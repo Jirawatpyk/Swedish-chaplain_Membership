@@ -119,6 +119,52 @@ export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbTx = TenantTx;
 
 /**
+ * Round 2 review-fix (I-2): runtime duck-type guard for `TenantTx`.
+ *
+ * Cross-module callbacks that thread Drizzle tx handles through
+ * `unknown`-typed parameters (e.g. F4 → F8 `onPaidCallbacks(evt, tx)`)
+ * MUST verify the runtime shape before casting back to `TenantTx`. A
+ * silent cast bypasses TypeScript's nominal protection: if F4 ever
+ * passes the wrong shape (a refactor wraps `tx` in instrumentation, a
+ * future cross-module wiring forgets to thread the tx, etc.) the
+ * downstream consumer would silently run against the wrong handle —
+ * either Constitution Principle I cross-tenant scope corruption or
+ * `TypeError: tx.execute is not a function` deep in a query callsite.
+ *
+ * The guard checks Drizzle's tx-callback parameter shape — every tx
+ * exposes `execute`, `select`, `insert`, `update`, `delete`,
+ * `transaction` as functions. Foreign objects (event payloads,
+ * sentinels, plain JSON) fail at least one. False-positives are
+ * structurally impossible without intentional spoofing.
+ *
+ * Usage:
+ *
+ *   const txMaybe: unknown = …;
+ *   if (!isTenantTx(txMaybe)) {
+ *     // Log + fall back to a fresh runInTenant — never silently cast.
+ *     return runInTenant(ctx, body);
+ *   }
+ *   return body(txMaybe);
+ */
+const TX_DUCK_METHODS = [
+  'execute',
+  'select',
+  'insert',
+  'update',
+  'delete',
+  'transaction',
+] as const;
+export function isTenantTx(value: unknown): value is TenantTx {
+  if (value === null || typeof value !== 'object') return false;
+  for (const method of TX_DUCK_METHODS) {
+    if (typeof (value as Record<string, unknown>)[method] !== 'function') {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Run `fn` inside a Drizzle transaction that has been hardened against
  * cross-tenant leakage:
  *

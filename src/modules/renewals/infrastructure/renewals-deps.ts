@@ -258,9 +258,11 @@ export type { AuditContext, F8AuditEvent, F8AuditEventType };
  * (legacy callers), T123 falls through to `runInTenant` so the
  * callback never breaks. The Phase 5+ wiring always threads the tx.
  *
- * Called by F4's record-payment composition (mark-paid-offline path
- * via f4-invoice-bridge.ts; webhook path via markPaidFromProcessor
- * once F4 wires the onPaidCallbacks param into its factory).
+ * Called by F4's record-payment composition on every paid-invoice flip
+ * (mark-paid-offline path via f4-invoice-bridge.ts; Stripe-webhook path
+ * via `markPaidFromProcessor`, which forwards `onPaidCallbacks` through
+ * `makeRecordPaymentDeps`). F4 threads its internal tx into the second
+ * parameter so listeners can run atomically — see I3 review-fix below.
  */
 export function f8OnPaidCallbacks(
   tenantId: string,
@@ -268,10 +270,18 @@ export function f8OnPaidCallbacks(
   const deps = makeRenewalsDeps(tenantId);
   return [
     async (evt, txUnknown) => {
-      // Lazy-import to avoid circular: index.ts barrel re-exports the
-      // use-case which itself imports from `@/modules/invoicing`. Pulling
-      // the use-case via the direct path here keeps the import graph
-      // linear.
+      // Lazy-import to break a runtime composition cycle: `@/modules/
+      // renewals/index.ts` barrel exports `f8OnPaidCallbacks` (this
+      // factory) AND F4's `recordPayment` consumes that array via its
+      // own composition root. A static import here would force the
+      // T123 use-case module to load before the renewals barrel
+      // finishes initialising, which crashes hot-reload + cold-start
+      // on Vercel Fluid Compute. The dynamic import defers T123 module
+      // resolution to first-callback-invocation, by which point both
+      // barrels are fully initialised. (Type-only imports of F4 inside
+      // T123 are erased at compile time and never participate in this
+      // cycle — see `import type` in mark-cycle-complete-from-invoice-
+      // paid.ts for the type-side resolution.)
       let markCycleCompleteFromInvoicePaid: typeof import('../application/use-cases/mark-cycle-complete-from-invoice-paid').markCycleCompleteFromInvoicePaid;
       try {
         ({ markCycleCompleteFromInvoicePaid } = await import(
@@ -294,16 +304,53 @@ export function f8OnPaidCallbacks(
         );
         throw e;
       }
-      // I3 review-fix: cast F4's `unknown` tx back to F8's TenantTx
-      // brand. Both modules use the same underlying Drizzle connection
-      // shape (`db.transaction(...)` callback param), so the cast is
-      // safe at runtime. When `txUnknown` is undefined (legacy F4 call
-      // path that didn't pass the tx), T123 falls back to its own
-      // runInTenant — full backward compat.
-      const existingTx =
-        txUnknown !== undefined
-          ? (txUnknown as Parameters<typeof markCycleCompleteFromInvoicePaid>[2])
-          : undefined;
+      // I3 review-fix + Round 2 review-fix (I-2): when F4 threads a tx,
+      // cast back to F8's TenantTx brand only after a runtime duck-type
+      // check (`isTenantTx`). The naïve `as` cast bypasses TypeScript's
+      // nominal protection — if F4 ever passes the wrong shape (a
+      // refactor wraps `tx` in instrumentation, a future cross-module
+      // wiring forgets to thread the tx, etc.) the silent cast would
+      // either corrupt the tenant scope (Principle I) or surface as
+      // `TypeError: tx.execute is not a function` deep in a query
+      // callsite. The duck-check verifies the Drizzle tx-method shape
+      // and falls back to `runInTenant` if mismatched, with a
+      // structured error log so SRE can triage. Backward compat: when
+      // `txUnknown` is undefined (legacy F4 call path that didn't
+      // pass the tx), T123 still falls back to its own runInTenant.
+      let existingTx:
+        | Parameters<typeof markCycleCompleteFromInvoicePaid>[2]
+        | undefined = undefined;
+      if (txUnknown !== undefined) {
+        const { isTenantTx } = await import('@/lib/db');
+        if (isTenantTx(txUnknown)) {
+          existingTx = txUnknown as Parameters<
+            typeof markCycleCompleteFromInvoicePaid
+          >[2];
+        } else {
+          const { logger } = await import('@/lib/logger');
+          logger.error(
+            {
+              errorId: 'F8.ONPAID.INVALID_TX',
+              tenantId,
+              invoiceId: evt.invoiceId,
+              memberId: evt.memberId,
+              txKeys:
+                txUnknown !== null && typeof txUnknown === 'object'
+                  ? Object.keys(txUnknown as Record<string, unknown>).slice(0, 10)
+                  : null,
+              txType: typeof txUnknown,
+            },
+            '[f8-onPaid] F4 threaded non-TenantTx value — falling back to runInTenant; F4 callback contract drift suspected',
+          );
+          // Fall through with existingTx=undefined — T123 opens its
+          // own runInTenant. The F4 invoice flip is NOT atomic with
+          // the F8 cycle update in this degraded mode (re-introduces
+          // the eventual-consistency window the I3 fix closed) — but
+          // the log + errorId + Sentry alert above ensures SRE can
+          // detect and remediate before the contract drift causes
+          // user-visible state divergence.
+        }
+      }
       const result = await markCycleCompleteFromInvoicePaid(
         deps,
         evt,

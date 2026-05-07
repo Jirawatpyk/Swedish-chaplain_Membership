@@ -2,13 +2,22 @@
  * F8 Phase 5 Wave D · T148 — pending-reactivation timeout cron test
  * (live Neon).
  *
- * Verifies T138 reconcilePendingReactivations on real Postgres:
+ * Verifies T138 reconcilePendingReactivations on real Postgres in the
+ * **catch-up cron-skip-recovery scenario** (no prior audit rows seeded
+ * — i.e. the cron has missed every previous day):
  *
- *   1. **Reminder ladder** at days 23 / 27 / 29 → emits the 3
- *      `_reminder_t-7/_t-3/_t-1` audit events; cycle stays in
- *      pending_admin_reactivation (no transition).
- *   2. **Auto-timeout at day 30+** → cycle pending → cancelled with
- *      closedReason='admin_rejected_with_refund'; emits
+ *   1. **Reminder ladder** with no prior audits — every CROSSED rung
+ *      fires per `decideRemindersToFire` semantics (T138 review-fix):
+ *      - Day 23 cycle → emits T-7 only
+ *      - Day 27 cycle → emits T-7 + T-3
+ *      - Day 29 cycle → emits T-7 + T-3 + T-1
+ *      Aggregate counts in this run: remindersT7=3, remindersT3=2,
+ *      remindersT1=1. Reminder cycles stay in pending_admin_reactivation
+ *      (no transition).
+ *   2. **Auto-timeout at day 30+** → I2 review-fix: cycle pending →
+ *      `lapsed` with `closedReason='pending_reactivation_timed_out'`
+ *      (distinguishes a system timeout from an explicit admin reject in
+ *      the lapsed-tab badge without joining audit_log). Emits
  *      `lapsed_member_admin_reactivation_timed_out` audit (actor=cron,
  *      null userId).
  *
@@ -16,6 +25,12 @@
  * `linked_invoice_id` go through the bridge's `no_payment_found` path
  * — no Stripe API call. Refund-failure recovery (`timeoutRefundFailures`)
  * counter is covered by unit tests.
+ *
+ * Steady-state daily cron (one rung emitted per day per cycle, prior-
+ * day audit rows present) is exercised by the unit-test suite at
+ * `tests/unit/.../reconcile-pending-reactivations.test.ts` — this
+ * integration file purposefully does NOT seed prior audits so the
+ * catch-up SQL path is exercised against live Postgres.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';

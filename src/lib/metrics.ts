@@ -1490,4 +1490,56 @@ export const renewalsMetrics = {
       ).add(1, { tenant: tenantId, outcome });
     });
   },
+
+  /**
+   * `renewals_reminder_audit_query_failures_total{tenant}` — Round 2
+   * review-fix (I-1): the `reconcilePendingReactivations` cron's
+   * audit-existence query failed (DB connection hiccup, RLS misconfig,
+   * etc.) and the cron fell back to fire-all-crossed-rungs. Trade-off
+   * accepted per Constitution Principle V (Reliability) — the
+   * dispatcher cron's send-side dedupe (Resend idempotency) bounds the
+   * blast radius — but a sustained non-zero rate signals
+   * (a) audit_log connection pool exhaustion, or (b) RLS/role drift
+   * that is silently degrading the cron's catch-up correctness.
+   * Alert rule: any non-zero rate sustained for 10 min pages on-call.
+   */
+  reminderAuditQueryFailures: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_reminder_audit_query_failures_total',
+          'F8 reconcile-pending-reactivations audit-existence query failed; cron fell back to fire-all-crossed-rungs',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * `renewals_reminder_audit_emit_failures_total{tenant, type}` —
+   * Round 2 review-fix (I-6): a reminder-rung audit emit threw inside
+   * `reconcilePendingReactivations`. Previously swallowed by a
+   * `logger.warn` with no metric → a misconfigured RLS / connection
+   * pool exhaustion / unique-constraint regression could silently
+   * drop every reminder for weeks before a member-support ticket
+   * surfaced the problem. The cron's success counters
+   * (`remindersT7/T3/T1`) only bump on emit-success now (parity with
+   * `timeoutRefundFailures`), and this counter tracks the failures.
+   * Alert rule: any non-zero rate sustained for 10 min pages on-call.
+   */
+  reminderAuditEmitFailures: {
+    add(
+      value: number,
+      attrs: { tenant_id: string; type: string },
+    ): void {
+      safeMetric(() => {
+        counter(
+          'renewals_reminder_audit_emit_failures_total',
+          'F8 reconcile-pending-reactivations failed to emit a reminder-rung audit row (forensic-trail loss)',
+        ).add(value, {
+          tenant: attrs.tenant_id,
+          type: attrs.type,
+        });
+      });
+    },
+  },
 } as const;

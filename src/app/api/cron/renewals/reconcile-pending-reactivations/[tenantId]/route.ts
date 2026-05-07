@@ -70,6 +70,11 @@ export async function POST(
       reminders_t7: result.value.remindersT7,
       reminders_t3: result.value.remindersT3,
       reminders_t1: result.value.remindersT1,
+      // Round 2 review-fix (I-6): SRE-visible reminder-emit failures.
+      // Round 1 silently swallowed these into a `logger.warn`. Now the
+      // success counters above only bump on emit-success and this
+      // counter tracks failures (parity with timeout_refund_failures).
+      reminders_failed: result.value.remindersFailed,
       timed_out: result.value.timedOut,
       timeout_refund_failures: result.value.timeoutRefundFailures,
       duration_ms: Date.now() - startedAt,

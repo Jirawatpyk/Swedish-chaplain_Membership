@@ -10,17 +10,41 @@
  * visually-hidden "Loading…" announcement so screen-reader users hear
  * the loading state explicitly instead of silence (the shimmer cards
  * are otherwise invisible to assistive tech).
+ *
+ * Round 2 review-fix (I-8): the `getTranslations` call is wrapped in
+ * try/catch with a hardcoded EN fallback. The release-branch CI gate
+ * (`pnpm check:i18n`) blocks merges that drop the `announce` key from
+ * any locale, so the fallback is defensive-only — but a Suspense
+ * fallback that THROWS at render time degrades the entire renewal
+ * page transition into a blank screen with no error boundary. Better
+ * to ship the wrong-locale string ("Loading renewal details…" in EN
+ * even on TH/SV portals) than nothing — the announcement is a
+ * screen-reader-only string, never visible. Belt + braces.
  */
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const FALLBACK_LOADING_ANNOUNCE = 'Loading renewal details…';
+
+async function resolveLoadingAnnounce(): Promise<string> {
+  try {
+    const t = await getTranslations('portal.renewal.loading');
+    return t('announce');
+  } catch {
+    // i18n namespace/key missing — degraded mode. CI gate should have
+    // caught this on release branch; we fall back to the EN canonical
+    // so screen-reader users always hear something.
+    return FALLBACK_LOADING_ANNOUNCE;
+  }
+}
+
 export default async function RenewalPortalLoading() {
-  const t = await getTranslations('portal.renewal.loading');
+  const announce = await resolveLoadingAnnounce();
   return (
     <DetailContainer>
       <div role="status" aria-live="polite">
-        <span className="sr-only">{t('announce')}</span>
+        <span className="sr-only">{announce}</span>
         <header>
           <Skeleton className="h-7 w-40" />
           <Skeleton className="mt-2 h-4 w-72" />

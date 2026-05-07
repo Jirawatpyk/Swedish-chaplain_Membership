@@ -538,10 +538,15 @@ export async function recordPayment(
     // `issued`, audit + outbox + reg-fee flip are unwound. Atomic
     // coordination per Constitution Principle VIII (Reliability).
     //
-    // Listeners must keep their own work transactional via the same
-    // `tx` if they touch other tables; they receive only the canonical
-    // event payload here, not the raw tx handle, to keep the cross-
-    // module contract narrow + framework-free (Principle III).
+    // Listeners receive the canonical event payload AND an opaque
+    // `unknown`-typed tx handle (`cb(evt, tx)` below). The `unknown`
+    // typing keeps the cross-module contract framework-free per
+    // Principle III — F4 does not export Drizzle types into F8 — while
+    // still letting listeners participate atomically in this same `tx`.
+    // Listeners that don't need the tx may ignore the second parameter;
+    // those that DO need it cast back to their own internal `TenantTx`
+    // brand at the consumer side (see F8 `f8OnPaidCallbacks` for the
+    // canonical pattern + runtime brand-check).
     //
     // The non-null assertions on `loaded.total` and `updated.paidAt`
     // are guarded upstream: `no_snapshot_on_invoice` returns early when

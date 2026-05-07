@@ -33,6 +33,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
 import type {
@@ -67,12 +68,27 @@ export type ReconcilePendingReactivationsInput = z.infer<
 
 export interface ReconcilePendingReactivationsOutput {
   readonly cyclesProcessed: number;
+  /** Successfully emitted T-7 reminder audit rows in this run. */
   readonly remindersT7: number;
+  /** Successfully emitted T-3 reminder audit rows in this run. */
   readonly remindersT3: number;
+  /** Successfully emitted T-1 reminder audit rows in this run. */
   readonly remindersT1: number;
   readonly timedOut: number;
   /** Auto-timeouts where the F5 refund failed; cron will retry tomorrow. */
   readonly timeoutRefundFailures: number;
+  /**
+   * Round 2 review-fix (I-6): reminder-rung audit emits that THREW
+   * (DB connection blip / RLS regression / unique-constraint conflict).
+   * Round 1 silently swallowed these into a `logger.warn` — a
+   * misconfigured RLS could drop every reminder for weeks before
+   * a member-support ticket surfaced the regression. The cron's
+   * success counters (`remindersT7/T3/T1`) only bump on emit-success;
+   * this counter tracks the failures (parity with `timeoutRefundFailures`).
+   * Sustained non-zero rate alerts via
+   * `renewalsMetrics.reminderAuditEmitFailures`.
+   */
+  readonly remindersFailed: number;
 }
 
 export type ReconcilePendingReactivationsError = {
@@ -135,6 +151,7 @@ export async function reconcilePendingReactivations(
   let remindersT7 = 0;
   let remindersT3 = 0;
   let remindersT1 = 0;
+  let remindersFailed = 0;
   let timedOut = 0;
   let timeoutRefundFailures = 0;
 
@@ -157,45 +174,54 @@ export async function reconcilePendingReactivations(
     const alreadyEmitted = await deps.reminderAuditQuery
       .findReminderAuditsForCycle(cycle.tenantId, cycle.cycleId)
       .catch((e: unknown) => {
-        // Read-only audit query failure is non-fatal — fall back to
-        // the legacy equality-fire policy so the cron does NOT block
-        // on a stale audit-log connection. The next run retries.
-        logger.warn(
+        // Round 2 review fix (I-1): read-only audit query failure is
+        // non-fatal — fall back to "fire-all-crossed-rungs" so the cron
+        // does NOT block on a stale audit-log connection. Trade-off: a
+        // transient outage WILL cause duplicate reminder audit rows
+        // (e.g. day-28 cycle re-fires T-7 even though it was emitted
+        // on day-23 already). We accept the duplicate-audit risk over
+        // the silently-dropped-reminder risk per Constitution
+        // Principle V (Reliability): the dispatcher cron is idempotent
+        // on send (Resend dedupe) so duplicate emails are bounded.
+        // Counter `renewalsMetrics.reminderAuditQueryFailures` lets SREs
+        // see this on a dashboard before it spirals.
+        renewalsMetrics.reminderAuditQueryFailures.add(1, {
+          tenant_id: cycle.tenantId,
+        });
+        logger.error(
           {
+            errorId: 'F8.RECONCILE.AUDIT_QUERY_FAILED',
+            tenantId: cycle.tenantId,
             cycleId: cycle.cycleId,
             err: e instanceof Error ? e.message : String(e),
           },
-          '[reconcile-pending-reactivations] reminderAuditQuery failed — falling back to equality-fire',
+          '[reconcile-pending-reactivations] reminderAuditQuery failed — falling back to fire-all-crossed-rungs',
         );
         return new Set<ReminderLadderAuditType>();
       });
     const toFire = decideRemindersToFire(daysPending, alreadyEmitted);
-    if (toFire.has('lapsed_member_admin_reactivation_reminder_t-7')) {
-      await emitReminderAudit(
-        deps,
-        cycle,
-        'lapsed_member_admin_reactivation_reminder_t-7' as const,
-        input.correlationId,
-      );
-      remindersT7 += 1;
-    }
-    if (toFire.has('lapsed_member_admin_reactivation_reminder_t-3')) {
-      await emitReminderAudit(
-        deps,
-        cycle,
-        'lapsed_member_admin_reactivation_reminder_t-3' as const,
-        input.correlationId,
-      );
-      remindersT3 += 1;
-    }
-    if (toFire.has('lapsed_member_admin_reactivation_reminder_t-1')) {
-      await emitReminderAudit(
-        deps,
-        cycle,
-        'lapsed_member_admin_reactivation_reminder_t-1' as const,
-        input.correlationId,
-      );
-      remindersT1 += 1;
+    // Round 2 review-fix (I-6): success counters only bump on emit
+    // success — Round 1 incremented unconditionally even when the emit
+    // threw. `remindersFailed` collects the misses for observability.
+    // Iteration order matches `decideRemindersToFire` insertion order
+    // (T-7 → T-3 → T-1) so audit rows arrive in chronological rung order.
+    for (const type of toFire) {
+      const ok = await emitReminderAudit(deps, cycle, type, input.correlationId);
+      if (!ok) {
+        remindersFailed += 1;
+        continue;
+      }
+      switch (type) {
+        case 'lapsed_member_admin_reactivation_reminder_t-7':
+          remindersT7 += 1;
+          break;
+        case 'lapsed_member_admin_reactivation_reminder_t-3':
+          remindersT3 += 1;
+          break;
+        case 'lapsed_member_admin_reactivation_reminder_t-1':
+          remindersT1 += 1;
+          break;
+      }
     }
   }
 
@@ -204,6 +230,7 @@ export async function reconcilePendingReactivations(
     remindersT7,
     remindersT3,
     remindersT1,
+    remindersFailed,
     timedOut,
     timeoutRefundFailures,
   });
@@ -262,6 +289,18 @@ function computeDaysPending(cycle: RenewalCycle, now: Date): number | null {
   return Math.floor(ms / MS_PER_DAY);
 }
 
+/**
+ * Round 2 review-fix (I-6): returns `true` on emit success, `false` on
+ * throw. The cron caller increments the success counter
+ * (`remindersT7/T3/T1`) only on `true` and `remindersFailed` on `false`,
+ * giving SREs an accurate "what landed in audit_log" tally instead of
+ * the Round 1 lie ("we sent 47 reminders" when 47 emits ALL threw).
+ *
+ * Throws are still NON-fatal for the cron (one bad cycle must not
+ * abort the whole run), but they are now logged at `error` level
+ * (was `warn`) with `errorId` for Sentry grouping + bumped via
+ * `renewalsMetrics.reminderAuditEmitFailures` for dashboard alerts.
+ */
 async function emitReminderAudit(
   deps: ReconcilePendingReactivationsDeps,
   cycle: RenewalCycle,
@@ -270,7 +309,7 @@ async function emitReminderAudit(
     | 'lapsed_member_admin_reactivation_reminder_t-3'
     | 'lapsed_member_admin_reactivation_reminder_t-1',
   correlationId: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await deps.auditEmitter.emit(
       {
@@ -287,15 +326,23 @@ async function emitReminderAudit(
         correlationId,
       },
     );
+    return true;
   } catch (e) {
-    logger.warn(
+    renewalsMetrics.reminderAuditEmitFailures.add(1, {
+      tenant_id: cycle.tenantId,
+      type,
+    });
+    logger.error(
       {
+        errorId: 'F8.RECONCILE.REMINDER_EMIT_FAILED',
+        tenantId: cycle.tenantId,
         cycleId: cycle.cycleId,
         type,
         err: e instanceof Error ? e.message : String(e),
       },
-      '[reconcile-pending-reactivations] reminder audit emit failed',
+      '[reconcile-pending-reactivations] reminder audit emit failed — counted in remindersFailed; cron continues',
     );
+    return false;
   }
 }
 

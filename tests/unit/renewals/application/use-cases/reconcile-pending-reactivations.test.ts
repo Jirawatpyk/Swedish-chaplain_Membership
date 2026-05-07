@@ -400,7 +400,13 @@ describe('reconcilePendingReactivations (T138) — input validation + summary', 
     }
   });
 
-  it('audit emit failure on reminder path is swallowed (cron must not abort)', async () => {
+  it('Round 2 review-fix (I-6): audit emit failure increments remindersFailed (NOT remindersT7), cron continues', async () => {
+    // Round 1 swallowed emit failures into a `logger.warn` AND
+    // incremented `remindersT7` regardless — the cron's own log line
+    // ("I sent 47 reminders") would be a lie when 47 emits all threw.
+    // Round 2 review fix: success counters only bump on emit-success;
+    // a NEW `remindersFailed` counter (parity with
+    // `timeoutRefundFailures`) tracks the misses for SRE alerting.
     const cycle = pendingCycle({ daysPending: 23 });
     const { deps } = fakeDeps({
       cycles: [cycle],
@@ -410,6 +416,14 @@ describe('reconcilePendingReactivations (T138) — input validation + summary', 
     });
     const r = await reconcilePendingReactivations(deps, baseInput);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.remindersT7).toBe(1); // still counted
+    if (r.ok) {
+      // Cron must not abort — output struct is still ok(...).
+      // emit failed → remindersT7 NOT bumped.
+      expect(r.value.remindersT7).toBe(0);
+      // emit failed → remindersFailed bumped.
+      expect(r.value.remindersFailed).toBe(1);
+      // Cycle was processed (we didn't skip it).
+      expect(r.value.cyclesProcessed).toBe(1);
+    }
   });
 });

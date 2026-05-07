@@ -9,7 +9,7 @@
  *   - Race-condition skip (TransitionConflict)
  *   - Atomic state+audit (Principle VIII reverse-direction)
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { markCycleCompleteFromInvoicePaid } from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
 import type { MarkCycleCompleteDeps } from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
 import { CycleTransitionConflictError } from '@/modules/renewals/application/ports/renewal-cycle-repo';
@@ -23,10 +23,27 @@ const MEMBER_ID = 'mem-123';
 const CYCLE_UUID = '00000000-0000-0000-0000-0000000c1230';
 const INVOICE_UUID = '00000000-0000-0000-0000-0000000aaaaa';
 
-vi.mock('@/lib/db', () => ({
-  runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
-    fn({} as unknown),
+// Round 2 review-fix (I-5): hoisted spy lets the I3 tx-thread test
+// distinguish "tx threaded — runInTenant NOT called" (existingTx path)
+// from "tx omitted — runInTenant called exactly once" (legacy
+// backward-compat path). Round 1's passthrough mock could not tell
+// these apart: the sentinel-identity assertion would still pass even
+// if the production code accidentally re-wrapped in `runInTenant`,
+// silently re-introducing the eventual-consistency window I3 closed.
+const { runInTenantSpy } = vi.hoisted(() => ({
+  runInTenantSpy: vi.fn(
+    async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
+      fn({} as unknown),
+  ),
 }));
+
+vi.mock('@/lib/db', () => ({
+  runInTenant: runInTenantSpy,
+}));
+
+beforeEach(() => {
+  runInTenantSpy.mockClear();
+});
 
 function buildEvent(overrides: Partial<F4InvoicePaidEvent> = {}): F4InvoicePaidEvent {
   return {
@@ -186,10 +203,14 @@ describe('markCycleCompleteFromInvoicePaid (T123) — non-renewal + idempotent p
   });
 
   it('I3 review-fix: existingTx threaded by F4 callback is reused — runInTenant NOT called', async () => {
-    // The mock at the top of this file makes `runInTenant` a passthrough
-    // that runs `fn({})`. To prove the existingTx path is taken, we
-    // pass a sentinel object and assert it's the SAME object received
-    // by the cycle repo's findByInvoiceIdInTx.
+    // Round 2 review-fix (I-5): the hoisted `runInTenantSpy` lets us
+    // assert the strong invariant — when F4 threads its tx, the
+    // existingTx short-circuit at `mark-cycle-complete:if (existingTx
+    // !== undefined) { return body(existingTx); }` MUST bypass
+    // runInTenant entirely. A regression that drops the short-circuit
+    // would silently re-open a fresh tx (eventual-consistency window
+    // returns) — Round 1's identity-only assertion would NOT have
+    // caught it. With the spy we can.
     const cycle = buildCycle();
     const { deps, findByInvoiceMock } = fakeDeps({ cycle });
     const sentinelTx = { sentinel: 'f4-tx-handle' } as unknown as Parameters<
@@ -201,11 +222,33 @@ describe('markCycleCompleteFromInvoicePaid (T123) — non-renewal + idempotent p
       sentinelTx,
     );
     expect(r.ok).toBe(true);
+    // Assertion 1: sentinel-identity threads through to repo
     expect(findByInvoiceMock).toHaveBeenCalledWith(
       sentinelTx,
       TENANT_ID,
       INVOICE_UUID,
     );
+    // Assertion 2 (I-5): runInTenant is NOT called when existingTx
+    // is provided — locks the I3 contract that closes the eventual-
+    // consistency window. If a future refactor re-wraps in runInTenant
+    // even when existingTx exists, this assertion catches it.
+    expect(runInTenantSpy).not.toHaveBeenCalled();
+  });
+
+  it('I3 backward-compat: existingTx omitted — runInTenant IS called exactly once', async () => {
+    // Reciprocal Round 2 (I-5) assertion: when F4 calls without
+    // threading the tx (legacy callers OR future cross-module
+    // bindings that intentionally want F8 to manage its own tx),
+    // T123 MUST fall through to its own runInTenant. This locks the
+    // backward-compat half of the I3 contract.
+    const cycle = buildCycle();
+    const { deps, findByInvoiceMock } = fakeDeps({ cycle });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.ok).toBe(true);
+    expect(runInTenantSpy).toHaveBeenCalledTimes(1);
+    // Repo call still receives the tx handle from the runInTenant
+    // callback — sanity that the legacy path still works.
+    expect(findByInvoiceMock).toHaveBeenCalled();
   });
 });
 
