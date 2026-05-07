@@ -119,6 +119,35 @@ export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbTx = TenantTx;
 
 /**
+ * Round 2 review-fix (H2): cross-module-callback transactional helper.
+ *
+ * Run `body` inside a tenant-scoped transaction, OR reuse an existing
+ * tx handle when the caller is already inside one (e.g. an F4 →
+ * F8 onPaidCallback that threads F4's tx for atomic single-tx
+ * completion per Constitution Principle VIII).
+ *
+ * This collapses the recurring `if (existingTx !== undefined) {
+ * return body(existingTx); } return runInTenant(ctx, body);` pattern
+ * into a single name-documented helper. F5/F6/F7 cross-module
+ * callbacks adopt the same shape.
+ *
+ * Usage:
+ *
+ *   export async function myUseCase(deps, event, existingTx?: TenantTx) {
+ *     return runInTenantOrReuse(deps.tenant, existingTx, async (tx) => {
+ *       // ...body that uses tx...
+ *     });
+ *   }
+ */
+export function runInTenantOrReuse<T>(
+  ctx: TenantContext,
+  existingTx: TenantTx | undefined,
+  body: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  return existingTx !== undefined ? body(existingTx) : runInTenant(ctx, body);
+}
+
+/**
  * Round 2 review-fix (I-2): runtime duck-type guard for `TenantTx`.
  *
  * Cross-module callbacks that thread Drizzle tx handles through

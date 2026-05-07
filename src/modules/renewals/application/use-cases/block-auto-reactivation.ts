@@ -68,17 +68,15 @@ export async function blockAutoReactivation(
   const input = inputResult.value;
 
   return runInTenant(deps.tenant, async (tx) => {
-    const flagInput: {
-      memberId: string;
-      actorUserId: string;
-      reason?: string;
-    } = {
+    // Round 2 review-fix (L1): conditional spread is exactOptional-
+    // PropertyTypes-compatible — the `reason` key is absent from the
+    // object exactly when `input.reason === undefined`, matching the
+    // imperative version's behaviour. -6 LOC.
+    const flagInput = {
       memberId: input.memberId,
       actorUserId: input.actorUserId,
+      ...(input.reason !== undefined ? { reason: input.reason } : {}),
     };
-    if (input.reason !== undefined) {
-      flagInput.reason = input.reason;
-    }
     const result = await deps.memberRenewalFlagsRepo.setBlockedFromAutoReactivation(
       tx,
       input.tenantId,

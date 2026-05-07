@@ -1,10 +1,13 @@
 /**
  * F8 Phase 5 review backlog close — `parseInput` + `mapZodFirstIssue`
  * helpers extracted from the duplicated zod-error-mapping boilerplate
- * across 12 use-cases. New use-cases SHOULD adopt this helper to keep
- * the surface uniform; existing use-cases keep their inline pattern
- * for now (call-site rewrites would balloon the diff for marginal
- * gain — the pattern is already consistent).
+ * across most F8 use-cases (~18 inline `safeParse` callsites at the
+ * time of extraction). 5 of those callsites have adopted this helper
+ * (4 in commit `d4afa438` — block / unblock / opt-in / opt-out — plus
+ * `reconcile-pending-reactivations` adopted in Round 2 Wave K18).
+ * New use-cases SHOULD adopt this helper to keep the surface uniform;
+ * the remaining inline callsites will migrate opportunistically as
+ * they're touched for other reasons.
  *
  * Why a helper at all:
  *   - One canonical "what does invalid_input error look like?" answer

@@ -267,8 +267,27 @@ describe('reconcilePendingReactivations (T138) — reminder ladder', () => {
     });
     const r = await reconcilePendingReactivations(deps, baseInput);
     expect(r.ok).toBe(true);
-    // Empty fallback set → all crossed thresholds fire.
-    expect(emitMock).toHaveBeenCalled();
+    // Round 2 review-fix (S-5): tighten the assertion. With
+    // daysPending=23 only the T-7 threshold has been crossed; the
+    // empty fallback set means we re-fire every CROSSED rung — i.e.
+    // exactly T-7, NOT T-3 (threshold 27) and NOT T-1 (threshold 29).
+    // Round 1 only asserted "emitMock was called" — a bug that emits
+    // ALL three rungs on day-23 fallback (e.g. someone refactors
+    // decideRemindersToFire to drop the daysPending check) would
+    // have slipped through. Now locked.
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'lapsed_member_admin_reactivation_reminder_t-7',
+      }),
+      expect.anything(),
+    );
+    if (r.ok) {
+      expect(r.value.remindersT7).toBe(1);
+      expect(r.value.remindersT3).toBe(0);
+      expect(r.value.remindersT1).toBe(0);
+      expect(r.value.remindersFailed).toBe(0);
+    }
   });
 });
 

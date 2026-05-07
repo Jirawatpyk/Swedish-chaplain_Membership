@@ -16,17 +16,23 @@
  * The three reminder-ladder audit event types tracked by the cron's
  * catch-up logic. Mirrors the literal types in
  * `renewal-audit-emitter.ts` F8_AUDIT_EVENT_TYPES.
+ *
+ * Round 2 review-fix (S-8): the runtime const-array is the single
+ * source of truth — `ReminderLadderAuditType` is derived from it via
+ * `(typeof REMINDER_LADDER_AUDIT_TYPES)[number]`. Adding / removing a
+ * rung requires editing only the array; the type narrows automatically
+ * and TS exhaustiveness checks fall out for `switch` blocks. Round 1
+ * had the array + the union as parallel hand-kept declarations — easy
+ * to drift.
  */
-export type ReminderLadderAuditType =
-  | 'lapsed_member_admin_reactivation_reminder_t-7'
-  | 'lapsed_member_admin_reactivation_reminder_t-3'
-  | 'lapsed_member_admin_reactivation_reminder_t-1';
-
-export const REMINDER_LADDER_AUDIT_TYPES: ReadonlyArray<ReminderLadderAuditType> = [
+export const REMINDER_LADDER_AUDIT_TYPES = [
   'lapsed_member_admin_reactivation_reminder_t-7',
   'lapsed_member_admin_reactivation_reminder_t-3',
   'lapsed_member_admin_reactivation_reminder_t-1',
-];
+] as const;
+
+export type ReminderLadderAuditType =
+  (typeof REMINDER_LADDER_AUDIT_TYPES)[number];
 
 export interface ReminderAuditQueryPort {
   /**

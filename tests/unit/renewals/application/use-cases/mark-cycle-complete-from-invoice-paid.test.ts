@@ -30,19 +30,38 @@ const INVOICE_UUID = '00000000-0000-0000-0000-0000000aaaaa';
 // these apart: the sentinel-identity assertion would still pass even
 // if the production code accidentally re-wrapped in `runInTenant`,
 // silently re-introducing the eventual-consistency window I3 closed.
-const { runInTenantSpy } = vi.hoisted(() => ({
-  runInTenantSpy: vi.fn(
+//
+// Round 2 (H2): the production code now uses `runInTenantOrReuse`
+// (a thin helper that delegates to `runInTenant` when existingTx is
+// undefined). The mock spies on `runInTenantOrReuse` directly — it
+// captures the same observable behaviour (was the tx reused or did
+// we open a fresh one?) and a regression that re-introduced the old
+// branched code would still trip the assertions.
+const { runInTenantSpy, runInTenantOrReuseSpy } = vi.hoisted(() => {
+  const runInTenantSpy = vi.fn(
     async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
       fn({} as unknown),
-  ),
-}));
+  );
+  return {
+    runInTenantSpy,
+    runInTenantOrReuseSpy: vi.fn(
+      async <T>(
+        ctx: unknown,
+        existingTx: unknown,
+        body: (tx: unknown) => Promise<T>,
+      ) => (existingTx !== undefined ? body(existingTx) : runInTenantSpy(ctx, body)),
+    ),
+  };
+});
 
 vi.mock('@/lib/db', () => ({
   runInTenant: runInTenantSpy,
+  runInTenantOrReuse: runInTenantOrReuseSpy,
 }));
 
 beforeEach(() => {
   runInTenantSpy.mockClear();
+  runInTenantOrReuseSpy.mockClear();
 });
 
 function buildEvent(overrides: Partial<F4InvoicePaidEvent> = {}): F4InvoicePaidEvent {

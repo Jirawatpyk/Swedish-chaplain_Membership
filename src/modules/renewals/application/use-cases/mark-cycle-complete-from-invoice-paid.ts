@@ -54,7 +54,7 @@
  * tasks.md T123 follow-up sub-bullets.
  */
 import { ok, type Result } from '@/lib/result';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenantOrReuse, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -155,13 +155,12 @@ export async function markCycleCompleteFromInvoicePaid(
     // Default auto-complete branch.
     return autoComplete(deps, tx, cycle, event, closedAt);
   };
-  // I3 review-fix: reuse caller's tx when threaded via the F4
-  // onPaidCallback's new `(evt, tx)` signature; otherwise fall back
-  // to opening our own runInTenant for legacy callers.
-  if (existingTx !== undefined) {
-    return body(existingTx);
-  }
-  return runInTenant(deps.tenant, body);
+  // I3 review-fix + Round 2 (H2): reuse caller's tx when threaded
+  // via the F4 onPaidCallback's new `(evt, tx)` signature; otherwise
+  // fall back to opening our own runInTenant for legacy callers.
+  // The shared `runInTenantOrReuse` helper documents this pattern
+  // for future F5/F6/F7 cross-module callbacks.
+  return runInTenantOrReuse(deps.tenant, existingTx, body);
 }
 
 async function autoComplete(

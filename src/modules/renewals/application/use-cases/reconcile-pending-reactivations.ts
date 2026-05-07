@@ -34,6 +34,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { parseInput } from './_lib/parse-input';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
 import type {
@@ -130,14 +131,16 @@ export async function reconcilePendingReactivations(
     ReconcilePendingReactivationsError
   >
 > {
-  const parsed = reconcilePendingReactivationsInputSchema.safeParse(rawInput);
-  if (!parsed.success) {
-    return err({
-      kind: 'invalid_input',
-      message: parsed.error.issues[0]?.message ?? 'invalid input',
-    });
-  }
-  const input = parsed.data;
+  // Round 2 review-fix (M2): adopt the shared `parseInput` helper
+  // for consistency with block-/unblock-/opt-in/opt-out use-cases.
+  // Same observable behaviour (first-issue-message + 'invalid input'
+  // fallback), narrower surface for future evolution.
+  const inputResult = parseInput(
+    reconcilePendingReactivationsInputSchema,
+    rawInput,
+  );
+  if (!inputResult.ok) return err(inputResult.error);
+  const input = inputResult.value;
   const pageSize = input.pageSize ?? 1000;
 
   // Single page of pending cycles ordered by entered_pending_at ASC
