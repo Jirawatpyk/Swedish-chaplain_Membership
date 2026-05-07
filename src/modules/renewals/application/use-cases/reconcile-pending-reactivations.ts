@@ -34,6 +34,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
+import { asTenantId, asInvoiceId } from '@/lib/branded-ids';
 import { parseInput } from './_lib/parse-input';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
@@ -356,9 +357,11 @@ async function processTimeout(
 ): Promise<boolean> {
   // Step 1: refund via F5 (outside tx — Stripe is external).
   if (cycle.linkedInvoiceId !== null) {
+    // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
+    // boundary — see same pattern in admin-reject-reactivation.
     const refundResult = await deps.f5RefundBridge.issueRefundForInvoice({
-      tenantId: cycle.tenantId,
-      invoiceId: cycle.linkedInvoiceId,
+      tenantId: asTenantId(cycle.tenantId),
+      invoiceId: asInvoiceId(cycle.linkedInvoiceId),
       reason: 'auto-timeout: 30-day pending_admin_reactivation expired',
       actorUserId: 'system:cron',
       correlationId,

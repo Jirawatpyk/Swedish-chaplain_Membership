@@ -41,6 +41,7 @@ import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth/domain/branded';
 import { asCreditNoteId } from '@/modules/invoicing';
+import { asTenantId, asInvoiceId } from '@/lib/branded-ids';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
 import {
@@ -178,9 +179,14 @@ export async function adminRejectReactivation(
     // no-payment-found path (audit refund_credit_note_id stays null).
     refundCreditNoteId = null;
   } else {
+    // Round 2 (S-9): wrap raw strings in branded IDs at the bridge
+    // boundary. The bridge input type now demands TenantId/InvoiceId
+    // brands so a swapped (tenantId, invoiceId) call no longer
+    // type-checks. F8-internal use-case input stays `string` for now
+    // — adoption is incremental per S-9 scope policy.
     const refundResult = await deps.f5RefundBridge.issueRefundForInvoice({
-      tenantId: input.tenantId,
-      invoiceId: lockedCycle.linkedInvoiceId,
+      tenantId: asTenantId(input.tenantId),
+      invoiceId: asInvoiceId(lockedCycle.linkedInvoiceId),
       reason: input.reason,
       actorUserId: input.actorUserId,
       correlationId: input.correlationId,

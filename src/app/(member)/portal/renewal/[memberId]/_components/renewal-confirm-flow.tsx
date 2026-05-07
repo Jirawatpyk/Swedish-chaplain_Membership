@@ -115,6 +115,35 @@ export function RenewalConfirmFlow({
           // C6 review-fix: log raw code for support correlation; user
           // sees mapped i18n message (see ERROR_CODE_TO_I18N_KEY).
           console.warn('[renewal-confirm] error', { code, status: r.status });
+          // Round 2 review-fix S-6: also send a structured beacon to
+          // /api/internal/client-error so SRE / support can correlate
+          // user-reported failures with the raw error code instead of
+          // relying on screenshot of the user's browser console.
+          // sendBeacon is fire-and-forget and survives navigation;
+          // failures are silent (the console.warn above is the
+          // primary handle).
+          if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+            try {
+              navigator.sendBeacon(
+                '/api/internal/client-error',
+                new Blob(
+                  [
+                    JSON.stringify({
+                      tag: 'renewal-confirm',
+                      code,
+                      status: r.status,
+                      path: window.location.pathname,
+                    }),
+                  ],
+                  { type: 'application/json' },
+                ),
+              );
+            } catch {
+              // sendBeacon throws if the body is too large or quota
+              // exhausted — silently swallow; the console.warn above
+              // and the setError below are the user-visible handles.
+            }
+          }
           setError(code);
           return;
         }
@@ -124,7 +153,11 @@ export function RenewalConfirmFlow({
         } else {
           setError('missing_pay_url');
         }
-      } catch {
+      } catch (e) {
+        // Round 2 review-fix S-6: bind the caught error so a
+        // CSP / TypeError / abort distinction lands in the console
+        // instead of all looking like generic "network_error".
+        console.error('[renewal-confirm] network error', e);
         setError('network_error');
       }
     });

@@ -10,7 +10,10 @@
  *   - Atomic state+audit (Principle VIII reverse-direction)
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { markCycleCompleteFromInvoicePaid } from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
+import {
+  markCycleCompleteFromInvoicePaid,
+  markCycleCompleteInTx,
+} from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
 import type { MarkCycleCompleteDeps } from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
 import { CycleTransitionConflictError } from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
@@ -139,8 +142,9 @@ describe('markCycleCompleteFromInvoicePaid (T123) — auto-complete branch', () 
     const cycle = buildCycle();
     const { deps, transitionMock, emitInTxMock } = fakeDeps({ cycle });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe('completed');
+    // Round 2 (S-10): use-case returns MarkCycleCompleteOutcome
+    // directly (no Result wrapper). Discriminate via `kind`.
+    expect(r.kind).toBe('completed');
     expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
       from: 'awaiting_payment',
       to: 'completed',
@@ -156,8 +160,7 @@ describe('markCycleCompleteFromInvoicePaid (T123) — auto-complete branch', () 
     const cycle = buildCycle();
     const { deps } = fakeDeps({ cycle, blocked: null });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe('completed');
+    expect(r.kind).toBe('completed');
   });
 });
 
@@ -174,8 +177,7 @@ describe('markCycleCompleteFromInvoicePaid (T123) — FR-005b admin-block branch
       } as never),
     });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe('held_pending_admin');
+    expect(r.kind).toBe('held_pending_admin');
     expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
       from: 'awaiting_payment',
       to: 'pending_admin_reactivation',
@@ -192,8 +194,7 @@ describe('markCycleCompleteFromInvoicePaid (T123) — non-renewal + idempotent p
   it('no_cycle_for_invoice when invoice has no F8 cycle (e.g. ad-hoc admin invoice)', async () => {
     const { deps, transitionMock } = fakeDeps({ cycle: null });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe('no_cycle_for_invoice');
+    expect(r.kind).toBe('no_cycle_for_invoice');
     expect(transitionMock).not.toHaveBeenCalled();
   });
 
@@ -201,9 +202,10 @@ describe('markCycleCompleteFromInvoicePaid (T123) — non-renewal + idempotent p
     const cycle = buildCycle({ status: 'completed' });
     const { deps, transitionMock } = fakeDeps({ cycle });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok && r.value.kind === 'cycle_not_payable') {
-      expect(r.value.currentStatus).toBe('completed');
+    if (r.kind === 'cycle_not_payable') {
+      expect(r.currentStatus).toBe('completed');
+    } else {
+      throw new Error(`expected cycle_not_payable, got ${r.kind}`);
     }
     expect(transitionMock).not.toHaveBeenCalled();
   });
@@ -215,58 +217,44 @@ describe('markCycleCompleteFromInvoicePaid (T123) — non-renewal + idempotent p
     });
     const { deps } = fakeDeps({ cycle });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok && r.value.kind === 'cycle_not_payable') {
-      expect(r.value.currentStatus).toBe('pending_admin_reactivation');
+    if (r.kind === 'cycle_not_payable') {
+      expect(r.currentStatus).toBe('pending_admin_reactivation');
+    } else {
+      throw new Error(`expected cycle_not_payable, got ${r.kind}`);
     }
   });
 
-  it('I3 review-fix: existingTx threaded by F4 callback is reused — runInTenant NOT called', async () => {
-    // Round 2 review-fix (I-5): the hoisted `runInTenantSpy` lets us
-    // assert the strong invariant — when F4 threads its tx, the
-    // existingTx short-circuit at `mark-cycle-complete:if (existingTx
-    // !== undefined) { return body(existingTx); }` MUST bypass
-    // runInTenant entirely. A regression that drops the short-circuit
-    // would silently re-open a fresh tx (eventual-consistency window
-    // returns) — Round 1's identity-only assertion would NOT have
-    // caught it. With the spy we can.
+  it('S-11 split: markCycleCompleteInTx reuses caller tx — runInTenant NOT called', async () => {
+    // Round 2 review-fix (S-11): the use-case is split into two
+    // variants. The InTx variant takes a caller-provided tx and
+    // never opens its own runInTenant — locks the I3 atomic-tx
+    // invariant at the type system level (no `existingTx?` branch
+    // to forget). Round 1's hoisted spy still runs to prove the
+    // assertion holds at runtime.
     const cycle = buildCycle();
     const { deps, findByInvoiceMock } = fakeDeps({ cycle });
-    const sentinelTx = { sentinel: 'f4-tx-handle' } as unknown as Parameters<
-      typeof markCycleCompleteFromInvoicePaid
-    >[2];
-    const r = await markCycleCompleteFromInvoicePaid(
-      deps,
-      buildEvent(),
-      sentinelTx,
-    );
-    expect(r.ok).toBe(true);
+    const sentinelTx = { sentinel: 'f4-tx-handle' } as never;
+    const r = await markCycleCompleteInTx(deps, buildEvent(), sentinelTx);
+    expect(r.kind).toBe('completed');
     // Assertion 1: sentinel-identity threads through to repo
     expect(findByInvoiceMock).toHaveBeenCalledWith(
       sentinelTx,
       TENANT_ID,
       INVOICE_UUID,
     );
-    // Assertion 2 (I-5): runInTenant is NOT called when existingTx
-    // is provided — locks the I3 contract that closes the eventual-
-    // consistency window. If a future refactor re-wraps in runInTenant
-    // even when existingTx exists, this assertion catches it.
+    // Assertion 2: InTx variant does NOT call runInTenant — by
+    // construction (no body wrapping) but locked by the spy.
     expect(runInTenantSpy).not.toHaveBeenCalled();
   });
 
-  it('I3 backward-compat: existingTx omitted — runInTenant IS called exactly once', async () => {
-    // Reciprocal Round 2 (I-5) assertion: when F4 calls without
-    // threading the tx (legacy callers OR future cross-module
-    // bindings that intentionally want F8 to manage its own tx),
-    // T123 MUST fall through to its own runInTenant. This locks the
+  it('S-11 wrapper: markCycleCompleteFromInvoicePaid opens runInTenant exactly once', async () => {
+    // Reciprocal: the wrapper variant DOES call runInTenant —
     // backward-compat half of the I3 contract.
     const cycle = buildCycle();
     const { deps, findByInvoiceMock } = fakeDeps({ cycle });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
+    expect(r.kind).toBe('completed');
     expect(runInTenantSpy).toHaveBeenCalledTimes(1);
-    // Repo call still receives the tx handle from the runInTenant
-    // callback — sanity that the legacy path still works.
     expect(findByInvoiceMock).toHaveBeenCalled();
   });
 });
@@ -285,8 +273,7 @@ describe('markCycleCompleteFromInvoicePaid (T123) — race + atomicity', () => {
       },
     });
     const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe('cycle_not_payable');
+    expect(r.kind).toBe('cycle_not_payable');
   });
 
   it('Principle VIII — audit emit failure throws (rolls back F4 invoice)', async () => {

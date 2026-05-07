@@ -21,6 +21,7 @@
  * (Constitution Principle III).
  */
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
+import type { TenantTx } from '@/lib/db';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
 
@@ -282,11 +283,19 @@ export function f8OnPaidCallbacks(
       // T123 are erased at compile time and never participate in this
       // cycle — see `import type` in mark-cycle-complete-from-invoice-
       // paid.ts for the type-side resolution.)
+      // Round 2 (S-11): use-case is now split into:
+      //   - markCycleCompleteInTx(deps, evt, tx) — InTx variant
+      //   - markCycleCompleteFromInvoicePaid(deps, evt) — wrapper
+      // We import both so we can dispatch correctly based on whether
+      // F4 threaded a tx (atomic single-tx path) or not (degraded
+      // fallback path that opens its own runInTenant).
+      let markCycleCompleteInTx: typeof import('../application/use-cases/mark-cycle-complete-from-invoice-paid').markCycleCompleteInTx;
       let markCycleCompleteFromInvoicePaid: typeof import('../application/use-cases/mark-cycle-complete-from-invoice-paid').markCycleCompleteFromInvoicePaid;
       try {
-        ({ markCycleCompleteFromInvoicePaid } = await import(
-          '../application/use-cases/mark-cycle-complete-from-invoice-paid'
-        ));
+        ({ markCycleCompleteInTx, markCycleCompleteFromInvoicePaid } =
+          await import(
+            '../application/use-cases/mark-cycle-complete-from-invoice-paid'
+          ));
       } catch (e) {
         // I8 review-fix: F8-tagged log so a cold-start module-resolution
         // failure (ENOENT, SyntaxError on hot-reload) is traceable
@@ -304,28 +313,25 @@ export function f8OnPaidCallbacks(
         );
         throw e;
       }
-      // I3 review-fix + Round 2 review-fix (I-2): when F4 threads a tx,
-      // cast back to F8's TenantTx brand only after a runtime duck-type
-      // check (`isTenantTx`). The naïve `as` cast bypasses TypeScript's
-      // nominal protection — if F4 ever passes the wrong shape (a
-      // refactor wraps `tx` in instrumentation, a future cross-module
-      // wiring forgets to thread the tx, etc.) the silent cast would
-      // either corrupt the tenant scope (Principle I) or surface as
+      // I3 + Round 2 (I-2 + S-11): dispatch on tx-presence with
+      // runtime brand-check.
+      //   - F4 threaded a valid TenantTx → call InTx variant (atomic
+      //     single-tx path; closes the eventual-consistency window).
+      //   - F4 threaded undefined OR a non-TenantTx shape → call
+      //     wrapper variant (opens own runInTenant; degraded mode).
+      // The runtime `isTenantTx` brand-check protects against F4
+      // contract drift — a refactor that wraps `tx` in instrumentation
+      // or a future cross-module wiring that forgets to thread the
+      // tx would otherwise either corrupt the tenant scope
+      // (Constitution Principle I) or surface as
       // `TypeError: tx.execute is not a function` deep in a query
-      // callsite. The duck-check verifies the Drizzle tx-method shape
-      // and falls back to `runInTenant` if mismatched, with a
-      // structured error log so SRE can triage. Backward compat: when
-      // `txUnknown` is undefined (legacy F4 call path that didn't
-      // pass the tx), T123 still falls back to its own runInTenant.
-      let existingTx:
-        | Parameters<typeof markCycleCompleteFromInvoicePaid>[2]
-        | undefined = undefined;
+      // callsite. The structured error log + errorId lets SRE detect
+      // and remediate before user-visible state divergence.
+      let txForInTx: TenantTx | undefined = undefined;
       if (txUnknown !== undefined) {
         const { isTenantTx } = await import('@/lib/db');
         if (isTenantTx(txUnknown)) {
-          existingTx = txUnknown as Parameters<
-            typeof markCycleCompleteFromInvoicePaid
-          >[2];
+          txForInTx = txUnknown;
         } else {
           const { logger } = await import('@/lib/logger');
           logger.error(
@@ -342,26 +348,16 @@ export function f8OnPaidCallbacks(
             },
             '[f8-onPaid] F4 threaded non-TenantTx value — falling back to runInTenant; F4 callback contract drift suspected',
           );
-          // Fall through with existingTx=undefined — T123 opens its
-          // own runInTenant. The F4 invoice flip is NOT atomic with
-          // the F8 cycle update in this degraded mode (re-introduces
-          // the eventual-consistency window the I3 fix closed) — but
-          // the log + errorId + Sentry alert above ensures SRE can
-          // detect and remediate before the contract drift causes
-          // user-visible state divergence.
         }
       }
-      const result = await markCycleCompleteFromInvoicePaid(
-        deps,
-        evt,
-        existingTx,
-      );
-      // Throw on Result-typed err so F4's tx rolls back. Domain failures
-      // (no_cycle_for_invoice / cycle_not_payable) return ok(...) so they
-      // do NOT roll back the F4 invoice flip — see T123 file header for
-      // why those are non-throw success paths.
-      if (!result.ok) {
-        throw new Error(`F8 onPaidCallback failed: ${String(result.error)}`);
+      // S-10: use-case now returns MarkCycleCompleteOutcome directly
+      // (no Result wrapper — domain failures are non-throws so callers
+      // never need to discriminate ok vs err). Infra throws still
+      // propagate up so F4's tx rolls back on real DB failures.
+      if (txForInTx !== undefined) {
+        await markCycleCompleteInTx(deps, evt, txForInTx);
+      } else {
+        await markCycleCompleteFromInvoicePaid(deps, evt);
       }
     },
   ];

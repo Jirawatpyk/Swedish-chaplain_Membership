@@ -187,10 +187,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     };
 
     const r = await markCycleCompleteFromInvoicePaid(deps, event);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.kind).toBe('completed');
-    }
+    expect(r.kind).toBe('completed');
 
     // Cycle moved to completed with closed_reason='paid' + linked_invoice_id intact.
     const rows = await runInTenant(tenantA.ctx, (tx) =>
@@ -231,10 +228,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     };
 
     const r = await markCycleCompleteFromInvoicePaid(deps, event);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.kind).toBe('held_pending_admin');
-    }
+    expect(r.kind).toBe('held_pending_admin');
 
     const rows = await runInTenant(tenantA.ctx, (tx) =>
       tx
@@ -271,8 +265,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
       memberId: randomUUID(),
     };
     const r = await markCycleCompleteFromInvoicePaid(deps, event);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.value.kind).toBe('no_cycle_for_invoice');
+    expect(r.kind).toBe('no_cycle_for_invoice');
   });
 
   it('cross_tenant: tenant B context with tenant A invoice id returns no_cycle_for_invoice (Principle I sub-clause 3 / Review-Gate blocker)', async () => {
@@ -343,8 +336,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
         memberId: memberA,
       };
       const r = await markCycleCompleteFromInvoicePaid(depsB, event);
-      expect(r.ok).toBe(true);
-      if (r.ok) expect(r.value.kind).toBe('no_cycle_for_invoice');
+      expect(r.kind).toBe('no_cycle_for_invoice');
 
       // Tenant A's cycle MUST stay in awaiting_payment (untouched).
       const rowsA = await runInTenant(tenantAA.ctx, (tx) =>
@@ -384,8 +376,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
 
     // First fire: completes the cycle.
     const r1 = await markCycleCompleteFromInvoicePaid(deps, event);
-    expect(r1.ok).toBe(true);
-    if (r1.ok) expect(r1.value.kind).toBe('completed');
+    expect(r1.kind).toBe('completed');
 
     // Capture audit row count for this cycle BEFORE the second fire so
     // we can assert "no further audit emit" rather than relying on a
@@ -401,8 +392,7 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     // Second fire: cycle is now in `completed` — short-circuits with
     // `cycle_not_payable` (use-case path: status !== awaiting_payment).
     const r2 = await markCycleCompleteFromInvoicePaid(deps, event);
-    expect(r2.ok).toBe(true);
-    if (r2.ok) expect(r2.value.kind).toBe('cycle_not_payable');
+    expect(r2.kind).toBe('cycle_not_payable');
 
     // No new audit row emitted by the idempotent re-fire path (the
     // skip is logged with `logger.warn` only — the use-case explicitly

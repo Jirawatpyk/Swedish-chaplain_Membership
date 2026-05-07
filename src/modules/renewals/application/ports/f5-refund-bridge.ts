@@ -14,12 +14,23 @@
  * `loadInvoicePaymentActivity` + `issueRefund` use-cases. Mirrors the
  * existing `f4-invoice-bridge.ts` precedent for F8 → F4.
  *
+ * **Round 2 review-fix S-9** (POC adoption): the cross-module input
+ * types use branded `TenantId` / `InvoiceId` from `@/lib/branded-ids`
+ * to catch arg-swap at compile time — `issueRefundForInvoice({
+ * tenantId: invoiceId, invoiceId: tenantId })` (swapped) now refuses
+ * to type-check. The 3 other F8 cross-module ports
+ * (`f4-invoicing-bridge`, `plan-lookup-for-renewal`,
+ * `event-attendees-port`) adopt the same pattern incrementally as
+ * they're touched (F9).
+ *
  * Pure interface — no framework imports (Constitution Principle III).
  */
 
+import type { TenantId, InvoiceId } from '@/lib/branded-ids';
+
 export interface IssueRefundForInvoiceInput {
-  readonly tenantId: string;
-  readonly invoiceId: string;
+  readonly tenantId: TenantId;
+  readonly invoiceId: InvoiceId;
   /** Free-text reason persisted on F5 refund row + carried in audit. */
   readonly reason: string;
   readonly actorUserId: string;

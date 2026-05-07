@@ -53,8 +53,7 @@
  * These need additional repo methods + gateway access; tracked via
  * tasks.md T123 follow-up sub-bullets.
  */
-import { ok, type Result } from '@/lib/result';
-import { runInTenantOrReuse, type TenantTx } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -87,80 +86,99 @@ export type MarkCycleCompleteDeps = Pick<
 >;
 
 /**
- * Result is always `ok(...)`. Domain failures (no cycle / non-payable
- * status) are non-throws because F4 has paid the invoice — the cycle
- * is just not F8-managed or already settled. F4 must NOT roll back on
- * those, so we return success-with-explanation rather than err.
+ * Domain failures (no cycle / non-payable status) are non-throws
+ * because F4 has paid the invoice — the cycle is just not F8-managed
+ * or already settled. F4 must NOT roll back on those, so we return
+ * success-with-explanation rather than err.
  *
  * Genuine infra throws (DB connection lost) propagate up to F4's tx
  * which rolls back the invoice flip — atomic-failure invariant.
  *
+ * Round 2 review-fix (S-10): the previous return type
+ * `Promise<Result<MarkCycleCompleteOutcome, never>>` advertised "this
+ * Result branch never happens" which was misleading: the body throws
+ * on infra failures (the err channel is in fact never used). Replaced
+ * with `Promise<MarkCycleCompleteOutcome>` so the type tells the
+ * truth about which mechanism handles which failure mode.
+ *
+ * Round 2 review-fix (S-11): the function is now split into two
+ * variants with one tx-ownership invariant each:
+ *   - `markCycleCompleteInTx(deps, event, tx)` — body; requires
+ *     caller to provide the tx. Used by the F4 onPaidCallback path
+ *     where F4 threads its own tx for atomic single-tx completion.
+ *   - `markCycleCompleteFromInvoicePaid(deps, event)` — wrapper that
+ *     opens its own `runInTenant` and delegates to the InTx body.
+ *     Used by legacy / standalone callers that don't have a tx.
+ *
  * I3 review-fix (Phase 5 backlog close): when the F4 onPaidCallback
- * threads its own tx via the new `(evt, tx?)` callback signature,
- * F8 reuses it instead of opening a separate `runInTenant`. This
+ * threads its own tx, F8 reuses it via `markCycleCompleteInTx`. This
  * collapses the two-tx eventual-consistency window — F4 commit + F8
- * commit are now ONE atomic operation. The legacy `existingTx`-omitted
- * path is preserved for callers that don't (yet) thread the tx so the
- * change is fully backward-compatible.
+ * commit are now ONE atomic operation.
+ */
+export async function markCycleCompleteInTx(
+  deps: MarkCycleCompleteDeps,
+  event: F4InvoicePaidEvent,
+  tx: TenantTx,
+): Promise<MarkCycleCompleteOutcome> {
+  const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
+    tx,
+    event.tenantId,
+    event.invoiceId,
+  );
+  if (!cycle) {
+    logger.info(
+      { invoiceId: event.invoiceId, tenantId: event.tenantId },
+      '[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment',
+    );
+    return { kind: 'no_cycle_for_invoice' as const };
+  }
+
+  if (cycle.status !== 'awaiting_payment') {
+    logger.warn(
+      {
+        cycleId: cycle.cycleId,
+        currentStatus: cycle.status,
+        invoiceId: event.invoiceId,
+      },
+      '[mark-cycle-complete] cycle not in awaiting_payment — skip (idempotent re-fire or out-of-band transition)',
+    );
+    return {
+      kind: 'cycle_not_payable' as const,
+      currentStatus: cycle.status,
+    };
+  }
+
+  // FR-005b branch — read admin override flag.
+  const blocked =
+    await deps.memberRenewalFlagsRepo.readBlockedFromAutoReactivation(
+      tx,
+      event.tenantId,
+      cycle.memberId,
+    );
+
+  const closedAt = event.paidAt;
+  if (blocked === true) {
+    // Hold for admin review — NOT a terminal state. cycle moves to
+    // pending_admin_reactivation; T136 / T137 / T138 govern exit.
+    return holdForAdminReview(deps, tx, cycle, event, closedAt);
+  }
+
+  // Default auto-complete branch.
+  return autoComplete(deps, tx, cycle, event, closedAt);
+}
+
+/**
+ * Standalone wrapper — opens a fresh `runInTenant` and delegates to
+ * `markCycleCompleteInTx`. Use when no caller-provided tx is
+ * available (legacy paths, standalone admin replays, integration
+ * tests). The F4 onPaidCallback path uses `markCycleCompleteInTx`
+ * directly to participate in F4's tx for atomic single-tx completion.
  */
 export async function markCycleCompleteFromInvoicePaid(
   deps: MarkCycleCompleteDeps,
   event: F4InvoicePaidEvent,
-  existingTx?: TenantTx,
-): Promise<Result<MarkCycleCompleteOutcome, never>> {
-  const body = async (tx: TenantTx): Promise<Result<MarkCycleCompleteOutcome, never>> => {
-    const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
-      tx,
-      event.tenantId,
-      event.invoiceId,
-    );
-    if (!cycle) {
-      logger.info(
-        { invoiceId: event.invoiceId, tenantId: event.tenantId },
-        '[mark-cycle-complete] no F8 cycle for invoice — non-renewal payment',
-      );
-      return ok({ kind: 'no_cycle_for_invoice' as const });
-    }
-
-    if (cycle.status !== 'awaiting_payment') {
-      logger.warn(
-        {
-          cycleId: cycle.cycleId,
-          currentStatus: cycle.status,
-          invoiceId: event.invoiceId,
-        },
-        '[mark-cycle-complete] cycle not in awaiting_payment — skip (idempotent re-fire or out-of-band transition)',
-      );
-      return ok({
-        kind: 'cycle_not_payable' as const,
-        currentStatus: cycle.status,
-      });
-    }
-
-    // FR-005b branch — read admin override flag.
-    const blocked =
-      await deps.memberRenewalFlagsRepo.readBlockedFromAutoReactivation(
-        tx,
-        event.tenantId,
-        cycle.memberId,
-      );
-
-    const closedAt = event.paidAt;
-    if (blocked === true) {
-      // Hold for admin review — NOT a terminal state. cycle moves to
-      // pending_admin_reactivation; T136 / T137 / T138 govern exit.
-      return holdForAdminReview(deps, tx, cycle, event, closedAt);
-    }
-
-    // Default auto-complete branch.
-    return autoComplete(deps, tx, cycle, event, closedAt);
-  };
-  // I3 review-fix + Round 2 (H2): reuse caller's tx when threaded
-  // via the F4 onPaidCallback's new `(evt, tx)` signature; otherwise
-  // fall back to opening our own runInTenant for legacy callers.
-  // The shared `runInTenantOrReuse` helper documents this pattern
-  // for future F5/F6/F7 cross-module callbacks.
-  return runInTenantOrReuse(deps.tenant, existingTx, body);
+): Promise<MarkCycleCompleteOutcome> {
+  return runInTenant(deps.tenant, (tx) => markCycleCompleteInTx(deps, event, tx));
 }
 
 async function autoComplete(
@@ -169,7 +187,7 @@ async function autoComplete(
   cycle: RenewalCycle,
   event: F4InvoicePaidEvent,
   closedAt: string,
-): Promise<Result<MarkCycleCompleteOutcome, never>> {
+): Promise<MarkCycleCompleteOutcome> {
   const cycleId = asCycleId(cycle.cycleId);
   let updated: RenewalCycle;
   try {
@@ -196,10 +214,10 @@ async function autoComplete(
         { cycleId, err: e.message },
         '[mark-cycle-complete] auto-complete lost race — idempotent skip',
       );
-      return ok({
+      return {
         kind: 'cycle_not_payable' as const,
         currentStatus: cycle.status,
-      });
+      };
     }
     throw e;
   }
@@ -225,11 +243,11 @@ async function autoComplete(
     },
   );
 
-  return ok({
+  return {
     kind: 'completed' as const,
     cycleId: cycle.cycleId,
     memberId: cycle.memberId,
-  });
+  };
 }
 
 async function holdForAdminReview(
@@ -238,7 +256,7 @@ async function holdForAdminReview(
   cycle: RenewalCycle,
   event: F4InvoicePaidEvent,
   closedAt: string,
-): Promise<Result<MarkCycleCompleteOutcome, never>> {
+): Promise<MarkCycleCompleteOutcome> {
   const cycleId = asCycleId(cycle.cycleId);
   try {
     await deps.cyclesRepo.transitionStatus(
@@ -261,10 +279,10 @@ async function holdForAdminReview(
         { cycleId, err: e.message },
         '[mark-cycle-complete] hold-for-admin lost race — idempotent skip',
       );
-      return ok({
+      return {
         kind: 'cycle_not_payable' as const,
         currentStatus: cycle.status,
-      });
+      };
     }
     throw e;
   }
@@ -288,9 +306,9 @@ async function holdForAdminReview(
     },
   );
 
-  return ok({
+  return {
     kind: 'held_pending_admin' as const,
     cycleId: cycle.cycleId,
     memberId: cycle.memberId,
-  });
+  };
 }
