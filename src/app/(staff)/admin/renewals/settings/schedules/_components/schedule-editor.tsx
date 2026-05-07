@@ -76,6 +76,35 @@ export interface ScheduleEditorProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * K16-2 (R14-S7) — offline detection helper.
+ *
+ * Extracted from the schedule-save catch block so the K14-8 3-browser
+ * regex coverage can be unit-tested without mounting the full editor.
+ * Exported for `tests/unit/components/schedules/schedule-editor.test.ts`.
+ *
+ * Browser → `e.message` mapping:
+ *   - Chrome:  `TypeError: Failed to fetch`         → `/fetch/i`
+ *   - Firefox: `TypeError: NetworkError when…`      → `/network/i`
+ *   - Safari:  `TypeError: Load failed`             → `/load failed/i`
+ *
+ * Returns `true` only when ALL of:
+ *   1. `e instanceof TypeError` — non-TypeError throws (e.g. AbortError,
+ *      DOMException, server-thrown SyntaxError) are NOT offline.
+ *   2. The message matches one of the 3 browser patterns. Other
+ *      TypeErrors (e.g. `TypeError: prop is undefined`) are NOT
+ *      offline — those represent code bugs, not network failure.
+ */
+export function isOfflineFetchError(e: unknown): boolean {
+  if (!(e instanceof TypeError)) return false;
+  const msg = e.message;
+  return (
+    /fetch/i.test(msg) ||
+    /network/i.test(msg) ||
+    /load failed/i.test(msg)
+  );
+}
+
 function emptyStep(): ScheduleStepWire {
   // J8-M33: random suffix so multiple "Add step" clicks within one
   // session produce unique step_ids — server zod's distinct-step_ids
@@ -505,20 +534,15 @@ export function ScheduleEditor({
           // "contact support").
 
           console.error('[F8] schedule save: client handler failed', e);
-          // K14-8 (R13-S5): browser coverage for the offline-detection
-          // regex —
-          //   • Chrome: `TypeError: Failed to fetch`         → /fetch/i
-          //   • Firefox: `TypeError: NetworkError when…`     → /network/i
-          //   • Safari: `TypeError: Load failed`             → /load failed/i
-          // Without the third branch Safari users got the generic
-          // "saveFailed" copy. The `error.offline` translation gives
-          // them the actionable "check connection" hint instead.
-          const isOffline =
-            e instanceof TypeError &&
-            (/fetch/i.test(e.message) ||
-              /network/i.test(e.message) ||
-              /load failed/i.test(e.message));
-          const messageKey = isOffline ? 'error.offline' : 'error.saveFailed';
+          // K16-2 (R14-S7): extracted to `isOfflineFetchError` helper
+          // (exported for direct unit testing). Pre-K16 inline regex
+          // was correct but untestable in isolation without mounting
+          // the full editor + mocking fetch — ~50 LOC test scaffold
+          // for a 3-line branch. The helper keeps the call-site one-
+          // liner while making the branch CI-enforceable.
+          const messageKey = isOfflineFetchError(e)
+            ? 'error.offline'
+            : 'error.saveFailed';
           setSaveError(t(messageKey));
           toast.error(t(messageKey));
         }
