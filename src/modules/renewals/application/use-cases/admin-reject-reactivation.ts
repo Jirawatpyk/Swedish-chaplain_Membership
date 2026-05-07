@@ -33,10 +33,12 @@
  *
  * RBAC: admin role only. Manager-role rejected by route handler.
  */
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth/domain/branded';
 import { asCreditNoteId } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -50,6 +52,7 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
 } from '../ports/renewal-cycle-repo';
+import { asTaskId } from '../../domain/renewal-escalation-task';
 
 export const adminRejectReactivationInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -97,14 +100,29 @@ export type AdminRejectReactivationError =
  * cron routes); test composition supplies a mock directly via this
  * narrower deps shape. When the production bridge ships, swap to the
  * full `RenewalsDeps` import + lift the `f5RefundBridge` field there.
+ *
+ * I9 review-fix: `escalationTaskRepo` added so the use-case inserts a
+ * `post_refund_review` row in the same tx as the cycle transition +
+ * audit emit. Finance team consumes the queue from
+ * `/admin/renewals/escalations` to verify the F5 refund and reconcile
+ * the F4 credit-note in their bank-rec workflow.
  */
 export interface AdminRejectReactivationDeps
   extends Pick<
     RenewalsDeps,
-    'tenant' | 'cyclesRepo' | 'auditEmitter'
+    'tenant' | 'cyclesRepo' | 'auditEmitter' | 'escalationTaskRepo'
   > {
   readonly f5RefundBridge: F5RefundBridge;
 }
+
+/**
+ * I9 review-fix: task_type literal for finance follow-up rows created
+ * after a successful admin-reject + F5 refund. Idempotent on
+ * `(tenant, member, cycle, task_type) WHERE status='open'` per the
+ * partial-unique-index contract on `renewal_escalation_tasks_open_idem_idx`.
+ */
+const POST_REFUND_REVIEW_TASK_TYPE = 'post_refund_review' as const;
+const POST_REFUND_REVIEW_DUE_DAYS = 3;
 
 export async function adminRejectReactivation(
   deps: AdminRejectReactivationDeps,
@@ -177,6 +195,10 @@ export async function adminRejectReactivation(
         },
         '[admin-reject-reactivation] F5 refund failed — cycle stays pending for retry',
       );
+      // I9 review-fix: alertable failure metric so SRE pages on a
+      // sustained F5-refund-pipeline outage instead of waiting for an
+      // admin to escalate manually.
+      renewalsMetrics.adminRejectCompleted(input.tenantId, 'failed');
       return err({
         kind: 'refund_failed',
         errorCode: refundResult.errorCode,
@@ -219,6 +241,7 @@ export async function adminRejectReactivation(
           },
           '[admin-reject-reactivation] refund issued but cycle transition lost race — manual reconciliation needed',
         );
+        renewalsMetrics.adminRejectCompleted(input.tenantId, 'failed');
         return err({
           kind: 'server_error',
           message:
@@ -226,12 +249,14 @@ export async function adminRejectReactivation(
         });
       }
       if (e instanceof CycleNotFoundError) {
+        renewalsMetrics.adminRejectCompleted(input.tenantId, 'failed');
         return err({ kind: 'cycle_not_found' });
       }
       logger.error(
         { err: e instanceof Error ? e.message : String(e), cycleId },
         '[admin-reject-reactivation] cycle transition failed',
       );
+      renewalsMetrics.adminRejectCompleted(input.tenantId, 'failed');
       return err({
         kind: 'server_error',
         message: 'cycle transition failed',
@@ -270,6 +295,67 @@ export async function adminRejectReactivation(
       );
       throw e;
     }
+
+    // I9 review-fix: insert a `post_refund_review` escalation task so
+    // finance closes the loop on the F5 refund + F4 credit-note in
+    // their bank-rec queue. Idempotent: a re-fired admin-reject (e.g.
+    // double-click) finds the open row + reuses it instead of stacking
+    // duplicates. Only insert when a refund actually issued —
+    // `no_payment_found` cycles need no finance follow-up.
+    if (refundCreditNoteId !== null) {
+      const dueAt = new Date(
+        Date.now() + POST_REFUND_REVIEW_DUE_DAYS * 86_400_000,
+      ).toISOString();
+      try {
+        const taskInsert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
+          tenantId: input.tenantId,
+          taskId: asTaskId(randomUUID()),
+          memberId: lockedCycle.memberId,
+          cycleId,
+          taskType: POST_REFUND_REVIEW_TASK_TYPE,
+          assignedToRole: 'admin',
+          dueAt,
+        });
+        if (taskInsert.created) {
+          await deps.auditEmitter.emitInTx(
+            tx,
+            {
+              type: 'escalation_task_created' as const,
+              payload: {
+                task_id: taskInsert.row.taskId,
+                task_type: POST_REFUND_REVIEW_TASK_TYPE,
+                member_id: lockedCycle.memberId,
+                cycle_id: cycleId,
+                trigger_reason: 'admin_reject_with_refund',
+                refund_credit_note_id: refundCreditNoteId,
+              },
+            },
+            {
+              tenantId: input.tenantId,
+              actorUserId: input.actorUserId,
+              actorRole: 'admin',
+              correlationId: input.correlationId,
+              requestId: input.requestId ?? null,
+              summary: `post_refund_review task created for credit-note ${refundCreditNoteId}`,
+            },
+          );
+        }
+      } catch (e) {
+        // Same Principle VIII reverse-direction as the prior emit —
+        // throwing rolls back the cycle transition + the lapsed-member
+        // audit, preserving state↔audit↔task atomicity.
+        logger.error(
+          { err: e instanceof Error ? e.message : String(e), cycleId },
+          '[admin-reject-reactivation] escalation task insert failed — rolling back',
+        );
+        throw e;
+      }
+    }
+
+    renewalsMetrics.adminRejectCompleted(
+      input.tenantId,
+      refundCreditNoteId === null ? 'no_payment' : 'refunded',
+    );
 
     return ok({
       cycleStatus: 'cancelled' as const,

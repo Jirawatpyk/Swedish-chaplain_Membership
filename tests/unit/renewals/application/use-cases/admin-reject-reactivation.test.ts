@@ -47,6 +47,7 @@ function fakeDeps(args: {
   refundMock: ReturnType<typeof vi.fn>;
   transitionMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
+  insertTaskMock: ReturnType<typeof vi.fn>;
 } {
   const findByIdInTxMock = vi.fn(async () => args.cycle ?? null);
   const refundMock = vi.fn(
@@ -68,6 +69,41 @@ function fakeDeps(args: {
   const f5Bridge: F5RefundBridge = {
     issueRefundForInvoice: refundMock as never,
   };
+  // I9 review-fix: stub `escalationTaskRepo.insertIfAbsent` so the
+  // post-refund-review task path runs without persistence; default
+  // returns `created: true` mirroring the steady-state idempotent miss.
+  const insertTaskMock = vi.fn(
+    async (
+      _tx: unknown,
+      input: {
+        readonly taskId: string;
+        readonly memberId: string;
+        readonly cycleId: string | null;
+        readonly taskType: string;
+        readonly assignedToRole: 'admin' | 'manager' | 'executive_director';
+        readonly dueAt: string;
+      },
+    ) => ({
+      created: true,
+      row: {
+        tenantId: TENANT_ID,
+        taskId: input.taskId,
+        memberId: input.memberId,
+        cycleId: input.cycleId,
+        taskType: input.taskType,
+        assignedToRole: input.assignedToRole,
+        assignedToUserId: null,
+        dueAt: input.dueAt,
+        relatedSuggestionId: null,
+        createdAt: new Date().toISOString(),
+        status: 'open' as const,
+        outcomeNote: null,
+        skippedReason: null,
+        closedByUserId: null,
+        closedAt: null,
+      },
+    }),
+  );
   const deps: AdminRejectReactivationDeps = {
     tenant: { slug: TENANT_ID } as AdminRejectReactivationDeps['tenant'],
     cyclesRepo: {
@@ -80,9 +116,12 @@ function fakeDeps(args: {
       emit: vi.fn(async () => {}),
       emitInTx: emitInTxMock,
     } as unknown as AdminRejectReactivationDeps['auditEmitter'],
+    escalationTaskRepo: {
+      insertIfAbsent: insertTaskMock,
+    } as unknown as AdminRejectReactivationDeps['escalationTaskRepo'],
     f5RefundBridge: f5Bridge,
   };
-  return { deps, refundMock, transitionMock, emitInTxMock };
+  return { deps, refundMock, transitionMock, emitInTxMock, insertTaskMock };
 }
 
 const baseInput = {
@@ -228,6 +267,45 @@ describe('adminRejectReactivation (T137)', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+  });
+
+  it('I9 review-fix: refund-success path inserts post_refund_review escalation task + emits escalation_task_created audit', async () => {
+    const cycle = buildCycle();
+    const { deps, insertTaskMock, emitInTxMock } = fakeDeps({ cycle });
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(insertTaskMock).toHaveBeenCalledOnce();
+    expect(insertTaskMock.mock.calls[0]?.[1]).toMatchObject({
+      tenantId: TENANT_ID,
+      memberId: cycle.memberId,
+      taskType: 'post_refund_review',
+      assignedToRole: 'admin',
+    });
+    // Two audits emitted in tx: lapsed_member_admin_reactivation_rejected,
+    // then escalation_task_created (when task was newly created).
+    expect(emitInTxMock).toHaveBeenCalledTimes(2);
+    expect(emitInTxMock.mock.calls[1]?.[1]).toMatchObject({
+      type: 'escalation_task_created',
+      payload: {
+        task_type: 'post_refund_review',
+        trigger_reason: 'admin_reject_with_refund',
+        refund_credit_note_id: 'cn-1',
+      },
+    });
+  });
+
+  it('I9 review-fix: no_payment_found does NOT insert escalation task (no finance follow-up needed)', async () => {
+    const cycle = buildCycle();
+    const { deps, insertTaskMock, emitInTxMock } = fakeDeps({
+      cycle,
+      refundResult: { status: 'no_payment_found' },
+    });
+    const r = await adminRejectReactivation(deps, baseInput);
+    expect(r.ok).toBe(true);
+    expect(insertTaskMock).not.toHaveBeenCalled();
+    // Only the `lapsed_member_admin_reactivation_rejected` audit fires;
+    // no `escalation_task_created` follow-up.
+    expect(emitInTxMock).toHaveBeenCalledOnce();
   });
 
   it('invalid_input on empty reason', async () => {

@@ -61,6 +61,7 @@ import {
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
+  InvoiceLinkConflictError,
 } from '../ports/renewal-cycle-repo';
 
 export const confirmRenewalInputSchema = z.object({
@@ -284,6 +285,12 @@ export async function confirmRenewal(
 
   // ---- Step 4 + 5: link invoice + emit audit atomically
   return runInTenant(deps.tenant, async (tx) => {
+    // I1 review-fix: acquire per-cycle advisory lock first so two
+    // concurrent confirms serialise on the link step. Combined with the
+    // adapter's `WHERE (linked_invoice_id IS NULL OR = $1)` guard, this
+    // closes the orphan-invoice race for all but pathological clock-
+    // skew scenarios (covered by the conflict-error branch below).
+    await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
     try {
       await deps.cyclesRepo.linkInvoice(
         tx,
@@ -302,6 +309,24 @@ export async function confirmRenewal(
         return err({
           kind: 'server_error',
           message: 'cycle vanished after invoice issued — see runbook',
+        });
+      }
+      if (e instanceof InvoiceLinkConflictError) {
+        // I1 review-fix: a concurrent confirm won the link race. Our
+        // F4-issued invoice is now orphaned; surface this in the log so
+        // support can void it via the F4 admin list.
+        logger.error(
+          {
+            cycleId,
+            attemptedInvoiceId: e.attemptedInvoiceId,
+            existingInvoiceId: e.existingInvoiceId,
+          },
+          '[confirm-renewal] concurrent confirm linked a different invoice — our invoice orphaned in F4 (void via admin)',
+        );
+        return err({
+          kind: 'server_error',
+          message:
+            'concurrent confirm won link race — our invoice orphaned, void via F4 admin',
         });
       }
       throw e;

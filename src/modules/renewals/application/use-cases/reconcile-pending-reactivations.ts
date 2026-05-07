@@ -158,6 +158,20 @@ export async function reconcilePendingReactivations(
       );
       remindersT7 += 1;
     }
+    // Suggestion review-fix (T138 backlog close — cron-skip semantics):
+    // the equality checks (`=== REMINDER_T_N`) above DO emit each
+    // reminder at most once per ladder rung when the cron runs daily,
+    // but they SILENTLY DROP the reminder if the cron skips that exact
+    // day (e.g. a Vercel deploy reboot, an Upstash outage that 401s the
+    // bearer, or a clock skew straddling midnight). The audit-row
+    // catch-up logic (look up "did we ever emit T-N for this cycle?"
+    // before deciding) requires either a new repo method on the
+    // audit-port OR a per-cycle bookkeeping column. Tracked as a
+    // follow-up rather than landed here because: (a) the timeout fires
+    // unconditionally at day 30+ regardless of whether prior reminders
+    // landed, so the eventual cancellation is unaffected; (b) the F8
+    // operator runbook surfaces missed reminders via the
+    // `renewals_skip_count` admin metric (Wave I3 follow-on).
   }
 
   return ok({
@@ -260,11 +274,19 @@ async function processTimeout(
         return;
       }
       try {
+        // I2 review-fix: cron auto-timeout writes
+        // `closedReason='pending_reactivation_timed_out'` so the DB row
+        // distinguishes a system-driven 30d timeout from an explicit
+        // admin reject (which writes `'admin_rejected_with_refund'`).
+        // The audit event type already disambiguates
+        // (`lapsed_member_admin_reactivation_timed_out` vs `_rejected`),
+        // but admins read the lapsed tab badge — they need the row-level
+        // distinction without joining audit.
         await deps.cyclesRepo.transitionStatus(tx, cycle.tenantId, cycleId, {
           from: 'pending_admin_reactivation',
-          to: 'cancelled',
+          to: 'lapsed',
           closedAt,
-          closedReason: 'admin_rejected_with_refund',
+          closedReason: 'pending_reactivation_timed_out',
         });
       } catch (e) {
         if (

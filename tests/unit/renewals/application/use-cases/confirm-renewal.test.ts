@@ -110,6 +110,11 @@ function fakeDeps(args: {
       findByIdInTx: findByIdInTxMock,
       updateFrozenPlan: updateFrozenPlanMock,
       linkInvoice: linkInvoiceMock,
+      // I1 review-fix: link-step now acquires the per-cycle advisory
+      // lock before the WHERE-IS-NULL guarded UPDATE. Stub it as a
+      // no-op for these unit tests — real serialise-via-pg-advisory-
+      // lock semantics are exercised by integration tests.
+      acquireCycleLockInTx: vi.fn(async () => {}),
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),

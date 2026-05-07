@@ -112,10 +112,32 @@ export async function checkLapsedPortalScope(
   };
 }
 
+/**
+ * Suggestion review-fix (Phase 5 / US3 backlog close): tighten the
+ * prefix match so `/portal/renewal-evil` does NOT match the
+ * `/portal/renewal` prefix. The check now requires the pathname to
+ * EITHER equal a whitelisted prefix OR be followed by a path separator
+ * (`/` or `?` for the query-string variant). This rules out path-name
+ * confusables that the bare `startsWith` accepted.
+ *
+ * The previous bare `startsWith` was a soft confused-deputy risk: a
+ * future operator could accidentally land a `/portal/renewal-admin`
+ * page (or any `${prefix}-suffix` route) and have it pass the lapsed
+ * gate without explicit policy review.
+ */
 export function isLapsedAllowedRoute(pathname: string): boolean {
   return LAPSED_PORTAL_ALLOWED_PREFIXES.some((prefix) =>
-    pathname.startsWith(prefix),
+    matchesScopePrefix(pathname, prefix),
   );
+}
+
+function matchesScopePrefix(pathname: string, prefix: string): boolean {
+  if (pathname === prefix) return true;
+  if (!pathname.startsWith(prefix)) return false;
+  const next = pathname.charCodeAt(prefix.length);
+  // 0x2F = '/', 0x3F = '?'. Anything else (e.g. '-', letters, digits)
+  // means the prefix matched only as a substring of a wider route.
+  return next === 0x2f || next === 0x3f;
 }
 
 async function emitBlockedAudit(

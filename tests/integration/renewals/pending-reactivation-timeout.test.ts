@@ -156,8 +156,13 @@ describe('F8 reconcilePendingReactivations — integration (T148)', () => {
         .where(eq(renewalCycles.cycleId, cycleTimeout))
         .limit(1),
     );
-    expect(timedOut[0]?.status).toBe('cancelled');
-    expect(timedOut[0]?.closedReason).toBe('admin_rejected_with_refund');
+    // I2 review-fix: cron-driven auto-timeout writes
+    // `status='lapsed' + closedReason='pending_reactivation_timed_out'`
+    // (not `cancelled` + `admin_rejected_with_refund`). This
+    // distinguishes a system timeout from an explicit admin reject in
+    // the lapsed-tab badge without joining audit_log.
+    expect(timedOut[0]?.status).toBe('lapsed');
+    expect(timedOut[0]?.closedReason).toBe('pending_reactivation_timed_out');
 
     // Reminder cycles stay in pending_admin_reactivation (no transition).
     const reminderRows = await runInTenant(tenantA.ctx, (tx) =>

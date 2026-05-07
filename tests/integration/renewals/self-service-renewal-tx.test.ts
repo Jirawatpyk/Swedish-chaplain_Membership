@@ -369,6 +369,67 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     }
   });
 
+  it('I11 review-fix: re-fire on already-completed cycle is idempotent skip + does NOT duplicate audit (live Postgres)', async () => {
+    // Lock the contract that T123's idempotent re-fire path
+    // (`cycle_not_payable` outcome when cycle is already in `completed`)
+    // is observed against real Drizzle + RLS rather than only mocked.
+    const { memberId, cycleId, invoiceId } = await seedTriplet();
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const event: F4InvoicePaidEvent = {
+      ...F4_PAID_DEFAULTS,
+      tenantId: tenantA.ctx.slug,
+      invoiceId,
+      memberId,
+    };
+
+    // First fire: completes the cycle.
+    const r1 = await markCycleCompleteFromInvoicePaid(deps, event);
+    expect(r1.ok).toBe(true);
+    if (r1.ok) expect(r1.value.kind).toBe('completed');
+
+    // Capture audit row count for this cycle BEFORE the second fire so
+    // we can assert "no further audit emit" rather than relying on a
+    // strict total-count match (other parallel tests may emit too).
+    const beforeAudits = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenantA.ctx.slug)),
+    );
+    const beforeCount = beforeAudits.length;
+
+    // Second fire: cycle is now in `completed` — short-circuits with
+    // `cycle_not_payable` (use-case path: status !== awaiting_payment).
+    const r2 = await markCycleCompleteFromInvoicePaid(deps, event);
+    expect(r2.ok).toBe(true);
+    if (r2.ok) expect(r2.value.kind).toBe('cycle_not_payable');
+
+    // No new audit row emitted by the idempotent re-fire path (the
+    // skip is logged with `logger.warn` only — the use-case explicitly
+    // does not emit a `renewal_completed` second time).
+    const afterAudits = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenantA.ctx.slug)),
+    );
+    expect(afterAudits.length).toBe(beforeCount);
+
+    // Cycle row is unchanged (still `completed` with `closed_reason='paid'`).
+    const rows = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({
+          status: renewalCycles.status,
+          closedReason: renewalCycles.closedReason,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(rows[0]?.status).toBe('completed');
+    expect(rows[0]?.closedReason).toBe('paid');
+  });
+
   it('f8OnPaidCallbacks: production factory returns 1 callback (Phase 5 wired, was [] stub)', async () => {
     const callbacks = f8OnPaidCallbacks(tenantA.ctx.slug);
     expect(callbacks).toHaveLength(1);

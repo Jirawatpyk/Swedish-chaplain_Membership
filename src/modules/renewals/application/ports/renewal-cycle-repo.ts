@@ -301,3 +301,25 @@ export class CycleTransitionConflictError extends Error {
     );
   }
 }
+
+/**
+ * Thrown by `linkInvoice` when the cycle row already carries a
+ * DIFFERENT linked_invoice_id. Indicates a concurrent confirmRenewal
+ * race won the link and our F4-issued invoice is now orphaned. The
+ * use-case maps this to `server_error` with a forensic log line so
+ * support can void the orphan invoice via the F4 admin list.
+ *
+ * Idempotent re-link with the SAME invoice_id does NOT throw.
+ */
+export class InvoiceLinkConflictError extends Error {
+  override readonly name = 'InvoiceLinkConflictError';
+  constructor(
+    public readonly cycleId: string,
+    public readonly attemptedInvoiceId: string,
+    public readonly existingInvoiceId: string,
+  ) {
+    super(
+      `cycle ${cycleId} already linked to invoice ${existingInvoiceId} — refused to overwrite with ${attemptedInvoiceId}`,
+    );
+  }
+}

@@ -54,7 +54,7 @@
  * tasks.md T123 follow-up sub-bullets.
  */
 import { ok, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -150,7 +150,7 @@ export async function markCycleCompleteFromInvoicePaid(
 
 async function autoComplete(
   deps: MarkCycleCompleteDeps,
-  tx: unknown,
+  tx: TenantTx,
   cycle: RenewalCycle,
   event: F4InvoicePaidEvent,
   closedAt: string,
@@ -159,7 +159,7 @@ async function autoComplete(
   let updated: RenewalCycle;
   try {
     updated = await deps.cyclesRepo.transitionStatus(
-      tx as never,
+      tx,
       event.tenantId,
       cycleId,
       {
@@ -190,7 +190,7 @@ async function autoComplete(
   }
 
   await deps.auditEmitter.emitInTx(
-    tx as never,
+    tx,
     {
       type: 'renewal_completed' as const,
       payload: {
@@ -219,7 +219,7 @@ async function autoComplete(
 
 async function holdForAdminReview(
   deps: MarkCycleCompleteDeps,
-  tx: unknown,
+  tx: TenantTx,
   cycle: RenewalCycle,
   event: F4InvoicePaidEvent,
   closedAt: string,
@@ -227,7 +227,7 @@ async function holdForAdminReview(
   const cycleId = asCycleId(cycle.cycleId);
   try {
     await deps.cyclesRepo.transitionStatus(
-      tx as never,
+      tx,
       event.tenantId,
       cycleId,
       {
@@ -255,7 +255,7 @@ async function holdForAdminReview(
   }
 
   await deps.auditEmitter.emitInTx(
-    tx as never,
+    tx,
     {
       type: 'renewal_completed_post_lapse' as const,
       payload: {

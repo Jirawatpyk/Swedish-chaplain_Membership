@@ -84,4 +84,69 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     await expect(confirmBtn).toBeVisible();
     await expect(confirmBtn).toBeEnabled();
   });
+
+  test('I12 review-fix: clicking confirm posts to API + redirects to /portal/billing/<invoiceId>/pay', async ({
+    page,
+  }) => {
+    // Lock AS6 contract: clicking the "Confirm renewal" button triggers
+    // a POST to `/api/portal/renewal/<memberId>/confirm`, the response
+    // contains `pay_url`, and the browser navigates there. Use a route
+    // intercept to fulfil the API with a deterministic pay_url so the
+    // test does not depend on Stripe / F4 invoice creation chain (those
+    // live in T145 + F4/F5 integration suites).
+    const seed = await seedF8Renewals();
+    if (!seed) {
+      throw new Error(
+        'F8 renewals seed returned null — verify DATABASE_URL + E2E_MEMBER_EMAIL are set in .env.local',
+      );
+    }
+
+    const fakeInvoiceId = 'inv-e2e-i12-fixture';
+    const fakePayUrl = `/portal/billing/${fakeInvoiceId}/pay`;
+
+    // Intercept the F8 confirm endpoint with a stub success envelope.
+    // Letting it hit production would create a real F4 invoice for the
+    // seed member which then fails T145's idempotent re-seed.
+    await page.route(
+      `**/api/portal/renewal/${seed.memberId}/confirm`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            invoice_id: fakeInvoiceId,
+            invoice_number: 'INV-2026-E2E-0001',
+            pay_url: fakePayUrl,
+            plan_changed: false,
+          }),
+        });
+      },
+    );
+
+    // Stub the redirected billing/pay page so the test does not 404
+    // against the F5 surface (which depends on a real invoice id).
+    await page.route(`**${fakePayUrl}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html',
+        body: '<!doctype html><html lang="en"><body><h1 data-testid="i12-pay-stub">F5 pay stub</h1></body></html>',
+      });
+    });
+
+    await page.goto(`/portal/renewal/${seed.memberId}`);
+    await page.waitForLoadState('networkidle');
+
+    const confirmBtn = page.getByRole('button', { name: /confirm renewal/i });
+    await expect(confirmBtn).toBeEnabled();
+
+    await Promise.all([
+      page.waitForURL(`**${fakePayUrl}`, { timeout: 15_000 }),
+      confirmBtn.click(),
+    ]);
+
+    await expect(
+      page.getByTestId('i12-pay-stub'),
+    ).toBeVisible({ timeout: 15_000 });
+    expect(page.url()).toContain(fakePayUrl);
+  });
 });

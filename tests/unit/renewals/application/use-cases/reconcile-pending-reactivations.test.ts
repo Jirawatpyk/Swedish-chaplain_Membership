@@ -147,7 +147,13 @@ describe('reconcilePendingReactivations (T138) — reminder ladder', () => {
 });
 
 describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
-  it('day 30 — refunds + cancels cycle + emits timed_out audit', async () => {
+  it('day 30 — refunds + lapses cycle (cron-timeout) + emits timed_out audit', async () => {
+    // I2 review-fix: the cron auto-timeout writes
+    // `closedReason='pending_reactivation_timed_out'` (not the
+    // ambiguous `'admin_rejected_with_refund'` it previously inherited
+    // from the admin-reject path). Cycle moves to `'lapsed'` so the
+    // lapsed-tab badge maps to the dedicated "Reactivation timed out"
+    // label, distinguishing system-timeouts from explicit admin-rejects.
     const cycle = pendingCycle({ daysPending: 30 });
     const { deps, refundMock, transitionMock, emitInTxMock } = fakeDeps({
       cycles: [cycle],
@@ -158,8 +164,8 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
     expect(refundMock).toHaveBeenCalledOnce();
     expect(transitionMock.mock.calls[0]?.[3]).toMatchObject({
       from: 'pending_admin_reactivation',
-      to: 'cancelled',
-      closedReason: 'admin_rejected_with_refund',
+      to: 'lapsed',
+      closedReason: 'pending_reactivation_timed_out',
     });
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
       type: 'lapsed_member_admin_reactivation_timed_out',

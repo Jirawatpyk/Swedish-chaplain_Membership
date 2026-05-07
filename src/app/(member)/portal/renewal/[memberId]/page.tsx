@@ -21,7 +21,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { listPlans } from '@/modules/plans';
+import { asPlanYear, listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import {
   loadRenewalSummary,
@@ -95,8 +95,11 @@ export default async function RenewalPortalPage({
   // selector. Falls back to single-option list (current plan only) if
   // F2 listPlans fails so the CTA still renders.
   const plansDeps = buildPlansDeps(tenant);
+  // I15 review-fix: use the F2 branded `asPlanYear()` helper instead of
+  // `as never` cast — preserves the PlanYear branded-type guarantee at
+  // the F8↔F2 boundary.
   const plansResult = await listPlans(
-    { filter: { year: planYear as never, activeOnly: true } },
+    { filter: { year: asPlanYear(planYear), activeOnly: true } },
     plansDeps,
   );
   const availablePlans: ReadonlyArray<RenewalPlanOption> = plansResult.ok

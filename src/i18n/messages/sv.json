@@ -2510,7 +2510,12 @@
       },
       "benefits": {
         "heading": "Förmånsöversikt",
-        "unavailable": "Förmånsöversikten är inte tillgänglig."
+        "unavailable": "Förmånsöversikten är inte tillgänglig.",
+        "unmeteredQuota": "Obegränsat",
+        "usageRatio": "{used} av {quota}",
+        "usageUnmetered": "{used} använt",
+        "percentUsed": "{percent}% använt",
+        "ariaProgress": "{label}: {used} av {quota} använt"
       },
       "confirm": {
         "cta": "Bekräfta förnyelse",

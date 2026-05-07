@@ -2510,7 +2510,12 @@
       },
       "benefits": {
         "heading": "Benefit summary",
-        "unavailable": "Benefit summary unavailable."
+        "unavailable": "Benefit summary unavailable.",
+        "unmeteredQuota": "Unlimited",
+        "usageRatio": "{used} of {quota}",
+        "usageUnmetered": "{used} used",
+        "percentUsed": "{percent}% used",
+        "ariaProgress": "{label}: {used} of {quota} used"
       },
       "confirm": {
         "cta": "Confirm renewal",

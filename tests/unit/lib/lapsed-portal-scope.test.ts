@@ -147,6 +147,17 @@ describe('isLapsedAllowedRoute (T134 helper)', () => {
     ['/portal/billing', false],
     ['/portal/broadcasts', false],
     ['/api/portal/billing', false],
+    // Suggestion review-fix (Phase 5 / US3 backlog close): the bare
+    // `startsWith` previously treated `/portal/renewal-evil` as a
+    // whitelisted prefix-match. The hardened `matchesScopePrefix`
+    // requires the next char to be `/` or `?` (or the strings are
+    // equal), so confusable substrings get rejected.
+    ['/portal/renewal-evil', false],
+    ['/portal/renewal-admin/foo', false],
+    ['/portal/preferences-other', false],
+    ['/api/portal/preferences/renewals?next=/x', true],
+    ['/portal/renewal', true],
+    ['/portal/renewal?cycle=1', true],
   ])('isLapsedAllowedRoute(%s) === %s', (path, expected) => {
     expect(isLapsedAllowedRoute(path)).toBe(expected);
   });

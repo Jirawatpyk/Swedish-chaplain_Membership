@@ -27,6 +27,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
+  InvoiceLinkConflictError,
   type ListRenewalCyclesOpts,
   type NewRenewalCycleInput,
   type PipelineQueryOpts,
@@ -554,15 +555,48 @@ export function makeDrizzleRenewalCycleRepo(
       cycleId: CycleId,
       invoiceId: string,
     ): Promise<RenewalCycle> {
+      // I1 review-fix: atomic race-guard. The previous implementation
+      // unconditionally overwrote `linked_invoice_id`, which silently
+      // orphaned the previous invoice if a concurrent confirmRenewal
+      // already linked one. This `WHERE (linked_invoice_id IS NULL OR
+      // linked_invoice_id = $newId)` makes the link:
+      //   - idempotent (re-link with same invoice succeeds; covers
+      //     F4-callback retries that re-enter the use-case)
+      //   - race-safe (concurrent confirm with a DIFFERENT invoice id
+      //     gets 0 rows updated → InvoiceLinkConflictError, which the
+      //     use-case maps to server_error so support voids the orphan)
       const txDb = tx as typeof db;
       const updated = await txDb
         .update(renewalCycles)
         .set({ linkedInvoiceId: invoiceId })
-        .where(eq(renewalCycles.cycleId, cycleId))
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            or(
+              isNull(renewalCycles.linkedInvoiceId),
+              eq(renewalCycles.linkedInvoiceId, invoiceId),
+            ),
+          ),
+        )
         .returning();
       const row = updated[0];
       if (!row) {
-        throw new CycleNotFoundError(cycleId);
+        // 0 rows updated — disambiguate "cycle missing" from "already
+        // linked to a different invoice" so the use-case can map the
+        // forensic-log line correctly.
+        const probe = await txDb
+          .select({ linkedInvoiceId: renewalCycles.linkedInvoiceId })
+          .from(renewalCycles)
+          .where(eq(renewalCycles.cycleId, cycleId))
+          .limit(1);
+        if (probe.length === 0) {
+          throw new CycleNotFoundError(cycleId);
+        }
+        throw new InvoiceLinkConflictError(
+          cycleId,
+          invoiceId,
+          probe[0]!.linkedInvoiceId ?? '<unexpected-null>',
+        );
       }
       return rowToDomain(row);
     },

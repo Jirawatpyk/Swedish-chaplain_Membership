@@ -2510,7 +2510,12 @@
       },
       "benefits": {
         "heading": "สรุปสิทธิประโยชน์",
-        "unavailable": "ยังไม่สามารถแสดงสรุปสิทธิประโยชน์ได้"
+        "unavailable": "ยังไม่สามารถแสดงสรุปสิทธิประโยชน์ได้",
+        "unmeteredQuota": "ไม่จำกัด",
+        "usageRatio": "{used} จาก {quota}",
+        "usageUnmetered": "ใช้ไปแล้ว {used}",
+        "percentUsed": "ใช้ไปแล้ว {percent}%",
+        "ariaProgress": "{label}: ใช้ไปแล้ว {used} จาก {quota}"
       },
       "confirm": {
         "cta": "ยืนยันการต่ออายุ",

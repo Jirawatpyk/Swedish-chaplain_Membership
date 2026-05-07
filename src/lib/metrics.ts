@@ -1462,4 +1462,32 @@ export const renewalsMetrics = {
       ).add(1);
     });
   },
+
+  /**
+   * `renewals_admin_reject_total{tenant, outcome}` — I9 review-fix
+   * (Phase 5 / US3 backlog close): F8 admin-reject of a
+   * `pending_admin_reactivation` cycle. `outcome` discriminates:
+   *
+   *   - `refunded` — F5 refund succeeded; F4 credit-note cascaded;
+   *     post-refund escalation task inserted for finance reconciliation.
+   *   - `no_payment` — cycle had no linkedInvoiceId (rare manual-block
+   *     pre-payment path); cycle cancelled without refund.
+   *   - `failed` — cycle never transitioned (refund_failed or
+   *     transition lost race).
+   *
+   * Alert rule: a sustained `failed` rate >0 for 15 min pages on-call —
+   * indicates F5 refund pipeline is degraded and admins are getting
+   * stuck cycles. Steady-state `refunded` is informational only.
+   */
+  adminRejectCompleted(
+    tenantId: string,
+    outcome: 'refunded' | 'no_payment' | 'failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_admin_reject_total',
+        'F8 admin-reject of pending_admin_reactivation cycles, partitioned by refund outcome',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
 } as const;
