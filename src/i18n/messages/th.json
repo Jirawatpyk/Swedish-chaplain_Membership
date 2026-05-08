@@ -611,6 +611,8 @@
           "notes": "บันทึก"
         },
         "riskPlaceholder": "—",
+        "riskNotComputed": "—",
+        "riskNotComputedAria": "ยังไม่ได้คำนวณคะแนนความเสี่ยง",
         "rowAriaLabel": "เปิดรายละเอียด {company}",
         "noPrimary": "ไม่มีผู้ติดต่อหลัก",
         "loadMore": "โหลดเพิ่ม",

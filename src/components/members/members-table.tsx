@@ -46,6 +46,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
+// F8 Phase 6 Wave H — risk-score badge for the directory column. F8
+// shared primitive lives at src/components/renewals/risk-score-badge.tsx
+// and is barrel-safe (Domain types only; no Drizzle/server imports).
+import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -60,7 +64,17 @@ export type MembersTableRow = {
    */
   readonly plan_display_name: string | null;
   readonly status: 'active' | 'inactive' | 'archived';
-  readonly member_risk_flag: null;
+  /**
+   * F8 Phase 6 Wave H — at-risk band derived from F3
+   * `members.risk_score_band` (populated by F8's batched recompute
+   * cron). Null when the recompute hasn't run yet (FR-035 min-tenure
+   * skips fresh members) — the column then renders the "—" placeholder.
+   * Kept under the legacy `member_risk_flag` accessor name for column
+   * id stability across F3 → F8 transition.
+   */
+  readonly member_risk_flag:
+    | { score: number; band: 'healthy' | 'warning' | 'at-risk' | 'critical' }
+    | null;
   readonly last_activity_at: string | null;
   /** Admin-only inline-edit target (FR-040). Visible in the Notes cell. */
   readonly notes: string | null;
@@ -572,11 +586,31 @@ export function MembersTable({
     }),
     columnHelper.accessor('member_risk_flag', {
       header: () => t('columns.risk'),
-      cell: () => (
-        <span className="text-muted-foreground" aria-label="placeholder">
-          {t('riskPlaceholder')}
-        </span>
-      ),
+      cell: (info) => {
+        const flag = info.getValue();
+        if (flag === null) {
+          return (
+            <span
+              className="text-muted-foreground"
+              aria-label={t('riskNotComputedAria')}
+            >
+              {t('riskNotComputed')}
+            </span>
+          );
+        }
+        // F8 Phase 6 Wave H — render real RiskScoreBadge from F8 module.
+        // F6 readiness gate is presentation-deferred: directory rows
+        // don't carry the active_max signal so we use 100 as the
+        // canonical max (production uses the F6-active formula by
+        // default; F6-inactive surface 70 is widget-specific).
+        return (
+          <RiskScoreBadge
+            score={flag.score}
+            band={flag.band}
+            activeMax={100}
+          />
+        );
+      },
     }),
     columnHelper.accessor('last_activity_at', {
       header: () => t('columns.lastActivity'),

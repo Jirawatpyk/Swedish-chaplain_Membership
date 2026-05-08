@@ -611,6 +611,8 @@
           "notes": "Anteckningar"
         },
         "riskPlaceholder": "—",
+        "riskNotComputed": "—",
+        "riskNotComputedAria": "Riskpoäng inte beräknad ännu",
         "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
         "loadMore": "Ladda fler",

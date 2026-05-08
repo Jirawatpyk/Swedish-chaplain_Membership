@@ -611,6 +611,8 @@
           "notes": "Notes"
         },
         "riskPlaceholder": "—",
+        "riskNotComputed": "—",
+        "riskNotComputedAria": "Risk score not yet computed",
         "rowAriaLabel": "Open {company} details",
         "noPrimary": "No primary contact",
         "loadMore": "Load more",

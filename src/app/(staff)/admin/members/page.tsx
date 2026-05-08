@@ -191,7 +191,13 @@ async function MembersDirectoryBody({
     plan_year: row.member.planYear,
     plan_display_name: row.planDisplayName,
     status: row.member.status,
-    member_risk_flag: null,
+    // F8 Phase 6 Wave H — wire risk score into the F3 column
+    // placeholder. Null when at-risk recompute hasn't run yet (FR-035
+    // min-tenure gate skips fresh members) → column renders "—".
+    member_risk_flag:
+      row.riskScore !== null && row.riskScoreBand !== null
+        ? { score: row.riskScore, band: row.riskScoreBand }
+        : null,
     last_activity_at: row.member.lastActivityAt?.toISOString() ?? null,
     notes: row.member.notes,
     primary_contact: row.primaryContact

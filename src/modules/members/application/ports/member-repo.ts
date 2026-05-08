@@ -44,6 +44,26 @@ export type DirectoryRow = {
   readonly member: Member;
   readonly primaryContact: Contact | null;
   readonly planDisplayName: string | null;
+  /**
+   * F8 Phase 6 Wave H — at-risk score surfaced on /admin/members
+   * directory table. Closes the cross-phase spec gap: F3 reserved
+   * the `member_risk_flag` column placeholder ("Reserves the column
+   * for F8" — `members-table.tsx:7`) but neither F3 nor F8 spec
+   * explicitly task'd the wiring. Phase 6 Wave H closes the gap by
+   * threading risk_score + risk_score_band from F3 `members.risk_score*`
+   * (populated by F8's batched recompute use-case) through DirectoryRow
+   * and the directory-search use-case so the column shows real data.
+   *
+   * Null when the at-risk recompute cron hasn't run yet for this
+   * member (e.g. members below min-tenure or freshly imported).
+   */
+  readonly riskScore: number | null;
+  readonly riskScoreBand:
+    | 'healthy'
+    | 'warning'
+    | 'at-risk'
+    | 'critical'
+    | null;
 };
 
 export type RepoError =
