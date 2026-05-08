@@ -37,7 +37,7 @@ import { makeDrizzleRenewalAuditEmitter } from './drizzle/drizzle-renewal-audit-
 import { makeDrizzleTenantRenewalSchedulePolicyRepo } from './drizzle/drizzle-tenant-renewal-schedule-policy-repo';
 import { makeDrizzleAtRiskOutreachReadRepo } from './drizzle/drizzle-at-risk-outreach-read-repo';
 import { makeDrizzleAtRiskOutreachWriteRepo } from './drizzle/drizzle-at-risk-outreach-write-repo';
-import { atRiskScorerStub } from './at-risk-scorer-stub';
+import { makeDrizzleAtRiskScorer } from './drizzle/drizzle-at-risk-scorer';
 import { makeDrizzleRenewalEscalationTaskRepo } from './drizzle/drizzle-renewal-escalation-task-repo';
 import { makeDrizzleMemberRenewalFlagsRepo } from './drizzle/drizzle-member-renewal-flags-repo';
 import { makeDrizzleDispatchCandidateRepo } from './drizzle/drizzle-dispatch-candidate-repo';
@@ -268,7 +268,11 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),
     atRiskOutreachReadRepo: makeDrizzleAtRiskOutreachReadRepo(tenant),
     atRiskOutreachWriteRepo: makeDrizzleAtRiskOutreachWriteRepo(tenant),
-    atRiskScorer: atRiskScorerStub,
+    atRiskScorer: makeDrizzleAtRiskScorer({
+      tenant,
+      eventAttendees: eventAttendeesStub,
+      tenantRenewalSettingsRepo: makeDrizzleTenantRenewalSettingsRepo(tenant),
+    }),
     escalationTaskRepo: makeDrizzleRenewalEscalationTaskRepo(tenant),
     memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
     dispatchCandidateRepo: makeDrizzleDispatchCandidateRepo(tenant),

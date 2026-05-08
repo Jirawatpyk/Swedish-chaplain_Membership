@@ -186,6 +186,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     Phase-5 branch). Catalogue entry existed at Phase 1 setup but
   //     the pgEnum ADD VALUE was never shipped — K24 closes the gap. ---
   'renewal_lapsed',
+  // --- F8 Phase 6 Wave F (migration 0111) — 6 at-risk events for
+  //     User Story 4 (At-Risk Member Detection). Emit sites: T154
+  //     compute-at-risk-score, T155 snooze-at-risk-member, T156
+  //     record-at-risk-outreach, T161 at-risk-recompute per-tenant
+  //     route. Spec FR-029 + FR-031 + FR-032 + FR-033 + FR-035. ---
+  'at_risk_score_recomputed',
+  'at_risk_score_threshold_crossed',
+  'at_risk_snoozed',
+  'at_risk_outreach_recorded',
+  'at_risk_skipped_below_min_tenure',
+  'at_risk_compute_partial_failure',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

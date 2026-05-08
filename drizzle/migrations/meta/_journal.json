@@ -778,6 +778,13 @@
       "when": 1778310400000,
       "tag": "0110_f8_wave_k24_renewal_lapsed_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1778742000000,
+      "tag": "0111_f8_phase6_us4_audit_event_type_enum",
+      "breakpoints": true
     }
   ]
 }

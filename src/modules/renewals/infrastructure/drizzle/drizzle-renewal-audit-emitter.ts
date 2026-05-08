@@ -133,6 +133,17 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   // forensic count. pgEnum value 'renewal_lapsed' was added in F8 phase
   // setup migrations (Phase 1-2); no new ADD VALUE migration needed.
   'renewal_lapsed',
+  // --- Phase 6 Wave F US4 emit sites (T154-T156, T161) -----------------
+  // Migration 0111 adds these 6 enum values to the DB so the Phase 6
+  // at-risk surfaces persist their audits instead of falling through
+  // to pino. All 6 events were already in the F8_AUDIT_EVENT_TYPES
+  // const tuple (count 59 unchanged) per Phase 2 Wave A2.
+  'at_risk_score_recomputed',
+  'at_risk_score_threshold_crossed',
+  'at_risk_snoozed',
+  'at_risk_outreach_recorded',
+  'at_risk_skipped_below_min_tenure',
+  'at_risk_compute_partial_failure',
 ]);
 
 function buildSummary<E extends F8AuditEventType>(
