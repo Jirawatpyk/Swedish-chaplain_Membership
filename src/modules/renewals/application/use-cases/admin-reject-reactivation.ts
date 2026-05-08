@@ -63,6 +63,13 @@ export const adminRejectReactivationInputSchema = z.object({
   actorRole: z.literal('admin'),
   requestId: z.string().nullable().optional(),
   correlationId: z.string().min(1),
+  // Staff-Review-2026-05-09 R2-W3 fix: optional injected clock for
+  // determinism + unit testability without `vi.setSystemTime`. Caller
+  // (POST /api/admin/renewals/[cycleId]/reject) defaults to wall-clock
+  // `new Date()` — same observable behaviour as before for the route
+  // handler, but enables consistent fixturisation in unit + integration
+  // tests and aligns with the WRN-12 fix in `lapseCyclesOnGraceExpiry`.
+  now: z.date().optional(),
 });
 
 export type AdminRejectReactivationInput = z.infer<
@@ -218,8 +225,24 @@ export async function adminRejectReactivation(
   }
 
   // Step 4-5: transition cycle + emit audit atomically.
-  const closedAt = new Date().toISOString();
+  // R2-W3: prefer injected `now` over wall-clock for clock determinism.
+  const now = input.now ?? new Date();
+  const closedAt = now.toISOString();
   return runInTenant(deps.tenant, async (tx) => {
+    // Staff-Review-2026-05-09 WRN-1 fix: re-acquire the per-cycle
+    // advisory lock at the top of tx2. tx1 (validate) released the
+    // lock at COMMIT, then the F5 refund call ran without any lock
+    // held. Without this re-acquire two admins double-clicking
+    // "reject" can both pass `transitionStatus(from='pending...')`
+    // because Postgres locks rows only at FOR UPDATE / FOR NO KEY
+    // UPDATE — the cycle row itself is not held between the F5
+    // refund call and the transition. The advisory lock here serialises
+    // tx2 on the (tenant, cycle) namespace so a second admin's tx2
+    // blocks until ours commits, after which their `transitionStatus`
+    // raises CycleTransitionConflictError (idempotent — refund cascade
+    // is no-op via F5 credit-note uniqueness). Mirrors the lock pattern
+    // in lapseCyclesOnGraceExpiry + reconcilePendingReactivations.
+    await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
     let updated: RenewalCycle;
     try {
       updated = await deps.cyclesRepo.transitionStatus(
@@ -295,9 +318,18 @@ export async function adminRejectReactivation(
       // Constitution Principle VIII reverse-direction: throw to roll
       // back the transition. The refund stays issued — same situation
       // as the TransitionConflict branch (manual reconciliation).
+      // Round-3 silent-failure F7 fix: log refundCreditNoteId loud +
+      // mark `refundIssuedRequiresReconciliation` so SRE can filter
+      // for refund-orphan rollbacks in pino → Sentry queries.
       logger.error(
-        { err: e instanceof Error ? e.message : String(e) },
-        '[admin-reject-reactivation] audit emit failed inside tx — rolling back',
+        {
+          err: e instanceof Error ? e.message : String(e),
+          cycleId,
+          tenantId: input.tenantId,
+          refundCreditNoteId,
+          refundIssuedRequiresReconciliation: refundCreditNoteId !== null,
+        },
+        '[admin-reject-reactivation] audit emit failed inside tx — rolling back; refund stays issued, manual reconciliation required when refundCreditNoteId is set',
       );
       throw e;
     }
@@ -309,8 +341,11 @@ export async function adminRejectReactivation(
     // duplicates. Only insert when a refund actually issued —
     // `no_payment_found` cycles need no finance follow-up.
     if (refundCreditNoteId !== null) {
+      // R2-W3: derive dueAt from the same `now` used for closedAt so
+      // the audit trail is consistent (review queue shows the same
+      // reference clock as the cycle-close timestamp).
       const dueAt = new Date(
-        Date.now() + POST_REFUND_REVIEW_DUE_DAYS * 86_400_000,
+        now.getTime() + POST_REFUND_REVIEW_DUE_DAYS * 86_400_000,
       ).toISOString();
       try {
         const taskInsert = await deps.escalationTaskRepo.insertIfAbsent(tx, {
@@ -350,9 +385,19 @@ export async function adminRejectReactivation(
         // Same Principle VIII reverse-direction as the prior emit —
         // throwing rolls back the cycle transition + the lapsed-member
         // audit, preserving state↔audit↔task atomicity.
+        // Round-3 silent-failure F7 fix: log refundCreditNoteId loud
+        // (we're inside `if (refundCreditNoteId !== null)` so it's
+        // guaranteed set here) so SRE sees the orphaned refund in the
+        // alert payload.
         logger.error(
-          { err: e instanceof Error ? e.message : String(e), cycleId },
-          '[admin-reject-reactivation] escalation task insert failed — rolling back',
+          {
+            err: e instanceof Error ? e.message : String(e),
+            cycleId,
+            tenantId: input.tenantId,
+            refundCreditNoteId,
+            refundIssuedRequiresReconciliation: true,
+          },
+          '[admin-reject-reactivation] escalation task insert failed — rolling back; refund stays issued, manual reconciliation required',
         );
         throw e;
       }

@@ -156,9 +156,25 @@ describe('cron at-risk per-tenant route (Phase 6 review I9)', () => {
     expect(txExecuteMock).toHaveBeenCalled();
     const lockCall = txExecuteMock.mock.calls[0] as unknown[] | undefined;
     expect(lockCall).toBeDefined();
-    const sqlText = JSON.stringify(lockCall![0]);
-    expect(sqlText).toContain('renewals:at-risk:');
-    expect(sqlText).toContain('pg_advisory_xact_lock');
+    // Staff-Review-2026-05-09 SUG-2 fix: assert against `queryChunks`
+    // (the documented Drizzle SQL tagged-template AST) instead of a
+    // black-box `JSON.stringify(lockCall[0])` over the entire `SQL`
+    // object. queryChunks is the public template-AST surface that
+    // contains the raw template literal segments — stable across
+    // Drizzle's internal refactors of decoder/usedTables/etc. fields
+    // (the latter would silently flip to "[object Object]" if the
+    // serialiser changed). Stringify only the chunks so future
+    // Drizzle minor versions can rearrange other internals without
+    // breaking this assertion.
+    const sqlObject = lockCall![0] as { queryChunks?: unknown };
+    expect(sqlObject.queryChunks).toBeDefined();
+    const chunksText = JSON.stringify(sqlObject.queryChunks);
+    expect(chunksText).toContain('renewals:at-risk:');
+    expect(chunksText).toContain('pg_advisory_xact_lock');
+    // R2-S4: pin tenantSlug substring so a future refactor that drops
+    // the tenant scope from the lock-namespace key can't silently pass.
+    // The TENANT constant is the slug used by the test fixture.
+    expect(chunksText).toContain(TENANT_SLUG);
     // Use-case received a tx (C1 fix — atomic with the lock).
     expect(recomputeMock).toHaveBeenCalledTimes(1);
     const recomputeArgs = recomputeMock.mock.calls[0] as unknown[] | undefined;

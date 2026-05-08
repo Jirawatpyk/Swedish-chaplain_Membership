@@ -51,6 +51,12 @@ for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {
 process.env['STRIPE_API_VERSION'] = '2024-06-20';
 
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
+// Staff-Review-2026-05-09 R2-S6: extend Vitest's expect with
+// @testing-library/jest-dom matchers (`.toBeInTheDocument`,
+// `.toHaveAccessibleName`, etc.) — DOM-aware assertions are the
+// Testing Library convention and replace the looser `.toBeTruthy`
+// pattern that passes for any non-null DOM reference.
+import '@testing-library/jest-dom/vitest';
 
 // Fixed clock for deterministic TTL tests. Individual tests can override
 // by calling `vi.setSystemTime(...)` themselves.

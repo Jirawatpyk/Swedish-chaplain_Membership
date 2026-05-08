@@ -27,7 +27,13 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
-import { payments } from '@/modules/payments/infrastructure/schema';
+// Staff-Review-2026-05-09 SUG-3 fix: import via the F5 barrel's
+// `paymentsTable` re-export instead of reaching into
+// `@/modules/payments/infrastructure/schema` directly. The barrel
+// surface is the documented cross-module contract — if F5 renames
+// or restructures the schema file, the alias re-export breaks at
+// build time at one location instead of N.
+import { paymentsTable as payments } from '@/modules/payments';
 import type {
   CountFailedPaymentAttemptsInput,
   F5PaymentAttemptsBridge,

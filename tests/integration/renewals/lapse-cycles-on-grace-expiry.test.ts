@@ -133,6 +133,15 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
     );
 
     // Cycles — both awaiting_payment, both past grace.
+    //
+    // Staff-Review-2026-05-09 R2-S9: align seed with the canonical
+    // post-0113 pattern (use the F2 plan slug 'regular', not a
+    // UUID-shaped string). The migration-0113 backward-compat path
+    // is already covered by `tests/integration/renewals/
+    // plan-id-at-cycle-start-text.test.ts` "legacy UUID-shaped values
+    // still queryable as text" — duplicating the legacy pattern in
+    // this lapse test was misaligned with the canonical seed shape
+    // used by `tests/e2e/helpers/renewals-seed.ts:101`.
     const seedCycle = (
       cycleId: string,
       memberId: string,
@@ -149,7 +158,7 @@ describe('F8 lapseCyclesOnGraceExpiry — integration (K24 / T115a)', () => {
           expiresAt: EXPIRES_AT,
           cycleLengthMonths: 12,
           tierAtCycleStart: 'regular',
-          planIdAtCycleStart: randomUUID(),
+          planIdAtCycleStart: 'regular',
           frozenPlanPriceThb: '50000.00',
           frozenPlanTermMonths: 12,
           frozenPlanCurrency: 'THB',

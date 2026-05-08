@@ -43,7 +43,7 @@ import {
   fetchPlanDisplay,
 } from './_lib/cycle-detail-fetchers';
 
-// K28: locale → BCP47 mapping. Thai uses Buddhist Era via the
+// Locale → BCP47 mapping. Thai uses Buddhist Era via the
 // `-u-ca-buddhist` calendar extension (CLAUDE.md: BE = CE + 543 is
 // display-only for th-TH; storage stays Gregorian ISO). Verified
 // pattern at `src/components/members/archived-banner.tsx:90`.
@@ -159,9 +159,9 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   const c = v.cycle;
   const shortId = c.cycleId.slice(0, 8);
 
-  // K28 + K29: parallel F3 member + F2 plan display lookups. Plan
-  // lookup uses the SAME query shape as production
-  // `loadPlanFrozenFields` (`plan-lookup-for-renewal-drizzle.ts`):
+  // Parallel F3 member + F2 plan display lookups. Plan lookup uses
+  // the SAME query shape as production `loadPlanFrozenFields`
+  // (`plan-lookup-for-renewal-drizzle.ts`):
   // `WHERE planId = X AND deleted_at IS NULL ORDER BY plan_year DESC
   // LIMIT 1`. The cycle's `plan_id_at_cycle_start` is `text`
   // (migration 0113) matching F2's `plan_id` slug. No `planYear`
@@ -197,8 +197,8 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
     );
   }
 
-  // K28: locale-aware date formatting via Intl.DateTimeFormat with
-  // the BCP47 calendar extension for Thai BE. Day-grain only for
+  // Locale-aware date formatting via Intl.DateTimeFormat with the
+  // BCP47 calendar extension for Thai BE. Day-grain only for
   // period bounds / expiry (I-1: showing UTC-midnight time misleads
   // admins). The Date constructor accepts any string and
   // `Intl.DateTimeFormat.format` returns "Invalid Date" for bad
@@ -278,9 +278,9 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
       : `${v.linkedInvoice.status} (untranslated)`
     : null;
 
-  // K28: tier label via the existing F8 tier-badge i18n namespace.
-  // Falls back to raw enum value if a future tier is added in domain
-  // but not in i18n (loud-fail pattern matching closedReason).
+  // Tier label via the existing F8 tier-badge i18n namespace. Falls
+  // back to raw enum value if a future tier is added in domain but
+  // not in i18n (loud-fail pattern matching closedReason).
   const tierKey = c.tierAtCycleStart;
   const tierLabel = tTier.has(tierKey)
     ? tTier(tierKey)
@@ -289,7 +289,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   const memberCompany = member
     ? member.companyName
     : t('fields.memberLookupFailed');
-  // K29 follow-up: when F2 plan-name lookup returns null (cycle's
+  // When F2 plan-name lookup returns null (cycle's
   // plan_id_at_cycle_start has no matching plan_id in `membership_plans`
   // — common with dev/test seed data that uses UUID-shaped placeholders
   // instead of real F2 plan slugs), render a neutral "—" rather than
@@ -300,7 +300,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
 
   return (
     <DetailContainer>
-      {/* K28 / N-6 (round 3): replace raw UUID in breadcrumb with the
+      {/* N-6 (round 3): replace raw UUID in breadcrumb with the
           member's company name. Falls back to shortId when F3 lookup
           failed (forensic-friendly without UUID-overflow horror). */}
       <PlanBreadcrumbLabel segment={cycleId} label={breadcrumbLabel} />
@@ -361,6 +361,30 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
         </Alert>
       )}
 
+      {/* Staff-Review-2026-05-09 SUG-5 fix: surface F2/F3 lookup
+          failures via <Alert variant="warning"> instead of inline
+          "—" fallback. Previously a Promise.allSettled rejection
+          would silently render "—" in the dl, leaving the admin
+          with no indication the lookup failed; the pino warn was
+          only visible in Vercel logs. The alert tells the admin
+          the data they see may be incomplete + points at the
+          requestId for support escalation. */}
+      {(memberResult.status === 'rejected' ||
+        planResult.status === 'rejected') && (
+        <Alert variant="default">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>{t('lookupFailedTitle')}</AlertTitle>
+          <AlertDescription>
+            {memberResult.status === 'rejected' &&
+              planResult.status === 'rejected'
+              ? t('lookupFailedBoth', { requestId })
+              : memberResult.status === 'rejected'
+                ? t('lookupFailedMember', { requestId })
+                : t('lookupFailedPlan', { requestId })}
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* UX R5 / I7 + Staff-Review-2026-05-09 BLK-4 fix: section labelled
           by the card heading itself, not by the inner subsection h3 —
           previously the `region` landmark was announced as "Member" only,
@@ -369,100 +393,110 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           h2-labelled region (closes WCAG 1.3.1 — content was orphan
           when the outer </section> closed immediately after the h2). */}
       <Card>
-        <CardContent className="space-y-4">
-          <section aria-labelledby="cycle-detail-card-heading">
+        <CardContent>
+          {/* Staff-Review-2026-05-09 BLK-4 spacing fix: `space-y-4` lives
+              on the wrapping <section> so direct children of the
+              section (h2, inner sections, Separator, details) get the
+              4-step gap. Previously space-y-4 sat on CardContent and
+              applied to the orphan structure; after wrapping with one
+              <section>, CardContent has only one direct child and
+              inner items collapsed against each other. */}
+          <section
+            aria-labelledby="cycle-detail-card-heading"
+            className="space-y-4"
+          >
             <h2
               id="cycle-detail-card-heading"
               className="text-base font-semibold"
             >
               {t('sectionMemberPlan')}
             </h2>
-          <section aria-labelledby="cycle-detail-member-heading">
-            <h3
-              id="cycle-detail-member-heading"
-              className="mb-2 text-sm font-medium text-muted-foreground"
+            <section aria-labelledby="cycle-detail-member-heading">
+              <h3
+                id="cycle-detail-member-heading"
+                className="mb-2 text-sm font-medium text-muted-foreground"
+              >
+                {t('subsectionMember')}
+              </h3>
+              <dl className="space-y-1">
+                <Field
+                  label={t('fields.companyName')}
+                  // I-2 (UX R3): link the company name to its member
+                  // detail page — admins investigating a lapsed cycle
+                  // typically need contact info, payment history, or
+                  // tier from the member record next.
+                  valueNode={
+                    member ? (
+                      <Link
+                        href={`/admin/members/${c.memberId}`}
+                        className="rounded-sm text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                      >
+                        {memberCompany}
+                      </Link>
+                    ) : (
+                      <span>{memberCompany}</span>
+                    )
+                  }
+                />
+                <Field
+                  label={t('fields.primaryContact')}
+                  value={
+                    member?.primaryContact ?? t('fields.primaryContactNone')
+                  }
+                />
+                {/* C-2 (UX R3): status moved to PageHeader; this row
+                    removed to avoid duplication. The tier label remains
+                    here — it's a frozen-plan attribute, not a state. */}
+                <Field label={t('fields.tier')} value={tierLabel} />
+              </dl>
+            </section>
+            <Separator />
+            <section aria-labelledby="cycle-detail-plan-heading">
+              <h3
+                id="cycle-detail-plan-heading"
+                className="mb-2 text-sm font-medium text-muted-foreground"
+              >
+                {t('subsectionPlan')}
+              </h3>
+              <dl className="space-y-1">
+                <Field label={t('fields.planName')} value={planName} />
+                <Field label={t('fields.frozenPrice')} value={frozenPrice} />
+                <Field
+                  label={t('fields.frozenTerm')}
+                  value={
+                    c.frozenPlanTermMonths !== null
+                      ? String(c.frozenPlanTermMonths)
+                      : '—'
+                  }
+                />
+                <Field
+                  label={t('fields.frozenCurrency')}
+                  value={c.frozenPlanCurrency ?? '—'}
+                />
+              </dl>
+            </section>
+            {/* Forensic UUIDs collapsible — admins rarely need raw IDs
+                but support tickets do. <details> keeps them accessible
+                without polluting the primary scan path.
+                UX R5 / S6: `id` lets support tickets deep-link to this
+                section (`#cycle-technical-ids`). */}
+            <details
+              id="cycle-technical-ids"
+              className="rounded-md border border-dashed border-border p-3"
             >
-              {t('subsectionMember')}
-            </h3>
-            <dl className="space-y-1">
-              <Field
-                label={t('fields.companyName')}
-                // I-2 (UX R3): link the company name to its member
-                // detail page — admins investigating a lapsed cycle
-                // typically need contact info, payment history, or
-                // tier from the member record next.
-                valueNode={
-                  member ? (
-                    <Link
-                      href={`/admin/members/${c.memberId}`}
-                      className="text-primary underline-offset-2 hover:underline"
-                    >
-                      {memberCompany}
-                    </Link>
-                  ) : (
-                    <span>{memberCompany}</span>
-                  )
-                }
-              />
-              <Field
-                label={t('fields.primaryContact')}
-                value={
-                  member?.primaryContact ?? t('fields.primaryContactNone')
-                }
-              />
-              {/* C-2 (UX R3): status moved to PageHeader; this row
-                  removed to avoid duplication. The tier label remains
-                  here — it's a frozen-plan attribute, not a state. */}
-              <Field label={t('fields.tier')} value={tierLabel} />
-            </dl>
-          </section>
-          <Separator />
-          <section aria-labelledby="cycle-detail-plan-heading">
-            <h3
-              id="cycle-detail-plan-heading"
-              className="mb-2 text-sm font-medium text-muted-foreground"
-            >
-              {t('subsectionPlan')}
-            </h3>
-            <dl className="space-y-1">
-              <Field label={t('fields.planName')} value={planName} />
-              <Field label={t('fields.frozenPrice')} value={frozenPrice} />
-              <Field
-                label={t('fields.frozenTerm')}
-                value={
-                  c.frozenPlanTermMonths !== null
-                    ? String(c.frozenPlanTermMonths)
-                    : '—'
-                }
-              />
-              <Field
-                label={t('fields.frozenCurrency')}
-                value={c.frozenPlanCurrency ?? '—'}
-              />
-            </dl>
-          </section>
-          {/* K28: forensic UUIDs collapsible — admins rarely need raw
-              IDs but support tickets do. <details> keeps them
-              accessible without polluting the primary scan path.
-              UX R5 / S6: `id` lets support tickets deep-link to this
-              section (`#cycle-technical-ids`). */}
-          <details
-            id="cycle-technical-ids"
-            className="rounded-md border border-dashed border-border p-3"
-          >
-            <summary className="cursor-pointer rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2">
-              {t('fields.showTechnicalIds')}
-            </summary>
-            <dl className="mt-3 space-y-1">
-              <Field label={t('fields.cycleId')} value={c.cycleId} mono />
-              <Field label={t('fields.memberId')} value={c.memberId} mono />
-              <Field
-                label={t('fields.planId')}
-                value={c.planIdAtCycleStart}
-                mono
-              />
-            </dl>
-          </details>
+              <summary className="cursor-pointer rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2">
+                {t('fields.showTechnicalIds')}
+              </summary>
+              <dl className="mt-3 space-y-1">
+                <Field label={t('fields.cycleId')} value={c.cycleId} mono />
+                <Field label={t('fields.memberId')} value={c.memberId} mono />
+                <Field
+                  label={t('fields.planId')}
+                  value={c.planIdAtCycleStart}
+                  mono
+                />
+              </dl>
+            </details>
           </section>
         </CardContent>
       </Card>
@@ -470,46 +504,63 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
       {/* I-4 (UX R3): always render — the body adapts to status so
           admins understand *why* an invoice is or isn't present.
           Phase 6 review-round 2 C2: section landmark for keyboard /
-          SR navigation between cards (WCAG 1.3.1 + 2.4.6). */}
+          SR navigation between cards (WCAG 1.3.1 + 2.4.6).
+          Staff-Review-2026-05-09 BLK-4 spacing fix: space-y-3 lives on
+          the wrapping <section> so h2 + body get the 3-step gap
+          (was on CardContent — single direct child made the spacing
+          a no-op once the section wrapped everything). */}
       <Card>
-        <CardContent className="space-y-3">
-          <section aria-labelledby="cycle-detail-invoice-heading">
+        <CardContent>
+          <section
+            aria-labelledby="cycle-detail-invoice-heading"
+            className="space-y-3"
+          >
             <h2
               id="cycle-detail-invoice-heading"
               className="text-base font-semibold"
             >
               {t('sectionInvoice')}
             </h2>
-          {v.linkedInvoice ? (
-            <>
-              <dl className="space-y-1">
-                <Field
-                  label={t('fields.invoiceNumber')}
-                  value={v.linkedInvoice.invoiceNumber ?? '—'}
-                />
-                <Field
-                  label={t('fields.invoiceStatus')}
-                  value={invoiceStatusLabel ?? '—'}
-                />
-                <Field
-                  label={t('fields.invoiceTotal')}
-                  value={invoiceTotal ?? '—'}
-                />
-              </dl>
-              <Link
-                href={`/admin/invoices/${v.linkedInvoice.invoiceId}`}
-                className="inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline"
-              >
-                {t('fields.viewInvoice', {
-                  number: v.linkedInvoice.invoiceNumber ?? shortId,
-                })}
-              </Link>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {invoicePendingMessage}
-            </p>
-          )}
+            {v.linkedInvoice ? (
+              <div className="space-y-3">
+                <dl className="space-y-1">
+                  <Field
+                    label={t('fields.invoiceNumber')}
+                    value={v.linkedInvoice.invoiceNumber ?? '—'}
+                  />
+                  <Field
+                    label={t('fields.invoiceStatus')}
+                    value={invoiceStatusLabel ?? '—'}
+                  />
+                  <Field
+                    label={t('fields.invoiceTotal')}
+                    value={invoiceTotal ?? '—'}
+                  />
+                </dl>
+                <Link
+                  href={`/admin/invoices/${v.linkedInvoice.invoiceId}`}
+                  className="inline-flex items-center gap-2 rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                >
+                  {t('fields.viewInvoice', {
+                    // R2 follow-up: fall back to the INVOICE's own
+                    // UUID prefix (not the cycle's `shortId`) when
+                    // `invoiceNumber` is null. Previously a draft /
+                    // unnumbered / degraded-F4-fetch invoice would
+                    // render the link as "View invoice <cycle-prefix>"
+                    // — admins reading the label naturally interpret
+                    // the placeholder as the invoice number, but it
+                    // was the cycle id.
+                    number:
+                      v.linkedInvoice.invoiceNumber ??
+                      v.linkedInvoice.invoiceId.slice(0, 8),
+                  })}
+                </Link>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {invoicePendingMessage}
+              </p>
+            )}
           </section>
         </CardContent>
       </Card>
@@ -518,69 +569,77 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           the "Show audit timestamps" disclosure has the same 16px gap
           above it as "Show technical IDs" does in the sibling card.
           The previous `space-y-3` (12px) made the disclosure visually
-          crowd the period dl above it. */}
+          crowd the period dl above it.
+          Staff-Review-2026-05-09 BLK-4 spacing fix: space-y-4 lives on
+          the wrapping <section> so dl + details get the 4-step gap. */}
       <Card>
-        <CardContent className="space-y-4">
-          <section aria-labelledby="cycle-detail-period-heading">
+        <CardContent>
+          {/* Staff-Review-2026-05-09 BLK-4 fix: <section> wraps the
+              entire dl + details so the period content lives inside the
+              region landmark (was orphan content). */}
+          <section
+            aria-labelledby="cycle-detail-period-heading"
+            className="space-y-4"
+          >
             <h2
               id="cycle-detail-period-heading"
               className="text-base font-semibold"
             >
               {t('sectionPeriod')}
             </h2>
-          </section>
-          <dl className="space-y-1">
-            {/* I-1 (UX R3): period bounds + expiry are day-grain
-                concepts — render without a clock time. */}
-            <Field
-              label={t('fields.periodFrom')}
-              value={fmtDateOnly(c.periodFrom)}
-            />
-            <Field
-              label={t('fields.periodTo')}
-              value={fmtDateOnly(c.periodTo)}
-            />
-            <Field
-              label={t('fields.expiresAt')}
-              value={fmtDateOnly(c.expiresAt)}
-            />
-            {showEnteredPendingAt && (
+            <dl className="space-y-1">
+              {/* I-1 (UX R3): period bounds + expiry are day-grain
+                  concepts — render without a clock time. */}
               <Field
-                label={t('fields.enteredPendingAt')}
-                value={fmtDate(c.enteredPendingAt ?? null)}
-              />
-            )}
-            {showClosedAt && (
-              <Field
-                label={t('fields.closedAt')}
-                value={fmtDate(c.closedAt ?? null)}
-              />
-            )}
-            {closedReasonLabel && (
-              <Field
-                label={t('fields.closedReason')}
-                value={closedReasonLabel}
-              />
-            )}
-          </dl>
-          {/* S-2 (UX R3): audit timestamps are forensic-only — collapsed
-              behind <details> so the primary scan path stays focused on
-              the period bounds + expiry that admins actually care about. */}
-          <details className="rounded-md border border-dashed border-border p-3">
-            <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-              {t('fields.showAuditTimestamps')}
-            </summary>
-            <dl className="mt-3 space-y-1">
-              <Field
-                label={t('fields.createdAt')}
-                value={fmtDate(c.createdAt)}
+                label={t('fields.periodFrom')}
+                value={fmtDateOnly(c.periodFrom)}
               />
               <Field
-                label={t('fields.updatedAt')}
-                value={fmtDate(c.updatedAt)}
+                label={t('fields.periodTo')}
+                value={fmtDateOnly(c.periodTo)}
               />
+              <Field
+                label={t('fields.expiresAt')}
+                value={fmtDateOnly(c.expiresAt)}
+              />
+              {showEnteredPendingAt && (
+                <Field
+                  label={t('fields.enteredPendingAt')}
+                  value={fmtDate(c.enteredPendingAt ?? null)}
+                />
+              )}
+              {showClosedAt && (
+                <Field
+                  label={t('fields.closedAt')}
+                  value={fmtDate(c.closedAt ?? null)}
+                />
+              )}
+              {closedReasonLabel && (
+                <Field
+                  label={t('fields.closedReason')}
+                  value={closedReasonLabel}
+                />
+              )}
             </dl>
-          </details>
+            {/* S-2 (UX R3): audit timestamps are forensic-only — collapsed
+                behind <details> so the primary scan path stays focused on
+                the period bounds + expiry that admins actually care about. */}
+            <details className="rounded-md border border-dashed border-border p-3">
+              <summary className="cursor-pointer rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2">
+                {t('fields.showAuditTimestamps')}
+              </summary>
+              <dl className="mt-3 space-y-1">
+                <Field
+                  label={t('fields.createdAt')}
+                  value={fmtDate(c.createdAt)}
+                />
+                <Field
+                  label={t('fields.updatedAt')}
+                  value={fmtDate(c.updatedAt)}
+                />
+              </dl>
+            </details>
+          </section>
         </CardContent>
       </Card>
 

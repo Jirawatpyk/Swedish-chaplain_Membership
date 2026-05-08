@@ -1,21 +1,36 @@
 /**
  * `LapsedTab` panel — renders when `?urgency=lapsed`.
  *
- * Shows lapsed cycles with reason badges. Reactivate + Archive CTAs
- * are reserved for US3 P1 (self-service renewal post-lapse) + US7
- * (member archive flow); detail-page actions (Cancel +
- * mark-paid-offline) handle the admin recovery path today.
+ * Shows lapsed cycles with reason badges + a row actions dropdown.
  *
- * The list reuses `PipelineTable` since the row shape is identical;
- * this wrapper adds an explanatory banner so admins understand the
- * operational difference between active + lapsed members.
+ * Staff-Review-2026-05-09 T277d closure: replaces the bare "View detail"
+ * link with a `RowActionsMenu` exposing:
+ *   - View detail  → /admin/renewals/[cycleId]
+ *   - Mark contacted → opens the shared `OutreachDialog` (US4 — already
+ *     wired into the at-risk widget; we lift it into the LapsedTab so
+ *     admins working a 30+ row lapsed cohort can record win-back outreach
+ *     without bouncing through the cycle-detail page each time).
+ *
+ * Reactivate / Reject / Mark-paid-offline are intentionally NOT here —
+ * those use-cases (T136 / T137 / F4 manual-mark-paid) operate on
+ * `pending_admin_reactivation` (T136/T137) or `awaiting_payment` (F4)
+ * status, neither of which the LapsedTab surface lists. They live on
+ * the cycle-detail page actions slot. Adding disabled stubs here would
+ * be a broken affordance per UX standards.
  */
 'use client';
 
-import Link from 'next/link';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, MoreHorizontal } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -30,6 +45,7 @@ import {
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
 import { cn } from '@/lib/utils';
+import { OutreachDialog } from './outreach-dialog';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { PipelineRow } from '@/modules/renewals/client';
 
@@ -81,9 +97,28 @@ export function LapsedTab({ rows }: LapsedTabProps) {
   const t = useTranslations('admin.renewals.lapsed');
   const tTable = useTranslations('admin.renewals.table');
   const tReason = useTranslations('admin.renewals.lapsedReason');
+  const tActions = useTranslations('admin.renewals.actions');
+  // Outreach dialog state — single instance lifted to the table level
+  // so re-rendering rows doesn't tear down the dialog mid-submit.
+  // Mirrors the at-risk-widget pattern (`at-risk-widget.tsx:111`).
+  const [outreachFor, setOutreachFor] = useState<{
+    memberId: string;
+    companyName: string | null;
+  } | null>(null);
 
   return (
-    <div className="flex flex-col gap-3">
+    // Round-3 UX M1 fix: wrap in <section aria-labelledby> so SR
+    // users have a landmark when switching to the lapsed tab. Mirrors
+    // the cycle-detail page's round-2 C2 pattern. The visually-hidden
+    // <h2> takes its accessible name from the existing banner title
+    // i18n key so we don't introduce a new untranslated string.
+    <section
+      aria-labelledby="lapsed-tab-heading"
+      className="flex flex-col gap-3"
+    >
+      <h2 id="lapsed-tab-heading" className="sr-only">
+        {t('banner.title')}
+      </h2>
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>{t('banner.title')}</AlertTitle>
@@ -114,7 +149,21 @@ export function LapsedTab({ rows }: LapsedTabProps) {
           ) : (
             rows.map((r) => {
               const reason: LapsedReasonKey = (r.closedReason ?? 'lapsed') as LapsedReasonKey;
-              const reasonLabel = tReason(reason);
+              // Round-3 silent-failure F6 fix: when a future
+              // closed_reason is added to the DB enum but the i18n
+              // key + REASON_VARIANT_CLASSES branch are missing, fall
+              // back to a neutral grey pill instead of forcing
+              // lapsed-red (which would mis-signal severity). Matches
+              // the cycle-detail page's loud-fail pattern (page.tsx
+              // tierLabel / closedReasonLabel `t.has` guards).
+              const isKnownReason = tReason.has(reason);
+              const reasonLabel = isKnownReason
+                ? tReason(reason)
+                : `${reason} (untranslated)`;
+              const reasonClasses = isKnownReason
+                ? REASON_VARIANT_CLASSES[reason] ??
+                  REASON_VARIANT_CLASSES.cancelled
+                : REASON_VARIANT_CLASSES.cancelled;
               return (
                 <TableRow key={r.cycleId}>
                   <TableCell>
@@ -140,23 +189,72 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                     <span
                       className={cn(
                         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-                        REASON_VARIANT_CLASSES[reason] ??
-                          REASON_VARIANT_CLASSES.lapsed,
+                        reasonClasses,
                       )}
                     >
                       {reasonLabel}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/admin/renewals/${r.cycleId}`}
-                      className="text-sm text-primary hover:underline"
-                      aria-label={t('viewDetailFor', {
-                        company: r.companyName || r.memberId,
-                      })}
-                    >
-                      {t('viewDetail')}
-                    </Link>
+                    {/* Staff-Review-2026-05-09 T277d closure: dropdown
+                        replaces the bare Link so admins can record
+                        outreach without leaving the lapsed-tab view.
+                        View Detail is the navigation primary; Mark
+                        Contacted opens the OutreachDialog. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={(props) => (
+                          <Button
+                            {...props}
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            aria-label={tActions('rowMenu', {
+                              company: r.companyName || r.memberId,
+                            })}
+                            title={tActions('rowMenu', {
+                              company: r.companyName || r.memberId,
+                            })}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        )}
+                      />
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-56 whitespace-nowrap"
+                      >
+                        {/* View detail — uses raw <a> for the same
+                            Base UI render-prop reason documented in
+                            pipeline-table.tsx:367-374 (Next Link
+                            handler types incompatible with
+                            DropdownMenuItem render under
+                            exactOptionalPropertyTypes). */}
+                        <DropdownMenuItem
+                          render={(props) => (
+                            <a
+                              {...props}
+                              href={`/admin/renewals/${r.cycleId}`}
+                              aria-label={tActions('openAriaLabel', {
+                                company: r.companyName || r.memberId,
+                              })}
+                            >
+                              {tActions('open')}
+                            </a>
+                          )}
+                        />
+                        <DropdownMenuItem
+                          onClick={() => {
+                            setOutreachFor({
+                              memberId: r.memberId,
+                              companyName: r.companyName,
+                            });
+                          }}
+                        >
+                          {tActions('markContacted')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );
@@ -164,6 +262,16 @@ export function LapsedTab({ rows }: LapsedTabProps) {
           )}
         </TableBody>
       </Table>
-    </div>
+      {outreachFor ? (
+        <OutreachDialog
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setOutreachFor(null);
+          }}
+          memberId={outreachFor.memberId}
+          memberCompanyName={outreachFor.companyName}
+        />
+      ) : null}
+    </section>
   );
 }

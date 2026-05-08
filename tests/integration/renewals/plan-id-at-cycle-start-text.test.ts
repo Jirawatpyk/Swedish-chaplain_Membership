@@ -52,9 +52,21 @@ describe('F8 plan_id_at_cycle_start TEXT schema (migration 0113)', () => {
   }, 180_000);
 
   afterAll(async () => {
+    // Staff-Review-2026-05-09 WRN-3 fix: cleanup must include
+    // contacts + members rows inserted in test bodies (lines 91-108
+    // and the second test). FK order: renewal_cycles → contacts
+    // (FK to members) → members → tenant cleanup.
     await db
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, tenant.ctx.slug))
+      .catch(() => {});
+    await db
+      .delete(contacts)
+      .where(eq(contacts.tenantId, tenant.ctx.slug))
+      .catch(() => {});
+    await db
+      .delete(members)
+      .where(eq(members.tenantId, tenant.ctx.slug))
       .catch(() => {});
     await db
       .delete(auditLog)

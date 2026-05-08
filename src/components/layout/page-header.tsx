@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+'use client';
+
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -8,6 +10,16 @@ type PageHeaderProps = {
   actions?: ReactNode;
   badge?: ReactNode;
   className?: string;
+  /**
+   * Staff-Review-2026-05-09 Round-2 R2-W2 fix: auto-focus the H1 on
+   * mount via React-owned ref instead of the previous external
+   * `<AutoFocusH1>` component which mutated `tabIndex` directly on
+   * the DOM. Use on routes the user was server-redirected to (e.g.
+   * `/portal/renewal/[memberId]/success` after F5 returns from
+   * Stripe) so screen-reader + keyboard users land at the heading
+   * instead of the previous page's last-focused element (WCAG 2.4.3).
+   */
+  autoFocusTitle?: boolean;
 };
 
 /**
@@ -21,7 +33,17 @@ export function PageHeader({
   actions,
   badge,
   className,
+  autoFocusTitle = false,
 }: PageHeaderProps) {
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (!autoFocusTitle) return;
+    const h1 = titleRef.current;
+    if (h1) {
+      h1.focus({ preventScroll: true });
+    }
+  }, [autoFocusTitle]);
+
   return (
     <header
       data-slot="page-header"
@@ -44,7 +66,12 @@ export function PageHeader({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h1 data-slot="page-header-title" className="text-h1 text-foreground">
+          <h1
+            ref={titleRef}
+            data-slot="page-header-title"
+            className="text-h1 text-foreground focus-visible:outline-none"
+            tabIndex={autoFocusTitle ? -1 : undefined}
+          >
             {title}
           </h1>
           {badge}

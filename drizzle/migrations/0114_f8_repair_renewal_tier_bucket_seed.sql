@@ -42,32 +42,49 @@
 --
 -- Source of truth: spec.md § FR-008 (5 frozen buckets) +
 -- docs/membership-benefits-analysis.md plan catalogue.
+--
+-- Staff-Review-2026-05-09 SUG-6 fix: wrap the four UPDATEs in a
+-- DO $$ BEGIN IF EXISTS … guard. The previous version was idempotent
+-- via the AND renewal_tier_bucket <> '<target>' clause but produced a
+-- confusing zero-row no-op on non-swecham environments (CI staging
+-- branches, fresh Neon dev branches). The IF EXISTS makes the
+-- swecham-only intent explicit so readers don't waste time wondering
+-- whether the migration applies — and so a future tenant onboarding
+-- per docs/runbooks/tenant-onboarding.md can see exactly what to
+-- copy-paste into a per-tenant repair query.
 -- ---------------------------------------------------------------------------
 
-UPDATE "membership_plans"
-   SET "renewal_tier_bucket" = 'premium'
- WHERE "tenant_id" = 'swecham'
-   AND "plan_id"   = 'premium'
-   AND "renewal_tier_bucket" <> 'premium';
---> statement-breakpoint
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM "membership_plans" WHERE "tenant_id" = 'swecham'
+  ) THEN
+    UPDATE "membership_plans"
+       SET "renewal_tier_bucket" = 'premium'
+     WHERE "tenant_id" = 'swecham'
+       AND "plan_id"   = 'premium'
+       AND "renewal_tier_bucket" <> 'premium';
 
-UPDATE "membership_plans"
-   SET "renewal_tier_bucket" = 'start_up'
- WHERE "tenant_id" = 'swecham'
-   AND "plan_id"   = 'start-up'
-   AND "renewal_tier_bucket" <> 'start_up';
---> statement-breakpoint
+    UPDATE "membership_plans"
+       SET "renewal_tier_bucket" = 'start_up'
+     WHERE "tenant_id" = 'swecham'
+       AND "plan_id"   = 'start-up'
+       AND "renewal_tier_bucket" <> 'start_up';
 
-UPDATE "membership_plans"
-   SET "renewal_tier_bucket" = 'thai_alumni'
- WHERE "tenant_id" = 'swecham'
-   AND "plan_id"   = 'thai-alumni'
-   AND "renewal_tier_bucket" <> 'thai_alumni';
---> statement-breakpoint
+    UPDATE "membership_plans"
+       SET "renewal_tier_bucket" = 'thai_alumni'
+     WHERE "tenant_id" = 'swecham'
+       AND "plan_id"   = 'thai-alumni'
+       AND "renewal_tier_bucket" <> 'thai_alumni';
 
-UPDATE "membership_plans"
-   SET "renewal_tier_bucket" = 'regular'
- WHERE "tenant_id" = 'swecham'
-   AND "plan_id"   = 'individual'
-   AND "renewal_tier_bucket" <> 'regular';
+    UPDATE "membership_plans"
+       SET "renewal_tier_bucket" = 'regular'
+     WHERE "tenant_id" = 'swecham'
+       AND "plan_id"   = 'individual'
+       AND "renewal_tier_bucket" <> 'regular';
+  ELSE
+    RAISE NOTICE
+      'F8 migration 0114: no swecham tenant on this DB — skipping tier_bucket repair (this is expected on staging / fresh dev branches).';
+  END IF;
+END $$;
 --> statement-breakpoint

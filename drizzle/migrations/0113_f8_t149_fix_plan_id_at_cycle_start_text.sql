@@ -45,10 +45,18 @@
 --
 -- Source of truth: T149 carry-forward note (`specs/011-renewal-reminders/
 -- tasks.md`) + Phase 5 K29 staff feedback "shema ผิดใช่ไหม" (2026-05-08).
+--
+-- Staff-Review-2026-05-09 SUG-7 note: GRANTs on `renewal_cycles`
+-- remain unchanged by this migration. ALTER COLUMN TYPE preserves
+-- existing GRANT/REVOKE state (verified against F4/F5 migration
+-- patterns). RLS policies on the table are also preserved per
+-- Postgres semantics — column-type changes do not invalidate
+-- row-security rules.
 -- ---------------------------------------------------------------------------
 
 ALTER TABLE "renewal_cycles"
   ALTER COLUMN "plan_id_at_cycle_start" TYPE text USING "plan_id_at_cycle_start"::text;
+-- grants unchanged (RLS preserved; chamber_app GRANT inherited from 0087)
 --> statement-breakpoint
 
 UPDATE "renewal_cycles" c
@@ -76,6 +84,14 @@ UPDATE "renewal_cycles" c
 -- orphan tray yet). Operators reading the migration log see this
 -- count and can decide whether to manually triage. Pure SELECT — no
 -- side effects beyond the NOTICE.
+-- Staff-Review-2026-05-09 WRN-13 fix: orphan-count subquery
+-- intentionally OMITS `AND p.deleted_at IS NULL` so cycles whose
+-- plan was soft-deleted (legitimate post-cycle-creation lifecycle)
+-- do NOT inflate the orphan count. Only TRULY missing plans (no
+-- row at all in `membership_plans` for that tenant + plan_id) are
+-- flagged as orphans. The cycle-detail page already renders plan
+-- name from a soft-deleted plan via the historical lookup pattern,
+-- so soft-deleted is NOT an orphan condition.
 DO $$
 DECLARE
   orphan_count BIGINT;
@@ -88,11 +104,10 @@ BEGIN
        FROM "membership_plans" p
       WHERE p."tenant_id" = c."tenant_id"
         AND p."plan_id"   = c."plan_id_at_cycle_start"
-        AND p."deleted_at" IS NULL
    );
   IF orphan_count > 0 THEN
     RAISE NOTICE
-      'F8 migration 0113: % renewal_cycles row(s) still have plan_id_at_cycle_start that does not resolve to a live membership_plans row. Cycle-detail page will render plan-name as ''—'' for these rows. Manual triage may be required.',
+      'F8 migration 0113: % renewal_cycles row(s) still have plan_id_at_cycle_start that does not resolve to ANY membership_plans row (live or soft-deleted). Cycle-detail page will render plan-name as ''—'' for these rows. Manual triage may be required.',
       orphan_count;
   ELSE
     RAISE NOTICE 'F8 migration 0113: zero orphan rows after repair UPDATE.';

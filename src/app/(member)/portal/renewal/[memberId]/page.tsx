@@ -17,12 +17,12 @@
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asPlanYear, listPlans } from '@/modules/plans';
-import type { LocaleText } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import {
   loadRenewalSummary,
@@ -34,6 +34,10 @@ import {
   RenewalConfirmFlow,
   type RenewalPlanOption,
 } from './_components/renewal-confirm-flow';
+// Round-3 test-coverage I1 fix: locale fallback resolver extracted
+// to a testable utility module so the en/th/sv branching is covered
+// by a unit test instead of relying on E2E for behavioural pinning.
+import { resolvePlanName } from './_lib/resolve-plan-name';
 
 export default async function RenewalPortalPage({
   params,
@@ -138,10 +142,13 @@ export default async function RenewalPortalPage({
 
   return (
     <DetailContainer>
-      <header>
-        <h1 className="text-2xl font-semibold">{t('title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-      </header>
+      {/* Staff-Review-2026-05-09 WRN-7 fix: replaced handrolled
+          <header><h1><p></header> with the shared <PageHeader> primitive
+          used by all other portal pages (F3 self-service). PageHeader
+          bakes in skip-to-content wiring, responsive margin, and the
+          mobile-first stack→sm:row layout — handrolled markup made the
+          visual rhythm here inconsistent with sibling portal pages. */}
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {/* I18 review-fix: OnboardingBanner moved AFTER <header> so h1 precedes
           h2 (WCAG 2.4.6 heading order) — banner only renders for first-time
@@ -204,25 +211,3 @@ export default async function RenewalPortalPage({
   );
 }
 
-/**
- * UX R5: locale-aware plan name resolver. Mirrors the cycle-detail
- * `fetchPlanDisplay` helper so a member viewing the portal in TH/SV
- * sees the localised plan name (with EN canonical fallback), not the
- * raw slug or only the English label.
- */
-function resolvePlanName(
-  rawName: unknown,
-  fallback: string,
-  locale: string,
-): string {
-  if (typeof rawName === 'object' && rawName !== null) {
-    const localeText = rawName as LocaleText;
-    return (
-      (locale === 'th' && localeText.th) ||
-      (locale === 'sv' && localeText.sv) ||
-      localeText.en ||
-      fallback
-    );
-  }
-  return String(rawName ?? fallback);
-}

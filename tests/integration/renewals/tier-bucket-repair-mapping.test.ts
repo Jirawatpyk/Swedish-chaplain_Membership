@@ -24,14 +24,21 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, sql as drizzleSql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { membershipPlans } from '@/modules/plans';
+import { type TierBucket } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 
+// Round-3 type-design TD2 fix: pin `expectedBucket` to the
+// `TierBucket` literal union so a typo in a future repair plan
+// (e.g. 'thai-alumni' vs 'thai_alumni') fails at typecheck. The
+// `initialBucket` stays `string` — the migration is repairing
+// historical "wrong" values which are by definition not in the
+// canonical union.
 interface PlanSpec {
   readonly planId: string;
   readonly initialBucket: string;
-  readonly expectedBucket: string;
+  readonly expectedBucket: TierBucket;
 }
 
 // Mirrors migration 0114 mapping rationale — see header docstring of
@@ -59,6 +66,15 @@ describe('F8 migration 0114 tier_bucket repair (B2 SQL contract)', () => {
     user = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     // Seed each repair-target plan with its WRONG starting bucket.
+    //
+    // R2-S10: this `db.insert` runs OUTSIDE `runInTenant` — no RLS
+    // tenant context is set on the connection. Permitted in the
+    // integration-test layer because the test database role
+    // (`chamber_app` or BYPASSRLS) skips row-security policies, but
+    // production code MUST always wrap inserts in `runInTenant` so
+    // RLS+FORCE enforces the tenant scope at the DB level. Do NOT
+    // copy this pattern into `src/modules/**` — see
+    // `docs/multi-tenant.md` for the canonical production pattern.
     for (const p of REPAIR_PLANS) {
       await db.insert(membershipPlans).values({
         tenantId: tenant.ctx.slug,
@@ -105,8 +121,9 @@ describe('F8 migration 0114 tier_bucket repair (B2 SQL contract)', () => {
         .select({ bucket: membershipPlans.renewalTierBucket })
         .from(membershipPlans)
         .where(eq(membershipPlans.planId, p.planId));
-      const matchingTenantRow = rows.find(() => true);
-      expect(matchingTenantRow?.bucket).toBe(p.expectedBucket);
+      // Round-3 simplification Simp3: drop `.find(() => true)` no-op;
+      // index access is the same predicate with one less expression.
+      expect(rows[0]?.bucket).toBe(p.expectedBucket);
     }
   });
 

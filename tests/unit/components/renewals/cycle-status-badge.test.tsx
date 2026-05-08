@@ -27,14 +27,29 @@ describe('CycleStatusBadge (Phase 6 review-round 2 A3)', () => {
     'pending_admin_reactivation',
   ];
 
-  it.each(statuses)('renders label + non-empty class for status %s', (status) => {
-    const { container, getByText } = render(
-      <CycleStatusBadge status={status} label={`Label for ${status}`} />,
-    );
-    expect(getByText(`Label for ${status}`)).toBeTruthy();
-    const badge = container.querySelector('span');
-    expect(badge?.className.length ?? 0).toBeGreaterThan(50);
-  });
+  it.each(statuses)(
+    'renders label + a status-variant class for status %s',
+    (status) => {
+      const { container, getByText } = render(
+        <CycleStatusBadge status={status} label={`Label for ${status}`} />,
+      );
+      // R2-S6: prefer Testing Library's `.toBeInTheDocument()` over
+      // `.toBeTruthy()` — the latter passes for any non-null DOM node
+      // reference even if the node is detached / hidden / not in the
+      // rendered output. `.toBeInTheDocument()` actually verifies the
+      // node is connected to the document under test.
+      expect(getByText(`Label for ${status}`)).toBeInTheDocument();
+      const badge = container.querySelector('span');
+      // Staff-Review-2026-05-09 SUG-1 fix: positive class assertion
+      // instead of brittle `className.length > 50` threshold which
+      // coupled to Tailwind class-string length. A future CSS-module
+      // migration or class-prune pass would silently drop below 50
+      // chars and fail CI for the wrong reason. Match the variant
+      // tokens that STATUS_VARIANT_CLASSES is expected to inject
+      // (one of bg-/border-/text- — Tailwind colour utilities).
+      expect(badge?.className).toMatch(/(bg-|border-|text-)/);
+    },
+  );
 
   it('renders srSuffix in sr-only span when provided', () => {
     const { container } = render(

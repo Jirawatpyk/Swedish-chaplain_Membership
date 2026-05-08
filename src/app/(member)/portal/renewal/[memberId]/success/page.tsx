@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -61,10 +62,25 @@ export default async function RenewalSuccessPage({
 
   return (
     <DetailContainer>
-      <header>
-        <h1 className="text-2xl font-semibold">{t('title')}</h1>
-        <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
-      </header>
+      {/* Staff-Review-2026-05-09 WRN-7 fix: replaced handrolled
+          <header><h1><p></header> with the shared <PageHeader> primitive
+          for visual rhythm parity with sibling portal pages.
+
+          Round-3 UX H2 fix: auto-focus the H1 after F5 redirect so
+          SR + keyboard users land at the heading instead of inheriting
+          focus from Stripe's last-focused payment-form element
+          (WCAG 2.4.3).
+
+          Round-2 R2-W2 follow-up: focus owned by PageHeader's
+          internal ref via `autoFocusTitle` prop (replaces the
+          external <AutoFocusH1> component which mutated `tabIndex`
+          directly on a React-owned DOM node — fragile if PageHeader
+          ever re-rendered client-side). */}
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        autoFocusTitle
+      />
 
       <section
         aria-labelledby="renewal-details-heading"
@@ -104,7 +120,23 @@ export default async function RenewalSuccessPage({
             )}
           </dl>
         ) : (
-          <p className="text-sm text-muted-foreground">{t('processing')}</p>
+          // Round-3 UX H1 fix: announce the async-processing state to
+          // SR via aria-live="polite" so users hear the transition
+          // when Stripe webhook lands and the page re-renders with
+          // status=completed (WCAG 4.1.3).
+          // Round-3 UX M4 fix: provide a back-to-portal CTA so members
+          // who never see the webhook arrive (network drop, blocked)
+          // have an explicit next step instead of a dead-end page.
+          <div role="status" aria-live="polite" className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t('processing')}</p>
+            <Link
+              href="/portal"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+              data-testid="processing-back-to-portal"
+            >
+              {t('backToPortal')}
+            </Link>
+          </div>
         )}
       </section>
 

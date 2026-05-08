@@ -159,6 +159,7 @@ export async function lapseCyclesOnGraceExpiry(
         input.tenantId,
         gracePeriodDays,
         input.correlationId,
+        input.now,
       );
       // Round 5 staff-review (K24-T2): exhaustive switch + `_exhaustive:
       // never` pin matches the F8-canonical pattern at
@@ -225,6 +226,7 @@ async function processOne(
   tenantId: string,
   gracePeriodDays: number,
   correlationId: string,
+  now: Date,
 ): Promise<ProcessOneOutcome> {
   // Decision branch — count F5 failed-attempt rows for the cycle's
   // linked invoice. When `linked_invoice_id` is null (no F4 invoice
@@ -239,7 +241,15 @@ async function processOne(
           invoiceId: asInvoiceId(cycle.linkedInvoiceId),
         });
   const closedReason = failedAttempts >= 1 ? 'payment_failed' : 'grace_expired';
-  const closedAt = new Date().toISOString();
+  // Staff-Review-2026-05-09 WRN-12 fix: use the injected `now`
+  // (consistent with cutoffDate at the cron entry point) instead of
+  // wall-clock `new Date()` so the closedAt timestamp aligns with
+  // the cutoff cohort. Under heavy cron load wall-clock could drift
+  // from the listCyclesEligibleForLapse cutoff timestamp, making
+  // forensic audit traces harder to correlate. Also enables
+  // deterministic vi.setSystemTime testing without monkey-patching
+  // the use-case internals.
+  const closedAt = now.toISOString();
   const cycleId = cycle.cycleId as CycleId;
 
   // Single tx — advisory lock + tx-bound re-read + transition + audit

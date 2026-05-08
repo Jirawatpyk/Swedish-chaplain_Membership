@@ -1893,6 +1893,10 @@
         "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
         "pendingNoticeTitle": "Väntar på ditt beslut",
         "pendingNoticeBody": "Den här medlemmens återaktivering väntar på granskning. För att godkänna eller avslå, gå tillbaka till förnyelsepipelinen och använd rad-åtgärdsmenyn.",
+        "lookupFailedTitle": "Viss kopplad data kunde inte läsas in",
+        "lookupFailedBoth": "Vi kunde inte läsa in den kopplade medlems- eller planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "lookupFailedMember": "Vi kunde inte läsa in den kopplade medlemsuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "lookupFailedPlan": "Vi kunde inte läsa in den kopplade planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
         "noActivityTitle": "Ingen aktivitet än",
         "noActivityDescription": "Skickade påminnelsemail och uppföljningsärenden visas här när förnyelsepåminnelserna börjar för denna cykel.",
         "fields": {

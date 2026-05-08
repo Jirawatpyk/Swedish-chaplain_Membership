@@ -57,13 +57,39 @@ export default async function RenewalPortalLoading() {
           `<header>` + `<section>` landmarks. The real page renders
           its own landmarks; phantom-landmark announcements during
           load mislead screen-reader users about page structure
-          (matching the cycle-detail loading.tsx K27 R2 N-3 fix). */}
-      <div role="status" aria-live="polite">
+          (matching the cycle-detail loading.tsx K27 R2 N-3 fix).
+
+          Staff-Review-2026-05-09 WRN-6 fix: skeleton tree mirrors the
+          real page's 3-section layout (plan-summary card + benefit
+          summary card + RenewalConfirmFlow card) to avoid CLS at
+          hydration. Heights/widths estimated from the real components:
+            - PageHeader: h1 (28px) + subtitle (16px) ≈ 60px
+            - Plan summary card: 5 dl rows × (16px + 8px gap) ≈ 168px
+            - Benefit summary card: 3 progress rows ≈ 192px (typical
+              MVP set; F2/F4/F6/F7 quotas)
+            - RenewalConfirmFlow card: select + helper + CTA button
+              row ≈ 180px
+          Real components are responsive — skeleton intentionally
+          uses generous fixed heights so post-hydration content
+          generally fits without pushing surrounding chrome. */}
+      <div role="status" aria-live="polite" className="space-y-6">
         <span className="sr-only">{announce}</span>
+        {/* PageHeader skeleton (mirrors WRN-7 PageHeader primitive) */}
         <div>
           <Skeleton className="h-7 w-40" />
           <Skeleton className="mt-2 h-4 w-72" />
         </div>
+        {/* Staff-Review-2026-05-09 R2-W1 fix: reserve a slot for the
+            <OnboardingBanner> which conditionally renders for first-
+            time renewers in the real page (`page.tsx:153`). loading.tsx
+            cannot read `summary.isFirstTimeRenewer` (use-case hasn't
+            loaded yet) — the trade-off is ~50px wasted vertical for
+            non-first-renewers vs ~50px CLS for first-renewers. We
+            reserve unconditionally because the first-renewer experience
+            is more sensitive to layout shift (banner content explains
+            the 3-step flow, so any jump distracts from comprehension). */}
+        <Skeleton className="h-12 w-full rounded-lg" />
+        {/* Plan summary card */}
         <div className="rounded-lg border bg-card p-4">
           <Skeleton className="mb-3 h-6 w-32" />
           <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-2 sm:gap-x-4">
@@ -75,11 +101,35 @@ export default async function RenewalPortalLoading() {
             ))}
           </div>
         </div>
+        {/* Benefit summary card — real BenefitSummary renders ~3
+            progress rows (e-blast, events, member-search, etc.)
+            with bar + label per row. */}
         <div className="rounded-lg border bg-card p-4">
           <Skeleton className="mb-3 h-6 w-40" />
-          <Skeleton className="h-4 w-full" />
+          <div className="space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="space-y-1">
+                <div className="flex items-baseline justify-between">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-16" />
+                </div>
+                <Skeleton className="h-2 w-full rounded-full" />
+              </div>
+            ))}
+          </div>
         </div>
-        <Skeleton className="h-10 w-32" />
+        {/* RenewalConfirmFlow card — plan select + helper text +
+            primary CTA + secondary cancel link. */}
+        <div className="rounded-lg border bg-card p-4">
+          <Skeleton className="mb-3 h-6 w-40" />
+          <Skeleton className="h-4 w-full max-w-xs" />
+          <Skeleton className="mt-3 h-9 w-full" />
+          <Skeleton className="mt-3 h-3 w-3/4" />
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+            <Skeleton className="h-10 w-full sm:w-40" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+        </div>
       </div>
     </DetailContainer>
   );

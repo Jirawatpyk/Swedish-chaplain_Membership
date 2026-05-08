@@ -138,3 +138,16 @@ export {
   makeIssueRefundDeps,
   makeSweepStalePendingRefundsDeps,
 } from './infrastructure/di';
+
+// Staff-Review-2026-05-09 SUG-3 fix: schema-level re-export for
+// cross-module infra adapters (F8 → F5 read-only joins via Drizzle).
+// F8's `f5-payment-attempts-bridge-drizzle.ts` previously imported
+// directly from `@/modules/payments/infrastructure/schema`, bypassing
+// the module's symbolic boundary. Re-exporting `paymentsTable` here
+// makes the cross-module dependency explicit at the barrel surface
+// — if F5 renames or restructures the schema file, the rename
+// propagates through this single export point instead of failing
+// silently across N adapter sites. Per Constitution Principle III:
+// infra-to-infra schema sharing is permitted (F4/F5/F7 do same), but
+// going through a barrel re-export documents the contract.
+export { payments as paymentsTable } from './infrastructure/schema';

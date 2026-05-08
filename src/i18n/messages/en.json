@@ -1893,6 +1893,10 @@
         "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
         "pendingNoticeTitle": "Awaiting your decision",
         "pendingNoticeBody": "This member's reactivation is pending review. To approve or reject, return to the renewal pipeline and use the row actions menu.",
+        "lookupFailedTitle": "Some related data couldn't be loaded",
+        "lookupFailedBoth": "We couldn't load the linked member or plan record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
+        "lookupFailedMember": "We couldn't load the linked member record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
+        "lookupFailedPlan": "We couldn't load the linked plan record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
         "noActivityTitle": "No activity yet",
         "noActivityDescription": "Sent reminder emails and follow-up tasks will appear here once the renewal reminders begin for this cycle.",
         "fields": {

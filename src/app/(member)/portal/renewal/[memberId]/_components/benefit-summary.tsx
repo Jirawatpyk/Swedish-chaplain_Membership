@@ -44,7 +44,20 @@ export function BenefitSummary({
         {t('heading')}
       </h2>
       {hasContent ? (
-        <ul className="space-y-3 text-sm">
+        // Round-3 UX M2 fix: reference the section heading from the
+        // <ul> so SR users hear the list's purpose ("Membership
+        // benefits, list, N items") instead of just "list, N items".
+        // The list is inside the labelled <section>, but most SR engines
+        // do not propagate the section's accessible name to nested
+        // <ul> announcements (WCAG 1.3.1).
+        //
+        // R2-S7: use `aria-label={t('heading')}` instead of reusing
+        // `aria-labelledby="benefits-heading"` (which would point to
+        // the same id used by the parent <section>) — id-reuse can
+        // produce SR redundancy ("Membership benefits, Membership
+        // benefits list, N items"). aria-label gives the <ul> its
+        // own accessible name without traversing the same node twice.
+        <ul aria-label={t('heading')} className="space-y-3 text-sm">
           {benefits.map((b) => (
             <BenefitRow key={b.key} benefit={b} />
           ))}
