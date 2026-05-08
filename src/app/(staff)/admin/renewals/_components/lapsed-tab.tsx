@@ -202,13 +202,20 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                         View Detail is the navigation primary; Mark
                         Contacted opens the OutreachDialog. */}
                     <DropdownMenu>
+                      {/*
+                       * R4-W9 (staff-review-2026-05-09): align trigger
+                       * size with `pipeline-table.tsx` (h-11 w-11 = 44px)
+                       * for visual + interaction consistency on the
+                       * same page. Old h-8 w-8 was above WCAG 2.5.8
+                       * minimum (24px) but inconsistent.
+                       */}
                       <DropdownMenuTrigger
                         render={(props) => (
                           <Button
                             {...props}
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8"
+                            className="h-11 w-11"
                             aria-label={tActions('rowMenu', {
                               company: r.companyName || r.memberId,
                             })}

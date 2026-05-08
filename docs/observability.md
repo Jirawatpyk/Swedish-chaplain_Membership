@@ -1070,3 +1070,119 @@ Per perf.md CHK049:
 - **alarm** → `#oncall-platform` Slack + on-call email digest
 - **page** → PagerDuty primary on-call rotation
 - **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥ 1 / 5 min escalation
+
+---
+
+## 23. F8 Renewal Tracking + Smart Reminders — observability
+
+**Lineage**: spec § Performance & Observability (FR-046, SC-003 pipeline p95, SC-005 at-risk recompute p95). Round-4 staff-review-2026-05-09 closed R4-S8 (this section was missing) + R4-W7 (cron field-aliasing semantics).
+
+F8 ships dark behind `FEATURE_F8_RENEWALS=false` until F9 admin shell lands. All metrics + alerts described here MUST be wired before the production flag-flip.
+
+### 23.1 Metrics catalogue
+
+#### 23.1.1 Pipeline dashboard
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `renewals.pipeline.load_duration_ms` | histogram | `tenant_id`, `tier_filter`, `urgency_filter` | OTel span `admin_pipeline_load` | SC-003 |
+| `renewals.pipeline.row_count` | gauge | `tenant_id`, `urgency_band` | per-load summary | — |
+| `renewals.pipeline.lapsed_tab_visit_total` | counter | `tenant_id` | route handler | — |
+
+#### 23.1.2 At-risk widget + recompute
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `renewals.at_risk.recompute_duration_ms` | histogram | `tenant_id`, `members_total` | OTel span `at_risk_recompute_per_tenant` | SC-005 |
+| `renewals.at_risk.recompute_members_succeeded_total` | counter | `tenant_id`, `band` | use-case | — |
+| `renewals.at_risk.recompute_members_failed_total` | counter | `tenant_id` | use-case | — |
+| `renewals.at_risk.snooze_total` | counter | `tenant_id`, `actor_role` | use-case | — |
+| `renewals.at_risk.outreach_recorded_total` | counter | `tenant_id`, `channel`, `template_id` | use-case | — |
+
+#### 23.1.3 Cron coordinators (4 paths)
+
+All 4 coordinators emit a single `cron_dispatch_orchestrated` audit on completion. The audit payload's **`cron_kind` discriminator** distinguishes which path produced the event (added in Phase 6 review I3 + verified by 4 unit tests in `tests/unit/api/cron/renewals/{dispatch,at-risk}-coordinator.test.ts`):
+
+| `cron_kind` | Coordinator route | Schedule |
+|---|---|---|
+| `dispatch` | `/api/cron/renewals/dispatch-coordinator` | daily |
+| `at_risk_recompute` | `/api/cron/renewals/at-risk-recompute-coordinator` | weekly |
+| `lapse` | `/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator` | daily |
+| `reconcile` | `/api/cron/renewals/reconcile-pending-reactivations-coordinator` | daily |
+
+**R4-W7 field-aliasing note (staff-review-2026-05-09)**: at-risk + lapse + reconcile coordinators reuse the `reminders_dispatched` and `tasks_created` payload field names with kind-specific semantics. Treat the (`cron_kind`, `reminders_dispatched`, `tasks_created`) tuple as kind-discriminated:
+
+| `cron_kind` | `reminders_dispatched` means | `tasks_created` means |
+|---|---|---|
+| `dispatch` | reminder emails sent (literal) | escalation tasks created (literal) |
+| `at_risk_recompute` | members recomputed | members failed |
+| `lapse` | cycles transitioned to lapsed | per-tenant errors |
+| `reconcile` | reminders fired (T-7/T-3/T-1) | timeouts processed |
+
+**Alert query rule**: every alert keyed on `reminders_dispatched` or `tasks_created` MUST include a `cron_kind = '<expected>'` filter to avoid double-counting across coordinators that fire in overlapping windows. Example PromQL guard: `cron_dispatch_orchestrated{cron_kind="dispatch"}` not `cron_dispatch_orchestrated`.
+
+| Metric | Type | Labels | Source |
+|---|---|---|---|
+| `renewals.coordinator.tenants_enqueued_total` | counter | `cron_kind` | coordinator audit |
+| `renewals.coordinator.tenants_succeeded_total` | counter | `cron_kind` | coordinator audit |
+| `renewals.coordinator.tenants_failed_total` | counter | `cron_kind` | coordinator audit |
+| `renewals.coordinator.duration_ms` | histogram | `cron_kind` | OTel span (lapse + reconcile + at-risk; dispatch span existed since Wave I5) |
+| `renewals.coordinator.audit_emit_failed_total` | counter | `cron_kind` | error path |
+| `renewals.cron_bearer_auth_rejected_total` | counter | `route` | 401 path |
+
+### 23.2 SLOs — F8
+
+| SLO | Target | Window | Metric | Action on breach |
+|---|---|---|---|---|
+| **SC-003** Admin pipeline render | p95 < 500 ms @ 5 k members + 600 in window | rolling 1 d | `renewals.pipeline.load_duration_ms` | alarm `#oncall-platform`; capture trace; check Neon connection pool |
+| **SC-005** At-risk recompute per tenant | p95 < 60 s @ 5 k members | per-cron-run | `renewals.at_risk.recompute_duration_ms` | alarm + freeze cron flag-flip until rectified |
+| **F8 cron dispatch** | p95 < 30 s per tenant | per-cron-run | `renewals.coordinator.duration_ms{cron_kind="dispatch"}` | investigate slow tenants |
+| **F8 audit emit failure** | < 0.1 % of state-mutating use-case calls | rolling 1 d | `renewals.coordinator.audit_emit_failed_total` | page on-call (audit invariant Constitution VIII) |
+
+**SC-005 measurement evidence (staff-review-2026-05-09 Round-4 closure)**: ran `RUN_PERF=1 pnpm test:integration tests/integration/renewals/at-risk-recompute-perf.test.ts` against Neon Singapore on 2026-05-09 04:05 UTC+7 with 5,000 seeded members:
+- `list=5491ms` (pre-recompute eligibility query)
+- `cron=10374ms` total batched recompute
+- per-member: p50=p95=p99=avg=2.1 ms (CTE-batched UPDATE — single round-trip per 5 k members)
+- **6× headroom** under the 60 s budget
+
+### 23.3 Alerts — F8 initial set
+
+| ID | Rule | Severity | Routing |
+|---|---|---|---|
+| F8-A1 | `renewals.coordinator.tenants_failed_total{cron_kind=*}` ≥ 1 in any 5-min window | alarm | `#oncall-platform` |
+| F8-A2 | `renewals.coordinator.audit_emit_failed_total` ≥ 1 in any 5-min window | page | PagerDuty primary |
+| F8-A3 | `cron_bearer_auth_rejected_total` ≥ 5 in any 1-min window | alarm + audit-log review | `#oncall-platform` |
+| F8-A4 | `renewals.at_risk.recompute_duration_ms` p95 > 60 000 (SC-005) | alarm | `#oncall-platform` + freeze flag-flip |
+| F8-A5 | `renewals.pipeline.load_duration_ms` p95 > 500 (SC-003) | alarm | `#oncall-platform` |
+| F8-A6 | `lapsed_member_action_blocked` audit emit ≥ 50 in any 1-h window per tenant | info → alarm | check for compromised member account or admin script |
+| F8-A7 | `renewal_cross_member_probe` audit emit ≥ 1 in any 1-h window per tenant | alarm | possible IDOR attempt — review actor |
+
+### 23.4 Forbidden log fields (F8-specific extension to § 3 universal list)
+
+In addition to the universal forbidden fields (passwords, session IDs, tokens, Authorization headers):
+
+- **F8 renewal-link tokens** — only `tokenHash` (SHA-256 base64url) may appear in logs; raw `token` query-string value is forbidden
+- **Resend `delivery_id`** — admin-only forensic identifier; not exposed to member-facing API responses or member-tier OTel spans
+- **At-risk score `contributions`** — full factor-by-factor breakdown is admin-only (FR-035 demotivation guard); member-facing logs may carry `band` only, never `contributions[]`
+
+### 23.5 Sample rates
+
+Inherits § 22.5: 10 % trace sampling in production; 100 % aggregation on metrics.
+
+### 23.6 Runbooks
+
+- `docs/runbooks/cron-jobs.md` — F8 cron-job.org configuration (extended from F5 + F7 shared file with the 4 F8 coordinators)
+- `docs/runbooks/at-risk-perf-regression.md` — SC-005 budget breach (>60 s) workflow
+- `docs/runbooks/pipeline-perf-regression.md` — SC-003 budget breach (>500 ms p95) workflow
+- `docs/runbooks/audit-emit-loss.md` — Constitution VIII audit-trail-loss escalation (covers F8 + earlier features)
+
+### 23.7 Dashboard — F8 (Vercel Analytics)
+
+- **Top row**: pipeline-load p95 (line, SC-003 target 500 ms), at-risk p95 per tenant (line, SC-005 target 60 s), lapsed-tab visit count (gauge)
+- **Second row**: dispatch coordinator duration, at-risk coordinator duration, lapse coordinator duration, reconcile coordinator duration
+- **Third row**: tenants_succeeded vs failed (per `cron_kind`), audit emit failed per kind, bearer auth rejected per route
+- **Fourth row** (security): `lapsed_member_action_blocked` heatmap, `renewal_cross_member_probe` (alarm-on-1), `f8_role_violation_blocked` (manager-role mutation attempts)
+
+### 23.8 Owner
+
+**F8 section**: The maintainer who ships F8 (currently @Jirawatpyk) is the initial owner of metrics, SLOs, and alerts; ownership transfers to the Renewals product engineer once a dedicated team forms.

@@ -121,8 +121,19 @@ test.describe('F8 — portal renewal success page (Phase 6 round-3 I2)', () => {
         page.getByTestId('processing-back-to-portal'),
       ).toBeVisible();
     } finally {
-      // Restore a cycle for downstream tests (idempotent re-seed).
-      await seedF8Renewals();
+      // R4-S6 (staff-review-2026-05-09): wrap restore in try/catch so
+      // a Neon transient failure surfaces as a `console.warn` signal
+      // without swallowing the original test assertion failure.
+      // `--workers=1` mandate makes suite-order dependency real — a
+      // silently-skipped restore would break subsequent tests.
+      try {
+        await seedF8Renewals();
+      } catch (restoreErr) {
+        console.warn(
+          '[portal-renewal-success.spec] post-test re-seed failed; downstream tests may misbehave:',
+          restoreErr,
+        );
+      }
     }
   });
 });

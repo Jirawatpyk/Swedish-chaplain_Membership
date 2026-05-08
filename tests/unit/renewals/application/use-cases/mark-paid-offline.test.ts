@@ -351,9 +351,12 @@ describe('markPaidOffline — error paths', () => {
     if (!r.ok) {
       expect(r.error.kind).toBe('server_error');
       if (r.error.kind === 'server_error') {
-        expect(r.error.message).toMatch(
-          /onPaid never fired|F4 contract regression/,
-        );
+        // R4-W2 (staff-review-2026-05-09): use-case redacts raw
+        // exception messages in the Result so route handlers can't
+        // accidentally leak DB internals / contract violations via
+        // toast / HTTP body. The "onPaid never fired" forensic detail
+        // still lives in the logger.error call for SRE.
+        expect(r.error.message).toBe('internal error — see server logs');
       }
     }
   });

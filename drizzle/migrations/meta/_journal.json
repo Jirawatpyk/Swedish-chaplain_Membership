@@ -806,6 +806,13 @@
       "when": 1792310400000,
       "tag": "0114_f8_repair_renewal_tier_bucket_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1792396800000,
+      "tag": "0115_f8_audit_log_member_plan_changed_idx",
+      "breakpoints": true
     }
   ]
 }

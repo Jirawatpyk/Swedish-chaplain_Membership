@@ -38,6 +38,7 @@ import { uuidv7 } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
+import { renewalsMetrics } from '@/lib/metrics';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
@@ -118,6 +119,10 @@ async function emitOrchestratedAudit(
       },
     );
   } catch (e) {
+    // Mirror dispatch-coordinator pattern (line 157): counter fires the
+    // alert pipeline so on-call sees the compliance-trail loss. Log
+    // alone is not enough because Vercel alert rules attach to OTel
+    // counters not log strings.
     logger.error(
       {
         err: e instanceof Error ? e : new Error(String(e)),
@@ -125,6 +130,7 @@ async function emitOrchestratedAudit(
       },
       'cron.renewals.at_risk.coordinator.audit_emit_failed',
     );
+    renewalsMetrics.coordinatorAuditEmitFailed();
   }
 }
 

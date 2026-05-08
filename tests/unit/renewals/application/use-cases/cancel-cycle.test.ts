@@ -129,7 +129,11 @@ describe('cancelCycle (T058) — happy path', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('server_error');
       if (result.error.kind === 'server_error') {
-        expect(result.error.message).toMatch(/audit_log.*insert failed/);
+        // R4-W2 (staff-review-2026-05-09): use-case redacts raw
+        // exception messages in the Result so route handlers can't
+        // accidentally leak DB internals via toast / HTTP body. Raw
+        // detail still lives in `logger.error` for SRE forensics.
+        expect(result.error.message).toBe('internal error — see server logs');
       }
     }
     expect(transitionMock).toHaveBeenCalledTimes(1);
@@ -146,7 +150,8 @@ describe('cancelCycle (T058) — happy path', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('server_error');
       if (result.error.kind === 'server_error') {
-        expect(result.error.message).toMatch(/serialization failure/);
+        // R4-W2 — see redaction comment above.
+        expect(result.error.message).toBe('internal error — see server logs');
       }
     }
     expect(acquireLockMock).toHaveBeenCalledTimes(1);
@@ -329,7 +334,8 @@ describe('cancelCycle — error paths', () => {
     if (!r.ok) {
       expect(r.error.kind).toBe('server_error');
       if (r.error.kind === 'server_error') {
-        expect(r.error.message).toMatch(/db connection lost/);
+        // R4-W2 (staff-review-2026-05-09): redact raw exception messages.
+        expect(r.error.message).toBe('internal error — see server logs');
       }
     }
   });

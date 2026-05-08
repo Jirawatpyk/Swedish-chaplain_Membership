@@ -947,8 +947,8 @@
     },
     "outboxHealth": {
       "label": "ตรวจพบปัญหาการส่งอีเมล",
-      "permanentFailed": "{count, plural, one {อีเมล # ฉบับส่งไม่สำเร็จถาวร} other {อีเมล # ฉบับส่งไม่สำเร็จถาวร}} ใน 24 ชั่วโมงที่ผ่านมา",
-      "stuckPending": "{count, plural, one {อีเมล # ฉบับค้างอยู่} other {อีเมล # ฉบับค้างอยู่}} ในคิว (อาจมีปัญหากับ cron)"
+      "permanentFailed": "{count, plural, other {อีเมล # ฉบับส่งไม่สำเร็จถาวร}} ใน 24 ชั่วโมงที่ผ่านมา",
+      "stuckPending": "{count, plural, other {อีเมล # ฉบับค้างอยู่}} ในคิว (อาจมีปัญหากับ cron)"
     },
     "invoiceSettings": {
       "title": "ตั้งค่าการออกใบแจ้งหนี้",
@@ -2770,7 +2770,17 @@
       "at_risk_score_recomputed": "คำนวณคะแนนความเสี่ยงใหม่",
       "at_risk_score_threshold_crossed": "ระดับความเสี่ยงเปลี่ยน",
       "at_risk_snoozed": "เลื่อนการแจ้งเตือนความเสี่ยง",
-      "at_risk_outreach_recorded": "บันทึกการติดต่อ"
+      "at_risk_outreach_recorded": "บันทึกการติดต่อ",
+      "at_risk_compute_partial_failure": "คำนวณคะแนนความเสี่ยงบางส่วนไม่สำเร็จ",
+      "tier_upgrade_suggested": "แนะนำการอัปเกรดระดับสมาชิก",
+      "tier_upgrade_accepted": "ยืนยันการอัปเกรดระดับสมาชิก",
+      "tier_upgrade_dismissed": "ปฏิเสธการอัปเกรดระดับสมาชิก",
+      "tier_upgrade_already_at_target": "อยู่ในระดับเป้าหมายอยู่แล้ว",
+      "tier_upgrade_skipped_no_thresholds_configured": "ข้ามการอัปเกรด — ยังไม่ได้กำหนดเกณฑ์",
+      "tier_upgrade_tenant_disabled": "ปิดใช้งานการอัปเกรดสำหรับองค์กรนี้",
+      "cron_bearer_auth_rejected": "ปฏิเสธการยืนยันตัวตนของ cron",
+      "lapsed_member_action_blocked": "บล็อกการดำเนินการ — สมาชิกหมดอายุ",
+      "renewal_kill_switch_blocked": "บล็อกการดำเนินการ — kill switch เปิดใช้งาน"
     }
   },
   "pagination": {

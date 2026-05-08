@@ -100,3 +100,10 @@ member loop at the same scale.
 - cron pass: 16965ms (SLO 60000ms; strict=true)
 - per-member avg: 3.39ms (batched — 4 round-trips total)
 - recomputed: 5000 · skipped<tenure: 0 · failed: 0
+
+## F8 Phase 6 T174 — at-risk recompute BATCHED (2026-05-08T21:05:33.131Z)
+- members: 5000
+- list query: 5491ms
+- cron pass: 10374ms (SLO 60000ms; strict=false)
+- per-member avg: 2.07ms (batched — 4 round-trips total)
+- recomputed: 5000 · skipped<tenure: 0 · failed: 0

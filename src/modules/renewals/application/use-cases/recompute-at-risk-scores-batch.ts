@@ -114,11 +114,12 @@ export async function recomputeAtRiskScoresBatch(
 
   const startedAt = Date.now();
 
-  // 1. Read tenant settings ONCE (1 round-trip).
-  const settings = await deps.tenantRenewalSettingsRepo.findByTenant(
-    input.tenantId,
-  );
-  const minTenureDays = settings?.minTenureDaysForAtRisk ?? 30;
+  // R4-W5 (staff-review-2026-05-09): tenant settings read MUST execute
+  // inside the same `runInTenant(externalTx, ...)` block as the CTE
+  // compute so they share the per-tenant advisory lock — admin
+  // mutating `minTenureDaysForAtRisk` mid-cron must NOT cause settings
+  // drift between read-time and CTE-compute-time. Single-row read; no
+  // latency cost. Hoisted into `work` below.
   const f6Available = deps.eventAttendees.isAvailable();
   const computedAt = new Date();
   const nowMs = computedAt.getTime();
@@ -130,6 +131,11 @@ export async function recomputeAtRiskScoresBatch(
     ): Promise<
       Result<RecomputeAtRiskScoresBatchOutput, RecomputeAtRiskScoresBatchError>
     > => {
+      // 1. Read tenant settings inside the per-tenant lock (R4-W5).
+      const settings = await deps.tenantRenewalSettingsRepo.findByTenant(
+        input.tenantId,
+      );
+      const minTenureDays = settings?.minTenureDaysForAtRisk ?? 30;
       // 2. Single CTE: gather factor inputs for ALL active members in
       //    one round-trip via the port abstraction.
       const factorRows: ReadonlyArray<AtRiskBatchFactorRow> =

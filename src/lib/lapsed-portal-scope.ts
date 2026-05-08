@@ -69,6 +69,15 @@ export interface LapsedPortalScopeContext {
   readonly tenantId: string;
   readonly memberId: string;
   readonly pathname: string;
+  /**
+   * R4-W3 (staff-review-2026-05-09): HTTP method (or logical operation
+   * label for non-HTTP callers) of the blocked request — captured on
+   * the `lapsed_member_action_blocked` audit row so SRE can distinguish
+   * a blocked GET (read attempt) from a blocked POST (mutation attempt)
+   * when triaging audit logs. Optional for backward compatibility with
+   * existing callers; omitted defaults the audit field to `null`.
+   */
+  readonly action?: string;
   readonly actorUserId: string;
   readonly correlationId: string;
   readonly requestId?: string | null;
@@ -151,6 +160,9 @@ async function emitBlockedAudit(
       cycle_id: cycleId,
       member_id: ctx.memberId,
       blocked_route: ctx.pathname,
+      // R4-W3 (staff-review-2026-05-09): HTTP method / logical operation
+      // — null when caller does not pass it (legacy site).
+      action: ctx.action ?? null,
     },
   };
   try {

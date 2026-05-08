@@ -198,8 +198,13 @@ export function makeDrizzleAtRiskScorer(
       readonly memberId: string;
       readonly result: AtRiskScoreResult;
     }> {
-      // Batched-but-sequential — issues one query per member.
-      // Optimised CTE-batch path is a follow-up wave.
+      // R4-W13 (staff-review-2026-05-09): NOT the cron path — the weekly
+      // recompute uses `recomputeAtRiskScoresBatch` which calls a single-
+      // CTE bulk gather + bulk UPDATE (4 round-trips total). This per-
+      // member generator exists for ad-hoc admin use-cases ("recompute
+      // for member X right now") and small-N fixtures. At 5k members
+      // calling this would issue ≈15,000 round-trips and breach SC-005.
+      // Do NOT call from cron / batch code paths.
       for (const memberId of memberIds) {
         try {
           const result = await this.scoreMember(tenantId, memberId);

@@ -203,7 +203,12 @@ export async function reconcilePendingReactivations(
     const daysPending = computeDaysPending(cycle, input.now);
     if (daysPending === null) continue; // missing entered_pending_at — defensive
     if (daysPending >= PENDING_TIMEOUT_DAYS) {
-      const ok = await processTimeout(deps, cycle, input.correlationId);
+      const ok = await processTimeout(
+        deps,
+        cycle,
+        input.correlationId,
+        input.now,
+      );
       if (ok) timedOut += 1;
       else timeoutRefundFailures += 1;
       continue;
@@ -368,6 +373,7 @@ async function processTimeout(
   deps: ReconcilePendingReactivationsDeps,
   cycle: RenewalCycle,
   correlationId: string,
+  now: Date,
 ): Promise<boolean> {
   // Step 1: refund via F5 (outside tx — Stripe is external).
   if (cycle.linkedInvoiceId !== null) {
@@ -394,8 +400,12 @@ async function processTimeout(
   }
 
   // Step 2: transition cycle + emit timed_out audit atomically.
+  // R4-W1 (staff-review-2026-05-09): use injected `now` for clock
+  // determinism — mirrors the WRN-12 fix in `lapseCyclesOnGraceExpiry`.
+  // Without this, `closedAt` drifts from the page-cutoff timestamp under
+  // heavy cron load and breaks log↔audit correlation.
   const cycleId = cycle.cycleId as CycleId;
-  const closedAt = new Date().toISOString();
+  const closedAt = now.toISOString();
   try {
     await runInTenant(deps.tenant, async (tx) => {
       await deps.cyclesRepo.acquireCycleLockInTx(tx, cycle.tenantId, cycleId);

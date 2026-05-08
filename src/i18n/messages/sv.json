@@ -2722,7 +2722,7 @@
           "awaiting_payment": "Väntar på betalning",
           "completed": "Aktivt",
           "lapsed": "Utgånget",
-          "cancelled": "Avbrutet",
+          "cancelled": "Avbruten",
           "pending_admin_reactivation": "Väntar på granskning"
         },
         "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
@@ -2770,7 +2770,17 @@
       "at_risk_score_recomputed": "Riskpoäng omräknad",
       "at_risk_score_threshold_crossed": "Riskbandet ändrades",
       "at_risk_snoozed": "Riskvarning pausad",
-      "at_risk_outreach_recorded": "Kontakt registrerad"
+      "at_risk_outreach_recorded": "Kontakt registrerad",
+      "at_risk_compute_partial_failure": "Riskpoängsberäkning delvis misslyckad",
+      "tier_upgrade_suggested": "Nivåuppgradering föreslagen",
+      "tier_upgrade_accepted": "Nivåuppgradering godkänd",
+      "tier_upgrade_dismissed": "Nivåuppgradering avvisad",
+      "tier_upgrade_already_at_target": "Redan på målnivå",
+      "tier_upgrade_skipped_no_thresholds_configured": "Nivåuppgradering hoppades över — inga tröskelvärden",
+      "tier_upgrade_tenant_disabled": "Nivåuppgradering inaktiverad för denna kammare",
+      "cron_bearer_auth_rejected": "Cron-autentisering nekad",
+      "lapsed_member_action_blocked": "Åtgärd blockerad — förfallen medlem",
+      "renewal_kill_switch_blocked": "Åtgärd blockerad — kill switch aktiv"
     }
   },
   "pagination": {

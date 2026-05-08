@@ -183,8 +183,18 @@ export function OutreachDialog({
               maxLength={OUTCOME_NOTE_MAX + 50}
               aria-describedby="outreach-note-counter"
             />
+            {/*
+             * R4-S2 (staff-review-2026-05-09): WCAG 4.1.3 Status Messages
+             * — character-counter MUST announce changes to AT users
+             * typing in the textarea. `aria-live="polite"` queues the
+             * announcement without interrupting; `aria-atomic="true"`
+             * ensures the full counter (X / Y characters) is read each
+             * time, not just the changed digit.
+             */}
             <p
               id="outreach-note-counter"
+              aria-live="polite"
+              aria-atomic="true"
               className={
                 'text-xs ' +
                 (noteOver

@@ -100,6 +100,13 @@ describe('assertSuggestionInvariants', () => {
   // union. The happy-path cases below confirm the type-system permits
   // each valid combination.
 
+  // R4-S7 (staff-review-2026-05-09): use `.toMatchObject({ ok: true })`
+  // instead of `.ok).toBe(true)` so the failure message surfaces the
+  // structural mismatch (incl. `error.kind`) rather than a bare
+  // "expected false to be true" with no diff. Each happy-path case
+  // produces an actionable diff if the discriminated union ever
+  // accepts an invalid combination.
+
   it('accepts accepted_pending_apply with full anchors', () => {
     expect(
       assertSuggestionInvariants(
@@ -109,8 +116,8 @@ describe('assertSuggestionInvariants', () => {
           acceptedByUserId: '00000000-0000-0000-0000-0000000000aa',
           targetApplyAtCycleId: VALID_UUID,
         }),
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toMatchObject({ ok: true });
   });
 
   it('accepts applied with full anchors', () => {
@@ -125,8 +132,8 @@ describe('assertSuggestionInvariants', () => {
           appliedAtInvoiceId: '00000000-0000-0000-0000-0000000000d1',
           closedAt: '2026-06-01T00:00:00Z',
         }),
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toMatchObject({ ok: true });
   });
 
   it('accepts dismissed with full anchors', () => {
@@ -137,8 +144,8 @@ describe('assertSuggestionInvariants', () => {
           dismissedReason: 'no thanks',
           closedAt: '2026-05-01T00:00:00Z',
         }),
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toMatchObject({ ok: true });
   });
 
   it('accepts superseded-from-open with closed_at', () => {
@@ -149,8 +156,8 @@ describe('assertSuggestionInvariants', () => {
           supersededFrom: 'open',
           closedAt: '2026-06-01T00:00:00Z',
         }),
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toMatchObject({ ok: true });
   });
 
   it('accepts superseded-from-accepted with full anchors', () => {
@@ -164,8 +171,8 @@ describe('assertSuggestionInvariants', () => {
           targetApplyAtCycleId: VALID_UUID,
           closedAt: '2026-06-01T00:00:00Z',
         }),
-      ).ok,
-    ).toBe(true);
+      ),
+    ).toMatchObject({ ok: true });
   });
 
   it('compile-error: open with closedAt set', () => {

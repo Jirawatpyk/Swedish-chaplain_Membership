@@ -228,9 +228,14 @@ export async function cancelCycle(
       },
       'cancelCycle: unexpected error',
     );
+    // R4-W2 (staff-review-2026-05-09): never surface raw exception
+    // messages — they may carry DB column names, query fragments, or
+    // connection strings. Route handlers may relay this `message` field
+    // to UI toasts; keep the forensic detail in the logger.error call
+    // above only.
     return err({
       kind: 'server_error',
-      message: e instanceof Error ? e.message : String(e),
+      message: 'internal error — see server logs',
     });
   }
 }

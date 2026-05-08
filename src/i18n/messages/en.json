@@ -2770,7 +2770,17 @@
       "at_risk_score_recomputed": "Risk score recomputed",
       "at_risk_score_threshold_crossed": "Risk band changed",
       "at_risk_snoozed": "At-risk snoozed",
-      "at_risk_outreach_recorded": "Outreach recorded"
+      "at_risk_outreach_recorded": "Outreach recorded",
+      "at_risk_compute_partial_failure": "At-risk score partial failure",
+      "tier_upgrade_suggested": "Tier upgrade suggested",
+      "tier_upgrade_accepted": "Tier upgrade accepted",
+      "tier_upgrade_dismissed": "Tier upgrade dismissed",
+      "tier_upgrade_already_at_target": "Already at target tier",
+      "tier_upgrade_skipped_no_thresholds_configured": "Tier upgrade skipped — no thresholds",
+      "tier_upgrade_tenant_disabled": "Tier upgrade disabled for tenant",
+      "cron_bearer_auth_rejected": "Cron auth rejected",
+      "lapsed_member_action_blocked": "Action blocked — lapsed member",
+      "renewal_kill_switch_blocked": "Action blocked — kill switch active"
     }
   },
   "pagination": {

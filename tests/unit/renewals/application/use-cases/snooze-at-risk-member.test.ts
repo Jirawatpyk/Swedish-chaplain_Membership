@@ -55,30 +55,39 @@ const baseInput = {
 
 describe('snoozeAtRiskMember (T155)', () => {
   it('happy path — 30d snooze sets flag + emits audit in tx', async () => {
-    const { deps, setMock, emitInTxMock } = fakeDeps({
-      previousValue: false,
-      affectedRows: 1,
-    });
-    const beforeMs = Date.now();
-    const r = await snoozeAtRiskMember(deps, baseInput);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      const snoozedAtMs = new Date(r.value.snoozedUntil).getTime();
-      const expectedMs = beforeMs + 30 * 24 * 60 * 60 * 1000;
-      // Snooze timestamp is `now() + duration` — allow a few ms tolerance
-      // for clock drift between input parse + repo call.
-      expect(snoozedAtMs).toBeGreaterThanOrEqual(expectedMs - 1000);
-      expect(snoozedAtMs).toBeLessThanOrEqual(expectedMs + 1000);
+    // R4-S5 (staff-review-2026-05-09): use vi.useFakeTimers instead of
+    // ±1000 ms wall-clock tolerance. Windows CI runners under load can
+    // exceed 1 s drift between `Date.now()` and the use-case's internal
+    // `new Date()`; pinning the clock makes the assertion exact and
+    // CI-stable.
+    const FIXED_MS = new Date('2026-05-09T00:00:00.000Z').getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_MS);
+    try {
+      const { deps, setMock, emitInTxMock } = fakeDeps({
+        previousValue: false,
+        affectedRows: 1,
+      });
+      const r = await snoozeAtRiskMember(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        const snoozedAtMs = new Date(r.value.snoozedUntil).getTime();
+        const expectedMs = FIXED_MS + 30 * 24 * 60 * 60 * 1000;
+        // Exact equality under pinned clock — no tolerance window.
+        expect(snoozedAtMs).toBe(expectedMs);
+      }
+      expect(setMock).toHaveBeenCalledOnce();
+      expect(emitInTxMock).toHaveBeenCalledOnce();
+      expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
+        type: 'at_risk_snoozed',
+        payload: {
+          member_id: MEMBER_UUID,
+          snooze_duration_days: 30,
+        },
+      });
+    } finally {
+      vi.useRealTimers();
     }
-    expect(setMock).toHaveBeenCalledOnce();
-    expect(emitInTxMock).toHaveBeenCalledOnce();
-    expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
-      type: 'at_risk_snoozed',
-      payload: {
-        member_id: MEMBER_UUID,
-        snooze_duration_days: 30,
-      },
-    });
   });
 
   it('happy path — 7d snooze', async () => {

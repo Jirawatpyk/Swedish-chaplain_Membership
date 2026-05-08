@@ -69,6 +69,18 @@ Surfaced by the readiness check at `scripts/check-multi-tenant-ready.ts` LEGACY_
 
 ---
 
+## Round 4 (staff-review-2026-05-09) — closure status
+
+All Round 4 findings closed inside this branch (no deferrals). Provenance: `reviews/review-20260509-034217-staff-phase6-full-scope.md`.
+
+| ID | Status | Closure |
+|----|--------|---------|
+| R4-W4 | ✅ CLOSED | migration `0115_audit_log_f8_tier_change_idx.sql` |
+| R4-W7 | ✅ CLOSED | `docs/observability.md` § F8 documents `cron_kind` discriminator + alert-rule guidance |
+| R4-W11 | ⛔ OUT-OF-SCOPE for Phase 6 | US5 Tier Upgrade is NOT in Phase 6 Exit Checkpoint (T178 covers US4 only — all T154–T178 are `[US4]`). The mobile-a11y-ux-reviewer agent flagged the missing component file by reading spec.md US5 AS without cross-checking tasks.md scope. US5 ships as a future phase wave; not a Round 4 fix. |
+| R4-W13 | ✅ CLOSED | perf test `tests/integration/renewals/at-risk-recompute-perf.test.ts` already in place; ran under `RUN_PERF=1` against Neon Singapore |
+| R4-S8 | ✅ CLOSED | `docs/observability.md` § F8 added (SLO targets + histogram contract + 4 cron coordinator audit shape) |
+
 ## Triage policy
 
 When a Phase 10 polish sweep is scheduled:

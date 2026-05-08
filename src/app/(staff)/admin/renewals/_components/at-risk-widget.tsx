@@ -201,6 +201,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
             return (
               <button
                 key={band}
+                id={`at-risk-widget-tab-${band}`}
                 ref={(el) => {
                   tabRefs.current[idx] = el;
                 }}
@@ -229,7 +230,13 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                   }
                 }}
                 className={
-                  'inline-flex items-center gap-1 rounded-t-md px-3 py-1.5 text-sm font-medium motion-safe:transition-colors ' +
+                  // R4-BLK-4 (staff-review-2026-05-09): WCAG 2.4.7 — band
+                  // tab buttons MUST surface keyboard focus. Tailwind v4 +
+                  // shadcn/ui globals reset native outlines, so the
+                  // focus-visible ring has to be opted-in explicitly.
+                  // Pattern matches `success/page.tsx:125` Link focus ring
+                  // for visual consistency across F8 surfaces.
+                  'inline-flex items-center gap-1 rounded-t-md px-3 py-1.5 text-sm font-medium motion-safe:transition-colors focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 ' +
                   (isActive
                     ? 'border-b-2 border-primary text-primary'
                     : 'text-muted-foreground hover:text-foreground')
@@ -245,7 +252,17 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           })}
         </div>
 
-        <div id="at-risk-widget-rows">
+        {/*
+         * R4-S1 (staff-review-2026-05-09): ARIA Tabs APG pattern — the
+         * panel under a tablist MUST carry `role="tabpanel"` and link
+         * back to the active tab via `aria-labelledby`. Visual + keyboard
+         * UX worked before, but the SR semantics now match WAI-ARIA APG.
+         */}
+        <div
+          id="at-risk-widget-rows"
+          role="tabpanel"
+          aria-labelledby={`at-risk-widget-tab-${activeBand}`}
+        >
           {loading ? (
             <WidgetSkeleton />
           ) : error ? (
@@ -321,9 +338,21 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                         : '—'}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
+                      {/*
+                       * R4-BLK-5 (staff-review-2026-05-09): WCAG 2.5.5
+                       * touch target — Contact + Snooze pair must not
+                       * crowd at <375px viewport. Stack vertically on
+                       * narrow viewports (each button gets full row width
+                       * + 36px height = 44px minimum effective target via
+                       * default Button size); restore inline `flex-row`
+                       * + right-justified at sm: breakpoint and above.
+                       * Both buttons share `size="default"` (h-9 = 36px)
+                       * for consistency.
+                       */}
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
                         <Button
                           variant="outline"
+                          className="w-full sm:w-auto"
                           aria-label={t('actions.contactAriaLabel', {
                             company:
                               m.company_name ?? t('table.unknownCompany'),
@@ -340,6 +369,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                         {actorRole === 'admin' ? (
                           <Button
                             variant="ghost"
+                            className="w-full sm:w-auto"
                             aria-label={t('actions.snoozeAriaLabel', {
                               company:
                                 m.company_name ?? t('table.unknownCompany'),

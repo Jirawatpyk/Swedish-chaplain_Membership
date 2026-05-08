@@ -158,4 +158,28 @@ describe('cron at-risk-recompute-coordinator route (Phase 6 review I9)', () => {
       'at_risk_recompute',
     );
   });
+
+  it('R4-S3 — per-tenant 500 marks the tenant failed but continues + returns 200 with tenants_failed=1', async () => {
+    // Per-tenant fault isolation: a per-tenant route that 500s must
+    // NOT propagate up — the coordinator records the failure and
+    // returns 200 so cron-job.org does not retry-storm the
+    // coordinator. Mirrors the dispatch-coordinator K14-5 precedent.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: { code: 'internal_error' } }),
+    });
+    const res = await POST(makeRequest(VALID_AUTH));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.tenants_succeeded).toBe(0);
+    expect(body.tenants_failed).toBe(1);
+    // Audit still emits — coordinator records the orchestration shape
+    // even when every tenant pass failed (this is the operationally-
+    // valuable signal for SRE).
+    expect(auditEmitMock).toHaveBeenCalledTimes(1);
+    const event = auditEmitMock.mock.calls[0]![0];
+    expect(event.type).toBe('cron_dispatch_orchestrated');
+    expect((event.payload as { tenants_failed: number }).tenants_failed).toBe(1);
+  });
 });

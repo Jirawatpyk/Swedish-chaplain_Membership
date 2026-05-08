@@ -528,6 +528,8 @@ export interface F8AuditPayloadShapes {
     readonly cron_kind?:
       | 'dispatch'
       | 'at_risk_recompute'
+      | 'lapse'
+      | 'reconcile'
       | 'tier_upgrade_evaluate';
     readonly tenants_enqueued: number;
     readonly tenants_succeeded: number;

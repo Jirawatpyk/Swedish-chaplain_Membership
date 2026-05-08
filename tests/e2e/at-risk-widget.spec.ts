@@ -24,11 +24,15 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsMember } from './helpers/member-session';
 import {
   seedOneAtRiskMember,
   type SeededAtRiskMember,
 } from './helpers/seed-at-risk-member';
 import AxeBuilder from '@axe-core/playwright';
+
+const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
+const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
@@ -186,6 +190,49 @@ test.describe('F8 — at-risk widget (US4)', () => {
       .include('[aria-labelledby="at-risk-widget-title"]')
       .analyze();
     expect(results.violations).toEqual([]);
+  });
+
+  test('AS5: member role cannot access /admin/renewals — at-risk widget never rendered', async ({
+    page,
+  }) => {
+    // R4-BLK-6 (staff-review-2026-05-09): closes the AS5 / FR-034 test
+    // gap. Spec invariant: members MUST NOT see their own at-risk
+    // signal — admin-only by design ("admin sees a `member` role user
+    // would be demotivating and risks self-fulfilling churn"). This
+    // test asserts both server-side authz (route gated) AND that the
+    // widget never appears in the member-portal viewport.
+    test.skip(
+      !MEMBER_EMAIL || !MEMBER_PASSWORD,
+      'E2E_MEMBER_EMAIL / E2E_MEMBER_PASSWORD missing — set in .env.local before running AS5.',
+    );
+
+    await signInAsMember(page);
+    // Member tries to navigate directly to the staff renewals route.
+    // Middleware + route layout (staff group) MUST reject — typical
+    // F8 + F1 pattern is a redirect to the member portal landing.
+    const response = await page.goto('/admin/renewals', {
+      waitUntil: 'commit',
+    });
+    // Response is either a 4xx (forbidden / not-found) OR a redirect
+    // landed at /portal/* — accept either as compliant. What is NOT
+    // acceptable is a 200 + at-risk widget render.
+    const status = response?.status();
+    expect(
+      status === undefined ||
+        status === 401 ||
+        status === 403 ||
+        status === 404 ||
+        // Redirect-followed: response is the destination's status, so
+        // accept 200 only if URL is no longer /admin/renewals.
+        (status === 200 &&
+          !page.url().includes('/admin/renewals')),
+    ).toBe(true);
+
+    // Defence-in-depth: the at-risk widget heading MUST NOT appear in
+    // any branch (regardless of redirect target).
+    await expect(
+      page.getByRole('heading', { name: /at-risk members/i }),
+    ).toHaveCount(0, { timeout: 5_000 });
   });
 
   test('reduced-motion: widget respects prefers-reduced-motion', async ({

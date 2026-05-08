@@ -149,7 +149,77 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   // pgEnum value was never added — every emit fell through to
   // pinoFallback, silently dropping the security audit.
   'cron_bearer_auth_rejected',
-]);
+  // --- Phase 5 Wave A.5 / Round 4 whitelist close (migration 0109) ------
+  // These 3 values were added to the pgEnum in migration 0109 (Phase 5
+  // US3 batch) but were never added to F8_ENUM_SHIPPED. In production,
+  // every emit of these event types fell through to pinoFallback which
+  // throws (production guard), crashing the request and silently
+  // dropping the audit row — a Constitution Principle I clause 4 and
+  // Principle VIII compliance gap.
+  //
+  // `renewal_kill_switch_blocked` — emitted from
+  //   `src/app/api/admin/renewals/route.ts:66` on FEATURE_F8_RENEWALS=false.
+  //
+  // `lapsed_member_action_blocked` — emitted from
+  //   `src/lib/lapsed-portal-scope.ts:149` on every lapsed-member
+  //   portal-route block (FR-005a scope enforcement).
+  //
+  // `renewal_cross_member_probe` — emitted from
+  //   `confirm-renewal.ts:153` + `load-renewal-summary.ts:169` when
+  //   the URL [memberId] does not match the session member_id
+  //   (Constitution Principle I cross-member isolation).
+  'renewal_kill_switch_blocked',
+  'lapsed_member_action_blocked',
+  'renewal_cross_member_probe',
+] as const satisfies ReadonlyArray<F8AuditEventType>);
+
+/**
+ * Round-4 review-finding C1 (compile-time exhaustiveness): every event
+ * type in the catalogue (`F8_AUDIT_EVENT_TYPES`) must be EXPLICITLY
+ * categorised as either shipped (in `F8_ENUM_SHIPPED` above) OR
+ * deferred (in `F8_ENUM_DEFERRED` below). The exhaustiveness check at
+ * the bottom errors at typecheck if a future event type is added to
+ * the catalogue without categorisation here.
+ *
+ * Round-4 surfaced the failure mode this guards against: 3 event
+ * types had pgEnum values + emit sites in production code but were
+ * silently absent from the whitelist; every emit crashed the request
+ * and dropped the audit row. The Set-of-strings shape used pre-round-4
+ * had no compile-time signal — drift was only caught by integration
+ * tests, which most of these emits did not have.
+ */
+const F8_ENUM_DEFERRED = [
+  // Reserved for future cycle-creation hook (F4 invoice-paid →
+  // markCycleCompleteFromInvoicePaid use-case in `f8OnPaidCallbacks`);
+  // see FR-006 deferral target.
+  'renewal_cycle_created',
+] as const satisfies ReadonlyArray<F8AuditEventType>;
+
+// Compile-time exhaustiveness: every catalogue entry must be in EITHER
+// the shipped or deferred tuple. If a future commit adds an event type
+// to F8_AUDIT_EVENT_TYPES without categorising it here, this assignment
+// errors at typecheck — the developer is forced to make an explicit
+// shipped-vs-deferred decision (the same drift mode that round-4 found).
+type _F8ShippedOrDeferred =
+  | (typeof F8_ENUM_SHIPPED)[number]
+  | (typeof F8_ENUM_DEFERRED)[number];
+// Both directions to catch typos in either tuple:
+//   - `_AssertEveryEventCategorised` errors if catalogue has an
+//     event type missing from shipped+deferred (the ROUND-4 BUG).
+//   - `_AssertNoStrayCategorisation` errors if shipped+deferred has
+//     an event type not in the catalogue (TYPO in this file).
+type _AssertEveryEventCategorised =
+  Exclude<F8AuditEventType, _F8ShippedOrDeferred> extends never
+    ? true
+    : ['F8 audit event type missing from F8_ENUM_SHIPPED OR F8_ENUM_DEFERRED:', Exclude<F8AuditEventType, _F8ShippedOrDeferred>];
+type _AssertNoStrayCategorisation =
+  Exclude<_F8ShippedOrDeferred, F8AuditEventType> extends never
+    ? true
+    : ['Stray entry in F8_ENUM_SHIPPED or F8_ENUM_DEFERRED not in F8_AUDIT_EVENT_TYPES:', Exclude<_F8ShippedOrDeferred, F8AuditEventType>];
+const _f8ShippedOrDeferredAssertion: _AssertEveryEventCategorised = true;
+const _f8NoStrayCategorisationAssertion: _AssertNoStrayCategorisation = true;
+void _f8ShippedOrDeferredAssertion;
+void _f8NoStrayCategorisationAssertion;
 
 function buildSummary<E extends F8AuditEventType>(
   event: F8AuditEvent<E>,

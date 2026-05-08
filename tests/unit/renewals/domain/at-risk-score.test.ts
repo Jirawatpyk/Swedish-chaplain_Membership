@@ -493,6 +493,13 @@ describe('property-based — score invariants (T172, 512 cases)', () => {
   });
 
   it('determinism — identical inputs always yield identical results', () => {
+    // R4-S4 (staff-review-2026-05-09): use vitest's deep-equality
+    // matcher (`.toEqual`) instead of `JSON.stringify === JSON.stringify`
+    // — produces a readable structural diff on failure rather than
+    // "expected false to be true" with no actionable signal. fast-check
+    // catches the thrown assertion + reports the shrinking counter-
+    // example. Returning `true` from the predicate keeps fast-check
+    // happy when the assertions all pass.
     fc.assert(
       fc.property(factorsArb, fc.boolean(), (factors, f6Available) => {
         const ctx: AtRiskComputeContext = {
@@ -501,16 +508,11 @@ describe('property-based — score invariants (T172, 512 cases)', () => {
         };
         const r1 = computeAtRiskScore(factors as AtRiskFactors, ctx);
         const r2 = computeAtRiskScore(factors as AtRiskFactors, ctx);
+        expect(r1.ok).toBe(true);
+        expect(r2.ok).toBe(true);
         if (!r1.ok || !r2.ok) return false;
-        return (
-          r1.value.score === r2.value.score &&
-          r1.value.band === r2.value.band &&
-          r1.value.skippedBelowMinTenure === r2.value.skippedBelowMinTenure &&
-          r1.value.eventAttendanceFactorSkipped ===
-            r2.value.eventAttendanceFactorSkipped &&
-          JSON.stringify(r1.value.contributions) ===
-            JSON.stringify(r2.value.contributions)
-        );
+        expect(r1.value).toEqual(r2.value);
+        return true;
       }),
       { numRuns: 50 },
     );
