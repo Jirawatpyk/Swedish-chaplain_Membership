@@ -54,6 +54,13 @@ export const recomputeAtRiskScoresBatchInputSchema = z.object({
   tenantId: z.string().min(1),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
+  // Round-5 review-finding H5: optional injected clock so test runs
+  // pin determinism + production callers (cron coord) can pass the
+  // request-time clock so `computedAt` aligns with the audit row's
+  // `timestamp` (no drift mid-CTE under slow plans). Mirrors the
+  // R4-W1 fix in `processTimeout` (`reconcile-pending-reactivations.ts:368`).
+  // Default: wall-clock `() => new Date()` at use-case entry.
+  now: z.date().optional(),
 });
 
 export type RecomputeAtRiskScoresBatchInput = z.infer<
@@ -120,8 +127,19 @@ export async function recomputeAtRiskScoresBatch(
   // mutating `minTenureDaysForAtRisk` mid-cron must NOT cause settings
   // drift between read-time and CTE-compute-time. Single-row read; no
   // latency cost. Hoisted into `work` below.
+  // TODO(F6 ship): `f6Available` is read OUTSIDE the per-tenant
+  // advisory lock (settings hoist R4-W5 lifted only the renewal-
+  // settings read inside the lock). F7 ships the F6 EventAttendees
+  // stub returning `isAvailable() === false` constantly, so this is
+  // inert today. When F6 lands, fold this read INSIDE the runInTenant
+  // callback so a tenant flipping F6 mid-cron sees consistent state
+  // (matches the R4-W5 settings hoist rationale).
   const f6Available = deps.eventAttendees.isAvailable();
-  const computedAt = new Date();
+  // Round-5 H5: honour injected clock when provided; default to
+  // wall-clock new Date(). Pinning here means `computedAt`,
+  // `nowMs`, and downstream FR-035 min-tenure cutoff all reference
+  // the same instant — no drift mid-tx.
+  const computedAt = input.now ?? new Date();
   const nowMs = computedAt.getTime();
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
 

@@ -64,7 +64,7 @@ import type { AuditLogInsert } from '@/modules/auth/infrastructure/db/schema';
  * that emit site + ADD VALUE migration lands; see the spec backlog
  * (FR-006) for the deferral target.
  */
-const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
+const F8_ENUM_SHIPPED_TUPLE = [
   'renewal_cycle_cancelled',
   'renewal_cycle_completed_offline',
   'renewal_cross_tenant_probe',
@@ -161,8 +161,10 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   //   `src/app/api/admin/renewals/route.ts:66` on FEATURE_F8_RENEWALS=false.
   //
   // `lapsed_member_action_blocked` — emitted from
-  //   `src/lib/lapsed-portal-scope.ts:149` on every lapsed-member
-  //   portal-route block (FR-005a scope enforcement).
+  //   `src/lib/lapsed-portal-scope.ts` `emitBlockedAudit` on every
+  //   lapsed-member portal-route block (FR-005a scope enforcement).
+  //   Function-name reference (not line number) so the comment
+  //   survives same-round insertions that shift the file.
   //
   // `renewal_cross_member_probe` — emitted from
   //   `confirm-renewal.ts:153` + `load-renewal-summary.ts:169` when
@@ -171,7 +173,11 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'renewal_kill_switch_blocked',
   'lapsed_member_action_blocked',
   'renewal_cross_member_probe',
-] as const satisfies ReadonlyArray<F8AuditEventType>);
+] as const satisfies ReadonlyArray<F8AuditEventType>;
+
+const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(
+  F8_ENUM_SHIPPED_TUPLE,
+);
 
 /**
  * Round-4 review-finding C1 (compile-time exhaustiveness): every event
@@ -188,11 +194,41 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
  * had no compile-time signal — drift was only caught by integration
  * tests, which most of these emits did not have.
  */
-const F8_ENUM_DEFERRED = [
+// `_` prefix because the tuple is consumed only by the type-level
+// exhaustiveness assertion below (`typeof _F8_ENUM_DEFERRED`); ESLint
+// `no-unused-vars` ignores `_`-prefixed identifiers.
+const _F8_ENUM_DEFERRED = [
   // Reserved for future cycle-creation hook (F4 invoice-paid →
   // markCycleCompleteFromInvoicePaid use-case in `f8OnPaidCallbacks`);
   // see FR-006 deferral target.
   'renewal_cycle_created',
+  // F8 Phase 7+ tier-upgrade-suggestion engine (FR-031 future scope —
+  // domain types + tests shipped in Phase 6 W-K27 but no production
+  // emit sites yet; pgEnum values reserved by catalogue, runtime
+  // emit deferred until a use case wires them).
+  'tier_upgrade_suggested',
+  'tier_upgrade_accepted',
+  'tier_upgrade_dismissed',
+  'tier_upgrade_already_at_target',
+  'tier_upgrade_tenant_disabled',
+  'tier_upgrade_skipped_no_thresholds_configured',
+  'tier_upgrade_applied_at_renewal',
+  'tier_upgrade_pending_member_notified',
+  'tier_upgrade_pending_admin_verification_due',
+  'tier_upgrade_pending_superseded_by_manual_change',
+  'tier_upgrade_pending_orphan_detected',
+  // Escalation-task expansion (F8 Phase 8+) — `reassigned` covers
+  // admin re-assignment of finance follow-ups; `skipped` covers
+  // auto-archived tasks past 30d. Domain type union shipped in
+  // Phase 5 Wave A.5 for forward compat; emit sites land later.
+  'escalation_task_reassigned',
+  'escalation_task_skipped',
+  // Reserved for cron-driven schedule rescheduling (Phase 7 admin
+  // bulk-shift) and the `renewal_payment_failed` audit on F5 webhook
+  // payment_intent.payment_failed → mark_paid_offline cancel path
+  // (Phase 5 Wave B follow-up; current path emits at the F4 layer).
+  'renewal_schedule_rescheduled',
+  'renewal_payment_failed',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 // Compile-time exhaustiveness: every catalogue entry must be in EITHER
@@ -201,8 +237,8 @@ const F8_ENUM_DEFERRED = [
 // errors at typecheck — the developer is forced to make an explicit
 // shipped-vs-deferred decision (the same drift mode that round-4 found).
 type _F8ShippedOrDeferred =
-  | (typeof F8_ENUM_SHIPPED)[number]
-  | (typeof F8_ENUM_DEFERRED)[number];
+  | (typeof F8_ENUM_SHIPPED_TUPLE)[number]
+  | (typeof _F8_ENUM_DEFERRED)[number];
 // Both directions to catch typos in either tuple:
 //   - `_AssertEveryEventCategorised` errors if catalogue has an
 //     event type missing from shipped+deferred (the ROUND-4 BUG).

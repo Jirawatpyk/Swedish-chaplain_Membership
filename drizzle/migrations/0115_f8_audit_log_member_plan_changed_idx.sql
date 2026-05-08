@@ -11,12 +11,24 @@
 -- a table that grows unboundedly across all features (F1+F4+F7 each
 -- contribute thousands of rows per active tenant per month).
 --
--- At 5,000 members × ~50,000 audit rows the EXPLAIN ANALYZE on Neon
--- Singapore showed the EXISTS branch fall back to a Bitmap Heap Scan +
--- recheck. Adding the partial index `(tenant_id, timestamp)` filtered to
--- only `event_type='member_plan_changed'` (~0.5% of total rows) lets
--- the planner satisfy the EXISTS via an index-only scan without
--- touching the table heap.
+-- At 5,000 members × ~50,000 audit rows we expect (based on Postgres'
+-- planner cost model) the EXISTS branch to fall back to a Bitmap Heap
+-- Scan + recheck. Adding the partial index `(tenant_id, timestamp)`
+-- filtered to only `event_type='member_plan_changed'` (~0.5% of total
+-- rows) lets the planner reach those rows via an Index Scan
+-- (NOT Index-Only Scan — the EXISTS sub-query also filters on
+-- `payload->>'member_id' = m.member_id::text`, which is NOT in the
+-- index, so a heap fetch is still required to evaluate the JSON
+-- expression). Performance gain remains real (≥10× expected vs seq
+-- scan at 50k rows) but smaller than an Index-Only Scan would yield.
+-- A covering form `INCLUDE ((payload->>'member_id'))` would close the
+-- last gap; deferred until production-shape EXPLAIN ANALYZE confirms
+-- the residual heap-fetch overhead is material.
+--
+-- Round-5 review-finding H2: docstring hedged — the migration ships
+-- BEFORE the EXPLAIN ANALYZE measurement (the SC-005 perf gate runs
+-- AFTER this migration applies). Replace this paragraph with the
+-- captured EXPLAIN output once the gate runs.
 --
 -- The partial filter keeps the index small (~250 KB at MVP scale vs.
 -- ~50 MB on a non-partial `audit_log (tenant_id, event_type, timestamp)`

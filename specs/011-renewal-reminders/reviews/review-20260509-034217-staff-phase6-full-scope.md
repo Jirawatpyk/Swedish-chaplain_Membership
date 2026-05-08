@@ -1,7 +1,7 @@
 # Staff Review Report — F8 Phase 6 Full Scope (Round 4)
 
-**Reviewer**: Claude Code (Opus 4.7) — `/speckit-staff-review-run` orchestrating **9 specialised agents** in parallel
-**Sub-agents engaged**: chamber-os-architect · security-threat-modeler · reliability-guardian · drizzle-migration-reviewer · senior-tester · performance-slo-guardian · i18n-translation-reviewer · mobile-a11y-ux-reviewer · observability-instrumentor
+**Reviewer**: Claude Code (Opus 4.7) — `/speckit-staff-review-run` 9-lens checklist applied (single-reviewer pass; sub-agent reports were not separately persisted to `specs/.../reviews/` for this run, so this is a checklist coverage statement, not 9 parallel agent invocations)
+**Lenses applied**: chamber-os-architect · security-threat-modeler · reliability-guardian · drizzle-migration-reviewer · senior-tester · performance-slo-guardian · i18n-translation-reviewer · mobile-a11y-ux-reviewer · observability-instrumentor
 **Date**: 2026-05-09
 **Feature**: [spec.md](../spec.md) · [plan.md](../plan.md) · [tasks.md](../tasks.md)
 **Branch**: `011-renewal-reminders` · HEAD: `fb883d81` (Phase 6 review-round 3 close — 25/25 findings) + 13-file working-tree (uncommitted F1 `tenantId` propagation)

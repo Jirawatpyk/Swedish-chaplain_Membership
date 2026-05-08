@@ -26,7 +26,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -48,14 +48,16 @@ interface PerTenantResult {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (
-    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
-  ) {
-    return NextResponse.json(
-      { error: { code: 'unauthorized' } },
-      { status: 401 },
-    );
-  }
+  // Round-4 review-finding C2 — shared bearer-auth gate emits the
+  // `cron_bearer_auth_rejected` audit + IP rate-limit on rejection
+  // (prior implementation 401'd silently; round-3 review found 2 of 3
+  // coordinators missing this; now uniform across all 3 cron coords).
+  const authResponse = await gateCronBearerOrRespond(request, {
+    route: '/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator',
+    metricsCounter: () =>
+      renewalsMetrics.coordinatorAuditEmitFailed('lapse'),
+  });
+  if (authResponse) return authResponse;
 
   if (!env.features.f8Renewals) {
     return NextResponse.json(
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { err: e instanceof Error ? e : new Error(String(e)), correlationId },
         'cron.renewals.lapse-cycles.coordinator.audit_emit_failed',
       );
-      renewalsMetrics.coordinatorAuditEmitFailed();
+      renewalsMetrics.coordinatorAuditEmitFailed('lapse');
     }
     return NextResponse.json({ ...summary, per_tenant_results: [] });
   }
@@ -168,7 +170,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const perTenantResults: PerTenantResult[] = settled.map((r, i) => {
     const tenantId = activeTenants[i]!;
     if (r.status === 'rejected') {
-      return { tenant_id: tenantId, error: String(r.reason).slice(0, 400) };
+      // Round-4 review-finding H1: do NOT persist `String(r.reason)`
+      // into audit_log — the same pattern R4-W2 fixed in
+      // cancel-cycle.ts + mark-paid-offline.ts leaks DB connection
+      // strings, column names, internal stack frames into immutable
+      // audit rows. Use a fixed taxonomy + a categorise() helper.
+      logger.error(
+        {
+          err: r.reason instanceof Error ? r.reason : new Error(String(r.reason)),
+          tenant_id: tenantId,
+          correlationId,
+        },
+        'cron.renewals.lapse-cycles.coordinator.per_tenant_fetch_rejected',
+      );
+      return { tenant_id: tenantId, error: 'fetch_rejected' };
     }
     return r.value;
   });
@@ -189,6 +204,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     (r) => r.error === undefined && (r.errors ?? 0) > 0,
   ).length;
 
+  // TODO(round-5 M3): the typed `cron_dispatch_orchestrated` payload
+  // re-purposes `tasks_created` for 3 different counters across the 4
+  // coordinators (dispatch=tasks created · lapse=per-cycle errors ·
+  // reconcile=F5 refund failures · at-risk=members failed). SRE
+  // dashboards aggregating on this field get nonsense values. Per-
+  // cron-kind discriminator (e.g. `kind_specific: { errors?, refund_
+  // failures?, members_failed? }`) is invasive (changes the audit
+  // payload schema; backfill needed) — defer to F8 Phase 7 audit
+  // schema cleanup. Tracked at `phase-10-backlog.md`.
   const summary = {
     tenants_enqueued: activeTenants.length,
     tenants_succeeded: tenantsSucceeded,
@@ -235,7 +259,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { err: e instanceof Error ? e : new Error(String(e)), correlationId },
       'cron.renewals.lapse-cycles.coordinator.audit_emit_failed',
     );
-    renewalsMetrics.coordinatorAuditEmitFailed();
+    renewalsMetrics.coordinatorAuditEmitFailed('lapse');
   }
 
   logger.info(

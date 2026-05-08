@@ -154,7 +154,7 @@ async function emitOrchestratedAudit(
       },
       'cron.renewals.coordinator.audit_emit_failed',
     );
-    renewalsMetrics.coordinatorAuditEmitFailed();
+    renewalsMetrics.coordinatorAuditEmitFailed('dispatch');
   }
 }
 

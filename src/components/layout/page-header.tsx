@@ -67,19 +67,22 @@ export function PageHeader({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {/*
-           * R4-W10 (staff-review-2026-05-09): when the heading is auto-
-           * focused after a server-redirect (e.g. Stripe success), pair
-           * focus with `aria-live="polite"` so SR engines that don't
-           * announce focused-but-not-live headings (NVDA) still surface
-           * the page change. VoiceOver re-announces the focused element
-           * regardless; this complements rather than competes.
+           * R4 + Round-5 review-finding H4: focus-only announcement
+           * pattern. R4-W10 had paired `tabIndex={-1}.focus()` with
+           * `aria-live="polite"` to "complement rather than compete",
+           * but the round-5 review found that NVDA + JAWS announce
+           * the focused heading AND re-announce the live-region
+           * update on the next tick — SR users hear the heading
+           * twice (WCAG 4.1.3 / WAI-ARIA APG anti-pattern). Drop
+           * the live region and rely on focus-only announcement,
+           * which NVDA + JAWS + VoiceOver all surface reliably for
+           * `tabIndex={-1}` headings.
            */}
           <h1
             ref={titleRef}
             data-slot="page-header-title"
             className="text-h1 text-foreground focus-visible:outline-none"
             tabIndex={autoFocusTitle ? -1 : undefined}
-            aria-live={autoFocusTitle ? 'polite' : undefined}
           >
             {title}
           </h1>

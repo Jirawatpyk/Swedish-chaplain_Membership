@@ -184,17 +184,32 @@ export function OutreachDialog({
               aria-describedby="outreach-note-counter"
             />
             {/*
-             * R4-S2 (staff-review-2026-05-09): WCAG 4.1.3 Status Messages
-             * — character-counter MUST announce changes to AT users
-             * typing in the textarea. `aria-live="polite"` queues the
-             * announcement without interrupting; `aria-atomic="true"`
-             * ensures the full counter (X / Y characters) is read each
-             * time, not just the changed digit.
+             * R4-S2 + Round-5 review-finding M4: WCAG 4.1.3 Status
+             * Messages — `aria-live` should announce on MEANINGFUL
+             * state changes only. R4-S2 wired `aria-live="polite"`
+             * + `aria-atomic="true"` on every keystroke (the counter
+             * text re-renders on each character) which produced
+             * "247 / 500 characters" announcements ~250 times for a
+             * 250-char note — itself an accessibility regression on
+             * NVDA + JAWS + VoiceOver.
+             *
+             * Round-5 M4 fix: `aria-live="polite"` ONLY when the
+             * counter crosses into the over-limit state (`noteOver`).
+             * Sighted users still see the counter every keystroke;
+             * SR users only hear it when the limit is breached. Pre-
+             * cross announcements are unhelpful (the user already
+             * knows the limit from the textarea label). The aria-
+             * atomic attribute is dropped from the non-over branch
+             * so the live region is not "armed" while typing.
              */}
             <p
               id="outreach-note-counter"
-              aria-live="polite"
-              aria-atomic="true"
+              {...(noteOver
+                ? ({
+                    'aria-live': 'polite',
+                    'aria-atomic': 'true',
+                  } as const)
+                : {})}
               className={
                 'text-xs ' +
                 (noteOver

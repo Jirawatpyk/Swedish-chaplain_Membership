@@ -33,11 +33,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
-import { rateLimiter } from '@/lib/auth-deps';
-import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
-import { getClientIp } from '@/lib/client-ip';
 import { renewalsMetrics } from '@/lib/metrics';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
@@ -130,72 +127,22 @@ async function emitOrchestratedAudit(
       },
       'cron.renewals.at_risk.coordinator.audit_emit_failed',
     );
-    renewalsMetrics.coordinatorAuditEmitFailed();
+    renewalsMetrics.coordinatorAuditEmitFailed('at_risk_recompute');
   }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  // ----- Bearer auth + rate-limited 401 audit ----------------------------
-  if (
-    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
-  ) {
-    const ip = getClientIp(request);
-    try {
-      const rl = await rateLimiter.check(
-        `f8:cron:bearer-rejected:${ip}`,
-        60,
-        60,
-      );
-      if (!rl.success) {
-        return NextResponse.json(
-          { error: { code: 'rate_limited' } },
-          {
-            status: 429,
-            headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
-          },
-        );
-      }
-    } catch (e) {
-      const errInstance = e instanceof Error ? e : new Error(String(e));
-      logger.warn(
-        {
-          errMsg: errInstance.message.slice(0, 200),
-          errName: errInstance.name,
-          ip,
-          route: '/api/cron/renewals/at-risk-recompute-coordinator',
-        },
-        'cron.renewals.at_risk.coordinator.rate_limit_check_failed_fail_open',
-      );
-    }
-
-    try {
-      const deps = makeRenewalsDeps(env.tenant.slug);
-      await deps.auditEmitter.emit(
-        {
-          type: 'cron_bearer_auth_rejected',
-          payload: {
-            route: '/api/cron/renewals/at-risk-recompute-coordinator',
-          },
-        },
-        {
-          tenantId: env.tenant.slug,
-          actorUserId: null,
-          actorRole: 'cron',
-          correlationId: uuidv7(),
-          requestId: null,
-        },
-      );
-    } catch (e) {
-      logger.error(
-        { err: e instanceof Error ? e : new Error(String(e)) },
-        'cron.renewals.at_risk.coordinator.bearer_rejected_audit_failed',
-      );
-    }
-    return NextResponse.json(
-      { error: { code: 'unauthorized' } },
-      { status: 401 },
-    );
-  }
+  // Round-4 C2 — shared gate covers Bearer verify + 429 rate-limit +
+  // 401 with `cron_bearer_auth_rejected` audit emit. Pre-extraction
+  // each coordinator inlined this; lapse + reconcile coordinators
+  // 401'd silently with no audit (Constitution Principle I clause 4
+  // violation). Now uniform across all 3 routes.
+  const authResponse = await gateCronBearerOrRespond(request, {
+    route: '/api/cron/renewals/at-risk-recompute-coordinator',
+    metricsCounter: () =>
+      renewalsMetrics.coordinatorAuditEmitFailed('at_risk_recompute'),
+  });
+  if (authResponse) return authResponse;
 
   // ----- Kill-switch gates -----------------------------------------------
   if (!env.features.f8Renewals) {

@@ -54,6 +54,14 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-password-email';
+// Round-5 review-finding M2: branded TenantSlug at the cross-module
+// trust boundary so a typo'd slug or a member UUID slipped into the
+// inviter-context fails at compile time instead of at the
+// `notifications_outbox.tenant_id` NOT NULL gate. Auth is the global
+// identity boundary; every chamber-scoped invocation that lands here
+// already holds a TenantSlug (members deps.tenant.slug), so the brand
+// is free at production callsites and tightens the API contract.
+import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import { CreateUserAbort } from './tx-abort';
 import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
@@ -77,7 +85,7 @@ export interface CreateUserInput {
    * specific chamber even though the `users` table itself is cross-
    * tenant per Constitution Principle I.
    */
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
 }
 
 export interface CreateUserSuccess {
@@ -110,7 +118,7 @@ export interface EnqueueInvitationRequest {
    * carry a real tenant slug so the row both satisfies the constraint
    * and is visible to the per-tenant dispatcher cron.
    */
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
 }
 
 /**

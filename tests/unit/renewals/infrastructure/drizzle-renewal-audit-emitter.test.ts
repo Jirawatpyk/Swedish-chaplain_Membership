@@ -167,6 +167,31 @@ describe('makeDrizzleRenewalAuditEmitter — emit() (fire-and-forget)', () => {
     expect(logger.error).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });
+
+  // Round-5 review-finding L3: pin every newly-whitelisted shipped
+  // event so a future regression that drops one from
+  // `F8_ENUM_SHIPPED_TUPLE` (the catalogue → whitelist drift the
+  // round-4 review surfaced) fails the suite at the boundary
+  // between Round-3 closure and any future shipping commit.
+  it.each([
+    'cron_bearer_auth_rejected',
+    'renewal_kill_switch_blocked',
+    'lapsed_member_action_blocked',
+    'renewal_cross_member_probe',
+  ] as const)(
+    'round-3+4 shipped event %s — runs DB-insert path under NODE_ENV=production',
+    async (eventType) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      runInTenantMock.mockResolvedValueOnce(undefined);
+      const emitter = makeDrizzleRenewalAuditEmitter(tenant);
+      // Cast: payload shape varies per event type; at this layer we
+      // only verify the event is in F8_ENUM_SHIPPED (drives runInTenant
+      // path, NOT the pinoFallback throw branch). The audit-payload
+      // schema tests pin the per-event payload shape elsewhere.
+      await emitter.emit({ type: eventType, payload: {} } as never, ctx);
+      expect(runInTenantMock).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe('makeDrizzleRenewalAuditEmitter — emitInTx() (atomic, throws-on-failure)', () => {

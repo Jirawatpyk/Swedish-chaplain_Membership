@@ -311,6 +311,12 @@ describe('reconcilePendingReactivations (T138) — auto-timeout', () => {
       from: 'pending_admin_reactivation',
       to: 'lapsed',
       closedReason: 'pending_reactivation_timed_out',
+      // Round-5 review-finding L2: pin closedAt against the injected
+      // `input.now` clock so a future regression that re-introduces
+      // `new Date()` mid-tx (the WRN-12 anti-pattern) fails this
+      // assertion. R4-W1 added `now: Date` to the input schema; this
+      // line locks the pinning at the use-case level.
+      closedAt: NOW.toISOString(),
     });
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
       type: 'lapsed_member_admin_reactivation_timed_out',

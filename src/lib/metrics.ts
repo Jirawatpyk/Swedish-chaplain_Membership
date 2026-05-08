@@ -1389,18 +1389,26 @@ export const renewalsMetrics = {
   },
 
   /**
-   * `renewals_coordinator_audit_emit_failed_total` — H9: the
-   * `cron_dispatch_orchestrated` audit is the ONLY operational
-   * record of what the daily F8 cron did. Losing it silently breaks
+   * `renewals_coordinator_audit_emit_failed_total{cron_kind}` — H9:
+   * the orchestrated audit is the ONLY operational record of what
+   * each F8 cron coordinator did. Losing it silently breaks
    * Principle VIII compliance trail. Mirrors `broadcastsMetrics.
    * auditEmitFailed` semantics — any non-zero rate is stop-the-line.
+   *
+   * Round-4 review-finding H3: previously unlabeled, so on-call
+   * could not tell which compliance trail was lost across the 4
+   * F8 coordinators (`dispatch`, `at_risk_recompute`, `lapse`,
+   * `reconcile`). Adding `cron_kind` lets SRE attach distinct alert
+   * rules per stream + diagnose triage in seconds, not minutes.
    */
-  coordinatorAuditEmitFailed(): void {
+  coordinatorAuditEmitFailed(
+    cronKind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile',
+  ): void {
     safeMetric(() => {
       counter(
         'renewals_coordinator_audit_emit_failed_total',
-        'F8 cron coordinator failed to emit cron_dispatch_orchestrated audit (compliance trail loss)',
-      ).add(1);
+        'F8 cron coordinator failed to emit orchestrated audit (compliance trail loss)',
+      ).add(1, { cron_kind: cronKind });
     });
   },
 

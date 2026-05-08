@@ -34,6 +34,7 @@ import {
   createUser,
   defaultCreateUserDeps,
 } from '@/modules/auth/application/create-user';
+import { asTenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import {
   createActiveTestUser,
   deleteTestUser,
@@ -73,7 +74,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
         sourceIp: '203.0.113.20',
         requestId,
         locale: 'th',
-        tenantId: 'swecham',
+        tenantId: asTenantSlug('swecham'),
       },
       defaultCreateUserDeps,
     );
@@ -128,7 +129,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
           actorUserId: admin.userId,
           sourceIp: '203.0.113.21',
           requestId: `it-outbox-role-${role}`,
-          tenantId: 'swecham',
+          tenantId: asTenantSlug('swecham'),
         },
         defaultCreateUserDeps,
       );

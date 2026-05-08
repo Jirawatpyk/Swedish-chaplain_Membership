@@ -20,7 +20,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
@@ -43,14 +43,14 @@ interface PerTenantResult {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (
-    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
-  ) {
-    return NextResponse.json(
-      { error: { code: 'unauthorized' } },
-      { status: 401 },
-    );
-  }
+  // Round-4 review-finding C2 — shared bearer-auth gate; see
+  // `at-risk-recompute-coordinator/route.ts` for rationale.
+  const authResponse = await gateCronBearerOrRespond(request, {
+    route: '/api/cron/renewals/reconcile-pending-reactivations-coordinator',
+    metricsCounter: () =>
+      renewalsMetrics.coordinatorAuditEmitFailed('reconcile'),
+  });
+  if (authResponse) return authResponse;
 
   if (!env.features.f8Renewals) {
     return NextResponse.json(
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { err: e instanceof Error ? e : new Error(String(e)), correlationId },
         'cron.renewals.reconcile-pending.coordinator.audit_emit_failed',
       );
-      renewalsMetrics.coordinatorAuditEmitFailed();
+      renewalsMetrics.coordinatorAuditEmitFailed('reconcile');
     }
     return NextResponse.json({ ...summary, per_tenant_results: [] });
   }
@@ -166,7 +166,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const perTenantResults: PerTenantResult[] = settled.map((r, i) => {
     const tenantId = activeTenants[i]!;
     if (r.status === 'rejected') {
-      return { tenant_id: tenantId, error: String(r.reason).slice(0, 400) };
+      // Round-4 review-finding H1: same pattern as lapse coordinator
+      // — log the raw error to pino (server-side only) but persist
+      // a fixed-taxonomy literal into audit_log to prevent PII /
+      // connection-string leak (mirror of R4-W2 fix in cancel-cycle).
+      logger.error(
+        {
+          err: r.reason instanceof Error ? r.reason : new Error(String(r.reason)),
+          tenant_id: tenantId,
+          correlationId,
+        },
+        'cron.renewals.reconcile-pending.coordinator.per_tenant_fetch_rejected',
+      );
+      return { tenant_id: tenantId, error: 'fetch_rejected' };
     }
     return r.value;
   });
@@ -222,7 +234,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { err: e instanceof Error ? e : new Error(String(e)), correlationId },
       'cron.renewals.reconcile-pending.coordinator.audit_emit_failed',
     );
-    renewalsMetrics.coordinatorAuditEmitFailed();
+    renewalsMetrics.coordinatorAuditEmitFailed('reconcile');
   }
 
   logger.info(

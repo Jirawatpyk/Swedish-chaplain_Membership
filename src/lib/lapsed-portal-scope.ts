@@ -70,14 +70,25 @@ export interface LapsedPortalScopeContext {
   readonly memberId: string;
   readonly pathname: string;
   /**
-   * R4-W3 (staff-review-2026-05-09): HTTP method (or logical operation
-   * label for non-HTTP callers) of the blocked request — captured on
-   * the `lapsed_member_action_blocked` audit row so SRE can distinguish
-   * a blocked GET (read attempt) from a blocked POST (mutation attempt)
-   * when triaging audit logs. Optional for backward compatibility with
-   * existing callers; omitted defaults the audit field to `null`.
+   * R4-W3 + Round-5 review-finding M5: HTTP method of the blocked
+   * request — captured on the `lapsed_member_action_blocked` audit
+   * row so SRE can distinguish a blocked GET (read attempt) from
+   * a blocked POST (mutation attempt) when triaging audit logs.
+   *
+   * Closed union (Round-5 M5) — bare `string` accepted typos like
+   * 'Get' vs 'GET' and defeated forensic dashboard aggregation.
+   * Mirrors the `f8_role_violation_blocked.action` discipline already
+   * established in the audit-payload schemas. Optional for backward-
+   * compat with existing callers; omitted defaults to `null` audit row.
    */
-  readonly action?: string;
+  readonly action?:
+    | 'GET'
+    | 'POST'
+    | 'PUT'
+    | 'PATCH'
+    | 'DELETE'
+    | 'HEAD'
+    | 'OPTIONS';
   readonly actorUserId: string;
   readonly correlationId: string;
   readonly requestId?: string | null;

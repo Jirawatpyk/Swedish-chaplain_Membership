@@ -43,6 +43,7 @@ import { disableUser } from '@/modules/auth/application/disable-user';
 import { changeRole } from '@/modules/auth/application/change-role';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { asTokenId, asUserId } from '@/modules/auth/domain/branded';
+import { asTenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import { ok } from '@/lib/result';
 import {
   createActiveTestUser,
@@ -94,7 +95,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
         actorUserId: admin.userId,
         sourceIp: '203.0.113.11',
         requestId: inviteRequestId,
-        tenantId: 'swecham',
+        tenantId: asTenantSlug('swecham'),
       },
       { ...defaultCreateUserDeps, enqueueInvitationInTx: stubEnqueueInvitationInTx },
     );

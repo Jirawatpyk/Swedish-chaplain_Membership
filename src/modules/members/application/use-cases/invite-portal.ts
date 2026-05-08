@@ -25,6 +25,7 @@ import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
+import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import type { ContactId } from '../../domain/contact';
 import type { ContactRepo } from '../ports/contact-repo';
 
@@ -49,7 +50,7 @@ export type CreateUserPort = (input: {
    * runs inside a known `TenantContext` (passed via deps.tenant), so
    * the route handler / use-case threads `deps.tenant.slug` here.
    */
-  readonly tenantId: string;
+  readonly tenantId: TenantSlug;
 }) => Promise<
   | { readonly ok: true; readonly value: { readonly user: { readonly id: string } } }
   | { readonly ok: false; readonly error: { readonly code: 'invalid-input' | 'email-taken' | 'invitation-create-failed' } }

@@ -124,8 +124,12 @@ test.describe('F8 — portal renewal success page (Phase 6 round-3 I2)', () => {
       // R4-S6 (staff-review-2026-05-09): wrap restore in try/catch so
       // a Neon transient failure surfaces as a `console.warn` signal
       // without swallowing the original test assertion failure.
-      // `--workers=1` mandate makes suite-order dependency real — a
-      // silently-skipped restore would break subsequent tests.
+      // Tests share `seedF8Renewals` fixture state; suite-order
+      // dependency exists at any worker count (CI default `1`, local
+      // `3`), but the local `--workers=1` invocation override is the
+      // documented reproducer mode (per `feedback_e2e_workers`
+      // operator preference) — a silently-skipped restore would
+      // break subsequent tests under that mode.
       try {
         await seedF8Renewals();
       } catch (restoreErr) {
