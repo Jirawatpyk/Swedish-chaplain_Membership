@@ -28,7 +28,10 @@ import type {
   MemberRenewalFlagsRepo,
   MemberRenewalFlagsMutationResult,
   SetBlockedFromAutoReactivationInput,
+  SetRiskScoreInput,
+  SetRiskScoreResult,
 } from '../../application/ports/member-renewal-flags-repo';
+import type { RiskBand } from '../../domain/value-objects/risk-band';
 
 export function makeDrizzleMemberRenewalFlagsRepo(
   // RLS does the tenant binding via runInTenant at the use-case layer;
@@ -261,6 +264,80 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         .where(eq(members.memberId, memberId))
         .returning({ memberId: members.memberId });
       return { previousValue: wasBlocked, affectedRows: updated.length };
+    },
+
+    /**
+     * Phase 6 Wave B (T154) — write the at-risk score result onto F3
+     * `members.risk_score_*` columns. Reads prior `risk_score_band` in
+     * the same tx so the use-case can detect band crossings without an
+     * extra round-trip; both reads + the UPDATE commit atomically.
+     */
+    async setRiskScore(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+      input: SetRiskScoreInput,
+    ): Promise<SetRiskScoreResult> {
+      const txDb = tx as typeof db;
+      const priorRows = await txDb
+        .select({ band: members.riskScoreBand })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const prior = priorRows[0];
+      if (!prior) {
+        return { previousBand: null, affectedRows: 0 };
+      }
+      const previousBand = (prior.band as RiskBand | null) ?? null;
+      const updated = await txDb
+        .update(members)
+        .set({
+          riskScore: input.score,
+          riskScoreBand: input.band,
+          riskScoreFactors: input.factors,
+          riskScoreLastComputedAt: new Date(input.computedAt),
+        })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return { previousBand, affectedRows: updated.length };
+    },
+
+    /**
+     * Phase 6 Wave B (T155) — set `members.risk_snoozed_until` per
+     * FR-032. Adapter persists ISO timestamp via Date conversion;
+     * `previousValue` field of MemberFlagToggleResult is repurposed to
+     * `was-snoozed-active-now` (true ⇒ a snooze was already active at
+     * call time). Adapter trusts the use-case to validate the
+     * snooze-duration enum (7|30|90).
+     */
+    async setRiskSnoozedUntil(
+      tx: unknown,
+      _tenantId: string,
+      memberId: string,
+      snoozedUntil: string,
+    ): Promise<MemberFlagToggleResult> {
+      const txDb = tx as typeof db;
+      const priorRows = await txDb
+        .select({ snoozedUntil: members.riskSnoozedUntil })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const prior = priorRows[0];
+      if (!prior) {
+        return { previousValue: false, affectedRows: 0 };
+      }
+      const wasSnoozedActive =
+        prior.snoozedUntil !== null &&
+        prior.snoozedUntil.getTime() > Date.now();
+      const updated = await txDb
+        .update(members)
+        .set({ riskSnoozedUntil: new Date(snoozedUntil) })
+        .where(eq(members.memberId, memberId))
+        .returning({ memberId: members.memberId });
+      return {
+        previousValue: wasSnoozedActive,
+        affectedRows: updated.length,
+      };
     },
   };
 }

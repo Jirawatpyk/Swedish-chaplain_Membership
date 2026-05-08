@@ -36,6 +36,8 @@ import { makeDrizzleRenewalCycleRepo } from './drizzle/drizzle-renewal-cycle-rep
 import { makeDrizzleRenewalAuditEmitter } from './drizzle/drizzle-renewal-audit-emitter';
 import { makeDrizzleTenantRenewalSchedulePolicyRepo } from './drizzle/drizzle-tenant-renewal-schedule-policy-repo';
 import { makeDrizzleAtRiskOutreachReadRepo } from './drizzle/drizzle-at-risk-outreach-read-repo';
+import { makeDrizzleAtRiskOutreachWriteRepo } from './drizzle/drizzle-at-risk-outreach-write-repo';
+import { atRiskScorerStub } from './at-risk-scorer-stub';
 import { makeDrizzleRenewalEscalationTaskRepo } from './drizzle/drizzle-renewal-escalation-task-repo';
 import { makeDrizzleMemberRenewalFlagsRepo } from './drizzle/drizzle-member-renewal-flags-repo';
 import { makeDrizzleDispatchCandidateRepo } from './drizzle/drizzle-dispatch-candidate-repo';
@@ -64,6 +66,8 @@ import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-t
 import type { RenewalLinkTokenVerifier } from '../application/ports/renewal-link-token-verifier';
 import type { TenantRenewalSchedulePolicyRepo } from '../application/ports/tenant-renewal-schedule-policy-repo';
 import type { AtRiskOutreachReadRepo } from '../application/ports/at-risk-outreach-read-repo';
+import type { AtRiskOutreachWriteRepo } from '../application/ports/at-risk-outreach-write-repo';
+import type { AtRiskScorer } from '../application/ports/at-risk-scorer';
 import type { RenewalEscalationTaskRepo } from '../application/ports/renewal-escalation-task-repo';
 import type { MemberRenewalFlagsRepo } from '../application/ports/member-renewal-flags-repo';
 import type { DispatchCandidateRepo } from '../application/ports/dispatch-candidate-repo';
@@ -155,6 +159,26 @@ export interface RenewalsDeps {
    */
   readonly atRiskOutreachReadRepo: AtRiskOutreachReadRepo;
   /**
+   * Phase 6 Wave B (T157) — F8-internal Drizzle adapter for INSERTs into
+   * `at_risk_outreach`. Used by T156 record-at-risk-outreach use-case
+   * (admin OR manager records a "Contact" CTA from the at-risk widget).
+   * Inserts inside the use-case's outer tx so state + audit emit are
+   * atomic (Constitution Principle VIII).
+   */
+  readonly atRiskOutreachWriteRepo: AtRiskOutreachWriteRepo;
+  /**
+   * Phase 6 Wave B (T154) — `AtRiskScorer` port. Computes an 8-factor
+   * at-risk score per FR-029 + F6-readiness fallback per FR-029a +
+   * proportional bands per FR-030 + min-tenure gate per FR-035. Default
+   * factory wires the deterministic Wave-B stub
+   * (`at-risk-scorer-stub.ts`) which returns `score=0 / band='healthy'`
+   * for any input. **Wave C T159 replaces this stub with the real
+   * CTE-based Drizzle adapter** that joins F4 invoices + F7 broadcasts
+   * + F3 contacts + F6 events in one round-trip. Tests substitute via
+   * `makeRenewalsDeps` test-double composition.
+   */
+  readonly atRiskScorer: AtRiskScorer;
+  /**
    * Phase 4 Wave I2b — Drizzle adapter for `renewal_escalation_tasks`
    * (full surface). Used by T091 reset-email-unverified to close
    * `manual_outreach_required` tasks; reused by Wave I2c+ T088 +
@@ -243,6 +267,8 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     eventAttendees: eventAttendeesStub,
     schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),
     atRiskOutreachReadRepo: makeDrizzleAtRiskOutreachReadRepo(tenant),
+    atRiskOutreachWriteRepo: makeDrizzleAtRiskOutreachWriteRepo(tenant),
+    atRiskScorer: atRiskScorerStub,
     escalationTaskRepo: makeDrizzleRenewalEscalationTaskRepo(tenant),
     memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
     dispatchCandidateRepo: makeDrizzleDispatchCandidateRepo(tenant),

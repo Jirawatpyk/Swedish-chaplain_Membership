@@ -24,6 +24,8 @@
  * the first slot — TS now rejects `null`, the deps object, etc.
  */
 import type { TenantTx } from '@/lib/db';
+import type { RiskBand } from '../../domain/value-objects/risk-band';
+import type { AT_RISK_FACTOR_WEIGHTS } from '../../domain/at-risk-score';
 
 export interface MemberRenewalFlagsMutationResult {
   /**
@@ -169,4 +171,70 @@ export interface MemberRenewalFlagsRepo {
     tenantId: string,
     memberId: string,
   ): Promise<boolean | null>;
+
+  /**
+   * Phase 6 Wave B (T154) — persist the at-risk score result onto F3
+   * `members.risk_score_*` columns. Adapter writes:
+   *   - `risk_score = input.score` (smallint)
+   *   - `risk_score_band = input.band`
+   *   - `risk_score_factors = input.factors` (jsonb)
+   *   - `risk_score_last_computed_at = input.computedAt`
+   * Atomic UPDATE inside the supplied tx; returns the PRIOR band so the
+   * use-case can detect band-crossings and emit
+   * `at_risk_score_threshold_crossed` per FR-031. Idempotent — repeat
+   * writes with the same band yield `previousBand === input.band` and
+   * the use-case skips the threshold-crossed audit.
+   */
+  setRiskScore(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    input: SetRiskScoreInput,
+  ): Promise<SetRiskScoreResult>;
+
+  /**
+   * Phase 6 Wave B (T155) — persist `members.risk_snoozed_until` per
+   * FR-032 (admin can snooze 7 / 30 / 90 days from at-risk widget).
+   * Atomic UPDATE inside the supplied tx; returns affected-rows so the
+   * use-case can detect RLS-hidden / non-existent members. Adapter
+   * sets `risk_snoozed_until = input.snoozedUntil` (ISO 8601 UTC).
+   */
+  setRiskSnoozedUntil(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    snoozedUntil: string,
+  ): Promise<MemberFlagToggleResult>;
+}
+
+/**
+ * Phase 6 Wave B (T154) — input shape for `setRiskScore`. Mirrors the
+ * F3 `members.risk_score_*` columns added by migration 0094.
+ *
+ * `factors` is a per-key contribution map keyed by FR-029 factor names
+ * (e.g. `{ events_attended_last_12mo_zero: 25,
+ * invoices_overdue_count_gt_zero: 25 }`). Adapter serialises to JSONB.
+ *
+ * `computedAt` is ISO 8601 UTC — the cron's run-start timestamp; one
+ * timestamp per cron pass so all members in the same recompute share
+ * `risk_score_last_computed_at` and dashboards can group by run.
+ */
+export interface SetRiskScoreInput {
+  readonly score: number;
+  readonly band: RiskBand;
+  readonly factors: Partial<
+    Record<keyof typeof AT_RISK_FACTOR_WEIGHTS, number>
+  >;
+  readonly computedAt: string;
+}
+
+export interface SetRiskScoreResult {
+  /**
+   * The PRIOR band BEFORE the mutation, or `null` when the row had no
+   * band yet (first compute) OR when the row is RLS-hidden /
+   * non-existent (`affectedRows === 0`). Use-case detects threshold
+   * crossings by comparing `previousBand` vs `input.band` per FR-031.
+   */
+  readonly previousBand: RiskBand | null;
+  readonly affectedRows: number;
 }
