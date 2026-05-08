@@ -34,11 +34,6 @@ const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 const F8_AT_RISK_DISABLED =
   process.env.FEATURE_F8_AT_RISK_DISABLED === 'true';
-const E2E_PLAN_ID = process.env.E2E_AT_RISK_PLAN_ID ?? 'regular';
-const E2E_PLAN_YEAR = Number.parseInt(
-  process.env.E2E_AT_RISK_PLAN_YEAR ?? '2026',
-  10,
-);
 
 test.describe('F8 — at-risk widget (US4)', () => {
   let seeded: SeededAtRiskMember | null = null;
@@ -67,12 +62,7 @@ test.describe('F8 — at-risk widget (US4)', () => {
   // snoozed state and find no Contact button. Each test gets its own
   // fresh at-risk row + cleanup.
   test.beforeEach(async () => {
-    seeded = await seedOneAtRiskMember(E2E_PLAN_ID, E2E_PLAN_YEAR);
-    if (!seeded) {
-      throw new Error(
-        '[T176] seedOneAtRiskMember returned null — DATABASE_URL missing?',
-      );
-    }
+    seeded = await seedOneAtRiskMember('regular', 2026);
   });
 
   test.afterEach(async () => {
@@ -119,7 +109,7 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByText(/loading at-risk member summary/i),
     ).toBeHidden({ timeout: 15_000 });
 
-    // The beforeAll seedOneAtRiskMember guarantees ≥1 at-risk row at
+    // The beforeEach seedOneAtRiskMember guarantees ≥1 at-risk row at
     // score=78 (at-risk band). If the Snooze button is missing the
     // dialog flow is broken — that is the regression this hardening
     // catches (was previously accepted as a no-op pass).
@@ -161,7 +151,7 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByText(/loading at-risk member summary/i),
     ).toBeHidden({ timeout: 15_000 });
 
-    // beforeAll seed guarantees an actionable row — assert hard.
+    // beforeEach seed guarantees an actionable row — assert hard.
     const contactButton = page.getByRole('button', { name: /contact/i }).first();
     await expect(contactButton).toBeVisible({ timeout: 10_000 });
     await contactButton.click();

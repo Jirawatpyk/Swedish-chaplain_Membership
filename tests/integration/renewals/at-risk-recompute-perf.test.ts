@@ -24,7 +24,7 @@
  * canonical numerical CP for the Phase 6 exit checkpoint.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, gt, inArray, sql as drizzleSql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { db, runInTenant } from '@/lib/db';
@@ -250,6 +250,7 @@ describe.skipIf(!RUN_PERF)(
       // Single batched cron pass — 4 round-trips total regardless of
       // member count (T159b batched use-case).
       const cronStart = Date.now();
+      const cronStartDate = new Date(cronStart - 1000); // 1s slack
       const result = await recomputeAtRiskScoresBatch(deps, {
         tenantId: tenant.ctx.slug,
         correlationId: randomUUID(),
@@ -258,11 +259,25 @@ describe.skipIf(!RUN_PERF)(
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
-      // Guardrail: fail loudly if min-tenure gate ate every member —
-      // that would mean the SLO measurement is on the early-exit path
-      // (the regression that motivated this assertion).
+      // Guardrail layer 1 — tally invariants. Catches the early-exit
+      // regression (skipped<tenure==MEMBER_COUNT) AND any per-member
+      // failure that would otherwise be silently aggregated away.
       expect(result.value.membersRecomputed).toBeGreaterThan(0);
       expect(result.value.membersSkippedBelowTenure).toBe(0);
+      expect(result.value.membersFailed).toBe(0);
+
+      // Guardrail layer 2 — DB write proof. Confirms the bulkSetRiskScores
+      // UPDATE actually wrote rows (catches a regression where tally is
+      // truthy but the UPDATE silently affected 0 rows, e.g. WHERE
+      // mismatch or postgres-js Date binding error).
+      const writtenCount = await runInTenant(tenant.ctx, async (tx) => {
+        const rows = await tx
+          .select({ count: drizzleSql<number>`count(*)::int` })
+          .from(members)
+          .where(gt(members.riskScoreLastComputedAt, cronStartDate));
+        return rows[0]?.count ?? 0;
+      });
+      expect(writtenCount).toBe(result.value.membersRecomputed);
 
       // Per-member latency is amortised across the batch — surface the
       // average for trend tracking. The batch has no inner per-member

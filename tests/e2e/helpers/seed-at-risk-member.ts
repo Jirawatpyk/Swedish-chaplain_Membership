@@ -1,19 +1,12 @@
 /**
- * F8 Phase 6 T176 helper — seed one at-risk member into the SweCham
- * tenant for E2E so the AS3 + AS4 dialog flows always have an
- * actionable row to click. Returns a teardown closure.
+ * F8 Phase 6 T176 helper — seed one at-risk member (score=78,
+ * band=at-risk) into the SweCham tenant for E2E. Returns a `cleanup`
+ * closure that throws on failure so teardown problems are CI-visible
+ * (writes go to the LIVE tenant — silent orphans would corrupt
+ * production data).
  *
- * Writes directly to F3 `members.risk_score_*` columns (bypassing the
- * cron path) — the E2E only needs the widget query to return a row;
- * the recompute logic is covered by unit + integration tests
- * (T172 property-based × 512 cases · T173 F6-fallback · T175
- * snooze+outreach · T174 perf).
- *
- * Pattern mirrors `renewals-seed.ts`: raw `postgres` client (no
- * application-code import surface) so the helper runs independently
- * of the Next.js request lifecycle.
- *
- * No-op when DATABASE_URL is missing.
+ * Pattern mirrors `renewals-seed.ts`: raw `postgres` client, runs
+ * outside the Next.js request lifecycle.
  */
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
@@ -23,28 +16,25 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export interface SeededAtRiskMember {
   readonly memberId: string;
-  readonly cycleId: string;
-  readonly contactId: string;
   readonly cleanup: () => Promise<void>;
 }
 
 /**
- * Seed one at-risk member with `risk_score=78` (at-risk band) so the
- * widget query returns ≥1 actionable row.
+ * Seed one at-risk member with `risk_score=78`. Throws if
+ * `DATABASE_URL` is missing or the seed transaction fails.
  *
- * @param planId      F2 plan_id to bind the member to (must already exist
- *                    in the tenant — e.g. 'regular' from the SweCham 2026
- *                    fixtures).
- * @param planYear    F2 plan_year matching the plan row.
+ * @param planId    F2 plan_id (must already exist in tenant)
+ * @param planYear  F2 plan_year matching the plan row
  */
 export async function seedOneAtRiskMember(
   planId: string,
   planYear: number,
-): Promise<SeededAtRiskMember | null> {
+): Promise<SeededAtRiskMember> {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
-    console.warn('[e2e seed at-risk] skipped — DATABASE_URL missing');
-    return null;
+    throw new Error(
+      '[e2e seed at-risk] DATABASE_URL missing — cannot seed.',
+    );
   }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   const memberId = randomUUID();
@@ -59,13 +49,12 @@ export async function seedOneAtRiskMember(
   const email = `e2e-at-risk-${memberId.slice(0, 6)}@acme.example`;
 
   try {
-    // RLS scope — the helper runs OUTSIDE runInTenant; SET LOCAL on a
-    // dedicated transaction restricts every INSERT below to TENANT_ID.
     await sql.begin(async (tx) => {
       await tx`SELECT set_config('app.current_tenant', ${TENANT_ID}, true)`;
 
-      // 1. members row — pre-populate risk_score_* so the widget query
-      //    immediately returns this row at the 'at-risk' band.
+      // Empty factors JSONB — the AS3+AS4 specs assert only on score
+      // and band, never on factor breakdown. Keeping a static factor
+      // list would couple the fixture to FR-029 weights.
       await tx`
         INSERT INTO members (
           tenant_id, member_id, company_name, country,
@@ -81,20 +70,11 @@ export async function seedOneAtRiskMember(
           ${registrationDate}::date, true,
           'active', ${createdAt.toISOString()}::timestamptz,
           ${lastActivityAt.toISOString()}::timestamptz,
-          78, 'at-risk',
-          ${JSON.stringify([
-            { factor: 'invoices_overdue_count_gt_zero', points: 25 },
-            { factor: 'days_since_last_payment_gt_180', points: 10 },
-            { factor: 'days_since_contact_update_gt_365', points: 5 },
-            { factor: 'tier_downgraded_last_12mo', points: 15 },
-            { factor: 'e_blast_quota_under_30pct', points: 15 },
-            { factor: 'cultural_ticket_quota_under_50pct', points: 10 },
-          ])}::jsonb,
+          78, 'at-risk', '[]'::jsonb,
           ${now.toISOString()}::timestamptz
         )
       `;
 
-      // 2. primary contact (FR-003 — one primary per member).
       await tx`
         INSERT INTO contacts (
           tenant_id, contact_id, member_id,
@@ -106,8 +86,7 @@ export async function seedOneAtRiskMember(
         )
       `;
 
-      // 3. upcoming renewal cycle — required by FR-007a "active for F8
-      //    cron purposes" + ensures the at-risk widget query joins.
+      // Upcoming cycle required by FR-007a "active for F8 cron purposes"
       await tx`
         INSERT INTO renewal_cycles (
           tenant_id, cycle_id, member_id, status,
@@ -127,55 +106,42 @@ export async function seedOneAtRiskMember(
         )
       `;
     });
-
-    console.log(
-      `[e2e seed at-risk] OK member=${memberId} cycle=${cycleId} score=78`,
-    );
-
-    return {
-      memberId,
-      cycleId,
-      contactId,
-      cleanup: async () => {
-        const cleanupSql = postgres(dbUrl, { ssl: 'require', max: 1 });
-        try {
-          await cleanupSql.begin(async (tx) => {
-            await tx`SELECT set_config('app.current_tenant', ${TENANT_ID}, true)`;
-            // FK-friendly order. Snooze + outreach rows that the E2E
-            // may have created during AS3 + AS4 are also cascaded here.
-            await tx`
-              DELETE FROM at_risk_outreach
-              WHERE tenant_id = ${TENANT_ID}
-                AND member_id = ${memberId}::uuid
-            `;
-            await tx`
-              DELETE FROM renewal_cycles
-              WHERE tenant_id = ${TENANT_ID}
-                AND cycle_id = ${cycleId}::uuid
-            `;
-            await tx`
-              DELETE FROM contacts
-              WHERE tenant_id = ${TENANT_ID}
-                AND contact_id = ${contactId}::uuid
-            `;
-            await tx`
-              DELETE FROM members
-              WHERE tenant_id = ${TENANT_ID}
-                AND member_id = ${memberId}::uuid
-            `;
-          });
-        } catch (e) {
-          // Cleanup is best-effort — log but never throw from teardown.
-          console.warn(
-            `[e2e seed at-risk] cleanup failed for member=${memberId}:`,
-            e,
-          );
-        } finally {
-          await cleanupSql.end({ timeout: 5 });
-        }
-      },
-    };
-  } finally {
+  } catch (e) {
     await sql.end({ timeout: 5 });
+    throw e;
   }
+
+  console.log(
+    `[e2e seed at-risk] OK member=${memberId} cycle=${cycleId} score=78`,
+  );
+
+  return {
+    memberId,
+    cleanup: async () => {
+      try {
+        await sql.begin(async (tx) => {
+          await tx`SELECT set_config('app.current_tenant', ${TENANT_ID}, true)`;
+          // FK-friendly order. AS4 outreach rows cascaded too.
+          await tx`
+            DELETE FROM at_risk_outreach
+            WHERE tenant_id = ${TENANT_ID} AND member_id = ${memberId}::uuid
+          `;
+          await tx`
+            DELETE FROM renewal_cycles
+            WHERE tenant_id = ${TENANT_ID} AND cycle_id = ${cycleId}::uuid
+          `;
+          await tx`
+            DELETE FROM contacts
+            WHERE tenant_id = ${TENANT_ID} AND contact_id = ${contactId}::uuid
+          `;
+          await tx`
+            DELETE FROM members
+            WHERE tenant_id = ${TENANT_ID} AND member_id = ${memberId}::uuid
+          `;
+        });
+      } finally {
+        await sql.end({ timeout: 5 });
+      }
+    },
+  };
 }

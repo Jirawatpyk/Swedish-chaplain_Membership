@@ -370,11 +370,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         band: r.band,
         factors: r.factors,
       }));
-      // Date → ISO string + explicit ::timestamptz cast: postgres-js
-      // (the underlying driver) only accepts string/Buffer for params,
-      // unlike node-postgres which auto-serialises Date. Mirrors the
-      // pattern used by every other adapter in this file (see toIso /
-      // .toISOString() at lines 493, 506, 602).
+      // postgres-js driver only accepts string/Buffer params (unlike node-postgres).
       const result = await txDb.execute(sql`
         UPDATE members AS m
         SET
