@@ -23,6 +23,7 @@ import type {
 import type { TenantRenewalSettings } from '../../domain/tenant-renewal-settings';
 import {
   tenantRenewalSettings,
+  type TenantRenewalSettingsInsert,
   type TenantRenewalSettingsRow,
 } from '../schema-tenant-renewal-config';
 
@@ -64,49 +65,40 @@ export function makeDrizzleTenantRenewalSettingsRepo(
       input: UpdateTenantRenewalSettingsInput,
     ): Promise<TenantRenewalSettings> {
       const now = new Date();
-      const insertValues = {
+      // Round 5 staff-review (K24-Simplify-1): single-source-of-truth
+      // patch-keys loop instead of 12 conditional spreads (6 fields ×
+      // {insertValues, updateValues}). Mirrors F4 canonical pattern at
+      // `src/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo.ts:74-99`.
+      // Adding a 7th settings field becomes a 1-line change in the
+      // `patchKeys` array; field-pair drift between insert/update
+      // (caller adds key to one but forgets the other) is structurally
+      // impossible.
+      const patchKeys = [
+        'gracePeriodDays',
+        'autoUpgradeEnabled',
+        'minTenureDaysForAtRisk',
+        'dispatchCronEnabled',
+        'replyToEmail',
+        'replyToDisplayName',
+      ] as const satisfies ReadonlyArray<keyof UpdateTenantRenewalSettingsInput>;
+      const insertValues: TenantRenewalSettingsInsert = {
         tenantId,
-        ...(input.gracePeriodDays !== undefined
-          ? { gracePeriodDays: input.gracePeriodDays }
-          : {}),
-        ...(input.autoUpgradeEnabled !== undefined
-          ? { autoUpgradeEnabled: input.autoUpgradeEnabled }
-          : {}),
-        ...(input.minTenureDaysForAtRisk !== undefined
-          ? { minTenureDaysForAtRisk: input.minTenureDaysForAtRisk }
-          : {}),
-        ...(input.dispatchCronEnabled !== undefined
-          ? { dispatchCronEnabled: input.dispatchCronEnabled }
-          : {}),
-        ...(input.replyToEmail !== undefined
-          ? { replyToEmail: input.replyToEmail }
-          : {}),
-        ...(input.replyToDisplayName !== undefined
-          ? { replyToDisplayName: input.replyToDisplayName }
-          : {}),
         updatedAt: now,
       };
-      const updateValues = {
-        ...(input.gracePeriodDays !== undefined
-          ? { gracePeriodDays: input.gracePeriodDays }
-          : {}),
-        ...(input.autoUpgradeEnabled !== undefined
-          ? { autoUpgradeEnabled: input.autoUpgradeEnabled }
-          : {}),
-        ...(input.minTenureDaysForAtRisk !== undefined
-          ? { minTenureDaysForAtRisk: input.minTenureDaysForAtRisk }
-          : {}),
-        ...(input.dispatchCronEnabled !== undefined
-          ? { dispatchCronEnabled: input.dispatchCronEnabled }
-          : {}),
-        ...(input.replyToEmail !== undefined
-          ? { replyToEmail: input.replyToEmail }
-          : {}),
-        ...(input.replyToDisplayName !== undefined
-          ? { replyToDisplayName: input.replyToDisplayName }
-          : {}),
+      const updateValues: Partial<TenantRenewalSettingsInsert> = {
         updatedAt: now,
       };
+      for (const key of patchKeys) {
+        const v = input[key];
+        if (v !== undefined) {
+          // The patch keys are statically the intersection of
+          // UpdateTenantRenewalSettingsInput + Drizzle insert shape;
+          // the cast erases the discriminator-by-key TS narrowing
+          // which the for-loop can't preserve.
+          (insertValues as Record<string, unknown>)[key] = v;
+          (updateValues as Record<string, unknown>)[key] = v;
+        }
+      }
       const rows = await tx
         .insert(tenantRenewalSettings)
         .values(insertValues)

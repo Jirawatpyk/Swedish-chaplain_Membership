@@ -21,6 +21,10 @@ import type { LapseCyclesOnGraceExpiryDeps } from '@/modules/renewals/applicatio
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import type { TenantRenewalSettings } from '@/modules/renewals/domain/tenant-renewal-settings';
 import type { F5PaymentAttemptsBridge } from '@/modules/renewals/application/ports/f5-payment-attempts-bridge';
+import {
+  CycleTransitionConflictError,
+  CycleNotFoundError,
+} from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import { buildCycle as buildCycleShared } from '../../_helpers/build-cycle';
 
 const TENANT_ID = 'tenantA';
@@ -107,6 +111,12 @@ function fakeDeps(args: {
           dispatchCronEnabled: true,
           replyToEmail: null,
           replyToDisplayName: null,
+          // Round 5 staff-review (K24-S3): required ISO timestamps on
+          // the Domain shape — without these the cast bypassed TS's
+          // structural check + future use-case extensions touching
+          // these fields would silently get undefined in tests.
+          createdAt: '2026-05-08T00:00:00Z',
+          updatedAt: '2026-05-08T00:00:00Z',
         } as TenantRenewalSettings)
       : args.settings,
   );
@@ -219,6 +229,104 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
       expect(r.value.graceExpired).toBe(0);
     }
     expect(transitionMock).not.toHaveBeenCalled();
+  });
+
+  it('K24-Tests-1: race-loss via CycleTransitionConflictError thrown by transitionStatus → counted in transitionRaceSkipped, NOT errors', async () => {
+    // Round 5 staff-review (K24-Tests-1): the SECOND race-skip path
+    // (concurrent admin-mark-paid wins between findByIdInTx + transitionStatus
+    // calls inside the same tx). The previous race-loss test only covers
+    // the first path (re-read finds non-awaiting_payment cycle); this
+    // case verifies that a conflict thrown by transitionStatus itself is
+    // also discriminated correctly (NOT propagated as a generic error).
+    const cycle = expiredCycle({});
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new CycleTransitionConflictError(
+          cycle.cycleId,
+          'awaiting_payment',
+          'completed',
+        );
+      },
+    });
+    const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.transitionRaceSkipped).toBe(1);
+      expect(r.value.errors).toBe(0);
+      expect(r.value.graceExpired).toBe(0);
+    }
+  });
+
+  it('K24-Tests-1b: CycleNotFoundError thrown by transitionStatus → also counted in transitionRaceSkipped', async () => {
+    const cycle = expiredCycle({});
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new CycleNotFoundError(cycle.cycleId);
+      },
+    });
+    const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.transitionRaceSkipped).toBe(1);
+      expect(r.value.errors).toBe(0);
+    }
+  });
+
+  it('K24-Tests-1c: generic Error thrown by transitionStatus → re-thrown + counted in errors (NOT race-skipped)', async () => {
+    const cycle = expiredCycle({});
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      transitionImpl: async () => {
+        throw new Error('db connection lost mid-transition');
+      },
+    });
+    const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.errors).toBe(1);
+      expect(r.value.transitionRaceSkipped).toBe(0);
+    }
+  });
+
+  it('K24-Tests-2: acquireCycleLockInTx is invoked with (tx, tenantId, cycleId) — Principle VIII concurrency-defence lock', async () => {
+    // Round 5 staff-review (K24-Tests-2): a regression that drops the
+    // advisory-lock acquisition (e.g. moves it outside the tx, removes
+    // it during refactor) would silently weaken concurrency safety.
+    // Lock the contract explicitly.
+    const cycle = expiredCycle({});
+    const fake = fakeDeps({ cycles: [cycle] });
+    const acquireLockMock = fake.deps.cyclesRepo
+      .acquireCycleLockInTx as unknown as ReturnType<typeof vi.fn>;
+    await lapseCyclesOnGraceExpiry(fake.deps, baseInput);
+    expect(acquireLockMock).toHaveBeenCalledTimes(1);
+    expect(acquireLockMock).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+    );
+  });
+
+  it('K24-Tests-3: audit emit failure inside tx → counted in errors (Principle VIII reverse-direction rolls tx back; per-cycle catch absorbs)', async () => {
+    // Round 5 staff-review (K24-Tests-3): the use-case relies on
+    // emitInTx-throws → runInTenant-rollback → outer catch increments
+    // errors. The mock runInTenant is a passthrough so no real rollback
+    // happens, but the throw still propagates to the per-cycle catch
+    // which is the assertion here.
+    const cycle = expiredCycle({});
+    const { deps } = fakeDeps({
+      cycles: [cycle],
+      emitInTxImpl: async () => {
+        throw new Error('audit_log: insert failed');
+      },
+    });
+    const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.errors).toBe(1);
+      expect(r.value.graceExpired).toBe(0); // rollback prevents tally bump
+    }
   });
 
   it('per-cycle error isolation: F5 bridge throws → counted in errors + cron continues', async () => {

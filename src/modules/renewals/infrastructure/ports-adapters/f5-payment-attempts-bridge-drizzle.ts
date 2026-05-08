@@ -41,11 +41,22 @@ export function makeF5PaymentAttemptsBridgeDrizzle(
       input: CountFailedPaymentAttemptsInput,
     ): Promise<number> {
       return runInTenant(ctx, async (tx) => {
+        // Round 5 staff-review (K24-S2): explicit `eq(payments.tenantId,
+        // input.tenantId)` defence-in-depth alongside RLS GUC
+        // (Constitution Principle I § 1 — application-layer tenant
+        // enforcement). RLS+FORCE on `payments` already scopes the
+        // query (verified at `pnpm check:multi-tenant`), but adding the
+        // application predicate makes the bridge's intent self-
+        // documenting and protects against future RLS misconfigure /
+        // role-drift regressions. Cross-tenant probes still return 0
+        // (RLS denies the rows; the application predicate also denies
+        // them) → conservative `grace_expired` decision per docstring.
         const rows = await tx
           .select({ n: sql<number>`COUNT(*)::int` })
           .from(payments)
           .where(
             and(
+              eq(payments.tenantId, input.tenantId),
               eq(payments.invoiceId, input.invoiceId),
               eq(payments.status, 'failed'),
             ),

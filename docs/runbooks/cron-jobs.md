@@ -39,6 +39,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F8 at-risk recompute (coordinator)** | **`POST /api/cron/renewals/at-risk-recompute-coordinator`** | **`0 2 * * 0`** (Sun 02:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 at-risk) |
 | **F8 tier-upgrade evaluate (coordinator)** | **`POST /api/cron/renewals/tier-upgrade-evaluate-coordinator`** | **`0 3 * * 0`** (Sun 03:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 tier-upgrade) |
 | **F8 reconcile-pending-reactivations (coordinator)** | **`POST /api/cron/renewals/reconcile-pending-reactivations-coordinator`** | **`0 7 * * *`** (daily 07:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-reactivations) |
+| **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
 
@@ -312,6 +313,64 @@ Daily T-7/T-3/T-1 reminder ladder + 30d auto-timeout for cycles in
 - **URL**: `.../api/cron/renewals/reconcile-pending-reactivations-coordinator`
 - **Schedule**: `0 7 * * *` (daily 07:00 Asia/Bangkok — 1h after dispatch)
 - **Timeout**: 30 seconds (small dataset; partial-index scan)
+
+## F8 — renewals/lapse-cycles-on-grace-expiry-coordinator (NEW — F8 Phase 5 Wave K24)
+
+Daily transitions cycles from `awaiting_payment` → `lapsed` once
+`now() > expires_at + tenant.grace_period_days` per FR-004. Decision
+branch picks the **specific** `closed_reason` discriminator per AS3:
+
+- `'grace_expired'` — zero F5 `payments` rows with `status='failed'`
+  for the cycle's linked invoice (member silently let it expire)
+- `'payment_failed'` — at least one F5 row with `status='failed'`
+  before grace window expired (payment friction, not apathy)
+
+Emits typed `renewal_lapsed` audit per cycle with the closed_reason
+discriminator + forensic `failed_payment_attempts` count.
+
+**Sequencing rationale**: scheduled at 06:30 — 30 minutes BEFORE the
+reconcile-pending-reactivations coordinator (07:00) and 30 minutes
+AFTER the F8 dispatch coordinator (06:00). A cycle that JUST crossed
+grace doesn't get a final reminder dispatch race because dispatcher
+finished at 06:00, lapse runs at 06:30, then reconcile-pending runs
+at 07:00 against the post-lapse state. T115a (closeout of the
+Phase-5-DEFERRED branch).
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 lapse-cycles-on-grace-expiry coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`
+- **Schedule**: `30 6 * * *` (daily 06:30 Asia/Bangkok)
+- **Timeout**: 30 seconds (small dataset; partial-index scan via
+  `listCyclesEligibleForLapse`)
+- **Headers**: `Authorization: Bearer ${CRON_SECRET}` (constant-time
+  check; `verifyCronBearer`)
+- **Retry policy**: OFF (per F8/F4/F5/F7 convention — cron-job.org
+  retry would double-emit; the use-case's per-cycle fault isolation
+  + tomorrow's-pass already handles transient F5 / DB blips)
+
+### Pre-flight gates (operator checklist before flag-flip)
+
+1. `FEATURE_F8_RENEWALS=true` in Vercel production env
+2. Verify `tenant_renewal_settings` row exists for SweCham tenant
+   (defaults to `gracePeriodDays=14`; seeded by migration 0089)
+3. Confirm `pnpm check:multi-tenant` shows F5 `payments` table in the
+   24/24 SCOPED tables list (RLS+FORCE active — required for the F5
+   bridge tenant-scoped count)
+4. Confirm migration `0110_f8_wave_k24_renewal_lapsed_enum.sql`
+   applied to live Neon (`renewal_lapsed` value present in
+   `audit_event_type` pgEnum) — verify via:
+   `SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'renewal_lapsed';`
+
+### Alert rules
+
+- `renewals_lapse_cycles_errors_total{tenant}` — non-zero rate
+  sustained for 15 min pages on-call (per-cycle failures masked
+  behind 200 OK; symptomatic of F5 bridge or DB connectivity issue)
+- Per-tenant route 5xx rate (Vercel logs) >0% over 15 min — operational
+  failure (use-case threw at outer level, fault-isolation contract broken)
+- `tenants_with_errors > 0` in coordinator response (Wave K25
+  K24-Errors-S1 fix) — surfaces "200-OK-but-everything-failed" pattern
 
 ## F8 — renewals/prune-consumed-tokens (NEW — F8 Phase 9)
 

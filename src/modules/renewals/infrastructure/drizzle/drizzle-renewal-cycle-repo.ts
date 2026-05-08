@@ -158,7 +158,20 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
         status,
         enteredPendingAt: null,
         closedAt,
-        closedReason: closedReason as 'lapsed' | 'pending_reactivation_timed_out',
+        // Round 5 staff-review (K24-S1): widened from `'lapsed' |
+        // 'pending_reactivation_timed_out'` to include K24's new
+        // `'grace_expired'` + `'payment_failed'` discriminants. Domain
+        // `LapsedCycleFields.closedReason` already accepts all 4
+        // values per `renewal-cycle.ts:158-165`; the narrower row-mapper
+        // cast was a stale leftover from pre-K24 when only 2 reasons
+        // could land in a `lapsed` row. Future TS narrowing on
+        // `cycle.closedReason === 'grace_expired'` now compiles
+        // correctly post-`findById`.
+        closedReason: closedReason as
+          | 'lapsed'
+          | 'grace_expired'
+          | 'payment_failed'
+          | 'pending_reactivation_timed_out',
         linkedInvoiceId,
       };
     }

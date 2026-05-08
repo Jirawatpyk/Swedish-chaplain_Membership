@@ -79,6 +79,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const baseUrl = env.app.baseUrl;
   const cronSecret = env.cron.secret;
 
+  // Round 5 staff-review (K24-Simplify-S1): local helper to dedupe
+  // the 6× `typeof json.X === 'number' ? json.X : 0` ternaries.
+  // Same pattern can be lifted to a shared helper if more F8 cron
+  // coordinators adopt the convention; kept inline for now.
+  const numFromJson = (
+    json: Record<string, unknown>,
+    key: string,
+  ): number => (typeof json[key] === 'number' ? (json[key] as number) : 0);
+
   const settled = await Promise.allSettled(
     activeTenants.map((tenantId) =>
       (async (): Promise<PerTenantResult> => {
@@ -107,21 +116,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         return {
           tenant_id: tenantId,
           skipped: Boolean(json.skipped),
-          cycles_processed:
-            typeof json.cycles_processed === 'number'
-              ? json.cycles_processed
-              : 0,
-          grace_expired:
-            typeof json.grace_expired === 'number' ? json.grace_expired : 0,
-          payment_failed:
-            typeof json.payment_failed === 'number' ? json.payment_failed : 0,
-          transition_race_skipped:
-            typeof json.transition_race_skipped === 'number'
-              ? json.transition_race_skipped
-              : 0,
-          errors: typeof json.errors === 'number' ? json.errors : 0,
-          duration_ms:
-            typeof json.duration_ms === 'number' ? json.duration_ms : 0,
+          cycles_processed: numFromJson(json, 'cycles_processed'),
+          grace_expired: numFromJson(json, 'grace_expired'),
+          payment_failed: numFromJson(json, 'payment_failed'),
+          transition_race_skipped: numFromJson(json, 'transition_race_skipped'),
+          errors: numFromJson(json, 'errors'),
+          duration_ms: numFromJson(json, 'duration_ms'),
         };
       })(),
     ),
@@ -139,6 +139,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     (r) => r.error === undefined,
   ).length;
   const tenantsFailed = perTenantResults.length - tenantsSucceeded;
+  // Round 5 staff-review (K24-Errors-S1): surface tenants that
+  // returned 200-OK but had per-cycle errors. Without this, a tenant
+  // whose F5 bridge consistently throws (DB blip, RLS misconfig)
+  // returns `errors === cycles_processed` per run but appears in
+  // `tenants_succeeded` — SRE alert rules reading the success ratio
+  // see "100% healthy" while no cycles actually transitioned. Alert
+  // dashboards on `tenants_with_errors > 0` in addition to the
+  // tenants_failed gauge.
+  const tenantsWithErrors = perTenantResults.filter(
+    (r) => r.error === undefined && (r.errors ?? 0) > 0,
+  ).length;
 
   logger.info(
     {
@@ -146,6 +157,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenants_enqueued: activeTenants.length,
       tenants_succeeded: tenantsSucceeded,
       tenants_failed: tenantsFailed,
+      tenants_with_errors: tenantsWithErrors,
       duration_ms: Date.now() - startedAt,
     },
     'cron.renewals.lapse-cycles.coordinator.complete',
@@ -155,6 +167,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     tenants_enqueued: activeTenants.length,
     tenants_succeeded: tenantsSucceeded,
     tenants_failed: tenantsFailed,
+    tenants_with_errors: tenantsWithErrors,
     duration_ms: Date.now() - startedAt,
     per_tenant_results: perTenantResults,
   });

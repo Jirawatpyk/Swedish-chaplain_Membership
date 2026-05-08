@@ -19,10 +19,28 @@
  *     0 rows with `status='failed'` for the cycle's linked invoice
  *   - `'payment_failed'` — at least one F5 payment attempt ended in
  *     terminal `status='failed'` before the grace window expired
+ *   - **Short-circuit** (Round 5 K24-Comments-S1): when
+ *     `cycle.linkedInvoiceId === null` (no F4 invoice ever issued —
+ *     the common "member never even clicked Confirm" path), the F5
+ *     bridge call is skipped entirely and the cycle defaults to
+ *     `grace_expired`. Saves a network round-trip per cycle on the
+ *     hot path.
  *
  * Concurrency: per-cycle advisory lock + tx-bound re-read (TOCTOU)
  * mirrors `reconcilePendingReactivations` pattern. A concurrent admin
  * mark-paid-offline + cron lapse cannot both win the transition.
+ *
+ * Forensic-only race window (Round 5 K24-S4): the F5 bridge count
+ * runs OUTSIDE the lapse transaction (own `runInTenant`). A new F5
+ * `payments` row with `status='failed'` could land between the count
+ * read (T1) and the cycle transition (T2), changing the "true"
+ * closed_reason from `grace_expired` to `payment_failed`. The
+ * recorded `failed_payment_attempts` is the count at T1, not T2 —
+ * documented forensic behaviour. Real-world impact is vanishingly
+ * rare because the cron runs daily AFTER the grace window has
+ * already expired (no member should be initiating payments past
+ * grace), so post-grace payment attempts are an operational anomaly,
+ * not a routine race.
  *
  * Audit: emits typed `renewal_lapsed` event per K24 audit-emitter
  * payload extension. `failed_payment_attempts` count is forensic so
@@ -142,19 +160,44 @@ export async function lapseCyclesOnGraceExpiry(
         gracePeriodDays,
         input.correlationId,
       );
-      if (outcome === 'grace_expired') graceExpired += 1;
-      else if (outcome === 'payment_failed') paymentFailed += 1;
-      else if (outcome === 'race_skipped') transitionRaceSkipped += 1;
+      // Round 5 staff-review (K24-T2): exhaustive switch + `_exhaustive:
+      // never` pin matches the F8-canonical pattern at
+      // `renewals-deps.ts:380-407` (R3-CR2 / R4-S1). A 4th
+      // ProcessOneOutcome variant added in the future MUST add a
+      // counter line here — the pin breaks the build until it does.
+      // Without this guard, a 4th outcome would silently fall through
+      // and break the SC invariant
+      // `graceExpired + paymentFailed + transitionRaceSkipped + errors === cyclesProcessed`.
+      switch (outcome) {
+        case 'grace_expired':
+          graceExpired += 1;
+          break;
+        case 'payment_failed':
+          paymentFailed += 1;
+          break;
+        case 'race_skipped':
+          transitionRaceSkipped += 1;
+          break;
+        default: {
+          const _exhaustive: never = outcome;
+          void _exhaustive;
+        }
+      }
     } catch (e) {
       // Per-cycle fault isolation — one bad cycle must not abort the
       // whole cron run. Log + count + continue.
+      // Round 5 staff-review (K24-Errors-S2): pass the Error OBJECT
+      // (not `e.message`) so pino's err-serialiser captures the stack
+      // trace — programming bugs (TypeError / ReferenceError) would
+      // otherwise lose their call site, making the SRE log less
+      // actionable.
       errors += 1;
       logger.error(
         {
           errorId: 'F8.LAPSE.CYCLE_TRANSITION_FAILED',
           tenantId: input.tenantId,
           cycleId: cycle.cycleId,
-          err: e instanceof Error ? e.message : String(e),
+          err: e instanceof Error ? e : new Error(String(e)),
         },
         '[lapse-cycles-on-grace-expiry] cycle transition threw — counted in errors; cron continues',
       );
