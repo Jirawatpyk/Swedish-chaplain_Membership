@@ -30,6 +30,7 @@
 
 import { useMemo, useTransition } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations, useFormatter, useLocale } from 'next-intl';
 import { toast } from 'sonner';
 import {
@@ -248,6 +249,12 @@ function RowActionsMenu({
   const tToast = useTranslations('admin.renewals.sendReminderNow.toast');
   const locale = useLocale();
   const [isPending, startTransition] = useTransition();
+  // Round-3 UX M3 fix: client-side router so the "Open" action
+  // performs a soft navigation to /admin/renewals/[cycleId] instead
+  // of triggering a full-page reload via native <a href>. Soft nav
+  // preserves admin filter state (?urgency, ?tier) and avoids the
+  // ~300ms blank-screen flash on every row jump.
+  const router = useRouter();
 
   const handleSendReminder = (): void => {
     startTransition(async () => {
@@ -366,18 +373,39 @@ function RowActionsMenu({
         {/* UX R5 / Mobile #5: contextual `aria-label` so screen-reader
             users hear which company's cycle they're opening (the
             bare label "Open" on every row was indistinguishable in
-            a long pipeline). S4 (Link instead of `<a>`) was scoped
-            out — Base UI's DropdownMenuItem `render` prop emits
-            handler types incompatible with Next.js Link under
-            `exactOptionalPropertyTypes: true`. The `<a>` tag still
-            navigates correctly; client-side nav is a tier-2 win
-            that costs more in render-prop fragility than it gains. */}
+            a long pipeline).
+            Round-3 UX M3 fix: use `router.push()` for soft client-
+            side navigation. The previous `<a href>` form was kept
+            for type-compat with Base UI's `render`-prop pattern but
+            forced full-page reloads that lost the admin's tab+tier
+            filter URL state on every row jump. Now the visible
+            anchor is a real `<a>` that retains right-click + open-
+            in-new-tab affordances, but `onClick` calls
+            `router.push()` + `e.preventDefault()` for the standard
+            Next.js soft-nav path. */}
         <DropdownMenuItem
           render={(props) => (
             <a
               {...props}
               href={`/admin/renewals/${cycleId}`}
               aria-label={tActions('openAriaLabel', { company: companyName })}
+              onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+                // Honour the user's intent for new-tab / new-window
+                // affordances (cmd/ctrl + click, middle-click) by
+                // letting the browser take the native path.
+                if (
+                  event.defaultPrevented ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey ||
+                  event.button !== 0
+                ) {
+                  return;
+                }
+                event.preventDefault();
+                router.push(`/admin/renewals/${cycleId}`);
+              }}
             >
               {tActions('open')}
             </a>

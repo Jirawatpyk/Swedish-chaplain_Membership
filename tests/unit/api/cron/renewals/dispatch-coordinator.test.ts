@@ -215,6 +215,15 @@ describe('cron dispatch-coordinator route (T103)', () => {
     expect(auditEmitMock.mock.calls[0]![0].type).toBe(
       'cron_dispatch_orchestrated',
     );
+    // Round-3 test-coverage I4 fix: pin the `cron_kind: 'dispatch'`
+    // discriminator on the audit payload — mirror of the at-risk
+    // coordinator test that pins `cron_kind: 'at_risk_recompute'`.
+    // Downstream telemetry queries rely on this field to disambiguate
+    // the two coordinator audits when joining on event type.
+    expect(
+      (auditEmitMock.mock.calls[0]![0].payload as { cron_kind?: string })
+        .cron_kind,
+    ).toBe('dispatch');
   });
 
   it('per-tenant fetch failure: counted as failed in summary, audit still emitted', async () => {

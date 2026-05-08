@@ -89,7 +89,11 @@ type DemoPayload = z.infer<typeof demoPayloadSchema>;
 
 // --- Guards ------------------------------------------------------------------
 
-function requireSwechamTenant(): TenantContext {
+// Round-3 test-coverage I3 fix: export internal helpers so they can
+// be unit-tested in isolation (loadPayload + requireSwechamTenant via
+// vi.mock; findActorUserId via integration test). The smoke test
+// already covers `seedRow` + `main()`'s outcomes.
+export function requireSwechamTenant(): TenantContext {
   const slug = process.env.TENANT_SLUG ?? '';
   if (slug !== 'swecham') {
     throw new Error(
@@ -119,7 +123,7 @@ function requireSwechamTenant(): TenantContext {
  *      `runInTenant` for the application-layer half of the 2-layer rule.
  *   3. If neither path resolves, throw with operator guidance.
  */
-async function findActorUserId(ctx: TenantContext): Promise<string> {
+export async function findActorUserId(ctx: TenantContext): Promise<string> {
   const bootstrapEmail = process.env.BOOTSTRAP_ADMIN_EMAIL?.toLowerCase();
   if (bootstrapEmail) {
     const rows = await db
@@ -160,11 +164,19 @@ async function findActorUserId(ctx: TenantContext): Promise<string> {
   return id;
 }
 
-async function loadPayload(): Promise<DemoPayload> {
+// Round-3 test-coverage I3 fix: optional reader parameter so unit
+// tests can inject a stub without mocking `node:fs/promises` (the
+// hoisted-mock pattern was unreliable across vitest's module
+// resolution paths). Production caller passes nothing — defaults to
+// reading the real JSON file.
+export async function loadPayload(
+  reader: (filePath: string) => Promise<string> = (p) =>
+    readFile(p, 'utf-8'),
+): Promise<DemoPayload> {
   const path = resolve('scripts/_demo-data/demo-members.json');
   let raw: string;
   try {
-    raw = await readFile(path, 'utf-8');
+    raw = await reader(path);
   } catch {
     throw new Error(
       `seed-demo-members: ${path} not found. Run \`python scripts/extract-demo-members.py\` first.`,
@@ -351,6 +363,15 @@ async function main(): Promise<void> {
   let skipped = 0;
   let repaired = 0;
   const failures: Array<{ company: string; reason: string }> = [];
+  // Round-3 silent-failure F5: fail-fast guard. If three consecutive
+  // rows fail with the same error class (FK violation, schema drift,
+  // network timeout) we're not seeing transient row-level issues —
+  // we're seeing a systemic problem (migration desync, plan_id missing,
+  // DB down). Continuing to spam ~20 identical errors past the 3rd
+  // hit wastes operator time and leaves half-completed seed state.
+  let consecutiveFailures = 0;
+  let consecutiveErrorClass: string | null = null;
+  const FAIL_FAST_THRESHOLD = 3;
 
   for (const row of payload.rows) {
     try {
@@ -369,10 +390,24 @@ async function main(): Promise<void> {
           console.log(`  ↷ skipped (already canonical): ${row.companyName}`);
           break;
       }
+      consecutiveFailures = 0;
+      consecutiveErrorClass = null;
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
+      const errorClass = e instanceof Error ? e.constructor.name : 'unknown';
       failures.push({ company: row.companyName, reason });
       console.error(`  ✗ failed: ${row.companyName} — ${reason}`);
+      if (errorClass === consecutiveErrorClass) {
+        consecutiveFailures += 1;
+      } else {
+        consecutiveErrorClass = errorClass;
+        consecutiveFailures = 1;
+      }
+      if (consecutiveFailures >= FAIL_FAST_THRESHOLD) {
+        throw new Error(
+          `[seed-demo-members] aborting: ${consecutiveFailures} consecutive ${errorClass} failures suggest a systemic problem (migration desync, plan_id missing, DB down). Last error: ${reason}`,
+        );
+      }
     }
   }
 
@@ -392,9 +427,17 @@ async function main(): Promise<void> {
 // the entry point. Importing this module in tests no longer triggers
 // the whole seed pipeline; tests call `seedRow()` directly with a
 // throwaway tenant.
+//
+// Round-3 silent-failure C2 fix: regex MUST require a path separator
+// before `seed-demo-members` so sibling test files like
+// `tests/integration/scripts/seed-demo-members-smoke.test.ts` don't
+// match (the test filename ALSO matches `seed-demo-members\.[cm]?[jt]s$`).
+// Anchor `[\\/]` covers Windows + POSIX. Without the separator a
+// Vitest worker process whose argv[1] is the test file would invoke
+// `main()` against the live swecham tenant during test collection.
 const isEntryPoint =
   process.argv[1] !== undefined &&
-  /seed-demo-members\.[cm]?[jt]s$/.test(process.argv[1]);
+  /[\\/]seed-demo-members\.[cm]?[jt]s$/.test(process.argv[1]);
 if (isEntryPoint) {
   main()
     .catch((e) => {

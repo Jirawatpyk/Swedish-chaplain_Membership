@@ -26,7 +26,7 @@ import {
   getMemberPrimaryContact,
   type Member,
 } from '@/modules/members';
-import { membershipPlans, type LocaleText } from '@/modules/plans';
+import { membershipPlans } from '@/modules/plans';
 
 // Phase 6 review-round 2 TD1 — zod parser for the F2 plan_name JSONB
 // column. `LocaleText` shape is `{ en: string; th?: string; sv?: string }`
@@ -60,11 +60,6 @@ export interface FetchMemberDeps {
   readonly getPrimaryContact: typeof getMemberPrimaryContact;
 }
 
-const defaultFetchMemberDeps: FetchMemberDeps = {
-  memberRepo: f3DrizzleMemberRepo,
-  getPrimaryContact: getMemberPrimaryContact,
-};
-
 /**
  * F3 member + primary-contact lookup for display. Returns `null`
  * when the member doesn't exist or is archived; throws on
@@ -78,14 +73,33 @@ export async function fetchMemberDisplay(
     readonly actorUserId: string;
     readonly requestId: string;
   },
-  deps: FetchMemberDeps = defaultFetchMemberDeps,
+  deps: FetchMemberDeps = {
+    memberRepo: f3DrizzleMemberRepo,
+    getPrimaryContact: getMemberPrimaryContact,
+  },
 ): Promise<MemberDisplay | null> {
   const tenantContext = asTenantContext(args.tenantSlug);
   const memberResult = await deps.memberRepo.findById(
     tenantContext,
     asMemberId(args.memberId),
   );
-  if (!memberResult.ok) return null;
+  if (!memberResult.ok) {
+    // Round-3 silent-failure C1 fix: distinguish legitimate-empty
+    // (`repo.not_found` → null fallback in caller) from infra-error
+    // (`repo.unexpected` → re-throw so Promise.allSettled rejected
+    // branch fires + warn-log captures the cause). Conflating both
+    // into `null` hid Neon outages behind "—" placeholders with no
+    // SRE signal.
+    if ('code' in memberResult.error && memberResult.error.code !== 'repo.not_found') {
+      const cause =
+        'cause' in memberResult.error ? memberResult.error.cause : undefined;
+      throw new Error(
+        `[fetchMemberDisplay] member lookup failed: ${memberResult.error.code}`,
+        cause !== undefined ? { cause } : {},
+      );
+    }
+    return null;
+  }
   const member: Member = memberResult.value;
   const primaryContactResult = await deps.getPrimaryContact(
     { tenant: tenantContext, memberRepo: deps.memberRepo },
@@ -148,8 +162,17 @@ export async function fetchPlanDisplay(
   if (!row) return null;
   const parsed = planNameSchema.safeParse(row.planName);
   if (!parsed.success) {
+    // Round-3 silent-failure F4: structured `errorCode` field so SRE
+    // can filter on `plan_name_jsonb_malformed` in pino → Sentry
+    // queries. The page collapses both no-row and zod-fail into "—",
+    // so this log is the only observable signal of data-quality drift.
     logger.warn(
-      { planId: args.planId, raw: row.planName },
+      {
+        errorCode: 'plan_name_jsonb_malformed',
+        planId: args.planId,
+        raw: row.planName,
+        zodIssues: parsed.error.issues,
+      },
       '[admin/renewals/cycle-detail] plan_name JSONB failed schema parse',
     );
     return null;
@@ -160,7 +183,3 @@ export async function fetchPlanDisplay(
     parsed.data.en;
   return { localisedName };
 }
-
-// Re-export for convenience on the page side (avoids needing to import
-// `LocaleText` separately).
-export type { LocaleText };

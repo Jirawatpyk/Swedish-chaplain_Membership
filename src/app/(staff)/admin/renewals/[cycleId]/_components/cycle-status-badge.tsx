@@ -13,7 +13,7 @@
 import type { CycleStatus } from '@/modules/renewals';
 import { cn } from '@/lib/utils';
 
-// K28: tonal contrast bumped — `upcoming`/`reminded` previously
+// Tonal contrast bumped — `upcoming`/`reminded` previously
 // blended into card surfaces (slate-50/blue-50 on white-ish bg).
 // Using -100 base + -300 ring for visible distinction; severity
 // statuses (`lapsed`, `pending_admin_reactivation`) keep stronger
