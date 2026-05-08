@@ -497,6 +497,15 @@ export {
   type ReconcilePendingReactivationsError,
 } from './application/use-cases/reconcile-pending-reactivations';
 
+// --- T115a Phase 5 wave K24 — lapseCyclesOnGraceExpiry --------------------
+export {
+  lapseCyclesOnGraceExpiry,
+  lapseCyclesOnGraceExpiryInputSchema,
+  type LapseCyclesOnGraceExpiryInput,
+  type LapseCyclesOnGraceExpiryOutput,
+  type LapseCyclesOnGraceExpiryError,
+} from './application/use-cases/lapse-cycles-on-grace-expiry';
+
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

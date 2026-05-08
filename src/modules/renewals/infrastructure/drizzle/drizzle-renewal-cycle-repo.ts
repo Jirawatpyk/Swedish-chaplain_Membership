@@ -613,6 +613,38 @@ export function makeDrizzleRenewalCycleRepo(
       );
     },
 
+    async listCyclesEligibleForLapse(
+      _tenantId: string,
+      args: {
+        readonly cutoffDate: string;
+        readonly pageSize: number;
+      },
+    ): Promise<RenewalCyclePage> {
+      return runInTenant(tenant, async (tx) => {
+        // T115a Phase 5 wave K24 — eligible = `awaiting_payment` cycles
+        // whose `expires_at < cutoffDate` (cutoff = `now -
+        // grace_period_days`). RLS scopes to the tenant context. Order
+        // by `expires_at ASC` so oldest expiries are processed first
+        // (smallest blast radius if the cron is partially executed).
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.status, 'awaiting_payment'),
+              sql`${renewalCycles.expiresAt} < ${args.cutoffDate}`,
+            ),
+          )
+          .orderBy(sql`${renewalCycles.expiresAt} ASC`)
+          .limit(args.pageSize);
+
+        return {
+          items: rows.map(rowToDomain),
+          nextCursor: null,
+        };
+      });
+    },
+
     async transitionStatus(
       tx: unknown,
       _tenantId: string,

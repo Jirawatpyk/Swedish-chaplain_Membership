@@ -124,6 +124,15 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'renewal_invoice_created',
   'renewal_with_plan_change',
   'renewal_cycle_price_frozen',
+  // --- Phase 5 Wave K24 US3 emit site (T115a lapseCyclesOnGraceExpiry) ---
+  // Daily cron transitions awaiting_payment → lapsed once
+  // `expires_at + grace_period_days < now`. Decision branch picks
+  // `closed_reason='grace_expired'` (zero F5 failed attempts) vs
+  // `payment_failed` (>=1 F5 row with status='failed'). Typed payload
+  // carries `closed_reason` discriminant + `failed_payment_attempts`
+  // forensic count. pgEnum value 'renewal_lapsed' was added in F8 phase
+  // setup migrations (Phase 1-2); no new ADD VALUE migration needed.
+  'renewal_lapsed',
 ]);
 
 function buildSummary<E extends F8AuditEventType>(

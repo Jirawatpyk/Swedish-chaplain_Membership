@@ -43,6 +43,8 @@ import { makeDrizzleRenewalReminderEventRepo } from './drizzle/drizzle-renewal-r
 import { resendTransactionalRenewalGateway } from './resend-transactional-renewal-gateway';
 import { makeDrizzleBounceEventQuery } from './drizzle/drizzle-bounce-event-query';
 import { drizzleReminderAuditQueryRepo } from './drizzle/drizzle-reminder-audit-query-repo';
+import { makeDrizzleTenantRenewalSettingsRepo } from './drizzle/drizzle-tenant-renewal-settings-repo';
+import { makeF5PaymentAttemptsBridgeDrizzle } from './ports-adapters/f5-payment-attempts-bridge-drizzle';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 
 import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
@@ -69,6 +71,8 @@ import type { RenewalReminderEventRepo } from '../application/ports/renewal-remi
 import type { RenewalGateway } from '../application/ports/renewal-gateway';
 import type { BounceEventQuery } from '../application/ports/bounce-event-query';
 import type { ReminderAuditQueryPort } from '../application/ports/reminder-audit-query-repo';
+import type { F5PaymentAttemptsBridge } from '../application/ports/f5-payment-attempts-bridge';
+import type { TenantRenewalSettingsRepo } from '../application/ports/tenant-renewal-settings-repo';
 
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
@@ -200,6 +204,20 @@ export interface RenewalsDeps {
    * no audit row exists for it).
    */
   readonly reminderAuditQuery: ReminderAuditQueryPort;
+  /**
+   * T115a Phase 5 wave K24 — `tenant_renewal_settings` repo. Backs the
+   * new `lapseCyclesOnGraceExpiry` cron which reads `grace_period_days`
+   * to compute the lapse-eligibility cutoff. Drizzle adapter newly
+   * added at K24 (was port-only at Phase 2 Wave E T045).
+   */
+  readonly tenantRenewalSettingsRepo: TenantRenewalSettingsRepo;
+  /**
+   * T115a Phase 5 wave K24 — F8 → F5 payment-attempts read-only
+   * bridge for the `lapseCyclesOnGraceExpiry` decision branch
+   * (`grace_expired` vs `payment_failed`). Reads F5 `payments` rows
+   * directly via Drizzle; no F5 use-case dependency.
+   */
+  readonly f5PaymentAttemptsBridge: F5PaymentAttemptsBridge;
 }
 
 /**
@@ -232,6 +250,8 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     renewalGateway: resendTransactionalRenewalGateway,
     bounceEventQuery: makeDrizzleBounceEventQuery(tenant),
     reminderAuditQuery: drizzleReminderAuditQueryRepo,
+    tenantRenewalSettingsRepo: makeDrizzleTenantRenewalSettingsRepo(tenant),
+    f5PaymentAttemptsBridge: makeF5PaymentAttemptsBridgeDrizzle(tenant),
   };
 }
 

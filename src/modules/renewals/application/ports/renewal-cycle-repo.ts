@@ -201,6 +201,23 @@ export interface RenewalCycleRepo {
   ): Promise<void>;
 
   /**
+   * T115a Phase 5 wave K24 — eligibility cursor for the daily
+   * `lapseCyclesOnGraceExpiry` cron (FR-004 + AS3 closed-reason
+   * differentiation). Returns cycles still in `awaiting_payment`
+   * whose `expires_at < cutoffDate` (cutoff = `now - grace_period_days`),
+   * ordered by `expires_at ASC` for deterministic batching. The
+   * use-case decides the closed_reason discriminant per cycle by
+   * consulting the F5 payment-attempts bridge.
+   */
+  listCyclesEligibleForLapse(
+    tenantId: string,
+    args: {
+      readonly cutoffDate: string;
+      readonly pageSize: number;
+    },
+  ): Promise<RenewalCyclePage>;
+
+  /**
    * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).
    * Returns rows enriched with `members.company_name` + last reminder
    * + DB-side derived `urgency` bucket + summary aggregates. Cursor is

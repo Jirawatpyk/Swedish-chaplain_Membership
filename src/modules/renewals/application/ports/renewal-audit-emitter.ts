@@ -209,6 +209,31 @@ export interface F8AuditPayloadShapes {
     readonly reason: string;
     readonly previous_status: string;
   };
+  /**
+   * T115a Phase 5 wave K24 — typed payload for the `awaiting_payment`
+   * → `lapsed` transition driven by the daily `lapseCyclesOnGraceExpiry`
+   * cron (FR-004 + AS3 closed-reason differentiation).
+   *
+   * `closed_reason` discriminator picks between the two real-world
+   * causes the AS3 lapsed-tab badge differentiates:
+   *   - `'grace_expired'` — `now > expires_at + grace_period_days`,
+   *     no F5 payment attempts (member silently let it expire)
+   *   - `'payment_failed'` — `>= 1` F5 attempt ended `status='failed'`
+   *     before the grace window expired (payment problem, not apathy)
+   *
+   * `'lapsed'` (legacy catch-all) is intentionally NOT in this union —
+   * after K24, every `awaiting_payment → lapsed` transition writes a
+   * specific reason. The catch-all stays in `CLOSED_REASONS` for
+   * backward-compat with rows written before K24 ships.
+   */
+  readonly renewal_lapsed: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly closed_reason: 'grace_expired' | 'payment_failed';
+    readonly expires_at: string;
+    readonly grace_period_days: number;
+    readonly failed_payment_attempts: number;
+  };
   readonly renewal_cycle_completed_offline: {
     readonly cycle_id: CycleId;
     readonly member_id: MemberId;

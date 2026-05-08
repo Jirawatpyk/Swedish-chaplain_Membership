@@ -1568,6 +1568,26 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals_lapse_cycles_errors_total{tenant}` — T115a Phase 5
+   * wave K24: per-cycle errors during the daily
+   * `lapseCyclesOnGraceExpiry` cron (F5 bridge query failure / DB
+   * transition throw / audit emit failure). Per-cycle fault isolation
+   * means one bad cycle doesn't abort the run; this counter tracks
+   * the aggregate so SREs can alert on a cron-wide degradation.
+   * Alert rule: any non-zero rate sustained for 15 min pages on-call.
+   */
+  lapseCyclesErrors: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_lapse_cycles_errors_total',
+          'F8 lapseCyclesOnGraceExpiry per-cycle error count (decision-branch query failures + DB transition throws + audit emit failures); cron continues per-member fault-isolated',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
    * `renewals_onpaid_unknown_outcome_kind_total{tenant}` — Round 4
    * review-fix (R4-S1): F8 dispatch site received a
    * `MarkCycleCompleteOutcome` whose `kind` is not one of the 4 known

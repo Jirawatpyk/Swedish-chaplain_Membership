@@ -181,6 +181,11 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'plan_change_superseded',
   'plan_change_cancelled',
   'plan_change_applied',
+  // --- F8 Phase 5 Wave K24 (migration 0110) — `renewal_lapsed` finally
+  //     wired by `lapseCyclesOnGraceExpiry` use-case (T115a deferred-to-
+  //     Phase-5 branch). Catalogue entry existed at Phase 1 setup but
+  //     the pgEnum ADD VALUE was never shipped — K24 closes the gap. ---
+  'renewal_lapsed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

@@ -1,0 +1,29 @@
+-- ---------------------------------------------------------------------------
+-- F8 Phase 5 Wave K24 · T115a — extend audit_event_type pgEnum with
+-- `renewal_lapsed`.
+--
+-- Migration history audit at `/speckit.staff-review.run` Wave K24 surfaced
+-- a long-standing gap: `renewal_lapsed` was added to the F8 audit catalogue
+-- (`F8_AUDIT_EVENT_TYPES` const at `src/modules/renewals/application/ports/
+-- renewal-audit-emitter.ts:46`) at Phase 1 setup but the corresponding
+-- `ALTER TYPE … ADD VALUE` was never shipped via migrations 0095, 0099, or
+-- 0109. The catalogue entry was forward-compat reservation for the auto-
+-- lapse cycle-state-reconciler — which T115a defers from Phase 4 to
+-- Phase 5 ("the cycle-state-reconciler that performs the awaiting_payment
+-- → lapsed transition lands in Phase 5/9 alongside FR-005a/b/c"). Phase 5
+-- shipped only the `pending_admin_reactivation → lapsed` half of T115a
+-- (timeout via T138 with `closedReason='pending_reactivation_timed_out'`);
+-- the `awaiting_payment → lapsed` half plus the actual `renewal_lapsed`
+-- audit emit landed only at Wave K24.
+--
+-- This migration closes that gap so K24's `lapseCyclesOnGraceExpiry` cron
+-- can persist its `renewal_lapsed` audits via the pgEnum-typed
+-- `audit_log.event_type` column.
+--
+-- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
+-- transaction. drizzle-kit emits `--> statement-breakpoint` markers so
+-- each ALTER runs in its own implicit transaction — same pattern as
+-- migrations 0095 / 0099 / 0107 / 0109.
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_lapsed';--> statement-breakpoint
