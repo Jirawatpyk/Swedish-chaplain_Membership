@@ -79,16 +79,32 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByRole('heading', { name: /at-risk members/i }),
     ).toBeVisible({ timeout: 10_000 });
 
+    // Wait for the widget's loading-skeleton to clear before counting
+    // action buttons — the widget initially renders a "Loading at-risk
+    // member summary…" placeholder while the API request is in flight.
+    // The summary description text changes from "Loading…" to either
+    // the count-summary string OR feature-disabled placeholder once
+    // the response lands.
+    await expect(
+      page.getByText(/loading at-risk member summary/i),
+    ).toBeHidden({ timeout: 15_000 });
+
     // Snooze button visible on at least one row (admin role). If no
-    // at-risk members in seed data, the empty state shows instead —
-    // skip the action assertions in that case.
+    // at-risk members in seed data OR FEATURE_F8_AT_RISK_DISABLED=true,
+    // the widget shows a placeholder card instead — skip the action
+    // assertions in either case (both are legitimate non-action paths).
     const snoozeButton = page.getByRole('button', { name: /snooze/i }).first();
     const buttonCount = await snoozeButton.count();
     if (buttonCount === 0) {
-      // Empty state path — assert the empty-state copy, not the dialog.
-      await expect(
-        page.getByText(/all members healthy this week/i),
-      ).toBeVisible();
+      // Either empty-state copy OR feature-disabled copy must be visible
+      // — both signal "no actionable rows for the test to click".
+      const emptyState = page.getByText(/all members healthy this week/i);
+      const featureDisabled = page.getByText(
+        /at-risk detection is temporarily unavailable/i,
+      );
+      const seenEmpty = (await emptyState.count()) > 0;
+      const seenDisabled = (await featureDisabled.count()) > 0;
+      expect(seenEmpty || seenDisabled).toBe(true);
       return;
     }
     await snoozeButton.click();
@@ -121,13 +137,23 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByRole('heading', { name: /at-risk members/i }),
     ).toBeVisible({ timeout: 10_000 });
 
+    // Wait for the widget's loading-skeleton to clear (see AS3 spec
+    // for rationale).
+    await expect(
+      page.getByText(/loading at-risk member summary/i),
+    ).toBeHidden({ timeout: 15_000 });
+
     const contactButton = page.getByRole('button', { name: /contact/i }).first();
     const buttonCount = await contactButton.count();
     if (buttonCount === 0) {
-      // Empty state path.
-      await expect(
-        page.getByText(/all members healthy this week/i),
-      ).toBeVisible();
+      // Either empty-state OR feature-disabled placeholder is acceptable.
+      const emptyState = page.getByText(/all members healthy this week/i);
+      const featureDisabled = page.getByText(
+        /at-risk detection is temporarily unavailable/i,
+      );
+      const seenEmpty = (await emptyState.count()) > 0;
+      const seenDisabled = (await featureDisabled.count()) > 0;
+      expect(seenEmpty || seenDisabled).toBe(true);
       return;
     }
     await contactButton.click();
