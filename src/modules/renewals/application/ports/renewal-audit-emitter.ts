@@ -20,6 +20,13 @@ import type { TenantTx } from '@/lib/db';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
+import type { RiskBand } from '../../domain/value-objects/risk-band';
+import type {
+  AT_RISK_FACTOR_WEIGHTS,
+  F6_ACTIVE_MAX,
+  F6_INACTIVE_MAX,
+} from '../../domain/at-risk-score';
+import type { OutreachId } from '../../domain/at-risk-outreach';
 import type { MemberId, PlanId } from '@/modules/members';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { InvoiceId } from '@/modules/invoicing';
@@ -182,18 +189,27 @@ export function isF8AuditEventType(
 
 /**
  * `at_risk_score_threshold_crossed` requires `previous_band !== new_band`
- * — emitting "low → low" would be forensic noise. The DU below encodes
- * the 12 valid 4×4-with-self-excluded transitions at compile time, so
- * `{ previous_band: 'low', new_band: 'low' }` is a TS error rather than
- * a runtime invariant probe.
+ * — emitting "healthy → healthy" would be forensic noise. The DU below
+ * encodes the 12 valid 4×4-with-self-excluded transitions at compile
+ * time, so `{ previous_band: 'healthy', new_band: 'healthy' }` is a TS
+ * error rather than a runtime invariant probe.
+ *
+ * **Wave A2 alignment** (Phase 6): band labels were `low | medium | high
+ * | critical` in Wave D shipping. Re-aligned to `healthy | warning | at-
+ * risk | critical` to match the audit-port contract at
+ * `specs/011-renewal-reminders/contracts/audit-port.md` line 296+302+303
+ * AND the Domain `RiskBand` type (`src/modules/renewals/domain/value-
+ * objects/risk-band.ts`). Type alias re-exports the Domain `RiskBand`
+ * so the audit catalogue stays the single canonical band-label source
+ * across Domain + audit-payload + DB CHECK (`members.risk_score_band`).
  */
-export type AtRiskBand = 'low' | 'medium' | 'high' | 'critical';
+export type AtRiskBand = RiskBand;
 
 export type BandTransition =
-  | { readonly previous_band: 'low'; readonly new_band: 'medium' | 'high' | 'critical' }
-  | { readonly previous_band: 'medium'; readonly new_band: 'low' | 'high' | 'critical' }
-  | { readonly previous_band: 'high'; readonly new_band: 'low' | 'medium' | 'critical' }
-  | { readonly previous_band: 'critical'; readonly new_band: 'low' | 'medium' | 'high' };
+  | { readonly previous_band: 'healthy'; readonly new_band: 'warning' | 'at-risk' | 'critical' }
+  | { readonly previous_band: 'warning'; readonly new_band: 'healthy' | 'at-risk' | 'critical' }
+  | { readonly previous_band: 'at-risk'; readonly new_band: 'healthy' | 'warning' | 'critical' }
+  | { readonly previous_band: 'critical'; readonly new_band: 'healthy' | 'warning' | 'at-risk' };
 
 export interface F8AuditPayloadShapes {
   readonly renewal_cycle_created: {
@@ -301,13 +317,102 @@ export interface F8AuditPayloadShapes {
   };
   /**
    * The `BandTransition` DU prevents emitting same-band "transitions"
-   * at compile time (e.g. `{ previous_band: 'low', new_band: 'low' }`
+   * at compile time (e.g. `{ previous_band: 'healthy', new_band: 'healthy' }`
    * would be a TS error — there's no arm matching that pair). `score`
    * is the absolute new score, not a delta.
    */
   readonly at_risk_score_threshold_crossed: BandTransition & {
     readonly member_id: MemberId;
     readonly score: number;
+  };
+  /**
+   * Phase 6 Wave A2 — `at_risk_score_recomputed` typed payload per
+   * audit-port contract `AtRiskScoreRecomputedPayload` (line 292-298).
+   *
+   * `factors` is a per-key contribution map (e.g. `{
+   * events_attended_last_12mo_zero: 25, invoices_overdue_count_gt_zero:
+   * 25, days_since_last_payment_gt_180: 10 }`) — keys MUST be drawn
+   * from the FR-029 weight table (Domain `AT_RISK_FACTOR_WEIGHTS`) so
+   * dashboards can attribute score changes per factor.
+   *
+   * `active_max` is the literal 100 (F6 active) or 70 (F6 inactive) per
+   * FR-029a + FR-030 + audit-port `active_max: 70 | 100`.
+   *
+   * `threshold_band` is the band derived from `score / active_max` per
+   * `bandForScoreProportional` (FR-030).
+   */
+  readonly at_risk_score_recomputed: {
+    readonly member_id: MemberId;
+    readonly score: number;
+    readonly factors: Partial<
+      Record<keyof typeof AT_RISK_FACTOR_WEIGHTS, number>
+    >;
+    readonly threshold_band: RiskBand;
+    readonly active_max: typeof F6_ACTIVE_MAX | typeof F6_INACTIVE_MAX;
+    readonly f6_active: boolean;
+  };
+  /**
+   * Phase 6 Wave A2 — `at_risk_snoozed` typed payload per audit-port
+   * `AtRiskSnoozedPayload` (line 306-310). `snooze_duration_days` is a
+   * literal-union (FR-032 enumerates 7 / 30 / 90 only). `snoozed_until`
+   * is ISO 8601 UTC.
+   */
+  readonly at_risk_snoozed: {
+    readonly member_id: MemberId;
+    readonly snooze_duration_days: 7 | 30 | 90;
+    readonly snoozed_until: string;
+  };
+  /**
+   * Phase 6 Wave A2 — `at_risk_outreach_recorded` typed payload per
+   * audit-port `AtRiskOutreachRecordedPayload` (line 312-317). The
+   * `template_id: string | null` discriminator mirrors migration 0090's
+   * CHECK: email channel must carry template_id; phone/meeting must not.
+   *
+   * `actor_role` is captured because FR-033 + FR-052a allow BOTH
+   * admin and manager to record outreach (manager exception for
+   * board-level relationship tracking). Dashboards differentiate the
+   * two source roles via this field.
+   */
+  readonly at_risk_outreach_recorded: {
+    readonly member_id: MemberId;
+    readonly outreach_id: OutreachId;
+    readonly channel: 'email' | 'phone' | 'meeting';
+    readonly template_id: string | null;
+    readonly actor_role: 'admin' | 'manager';
+  };
+  /**
+   * Phase 6 Wave A2 — `at_risk_skipped_below_min_tenure` typed payload
+   * per audit-port `AtRiskSkippedBelowMinTenurePayload` (line 319-322).
+   * Emits per-member when the FR-035 min-tenure gate trips.
+   * `threshold_days` is the per-tenant `min_tenure_days_for_at_risk`
+   * setting in effect at recompute time.
+   */
+  readonly at_risk_skipped_below_min_tenure: {
+    readonly member_id: MemberId;
+    readonly tenure_days: number;
+    readonly threshold_days: number;
+  };
+  /**
+   * Phase 6 Wave A2 — `at_risk_compute_partial_failure` typed payload
+   * per audit-port `AtRiskComputePartialFailurePayload` (line 324-328).
+   *
+   * Emitted by the per-tenant recompute cron (Phase 6 Wave C T161) when
+   * one or more members raised a non-fatal exception during factor-
+   * gathering — surfaces as observability signal so partial-data
+   * recompute is detectable rather than silently degrading scores.
+   *
+   * `error_class` is a coarse classifier (e.g. `'db_timeout'` /
+   * `'cross_module_unavailable'` / `'unknown'`); detailed error message
+   * lives in pino logs (forbidden in audit per `docs/observability.md`).
+   *
+   * `members_processed + members_failed = total members in the cron
+   * batch`. Fault-isolation contract: cron continues to next tenant on
+   * any partial failure (per FR-052b spirit).
+   */
+  readonly at_risk_compute_partial_failure: {
+    readonly error_class: string;
+    readonly members_processed: number;
+    readonly members_failed: number;
   };
   /**
    * Discriminated union — `renewal_reminder_send_failed_permanent`
