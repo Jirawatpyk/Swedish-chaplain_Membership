@@ -345,8 +345,20 @@ export interface BulkSetRiskScoreRow {
 /**
  * Phase 6 Wave G T159b — per-member factor-input row returned by
  * `gatherAtRiskFactorsForTenant`. Adapter computes the LATERAL JOIN
- * aggregate from F4 invoices + F3 contacts; the use-case derives
- * AtRiskFactors values in-memory.
+ * aggregates from F2 + F3 + F4 + F7 + F1 audit_log; the use-case
+ * derives AtRiskFactors values in-memory.
+ *
+ * 6 of 8 FR-029 factors covered by this row shape:
+ *   ✓ tenureDays                — derived from memberCreatedAt
+ *   ✓ daysSinceContactUpdate    — derived from lastActivityAtIso
+ *   ✓ invoicesOverdueCount      — direct
+ *   ✓ daysSinceLastPayment      — derived from lastPaidAtIso
+ *   ✓ eBlastQuotaPctUsed        — direct (null when plan has no
+ *                                  eblast_per_year benefit)
+ *   ✓ tierDowngradedLast12Months — direct boolean
+ *   ⊘ eventsAttendedLast12Months — F6-dependent (skip via FR-029a)
+ *   ⊘ eventsAttendedLast3Months  — F6-dependent
+ *   ⊘ culturalTicketQuotaPctUsed — F6-dependent
  */
 export interface AtRiskBatchFactorRow {
   readonly memberId: string;
@@ -355,6 +367,18 @@ export interface AtRiskBatchFactorRow {
   readonly priorRiskBand: RiskBand | null;
   readonly invoicesOverdueCount: number;
   readonly lastPaidAtIso: string | null; // ISO 8601 UTC or null
+  /**
+   * F7 quota usage percentage (0–100). Null when the member's plan
+   * has no `eblast_per_year` benefit (e.g. partnership tier with
+   * unmetered quota or thai_alumni with quota=0). Domain skips the
+   * factor when null.
+   */
+  readonly eblastQuotaPctUsed: number | null;
+  /**
+   * True when the member's plan tier was downgraded in the last 12
+   * months (F1 audit_log scan). FR-029 line 8 weight +15.
+   */
+  readonly tierDowngradedLast12Months: boolean;
 }
 
 export interface SetRiskScoreResult {

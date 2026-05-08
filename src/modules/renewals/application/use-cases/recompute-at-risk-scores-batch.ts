@@ -164,6 +164,12 @@ export async function recomputeAtRiskScoresBatch(
             ...(daysSinceLastPayment !== undefined
               ? { daysSinceLastPayment }
               : {}),
+            // F7 e-blast quota — null ⇒ plan has no quota; Domain skips
+            ...(row.eblastQuotaPctUsed !== null
+              ? { eBlastQuotaPctUsed: row.eblastQuotaPctUsed }
+              : {}),
+            // F2 tier-downgrade — direct boolean
+            tierDowngradedLast12Months: row.tierDowngradedLast12Months,
           };
           const r = computeAtRiskScorePure(factors, {
             minTenureDays,

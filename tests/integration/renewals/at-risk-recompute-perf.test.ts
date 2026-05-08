@@ -169,13 +169,14 @@ async function seedBulkMembers(
   return seeded;
 }
 
-function percentile(sorted: ReadonlyArray<number>, p: number): number {
+function _percentile(sorted: ReadonlyArray<number>, p: number): number {
   const idx = Math.min(
     sorted.length - 1,
     Math.floor((p / 100) * sorted.length),
   );
   return sorted[idx] ?? 0;
 }
+void _percentile;
 
 describe.skipIf(!RUN_PERF)(
   'F8 at-risk recompute perf — integration (T174, RUN_PERF=1)',

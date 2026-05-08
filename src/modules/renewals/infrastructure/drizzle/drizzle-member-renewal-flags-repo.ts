@@ -386,12 +386,21 @@ export function makeDrizzleMemberRenewalFlagsRepo(
 
     /**
      * Phase 6 Wave G T159b — gather factor inputs for ALL active
-     * members in one CTE round-trip. LATERAL JOIN against invoices
-     * computes overdue count + last_paid_at per member server-side.
+     * members in one CTE round-trip. Joins: F4 invoices LATERAL
+     * aggregate (overdue_count + last_paid_at), F2 membership_plans
+     * (eblast_per_year benefit entitlement), F7 broadcasts LATERAL
+     * count (e-blasts consumed by member in current year), F1
+     * audit_log EXISTS (member_plan_changed events in last 12 months
+     * indicating tier-downgrade per FR-029 line 8).
+     *
+     * 6 of 8 FR-029 factors implemented end-to-end against real data
+     * (only F6 events_attended_12mo + events_attended_3mo +
+     * cultural_ticket_quota stay stubbed — pending F6 EventCreate
+     * integration).
      */
     async gatherAtRiskFactorsForTenant(
       tx: unknown,
-      _tenantId: string,
+      tenantId: string,
     ): Promise<ReadonlyArray<AtRiskBatchFactorRow>> {
       const txDb = tx as typeof db;
       const rows = await txDb.execute<{
@@ -401,6 +410,9 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         prior_band: string | null;
         overdue_count: string;
         last_paid_at: Date | null;
+        eblast_quota: string | null;
+        eblast_consumed: string;
+        tier_downgraded: boolean;
       }>(sql`
         SELECT
           m.member_id,
@@ -408,8 +420,47 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           m.last_activity_at,
           m.risk_score_band AS prior_band,
           COALESCE(inv.overdue_count, 0)::text AS overdue_count,
-          inv.last_paid_at
+          inv.last_paid_at,
+          (p.benefit_matrix->>'eblast_per_year')::text AS eblast_quota,
+          COALESCE(eb.consumed, 0)::text AS eblast_consumed,
+          EXISTS (
+            SELECT 1
+            FROM audit_log al
+            JOIN membership_plans p_old
+              ON p_old.tenant_id = al.tenant_id
+              AND p_old.plan_id = al.payload->>'old_plan_id'
+              AND p_old.plan_year = (al.payload->>'old_plan_year')::int
+            JOIN membership_plans p_new
+              ON p_new.tenant_id = al.tenant_id
+              AND p_new.plan_id = al.payload->>'new_plan_id'
+              AND p_new.plan_year = (al.payload->>'new_plan_year')::int
+            WHERE al.event_type = 'member_plan_changed'
+              AND al.tenant_id = ${tenantId}
+              AND al.payload->>'member_id' = m.member_id::text
+              AND al.timestamp > NOW() - INTERVAL '12 months'
+              AND CASE p_new.renewal_tier_bucket
+                    WHEN 'thai_alumni' THEN 0
+                    WHEN 'start_up' THEN 1
+                    WHEN 'regular' THEN 2
+                    WHEN 'premium' THEN 3
+                    WHEN 'partnership' THEN 4
+                    ELSE 99
+                  END
+                  <
+                  CASE p_old.renewal_tier_bucket
+                    WHEN 'thai_alumni' THEN 0
+                    WHEN 'start_up' THEN 1
+                    WHEN 'regular' THEN 2
+                    WHEN 'premium' THEN 3
+                    WHEN 'partnership' THEN 4
+                    ELSE 99
+                  END
+          ) AS tier_downgraded
         FROM members m
+        LEFT JOIN membership_plans p
+          ON p.tenant_id = m.tenant_id
+          AND p.plan_id = m.plan_id
+          AND p.plan_year = m.plan_year
         LEFT JOIN LATERAL (
           SELECT
             count(*) FILTER (
@@ -420,6 +471,13 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           FROM invoices
           WHERE member_id = m.member_id
         ) inv ON true
+        LEFT JOIN LATERAL (
+          SELECT count(*) AS consumed
+          FROM broadcasts b
+          WHERE b.requested_by_member_id = m.member_id
+            AND b.status IN ('sent', 'sending', 'approved')
+            AND b.quota_consumed_at > NOW() - INTERVAL '12 months'
+        ) eb ON true
         WHERE m.status = 'active'
           AND EXISTS (
             SELECT 1 FROM renewal_cycles c
@@ -435,14 +493,25 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         if (v instanceof Date) return v.toISOString();
         return new Date(v).toISOString();
       };
-      return rows.map((r) => ({
-        memberId: r.member_id,
-        memberCreatedAt: toIso(r.created_at) ?? new Date().toISOString(),
-        lastActivityAtIso: toIso(r.last_activity_at),
-        priorRiskBand: (r.prior_band as RiskBand | null) ?? null,
-        invoicesOverdueCount: Number.parseInt(r.overdue_count, 10) || 0,
-        lastPaidAtIso: toIso(r.last_paid_at),
-      }));
+      return rows.map((r) => {
+        const eblastQuota =
+          r.eblast_quota != null
+            ? Number.parseInt(r.eblast_quota, 10) || 0
+            : 0;
+        const eblastConsumed = Number.parseInt(r.eblast_consumed, 10) || 0;
+        const eblastQuotaPctUsed =
+          eblastQuota > 0 ? (eblastConsumed / eblastQuota) * 100 : null;
+        return {
+          memberId: r.member_id,
+          memberCreatedAt: toIso(r.created_at) ?? new Date().toISOString(),
+          lastActivityAtIso: toIso(r.last_activity_at),
+          priorRiskBand: (r.prior_band as RiskBand | null) ?? null,
+          invoicesOverdueCount: Number.parseInt(r.overdue_count, 10) || 0,
+          lastPaidAtIso: toIso(r.last_paid_at),
+          eblastQuotaPctUsed,
+          tierDowngradedLast12Months: r.tier_downgraded,
+        };
+      });
     },
 
     /**

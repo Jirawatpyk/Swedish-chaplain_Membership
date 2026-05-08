@@ -28,7 +28,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -141,7 +140,9 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
     return (
       <Card data-testid="at-risk-widget-disabled">
         <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
+          <h2 className="text-base font-semibold leading-none tracking-tight">
+            {t('title')}
+          </h2>
           <CardDescription>{t('featureDisabled')}</CardDescription>
         </CardHeader>
       </Card>
@@ -151,7 +152,12 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
   return (
     <Card aria-labelledby="at-risk-widget-title">
       <CardHeader>
-        <CardTitle id="at-risk-widget-title">{t('title')}</CardTitle>
+        <h2
+          id="at-risk-widget-title"
+          className="text-base font-semibold leading-none tracking-tight"
+        >
+          {t('title')}
+        </h2>
         <CardDescription>
           {data?.summary
             ? t('summary', {
