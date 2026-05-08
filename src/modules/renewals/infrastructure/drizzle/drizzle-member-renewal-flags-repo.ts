@@ -19,7 +19,7 @@
  * line 26 imports F3's `members` schema for the LEFT JOIN to surface
  * `company_name`. This adapter follows the same convention.
  */
-import { and, asc, eq, exists, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gte, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -31,6 +31,9 @@ import type {
   SetBlockedFromAutoReactivationInput,
   SetRiskScoreInput,
   SetRiskScoreResult,
+  ListAtRiskWidgetOpts,
+  ListAtRiskWidgetResult,
+  AtRiskWidgetMemberRow,
 } from '../../application/ports/member-renewal-flags-repo';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 
@@ -343,6 +346,131 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const rows =
         limit !== undefined ? await baseQuery.limit(limit) : await baseQuery;
       return rows.map((r) => r.memberId);
+    },
+
+    /**
+     * Phase 6 Wave D (T163) — paginated read for the at-risk widget.
+     * Two queries inside the supplied tx:
+     *   1. Page query — filtered + sorted + cursor + limit
+     *   2. Summary query — aggregate band counts (single round-trip
+     *      via FILTER(WHERE …) per band)
+     * Both share the WHERE-clause tail (`risk_score >= 50` + snoozed
+     * filter) so the partial index `members_at_risk_idx` (migration
+     * 0094) covers them.
+     */
+    async listAtRiskWidgetMembers(
+      tx: unknown,
+      _tenantId: string,
+      opts: ListAtRiskWidgetOpts,
+    ): Promise<ListAtRiskWidgetResult> {
+      const txDb = tx as typeof db;
+      const limit = Math.min(50, Math.max(1, opts.limit ?? 20));
+
+      // Cursor format: `${score}|${memberId}` — opaque to caller.
+      let cursorScore: number | null = null;
+      let cursorMemberId: string | null = null;
+      if (opts.cursor) {
+        const sep = opts.cursor.indexOf('|');
+        if (sep > 0) {
+          const score = Number.parseInt(opts.cursor.slice(0, sep), 10);
+          if (Number.isFinite(score)) {
+            cursorScore = score;
+            cursorMemberId = opts.cursor.slice(sep + 1);
+          }
+        }
+      }
+
+      const baseWhere = and(
+        gte(members.riskScore, 50),
+        or(
+          isNull(members.riskSnoozedUntil),
+          lt(members.riskSnoozedUntil, sql`NOW()`),
+        ),
+        ...(opts.band ? [eq(members.riskScoreBand, opts.band)] : []),
+        ...(cursorScore !== null && cursorMemberId !== null
+          ? [
+              or(
+                lt(members.riskScore, cursorScore),
+                and(
+                  eq(members.riskScore, cursorScore),
+                  sql`${members.memberId} > ${cursorMemberId}`,
+                ),
+              )!,
+            ]
+          : []),
+      );
+
+      const pageRows = await txDb
+        .select({
+          memberId: members.memberId,
+          companyName: members.companyName,
+          riskScore: members.riskScore,
+          riskScoreBand: members.riskScoreBand,
+          riskScoreFactors: members.riskScoreFactors,
+          riskScoreLastComputedAt: members.riskScoreLastComputedAt,
+          riskSnoozedUntil: members.riskSnoozedUntil,
+        })
+        .from(members)
+        .where(baseWhere)
+        .orderBy(desc(members.riskScore), asc(members.memberId))
+        .limit(limit + 1); // +1 to detect more-pages
+
+      const hasMore = pageRows.length > limit;
+      const items: AtRiskWidgetMemberRow[] = pageRows
+        .slice(0, limit)
+        .filter(
+          (r): r is typeof r & { riskScore: number; riskScoreBand: string } =>
+            r.riskScore !== null && r.riskScoreBand !== null,
+        )
+        .map((r) => ({
+          memberId: r.memberId,
+          companyName: r.companyName,
+          riskScore: r.riskScore,
+          riskScoreBand: r.riskScoreBand as
+            | 'warning'
+            | 'at-risk'
+            | 'critical',
+          riskScoreFactors:
+            (r.riskScoreFactors as Record<string, unknown> | null) ?? null,
+          riskScoreLastComputedAt:
+            r.riskScoreLastComputedAt?.toISOString() ?? null,
+          riskSnoozedUntil: r.riskSnoozedUntil?.toISOString() ?? null,
+        }));
+
+      const lastItem = items[items.length - 1];
+      const nextCursor =
+        hasMore && lastItem
+          ? `${lastItem.riskScore}|${lastItem.memberId}`
+          : null;
+
+      // Summary — one query with FILTER aggregates per band.
+      const summaryRows = await txDb.execute<{
+        warning: string | null;
+        at_risk: string | null;
+        critical: string | null;
+      }>(sql`
+        SELECT
+          count(*) FILTER (WHERE risk_score_band = 'warning') AS warning,
+          count(*) FILTER (WHERE risk_score_band = 'at-risk') AS at_risk,
+          count(*) FILTER (WHERE risk_score_band = 'critical') AS critical
+        FROM members
+        WHERE risk_score >= 50
+          AND (risk_snoozed_until IS NULL OR risk_snoozed_until < NOW())
+      `);
+      const summaryRow = summaryRows[0];
+      const toInt = (v: string | number | null | undefined): number => {
+        if (v === null || v === undefined) return 0;
+        return typeof v === 'number' ? v : Number.parseInt(v, 10) || 0;
+      };
+      return {
+        items,
+        nextCursor,
+        summary: {
+          warning: toInt(summaryRow?.warning),
+          atRisk: toInt(summaryRow?.at_risk),
+          critical: toInt(summaryRow?.critical),
+        },
+      };
     },
 
     /**

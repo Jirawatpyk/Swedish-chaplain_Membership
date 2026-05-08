@@ -226,6 +226,57 @@ export interface MemberRenewalFlagsRepo {
     tenantId: string,
     limit?: number,
   ): Promise<ReadonlyArray<string>>;
+
+  /**
+   * Phase 6 Wave D (T163) — paginated read of at-risk members for the
+   * admin "At-Risk Members" widget at /admin/renewals. Filters:
+   *   - `members.risk_score >= 50` (warning + at-risk + critical bands
+   *     surface; healthy band hidden)
+   *   - `members.risk_snoozed_until IS NULL OR risk_snoozed_until <
+   *     NOW()` (auto-expired snoozes re-appear)
+   *
+   * Optional `band` filter narrows further (warning | at-risk |
+   * critical). Cursor pagination on `(risk_score DESC, member_id ASC)`
+   * for deterministic ordering — the partial index
+   * `members_at_risk_idx` (migration 0094) covers the hot path.
+   *
+   * Returns a page of widget rows + `nextCursor` (null when last page)
+   * + summary aggregate (band counts + f6_active + active_max).
+   * Tenant-scoped via RLS.
+   */
+  listAtRiskWidgetMembers(
+    tx: TenantTx,
+    tenantId: string,
+    opts: ListAtRiskWidgetOpts,
+  ): Promise<ListAtRiskWidgetResult>;
+}
+
+export interface ListAtRiskWidgetOpts {
+  readonly band?: 'warning' | 'at-risk' | 'critical';
+  /** Opaque cursor (server-encoded `${score}|${memberId}`); null = first page. */
+  readonly cursor?: string | null;
+  /** 1–50; default 20. */
+  readonly limit?: number;
+}
+
+export interface AtRiskWidgetMemberRow {
+  readonly memberId: string;
+  readonly companyName: string | null;
+  readonly riskScore: number;
+  readonly riskScoreBand: 'warning' | 'at-risk' | 'critical';
+  readonly riskScoreFactors: Record<string, unknown> | null;
+  readonly riskScoreLastComputedAt: string | null;
+  readonly riskSnoozedUntil: string | null;
+}
+
+export interface ListAtRiskWidgetResult {
+  readonly items: ReadonlyArray<AtRiskWidgetMemberRow>;
+  readonly nextCursor: string | null;
+  readonly summary: {
+    readonly warning: number;
+    readonly atRisk: number;
+    readonly critical: number;
+  };
 }
 
 /**
