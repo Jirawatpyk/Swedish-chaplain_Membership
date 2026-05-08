@@ -21,11 +21,18 @@
  * the L1-L3 observability layers surfaced).
  *
  * Why `db.transaction` directly and not `runInTenant`:
- *   - F1 admin-invite flow is cross-tenant: the outbox row carries
- *     `tenant_id=null` because the dispatcher serves every tenant.
- *     `runInTenant` would `SET LOCAL app.current_tenant` and activate
- *     RLS policies that do not apply here (notifications_outbox has no
- *     RLS — see migration 0011 header).
+ *   - The `users` + `invitations` tables are cross-tenant (Constitution
+ *     Principle I — `users` is the global identity table). The
+ *     `chamber_app` role deliberately has NO INSERT grant on those
+ *     tables (migrations 0006/0016/0017), so wrapping this tx in
+ *     `runInTenant` would `SET LOCAL ROLE chamber_app` and break the
+ *     pending-user + invitation INSERTs with permission-denied.
+ *   - The owner role used by `db.transaction(...)` is `BYPASSRLS=TRUE`,
+ *     so the FORCE RLS introduced on `notifications_outbox` by
+ *     migration 0098 (F8 Phase 10A) is a no-op for owner inserts. The
+ *     outbox row still carries the inviter's `tenant_id` so the
+ *     downstream per-tenant dispatcher (chamber_app role under
+ *     `runInTenant`) can read it back via the matching RLS policy.
  *   - `TenantTx`/`DbTx` types are structurally identical; repos accept
  *     either via the `DbTx` alias.
  *
@@ -60,6 +67,17 @@ export interface CreateUserInput {
   readonly sourceIp: string;
   readonly requestId: string;
   readonly locale?: EmailLocale | undefined;
+  /**
+   * Tenant slug of the chamber the inviter belongs to. Carried on the
+   * `notifications_outbox` row so the dispatcher can route + audit per
+   * tenant, and so the row passes the FORCE RLS WITH CHECK introduced
+   * by migration 0098 (`tenant_id NOT NULL`). Pre-MTA the F1 flow
+   * stamped this column null and assumed a single global dispatcher;
+   * once F2+ landed multi-tenant, every invitation belongs to a
+   * specific chamber even though the `users` table itself is cross-
+   * tenant per Constitution Principle I.
+   */
+  readonly tenantId: string;
 }
 
 export interface CreateUserSuccess {
@@ -85,6 +103,14 @@ export interface EnqueueInvitationRequest {
   readonly token: TokenId;
   readonly role: Role;
   readonly locale?: EmailLocale | undefined;
+  /**
+   * Tenant slug of the chamber the invitation is for — written to
+   * `notifications_outbox.tenant_id`. NOT NULL since migration 0098
+   * (F8 Phase 10A) enabled FORCE RLS on the table; the column must
+   * carry a real tenant slug so the row both satisfies the constraint
+   * and is visible to the per-tenant dispatcher cron.
+   */
+  readonly tenantId: string;
 }
 
 /**
@@ -168,6 +194,7 @@ export async function createUser(
         token: invitation.id,
         role: input.role,
         locale: input.locale,
+        tenantId: input.tenantId,
       });
       if (!enqueueResult.ok) {
         logger.error(

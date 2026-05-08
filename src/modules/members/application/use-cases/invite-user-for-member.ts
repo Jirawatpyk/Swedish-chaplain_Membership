@@ -217,6 +217,7 @@ export async function inviteUserForMember(
     sourceIp: input.sourceIp,
     requestId: input.requestId,
     locale: input.locale,
+    tenantId: deps.tenant.slug,
   });
   if (!created.ok) {
     if (created.error.code === 'invalid-input') {

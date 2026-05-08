@@ -113,8 +113,13 @@ export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * cross-tenant flows that do NOT go through `runInTenant`). Structurally
  * identical to `TenantTx` — Drizzle's tx shape is the same either way.
  * Exported as a distinct alias for semantic clarity: callers who use
- * `DbTx` announce they intentionally operate outside a tenant context
- * (e.g. F1 invitation flow — tenant_id=null on the outbox row).
+ * `DbTx` announce they intentionally operate outside a tenant
+ * `runInTenant` chain because they need owner-role privileges on
+ * cross-tenant identity tables (e.g. F1 invitation flow — `users` and
+ * `invitations` have no INSERT grant for `chamber_app`). Post-Round-3
+ * Option G the rows written here still carry a tenant_id when their
+ * target table requires one (e.g. `notifications_outbox.tenant_id`
+ * is NOT NULL since migration 0098).
  */
 export type DbTx = TenantTx;
 

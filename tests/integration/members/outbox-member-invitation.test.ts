@@ -10,7 +10,11 @@
  *   notification_type = 'member_invitation'
  *   context_data.token = <invitation.id>
  *   context_data.role  = 'member' | 'manager' | 'admin'
- *   tenant_id          IS NULL   (F1 is cross-tenant)
+ *   tenant_id          = 'swecham' (Round-3 follow-up: pre-MTA F1 used
+ *                        null since the dispatcher served every tenant;
+ *                        migration 0098 enabled FORCE RLS + NOT NULL,
+ *                        so every invitation now carries the inviter's
+ *                        chamber slug).
  *   status             = 'pending'
  *   attempts           = 0
  *
@@ -19,7 +23,7 @@
  * stubbed the enqueue via `stubEnqueueInvitation`.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   invitations,
@@ -57,7 +61,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
     await deleteTestUser(admin);
   });
 
-  it('inserts member_invitation row with token + role + null tenant_id', async () => {
+  it('inserts member_invitation row with token + role + inviter tenantId', async () => {
     const requestId = `it-outbox-${Date.now()}`;
 
     const result = await createUser(
@@ -69,6 +73,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
         sourceIp: '203.0.113.20',
         requestId,
         locale: 'th',
+        tenantId: 'swecham',
       },
       defaultCreateUserDeps,
     );
@@ -85,7 +90,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
         and(
           eq(notificationsOutbox.toEmail, inviteeEmail.toLowerCase()),
           eq(notificationsOutbox.notificationType, 'member_invitation'),
-          isNull(notificationsOutbox.tenantId),
+          eq(notificationsOutbox.tenantId, 'swecham'),
         ),
       );
 
@@ -96,7 +101,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
     expect(row.status).toBe('pending');
     expect(row.attempts).toBe(0);
     expect(row.locale).toBe('th');
-    expect(row.tenantId).toBeNull();
+    expect(row.tenantId).toBe('swecham');
 
     const ctx = row.contextData as Record<string, unknown>;
     expect(ctx.token).toBe(invitationId);
@@ -123,6 +128,7 @@ describe('integration: createUser enqueues outbox row with correct shape', () =>
           actorUserId: admin.userId,
           sourceIp: '203.0.113.21',
           requestId: `it-outbox-role-${role}`,
+          tenantId: 'swecham',
         },
         defaultCreateUserDeps,
       );

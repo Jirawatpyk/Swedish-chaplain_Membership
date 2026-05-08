@@ -85,7 +85,7 @@ describe('integration: outbox dispatcher L2 stuck-rows detection', () => {
     await db.insert(notificationsOutbox).values([
       {
         id: stuckId1,
-        tenantId: null,
+        tenantId: 'swecham',
         notificationType: 'member_invitation',
         toEmail: `stuck-1-${stuckId1.slice(0, 8)}@swecham.test`,
         locale: 'en',
@@ -96,7 +96,7 @@ describe('integration: outbox dispatcher L2 stuck-rows detection', () => {
       },
       {
         id: stuckId2,
-        tenantId: null,
+        tenantId: 'swecham',
         notificationType: 'member_invitation',
         toEmail: `stuck-2-${stuckId2.slice(0, 8)}@swecham.test`,
         locale: 'en',
@@ -136,7 +136,7 @@ describe('integration: outbox dispatcher L2 stuck-rows detection', () => {
 
     await db.insert(notificationsOutbox).values({
       id: freshId,
-      tenantId: null,
+      tenantId: 'swecham',
       notificationType: 'member_invitation',
       toEmail: `fresh-${freshId.slice(0, 8)}@swecham.test`,
       locale: 'en',

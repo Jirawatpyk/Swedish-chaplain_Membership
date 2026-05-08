@@ -34,9 +34,11 @@ export const resendEmailOutboxAdapter: EmailOutboxPort = {
   ): Promise<void> {
     // T107 — `null` tx = "enqueue standalone" (used by resend-pdf,
     // which runs outside a mutating financial tx). Mirrors the
-    // `f4AuditAdapter` fallback pattern. `notifications_outbox` is
-    // platform-scoped (no RLS) so `db` auto-commit is safe — the same
-    // table is written by the F1 invitation flow with tenant_id=null.
+    // `f4AuditAdapter` fallback pattern. `notifications_outbox` had
+    // no RLS pre-0098; migration 0098 added FORCE RLS but the
+    // BYPASSRLS owner role used by `db` auto-commit + `db.transaction`
+    // skips the policy. F1 invitation flow now also stamps a
+    // tenant_id (Round-3 Option G).
     const tx = (txUnknown as TenantTx | null) ?? db;
     const contextData = {
       event_type: input.eventType,

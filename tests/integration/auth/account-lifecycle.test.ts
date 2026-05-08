@@ -94,6 +94,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
         actorUserId: admin.userId,
         sourceIp: '203.0.113.11',
         requestId: inviteRequestId,
+        tenantId: 'swecham',
       },
       { ...defaultCreateUserDeps, enqueueInvitationInTx: stubEnqueueInvitationInTx },
     );

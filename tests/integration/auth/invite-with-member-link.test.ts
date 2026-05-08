@@ -29,7 +29,7 @@
  * by unit tests on the route.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import {
@@ -77,6 +77,7 @@ const createUserPort: CreateUserPort = async (input) => {
     sourceIp: input.sourceIp,
     requestId: input.requestId,
     locale: input.locale,
+    tenantId: input.tenantId,
   });
   if (result.ok) {
     return { ok: true, value: { user: { id: result.value.user.id } } };
@@ -237,7 +238,9 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
       .where(eq(invitations.userId, userId));
     expect(invRows.length).toBe(1);
 
-    // 3. Outbox row enqueued (cross-tenant: tenant_id is null)
+    // 3. Outbox row enqueued — Round-3 follow-up: tenant_id now carries
+    //    the inviter's chamber slug (was null pre-MTA; migration 0098
+    //    enabled FORCE RLS + NOT NULL on the column).
     const outboxRows = await db
       .select()
       .from(notificationsOutbox)
@@ -245,7 +248,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
         and(
           eq(notificationsOutbox.toEmail, inviteeEmail.toLowerCase()),
           eq(notificationsOutbox.notificationType, 'member_invitation'),
-          isNull(notificationsOutbox.tenantId),
+          eq(notificationsOutbox.tenantId, tenantA.ctx.slug),
         ),
       );
     expect(outboxRows.length).toBe(1);
@@ -349,6 +352,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
       actorUserId: admin.userId,
       sourceIp: '203.0.113.32',
       requestId: `rq-solo-${Date.now()}`,
+      tenantId: tenantA.ctx.slug,
     });
 
     expect(result.ok).toBe(true);
@@ -488,6 +492,7 @@ describe('integration: admin invite with optional memberId (F1 spec:672-678)', (
       actorUserId: admin.userId,
       sourceIp: '203.0.113.41',
       requestId: `rq-seed-linked-${Date.now()}`,
+      tenantId: tenantA.ctx.slug,
     });
     if (!existingResult.ok) throw new Error('seed existing user failed');
     const existingUserId = existingResult.value.user.id;

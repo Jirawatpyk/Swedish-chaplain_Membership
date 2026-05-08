@@ -485,14 +485,18 @@ export const emailChangeTokens = pgTable(
  * is emitted. Admin can trigger a fresh token + new row via the
  * "Re-send verification" action (FR-012c).
  *
- * `tenantId` nullable: future auth flows (password-reset at sign-in)
- * do not have a tenant context yet. F3 enqueues MUST populate it.
+ * `tenantId` is NOT NULL since migration 0098 (F8 Phase 10A) — that
+ * migration deleted ~10 pre-launch orphan rows, set the column NOT
+ * NULL, and enabled FORCE RLS with a `tenant_id = current_setting(...)`
+ * policy. Every auth flow (F1 invitation, password-reset) now passes
+ * the inviter / requester chamber slug so the row is both visible to
+ * the per-tenant dispatcher and accountable to the inviter's tenant.
  */
 export const notificationsOutbox = pgTable(
   'notifications_outbox',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tenantId: text('tenant_id'),
+    tenantId: text('tenant_id').notNull(),
     notificationType: notificationTypeEnum('notification_type').notNull(),
     toEmail: text('to_email').notNull(),
     locale: text('locale').notNull(),

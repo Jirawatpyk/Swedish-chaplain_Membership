@@ -17,7 +17,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 
 // Hoisted mocks — must appear above route + db imports.
@@ -55,12 +55,14 @@ describe('integration: outbox permanentFailure metric labels', () => {
     // outbox row left over from prior tests in the suite. The test's
     // `sendMock` is called ONCE per dispatched row, so any leftover
     // pending row inflates the count and breaks toHaveBeenCalledOnce().
-    // F3 tenant-scoped rows (tenant_id != null) are unaffected.
+    // Post-Round-3 Option G: F1 invitation rows carry tenant_id
+    // 'swecham'; this delete scopes to that slug so non-swecham
+    // tenant rows from parallel tests are unaffected.
     await db
       .delete(notificationsOutbox)
       .where(
         and(
-          isNull(notificationsOutbox.tenantId),
+          eq(notificationsOutbox.tenantId, 'swecham'),
           eq(notificationsOutbox.status, 'pending'),
         ),
       );
@@ -92,7 +94,7 @@ describe('integration: outbox permanentFailure metric labels', () => {
     const id = randomUUID();
     await db.insert(notificationsOutbox).values({
       id,
-      tenantId: null,
+      tenantId: 'swecham',
       notificationType: 'member_invitation',
       toEmail: `perm-nth-${id.slice(0, 8)}@swecham.test`,
       locale: 'en',
@@ -126,7 +128,7 @@ describe('integration: outbox permanentFailure metric labels', () => {
     const id = randomUUID();
     await db.insert(notificationsOutbox).values({
       id,
-      tenantId: null,
+      tenantId: 'swecham',
       notificationType: 'member_invitation',
       toEmail: `perm-inv-${id.slice(0, 8)}@swecham.test`,
       locale: 'en',
@@ -161,7 +163,7 @@ describe('integration: outbox permanentFailure metric labels', () => {
     const id = randomUUID();
     await db.insert(notificationsOutbox).values({
       id,
-      tenantId: null,
+      tenantId: 'swecham',
       notificationType: 'member_invitation',
       toEmail: `perm-max-${id.slice(0, 8)}@swecham.test`,
       locale: 'en',
