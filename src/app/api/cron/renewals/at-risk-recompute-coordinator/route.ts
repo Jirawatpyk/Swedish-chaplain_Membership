@@ -1,0 +1,363 @@
+/**
+ * F8 Phase 6 Wave C · T160 — Weekly at-risk recompute coordinator.
+ *
+ * Triggered WEEKLY at Sunday 02:00 Asia/Bangkok by cron-job.org (per
+ * `docs/runbooks/cron-jobs.md` F8 entry — added by T162). Resolves the
+ * set of active tenants, fans out to per-tenant
+ * `/api/cron/renewals/at-risk-recompute/[tenantId]` routes via internal
+ * HTTP, aggregates results, emits `cron_dispatch_orchestrated` audit
+ * (existing typed shape from F4/F5/F7 + dispatch-coordinator pattern),
+ * returns a summary.
+ *
+ * Architecture (mirrors dispatch-coordinator):
+ *   - Promise.allSettled isolates per-tenant failures.
+ *   - Per-tenant route's own SLO < 60s @ 5,000 members per FR-036 +
+ *     SC-005 fits comfortably under one Vercel function timeout.
+ *   - Each per-tenant invocation runs in its own function instance
+ *     with its own 300s budget.
+ *
+ * MVP single-tenant: "active tenants" = `[env.tenant.slug]`. Post-F10
+ * SaaS multi-tenant would query a tenants table.
+ *
+ * Auth: Bearer via `CRON_SECRET` (constant-time check).
+ *
+ * Kill-switches:
+ *   - `FEATURE_F8_RENEWALS=false` → 200 + `{skipped: true, reason:
+ *     'feature_flag_disabled'}` (whole-F8 dark launch)
+ *   - `FEATURE_F8_AT_RISK_DISABLED=true` → 200 + `{skipped: true,
+ *     reason: 'at_risk_disabled'}` (granular per FR-052b)
+ *
+ * Both return 200 (NOT 503 / 5xx) so cron-job.org does not retry-storm
+ * during a dark-launch period.
+ */
+import { NextResponse, type NextRequest } from 'next/server';
+import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { verifyCronBearer } from '@/lib/cron-auth';
+import { uuidv7 } from '@/lib/request-id';
+import { rateLimiter } from '@/lib/auth-deps';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { getClientIp } from '@/lib/client-ip';
+import { makeRenewalsDeps } from '@/modules/renewals';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+interface PerTenantResultOk {
+  readonly tenant_id: string;
+  readonly skipped: boolean;
+  readonly members_recomputed?: number;
+  readonly members_skipped_below_tenure?: number;
+  readonly members_failed?: number;
+  readonly duration_ms?: number;
+}
+
+interface PerTenantResultErr {
+  readonly tenant_id: string;
+  readonly error: string;
+}
+
+type PerTenantResult = PerTenantResultOk | PerTenantResultErr;
+
+interface OrchestratedSummary {
+  readonly tenants_enqueued: number;
+  readonly tenants_succeeded: number;
+  readonly tenants_failed: number;
+  readonly tenants_skipped_kill_switch: number;
+  readonly duration_ms: number;
+}
+
+async function emitOrchestratedAudit(
+  bookkeepingTenantSlug: string,
+  summary: OrchestratedSummary,
+  perTenantResults: ReadonlyArray<PerTenantResult>,
+  correlationId: string,
+): Promise<void> {
+  try {
+    const deps = makeRenewalsDeps(bookkeepingTenantSlug);
+    await deps.auditEmitter.emit(
+      {
+        type: 'cron_dispatch_orchestrated',
+        payload: {
+          tenants_enqueued: summary.tenants_enqueued,
+          tenants_succeeded: summary.tenants_succeeded,
+          tenants_failed: summary.tenants_failed,
+          tenants_skipped_kill_switch: summary.tenants_skipped_kill_switch,
+          duration_ms: summary.duration_ms,
+          per_tenant_summaries: perTenantResults.map((r) =>
+            'error' in r
+              ? { tenant_id: r.tenant_id, error: r.error }
+              : {
+                  tenant_id: r.tenant_id,
+                  skipped: r.skipped,
+                  // The cron_dispatch_orchestrated typed payload uses
+                  // `reminders_dispatched` + `tasks_created` field
+                  // names (defined for the daily dispatch audit). For
+                  // at-risk we re-purpose the slots: `reminders_
+                  // dispatched` ⇒ members_recomputed, `tasks_created`
+                  // ⇒ members_failed. Dashboard queries that key on
+                  // `cron_dispatch_orchestrated` already group by
+                  // route in the bookkeeping tenant, so consumers can
+                  // distinguish at-risk vs dispatch by looking at the
+                  // (correlationId → trace) pair. Future spec
+                  // amendment could introduce a discriminator field.
+                  reminders_dispatched: r.members_recomputed ?? 0,
+                  tasks_created: r.members_failed ?? 0,
+                  duration_ms: r.duration_ms ?? 0,
+                },
+          ),
+        },
+      },
+      {
+        tenantId: bookkeepingTenantSlug,
+        actorUserId: null,
+        actorRole: 'cron',
+        correlationId,
+        requestId: correlationId,
+      },
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        correlationId,
+      },
+      'cron.renewals.at_risk.coordinator.audit_emit_failed',
+    );
+  }
+}
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  // ----- Bearer auth + rate-limited 401 audit ----------------------------
+  if (
+    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
+  ) {
+    const ip = getClientIp(request);
+    try {
+      const rl = await rateLimiter.check(
+        `f8:cron:bearer-rejected:${ip}`,
+        60,
+        60,
+      );
+      if (!rl.success) {
+        return NextResponse.json(
+          { error: { code: 'rate_limited' } },
+          {
+            status: 429,
+            headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
+          },
+        );
+      }
+    } catch (e) {
+      const errInstance = e instanceof Error ? e : new Error(String(e));
+      logger.warn(
+        {
+          errMsg: errInstance.message.slice(0, 200),
+          errName: errInstance.name,
+          ip,
+          route: '/api/cron/renewals/at-risk-recompute-coordinator',
+        },
+        'cron.renewals.at_risk.coordinator.rate_limit_check_failed_fail_open',
+      );
+    }
+
+    try {
+      const deps = makeRenewalsDeps(env.tenant.slug);
+      await deps.auditEmitter.emit(
+        {
+          type: 'cron_bearer_auth_rejected',
+          payload: {
+            route: '/api/cron/renewals/at-risk-recompute-coordinator',
+          },
+        },
+        {
+          tenantId: env.tenant.slug,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId: uuidv7(),
+          requestId: null,
+        },
+      );
+    } catch (e) {
+      logger.error(
+        { err: e instanceof Error ? e : new Error(String(e)) },
+        'cron.renewals.at_risk.coordinator.bearer_rejected_audit_failed',
+      );
+    }
+    return NextResponse.json(
+      { error: { code: 'unauthorized' } },
+      { status: 401 },
+    );
+  }
+
+  // ----- Kill-switch gates -----------------------------------------------
+  if (!env.features.f8Renewals) {
+    return NextResponse.json(
+      { skipped: true, reason: 'feature_flag_disabled' },
+      { status: 200 },
+    );
+  }
+  if (env.features.f8AtRiskDisabled) {
+    return NextResponse.json(
+      { skipped: true, reason: 'at_risk_disabled' },
+      { status: 200 },
+    );
+  }
+
+  const correlationId = uuidv7();
+  const startedAt = Date.now();
+
+  // Resolve active tenants. MVP single-tenant = [env.tenant.slug].
+  const activeTenants: ReadonlyArray<string> = [env.tenant.slug];
+
+  // Edge case: zero-tenant cron pass — emit one audit with
+  // tenants_enqueued=0 + return 200 (matches dispatch-coordinator
+  // CHK032 behaviour).
+  if (activeTenants.length === 0) {
+    const summary: OrchestratedSummary = {
+      tenants_enqueued: 0,
+      tenants_succeeded: 0,
+      tenants_failed: 0,
+      tenants_skipped_kill_switch: 0,
+      duration_ms: Date.now() - startedAt,
+    };
+    await emitOrchestratedAudit(env.tenant.slug, summary, [], correlationId);
+    return NextResponse.json({
+      skipped: false,
+      ...summary,
+      per_tenant_results: [],
+    });
+  }
+
+  // Fan-out via internal fetch.
+  const baseUrl = env.app.baseUrl;
+  const cronSecret = env.cron.secret;
+
+  const settled = await Promise.allSettled(
+    activeTenants.map((tenantId) =>
+      (async () => {
+        const r = await fetch(
+          `${baseUrl}/api/cron/renewals/at-risk-recompute/${encodeURIComponent(tenantId)}`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${cronSecret}`,
+              'x-request-id': correlationId,
+            },
+          },
+        );
+        let json: Record<string, unknown> = {};
+        let jsonParseFailed = false;
+        try {
+          json = (await r.json()) as Record<string, unknown>;
+        } catch (e) {
+          jsonParseFailed = true;
+          logger.error(
+            {
+              err: e instanceof Error ? e : new Error(String(e)),
+              tenantId,
+              status: r.status,
+              contentType: r.headers.get('content-type'),
+              correlationId,
+            },
+            'cron.renewals.at_risk.coordinator.json_parse_failed',
+          );
+        }
+        return {
+          tenantId,
+          ok: r.ok,
+          status: r.status,
+          json,
+          jsonParseFailed,
+        };
+      })(),
+    ),
+  );
+
+  const perTenantResults: PerTenantResult[] = settled.map((r, i) => {
+    const tenantId = activeTenants[i]!;
+    if (r.status === 'fulfilled' && r.value.ok && !r.value.jsonParseFailed) {
+      return {
+        tenant_id: tenantId,
+        skipped: Boolean(r.value.json.skipped),
+        members_recomputed:
+          typeof r.value.json.members_recomputed === 'number'
+            ? r.value.json.members_recomputed
+            : 0,
+        members_skipped_below_tenure:
+          typeof r.value.json.members_skipped_below_tenure === 'number'
+            ? r.value.json.members_skipped_below_tenure
+            : 0,
+        members_failed:
+          typeof r.value.json.members_failed === 'number'
+            ? r.value.json.members_failed
+            : 0,
+        duration_ms:
+          typeof r.value.json.duration_ms === 'number'
+            ? r.value.json.duration_ms
+            : 0,
+      };
+    }
+    if (r.status === 'rejected') {
+      const reasonStr = String(r.reason);
+      logger.error(
+        { tenantId, correlationId, reason: reasonStr.slice(0, 400) },
+        'cron.renewals.at_risk.coordinator.tenant_fetch_rejected',
+      );
+      return { tenant_id: tenantId, error: reasonStr };
+    }
+    if (r.value.jsonParseFailed) {
+      return {
+        tenant_id: tenantId,
+        error: `http_${r.value.status}_json_parse_failed`,
+      };
+    }
+    logger.error(
+      {
+        tenantId,
+        correlationId,
+        status: r.value.status,
+        errorBody: r.value.json,
+      },
+      'cron.renewals.at_risk.coordinator.tenant_http_error',
+    );
+    return { tenant_id: tenantId, error: `http_${r.value.status}` };
+  });
+
+  const tenantsSucceededOrSkipped = perTenantResults.filter(
+    (r): r is PerTenantResultOk => !('error' in r),
+  );
+  const tenantsSkippedKillSwitch = tenantsSucceededOrSkipped.filter(
+    (r) => r.skipped,
+  ).length;
+  const tenantsSucceeded =
+    tenantsSucceededOrSkipped.length - tenantsSkippedKillSwitch;
+  const tenantsFailed =
+    perTenantResults.length - tenantsSucceededOrSkipped.length;
+
+  const summary: OrchestratedSummary = {
+    tenants_enqueued: activeTenants.length,
+    tenants_succeeded: tenantsSucceeded,
+    tenants_failed: tenantsFailed,
+    tenants_skipped_kill_switch: tenantsSkippedKillSwitch,
+    duration_ms: Date.now() - startedAt,
+  };
+
+  await emitOrchestratedAudit(
+    env.tenant.slug,
+    summary,
+    perTenantResults,
+    correlationId,
+  );
+
+  logger.info(
+    { correlationId, ...summary },
+    'cron.renewals.at_risk.coordinator.complete',
+  );
+
+  return NextResponse.json({
+    skipped: false,
+    ...summary,
+    per_tenant_results: perTenantResults,
+  });
+}

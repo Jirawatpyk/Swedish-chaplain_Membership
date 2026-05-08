@@ -273,17 +273,53 @@ ready (50+ tenants).
 ## F8 — renewals/at-risk-recompute-coordinator (NEW — F8 Phase 6)
 
 Weekly batch-recompute of member at-risk scores (8-factor formula per FR-029
-+ FR-029a F6-readiness fallback). Per-tenant fan-out same as dispatch
-coordinator. Emits `at_risk_score_recomputed` per member + threshold-crossing
-audits.
++ FR-029a F6-readiness fallback + FR-030 proportional bands). Per-tenant
+fan-out same as dispatch coordinator. Per-member `computeAtRiskScore` call
+inside per-tenant route emits `at_risk_score_recomputed` (one per recomputed
+member) + `at_risk_score_threshold_crossed` (when member's band crosses UP)
++ `at_risk_skipped_below_min_tenure` (members < min-tenure threshold per
+FR-035). Cron-pass-level `at_risk_compute_partial_failure` audit on aggregate
+non-zero member-failure count. Coordinator emits `cron_dispatch_orchestrated`
+(re-using the existing typed shape) summarising tenants enqueued / succeeded
+/ failed / skipped-by-kill-switch.
+
+Per-tenant advisory lock: `pg_advisory_xact_lock(hashtextextended(
+'renewals:at-risk:'||tenant_id, 0))`. Distinct namespace from
+`renewals:dispatch:` so daily dispatch and weekly at-risk recompute can run
+concurrently without contention.
+
+Granular kill-switch: `FEATURE_F8_AT_RISK_DISABLED=true` short-circuits ONLY
+this surface (returns 200 + `{skipped: true, reason: 'at_risk_disabled'}`)
+without disabling the rest of F8 (dispatch + tier-upgrade + escalation
+tasks unaffected). Designed for incident response when formula calibration
+ships bad signals; restored via env-var revert + redeploy in <5 minutes.
+The whole-F8 kill-switch `FEATURE_F8_RENEWALS=false` also short-circuits
+both coordinator + per-tenant routes.
 
 ### Setup steps
 
 Same pattern as dispatch coordinator with these differences:
 - **Title**: `Chamber-OS · F8 at-risk recompute coordinator`
-- **URL**: `.../api/cron/renewals/at-risk-recompute-coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/at-risk-recompute-coordinator`
+- **Method**: `POST`
 - **Schedule**: `0 2 * * 0` (Sun 02:00 Asia/Bangkok)
-- **Timeout**: 60 seconds (per-tenant SLO ≤60s @ 5k members per FR-036)
+- **Timeout**: 60 seconds (per-tenant SLO ≤60s @ 5k members per FR-036 +
+  SC-005)
+- **Retry**: **OFF** per § Retry policy contract — re-runnable + idempotent
+  (score writes overwrite previous values; `risk_score_last_computed_at`
+  surfaces last-success timestamp). A failed cron pass simply means scores
+  stay at their previous values until the next Sunday — no data loss.
+- **Auth**: `Authorization: Bearer ${CRON_SECRET}` (rotated atomically with
+  F4/F5/F7/F8 per R17)
+
+### Expected response codes
+- `200 {skipped: false, ...summary}` — happy path with per-tenant counts
+- `200 {skipped: true, reason: 'feature_flag_disabled'}` — F8 kill-switch on
+- `200 {skipped: true, reason: 'at_risk_disabled'}` — granular kill-switch on
+- `401 {error: {code: 'unauthorized'}}` — Bearer rejected (audit emitted)
+- `429 {error: {code: 'rate_limited'}}` — sustained Bearer-rejection probe
+- `500` — unexpected coordinator-level error (per-tenant errors degrade to
+  `tenants_failed > 0` in the 200 response, not 500)
 
 ## F8 — renewals/tier-upgrade-evaluate-coordinator (NEW — F8 Phase 7)
 

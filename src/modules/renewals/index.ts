@@ -129,8 +129,13 @@ export {
   type TokenPayloadError,
 } from './domain/renewal-link-token';
 
+// Phase 6 Wave A1+C — Domain pure function re-exported under
+// `computeAtRiskScorePure` so the public name `computeAtRiskScore`
+// can carry the Application use-case (T154 — orchestrates persistence
+// + audit emit on top of the Domain formula). Direct Domain consumers
+// (tests + the AtRiskScorer adapter) keep using `./domain/...` paths.
 export {
-  computeAtRiskScore,
+  computeAtRiskScore as computeAtRiskScorePure,
   AT_RISK_FACTOR_WEIGHTS,
   F6_ACTIVE_MAX,
   F6_INACTIVE_MAX,
@@ -353,6 +358,31 @@ export {
   type SendReminderNowOutput,
   type SendReminderNowError,
 } from './application/use-cases/send-reminder-now';
+
+// --- Phase 6 Wave B (T154 + T155 + T156) at-risk use-cases ---------------
+export {
+  computeAtRiskScore,
+  computeAtRiskScoreInputSchema,
+  type ComputeAtRiskScoreInput,
+  type ComputeAtRiskScoreOutput,
+  type ComputeAtRiskScoreError,
+} from './application/use-cases/compute-at-risk-score';
+
+export {
+  snoozeAtRiskMember,
+  snoozeAtRiskMemberInputSchema,
+  type SnoozeAtRiskMemberInput,
+  type SnoozeAtRiskMemberOutput,
+  type SnoozeAtRiskMemberError,
+} from './application/use-cases/snooze-at-risk-member';
+
+export {
+  recordAtRiskOutreach,
+  recordAtRiskOutreachInputSchema,
+  type RecordAtRiskOutreachInput,
+  type RecordAtRiskOutreachOutput,
+  type RecordAtRiskOutreachError,
+} from './application/use-cases/record-at-risk-outreach';
 
 // SkipReason enum + DispatchCandidate types are referenced by route
 // handlers in Wave I5/I6 — exported via barrel for type-safety.

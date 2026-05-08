@@ -205,6 +205,27 @@ export interface MemberRenewalFlagsRepo {
     memberId: string,
     snoozedUntil: string,
   ): Promise<MemberFlagToggleResult>;
+
+  /**
+   * Phase 6 Wave C (T161) — list active member IDs for the weekly at-
+   * risk recompute cron loop. Filters per FR-007a canonical active
+   * definition: `members.status === 'active'` AND member has at least
+   * one renewal cycle whose `status NOT IN ('lapsed', 'cancelled')`.
+   *
+   * Returns a flat string[] (member UUIDs only) ordered by `member_id
+   * ASC` for deterministic batch processing. Tenant-scoped via RLS;
+   * caller MUST invoke inside `runInTenant`.
+   *
+   * `limit` is optional — caller passes `undefined` for "all active
+   * members" (cron's normal mode) or a small value for testing /
+   * pagination. The cron's per-tenant SLO (60s @ 5,000 members per
+   * FR-036 + SC-005) is verified by T174 perf test.
+   */
+  listActiveMemberIdsForAtRiskRecompute(
+    tx: TenantTx,
+    tenantId: string,
+    limit?: number,
+  ): Promise<ReadonlyArray<string>>;
 }
 
 /**

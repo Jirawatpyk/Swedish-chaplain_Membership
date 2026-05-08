@@ -19,10 +19,11 @@
  * line 26 imports F3's `members` schema for the LEFT JOIN to surface
  * `company_name`. This adapter follows the same convention.
  */
-import { eq } from 'drizzle-orm';
+import { and, asc, eq, exists, notInArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { renewalCycles } from '../schema-renewal-cycles';
 import type {
   MemberFlagToggleResult,
   MemberRenewalFlagsRepo,
@@ -300,6 +301,48 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         .where(eq(members.memberId, memberId))
         .returning({ memberId: members.memberId });
       return { previousBand, affectedRows: updated.length };
+    },
+
+    /**
+     * Phase 6 Wave C (T161) — list active member IDs for the weekly
+     * at-risk recompute cron loop. Filters per FR-007a:
+     *   - `members.status === 'active'`
+     *   - EXISTS a `renewal_cycles` row for this member with status NOT
+     *     IN ('lapsed', 'cancelled')
+     *
+     * Tenant-scoped via RLS (members + renewal_cycles both have
+     * tenant_isolation policies). Ordered by `member_id ASC` for
+     * deterministic batching.
+     */
+    async listActiveMemberIdsForAtRiskRecompute(
+      tx: unknown,
+      _tenantId: string,
+      limit?: number,
+    ): Promise<ReadonlyArray<string>> {
+      const txDb = tx as typeof db;
+      const baseQuery = txDb
+        .select({ memberId: members.memberId })
+        .from(members)
+        .where(
+          and(
+            eq(members.status, 'active'),
+            exists(
+              txDb
+                .select({ one: sql`1` })
+                .from(renewalCycles)
+                .where(
+                  and(
+                    eq(renewalCycles.memberId, members.memberId),
+                    notInArray(renewalCycles.status, ['lapsed', 'cancelled']),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .orderBy(asc(members.memberId));
+      const rows =
+        limit !== undefined ? await baseQuery.limit(limit) : await baseQuery;
+      return rows.map((r) => r.memberId);
     },
 
     /**
