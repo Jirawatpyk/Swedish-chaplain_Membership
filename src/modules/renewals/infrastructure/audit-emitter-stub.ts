@@ -77,4 +77,17 @@ export const renewalAuditEmitterStub: RenewalAuditEmitter = {
     // composition explicitly opts out of DB writes.
     return this.emit(event, ctx);
   },
+
+  async bulkEmitInTx(
+    _tx: unknown,
+    events: ReadonlyArray<F8AuditEvent<F8AuditEventType>>,
+    baseCtx: AuditContext,
+  ): Promise<void> {
+    // Stub fans out via the per-event emit path so test runs see one
+    // log entry per event (matches the real Drizzle adapter's bulk
+    // INSERT … VALUES behaviour at the row level).
+    for (const event of events) {
+      await this.emit(event, baseCtx);
+    }
+  },
 };

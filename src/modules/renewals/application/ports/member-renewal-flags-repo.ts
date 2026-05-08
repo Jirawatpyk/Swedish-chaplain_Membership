@@ -228,6 +228,34 @@ export interface MemberRenewalFlagsRepo {
   ): Promise<ReadonlyArray<string>>;
 
   /**
+   * Phase 6 Wave G T159b — bulk-write all members' at-risk score
+   * results in one round-trip. Used by `recomputeAtRiskScoresBatch`
+   * to hit the FR-036 + SC-005 60s @ 5,000 members SLO. Adapter
+   * uses `UPDATE … FROM jsonb_to_recordset(...)` to apply N updates
+   * in a single SQL statement.
+   *
+   * `computedAt` is the cron-pass-wide single timestamp (so all rows
+   * share `risk_score_last_computed_at` for that pass).
+   */
+  bulkSetRiskScores(
+    tx: TenantTx,
+    tenantId: string,
+    rows: ReadonlyArray<BulkSetRiskScoreRow>,
+    computedAt: Date,
+  ): Promise<{ readonly affectedRows: number }>;
+
+  /**
+   * Phase 6 Wave G T159b — bulk gather factor inputs for the at-risk
+   * recompute cron. Single CTE that joins F3 members + F4 invoices
+   * aggregate; filters per FR-007a (active member def). Returns ALL
+   * active members' factors in one round-trip.
+   */
+  gatherAtRiskFactorsForTenant(
+    tx: TenantTx,
+    tenantId: string,
+  ): Promise<ReadonlyArray<AtRiskBatchFactorRow>>;
+
+  /**
    * Phase 6 Wave D (T163) — paginated read of at-risk members for the
    * admin "At-Risk Members" widget at /admin/renewals. Filters:
    *   - `members.risk_score >= 50` (warning + at-risk + critical bands
@@ -298,6 +326,35 @@ export interface SetRiskScoreInput {
     Record<keyof typeof AT_RISK_FACTOR_WEIGHTS, number>
   >;
   readonly computedAt: string;
+}
+
+/**
+ * Phase 6 Wave G T159b — per-member row shape for `bulkSetRiskScores`.
+ * Adapter assembles UPDATE rows from this shape via
+ * `jsonb_to_recordset(...)`.
+ */
+export interface BulkSetRiskScoreRow {
+  readonly memberId: string;
+  readonly score: number;
+  readonly band: RiskBand;
+  readonly factors: Partial<
+    Record<keyof typeof AT_RISK_FACTOR_WEIGHTS, number>
+  >;
+}
+
+/**
+ * Phase 6 Wave G T159b — per-member factor-input row returned by
+ * `gatherAtRiskFactorsForTenant`. Adapter computes the LATERAL JOIN
+ * aggregate from F4 invoices + F3 contacts; the use-case derives
+ * AtRiskFactors values in-memory.
+ */
+export interface AtRiskBatchFactorRow {
+  readonly memberId: string;
+  readonly memberCreatedAt: string; // ISO 8601 UTC
+  readonly lastActivityAtIso: string | null; // ISO 8601 UTC or null
+  readonly priorRiskBand: RiskBand | null;
+  readonly invoicesOverdueCount: number;
+  readonly lastPaidAtIso: string | null; // ISO 8601 UTC or null
 }
 
 export interface SetRiskScoreResult {

@@ -42,3 +42,33 @@ These optimisations are tracked as a follow-up wave (T159b: batched
 CTE adapter). The current adapter (T159, Wave F) is functional + tested
 end-to-end (T173+T175 9/9 GREEN); the perf SLO compliance is the only
 deferred concern + strict-mode is OFF until the batched path lands.
+
+**UPDATE 2026-05-08 — T159b batched path SHIPPED (Wave G)**:
+The `recomputeAtRiskScoresBatch` use-case + new repo+emitter port
+methods (bulkSetRiskScores / gatherAtRiskFactorsForTenant /
+bulkEmitInTx) collapse the recompute pass into 4 round-trips total.
+At 5,000 members on local (BKK→SG, ~50ms RTT) the cron completes in
+**7.76 seconds**, well under the 60s budget — `PERF_SLO_STRICT=1`
+strict assertion now PASSES from local. Production runs (sin1→Neon,
+~5ms RTT) will be even faster. **Speedup: 38× faster** vs the per-
+member loop at the same scale.
+
+## F8 Phase 6 T174 — at-risk recompute (2026-05-08T08:46:09.298Z)
+- members: 500
+- list query: 228ms
+- cron pass: 297443ms (SLO 60000ms; strict=false)
+- per-member p50: 579ms · p95: 690ms · p99: 763ms · avg: 594.9ms
+
+## F8 Phase 6 T174 — at-risk recompute BATCHED (2026-05-08T08:49:28.542Z)
+- members: 100
+- list query: 228ms
+- cron pass: 356ms (SLO 60000ms; strict=false)
+- per-member avg: 3.56ms (batched — 4 round-trips total)
+- recomputed: 0 · skipped<tenure: 100 · failed: 0
+
+## F8 Phase 6 T174 — at-risk recompute BATCHED (2026-05-08T08:50:20.993Z)
+- members: 5000
+- list query: 6838ms
+- cron pass: 7763ms (SLO 60000ms; strict=true)
+- per-member avg: 1.55ms (batched — 4 round-trips total)
+- recomputed: 0 · skipped<tenure: 5000 · failed: 0

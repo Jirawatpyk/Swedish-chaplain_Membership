@@ -605,4 +605,22 @@ export interface RenewalAuditEmitter {
     event: F8AuditEvent<E>,
     ctx: AuditContext,
   ): Promise<void>;
+
+  /**
+   * Phase 6 Wave G T159b — bulk-emit N events in one INSERT … VALUES
+   * (…),(…) round-trip. All events share the same `baseCtx` (tenantId,
+   * actorUserId, actorRole, correlationId, requestId); only the
+   * `event` discriminant + payload varies per row. Used by the
+   * batched at-risk recompute use-case to collapse N audit-INSERTs
+   * into 1 (FR-036 SLO).
+   *
+   * Atomic with the surrounding `runInTenant` tx — failure rolls back
+   * the bulk UPDATE that landed alongside (Constitution Principle
+   * VIII). Empty `events` is a no-op.
+   */
+  bulkEmitInTx(
+    tx: TenantTx,
+    events: ReadonlyArray<F8AuditEvent<F8AuditEventType>>,
+    baseCtx: AuditContext,
+  ): Promise<void>;
 }

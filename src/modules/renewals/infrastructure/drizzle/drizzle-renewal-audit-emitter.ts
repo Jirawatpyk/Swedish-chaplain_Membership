@@ -300,6 +300,38 @@ export function makeDrizzleRenewalAuditEmitter(
       const txDb = tx as typeof db;
       await txDb.insert(auditLog).values(buildInsertValues(event, ctx));
     },
+
+    /**
+     * Phase 6 Wave G T159b — bulk-emit N events in one INSERT round-
+     * trip. Pre-flight checks each event's type against the F8 enum;
+     * throws on any unknown event so the caller's tx rolls back. Uses
+     * Drizzle's `.values([…])` array form which Postgres collapses
+     * into a single multi-row INSERT.
+     */
+    async bulkEmitInTx(
+      tx: unknown,
+      events: ReadonlyArray<F8AuditEvent<F8AuditEventType>>,
+      baseCtx: AuditContext,
+    ): Promise<void> {
+      if (events.length === 0) return;
+      for (const event of events) {
+        if (!isF8AuditEventType(event.type)) {
+          pinoFallback(event, baseCtx, 'unknown_event_type');
+          throw new Error(
+            `bulkEmitInTx: event type '${event.type}' is not a known F8 audit event — refusing to commit state mutation without atomic audit rows`,
+          );
+        }
+        if (!F8_ENUM_SHIPPED.has(event.type)) {
+          pinoFallback(event, baseCtx, 'not_in_pgenum');
+          throw new Error(
+            `bulkEmitInTx: event type '${event.type}' is not yet in the audit_event_type pgEnum — ship its migration before atomic emit`,
+          );
+        }
+      }
+      const txDb = tx as typeof db;
+      const rows = events.map((event) => buildInsertValues(event, baseCtx));
+      await txDb.insert(auditLog).values(rows);
+    },
   };
 }
 

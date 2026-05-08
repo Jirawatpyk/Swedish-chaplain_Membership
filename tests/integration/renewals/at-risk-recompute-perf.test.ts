@@ -32,7 +32,10 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
-import { computeAtRiskScore, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  recomputeAtRiskScoresBatch,
+  makeRenewalsDeps,
+} from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
@@ -222,7 +225,7 @@ describe.skipIf(!RUN_PERF)(
     it(`per-tenant cron pass <${PERF_SLO_MS}ms @ ${MEMBER_COUNT} members`, async () => {
       const deps = makeRenewalsDeps(tenant.ctx.slug);
 
-      // Step 1 — list active member IDs (the cron's first step).
+      // Smoke list — verifies the seed populated the candidate set.
       const listStart = Date.now();
       const memberIds = await runInTenant(tenant.ctx, (tx) =>
         deps.memberRenewalFlagsRepo.listActiveMemberIdsForAtRiskRecompute(
@@ -233,48 +236,48 @@ describe.skipIf(!RUN_PERF)(
       const listDurationMs = Date.now() - listStart;
       expect(memberIds.length).toBeGreaterThanOrEqual(MEMBER_COUNT);
 
-      // Step 2 — compute per member, capture wall-clock.
-      const samples: number[] = [];
+      // Single batched cron pass — 4 round-trips total regardless of
+      // member count (T159b batched use-case).
       const cronStart = Date.now();
-      for (const memberId of memberIds) {
-        const t0 = Date.now();
-        const r = await computeAtRiskScore(deps, {
-          tenantId: tenant.ctx.slug,
-          memberId,
-          correlationId: randomUUID(),
-        });
-        // Don't fail the perf bench on transient single-member errors;
-        // T174 is about throughput, not correctness (T173 + T175 cover
-        // correctness).
-        if (!r.ok) continue;
-        samples.push(Date.now() - t0);
-      }
+      const result = await recomputeAtRiskScoresBatch(deps, {
+        tenantId: tenant.ctx.slug,
+        correlationId: randomUUID(),
+      });
       const cronDurationMs = Date.now() - cronStart;
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
 
-      const sorted = [...samples].sort((a, b) => a - b);
-      const p50 = percentile(sorted, 50);
-      const p95 = percentile(sorted, 95);
-      const p99 = percentile(sorted, 99);
-      const avg =
-        sorted.reduce((a, b) => a + b, 0) / Math.max(1, sorted.length);
+      // Per-member latency is amortised across the batch — surface the
+      // average for trend tracking. The batch has no inner per-member
+      // wall-clock granularity (everything happens server-side in 4
+      // SQL statements).
+      const memberCount = Math.max(1, result.value.membersTotal);
+      const avg = cronDurationMs / memberCount;
+      const p50 = avg; // batched: per-member percentiles collapse to avg
+      const p95 = avg;
+      const p99 = avg;
 
       console.log(
-        `[T174] members=${samples.length} list=${listDurationMs}ms cron=${cronDurationMs}ms p50=${p50}ms p95=${p95}ms p99=${p99}ms avg=${avg.toFixed(1)}ms`,
+        `[T174] members=${result.value.membersTotal} list=${listDurationMs}ms cron=${cronDurationMs}ms (batched ⇒ p50=p95=p99=avg=${avg.toFixed(1)}ms/member)`,
       );
 
       // Append to perf-benchmarks.md (per memory feedback_verify_cp_before_mark).
       try {
         appendFileSync(
           'perf-benchmarks.md',
-          `\n## F8 Phase 6 T174 — at-risk recompute (${new Date().toISOString()})\n` +
-            `- members: ${samples.length}\n` +
+          `\n## F8 Phase 6 T174 — at-risk recompute BATCHED (${new Date().toISOString()})\n` +
+            `- members: ${result.value.membersTotal}\n` +
             `- list query: ${listDurationMs}ms\n` +
             `- cron pass: ${cronDurationMs}ms (SLO ${PERF_SLO_MS}ms; strict=${PERF_SLO_STRICT})\n` +
-            `- per-member p50: ${p50}ms · p95: ${p95}ms · p99: ${p99}ms · avg: ${avg.toFixed(1)}ms\n`,
+            `- per-member avg: ${avg.toFixed(2)}ms (batched — 4 round-trips total)\n` +
+            `- recomputed: ${result.value.membersRecomputed} · skipped<tenure: ${result.value.membersSkippedBelowTenure} · failed: ${result.value.membersFailed}\n`,
         );
       } catch {
         // perf-benchmarks.md may not exist on first run; non-fatal.
       }
+      void p50;
+      void p95;
+      void p99;
 
       // SLO assertion is gated on PERF_SLO_STRICT — local dev runs
       // exceed the 60s budget purely from BKK→Singapore RTT

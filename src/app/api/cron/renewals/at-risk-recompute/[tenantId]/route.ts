@@ -50,7 +50,7 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { getClientIp } from '@/lib/client-ip';
 import { asTenantContext } from '@/modules/tenants';
 import {
-  computeAtRiskScore,
+  recomputeAtRiskScoresBatch,
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
@@ -158,19 +158,17 @@ export async function POST(
   const startedAt = Date.now();
 
   try {
-    // Step 1 — list active member IDs inside an outer tx with the
-    // advisory lock held. The tx exists ONLY for the lock + the list
-    // query; per-member computeAtRiskScore opens its own runInTenant
-    // for atomic state+audit (the use-case design).
-    let memberIds: ReadonlyArray<string>;
+    // Acquire the per-tenant advisory lock — runs inside its own tx
+    // that auto-releases at commit. Distinct from the batch use-case's
+    // own tx (the use-case opens its own runInTenant; the lock here is
+    // a serialisation guard to prevent two concurrent at-risk crons
+    // racing for the same tenant). Lock namespace `renewals:at-risk:`
+    // is disjoint from `renewals:dispatch:` so daily dispatch and
+    // weekly at-risk can run concurrently without contention.
     try {
-      memberIds = await runInTenant(tenantCtx, async (tx) => {
+      await runInTenant(tenantCtx, async (tx) => {
         await tx.execute(
           sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:at-risk:'||${tenantId}, 0))`,
-        );
-        return await deps.memberRenewalFlagsRepo.listActiveMemberIdsForAtRiskRecompute(
-          tx,
-          tenantId,
         );
       });
     } catch (e) {
@@ -180,7 +178,7 @@ export async function POST(
           tenantId,
           correlationId,
         },
-        'cron.renewals.at_risk.list_members_failed',
+        'cron.renewals.at_risk.lock_acquire_failed',
       );
       return NextResponse.json(
         { error: { code: 'server_error' }, tenant_id: tenantId },
@@ -188,54 +186,45 @@ export async function POST(
       );
     }
 
-    // Step 2 — per-member compute loop with fault isolation.
+    // T159b — batched recompute use-case: 4 round-trips total (settings
+    // + factor CTE + bulk UPDATE + bulk INSERT audits) regardless of
+    // member count. Hits FR-036 + SC-005 60s @ 5,000 members SLO on
+    // production-equivalent infra (verified by T174 perf bench when
+    // PERF_SLO_STRICT=1).
     let recomputed = 0;
     let skippedBelowTenure = 0;
-    let memberNotFound = 0;
+    const memberNotFound = 0; // batched path doesn't surface this signal
     let failed = 0;
+    let membersTotal = 0;
 
-    for (const memberId of memberIds) {
-      try {
-        const r = await computeAtRiskScore(deps, {
+    const batchResult = await recomputeAtRiskScoresBatch(deps, {
+      tenantId,
+      correlationId,
+    });
+    if (!batchResult.ok) {
+      logger.error(
+        {
           tenantId,
-          memberId,
           correlationId,
-        });
-        if (!r.ok) {
-          if (r.error.kind === 'member_not_found') {
-            memberNotFound += 1;
-          } else {
-            failed += 1;
-            logger.warn(
-              {
-                tenantId,
-                memberId,
-                errorKind: r.error.kind,
-                correlationId,
-              },
-              'cron.renewals.at_risk.compute_member_failed',
-            );
-          }
-          continue;
-        }
-        if (r.value.skipped) {
-          skippedBelowTenure += 1;
-        } else {
-          recomputed += 1;
-        }
-      } catch (e) {
-        failed += 1;
-        logger.error(
-          {
-            err: e instanceof Error ? e : new Error(String(e)),
-            tenantId,
-            memberId,
-            correlationId,
-          },
-          'cron.renewals.at_risk.compute_member_threw',
-        );
-      }
+          errorKind: batchResult.error.kind,
+          message:
+            batchResult.error.kind === 'invalid_input' ||
+            batchResult.error.kind === 'server_error'
+              ? batchResult.error.message
+              : undefined,
+        },
+        'cron.renewals.at_risk.batch_failed',
+      );
+      return NextResponse.json(
+        { error: { code: 'server_error' }, tenant_id: tenantId },
+        { status: 500 },
+      );
     }
+    membersTotal = batchResult.value.membersTotal;
+    recomputed = batchResult.value.membersRecomputed;
+    skippedBelowTenure = batchResult.value.membersSkippedBelowTenure;
+    failed = batchResult.value.membersFailed;
+    void memberNotFound;
 
     // Step 3 — emit one partial-failure audit per cron pass if any
     // member failed.
@@ -246,7 +235,7 @@ export async function POST(
             type: 'at_risk_compute_partial_failure',
             payload: {
               error_class: 'aggregate',
-              members_processed: memberIds.length - failed,
+              members_processed: membersTotal - failed,
               members_failed: failed,
             },
           },
@@ -269,7 +258,7 @@ export async function POST(
     const responseBody = {
       skipped: false as const,
       tenant_id: tenantId,
-      members_total: memberIds.length,
+      members_total: membersTotal,
       members_recomputed: recomputed,
       members_skipped_below_tenure: skippedBelowTenure,
       members_not_found: memberNotFound,

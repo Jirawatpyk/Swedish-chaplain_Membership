@@ -34,6 +34,8 @@ import type {
   ListAtRiskWidgetOpts,
   ListAtRiskWidgetResult,
   AtRiskWidgetMemberRow,
+  BulkSetRiskScoreRow,
+  AtRiskBatchFactorRow,
 } from '../../application/ports/member-renewal-flags-repo';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 
@@ -346,6 +348,101 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const rows =
         limit !== undefined ? await baseQuery.limit(limit) : await baseQuery;
       return rows.map((r) => r.memberId);
+    },
+
+    /**
+     * Phase 6 Wave G T159b — bulk-write all members' risk scores in
+     * one round-trip via UPDATE … FROM jsonb_to_recordset(…). Hits
+     * the FR-036 SLO budget (60s @ 5,000 members) by collapsing N
+     * UPDATE round-trips into 1.
+     */
+    async bulkSetRiskScores(
+      tx: unknown,
+      _tenantId: string,
+      rows: ReadonlyArray<BulkSetRiskScoreRow>,
+      computedAt: Date,
+    ): Promise<{ readonly affectedRows: number }> {
+      if (rows.length === 0) return { affectedRows: 0 };
+      const txDb = tx as typeof db;
+      const payload = rows.map((r) => ({
+        member_id: r.memberId,
+        score: r.score,
+        band: r.band,
+        factors: r.factors,
+      }));
+      const result = await txDb.execute(sql`
+        UPDATE members AS m
+        SET
+          risk_score = src.score,
+          risk_score_band = src.band,
+          risk_score_factors = src.factors,
+          risk_score_last_computed_at = ${computedAt}
+        FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
+          AS src(member_id uuid, score smallint, band text, factors jsonb)
+        WHERE m.member_id = src.member_id
+      `);
+      return { affectedRows: (result as { count?: number }).count ?? rows.length };
+    },
+
+    /**
+     * Phase 6 Wave G T159b — gather factor inputs for ALL active
+     * members in one CTE round-trip. LATERAL JOIN against invoices
+     * computes overdue count + last_paid_at per member server-side.
+     */
+    async gatherAtRiskFactorsForTenant(
+      tx: unknown,
+      _tenantId: string,
+    ): Promise<ReadonlyArray<AtRiskBatchFactorRow>> {
+      const txDb = tx as typeof db;
+      const rows = await txDb.execute<{
+        member_id: string;
+        created_at: Date;
+        last_activity_at: Date | null;
+        prior_band: string | null;
+        overdue_count: string;
+        last_paid_at: Date | null;
+      }>(sql`
+        SELECT
+          m.member_id,
+          m.created_at,
+          m.last_activity_at,
+          m.risk_score_band AS prior_band,
+          COALESCE(inv.overdue_count, 0)::text AS overdue_count,
+          inv.last_paid_at
+        FROM members m
+        LEFT JOIN LATERAL (
+          SELECT
+            count(*) FILTER (
+              WHERE status = 'issued'
+                AND created_at < NOW() - INTERVAL '30 days'
+            ) AS overdue_count,
+            MAX(paid_at) AS last_paid_at
+          FROM invoices
+          WHERE member_id = m.member_id
+        ) inv ON true
+        WHERE m.status = 'active'
+          AND EXISTS (
+            SELECT 1 FROM renewal_cycles c
+            WHERE c.member_id = m.member_id
+              AND c.status NOT IN ('lapsed', 'cancelled')
+          )
+        ORDER BY m.member_id
+      `);
+      // postgres-js returns timestamptz as either Date or ISO string
+      // depending on column metadata; normalise via constructor.
+      const toIso = (v: Date | string | null | undefined): string | null => {
+        if (v == null) return null;
+        if (v instanceof Date) return v.toISOString();
+        return new Date(v).toISOString();
+      };
+      return rows.map((r) => ({
+        memberId: r.member_id,
+        memberCreatedAt: toIso(r.created_at) ?? new Date().toISOString(),
+        lastActivityAtIso: toIso(r.last_activity_at),
+        priorRiskBand: (r.prior_band as RiskBand | null) ?? null,
+        invoicesOverdueCount: Number.parseInt(r.overdue_count, 10) || 0,
+        lastPaidAtIso: toIso(r.last_paid_at),
+      }));
     },
 
     /**

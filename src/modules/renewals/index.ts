@@ -384,6 +384,17 @@ export {
   type RecordAtRiskOutreachError,
 } from './application/use-cases/record-at-risk-outreach';
 
+// Phase 6 Wave G T159b — batched cron path (per-tenant cron route uses
+// this; per-member computeAtRiskScore stays for admin-triggered single-
+// member recomputes).
+export {
+  recomputeAtRiskScoresBatch,
+  recomputeAtRiskScoresBatchInputSchema,
+  type RecomputeAtRiskScoresBatchInput,
+  type RecomputeAtRiskScoresBatchOutput,
+  type RecomputeAtRiskScoresBatchError,
+} from './application/use-cases/recompute-at-risk-scores-batch';
+
 // SkipReason enum + DispatchCandidate types are referenced by route
 // handlers in Wave I5/I6 — exported via barrel for type-safety.
 export {
