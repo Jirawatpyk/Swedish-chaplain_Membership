@@ -61,10 +61,16 @@ export function parseRiskBand(raw: string): Result<RiskBand, RiskBandError> {
 }
 
 /**
- * Compute the band for a numeric score. Returns an error for non-finite
- * or out-of-range values rather than throwing — callers are expected
- * to surface the typed error (e.g. an at-risk-scorer that produced a
- * malformed score).
+ * Compute the band for a numeric score using the F6-active fixed table
+ * (max=100). Returns an error for non-finite or out-of-range values
+ * rather than throwing — callers are expected to surface the typed
+ * error (e.g. an at-risk-scorer that produced a malformed score).
+ *
+ * **Prefer `bandForScoreProportional`** (added F8 Phase 6 Wave A1) — it
+ * handles both F6-active (max=100) and F6-inactive (max=70) modes per
+ * FR-030. This fixed-table function stays exported for the
+ * Phase-1-Wave-D callers that still use it; new code should use the
+ * proportional variant.
  */
 export function bandForScore(score: number): Result<RiskBand, RiskBandError> {
   if (!Number.isFinite(score) || score < 0 || score > 100) {
@@ -79,6 +85,44 @@ export function bandForScore(score: number): Result<RiskBand, RiskBandError> {
   // Unreachable — `RISK_BAND_THRESHOLDS` covers 0–100 contiguously.
   /* v8 ignore next */
   return err({ kind: 'score_out_of_range', score });
+}
+
+/**
+ * F8 Phase 6 Wave A1 — proportional band derivation per FR-030.
+ *
+ * Bands are computed as fractions of `activeMax` so they remain
+ * meaningful whether F6 is active (max=100) or not (max=70):
+ *
+ *   - `healthy`  = score < 25% of activeMax
+ *   - `warning`  = 25% ≤ score < 50% of activeMax
+ *   - `at-risk`  = 50% ≤ score < 75% of activeMax
+ *   - `critical` = score ≥ 75% of activeMax
+ *
+ * For activeMax=100 → bands at 0–24 / 25–49 / 50–74 / 75–100.
+ * For activeMax=70  → bands at 0–17 / 18–34 / 35–52 / 53–70.
+ *
+ * `score` MUST be in `[0, activeMax]`; out-of-range inputs return a
+ * typed error rather than throwing. `activeMax` MUST be a positive
+ * finite number; pathological inputs return `score_out_of_range`.
+ */
+export function bandForScoreProportional(
+  score: number,
+  activeMax: number,
+): Result<RiskBand, RiskBandError> {
+  if (
+    !Number.isFinite(score) ||
+    !Number.isFinite(activeMax) ||
+    activeMax <= 0 ||
+    score < 0 ||
+    score > activeMax
+  ) {
+    return err({ kind: 'score_out_of_range', score });
+  }
+  const ratio = score / activeMax;
+  if (ratio < 0.25) return ok('healthy');
+  if (ratio < 0.5) return ok('warning');
+  if (ratio < 0.75) return ok('at-risk');
+  return ok('critical');
 }
 
 /** True when band would surface in the at-risk widget (≥50 score range). */

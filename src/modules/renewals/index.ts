@@ -48,7 +48,9 @@ export {
   RISK_BANDS,
   RISK_BAND_THRESHOLDS,
   parseRiskBand,
+  asRiskBand,
   bandForScore,
+  bandForScoreProportional,
   isAtRiskWidgetBand,
   type RiskBand,
   type RiskBandError,
@@ -129,11 +131,15 @@ export {
 
 export {
   computeAtRiskScore,
+  AT_RISK_FACTOR_WEIGHTS,
+  F6_ACTIVE_MAX,
+  F6_INACTIVE_MAX,
   type AtRiskFactors,
   type AtRiskComputeContext,
   type AtRiskScoreResult,
   type FactorContribution,
 } from './domain/at-risk-score';
+
 
 export {
   GRACE_PERIOD_DAYS_MIN,
