@@ -77,7 +77,21 @@ export interface RenewalAdminContextRejection {
   readonly response: NextResponse;
 }
 
-export type RenewalAdminAction = 'read' | 'write';
+/**
+ * RBAC action label for renewal admin routes.
+ *
+ * - `'read'` — pure GET. Both admin AND manager pass.
+ * - `'write'` — mutating endpoint. Admin only; manager 403 +
+ *   `f8_role_violation_blocked` audit.
+ * - `'manager_exception'` — Phase 6 review I5: a mutating endpoint
+ *   that FR-052a explicitly permits manager on (currently only the
+ *   at-risk outreach POST). Internally maps to `'read'` for the
+ *   underlying RBAC check (both admin + manager allowed) but
+ *   propagates the `'manager_exception'` label into the
+ *   `f8_role_violation_blocked` audit so dashboards distinguish a
+ *   true read from a manager-permitted write.
+ */
+export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
 
 /**
  * F8-aware admin gate. Drop-in replacement for `requireAdminContext`
@@ -111,7 +125,11 @@ export async function requireRenewalAdminContext(
       };
     }
 
-    const guard = await requireRole(current, 'renewal', action, {
+    // 'manager_exception' allows both admin + manager (mirrors 'read'
+    // at the RBAC layer); the label is preserved for the audit emit
+    // path below so dashboards see the actual semantic.
+    const rbacAction = action === 'manager_exception' ? 'read' : action;
+    const guard = await requireRole(current, 'renewal', rbacAction, {
       sourceIp,
       requestId,
     });

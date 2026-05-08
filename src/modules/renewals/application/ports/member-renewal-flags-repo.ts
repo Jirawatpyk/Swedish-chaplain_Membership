@@ -292,7 +292,14 @@ export interface AtRiskWidgetMemberRow {
   readonly companyName: string | null;
   readonly riskScore: number;
   readonly riskScoreBand: 'warning' | 'at-risk' | 'critical';
-  readonly riskScoreFactors: Record<string, unknown> | null;
+  /**
+   * Phase 6 review S3 — typed key constraint matches the write port's
+   * `BulkSetRiskScoreRow.factors` shape. Reads + writes use the same
+   * factor-key vocabulary drawn from the FR-029 weight table.
+   */
+  readonly riskScoreFactors: Partial<
+    Record<keyof typeof AT_RISK_FACTOR_WEIGHTS, number>
+  > | null;
   readonly riskScoreLastComputedAt: string | null;
   readonly riskSnoozedUntil: string | null;
 }

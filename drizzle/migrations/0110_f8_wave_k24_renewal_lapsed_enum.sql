@@ -20,8 +20,8 @@
 -- can persist its `renewal_lapsed` audits via the pgEnum-typed
 -- `audit_log.event_type` column.
 --
--- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
--- transaction. drizzle-kit emits `--> statement-breakpoint` markers so
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
+-- transaction. drizzle-kit emits a "statement-breakpoint" marker so
 -- each ALTER runs in its own implicit transaction — same pattern as
 -- migrations 0095 / 0099 / 0107 / 0109.
 -- ---------------------------------------------------------------------------

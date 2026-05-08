@@ -14,7 +14,7 @@
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -116,9 +116,13 @@ export function OutreachDialog({
   const noteCount = outcomeNote.length;
   const noteOver = noteCount > OUTCOME_NOTE_MAX;
 
+  // Phase 6 review S8 — focus on Cancel via @base-ui Dialog
+  // `initialFocus` ref (mirrors snooze-dialog) per ux-standards § 4.
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent initialFocus={cancelRef}>
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>
@@ -194,10 +198,10 @@ export function OutreachDialog({
         </div>
         <DialogFooter>
           <Button
+            ref={cancelRef}
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={pending}
-            autoFocus
           >
             {t('cancel')}
           </Button>

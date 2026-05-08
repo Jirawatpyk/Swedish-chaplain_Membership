@@ -101,7 +101,7 @@ export async function seedOneAtRiskMember(
           ${expiresAt.toISOString()}::timestamptz,
           ${expiresAt.toISOString()}::timestamptz,
           12, 'regular',
-          gen_random_uuid(), '50000.00',
+          'regular', '50000.00',
           12, 'THB'
         )
       `;
@@ -118,6 +118,7 @@ export async function seedOneAtRiskMember(
   return {
     memberId,
     cleanup: async () => {
+      let cleanupError: unknown;
       try {
         await sql.begin(async (tx) => {
           await tx`SELECT set_config('app.current_tenant', ${TENANT_ID}, true)`;
@@ -139,9 +140,34 @@ export async function seedOneAtRiskMember(
             WHERE tenant_id = ${TENANT_ID} AND member_id = ${memberId}::uuid
           `;
         });
+      } catch (e) {
+        cleanupError = e;
+        // Phase 6 review-round 2 F6 — preserve the original cleanup
+        // error before `sql.end()` runs in finally. Without this, an
+        // RLS-rejection or FK-violation in DELETE was swallowed
+        // because the outer test teardown only logged the
+        // sql.end-timeout (which obscures the real cause). Now the
+        // structured log carries the original DELETE failure.
+        console.error(
+          `[e2e seed at-risk] cleanup DELETE failed for member=${memberId} cycle=${cycleId} contact=${contactId} tenant=${TENANT_ID}:`,
+          e instanceof Error ? `${e.name}: ${e.message}` : String(e),
+        );
       } finally {
-        await sql.end({ timeout: 5 });
+        try {
+          await sql.end({ timeout: 5 });
+        } catch (endError) {
+          console.error(
+            `[e2e seed at-risk] sql.end() failed for member=${memberId}:`,
+            endError instanceof Error
+              ? `${endError.name}: ${endError.message}`
+              : String(endError),
+          );
+        }
       }
+      // Re-throw the ORIGINAL cleanup error (not the sql.end one) so
+      // the test runner sees the real failure cause, not the
+      // connection-close noise that came after.
+      if (cleanupError) throw cleanupError;
     },
   };
 }

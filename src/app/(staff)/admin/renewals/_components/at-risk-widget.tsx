@@ -20,9 +20,16 @@
  */
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { Heart, AlertTriangle, AlertCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import {
+  AlertCircle,
+  AlertTriangle,
+  ShieldCheck,
+  TrendingDown,
+} from 'lucide-react';
+import Link from 'next/link';
+import { formatLocalisedTimestamp } from '@/components/members/timeline-event-item';
 import {
   Card,
   CardContent,
@@ -78,7 +85,11 @@ export interface AtRiskWidgetProps {
 
 export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
   const t = useTranslations('admin.renewals.atRisk');
+  const locale = useLocale();
   const [activeBand, setActiveBand] = useState<Band>('at-risk');
+  // Phase 6 review C5 — refetch counter bumped by retry button so
+  // the effect re-runs fetch when the user dismisses an error state.
+  const [refetchKey, setRefetchKey] = useState(0);
   // Single state shape (data | error) keyed by activeBand so changing
   // the band re-runs the fetch via effect-with-fresh-key. `loading` is
   // derived (null data + null error) — avoids react-hooks/set-state-
@@ -88,6 +99,9 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
     data: ApiResponse | null;
     error: string | null;
   }>({ band: activeBand, data: null, error: null });
+
+  // Phase 6 review S7 — refs for arrow-key navigation across band tabs.
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Snooze + outreach dialog state.
   const [snoozeFor, setSnoozeFor] = useState<{
@@ -124,7 +138,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
     return () => {
       cancelled = true;
     };
-  }, [activeBand]);
+  }, [activeBand, refetchKey]);
 
   // Loading is "active band changed and we haven't yet seen a response
   // for it" (state still pinned to previous band's data). This derivation
@@ -174,25 +188,48 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {/* Phase 6 review S7 — ARIA tablist with arrow-key navigation. */}
         <div
           role="tablist"
           aria-label={t('bandTabs.label')}
           className="mb-3 flex flex-wrap gap-1 border-b"
         >
-          {BANDS.map((band) => {
+          {BANDS.map((band, idx) => {
             const count =
               data?.summary[band] !== undefined ? data.summary[band] : null;
             const isActive = activeBand === band;
             return (
               <button
                 key={band}
+                ref={(el) => {
+                  tabRefs.current[idx] = el;
+                }}
                 type="button"
                 role="tab"
+                tabIndex={isActive ? 0 : -1}
                 aria-selected={isActive}
                 aria-controls="at-risk-widget-rows"
                 onClick={() => setActiveBand(band)}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    const dir = e.key === 'ArrowRight' ? 1 : -1;
+                    const nextIdx = (idx + dir + BANDS.length) % BANDS.length;
+                    setActiveBand(BANDS[nextIdx]!);
+                    tabRefs.current[nextIdx]?.focus();
+                  } else if (e.key === 'Home') {
+                    e.preventDefault();
+                    setActiveBand(BANDS[0]!);
+                    tabRefs.current[0]?.focus();
+                  } else if (e.key === 'End') {
+                    e.preventDefault();
+                    const last = BANDS.length - 1;
+                    setActiveBand(BANDS[last]!);
+                    tabRefs.current[last]?.focus();
+                  }
+                }}
                 className={
-                  'inline-flex items-center gap-1 rounded-t-md px-3 py-1.5 text-sm font-medium transition-colors ' +
+                  'inline-flex items-center gap-1 rounded-t-md px-3 py-1.5 text-sm font-medium motion-safe:transition-colors ' +
                   (isActive
                     ? 'border-b-2 border-primary text-primary'
                     : 'text-muted-foreground hover:text-foreground')
@@ -212,13 +249,41 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           {loading ? (
             <WidgetSkeleton />
           ) : error ? (
-            <p className="py-6 text-center text-sm text-destructive">
-              {t('errorLoading')}
-            </p>
+            // Phase 6 review C5 — role="alert" announces error to SR
+            // (WCAG SC 4.1.3); retry button bumps refetchKey to re-run
+            // the effect.
+            <div role="alert" className="flex flex-col items-center gap-3 py-6 text-center">
+              <p className="text-sm text-destructive">{t('errorLoading')}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setRefetchKey((k) => k + 1)}
+              >
+                {t('actions.retry')}
+              </Button>
+            </div>
           ) : !data || data.items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              {t('emptyState')}
-            </p>
+            // Phase 6 review S8 — illustration + secondary CTA per
+            // FR-046a + ux-standards § 5 empty-state pattern.
+            // UX R5 / S2: empty-state CTA points at the lapsed urgency
+            // tab on this same page rather than away to /admin/members
+            // — admins working the at-risk widget care about lapsed
+            // recovery next, not the full membership list.
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <ShieldCheck
+                className="h-8 w-8 text-emerald-500"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-muted-foreground">
+                {t('emptyState')}
+              </p>
+              <Link
+                href="/admin/renewals?urgency=lapsed"
+                className="text-sm text-primary underline-offset-4 hover:underline"
+              >
+                {t('actions.reviewLapsed')}
+              </Link>
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -246,16 +311,23 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground tabular-nums">
                       {m.risk_score_last_computed_at
-                        ? new Date(
+                        ? // Phase 6 review I2 — locale-pinned formatter
+                          // (Buddhist calendar on th-TH per CLAUDE.md
+                          // BE display-only convention).
+                          formatLocalisedTimestamp(
                             m.risk_score_last_computed_at,
-                          ).toLocaleDateString()
+                            locale,
+                          )
                         : '—'}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
-                          size="sm"
                           variant="outline"
+                          aria-label={t('actions.contactAriaLabel', {
+                            company:
+                              m.company_name ?? t('table.unknownCompany'),
+                          })}
                           onClick={() =>
                             setOutreachFor({
                               memberId: m.member_id,
@@ -267,8 +339,11 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                         </Button>
                         {actorRole === 'admin' ? (
                           <Button
-                            size="sm"
                             variant="ghost"
+                            aria-label={t('actions.snoozeAriaLabel', {
+                              company:
+                                m.company_name ?? t('table.unknownCompany'),
+                            })}
                             onClick={() =>
                               setSnoozeFor({
                                 memberId: m.member_id,
@@ -313,9 +388,12 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
   );
 }
 
+// UX R5 / I4: warning band uses TrendingDown (downward engagement
+// trend) instead of Heart (which conventionally signals "healthy"
+// and confused admins into reading the warning state as positive).
 function BandIcon({ band }: { band: Band }) {
   if (band === 'warning')
-    return <Heart className="h-3.5 w-3.5" aria-hidden="true" />;
+    return <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />;
   if (band === 'at-risk')
     return <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />;
   return <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />;

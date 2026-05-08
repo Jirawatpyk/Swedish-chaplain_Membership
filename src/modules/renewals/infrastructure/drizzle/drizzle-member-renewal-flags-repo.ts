@@ -430,10 +430,17 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             JOIN membership_plans p_old
               ON p_old.tenant_id = al.tenant_id
               AND p_old.plan_id = al.payload->>'old_plan_id'
+              -- Phase 6 review C3: regex-guarded cast so a malformed
+              -- payload (non-numeric old_plan_year) for ONE member's
+              -- audit row does not abort the whole CTE for the whole
+              -- tenant. The row is silently treated as "no match" —
+              -- equivalent to "not downgraded" for that audit entry.
+              AND al.payload->>'old_plan_year' ~ '^[0-9]+$'
               AND p_old.plan_year = (al.payload->>'old_plan_year')::int
             JOIN membership_plans p_new
               ON p_new.tenant_id = al.tenant_id
               AND p_new.plan_id = al.payload->>'new_plan_id'
+              AND al.payload->>'new_plan_year' ~ '^[0-9]+$'
               AND p_new.plan_year = (al.payload->>'new_plan_year')::int
             WHERE al.event_type = 'member_plan_changed'
               AND al.tenant_id = ${tenantId}
@@ -470,12 +477,17 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             ) AS overdue_count,
             MAX(paid_at) AS last_paid_at
           FROM invoices
-          WHERE member_id = m.member_id
+          -- Phase 6 review I7 — explicit tenant_id filter as
+          -- defence-in-depth atop RLS. Constitution Principle I 2-layer
+          -- rule: if RLS bind is misconfigured, the filter still scopes.
+          WHERE tenant_id = m.tenant_id AND member_id = m.member_id
         ) inv ON true
         LEFT JOIN LATERAL (
           SELECT count(*) AS consumed
           FROM broadcasts b
-          WHERE b.requested_by_member_id = m.member_id
+          -- Phase 6 review I7 — explicit tenant_id filter (defence-in-depth).
+          WHERE b.tenant_id = m.tenant_id
+            AND b.requested_by_member_id = m.member_id
             AND b.status IN ('sent', 'sending', 'approved')
             AND b.quota_consumed_at > NOW() - INTERVAL '12 months'
         ) eb ON true
@@ -548,6 +560,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       }
 
       const baseWhere = and(
+        // Phase 6 review I6 — filter archived members from the widget.
+        // Archive does not currently clear risk_score (kept for forensic
+        // history), so without this filter an archived "at-risk" member
+        // would still surface in the widget — admin would click Snooze
+        // on a phantom row.
+        eq(members.status, 'active'),
         gte(members.riskScore, 50),
         or(
           isNull(members.riskSnoozedUntil),
@@ -621,7 +639,8 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           count(*) FILTER (WHERE risk_score_band = 'at-risk') AS at_risk,
           count(*) FILTER (WHERE risk_score_band = 'critical') AS critical
         FROM members
-        WHERE risk_score >= 50
+        WHERE status = 'active'  -- Phase 6 review I6 (archive cascade)
+          AND risk_score >= 50
           AND (risk_snoozed_until IS NULL OR risk_snoozed_until < NOW())
       `);
       const summaryRow = summaryRows[0];

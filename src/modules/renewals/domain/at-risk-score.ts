@@ -80,6 +80,34 @@ export const F6_ACTIVE_MAX = 100 as const;
 export const F6_INACTIVE_MAX = 70 as const;
 
 /**
+ * Phase 6 review S1 — compile-time guard against silent FR-029 weight
+ * drift. The F6-inactive max MUST equal the sum of the 5
+ * F6-independent factor weights (e_blast 15 + invoices_overdue 25 +
+ * days_since_payment 10 + days_since_contact 5 + tier_downgrade 15 =
+ * 70). If a future weight tweak breaks this, the proportional band
+ * derivation in `bandForScoreProportional(score, F6_INACTIVE_MAX)`
+ * silently shifts the band thresholds — and the audit-port literal
+ * `active_max: 70 | 100` no longer matches reality. This assertion
+ * fails at TS compile time the moment the math drifts.
+ */
+type _F6IndependentSum =
+  (typeof AT_RISK_FACTOR_WEIGHTS)['e_blast_quota_under_30pct'] extends 15
+    ? (typeof AT_RISK_FACTOR_WEIGHTS)['invoices_overdue_count_gt_zero'] extends 25
+      ? (typeof AT_RISK_FACTOR_WEIGHTS)['days_since_last_payment_gt_180'] extends 10
+        ? (typeof AT_RISK_FACTOR_WEIGHTS)['days_since_contact_update_gt_365'] extends 5
+          ? (typeof AT_RISK_FACTOR_WEIGHTS)['tier_downgraded_last_12mo'] extends 15
+            ? typeof F6_INACTIVE_MAX extends 70
+              ? true
+              : 'F6-inactive max must equal 70 (sum of 5 F6-independent weights)'
+            : 'tier_downgraded_last_12mo must remain 15 to keep F6-inactive sum=70'
+          : 'days_since_contact_update_gt_365 must remain 5 to keep F6-inactive sum=70'
+        : 'days_since_last_payment_gt_180 must remain 10 to keep F6-inactive sum=70'
+      : 'invoices_overdue_count_gt_zero must remain 25 to keep F6-inactive sum=70'
+    : 'e_blast_quota_under_30pct must remain 15 to keep F6-inactive sum=70';
+const _assertF6InactiveSumIs70: _F6IndependentSum = true;
+void _assertF6InactiveSumIs70;
+
+/**
  * Set of factor keys that source from F6 (event-attendance data + event-
  * ticket quota). When `eventAttendeesAvailable === false` the scorer
  * skips these factors entirely and flags `eventAttendanceFactorSkipped:
@@ -166,10 +194,24 @@ export interface AtRiskScoreResult {
   readonly contributions: readonly FactorContribution[];
   /** True when min-tenure gate skipped scoring entirely (FR-035). */
   readonly skippedBelowMinTenure: boolean;
+  /**
+   * Phase 6 review I4 — actual tenure value at compute time. Set when
+   * the input carried `tenureDays` (regardless of whether the gate
+   * tripped); `null` when the input did not surface tenure. The audit
+   * payload `at_risk_skipped_below_min_tenure.tenure_days` reads this
+   * verbatim instead of the prior `0` sentinel.
+   */
+  readonly tenureDays: number | null;
   /** True when F6 fallback was active (events + cultural-ticket factors skipped). */
   readonly eventAttendanceFactorSkipped: boolean;
   /** Active max for the F6 mode in effect (100 active / 70 inactive). */
   readonly activeMax: typeof F6_ACTIVE_MAX | typeof F6_INACTIVE_MAX;
+  /**
+   * Phase 6 review I4 — per-tenant min-tenure threshold in effect at
+   * compute time. Mirrored from `ctx.minTenureDays` so the audit
+   * payload `threshold_days` reads the actual value (not hardcoded 30).
+   */
+  readonly thresholdDays: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -204,8 +246,10 @@ export function computeAtRiskScore(
       band: 'healthy',
       contributions: [],
       skippedBelowMinTenure: true,
+      tenureDays: factors.tenureDays,
       eventAttendanceFactorSkipped,
       activeMax,
+      thresholdDays: ctx.minTenureDays,
     });
   }
 
@@ -305,7 +349,9 @@ export function computeAtRiskScore(
     band,
     contributions,
     skippedBelowMinTenure: false,
+    tenureDays: factors.tenureDays ?? null,
     eventAttendanceFactorSkipped,
     activeMax,
+    thresholdDays: ctx.minTenureDays,
   });
 }

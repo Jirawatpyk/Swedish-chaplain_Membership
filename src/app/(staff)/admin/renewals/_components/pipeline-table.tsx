@@ -363,9 +363,22 @@ function RowActionsMenu({
         >
           {tActions('sendReminder')}
         </DropdownMenuItem>
+        {/* UX R5 / Mobile #5: contextual `aria-label` so screen-reader
+            users hear which company's cycle they're opening (the
+            bare label "Open" on every row was indistinguishable in
+            a long pipeline). S4 (Link instead of `<a>`) was scoped
+            out — Base UI's DropdownMenuItem `render` prop emits
+            handler types incompatible with Next.js Link under
+            `exactOptionalPropertyTypes: true`. The `<a>` tag still
+            navigates correctly; client-side nav is a tier-2 win
+            that costs more in render-prop fragility than it gains. */}
         <DropdownMenuItem
           render={(props) => (
-            <a {...props} href={`/admin/renewals/${cycleId}`}>
+            <a
+              {...props}
+              href={`/admin/renewals/${cycleId}`}
+              aria-label={tActions('openAriaLabel', { company: companyName })}
+            >
               {tActions('open')}
             </a>
           )}

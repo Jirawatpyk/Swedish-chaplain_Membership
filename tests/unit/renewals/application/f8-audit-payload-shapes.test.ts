@@ -119,44 +119,30 @@ describe('F8AuditPayloadShapes — Round 3 typed shapes round-trip', () => {
     expect(payload.previous_band).toBe('healthy');
     expect(payload.new_band).toBe('critical');
 
-    // Compile-time invariant: same-band "transition" is a TS error
-    // because no arm of BandTransition matches `<X> → <X>`. All 4
-    // same-band cases are asserted so a future arm-shape regression
-    // (e.g., accidentally adding `new_band: 'healthy'` to the `healthy`
-    // arm) surfaces here, not in production forensics noise.
+    // Compile-time invariants (Phase 6 review S2 — UP-only DU):
+    //   1. Same-band transitions are TS errors (no arm matches X→X).
+    //   2. DOWN transitions are TS errors (e.g. warning → healthy).
+    //   3. `previous_band: 'critical'` is excluded entirely (top of
+    //      band ladder; no UP path).
+    // The @ts-expect-error directive must sit directly above the
+    // offending property (not the outer const) so TS sees the error
+    // on the next syntactic line.
 
-    // @ts-expect-error — BandTransition arm `healthy` does not allow new_band: 'healthy'
-    const _illegalHealthy: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
-      member_id: asMemberId('mem-1'),
-      previous_band: 'healthy',
-      new_band: 'healthy',
-      score: 0,
-    };
-    // @ts-expect-error — BandTransition arm `warning` does not allow new_band: 'warning'
-    const _illegalWarning: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
-      member_id: asMemberId('mem-1'),
-      previous_band: 'warning',
-      new_band: 'warning',
-      score: 30,
-    };
-    // @ts-expect-error — BandTransition arm `at-risk` does not allow new_band: 'at-risk'
-    const _illegalAtRisk: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
-      member_id: asMemberId('mem-1'),
-      previous_band: 'at-risk',
-      new_band: 'at-risk',
-      score: 60,
-    };
-    // @ts-expect-error — BandTransition arm `critical` does not allow new_band: 'critical'
-    const _illegalCritical: F8AuditPayloadFor<'at_risk_score_threshold_crossed'> = {
-      member_id: asMemberId('mem-1'),
-      previous_band: 'critical',
-      new_band: 'critical',
-      score: 95,
-    };
-    expect(_illegalHealthy).toBeDefined();
-    expect(_illegalWarning).toBeDefined();
-    expect(_illegalAtRisk).toBeDefined();
-    expect(_illegalCritical).toBeDefined();
+    // Use a typed accept-fn so the TS error pins to the call line +
+    // a single @ts-expect-error directive suppresses it cleanly.
+    const acceptTransition = (
+      _p: F8AuditPayloadFor<'at_risk_score_threshold_crossed'>,
+    ): void => {};
+
+    // @ts-expect-error — same-band (healthy → healthy) excluded by DU
+    acceptTransition({ member_id: asMemberId('mem-1'), previous_band: 'healthy', new_band: 'healthy', score: 0 });
+    // @ts-expect-error — DOWN transition (warning → healthy) excluded by UP-only DU
+    acceptTransition({ member_id: asMemberId('mem-1'), previous_band: 'warning', new_band: 'healthy', score: 10 });
+    // @ts-expect-error — DOWN transition (at-risk → warning) excluded by UP-only DU
+    acceptTransition({ member_id: asMemberId('mem-1'), previous_band: 'at-risk', new_band: 'warning', score: 30 });
+    // @ts-expect-error — previous_band: 'critical' excluded (top of ladder, no UP path)
+    acceptTransition({ member_id: asMemberId('mem-1'), previous_band: 'critical', new_band: 'critical', score: 95 });
+    expect(acceptTransition).toBeDefined();
   });
 
   it('at_risk_score_recomputed — Phase 6 Wave A2 typed payload preserves all FR-029 fields', () => {

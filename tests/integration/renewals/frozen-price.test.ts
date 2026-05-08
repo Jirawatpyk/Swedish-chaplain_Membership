@@ -156,16 +156,12 @@ describe('F8 frozen-price invariant — integration (T149)', () => {
   it('FR-021b: updateFrozenPlan atomically updates all four frozen columns', async () => {
     const deps = makeRenewalsDeps(tenantA.ctx.slug);
     const cycleId = asCycleId(cycleIdA);
-    // Schema follow-up: `renewal_cycles.plan_id_at_cycle_start` is
-    // typed UUID (`schema-renewal-cycles.ts:57`) while F2 `plan_id`
-    // is TEXT. The two are de-facto-disjoint identifiers — F8
-    // currently passes a randomUUID() placeholder for new cycles.
-    // The integration test exercises updateFrozenPlan with a UUID
-    // value to match the column type; T122 confirm-renewal needs a
-    // schema fix OR an explicit F2-text→F8-UUID translation step
-    // before the plan-change branch can ship to production. Tracked
-    // as a Wave D follow-up; spec.ts unit-test for T122 covers the
-    // logic without exercising the FK type.
+    // T149 follow-up RESOLVED via migration 0113:
+    // `renewal_cycles.plan_id_at_cycle_start` is now TEXT and matches
+    // `membership_plans.plan_id`. This test still uses a randomUUID()
+    // because it only exercises the column round-trip — it does not
+    // resolve the value against F2. Other tests that DO need an F2
+    // lookup (e.g. cycle-detail page) pass a real plan slug.
     const newPlanUuid = randomUUID();
 
     await runInTenant(tenantA.ctx, async (tx) => {

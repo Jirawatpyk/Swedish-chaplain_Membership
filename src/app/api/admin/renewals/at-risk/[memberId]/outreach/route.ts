@@ -8,14 +8,12 @@
  * `pause-reminders-after-outreach` use-case (Phase 4 T092) auto-picks
  * up the FR-033 7-day reminder pause cascade.
  *
- * RBAC: admin OR manager. The standard `requireRenewalAdminContext`
- * helper rejects manager on 'write'; here we use the helper with
- * `'read'` action (which permits both admin + manager + denies member)
- * AND pass through `actorRole` to the use-case so the audit captures
- * the source role correctly. The 'read' label is semantically a
- * compromise — FR-052a is the spec exception that makes this
- * acceptable. Member role 403 + audit `f8_role_violation_blocked` is
- * still emitted by the helper.
+ * RBAC: admin OR manager (FR-052a manager exception). Uses the
+ * dedicated `'manager_exception'` action label (Phase 6 review I5) so
+ * the route helper allows both roles via the RBAC layer AND the
+ * `f8_role_violation_blocked` audit emit captures the semantic
+ * (mutating endpoint that admin+manager are both permitted on, NOT a
+ * pure read). Member role 403 + audit emitted as before.
  */
 import { type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
@@ -43,14 +41,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ memberId: string }> },
 ) {
-  if (!env.features.f8Renewals) {
-    return errorResponse({
-      status: 503,
-      code: 'feature_disabled',
-      correlationId: randomUUID(),
-    });
-  }
-  if (env.features.f8AtRiskDisabled) {
+  if (!env.features.f8Renewals || env.features.f8AtRiskDisabled) {
     return errorResponse({
       status: 503,
       code: 'feature_disabled',
@@ -58,9 +49,12 @@ export async function POST(
     });
   }
 
-  // 'read' label — admin + manager both pass; member rejected with
-  // f8_role_violation_blocked audit per FR-052a manager exception.
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  // 'manager_exception' label (Phase 6 review I5) — admin + manager
+  // both pass via the RBAC layer; member rejected with
+  // f8_role_violation_blocked audit carrying action='manager_exception'
+  // so dashboards can distinguish a manager-permitted write from a
+  // pure read.
+  const ctx = await requireRenewalAdminContext(request, 'manager_exception');
   if ('response' in ctx) return ctx.response;
 
   // Capture actor role for the audit payload + use-case discrimination.
@@ -124,16 +118,11 @@ export async function POST(
             code: 'server_error',
             correlationId: ctx.correlationId,
           });
-        default: {
-          const _exhaustive: never = result.error;
-          void _exhaustive;
-          return errorResponse({
-            status: 500,
-            code: 'server_error',
-            correlationId: ctx.correlationId,
-          });
-        }
       }
+      // TS exhaustiveness guard — a new error kind added without a
+      // case arm fails the build at this never-assertion.
+      const _exhaustive: never = result.error;
+      return _exhaustive;
     }
     return successResponse(
       {

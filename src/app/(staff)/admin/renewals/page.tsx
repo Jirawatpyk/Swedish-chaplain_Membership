@@ -173,8 +173,19 @@ export default async function RenewalsPipelinePage({
   }
 
   const { rows, summary } = result.value;
+  // `RenewalsEmptyState` replaces the entire pipeline shell (tabs +
+  // filter + table) with a full-card "no renewals due" illustration,
+  // so it must only fire when NO filter is active. Otherwise applying
+  // a tier that happens to match zero cycles (e.g. `tier=premium`
+  // when no premium member is in the renewal window) tears out the
+  // tier-filter dropdown itself, trapping the admin in the empty
+  // state with no way to clear the filter. When a filter is active
+  // and matches nothing, the existing table/lapsed-tab "No members"
+  // body-row pattern is the right empty surface.
   const showEmptyState =
-    summary.totalInWindow === 0 && summary.lapsedCount === 0;
+    tier === undefined &&
+    summary.totalInWindow === 0 &&
+    summary.lapsedCount === 0;
 
   // Phase 6 Wave E (T167) — at-risk widget plugged in alongside the
   // pipeline table. Hidden by route gate when:

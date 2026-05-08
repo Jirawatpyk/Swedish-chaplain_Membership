@@ -1639,23 +1639,24 @@
           "actions": "การดำเนินการ"
         },
         "status": {
-          "upcoming": "กำลังจะมาถึง",
+          "upcoming": "ใกล้ครบกำหนด",
           "reminded": "ส่งแจ้งเตือนแล้ว",
           "awaiting_payment": "รอชำระเงิน",
-          "completed": "เสร็จสิ้น",
+          "completed": "เสร็จสมบูรณ์",
           "lapsed": "หมดอายุ",
-          "cancelled": "ยกเลิกแล้ว",
-          "pending_admin_reactivation": "รอผู้ดูแลฟื้นฟูสถานะ"
+          "cancelled": "ยกเลิก",
+          "pending_admin_reactivation": "รอผู้ดูแลอนุมัติ"
         },
         "viewInvoice": "ดูใบแจ้งหนี้",
         "noRows": "ไม่มีสมาชิกในกลุ่มนี้",
         "noRowsInBucket": "ยังไม่มีสมาชิกครบกำหนดต่ออายุในช่วงนี้ ลองสลับไปดูแท็บความเร่งด่วนอื่นเพื่อดูรายการที่รอดำเนินการ",
         "unknownCompany": "(ไม่ระบุชื่อบริษัท)",
         "emailUnverifiedHint": "อีเมลยังไม่ได้รับการยืนยัน — ระบบตรวจพบการตีกลับเมื่อเร็ว ๆ นี้ และได้หยุดการแจ้งเตือนอัตโนมัติไว้จนกว่าผู้ติดต่อจะอัปเดตและยืนยันอีเมลใหม่",
-        "srResultCount": "แสดง {count} สมาชิก ใน {urgency}"
+        "srResultCount": "{count, plural, other {แสดง # สมาชิก ใน {urgency}}}"
       },
       "actions": {
         "open": "เปิดรอบการต่ออายุ",
+        "openAriaLabel": "เปิดรอบการต่ออายุของ {company}",
         "sendReminder": "ส่งเตือน",
         "markContacted": "ทำเครื่องหมายว่าติดต่อแล้ว",
         "markContactedComingSoon": "ฟีเจอร์นี้จะเปิดใช้งานในเฟสถัดไป — ผู้ดูแลสามารถบันทึกการติดต่อสมาชิกได้เอง",
@@ -1717,11 +1718,11 @@
           "title": "ตารางการแจ้งเตือนต่ออายุ",
           "subtitle": "กำหนดวิธีการติดต่อสมาชิกในแต่ละระดับก่อนและหลังวันครบกำหนดต่ออายุ",
           "tabs": {
-            "thai_alumni": "Thai Alumni",
-            "start_up": "Start-up",
-            "regular": "Regular",
-            "premium": "Premium",
-            "partnership": "Partnership"
+            "thai_alumni": "ศิษย์เก่าไทย",
+            "start_up": "สตาร์ทอัพ",
+            "regular": "ทั่วไป",
+            "premium": "พรีเมียม",
+            "partnership": "พันธมิตร"
           },
           "stepCard": {
             "channelLabel": "ช่องทางการส่ง",
@@ -1779,10 +1780,10 @@
         "title": "สมาชิกกลุ่มเสี่ยง",
         "summary": "เฝ้าระวัง {warning} · เสี่ยง {atRisk} · วิกฤต {critical}",
         "summaryLoading": "กำลังโหลดสรุปสมาชิกกลุ่มเสี่ยง…",
-        "f6Inactive": "โมดูล F6 (อีเวนต์) ยังไม่เปิดใช้งาน — คะแนนสูงสุด {max}",
+        "f6Inactive": "ยังไม่ได้เชื่อมต่อข้อมูลกิจกรรม — คะแนนสะท้อนสัญญาณการมีส่วนร่วมล่าสุดเท่านั้น (สูงสุด {max} คะแนน)",
         "featureDisabled": "การตรวจจับกลุ่มเสี่ยงยังไม่พร้อมใช้งานชั่วคราว หากปัญหายังคงอยู่ กรุณาติดต่อทีมสนับสนุน",
         "errorLoading": "ไม่สามารถโหลดรายการสมาชิกกลุ่มเสี่ยงได้ กรุณารีเฟรชหน้าจอ",
-        "emptyState": "สมาชิกทุกคนสุขภาพดีในสัปดาห์นี้",
+        "emptyState": "ไม่มีสมาชิกในกลุ่มเสี่ยงสัปดาห์นี้",
         "bandTabs": {
           "label": "กรองตามระดับความเสี่ยง",
           "warning": "เฝ้าระวัง",
@@ -1798,7 +1799,12 @@
         },
         "actions": {
           "contact": "ติดต่อ",
-          "snooze": "พักการแจ้งเตือน"
+          "contactAriaLabel": "ติดต่อ {company}",
+          "snooze": "พักการแจ้งเตือน",
+          "snoozeAriaLabel": "พักการแจ้งเตือน {company}",
+          "retry": "ลองอีกครั้ง",
+          "viewAllMembers": "ดูสมาชิกทั้งหมด",
+          "reviewLapsed": "ตรวจสอบสมาชิกที่หมดอายุ"
         },
         "scoreBadge": {
           "band": {
@@ -1863,6 +1869,74 @@
               "invalid_input": "ข้อมูลไม่ถูกต้อง"
             }
           }
+        }
+      },
+      "cycleDetail": {
+        "title": "รายละเอียดรอบสมาชิก",
+        "subtitle": "รอบสมาชิก {cycleId}",
+        "subtitleExpiry": "หมดอายุ {date}",
+        "subtitleClosed": "ปิดเมื่อ {date}",
+        "subtitlePendingSince": "รอตรวจสอบตั้งแต่ {date}",
+        "notFoundTitle": "ไม่พบรอบสมาชิก",
+        "notFoundDescription": "รอบสมาชิกนี้ไม่มีในระบบหรือคุณไม่มีสิทธิ์เข้าถึง",
+        "errorTitle": "ไม่สามารถโหลดรอบสมาชิก",
+        "errorDescription": "กรุณาลองใหม่ หากยังไม่ได้ผล โปรดติดต่อทีมสนับสนุน",
+        "loading": "กำลังโหลดรายละเอียด…",
+        "backToPipeline": "กลับไปยังไปป์ไลน์",
+        "sectionMemberPlan": "สมาชิกและแพ็กเกจ",
+        "sectionInvoice": "ใบแจ้งหนี้ที่เชื่อมโยง",
+        "sectionPeriod": "ช่วงเวลาและไทม์ไลน์",
+        "sectionActivity": "กิจกรรม",
+        "subsectionMember": "สมาชิก",
+        "subsectionPlan": "แพ็กเกจ",
+        "noLinkedInvoice": "ยังไม่มีใบแจ้งหนี้ที่เชื่อมโยงกับรอบนี้",
+        "noInvoiceYetUpcoming": "ใบแจ้งหนี้จะถูกสร้างเมื่อมีการส่งการแจ้งเตือนการต่ออายุ",
+        "pendingNoticeTitle": "รอการตัดสินใจของคุณ",
+        "pendingNoticeBody": "การฟื้นฟูสถานะของสมาชิกรายนี้อยู่ระหว่างการพิจารณา หากต้องการอนุมัติหรือปฏิเสธ กลับไปที่ไปป์ไลน์การต่ออายุและใช้เมนูการดำเนินการในแถว",
+        "noActivityTitle": "ยังไม่มีกิจกรรม",
+        "noActivityDescription": "อีเมลแจ้งเตือนที่ส่งออกและงานติดตามจะปรากฏที่นี่เมื่อระบบเริ่มแจ้งเตือนการต่ออายุสำหรับรอบนี้",
+        "fields": {
+          "cycleId": "รหัสรอบ",
+          "memberId": "รหัสสมาชิก",
+          "status": "สถานะ",
+          "tier": "ระดับ",
+          "planId": "รหัสแพ็กเกจ",
+          "frozenPrice": "ราคาล็อกไว้",
+          "frozenTerm": "ระยะเวลา (เดือน)",
+          "frozenCurrency": "สกุลเงิน",
+          "periodFrom": "ช่วงเริ่ม",
+          "periodTo": "ช่วงสิ้นสุด",
+          "expiresAt": "วันหมดอายุ",
+          "enteredPendingAt": "เข้าสถานะรอ",
+          "closedAt": "ปิดเมื่อ",
+          "closedReason": "เหตุผลการปิด",
+          "createdAt": "สร้างเมื่อ",
+          "updatedAt": "ปรับปรุงล่าสุด",
+          "invoiceNumber": "เลขที่ใบแจ้งหนี้",
+          "invoiceStatus": "สถานะใบแจ้งหนี้",
+          "invoiceTotal": "ยอดรวม",
+          "viewInvoice": "ดูใบแจ้งหนี้ {number}",
+          "companyName": "บริษัท",
+          "primaryContact": "ผู้ติดต่อหลัก",
+          "primaryContactNone": "ยังไม่ได้กำหนดผู้ติดต่อหลัก",
+          "planName": "ชื่อแพ็กเกจ",
+          "showTechnicalIds": "แสดงรหัสทางเทคนิค",
+          "showAuditTimestamps": "แสดงเวลาบันทึกในระบบ",
+          "memberLookupFailed": "ไม่สามารถโหลดข้อมูลสมาชิก",
+          "planLookupFailed": "ไม่สามารถโหลดข้อมูลแพ็กเกจ"
+        },
+        "cycleStatus": {
+          "upcoming": "ใกล้ครบกำหนด",
+          "reminded": "ส่งแจ้งเตือนแล้ว",
+          "awaiting_payment": "รอชำระเงิน",
+          "completed": "เสร็จสมบูรณ์",
+          "lapsed": "หมดอายุ",
+          "cancelled": "ยกเลิก",
+          "pending_admin_reactivation": "รอผู้ดูแลอนุมัติ"
+        },
+        "statusSeverity": {
+          "lapsed": " — ต้องเปิดใช้งานใหม่",
+          "pending_admin_reactivation": " — ต้องให้ผู้ดูแลตรวจสอบ"
         }
       }
     },
@@ -2649,6 +2723,7 @@
         },
         "processing": "การต่ออายุของคุณกำลังถูกประมวลผล วันหมดอายุใหม่จะแสดงที่นี่เมื่อยืนยันการชำระเงินสำเร็จ",
         "downloadReceipt": "ดาวน์โหลดใบเสร็จรับเงิน (PDF)",
+        "viewAllInvoices": "ดูใบแจ้งหนี้ทั้งหมด",
         "backToPortal": "กลับสู่หน้าหลักของพอร์ทัล"
       }
     },
@@ -2687,7 +2762,11 @@
       "email_verification_resent": "ส่งอีเมลยืนยันซ้ำแล้ว",
       "email_dispatch_failed": "ส่งอีเมลไม่สำเร็จ",
       "invitation_bounced": "อีเมลคำเชิญตีกลับ",
-      "bulk_action_rate_limit_exceeded": "เกินขีดจำกัดการดำเนินการแบบกลุ่ม"
+      "bulk_action_rate_limit_exceeded": "เกินขีดจำกัดการดำเนินการแบบกลุ่ม",
+      "at_risk_score_recomputed": "คำนวณคะแนนความเสี่ยงใหม่",
+      "at_risk_score_threshold_crossed": "ระดับความเสี่ยงเปลี่ยน",
+      "at_risk_snoozed": "เลื่อนการแจ้งเตือนความเสี่ยง",
+      "at_risk_outreach_recorded": "บันทึกการติดต่อ"
     }
   },
   "pagination": {

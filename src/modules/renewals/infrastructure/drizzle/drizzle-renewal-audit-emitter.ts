@@ -144,6 +144,11 @@ const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set([
   'at_risk_outreach_recorded',
   'at_risk_skipped_below_min_tenure',
   'at_risk_compute_partial_failure',
+  // --- Phase 6 review-round close (migration 0112) ----------------------
+  // Emitted from 4 cron routes since Wave I5 / Phase 6 Wave C but the
+  // pgEnum value was never added — every emit fell through to
+  // pinoFallback, silently dropping the security audit.
+  'cron_bearer_auth_rejected',
 ]);
 
 function buildSummary<E extends F8AuditEventType>(

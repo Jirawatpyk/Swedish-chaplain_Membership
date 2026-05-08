@@ -20,7 +20,7 @@ import postgres from 'postgres';
 
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? 'swecham';
 
-interface SeedResult {
+export interface SeedResult {
   readonly cycleId: string;
   readonly memberId: string;
 }
@@ -98,7 +98,7 @@ export async function seedF8Renewals(): Promise<SeedResult | null> {
         ${TENANT_ID}, ${cycleId}::uuid, ${member.member_id}::uuid, 'upcoming',
         ${periodFrom.toISOString()}::timestamptz, ${expiresAt.toISOString()}::timestamptz, ${expiresAt.toISOString()}::timestamptz,
         12, 'regular',
-        gen_random_uuid(), '50000.00',
+        'regular', '50000.00',
         12, 'THB'
       )
     `;
@@ -124,7 +124,7 @@ export async function seedF8Renewals(): Promise<SeedResult | null> {
         ${TENANT_ID}, ${lapsedCycleId}::uuid, ${member.member_id}::uuid, 'lapsed',
         ${lapsedPeriodFrom.toISOString()}::timestamptz, ${lapsedExpiresAt.toISOString()}::timestamptz, ${lapsedExpiresAt.toISOString()}::timestamptz,
         12, 'regular',
-        gen_random_uuid(), '50000.00',
+        'regular', '50000.00',
         12, 'THB',
         ${lapsedExpiresAt.toISOString()}::timestamptz, 'lapsed'
       )

@@ -212,9 +212,12 @@ export async function loadRenewalSummary(
     benefits: [],
     benefitsAvailable: false,
     // First-time-renewer detection deferred to a sibling read port
-    // (count completed cycles for this member). For MVP, treat all
-    // members as first-time renewers — onboarding banner shows; users
-    // can dismiss. Refactor when prior-cycle count repo lands.
-    isFirstTimeRenewer: true,
+    // (count completed cycles for this member). UX-review R5/C3
+    // (2026-05-09): defaulting to `true` showed every renewing member
+    // — including 5-year veterans — a "Welcome to your first renewal"
+    // banner, which read as broken. Default to `false` until the
+    // prior-cycle-count read port lands; a false-negative (silent
+    // banner) is preferable to a false-positive (wrong copy).
+    isFirstTimeRenewer: false,
   });
 }

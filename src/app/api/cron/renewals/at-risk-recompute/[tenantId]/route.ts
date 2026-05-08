@@ -158,84 +158,44 @@ export async function POST(
   const startedAt = Date.now();
 
   try {
-    // Acquire the per-tenant advisory lock — runs inside its own tx
-    // that auto-releases at commit. Distinct from the batch use-case's
-    // own tx (the use-case opens its own runInTenant; the lock here is
-    // a serialisation guard to prevent two concurrent at-risk crons
-    // racing for the same tenant). Lock namespace `renewals:at-risk:`
-    // is disjoint from `renewals:dispatch:` so daily dispatch and
-    // weekly at-risk can run concurrently without contention.
-    try {
-      await runInTenant(tenantCtx, async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:at-risk:'||${tenantId}, 0))`,
-        );
-      });
-    } catch (e) {
-      logger.error(
-        {
-          err: e instanceof Error ? e : new Error(String(e)),
-          tenantId,
-          correlationId,
-        },
-        'cron.renewals.at_risk.lock_acquire_failed',
-      );
-      return NextResponse.json(
-        { error: { code: 'server_error' }, tenant_id: tenantId },
-        { status: 500 },
-      );
-    }
-
-    // T159b — batched recompute use-case: 4 round-trips total (settings
-    // + factor CTE + bulk UPDATE + bulk INSERT audits) regardless of
-    // member count. Hits FR-036 + SC-005 60s @ 5,000 members SLO on
-    // production-equivalent infra (verified by T174 perf bench when
-    // PERF_SLO_STRICT=1).
-    let recomputed = 0;
-    let skippedBelowTenure = 0;
+    // Lock + work atomic (Phase 6 review C1): the advisory_xact_lock,
+    // the batched recompute (factor CTE + bulk UPDATE + bulk audit
+    // INSERT), and the partial-failure audit all commit in one tx.
+    // Two concurrent cron-job.org invocations now serialise correctly
+    // — one waits on the lock until the other commits, instead of both
+    // racing through the use-case work. Lock namespace
+    // `renewals:at-risk:` stays disjoint from `renewals:dispatch:`.
     const memberNotFound = 0; // batched path doesn't surface this signal
-    let failed = 0;
-    let membersTotal = 0;
 
-    const batchResult = await recomputeAtRiskScoresBatch(deps, {
-      tenantId,
-      correlationId,
-    });
-    if (!batchResult.ok) {
-      logger.error(
-        {
-          tenantId,
-          correlationId,
-          errorKind: batchResult.error.kind,
-          message:
-            batchResult.error.kind === 'invalid_input' ||
-            batchResult.error.kind === 'server_error'
-              ? batchResult.error.message
-              : undefined,
-        },
-        'cron.renewals.at_risk.batch_failed',
+    const txResult = await runInTenant(tenantCtx, async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:at-risk:'||${tenantId}, 0))`,
       );
-      return NextResponse.json(
-        { error: { code: 'server_error' }, tenant_id: tenantId },
-        { status: 500 },
+      // T159b batched recompute — 4 round-trips total (settings +
+      // factor CTE + bulk UPDATE + bulk INSERT audits) regardless of
+      // member count. Hits FR-036 + SC-005 60s @ 5,000 members SLO on
+      // production-equivalent infra (verified by T174 perf when
+      // PERF_SLO_STRICT=1).
+      const batchResult = await recomputeAtRiskScoresBatch(
+        deps,
+        { tenantId, correlationId },
+        tx,
       );
-    }
-    membersTotal = batchResult.value.membersTotal;
-    recomputed = batchResult.value.membersRecomputed;
-    skippedBelowTenure = batchResult.value.membersSkippedBelowTenure;
-    failed = batchResult.value.membersFailed;
-    void memberNotFound;
+      if (!batchResult.ok) return batchResult;
 
-    // Step 3 — emit one partial-failure audit per cron pass if any
-    // member failed.
-    if (failed > 0) {
-      try {
-        await deps.auditEmitter.emit(
+      // Partial-failure audit emit inside the same tx — atomic with
+      // the recompute writes. Caller-provided tx via emitInTx so the
+      // audit row commits + the lock is held until commit.
+      const failed = batchResult.value.membersFailed;
+      if (failed > 0) {
+        await deps.auditEmitter.emitInTx(
+          tx,
           {
             type: 'at_risk_compute_partial_failure',
             payload: {
               error_class: 'aggregate',
-              members_processed: membersTotal - failed,
+              members_processed:
+                batchResult.value.membersTotal - failed,
               members_failed: failed,
             },
           },
@@ -247,22 +207,38 @@ export async function POST(
             requestId: null,
           },
         );
-      } catch (e) {
-        logger.error(
-          { err: e instanceof Error ? e : new Error(String(e)), tenantId },
-          'cron.renewals.at_risk.partial_failure_audit_emit_failed',
-        );
       }
+      return batchResult;
+    });
+
+    if (!txResult.ok) {
+      logger.error(
+        {
+          tenantId,
+          correlationId,
+          errorKind: txResult.error.kind,
+          message:
+            txResult.error.kind === 'invalid_input' ||
+            txResult.error.kind === 'server_error'
+              ? txResult.error.message
+              : undefined,
+        },
+        'cron.renewals.at_risk.batch_failed',
+      );
+      return NextResponse.json(
+        { error: { code: 'server_error' }, tenant_id: tenantId },
+        { status: 500 },
+      );
     }
 
     const responseBody = {
       skipped: false as const,
       tenant_id: tenantId,
-      members_total: membersTotal,
-      members_recomputed: recomputed,
-      members_skipped_below_tenure: skippedBelowTenure,
+      members_total: txResult.value.membersTotal,
+      members_recomputed: txResult.value.membersRecomputed,
+      members_skipped_below_tenure: txResult.value.membersSkippedBelowTenure,
       members_not_found: memberNotFound,
-      members_failed: failed,
+      members_failed: txResult.value.membersFailed,
       duration_ms: Date.now() - startedAt,
     };
     logger.info(

@@ -205,11 +205,20 @@ export function isF8AuditEventType(
  */
 export type AtRiskBand = RiskBand;
 
+/**
+ * Phase 6 review S2 — UP-only band transitions (FR-031). Previously
+ * the DU also admitted DOWN arms (e.g. `critical → healthy`), enforcing
+ * UP-only at runtime via `BAND_ORDER`. Now compile-time-enforced: the
+ * 6 valid UP arms are explicit; any attempt to construct a DOWN
+ * transition is a TS error.
+ *
+ * `'critical'` has no UP arm (top of band ladder) so it is intentionally
+ * absent from `previous_band`.
+ */
 export type BandTransition =
   | { readonly previous_band: 'healthy'; readonly new_band: 'warning' | 'at-risk' | 'critical' }
-  | { readonly previous_band: 'warning'; readonly new_band: 'healthy' | 'at-risk' | 'critical' }
-  | { readonly previous_band: 'at-risk'; readonly new_band: 'healthy' | 'warning' | 'critical' }
-  | { readonly previous_band: 'critical'; readonly new_band: 'healthy' | 'warning' | 'at-risk' };
+  | { readonly previous_band: 'warning'; readonly new_band: 'at-risk' | 'critical' }
+  | { readonly previous_band: 'at-risk'; readonly new_band: 'critical' };
 
 export interface F8AuditPayloadShapes {
   readonly renewal_cycle_created: {
@@ -269,7 +278,13 @@ export interface F8AuditPayloadShapes {
   };
   readonly f8_role_violation_blocked: {
     readonly resource: string;
-    readonly action: 'read' | 'write';
+    /**
+     * Phase 6 review I5 — `'manager_exception'` extended action label
+     * for FR-052a's outreach-write-permitted-on-manager exception.
+     * Dashboards distinguish a true read from a manager-permitted write
+     * via this discriminator.
+     */
+    readonly action: 'read' | 'write' | 'manager_exception';
     readonly attempted_role: 'admin' | 'manager' | 'member';
     readonly route: string;
   };
@@ -500,6 +515,20 @@ export interface F8AuditPayloadShapes {
    * the presence of `error` (lookup the literal first).
    */
   readonly cron_dispatch_orchestrated: {
+    /**
+     * Phase 6 review I3 — discriminator added so dashboards can tell
+     * `dispatch` runs (daily T-90/-30/-7 reminders) apart from
+     * `at_risk_recompute` runs (weekly Sunday score recompute) and
+     * `tier_upgrade_evaluate` (Phase 7+). Without this, the daily-
+     * dispatch alert "no reminders in 24h" used to false-match every
+     * Sunday at-risk run because the at-risk coordinator re-purposed
+     * the `reminders_dispatched` slot. Optional for backward compat
+     * with rows written before this field landed.
+     */
+    readonly cron_kind?:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'tier_upgrade_evaluate';
     readonly tenants_enqueued: number;
     readonly tenants_succeeded: number;
     readonly tenants_failed: number;

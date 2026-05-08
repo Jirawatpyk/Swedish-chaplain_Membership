@@ -132,10 +132,9 @@ async function seedTenant(
       expiresAt: EXPIRES_AT_30D,
       cycleLengthMonths: 12,
       tierAtCycleStart: 'regular',
-      // `plan_id_at_cycle_start` is a UUID column (snapshot of plan
-      // at cycle creation, decoupled from the F2 plans table's
-      // string ID). Existing F8 integration tests use a fresh UUID
-      // here rather than the membership-plans `planId` slug.
+      // T149 RESOLVED (migration 0113): `plan_id_at_cycle_start` is
+      // TEXT matching F2 `plan_id`. This isolation test only round-trips
+      // the value, so a randomUUID() string still satisfies the column.
       planIdAtCycleStart: randomUUID(),
       frozenPlanPriceThb: '50000.00',
       frozenPlanTermMonths: 12,
@@ -459,6 +458,124 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
           .delete(contacts)
           .where(eq(contacts.contactId, ghostContactId))
           .catch(() => {});
+      }
+    });
+  });
+
+  // ----- Phase 6 review C4 — at-risk surfaces tenant isolation -------
+  describe('at-risk surfaces (Phase 6 review C4)', () => {
+    it('snoozeAtRiskMember in tenant B context cannot snooze tenant A member', async () => {
+      const { snoozeAtRiskMember } = await import('@/modules/renewals');
+      const depsB = makeRenewalsDeps(tenantB.ctx.slug);
+      const result = await snoozeAtRiskMember(depsB, {
+        tenantId: tenantB.ctx.slug,
+        memberId: seedA.memberId, // tenant A's member
+        durationDays: 7,
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+        requestId: null,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      // RLS hides tenant A's member from tenant B → member_not_found.
+      expect(result.error.kind).toBe('member_not_found');
+      // Tenant A's member.risk_snoozed_until MUST remain NULL.
+      const probe = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .select({ snoozed: members.riskSnoozedUntil })
+          .from(members)
+          .where(eq(members.memberId, seedA.memberId))
+          .limit(1),
+      );
+      expect(probe[0]?.snoozed).toBeNull();
+    });
+
+    it('recordAtRiskOutreach in tenant B context cannot record outreach against tenant A member', async () => {
+      const { recordAtRiskOutreach } = await import('@/modules/renewals');
+      const { atRiskOutreach } = await import(
+        '@/modules/renewals/infrastructure/schema-at-risk-outreach'
+      );
+      const depsB = makeRenewalsDeps(tenantB.ctx.slug);
+      // Outreach REJECTED — either via Result.err (use-case caught FK)
+      // OR via thrown PostgresError (runInTenant COMMIT after caught
+      // FK aborts the aborted tx). Either path proves tenant isolation;
+      // the post-condition (no row written anywhere) is the load-
+      // bearing assertion.
+      let rejected = false;
+      try {
+        const result = await recordAtRiskOutreach(depsB, {
+          tenantId: tenantB.ctx.slug,
+          memberId: seedA.memberId, // tenant A's member
+          channel: 'email',
+          templateId: 'at_risk.outreach.event_drought',
+          outcomeNote: 'cross-tenant probe',
+          actorUserId: user.userId,
+          actorRole: 'admin',
+          correlationId: randomUUID(),
+          requestId: null,
+        });
+        rejected = !result.ok;
+      } catch {
+        rejected = true;
+      }
+      expect(rejected).toBe(true);
+      // Tenant A MUST have zero outreach rows after the failed probe.
+      const aRows = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .select()
+          .from(atRiskOutreach)
+          .where(eq(atRiskOutreach.memberId, seedA.memberId)),
+      );
+      expect(aRows.length).toBe(0);
+      // Tenant B MUST also have zero rows (FK rejected before insert).
+      const bRows = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(atRiskOutreach)
+          .where(eq(atRiskOutreach.memberId, seedA.memberId)),
+      );
+      expect(bRows.length).toBe(0);
+    });
+
+    it('listAtRiskWidgetMembers in tenant B context never sees tenant A rows', async () => {
+      // Plant a high risk_score on tenant A's member directly.
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx
+          .update(members)
+          .set({
+            riskScore: 80,
+            riskScoreBand: 'critical',
+            riskScoreFactors: {},
+            riskScoreLastComputedAt: new Date(),
+          })
+          .where(eq(members.memberId, seedA.memberId));
+      });
+      try {
+        const depsB = makeRenewalsDeps(tenantB.ctx.slug);
+        const page = await runInTenant(tenantB.ctx, (tx) =>
+          depsB.memberRenewalFlagsRepo.listAtRiskWidgetMembers(
+            tx,
+            tenantB.ctx.slug,
+            { limit: 50 },
+          ),
+        );
+        const memberIds = page.items.map((m) => m.memberId);
+        // Tenant A's member MUST NOT appear in tenant B's widget.
+        expect(memberIds).not.toContain(seedA.memberId);
+      } finally {
+        // Reset tenant A's risk_score so subsequent tests start clean.
+        await runInTenant(tenantA.ctx, async (tx) => {
+          await tx
+            .update(members)
+            .set({
+              riskScore: null,
+              riskScoreBand: null,
+              riskScoreFactors: null,
+              riskScoreLastComputedAt: null,
+            })
+            .where(eq(members.memberId, seedA.memberId));
+        });
       }
     });
   });

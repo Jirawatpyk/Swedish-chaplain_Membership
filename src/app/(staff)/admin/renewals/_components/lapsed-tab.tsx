@@ -57,18 +57,24 @@ const REASON_VARIANT_CLASSES: Record<string, string> = {
     'bg-red-50 text-red-900 ring-red-200 dark:bg-red-950 dark:text-red-200 dark:ring-red-900',
   payment_failed:
     'bg-rose-50 text-rose-900 ring-rose-200 dark:bg-rose-950 dark:text-rose-200 dark:ring-rose-900',
+  // UX R5 / Mobile-a11y: dark-mode ring contrast — `dark:ring-gray-700`
+  // on `dark:bg-gray-900` was too low (3.0:1 borderline). Bump to -600
+  // for clearer pill outline. Same -600 floor applied across the
+  // tonal palette so every variant has a visible boundary on dark.
   cancelled:
-    'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-700',
+    'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-300 dark:ring-gray-600',
   paid:
-    'bg-emerald-50 text-emerald-900 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-900',
+    'bg-emerald-50 text-emerald-900 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-700',
   completed_offline:
-    'bg-emerald-50 text-emerald-900 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-900',
+    'bg-emerald-50 text-emerald-900 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-700',
   admin_reactivated:
-    'bg-blue-50 text-blue-900 ring-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:ring-blue-900',
+    'bg-blue-50 text-blue-900 ring-blue-200 dark:bg-blue-950 dark:text-blue-200 dark:ring-blue-700',
   admin_rejected_with_refund:
-    'bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-900',
+    'bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-700',
+  // -700 (was -600 inconsistently) so this severe state stays
+  // dominant in scan order matching `lapsed`/`payment_failed`.
   pending_reactivation_timed_out:
-    'bg-orange-50 text-orange-900 ring-orange-200 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-600',
+    'bg-orange-50 text-orange-900 ring-orange-200 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-700',
 };
 
 export function LapsedTab({ rows }: LapsedTabProps) {

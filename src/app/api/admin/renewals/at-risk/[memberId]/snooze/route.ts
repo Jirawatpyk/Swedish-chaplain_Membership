@@ -30,14 +30,7 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ memberId: string }> },
 ) {
-  if (!env.features.f8Renewals) {
-    return errorResponse({
-      status: 503,
-      code: 'feature_disabled',
-      correlationId: randomUUID(),
-    });
-  }
-  if (env.features.f8AtRiskDisabled) {
+  if (!env.features.f8Renewals || env.features.f8AtRiskDisabled) {
     return errorResponse({
       status: 503,
       code: 'feature_disabled',
@@ -98,16 +91,11 @@ export async function POST(
             code: 'member_not_found',
             correlationId: ctx.correlationId,
           });
-        default: {
-          const _exhaustive: never = result.error;
-          void _exhaustive;
-          return errorResponse({
-            status: 500,
-            code: 'server_error',
-            correlationId: ctx.correlationId,
-          });
-        }
       }
+      // TS exhaustiveness guard — a new error kind added without a
+      // case arm fails the build at this never-assertion.
+      const _exhaustive: never = result.error;
+      return _exhaustive;
     }
     return successResponse(
       { snoozed_until: result.value.snoozedUntil },

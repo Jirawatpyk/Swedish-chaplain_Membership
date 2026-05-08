@@ -14,7 +14,7 @@
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -85,9 +85,16 @@ export function SnoozeDialog({
     });
   };
 
+  // Phase 6 review S8 — focus on Cancel via @base-ui Dialog
+  // `initialFocus` ref (the `autoFocus` prop on Button doesn't survive
+  // the focus-trap which would otherwise steal initial focus to the
+  // close X). Canonical pattern for ux-standards § 4 "focus on Cancel
+  // by default".
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent initialFocus={cancelRef}>
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>
@@ -112,11 +119,10 @@ export function SnoozeDialog({
         </RadioGroup>
         <DialogFooter>
           <Button
+            ref={cancelRef}
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={pending}
-            // Focus on Cancel by default per ux-standards § 4.
-            autoFocus
           >
             {t('cancel')}
           </Button>

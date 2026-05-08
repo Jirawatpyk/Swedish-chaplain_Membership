@@ -95,8 +95,11 @@ function BenefitRow({ benefit }: { benefit: BenefitConsumptionEntry }) {
         aria-label={t('ariaProgress', { label, used, quota })}
         className="mt-1 h-2 w-full overflow-hidden rounded-full bg-muted"
       >
+        {/* UX R5 / S3: `motion-safe:` so future client-side updates
+            to `pct` honour `prefers-reduced-motion`. Server-rendered
+            today, but harmless to gate proactively. */}
         <div
-          className="h-full bg-primary transition-[width]"
+          className="h-full bg-primary motion-safe:transition-[width]"
           style={{ width: `${pct}%` }}
         />
       </div>

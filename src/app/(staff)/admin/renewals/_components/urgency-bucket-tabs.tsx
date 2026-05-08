@@ -68,13 +68,49 @@ export function UrgencyBucketTabs({
     // Outer wrapper handles horizontal scroll at narrow viewports
     // (WCAG 1.4.10 Reflow). TabsList itself is `inline-flex w-fit` from
     // base-ui, so `overflow-x-auto` only takes effect on the wrapper.
-    <div className="w-full overflow-x-auto">
+    //
+    // `overflow-y-hidden` is required: per CSS overflow spec, setting
+    // `overflow-x: auto` implicitly forces `overflow-y` to `auto` too
+    // (the spec disallows mixing `visible` with any non-visible
+    // value on the other axis). The TabsList's content is `33px` tall
+    // due to `p-[3px]` + `h-8` rounding, which overflows the 32px
+    // wrapper by 1px and triggers vertical scroll-arrow chevrons
+    // ("^" / "v") when the user clicks a tab. Forcing Y-hidden clips
+    // that 1px ghost overflow without affecting any visible tab
+    // content (the default-variant `:after` indicator is opacity-0).
+    //
+    // `py-0.5` adds 2px breathing room above + below so a focus ring
+    // on edge-row tabs isn't clipped by the Y-hidden boundary
+    // (WCAG 2.4.11 Focus Not Obscured).
+    <div className="w-full overflow-x-auto overflow-y-hidden py-0.5">
       <Tabs value={current} onValueChange={handleChange}>
-        <TabsList className="min-w-max" aria-label={t('aria_label')}>
+        {/* `gap-1` separates adjacent triggers — without it the count
+            badge of one tab visually butts against the next tab's
+            label, producing the unreadable "T-90 0T-60 0T-14 0" run.
+            shadcn's default TabsList variant has no inter-trigger gap
+            because shadcn assumes each trigger is a single short word;
+            pairs of <label, badge> need explicit breathing room. */}
+        {/* Phase 6 review-round 2 Cmt7 — arrow-key navigation provided by
+            shadcn `<Tabs>` automatically (Radix Tabs primitive). No need
+            to duplicate the manual `tablist` arrow handler used by
+            `at-risk-widget.tsx` (custom `<div role="tablist">`-based
+            tabs); both surfaces meet the same WCAG outcome via
+            different implementations. */}
+        <TabsList className="min-w-max gap-1" aria-label={t('aria_label')}>
           {TAB_ORDER.map((bucket) => {
           const count =
             bucket === 'lapsed' ? lapsedCount : (counts[bucket] ?? 0);
-          const i18nKey = bucket.replace('-', '_');
+          // Phase 6 review-round 2 UX-M3 — replaceAll is future-proof
+          // for multi-hyphen bucket strings (current set has at most
+          // one hyphen, so behaviour is identical today).
+          const i18nKey = bucket.replaceAll('-', '_') as UrgencyI18nKey;
+          // Phase 6 review-round 2 F8 — loud-fail when a TAB_ORDER
+          // entry is added without the matching i18n key. next-intl's
+          // default `getMessageFallback` returns the key string,
+          // silently rendering "t_45" instead of localized text.
+          const label = t.has(i18nKey)
+            ? t(i18nKey)
+            : `${i18nKey} (untranslated)`;
           return (
             <TabsTrigger
               key={bucket}
@@ -83,9 +119,7 @@ export function UrgencyBucketTabs({
                 bucket === 'lapsed' && 'ml-2 border-l border-border pl-3',
               )}
             >
-              <span>
-                {t(i18nKey as UrgencyI18nKey)}
-              </span>
+              <span>{label}</span>
               <span
                 className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums"
                 aria-hidden

@@ -1644,18 +1644,19 @@
           "awaiting_payment": "Inväntar betalning",
           "completed": "Slutförd",
           "lapsed": "Förfallen",
-          "cancelled": "Annullerad",
+          "cancelled": "Avbruten",
           "pending_admin_reactivation": "Väntar på återaktivering"
         },
         "viewInvoice": "Visa faktura",
         "noRows": "Inga medlemmar i detta intervall.",
-        "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskandeflik för att se väntande förnyelser.",
+        "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
         "unknownCompany": "(Okänt företag)",
         "emailUnverifiedHint": "E-postadressen är overifierad — nyligen upptäckta studsar; systempåminnelser är pausade tills kontaktens e-post uppdateras och verifieras på nytt.",
         "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}"
       },
       "actions": {
         "open": "Öppna cykel",
+        "openAriaLabel": "Öppna cykel för {company}",
         "sendReminder": "Skicka påminnelse",
         "markContacted": "Markera kontaktad",
         "markContactedComingSoon": "Kommer i en framtida fas — administratörer kommer att kunna registrera kontaktförsök",
@@ -1717,11 +1718,11 @@
           "title": "Påminnelseschema",
           "subtitle": "Bestäm hur medlemmar i varje nivå kontaktas före och efter sitt förnyelsedatum.",
           "tabs": {
-            "thai_alumni": "Thai alumni",
+            "thai_alumni": "Thai-alumner",
             "start_up": "Start-up",
-            "regular": "Regular",
+            "regular": "Standard",
             "premium": "Premium",
-            "partnership": "Partnership"
+            "partnership": "Partnerskap"
           },
           "stepCard": {
             "channelLabel": "Leveranskanal",
@@ -1735,7 +1736,7 @@
               "exact": "T+0"
             },
             "stepIdLabel": "Steg-ID",
-            "offsetDaysLabel": "Antal dagar (negativt = före, positivt = efter)",
+            "offsetDaysLabel": "Dagar (− = före, + = efter)",
             "templateIdLabel": "E-postmall",
             "taskTypeLabel": "Uppgiftstyp",
             "assigneeLabel": "Tilldelad roll",
@@ -1779,10 +1780,10 @@
         "title": "Medlemmar i riskzon",
         "summary": "{warning} varning · {atRisk} i riskzon · {critical} kritisk",
         "summaryLoading": "Läser in sammanfattning av medlemmar i riskzon…",
-        "f6Inactive": "F6-evenemangsmodulen är inte aktiv — maxpoäng {max}",
+        "f6Inactive": "Eventdata är inte ansluten — poäng speglar endast senaste engagemangssignaler (max {max} poäng)",
         "featureDisabled": "Riskzon-detektion är tillfälligt otillgänglig. Kontakta supporten om problemet kvarstår.",
         "errorLoading": "Kunde inte läsa in medlemmar i riskzon. Uppdatera sidan.",
-        "emptyState": "Alla medlemmar mår bra denna vecka",
+        "emptyState": "Inga medlemmar i riskzon denna vecka",
         "bandTabs": {
           "label": "Filtrera efter riskband",
           "warning": "Varning",
@@ -1798,11 +1799,16 @@
         },
         "actions": {
           "contact": "Kontakta",
-          "snooze": "Pausa"
+          "contactAriaLabel": "Kontakta {company}",
+          "snooze": "Pausa",
+          "snoozeAriaLabel": "Pausa {company}",
+          "retry": "Försök igen",
+          "viewAllMembers": "Visa alla medlemmar",
+          "reviewLapsed": "Granska förfallna medlemmar"
         },
         "scoreBadge": {
           "band": {
-            "healthy": "Frisk",
+            "healthy": "God status",
             "warning": "Varning",
             "at_risk": "Riskzon",
             "critical": "Kritisk"
@@ -1829,7 +1835,7 @@
         },
         "outreach": {
           "title": "Registrera kontakt",
-          "description": "Logga hur du har kontaktat {company}. Förnyelsens cron-jobb pausar e-postpåminnelser för denna medlem under nästa 7 dagar för att undvika kollision med din kontakt.",
+          "description": "Logga hur du har kontaktat {company}. Systemet pausar automatiskt e-postpåminnelser för denna medlem under de kommande 7 dagarna för att undvika kollision med din kontakt.",
           "descriptionFallback": "Logga hur du har kontaktat denna medlem.",
           "channel": {
             "label": "Kanal",
@@ -1863,6 +1869,74 @@
               "invalid_input": "Ogiltiga indata."
             }
           }
+        }
+      },
+      "cycleDetail": {
+        "title": "Cykelinformation",
+        "subtitle": "Förnyelsecykel {cycleId}",
+        "subtitleExpiry": "Löper ut {date}",
+        "subtitleClosed": "Avslutad {date}",
+        "subtitlePendingSince": "Väntar på granskning sedan {date}",
+        "notFoundTitle": "Cykel hittades inte",
+        "notFoundDescription": "Cykeln finns inte eller du har inte åtkomst.",
+        "errorTitle": "Kunde inte ladda cykel",
+        "errorDescription": "Försök igen. Kontakta support om problemet kvarstår.",
+        "loading": "Laddar cykelinformation…",
+        "backToPipeline": "Tillbaka till pipeline",
+        "sectionMemberPlan": "Medlem & plan",
+        "sectionInvoice": "Länkad faktura",
+        "sectionPeriod": "Period & tidslinje",
+        "sectionActivity": "Aktivitet",
+        "subsectionMember": "Medlem",
+        "subsectionPlan": "Plan",
+        "noLinkedInvoice": "Ingen faktura är länkad till denna cykel än.",
+        "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
+        "pendingNoticeTitle": "Väntar på ditt beslut",
+        "pendingNoticeBody": "Den här medlemmens återaktivering väntar på granskning. För att godkänna eller avslå, gå tillbaka till förnyelsepipelinen och använd rad-åtgärdsmenyn.",
+        "noActivityTitle": "Ingen aktivitet än",
+        "noActivityDescription": "Skickade påminnelsemail och uppföljningsärenden visas här när förnyelsepåminnelserna börjar för denna cykel.",
+        "fields": {
+          "cycleId": "Cykel-ID",
+          "memberId": "Medlems-ID",
+          "status": "Status",
+          "tier": "Nivå",
+          "planId": "Plan-ID",
+          "frozenPrice": "Låst pris",
+          "frozenTerm": "Löptid (månader)",
+          "frozenCurrency": "Valuta",
+          "periodFrom": "Period från",
+          "periodTo": "Period till",
+          "expiresAt": "Förfaller",
+          "enteredPendingAt": "Avvaktar sedan",
+          "closedAt": "Avslutad",
+          "closedReason": "Avslutsorsak",
+          "createdAt": "Skapad",
+          "updatedAt": "Uppdaterad",
+          "invoiceNumber": "Fakturanr",
+          "invoiceStatus": "Fakturastatus",
+          "invoiceTotal": "Total",
+          "viewInvoice": "Visa faktura {number}",
+          "companyName": "Företag",
+          "primaryContact": "Primär kontakt",
+          "primaryContactNone": "Ingen primär kontakt angiven",
+          "planName": "Plannamn",
+          "showTechnicalIds": "Visa tekniska ID:n",
+          "showAuditTimestamps": "Visa systemtidsstämplar",
+          "memberLookupFailed": "Kunde inte ladda medlemsdetaljer",
+          "planLookupFailed": "Kunde inte ladda plandetaljer"
+        },
+        "cycleStatus": {
+          "upcoming": "Kommande",
+          "reminded": "Påmind",
+          "awaiting_payment": "Inväntar betalning",
+          "completed": "Slutförd",
+          "lapsed": "Förfallen",
+          "cancelled": "Avbruten",
+          "pending_admin_reactivation": "Väntar på återaktivering"
+        },
+        "statusSeverity": {
+          "lapsed": " — kräver återaktivering",
+          "pending_admin_reactivation": " — kräver administratörsgranskning"
         }
       }
     },
@@ -2649,6 +2723,7 @@
         },
         "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
         "downloadReceipt": "Ladda ner kvitto (PDF)",
+        "viewAllInvoices": "Visa alla fakturor",
         "backToPortal": "Tillbaka till portalens startsida"
       }
     },
@@ -2687,7 +2762,11 @@
       "email_verification_resent": "Verifieringsmejl skickat på nytt",
       "email_dispatch_failed": "E-postutskick misslyckades",
       "invitation_bounced": "Inbjudan studsade",
-      "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd"
+      "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd",
+      "at_risk_score_recomputed": "Riskpoäng omräknad",
+      "at_risk_score_threshold_crossed": "Riskbandet ändrades",
+      "at_risk_snoozed": "Riskvarning pausad",
+      "at_risk_outreach_recorded": "Kontakt registrerad"
     }
   },
   "pagination": {

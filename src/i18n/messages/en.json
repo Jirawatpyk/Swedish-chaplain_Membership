@@ -1645,7 +1645,7 @@
           "completed": "Completed",
           "lapsed": "Lapsed",
           "cancelled": "Cancelled",
-          "pending_admin_reactivation": "Pending reactivation"
+          "pending_admin_reactivation": "Pending admin reactivation"
         },
         "viewInvoice": "View invoice",
         "noRows": "No members in this bucket.",
@@ -1656,6 +1656,7 @@
       },
       "actions": {
         "open": "Open cycle",
+        "openAriaLabel": "Open cycle for {company}",
         "sendReminder": "Send reminder",
         "markContacted": "Mark contacted",
         "markContactedComingSoon": "Coming in a future phase — admin can manually log contact attempts",
@@ -1779,7 +1780,7 @@
         "title": "At-risk members",
         "summary": "{warning} warning · {atRisk} at-risk · {critical} critical",
         "summaryLoading": "Loading at-risk member summary…",
-        "f6Inactive": "F6 events module not active — max score {max}",
+        "f6Inactive": "Event data not connected — scores reflect recent engagement signals only (max {max} points)",
         "featureDisabled": "At-risk detection is temporarily unavailable. Contact support if this persists.",
         "errorLoading": "Could not load at-risk members. Please refresh.",
         "emptyState": "All members healthy this week",
@@ -1798,7 +1799,12 @@
         },
         "actions": {
           "contact": "Contact",
-          "snooze": "Snooze"
+          "contactAriaLabel": "Contact {company}",
+          "snooze": "Snooze",
+          "snoozeAriaLabel": "Snooze {company}",
+          "retry": "Retry",
+          "viewAllMembers": "View all members",
+          "reviewLapsed": "Review lapsed members"
         },
         "scoreBadge": {
           "band": {
@@ -1829,7 +1835,7 @@
         },
         "outreach": {
           "title": "Record outreach",
-          "description": "Log how you contacted {company}. The renewal cron pauses email reminders for this member for the next 7 days to avoid colliding with your outreach.",
+          "description": "Log how you contacted {company}. We'll pause automated renewal reminders for this member for 7 days to avoid overlap with your personal outreach.",
           "descriptionFallback": "Log how you contacted this member.",
           "channel": {
             "label": "Channel",
@@ -1863,6 +1869,74 @@
               "invalid_input": "Invalid input."
             }
           }
+        }
+      },
+      "cycleDetail": {
+        "title": "Cycle detail",
+        "subtitle": "Renewal cycle {cycleId}",
+        "subtitleExpiry": "Expires {date}",
+        "subtitleClosed": "Closed {date}",
+        "subtitlePendingSince": "Pending review since {date}",
+        "notFoundTitle": "Cycle not found",
+        "notFoundDescription": "This renewal cycle doesn't exist or you don't have access.",
+        "errorTitle": "Could not load cycle",
+        "errorDescription": "Try again. If the problem persists, contact support.",
+        "loading": "Loading cycle detail…",
+        "backToPipeline": "Back to pipeline",
+        "sectionMemberPlan": "Member & plan",
+        "sectionInvoice": "Linked invoice",
+        "sectionPeriod": "Period & timeline",
+        "sectionActivity": "Activity",
+        "subsectionMember": "Member",
+        "subsectionPlan": "Plan",
+        "noLinkedInvoice": "No invoice linked to this cycle yet.",
+        "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
+        "pendingNoticeTitle": "Awaiting your decision",
+        "pendingNoticeBody": "This member's reactivation is pending review. To approve or reject, return to the renewal pipeline and use the row actions menu.",
+        "noActivityTitle": "No activity yet",
+        "noActivityDescription": "Sent reminder emails and follow-up tasks will appear here once the renewal reminders begin for this cycle.",
+        "fields": {
+          "cycleId": "Cycle ID",
+          "memberId": "Member ID",
+          "status": "Status",
+          "tier": "Tier",
+          "planId": "Plan ID",
+          "frozenPrice": "Frozen price",
+          "frozenTerm": "Term (months)",
+          "frozenCurrency": "Currency",
+          "periodFrom": "Period from",
+          "periodTo": "Period to",
+          "expiresAt": "Expires at",
+          "enteredPendingAt": "Entered pending at",
+          "closedAt": "Closed at",
+          "closedReason": "Closed reason",
+          "createdAt": "Created at",
+          "updatedAt": "Updated at",
+          "invoiceNumber": "Invoice #",
+          "invoiceStatus": "Invoice status",
+          "invoiceTotal": "Total",
+          "viewInvoice": "View invoice {number}",
+          "companyName": "Company",
+          "primaryContact": "Primary contact",
+          "primaryContactNone": "No primary contact set",
+          "planName": "Plan name",
+          "showTechnicalIds": "Show technical IDs",
+          "showAuditTimestamps": "Show audit timestamps",
+          "memberLookupFailed": "Couldn't load member details",
+          "planLookupFailed": "Couldn't load plan details"
+        },
+        "cycleStatus": {
+          "upcoming": "Upcoming",
+          "reminded": "Reminded",
+          "awaiting_payment": "Awaiting payment",
+          "completed": "Completed",
+          "lapsed": "Lapsed",
+          "cancelled": "Cancelled",
+          "pending_admin_reactivation": "Pending admin reactivation"
+        },
+        "statusSeverity": {
+          "lapsed": " — needs reactivation",
+          "pending_admin_reactivation": " — needs admin review"
         }
       }
     },
@@ -2649,6 +2723,7 @@
         },
         "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
         "downloadReceipt": "Download receipt PDF",
+        "viewAllInvoices": "View all invoices",
         "backToPortal": "Back to portal home"
       }
     },
@@ -2687,7 +2762,11 @@
       "email_verification_resent": "Verification email resent",
       "email_dispatch_failed": "Email dispatch failed",
       "invitation_bounced": "Invitation bounced",
-      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit",
+      "at_risk_score_recomputed": "Risk score recomputed",
+      "at_risk_score_threshold_crossed": "Risk band changed",
+      "at_risk_snoozed": "At-risk snoozed",
+      "at_risk_outreach_recorded": "Outreach recorded"
     }
   },
   "pagination": {

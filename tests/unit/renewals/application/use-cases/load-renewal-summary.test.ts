@@ -57,7 +57,11 @@ const baseInput = {
 };
 
 describe('loadRenewalSummary (T121)', () => {
-  it('happy path — returns frozen price + benefits empty + first-time true', async () => {
+  it('happy path — returns frozen price + benefits empty + first-time false', async () => {
+    // UX-review R5/C3 (2026-05-09): isFirstTimeRenewer defaults to
+    // false until the prior-cycle-count read port lands — a false-
+    // negative (silent banner) beats a false-positive (5-year
+    // veterans seeing "Welcome to your first renewal").
     const cycle = buildCycle();
     const { deps } = fakeDeps({ cycle });
     const r = await loadRenewalSummary(deps, baseInput);
@@ -69,7 +73,7 @@ describe('loadRenewalSummary (T121)', () => {
       expect(r.value.status).toBe('awaiting_payment');
       expect(r.value.benefits).toEqual([]);
       expect(r.value.benefitsAvailable).toBe(false);
-      expect(r.value.isFirstTimeRenewer).toBe(true);
+      expect(r.value.isFirstTimeRenewer).toBe(false);
     }
   });
 

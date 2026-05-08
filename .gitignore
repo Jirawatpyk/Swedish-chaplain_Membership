@@ -146,6 +146,8 @@ docs/*.xls
 docs/~$*
 # Excel lock files anywhere in the repo
 ~$*.xls*
+# Demo seed data extracted from PII-containing workbooks (never commit).
+scripts/_demo-data/
 .vercel
 .env*.local
 .e2e-seed.json

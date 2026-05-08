@@ -53,15 +53,20 @@ export default async function RenewalPortalLoading() {
   const announce = await resolveLoadingAnnounce();
   return (
     <DetailContainer>
+      {/* UX R5 / S2: skeleton uses plain `<div>` elements, not
+          `<header>` + `<section>` landmarks. The real page renders
+          its own landmarks; phantom-landmark announcements during
+          load mislead screen-reader users about page structure
+          (matching the cycle-detail loading.tsx K27 R2 N-3 fix). */}
       <div role="status" aria-live="polite">
         <span className="sr-only">{announce}</span>
-        <header>
+        <div>
           <Skeleton className="h-7 w-40" />
           <Skeleton className="mt-2 h-4 w-72" />
-        </header>
-        <section className="rounded-lg border bg-card p-4">
+        </div>
+        <div className="rounded-lg border bg-card p-4">
           <Skeleton className="mb-3 h-6 w-32" />
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+          <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-2 sm:gap-x-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="contents">
                 <Skeleton className="h-4 w-24" />
@@ -69,11 +74,11 @@ export default async function RenewalPortalLoading() {
               </div>
             ))}
           </div>
-        </section>
-        <section className="rounded-lg border bg-card p-4">
+        </div>
+        <div className="rounded-lg border bg-card p-4">
           <Skeleton className="mb-3 h-6 w-40" />
           <Skeleton className="h-4 w-full" />
-        </section>
+        </div>
         <Skeleton className="h-10 w-32" />
       </div>
     </DetailContainer>

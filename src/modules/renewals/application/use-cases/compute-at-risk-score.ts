@@ -115,20 +115,20 @@ export async function computeAtRiskScore(
   }
 
   // Step 2 — min-tenure skip path (FR-035). Emit + return without
-  // touching the score columns.
+  // touching the score columns. Phase 6 review I4: emit real
+  // `tenure_days` + `threshold_days` from the Domain result rather
+  // than the prior 0/30 sentinels.
   if (scoreResult.skippedBelowMinTenure) {
+    const tenureDays = scoreResult.tenureDays ?? 0;
+    const thresholdDays = scoreResult.thresholdDays;
     try {
       await deps.auditEmitter.emit(
         {
           type: 'at_risk_skipped_below_min_tenure' as const,
           payload: {
             member_id: input.memberId as MemberId,
-            tenure_days: 0, // adapter signals via the `skipped` flag; tenure is implied
-            // The scorer does not surface the literal tenure value (it's
-            // an implementation detail of factor-gathering); we record
-            // 0 as a sentinel + the threshold so dashboards can compute
-            // delta = threshold - tenure for forensic reasoning.
-            threshold_days: 30, // default per FR-035; adapter passes per-tenant override
+            tenure_days: tenureDays,
+            threshold_days: thresholdDays,
           },
         },
         {
@@ -151,8 +151,8 @@ export async function computeAtRiskScore(
     return ok({
       skipped: true as const,
       reason: 'below_min_tenure' as const,
-      tenureDays: 0,
-      thresholdDays: 30,
+      tenureDays,
+      thresholdDays,
     });
   }
 

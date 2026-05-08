@@ -38,10 +38,11 @@
 --  20. `lapsed_member_admin_reactivation_reminder_t-3` (T138 — pending ladder day 27)
 --  21. `lapsed_member_admin_reactivation_reminder_t-1` (T138 — pending ladder day 29)
 --
--- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
--- transaction. Drizzle's migration runner respects `--> statement-breakpoint`
--- so each ALTER lands as its own statement (idempotent via `IF NOT EXISTS`,
--- safe to re-run on partial-rollback or migration replay).
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
+-- transaction. Drizzle's migration runner uses the
+-- "statement-breakpoint" separator so each ALTER lands as its own
+-- statement (idempotent via IF NOT EXISTS, safe to re-run on
+-- partial-rollback or migration replay).
 --
 -- Source of truth: research.md R1 + spec.md §§ FR-005a-d, FR-016, FR-021,
 -- FR-022-25, FR-027, FR-052, audit-port.md taxonomy line 365 (58→59 with

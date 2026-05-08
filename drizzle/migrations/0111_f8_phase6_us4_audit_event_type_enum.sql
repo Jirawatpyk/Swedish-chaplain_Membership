@@ -18,10 +18,11 @@
 -- 67 F8_ENUM_SHIPPED set) can persist them via INSERT instead of falling
 -- through to pino-logging.
 --
--- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
--- transaction. Drizzle's migration runner respects `--> statement-breakpoint`
--- so each ALTER lands as its own statement (idempotent via `IF NOT EXISTS`,
--- safe to re-run on partial-rollback or migration replay).
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
+-- transaction. Drizzle's migration runner uses the
+-- "statement-breakpoint" separator so each ALTER lands as its own
+-- statement (idempotent via IF NOT EXISTS, safe to re-run on
+-- partial-rollback or migration replay).
 --
 -- Source of truth: spec.md FR-029 + FR-031 + FR-032 + FR-033 + FR-035 +
 -- contracts/audit-port.md lines 43-48 (6 at-risk events) +

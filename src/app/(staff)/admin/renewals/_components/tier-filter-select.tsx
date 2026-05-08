@@ -63,8 +63,12 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
   // SR comboboxes pair name + value when announcing — pointing at a
   // hidden span via aria-labelledby keeps both the label and the
   // current SelectValue audible (WCAG 4.1.2 Name, Role, Value).
+  //
+  // UX R5 / Mobile S5: wrapper drops `flex-col` — single visible child
+  // (the Select); `sr-only` span is out of visual flow. Width sizing
+  // (`w-full sm:w-[14rem]`) is the only structural class needed.
   return (
-    <div className="flex w-full sm:w-[14rem] flex-col">
+    <div className="w-full sm:w-[14rem]">
       <span id={labelId} className="sr-only">
         {t('aria_label')}
       </span>
@@ -80,7 +84,12 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
             }}
           />
         </SelectTrigger>
-        <SelectContent>
+        {/* `align="end"` anchors the popup to the trigger's right edge
+            so it doesn't overflow the viewport — this trigger sits on
+            the right side of the filter row, and the default
+            `align="start"` (left-edge) pushed the popup off-screen and
+            obscured the pipeline table's INVOICE column header. */}
+        <SelectContent align="end">
           <SelectItem value={ALL}>{t('all')}</SelectItem>
           {TIER_BUCKETS.map((bucket) => (
             <SelectItem key={bucket} value={bucket}>

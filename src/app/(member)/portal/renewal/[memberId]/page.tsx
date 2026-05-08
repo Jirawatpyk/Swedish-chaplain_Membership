@@ -15,13 +15,14 @@
  * is already established.
  */
 import { notFound, redirect } from 'next/navigation';
-import { getFormatter, getTranslations } from 'next-intl/server';
+import { getFormatter, getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asPlanYear, listPlans } from '@/modules/plans';
+import type { LocaleText } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import {
   loadRenewalSummary,
@@ -44,8 +45,13 @@ export default async function RenewalPortalPage({
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('portal.renewal.page');
   const tField = await getTranslations('portal.renewal.fields');
+  // UX R5/C2: tier slug → human-readable label via the same i18n
+  // namespace admin surfaces use; loud-fail to slug if a future tier
+  // is added without a matching key (matches K28 cycle-detail pattern).
+  const tTier = await getTranslations('admin.renewals.tierBadge');
   // I16 review-fix: locale-aware date formatting via next-intl.
   const formatter = await getFormatter();
+  const locale = await getLocale();
 
   // Resolve the session-member.
   const membersDeps = buildMembersDeps(tenant);
@@ -105,7 +111,7 @@ export default async function RenewalPortalPage({
   const availablePlans: ReadonlyArray<RenewalPlanOption> = plansResult.ok
     ? plansResult.value.data.map((p) => ({
         planId: p.plan_id,
-        label: resolvePlanName(p.plan_name, p.plan_id),
+        label: resolvePlanName(p.plan_name, p.plan_id, locale),
         annualFeeMinorUnits: Number(p.annual_fee_minor_units),
       }))
     : [];
@@ -113,6 +119,22 @@ export default async function RenewalPortalPage({
   const currentPlanLabel =
     availablePlans.find((p) => p.planId === summary.planIdAtCycleStart)
       ?.label ?? summary.planIdAtCycleStart;
+
+  // UX R5/C2: translate the frozen tier slug. Fallback emits the raw
+  // slug suffixed with "(untranslated)" so missing keys are visible
+  // in development without crashing the page.
+  const tierKey = summary.tierAtCycleStart;
+  const tierLabel = tTier.has(tierKey)
+    ? tTier(tierKey)
+    : `${tierKey} (untranslated)`;
+
+  // UX R5/C1: format the frozen plan price via Intl currency rather
+  // than emitting `36000.00 THB` raw — this is the price shown right
+  // before the renewal CTA, so it must read as money to the member.
+  const frozenPriceFormatted = formatter.number(
+    Number(summary.frozenPlanPriceThb),
+    { style: 'currency', currency: summary.frozenPlanCurrency ?? 'THB' },
+  );
 
   return (
     <DetailContainer>
@@ -136,15 +158,18 @@ export default async function RenewalPortalPage({
         >
           {t('membershipPlanHeading')}
         </h2>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+        {/* UX R5 / Mobile #1: `grid-cols-1` base + `sm:grid-cols-2` so
+            the dl reflows into a single column at <640px viewports
+            where Thai plan names ("Premium Plus / สมาชิกระดับพรีเมี่ยม")
+            would otherwise overflow the 136px column on a 320px
+            device (WCAG 1.4.10 Reflow). */}
+        <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
           <dt className="text-muted-foreground">{tField('plan')}</dt>
           <dd>{currentPlanLabel}</dd>
           <dt className="text-muted-foreground">{tField('tier')}</dt>
-          <dd>{summary.tierAtCycleStart}</dd>
+          <dd>{tierLabel}</dd>
           <dt className="text-muted-foreground">{tField('frozenPrice')}</dt>
-          <dd>
-            {summary.frozenPlanPriceThb} {summary.frozenPlanCurrency}
-          </dd>
+          <dd>{frozenPriceFormatted}</dd>
           <dt className="text-muted-foreground">{tField('term')}</dt>
           <dd>
             {tField('termMonths', { count: summary.frozenPlanTermMonths })}
@@ -179,9 +204,25 @@ export default async function RenewalPortalPage({
   );
 }
 
-function resolvePlanName(rawName: unknown, fallback: string): string {
+/**
+ * UX R5: locale-aware plan name resolver. Mirrors the cycle-detail
+ * `fetchPlanDisplay` helper so a member viewing the portal in TH/SV
+ * sees the localised plan name (with EN canonical fallback), not the
+ * raw slug or only the English label.
+ */
+function resolvePlanName(
+  rawName: unknown,
+  fallback: string,
+  locale: string,
+): string {
   if (typeof rawName === 'object' && rawName !== null) {
-    return (rawName as { en?: string }).en ?? fallback;
+    const localeText = rawName as LocaleText;
+    return (
+      (locale === 'th' && localeText.th) ||
+      (locale === 'sv' && localeText.sv) ||
+      localeText.en ||
+      fallback
+    );
   }
   return String(rawName ?? fallback);
 }

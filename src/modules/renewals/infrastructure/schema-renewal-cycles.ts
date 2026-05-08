@@ -54,7 +54,10 @@ export const renewalCycles = pgTable(
 
     // Frozen-plan snapshot (FR-021a — never overwritten after cycle creation).
     tierAtCycleStart: text('tier_at_cycle_start').notNull(),
-    planIdAtCycleStart: uuid('plan_id_at_cycle_start').notNull(),
+    // T149 follow-up (migration 0113): TEXT to match `membership_plans.plan_id`
+    // (TEXT slug like 'regular'/'premium'). Was `uuid` in 0087 — mismatch let
+    // seeds write `gen_random_uuid()` orphans that broke the F2 plan-name lookup.
+    planIdAtCycleStart: text('plan_id_at_cycle_start').notNull(),
     frozenPlanPriceThb: decimal('frozen_plan_price_thb', {
       precision: 12,
       scale: 2,

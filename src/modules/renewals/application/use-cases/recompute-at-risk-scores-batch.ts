@@ -92,6 +92,13 @@ interface ComputedRow {
 export async function recomputeAtRiskScoresBatch(
   deps: RenewalsDeps,
   rawInput: RecomputeAtRiskScoresBatchInput,
+  /**
+   * Optional external transaction. When the cron route holds a per-tenant
+   * advisory_xact_lock in its own runInTenant block (Phase 6 review C1),
+   * it passes that tx so the lock + the recompute work commit atomically.
+   * When undefined, the use-case opens its own runInTenant.
+   */
+  externalTx?: import('@/lib/db').TenantTx,
 ): Promise<
   Result<
     RecomputeAtRiskScoresBatchOutput,
@@ -118,7 +125,11 @@ export async function recomputeAtRiskScoresBatch(
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
   try {
-    return await runInTenant(deps.tenant, async (tx) => {
+    const work = async (
+      tx: import('@/lib/db').TenantTx,
+    ): Promise<
+      Result<RecomputeAtRiskScoresBatchOutput, RecomputeAtRiskScoresBatchError>
+    > => {
       // 2. Single CTE: gather factor inputs for ALL active members in
       //    one round-trip via the port abstraction.
       const factorRows: ReadonlyArray<AtRiskBatchFactorRow> =
@@ -131,8 +142,11 @@ export async function recomputeAtRiskScoresBatch(
       //    isolation: catch + count in membersFailed; never blocks the
       //    batch.
       const computed: ComputedRow[] = [];
+      const skippedBelowTenure: Array<{
+        readonly memberId: string;
+        readonly tenureDays: number;
+      }> = [];
       let membersFailed = 0;
-      let membersSkippedBelowTenure = 0;
 
       for (const row of factorRows) {
         try {
@@ -181,7 +195,10 @@ export async function recomputeAtRiskScoresBatch(
             continue;
           }
           if (r.value.skippedBelowMinTenure) {
-            membersSkippedBelowTenure += 1;
+            skippedBelowTenure.push({
+              memberId: row.memberId,
+              tenureDays,
+            });
             continue;
           }
           computed.push({
@@ -225,8 +242,27 @@ export async function recomputeAtRiskScoresBatch(
 
       // 5. Bulk INSERT audit_log via the port. Build the events list
       //    in-memory (one recompute audit per member; one extra
-      //    threshold_crossed per UP transition per FR-031).
+      //    threshold_crossed per UP transition per FR-031; one
+      //    skipped audit per min-tenure skip per FR-035).
       const events: F8AuditEvent<F8AuditEventType>[] = [];
+
+      // Phase 6 review I10 — emit per-skipped-member audit
+      // `at_risk_skipped_below_min_tenure` (FR-035 contract closure).
+      // Previously the batched path only incremented a counter; the
+      // single-member path emitted per member. The contract requires
+      // per-member emit so dashboards and forensics can identify
+      // which members were skipped, not just how many.
+      for (const s of skippedBelowTenure) {
+        events.push({
+          type: 'at_risk_skipped_below_min_tenure',
+          payload: {
+            member_id: s.memberId as MemberId,
+            tenure_days: s.tenureDays,
+            threshold_days: minTenureDays,
+          },
+        });
+      }
+
       for (const c of computed) {
         const factorsMap = Object.fromEntries(
           c.result.contributions.map((f) => [f.factor, f.points]),
@@ -301,11 +337,15 @@ export async function recomputeAtRiskScoresBatch(
       return ok({
         membersTotal: factorRows.length,
         membersRecomputed: computed.length,
-        membersSkippedBelowTenure,
+        membersSkippedBelowTenure: skippedBelowTenure.length,
         membersFailed,
         durationMs: Date.now() - startedAt,
       });
-    });
+    };
+    if (externalTx !== undefined) {
+      return await work(externalTx as import('@/lib/db').TenantTx);
+    }
+    return await runInTenant(deps.tenant, work);
   } catch (e) {
     const errInstance = e instanceof Error ? e : new Error(String(e));
     const message = errInstance.message;

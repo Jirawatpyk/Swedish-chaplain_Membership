@@ -77,7 +77,9 @@ export default async function RenewalSuccessPage({
           {t('detailsHeading')}
         </h2>
         {activeCycle ? (
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          // UX R5 / Mobile #1: responsive grid — single column at
+          // <640px so Thai/SV labels don't squeeze the value column.
+          <dl className="grid grid-cols-1 gap-y-2 text-sm sm:grid-cols-2 sm:gap-x-4">
             <dt className="text-muted-foreground">{t('newExpiry')}</dt>
             <dd>
               <time dateTime={activeCycle.expiresAt}>
@@ -88,25 +90,50 @@ export default async function RenewalSuccessPage({
                 })}
               </time>
             </dd>
-            <dt className="text-muted-foreground">{t('cycleStatus')}</dt>
-            <dd>{tStatus(activeCycle.status)}</dd>
+            {/* UX R5 / S3: only show cycle status when it's actually
+                completed. Stripe webhooks land async, so a member
+                redirected from F5 can briefly see status='awaiting_payment'
+                even though the success page heading says "Renewal
+                complete" — confusing. Hiding the row keeps the page
+                consistent until the cycle truly transitions. */}
+            {activeCycle.status === 'completed' && (
+              <>
+                <dt className="text-muted-foreground">{t('cycleStatus')}</dt>
+                <dd>{tStatus(activeCycle.status)}</dd>
+              </>
+            )}
           </dl>
         ) : (
           <p className="text-sm text-muted-foreground">{t('processing')}</p>
         )}
       </section>
 
-      {/* S-4 review-fix: primary nav action uses Button (≥36px hit
-          area per WCAG 2.5.8) instead of plain underline link. Receipt
-          download stays as a link — secondary action. */}
+      {/* UX R5 / Mobile #2: download receipt is the primary success-
+          page action — must hit ≥36px tap target on mobile. Plain
+          underline link sat at ~14px (text-sm line height) which
+          failed WCAG 2.5.8 on touch. Use the same button-shaped link
+          treatment as backToPortal so both primary actions are
+          visually equivalent.
+          UX R5 / I2: when invoiceId is missing (member navigated to
+          success URL directly, or F5 redirect dropped the param),
+          fall back to "View all invoices" so the receipt is still
+          reachable — empty action row is worse than indirect path. */}
       <div className="flex flex-wrap items-center gap-3">
-        {invoiceId && (
+        {invoiceId ? (
           <Link
             href={`/portal/invoices/${invoiceId}/pdf`}
-            className="text-sm underline"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
             data-testid="receipt-download-link"
           >
             {t('downloadReceipt')}
+          </Link>
+        ) : (
+          <Link
+            href="/portal/invoices"
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+            data-testid="view-invoices-fallback"
+          >
+            {t('viewAllInvoices')}
           </Link>
         )}
         <Link

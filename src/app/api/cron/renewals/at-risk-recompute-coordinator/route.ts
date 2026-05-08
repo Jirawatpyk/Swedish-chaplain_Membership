@@ -79,6 +79,7 @@ async function emitOrchestratedAudit(
       {
         type: 'cron_dispatch_orchestrated',
         payload: {
+          cron_kind: 'at_risk_recompute',
           tenants_enqueued: summary.tenants_enqueued,
           tenants_succeeded: summary.tenants_succeeded,
           tenants_failed: summary.tenants_failed,
