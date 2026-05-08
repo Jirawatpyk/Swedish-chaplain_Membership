@@ -24,14 +24,25 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import {
+  seedOneAtRiskMember,
+  type SeededAtRiskMember,
+} from './helpers/seed-at-risk-member';
 import AxeBuilder from '@axe-core/playwright';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 const F8_AT_RISK_DISABLED =
   process.env.FEATURE_F8_AT_RISK_DISABLED === 'true';
+const E2E_PLAN_ID = process.env.E2E_AT_RISK_PLAN_ID ?? 'regular';
+const E2E_PLAN_YEAR = Number.parseInt(
+  process.env.E2E_AT_RISK_PLAN_YEAR ?? '2026',
+  10,
+);
 
 test.describe('F8 — at-risk widget (US4)', () => {
+  let seeded: SeededAtRiskMember | null = null;
+
   test.beforeAll(() => {
     if (!ADMIN_EMAIL) {
       throw new Error(
@@ -48,6 +59,25 @@ test.describe('F8 — at-risk widget (US4)', () => {
         'FEATURE_F8_AT_RISK_DISABLED=true — at-risk surfaces are disabled; unset to run T176.',
       );
     }
+  });
+
+  // Per-test (not per-suite) seeding: AS3 snooze sets
+  // `risk_snoozed_until = NOW + 30d` which hides the member from the
+  // widget query — without per-test re-seeding, AS4 would inherit the
+  // snoozed state and find no Contact button. Each test gets its own
+  // fresh at-risk row + cleanup.
+  test.beforeEach(async () => {
+    seeded = await seedOneAtRiskMember(E2E_PLAN_ID, E2E_PLAN_YEAR);
+    if (!seeded) {
+      throw new Error(
+        '[T176] seedOneAtRiskMember returned null — DATABASE_URL missing?',
+      );
+    }
+  });
+
+  test.afterEach(async () => {
+    await seeded?.cleanup();
+    seeded = null;
   });
 
   test('renders at-risk widget on /admin/renewals (admin)', async ({
@@ -89,24 +119,12 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByText(/loading at-risk member summary/i),
     ).toBeHidden({ timeout: 15_000 });
 
-    // Snooze button visible on at least one row (admin role). If no
-    // at-risk members in seed data OR FEATURE_F8_AT_RISK_DISABLED=true,
-    // the widget shows a placeholder card instead — skip the action
-    // assertions in either case (both are legitimate non-action paths).
+    // The beforeAll seedOneAtRiskMember guarantees ≥1 at-risk row at
+    // score=78 (at-risk band). If the Snooze button is missing the
+    // dialog flow is broken — that is the regression this hardening
+    // catches (was previously accepted as a no-op pass).
     const snoozeButton = page.getByRole('button', { name: /snooze/i }).first();
-    const buttonCount = await snoozeButton.count();
-    if (buttonCount === 0) {
-      // Either empty-state copy OR feature-disabled copy must be visible
-      // — both signal "no actionable rows for the test to click".
-      const emptyState = page.getByText(/all members healthy this week/i);
-      const featureDisabled = page.getByText(
-        /at-risk detection is temporarily unavailable/i,
-      );
-      const seenEmpty = (await emptyState.count()) > 0;
-      const seenDisabled = (await featureDisabled.count()) > 0;
-      expect(seenEmpty || seenDisabled).toBe(true);
-      return;
-    }
+    await expect(snoozeButton).toBeVisible({ timeout: 10_000 });
     await snoozeButton.click();
 
     // Dialog opens with title + radio options.
@@ -143,19 +161,9 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByText(/loading at-risk member summary/i),
     ).toBeHidden({ timeout: 15_000 });
 
+    // beforeAll seed guarantees an actionable row — assert hard.
     const contactButton = page.getByRole('button', { name: /contact/i }).first();
-    const buttonCount = await contactButton.count();
-    if (buttonCount === 0) {
-      // Either empty-state OR feature-disabled placeholder is acceptable.
-      const emptyState = page.getByText(/all members healthy this week/i);
-      const featureDisabled = page.getByText(
-        /at-risk detection is temporarily unavailable/i,
-      );
-      const seenEmpty = (await emptyState.count()) > 0;
-      const seenDisabled = (await featureDisabled.count()) > 0;
-      expect(seenEmpty || seenDisabled).toBe(true);
-      return;
-    }
+    await expect(contactButton).toBeVisible({ timeout: 10_000 });
     await contactButton.click();
 
     await expect(

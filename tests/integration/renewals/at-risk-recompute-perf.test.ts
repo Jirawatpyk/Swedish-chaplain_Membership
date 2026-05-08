@@ -95,6 +95,8 @@ async function seedBulkMembers(
       country: string;
       planId: string;
       planYear: number;
+      createdAt: Date;
+      lastActivityAt: Date;
     }> = [];
     const contactRows: Array<{
       tenantId: string;
@@ -132,6 +134,14 @@ async function seedBulkMembers(
         country: 'TH',
         planId,
         planYear: 2026,
+        // Backdate so all members clear the FR-035 min-tenure gate
+        // (default 30d). Without this, every member is short-circuited
+        // and the SC-005 SLO measurement misses the bulkSetRiskScores +
+        // bulkEmitInTx code paths entirely.
+        createdAt: new Date(NOW_MS - 60 * MS_PER_DAY),
+        // Aged contact-update so FR-029 line 7 (>365d) is exercised on
+        // a non-trivial subset; pick 400d to cross the threshold.
+        lastActivityAt: new Date(NOW_MS - 400 * MS_PER_DAY),
       });
       contactRows.push({
         tenantId: tenant.ctx.slug,
@@ -247,6 +257,12 @@ describe.skipIf(!RUN_PERF)(
       const cronDurationMs = Date.now() - cronStart;
       expect(result.ok).toBe(true);
       if (!result.ok) return;
+
+      // Guardrail: fail loudly if min-tenure gate ate every member —
+      // that would mean the SLO measurement is on the early-exit path
+      // (the regression that motivated this assertion).
+      expect(result.value.membersRecomputed).toBeGreaterThan(0);
+      expect(result.value.membersSkippedBelowTenure).toBe(0);
 
       // Per-member latency is amortised across the batch — surface the
       // average for trend tracking. The batch has no inner per-member

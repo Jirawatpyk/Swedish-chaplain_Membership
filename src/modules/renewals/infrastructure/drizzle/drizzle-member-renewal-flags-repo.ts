@@ -370,13 +370,18 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         band: r.band,
         factors: r.factors,
       }));
+      // Date → ISO string + explicit ::timestamptz cast: postgres-js
+      // (the underlying driver) only accepts string/Buffer for params,
+      // unlike node-postgres which auto-serialises Date. Mirrors the
+      // pattern used by every other adapter in this file (see toIso /
+      // .toISOString() at lines 493, 506, 602).
       const result = await txDb.execute(sql`
         UPDATE members AS m
         SET
           risk_score = src.score,
           risk_score_band = src.band,
           risk_score_factors = src.factors,
-          risk_score_last_computed_at = ${computedAt}
+          risk_score_last_computed_at = ${computedAt.toISOString()}::timestamptz
         FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
           AS src(member_id uuid, score smallint, band text, factors jsonb)
         WHERE m.member_id = src.member_id
