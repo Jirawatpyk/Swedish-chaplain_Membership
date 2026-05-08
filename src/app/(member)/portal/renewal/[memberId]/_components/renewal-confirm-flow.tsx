@@ -70,6 +70,37 @@ interface RenewalConfirmFlowProps {
   readonly availablePlans: ReadonlyArray<RenewalPlanOption>;
 }
 
+/**
+ * Round 4 simplify (post-K20): the original Round 2 fix added a single
+ * sendBeacon block in the error path; K20 (Round 3 R3-S3) added a 2nd
+ * structurally-identical block in the malformed-response path. Two
+ * 22-LOC near-clones differing only by `code` is the DRY threshold
+ * where extraction wins — Round 3 simplifier explicitly deferred this
+ * with "1 callsite" rationale, no longer applies.
+ *
+ * Fire-and-forget beacon to `/api/internal/client-error` for SRE +
+ * support correlation. All failures (no `navigator`, sendBeacon throw
+ * on too-large/quota-exhausted) are silently swallowed — the visible
+ * console.warn / console.error at the callsite + the `setError` UI
+ * update are the user-visible handles.
+ */
+function reportClientError(payload: {
+  tag: string;
+  code: string;
+  status: number;
+  path: string;
+}): void {
+  if (typeof navigator === 'undefined' || !navigator.sendBeacon) return;
+  try {
+    navigator.sendBeacon(
+      '/api/internal/client-error',
+      new Blob([JSON.stringify(payload)], { type: 'application/json' }),
+    );
+  } catch {
+    /* best-effort; see callsite for user-visible handle */
+  }
+}
+
 export function RenewalConfirmFlow({
   memberId,
   cycleId,
@@ -115,35 +146,12 @@ export function RenewalConfirmFlow({
           // C6 review-fix: log raw code for support correlation; user
           // sees mapped i18n message (see ERROR_CODE_TO_I18N_KEY).
           console.warn('[renewal-confirm] error', { code, status: r.status });
-          // Round 2 review-fix S-6: also send a structured beacon to
-          // /api/internal/client-error so SRE / support can correlate
-          // user-reported failures with the raw error code instead of
-          // relying on screenshot of the user's browser console.
-          // sendBeacon is fire-and-forget and survives navigation;
-          // failures are silent (the console.warn above is the
-          // primary handle).
-          if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-            try {
-              navigator.sendBeacon(
-                '/api/internal/client-error',
-                new Blob(
-                  [
-                    JSON.stringify({
-                      tag: 'renewal-confirm',
-                      code,
-                      status: r.status,
-                      path: window.location.pathname,
-                    }),
-                  ],
-                  { type: 'application/json' },
-                ),
-              );
-            } catch {
-              // sendBeacon throws if the body is too large or quota
-              // exhausted — silently swallow; the console.warn above
-              // and the setError below are the user-visible handles.
-            }
-          }
+          reportClientError({
+            tag: 'renewal-confirm',
+            code,
+            status: r.status,
+            path: window.location.pathname,
+          });
           setError(code);
           return;
         }
@@ -161,26 +169,12 @@ export function RenewalConfirmFlow({
           payload = (await r.json()) as { pay_url?: string };
         } catch (parseErr) {
           console.error('[renewal-confirm] malformed response body', parseErr);
-          if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-            try {
-              navigator.sendBeacon(
-                '/api/internal/client-error',
-                new Blob(
-                  [
-                    JSON.stringify({
-                      tag: 'renewal-confirm',
-                      code: 'malformed_response',
-                      status: r.status,
-                      path: window.location.pathname,
-                    }),
-                  ],
-                  { type: 'application/json' },
-                ),
-              );
-            } catch {
-              /* sendBeacon best-effort; see error path above */
-            }
-          }
+          reportClientError({
+            tag: 'renewal-confirm',
+            code: 'malformed_response',
+            status: r.status,
+            path: window.location.pathname,
+          });
           setError('malformed_response');
           return;
         }

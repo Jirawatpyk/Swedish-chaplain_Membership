@@ -31,9 +31,12 @@ vi.mock('@/lib/auth-deps', () => ({
   rateLimiter: { check: (...args: unknown[]) => rateLimiterCheckMock(...args) },
 }));
 
+const loggerDebugMock = vi.fn();
+
 vi.mock('@/lib/logger', () => ({
   logger: {
     info: vi.fn(),
+    debug: (...args: unknown[]) => loggerDebugMock(...args),
     warn: (...args: unknown[]) => loggerWarnMock(...args),
     error: vi.fn(),
   },
@@ -134,6 +137,14 @@ describe('POST /api/internal/client-error', () => {
     const body = await response.json();
     expect(body.error.code).toBe('invalid_json');
     expect(loggerWarnMock).not.toHaveBeenCalled();
+    // Round 4 review-fix (R4-S3): the parse error is debug-logged with
+    // errorId for SRE diagnostic correlation. Locks the binding so a
+    // future refactor doesn't silently drop the side-band log.
+    expect(loggerDebugMock).toHaveBeenCalledTimes(1);
+    const [debugPayload] = loggerDebugMock.mock.calls[0]!;
+    expect(debugPayload).toMatchObject({
+      errorId: 'CLIENT.ERROR_REPORT.INVALID_JSON',
+    });
   });
 
   it('400 invalid-input when body fails zod schema (missing required fields)', async () => {

@@ -210,9 +210,14 @@ describe('F8 reconcilePendingReactivations — integration (T148)', () => {
       [cycleT7, cycleT3, cycleT1].sort(),
     );
 
-    // Round 3 review-fix (R3-S1): Verify all 4 distinct audit event
-    // TYPES appear (3 reminders × 3 cycles + 1 timeout × 1 cycle = 7
-    // total rows; we only assert TYPE coverage here, not row count).
+    // Round 3 review-fix (R3-S1) / Round 4 review-fix (R4-S2):
+    // Verify all 4 distinct audit event TYPES appear. The catch-up
+    // breakdown is documented at the test setup above (lines ~158-162):
+    // day-23 cycle fires T-7 only (1 row), day-27 fires T-7 + T-3
+    // (2 rows), day-29 fires T-7 + T-3 + T-1 (3 rows) → 1 + 2 + 3
+    // = 6 reminder rows; the day-30 cycle fires the timeout audit
+    // (1 row) → 7 total rows. We only assert TYPE coverage here,
+    // not row count.
     const auditCounts = await runInTenant(tenantA.ctx, (tx) =>
       tx
         .select({ eventType: auditLog.eventType })

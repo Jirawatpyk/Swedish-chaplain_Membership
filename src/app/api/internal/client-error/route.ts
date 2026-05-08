@@ -103,10 +103,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // Parse JSON body — empty / malformed → 400.
+  // Round 4 review-fix (R4-S3): bind the parse error and emit a debug
+  // log so SRE retains the parse-failure dimension (SyntaxError vs
+  // RangeError vs other) for correlation. Ironic to drop this signal
+  // on the very endpoint built to forward client warnings. Debug-level
+  // because the response 400 is the primary signal; this is a side-
+  // band diagnostic that should not inflate Vercel free-tier log
+  // volume on a misbehaving bot.
   let body: unknown;
   try {
     body = raw.length === 0 ? {} : JSON.parse(raw);
-  } catch {
+  } catch (e) {
+    logger.debug(
+      {
+        errorId: 'CLIENT.ERROR_REPORT.INVALID_JSON',
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[client-error] beacon body was not parseable JSON',
+    );
     return NextResponse.json(
       { error: { code: 'invalid_json' } },
       { status: 400 },

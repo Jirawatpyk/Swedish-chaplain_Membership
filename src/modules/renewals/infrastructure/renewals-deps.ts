@@ -384,6 +384,30 @@ export function f8OnPaidCallbacks(
         case 'cycle_not_payable':
           break;
         default: {
+          // Round 4 review-fix (R4-S1): defence-in-depth for the
+          // deploy-skew window — the TS `_exhaustive: never` pin below
+          // guarantees compile-time exhaustiveness in steady state, but
+          // a deploy where the use-case ships a 5th variant before this
+          // dispatch site rebuilds (or a hot-fix bundles only the
+          // use-case bundle) would silently swallow the unknown kind.
+          // Loud-fail at runtime: log + counter so SRE pages instead
+          // of waiting for a member-support ticket about a missed
+          // cycle flip. Counter alert rule: any non-zero rate.
+          const { logger } = await import('@/lib/logger');
+          const { renewalsMetrics } = await import('@/lib/metrics');
+          renewalsMetrics.onPaidUnknownOutcomeKind.add(1, {
+            tenant_id: tenantId,
+          });
+          logger.error(
+            {
+              errorId: 'F8.ONPAID.UNKNOWN_OUTCOME_KIND',
+              tenantId,
+              invoiceId: evt.invoiceId,
+              memberId: evt.memberId,
+              kind: (outcome as { kind?: unknown }).kind ?? null,
+            },
+            '[f8-onPaid] unknown MarkCycleCompleteOutcome.kind — possible deploy-skew between use-case and renewals-deps',
+          );
           const _exhaustive: never = outcome;
           void _exhaustive;
         }
