@@ -140,6 +140,15 @@ export type DbTx = TenantTx;
  * accident — all of which would explode as `TypeError: tx.execute is
  * not a function` deep in a query callsite without this check.
  *
+ * **Future relocation note** (`/speckit.staff-review.run` Wave K23
+ * R006 — non-blocking suggestion): if F5 / F6 / F7 cross-module
+ * callbacks proliferate post-MVP and each adopts this duck-type
+ * pattern, consider relocating `isTenantTx` to `@/modules/tenants`
+ * (it is conceptually a tenant-isolation primitive, not a DB
+ * primitive). Current placement at `@/lib/db` is defensible because
+ * the only consumer today is F4 → F8 and the `TenantTx` type itself
+ * is owned by `@/lib/db`. F9 cross-cutting cleanup can revisit.
+ *
  * For ANY new cross-module callback wiring, either:
  *   (a) trust the upstream `runInTenant` chain (current F4 → F8 path)
  *       and use this guard as belt-and-braces, OR

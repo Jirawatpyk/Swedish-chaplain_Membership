@@ -122,12 +122,16 @@ export interface ReconcilePendingReactivationsDeps
  * The pending-cycle auto-timeout boundary. Cycles whose
  * `daysPending >= PENDING_TIMEOUT_DAYS` flow through `processTimeout`
  * (cancel + F5 refund) instead of the reminder ladder. Round 4
- * review-fix (R4-S4) **invariant**: every `REMINDER_LADDER[*].threshold`
- * MUST be strictly less than this value, otherwise that rung is
- * silently consumed by the timeout branch before the reminder loop
- * can fire it. Enforced at module load by the assertion below.
+ * review-fix (R4-S4) / Round 5 staff-review (R005) **invariant**: every
+ * `REMINDER_LADDER[*].threshold` MUST be strictly less than this value,
+ * otherwise that rung is silently consumed by the timeout branch before
+ * the reminder loop fires. Enforced by a dedicated unit test
+ * (`reminder-ladder-invariants.test.ts`) that imports both constants
+ * and asserts the bound — chosen over a module-load throw so test
+ * imports of the module are side-effect-free (a future test that
+ * mocks something else in this file inherits no surprise throws).
  */
-const PENDING_TIMEOUT_DAYS = 30;
+export const PENDING_TIMEOUT_DAYS = 30;
 const MS_PER_DAY = 86_400_000;
 
 /**
@@ -143,7 +147,7 @@ const MS_PER_DAY = 86_400_000;
  * so the iteration in `decideRemindersToFire` produces audit rows
  * in chronological rung order.
  */
-const REMINDER_LADDER: ReadonlyArray<{
+export const REMINDER_LADDER: ReadonlyArray<{
   readonly threshold: number;
   readonly type: ReminderLadderAuditType;
 }> = [
@@ -151,21 +155,6 @@ const REMINDER_LADDER: ReadonlyArray<{
   { threshold: 27, type: 'lapsed_member_admin_reactivation_reminder_t-3' }, // 30 - 3
   { threshold: 29, type: 'lapsed_member_admin_reactivation_reminder_t-1' }, // 30 - 1
 ];
-
-// Round 4 review-fix (R4-S4): module-load invariant — every reminder
-// rung threshold MUST be < PENDING_TIMEOUT_DAYS. A rung at or above
-// the timeout would be silently consumed by the timeout branch in
-// `reconcilePendingReactivations` before the reminder loop fires.
-// Throws at first import (test or boot) — no silent ship-with-bug path.
-for (const rung of REMINDER_LADDER) {
-  if (rung.threshold >= PENDING_TIMEOUT_DAYS || rung.threshold < 0) {
-    throw new Error(
-      `[reconcile-pending-reactivations] REMINDER_LADDER threshold ${rung.threshold} for type ${rung.type} ` +
-        `must be in [0, PENDING_TIMEOUT_DAYS=${PENDING_TIMEOUT_DAYS}). A rung at or above the timeout boundary ` +
-        'would be silently consumed by processTimeout before the reminder loop fires.',
-    );
-  }
-}
 
 export async function reconcilePendingReactivations(
   deps: ReconcilePendingReactivationsDeps,

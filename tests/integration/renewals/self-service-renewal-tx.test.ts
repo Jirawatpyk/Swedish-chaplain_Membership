@@ -500,12 +500,18 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     };
     const beforeTally = tally(beforeAudits);
     const afterTally = tally(afterAudits);
+    // Round 5 staff-review (R007): per-key custom message arg so a
+    // future regression where a single event type leaks reveals which
+    // one in the failure output (vs an opaque "expected 2 to be 1").
     for (const key of [
       'renewal_completed',
       'renewal_completed_post_lapse',
       'renewal_payment_failed',
     ]) {
-      expect(afterTally[key] ?? 0).toBe(beforeTally[key] ?? 0);
+      expect(
+        afterTally[key] ?? 0,
+        `D1 invariant: no new '${key}' audit must be emitted after F5 payment_failed (F4-stays-issued path); regressed if delta != 0`,
+      ).toBe(beforeTally[key] ?? 0);
     }
 
     // Member tally for the `memberId` should be 0 across all renewal-
