@@ -38,6 +38,7 @@ import { PipelineTable } from './_components/pipeline-table';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from './_components/error-card-actions';
+import { AtRiskWidget } from './_components/at-risk-widget';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -175,6 +176,19 @@ export default async function RenewalsPipelinePage({
   const showEmptyState =
     summary.totalInWindow === 0 && summary.lapsedCount === 0;
 
+  // Phase 6 Wave E (T167) — at-risk widget plugged in alongside the
+  // pipeline table. Hidden by route gate when:
+  //   - whole-F8 kill-switch is on (early-return branch above)
+  //   - granular FEATURE_F8_AT_RISK_DISABLED kill-switch is on (the
+  //     widget renders a "feature temporarily unavailable" card per
+  //     FR-052b — handled inside the widget via API
+  //     `feature_disabled: true` field)
+  //   - actor role is `member` — but route already redirects member to
+  //     /portal at L77, so this server component only runs for
+  //     admin / manager.
+  const widgetActorRole: 'admin' | 'manager' =
+    currentUser.role === 'manager' ? 'manager' : 'admin';
+
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
@@ -192,15 +206,6 @@ export default async function RenewalsPipelinePage({
                 />
                 <TierFilterSelect current={tier ?? 'all'} />
               </div>
-              {/*
-               * J8-M27: extracted to client component so RSC
-               * re-renders don't re-mount the live region (SRs
-               * may not re-announce a wholesale-replaced node).
-               * Polite live region announces result count to screen
-               * readers when filter/tab changes re-render this page
-               * (UX-W2). aria-atomic so the whole sentence is read,
-               * not just the diff.
-               */}
               <ResultCountAnnouncer
                 count={rows.length}
                 urgencyKey={urgency}
@@ -214,6 +219,7 @@ export default async function RenewalsPipelinePage({
           )}
         </CardContent>
       </Card>
+      <AtRiskWidget actorRole={widgetActorRole} />
     </TableContainer>
   );
 }

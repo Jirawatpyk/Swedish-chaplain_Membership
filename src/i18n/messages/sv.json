@@ -1772,6 +1772,96 @@
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
         }
+      },
+      "atRisk": {
+        "title": "Medlemmar i riskzon",
+        "summary": "{warning} varning · {atRisk} i riskzon · {critical} kritisk",
+        "summaryLoading": "Läser in sammanfattning av medlemmar i riskzon…",
+        "f6Inactive": "F6-evenemangsmodulen är inte aktiv — maxpoäng {max}",
+        "featureDisabled": "Riskzon-detektion är tillfälligt otillgänglig. Kontakta supporten om problemet kvarstår.",
+        "errorLoading": "Kunde inte läsa in medlemmar i riskzon. Uppdatera sidan.",
+        "emptyState": "Alla medlemmar mår bra denna vecka",
+        "bandTabs": {
+          "label": "Filtrera efter riskband",
+          "warning": "Varning",
+          "at_risk": "Riskzon",
+          "critical": "Kritisk"
+        },
+        "table": {
+          "company": "Företag",
+          "score": "Riskpoäng",
+          "lastComputed": "Senast beräknat",
+          "actions": "Åtgärder",
+          "unknownCompany": "(inget företagsnamn)"
+        },
+        "actions": {
+          "contact": "Kontakta",
+          "snooze": "Pausa"
+        },
+        "scoreBadge": {
+          "band": {
+            "healthy": "Frisk",
+            "warning": "Varning",
+            "at_risk": "Riskzon",
+            "critical": "Kritisk"
+          },
+          "srLabel": "Riskpoäng {score} av {max}, band {band}"
+        },
+        "snooze": {
+          "title": "Pausa medlem i riskzon",
+          "description": "Dölj {company} från riskzon-widgeten under den valda perioden. Poängen fortsätter att uppdateras i bakgrunden; medlemmen återkommer när pausen löper ut.",
+          "descriptionFallback": "Dölj denna medlem från riskzon-widgeten under den valda perioden.",
+          "option": "{days} dagar",
+          "cancel": "Avbryt",
+          "confirm": "Bekräfta paus",
+          "confirming": "Pausar…",
+          "toast": {
+            "success": "Pausad i {days} dagar",
+            "failure": "Kunde inte pausa medlemmen",
+            "error": {
+              "server_error": "Serverfel. Försök igen.",
+              "invalid_input": "Ogiltiga indata.",
+              "member_not_found": "Medlemmen hittades inte."
+            }
+          }
+        },
+        "outreach": {
+          "title": "Registrera kontakt",
+          "description": "Logga hur du har kontaktat {company}. Förnyelsens cron-jobb pausar e-postpåminnelser för denna medlem under nästa 7 dagar för att undvika kollision med din kontakt.",
+          "descriptionFallback": "Logga hur du har kontaktat denna medlem.",
+          "channel": {
+            "label": "Kanal",
+            "option": {
+              "email": "E-post",
+              "phone": "Telefonsamtal",
+              "meeting": "Personligt möte"
+            }
+          },
+          "template": {
+            "label": "E-postmall",
+            "option": {
+              "at_risk_outreach_event_drought": "Återengagemang efter eventuppehåll",
+              "at_risk_outreach_benefit_underuse": "Påminnelse om underutnyttjade förmåner",
+              "at_risk_outreach_payment_reminder": "Betalningspåminnelse"
+            }
+          },
+          "note": {
+            "label": "Anteckning om utfall (frivilligt)",
+            "placeholder": "Kort anteckning om hur samtalet/mötet gick…",
+            "counter": "{count} / {max} tecken"
+          },
+          "cancel": "Avbryt",
+          "confirm": "Registrera kontakt",
+          "submitting": "Sparar…",
+          "toast": {
+            "success": "Kontakt registrerad",
+            "failure": "Kunde inte registrera kontakt",
+            "error": {
+              "server_error": "Serverfel. Försök igen.",
+              "invalid_input": "Ogiltiga indata."
+            }
+          }
+        }
       }
     },
     "refund": {
