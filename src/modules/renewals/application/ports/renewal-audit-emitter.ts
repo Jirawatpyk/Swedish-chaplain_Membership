@@ -52,6 +52,16 @@ export const F8_AUDIT_EVENT_TYPES = [
   'renewal_self_service_initiated',
   'renewal_invoice_created',
   'renewal_with_plan_change',
+  // Round 4 verify-fix (D1): `renewal_payment_failed` is RESERVED in the
+  // catalogue but currently NOT EMITTED by any production code path.
+  // F8 listens only to F4's `invoice_marked_paid` event via
+  // `f8OnPaidCallbacks`; the F5 payment_failed branch leaves the F4
+  // invoice in `issued` so the callback never fires (cycle stays in
+  // `awaiting_payment` and the reminder schedule resumes — verified by
+  // `tests/integration/renewals/self-service-renewal-tx.test.ts` D1
+  // case). Wiring requires a future F5 → F8 listener bridge (post-MVP);
+  // until then the catalogue entry is forward-compatible reservation
+  // (NEVER remove without an audit-counts migration).
   'renewal_payment_failed',
   'renewal_completed',
   'renewal_completed_post_lapse',
