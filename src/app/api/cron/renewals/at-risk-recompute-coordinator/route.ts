@@ -89,20 +89,23 @@ async function emitOrchestratedAudit(
               : {
                   tenant_id: r.tenant_id,
                   skipped: r.skipped,
-                  // The cron_dispatch_orchestrated typed payload uses
-                  // `reminders_dispatched` + `tasks_created` field
-                  // names (defined for the daily dispatch audit). For
-                  // at-risk we re-purpose the slots: `reminders_
-                  // dispatched` ⇒ members_recomputed, `tasks_created`
-                  // ⇒ members_failed. Dashboard queries that key on
-                  // `cron_dispatch_orchestrated` already group by
-                  // route in the bookkeeping tenant, so consumers can
-                  // distinguish at-risk vs dispatch by looking at the
-                  // (correlationId → trace) pair. Future spec
-                  // amendment could introduce a discriminator field.
+                  // Round-5 review-finding M3: `reminders_dispatched`
+                  // re-purposed as members_recomputed (legacy slot kept
+                  // for backward-compat with existing dashboards).
+                  // `tasks_created: 0` because the at-risk run produces
+                  // no escalation tasks; the actual `members_failed`
+                  // counter lives in the new typed `kind_specific` slot
+                  // below so SRE dashboards can read it without
+                  // re-purposing the dispatch-named field.
                   reminders_dispatched: r.members_recomputed ?? 0,
-                  tasks_created: r.members_failed ?? 0,
+                  tasks_created: 0,
                   duration_ms: r.duration_ms ?? 0,
+                  kind_specific: {
+                    kind: 'at_risk_recompute',
+                    members_failed: r.members_failed ?? 0,
+                    members_skipped_below_tenure:
+                      r.members_skipped_below_tenure ?? 0,
+                  },
                 },
           ),
         },

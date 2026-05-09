@@ -240,8 +240,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                   tenant_id: r.tenant_id,
                   skipped: r.skipped ?? false,
                   reminders_dispatched: r.cycles_processed ?? 0,
-                  tasks_created: r.errors ?? 0,
+                  // Round-5 review-finding M3: stop overloading
+                  // `tasks_created` with per-cycle errors. Set to 0
+                  // (lapse cron creates no tasks) and surface the
+                  // counter in the typed `kind_specific` slot below.
+                  tasks_created: 0,
                   duration_ms: r.duration_ms ?? 0,
+                  kind_specific: {
+                    kind: 'lapse',
+                    errors: r.errors ?? 0,
+                    grace_expired: r.grace_expired ?? 0,
+                    payment_failed: r.payment_failed ?? 0,
+                  },
                 },
           ),
         },

@@ -1136,6 +1136,8 @@ All 4 coordinators emit a single `cron_dispatch_orchestrated` audit on completio
 |---|---|---|---|---|
 | **SC-003** Admin pipeline render | p95 < 500 ms @ 5 k members + 600 in window | rolling 1 d | `renewals.pipeline.load_duration_ms` | alarm `#oncall-platform`; capture trace; check Neon connection pool |
 | **SC-005** At-risk recompute per tenant | p95 < 60 s @ 5 k members | per-cron-run | `renewals.at_risk.recompute_duration_ms` | alarm + freeze cron flag-flip until rectified |
+
+**SC-005 index dependency** (R5-WRN-3 staff-review-2026-05-09 Round 2): the at-risk CTE's correlated EXISTS sub-query against `audit_log` for FR-029 factor 8 (recent tier-downgrade signal) requires the partial index `audit_log_f8_tier_change_idx` (migration `0115_f8_audit_log_member_plan_changed_idx.sql`) for the planner to reach `member_plan_changed` rows via Index Scan. Without it the EXISTS branch falls back to a Bitmap Heap Scan + recheck and SC-005 confidence drops below MEDIUM at production scale (>50k audit rows per active tenant per month). DBAs investigating SC-005 latency regressions should `EXPLAIN ANALYZE` the CTE in `gatherAtRiskFactorsForTenant` (`src/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo.ts:417`) and verify the planner uses `audit_log_f8_tier_change_idx`.
 | **F8 cron dispatch** | p95 < 30 s per tenant | per-cron-run | `renewals.coordinator.duration_ms{cron_kind="dispatch"}` | investigate slow tenants |
 | **F8 audit emit failure** | < 0.1 % of state-mutating use-case calls | rolling 1 d | `renewals.coordinator.audit_emit_failed_total` | page on-call (audit invariant Constitution VIII) |
 

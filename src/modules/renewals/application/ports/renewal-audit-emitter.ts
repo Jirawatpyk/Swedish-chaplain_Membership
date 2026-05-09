@@ -554,8 +554,35 @@ export interface F8AuditPayloadShapes {
           readonly tenant_id: string;
           readonly skipped: boolean;
           readonly reminders_dispatched: number;
+          /**
+           * Round-5 review-finding M3: this slot was re-purposed for
+           * three different counters across coordinators
+           * (`dispatch`=tasks created · `lapse`=per-cycle errors ·
+           * `reconcile`=F5 refund failures · `at_risk_recompute`=
+           * members failed). SRE dashboards aggregating on it got
+           * nonsense values. The new `kind_specific` discriminator
+           * field below carries the per-cron-kind counters in a
+           * named shape; `tasks_created` stays for backward compat
+           * (existing dashboards keep working) and is reserved for
+           * the dispatch coordinator's literal "tasks created" usage
+           * going forward — other coordinators set it to 0 and
+           * populate `kind_specific` instead.
+           */
           readonly tasks_created: number;
           readonly duration_ms: number;
+          /**
+           * Round-5 review-finding M3 — per-cron-kind discriminated
+           * counters that replace the `tasks_created` slot reuse.
+           * Optional for backward-compat (audit rows written before
+           * this field landed don't have it). Each variant carries
+           * the counters specific to its cron run; consumers narrow
+           * via the parent `cron_kind` field.
+           */
+          readonly kind_specific?:
+            | { readonly kind: 'dispatch'; readonly tasks_created: number }
+            | { readonly kind: 'lapse'; readonly errors: number; readonly grace_expired?: number; readonly payment_failed?: number }
+            | { readonly kind: 'reconcile'; readonly refund_failures: number; readonly timed_out?: number }
+            | { readonly kind: 'at_risk_recompute'; readonly members_failed: number; readonly members_skipped_below_tenure?: number };
         }
     >;
   };

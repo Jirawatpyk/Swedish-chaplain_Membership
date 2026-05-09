@@ -77,6 +77,7 @@ import type { BounceEventQuery } from '../application/ports/bounce-event-query';
 import type { ReminderAuditQueryPort } from '../application/ports/reminder-audit-query-repo';
 import type { F5PaymentAttemptsBridge } from '../application/ports/f5-payment-attempts-bridge';
 import type { TenantRenewalSettingsRepo } from '../application/ports/tenant-renewal-settings-repo';
+import { type ClockPort, wallClock } from '../application/ports/clock-port';
 
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
@@ -242,6 +243,17 @@ export interface RenewalsDeps {
    * directly via Drizzle; no F5 use-case dependency.
    */
   readonly f5PaymentAttemptsBridge: F5PaymentAttemptsBridge;
+  /**
+   * Round-5 review-finding M6 — deterministic time source. Use
+   * `deps.clock.now()` instead of `new Date()` directly so test
+   * fixtures can pin a specific instant via
+   * `clock: { now: () => FIXED_DATE }`. Mirrors the established Clock
+   * pattern in `members`, `invoicing`, `payments`, `broadcasts`. The
+   * production composition root binds the `wallClock` adapter; tests
+   * can pass `wallClock` (current default behaviour) when they don't
+   * care about time.
+   */
+  readonly clock: ClockPort;
 }
 
 /**
@@ -282,6 +294,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     reminderAuditQuery: drizzleReminderAuditQueryRepo,
     tenantRenewalSettingsRepo: makeDrizzleTenantRenewalSettingsRepo(tenant),
     f5PaymentAttemptsBridge: makeF5PaymentAttemptsBridgeDrizzle(tenant),
+    clock: wallClock,
   };
 }
 

@@ -30,33 +30,17 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
-import { rateLimiter } from '@/lib/auth-deps';
-import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
-import { getClientIp } from '@/lib/client-ip';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
-/**
- * K12-6 (SEC-K-5): cap audit-DB-write amplification on the 401 path.
- *
- * Without this, sustained bad-Bearer probing at 1k req/s would emit
- * 1k INSERT/s into `audit_log`. Vercel's per-region concurrency
- * provides some defence but does NOT eliminate the burst window.
- *
- * 60 requests / 60 sec is generous for legitimate rotation-window
- * scenarios (cron-job.org may briefly retry with the old secret
- * during a CRON_SECRET rotation; F4/F5/F7 cron jobs share the same
- * IP) while bounding the audit-write burst to 60 rows/min/IP. After
- * the limit is hit, subsequent 401s short-circuit with no DB write —
- * the `cron_bearer_auth_rejected` rate is preserved (one row per IP
- * per minute) which is sufficient for forensic detection of a
- * sustained probe.
- */
-const BEARER_REJECT_RL_LIMIT = 60;
-const BEARER_REJECT_RL_WINDOW_SECONDS = 60;
+// K12-6 (SEC-K-5) rate-limit + Upstash fail-open + audit emit on the
+// 401 path now lives in `gateCronBearerOrRespond` (`src/lib/cron-auth.ts`).
+// 60 req/60s/IP cap, generous for CRON_SECRET rotation scenarios while
+// bounding audit-write burst — see helper docstring for the full
+// rationale.
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -121,8 +105,18 @@ async function emitOrchestratedAudit(
                   tenant_id: r.tenant_id,
                   skipped: r.skipped,
                   reminders_dispatched: r.reminders_dispatched ?? 0,
+                  // Round-5 review-finding M3: dispatch coord owns the
+                  // literal "tasks_created" semantics (escalation tasks
+                  // created during the daily ladder). Other coordinators
+                  // set this to 0 and surface their counters via
+                  // `kind_specific`. Mirror the value in `kind_specific`
+                  // so dashboards can choose a uniform read path.
                   tasks_created: r.tasks_created ?? 0,
                   duration_ms: r.duration_ms ?? 0,
+                  kind_specific: {
+                    kind: 'dispatch',
+                    tasks_created: r.tasks_created ?? 0,
+                  },
                 },
           ),
         },
@@ -159,106 +153,26 @@ async function emitOrchestratedAudit(
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  // Constant-time Bearer check (matches F4/F5/F7 cron pattern).
-  if (
-    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
-  ) {
-    // K12-6 (SEC-K-5): rate-limit the 401 path BEFORE the audit emit
-    // to cap audit-DB-write amplification under brute-force probing.
-    // Once the limit is hit subsequent 401s short-circuit with no DB
-    // write; the bearer_rejected rate signal is preserved at the
-    // capped cadence (sufficient for forensic detection).
-    //
-    // K13-1 (REL-R12-1): Upstash outages must NOT cascade into 5xx on
-    // the cron auth path. We FAIL OPEN — when `rateLimiter.check`
-    // throws (Upstash unreachable, network timeout), we proceed with
-    // the audit emit + 401 as if rate-limit had passed. The
-    // `redisFallback` warn-log fires the alert pipeline so on-call
-    // sees the Upstash degradation. The transient amplification window
-    // during an Upstash outage is acceptable vs the alternative of
-    // turning every cron auth-failure into a spurious 500 that pages
-    // the F8 cron team while Upstash is unrelated to renewals.
-    const ip = getClientIp(request);
-    try {
-      const rl = await rateLimiter.check(
-        `f8:cron:bearer-rejected:${ip}`,
-        BEARER_REJECT_RL_LIMIT,
-        BEARER_REJECT_RL_WINDOW_SECONDS,
-      );
-      if (!rl.success) {
-        return NextResponse.json(
-          { error: { code: 'rate_limited' } },
-          {
-            status: 429,
-            headers: { 'Retry-After': String(retryAfterSecondsFromRl(rl)) },
-          },
-        );
-      }
-    } catch (e) {
-      // K14-4/5/6 (R13-S1+S2+S3+S8):
-      //   • Removed dead `rateLimited` variable (refactor residue from K13-1
-      //     draft); fail-open semantics are fully expressed by the try/catch
-      //     shape itself.
-      //   • Added `renewalsMetrics.redisFallback()` so Vercel alert rules
-      //     (which key on OTel counters, not log strings) receive the
-      //     Upstash-outage signal. Mirrors `authMetrics.redisFallback`
-      //     pattern from F1 sign-in.
-      //   • Added `ip` field to warn-log payload for ops triage; truncated
-      //     `err.message` to 200 chars to cap potential Upstash endpoint-
-      //     URL leakage into log drains.
-      //
-      // K15-2 (R14-W2): added `errStack` (also capped) so the K12-3
-      // forensic-richness intent is preserved on this rate-limit fail-
-      // open path. Pino's `err` serializer was bypassed in K14-6 to
-      // hand-truncate the message — the bounded stack-slice gives ops
-      // a stack trace for unexpected Upstash failure modes (DNS, TLS,
-      // network partition) without re-introducing the URL-leak vector
-      // since the cap is applied in-line.
-      const errInstance = e instanceof Error ? e : new Error(String(e));
-      logger.warn(
-        {
-          errMsg: errInstance.message.slice(0, 200),
-          errName: errInstance.name,
-          errStack: errInstance.stack?.slice(0, 500),
-          ip,
-          route: '/api/cron/renewals/dispatch-coordinator',
-        },
-        'cron.renewals.coordinator.rate_limit_check_failed_fail_open',
-      );
-      renewalsMetrics.redisFallback();
-    }
-
-    // K6 / spec.md taxonomy line 365: emit `cron_bearer_auth_rejected`
-    // audit so a sustained Bearer-rejection rate (e.g. CRON_SECRET
-    // rotation incident, attacker probing) is forensically traceable.
-    // Fire-and-forget; emit failure must NOT block the 401 response.
-    try {
-      const deps = makeRenewalsDeps(env.tenant.slug);
-      await deps.auditEmitter.emit(
-        {
-          type: 'cron_bearer_auth_rejected',
-          payload: { route: '/api/cron/renewals/dispatch-coordinator' },
-        },
-        {
-          tenantId: env.tenant.slug,
-          actorUserId: null,
-          actorRole: 'cron',
-          correlationId: uuidv7(),
-          requestId: null,
-        },
-      );
-    } catch (e) {
-      logger.error(
-        {
-          err: e instanceof Error ? e : new Error(String(e)),
-        },
-        'cron.renewals.coordinator.bearer_rejected_audit_failed',
-      );
-    }
-    return NextResponse.json(
-      { error: { code: 'unauthorized' } },
-      { status: 401 },
-    );
+  // R5-BLK-1 (staff-review-2026-05-09): migrated from inline Bearer +
+  // rate-limit + audit-emit to the shared `gateCronBearerOrRespond`
+  // helper. The helper preserves all original behaviour:
+  //   - constant-time Bearer compare (`verifyCronBearer` internally)
+  //   - rate-limit on 401 path (per-IP, 60 req/60s) with Upstash fail-open
+  //   - `cron_bearer_auth_rejected` audit emit with `route` discriminator
+  //   - 429 with `Retry-After` when rate-limit hit
+  //   - metrics counter on audit emit failure
+  //
+  // Returns null when Bearer check passes; otherwise returns the
+  // appropriate NextResponse (401 / 429) for the caller to bubble up.
+  // Mirrors the adoption pattern in at-risk-recompute, lapse-cycles,
+  // and reconcile-pending-reactivations coordinators (Round-4 review C2).
+  const gateResponse = await gateCronBearerOrRespond(request, {
+    route: '/api/cron/renewals/dispatch-coordinator',
+    metricsCounter: () => renewalsMetrics.coordinatorAuditEmitFailed('dispatch'),
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
+  });
+  if (gateResponse) {
+    return gateResponse;
   }
 
   // Kill-switch — returns 200 + skipped (no audit emit). cron-job.org

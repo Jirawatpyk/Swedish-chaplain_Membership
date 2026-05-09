@@ -75,7 +75,23 @@ export async function gateCronBearerOrRespond(
   request: NextRequest,
   options: {
     readonly route: string;
+    /**
+     * Invoked when the audit emit fails on the 401 path. Pass
+     * `renewalsMetrics.coordinatorAuditEmitFailed(...)` (or feature-
+     * specific equivalent) so Vercel alert rules can fire on sustained
+     * audit-trail loss.
+     */
     readonly metricsCounter?: () => void;
+    /**
+     * R5-BLK-1 closure (staff-review-2026-05-09 Round 2): invoked when
+     * the rate-limiter check throws (Upstash outage) on the 401 path.
+     * Pass `renewalsMetrics.redisFallback()` (or feature-specific
+     * equivalent) so Vercel alert rules — which attach to OTel
+     * counters not log strings — can fire on sustained Upstash
+     * degradation. K14-5 / R13-W3 invariant preserved across the
+     * helper migration.
+     */
+    readonly rateLimitFallbackCounter?: () => void;
   },
 ): Promise<NextResponse | null> {
   if (verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
@@ -107,11 +123,13 @@ export async function gateCronBearerOrRespond(
       {
         errMsg: errInstance.message.slice(0, 200),
         errName: errInstance.name,
+        errStack: errInstance.stack?.slice(0, 500),
         ip,
         route: options.route,
       },
       'cron.coordinator.rate_limit_check_failed_fail_open',
     );
+    options.rateLimitFallbackCounter?.();
   }
 
   try {

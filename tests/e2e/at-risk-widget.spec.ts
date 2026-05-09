@@ -216,16 +216,24 @@ test.describe('F8 — at-risk widget (US4)', () => {
     // Response is either a 4xx (forbidden / not-found) OR a redirect
     // landed at /portal/* — accept either as compliant. What is NOT
     // acceptable is a 200 + at-risk widget render.
+    //
+    // R5-WRN-1 (staff-review-2026-05-09 Round 2): tightened URL check
+    // to exact pathname match. The previous `.includes('/admin/renewals')`
+    // would false-positive on any future route prefixed with the same
+    // path (e.g. `/admin/renewals-overview`) — fragile. Compare the
+    // pathname strictly to ensure the member is fully redirected away
+    // from the at-risk surface, not just shifted to a sibling route.
     const status = response?.status();
+    const finalPathname = new URL(page.url()).pathname;
     expect(
       status === undefined ||
         status === 401 ||
         status === 403 ||
         status === 404 ||
         // Redirect-followed: response is the destination's status, so
-        // accept 200 only if URL is no longer /admin/renewals.
-        (status === 200 &&
-          !page.url().includes('/admin/renewals')),
+        // accept 200 only if pathname has changed (exact-match guard
+        // against `/admin/renewals-*` sibling routes).
+        (status === 200 && finalPathname !== '/admin/renewals'),
     ).toBe(true);
 
     // Defence-in-depth: the at-risk widget heading MUST NOT appear in

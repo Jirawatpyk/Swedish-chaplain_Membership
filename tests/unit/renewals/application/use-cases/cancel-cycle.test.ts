@@ -64,6 +64,11 @@ function fakeDeps(
       emit: emitMock,
       emitInTx: emitInTxMock,
     },
+    // Round-5 review-finding M6: deps.clock injection. Tests pin
+    // `() => FIXED_DATE` for deterministic assertions when the
+    // closedAt timestamp matters; this fixture uses a wall-clock
+    // adapter because cancel-cycle tests don't assert on closedAt.
+    clock: { now: () => new Date() },
   } as unknown as RenewalsDeps;
   return { deps, emitMock, emitInTxMock, transitionMock, acquireLockMock };
 }

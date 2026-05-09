@@ -151,7 +151,9 @@ export async function cancelCycle(
   );
   // Atomic transition + audit emit.
   try {
-    const closedAt = new Date().toISOString();
+    // Round-5 review-finding M6 — `deps.clock.now()` instead of `new
+    // Date()` for testability + consistency with sibling modules.
+    const closedAt = deps.clock.now().toISOString();
     return await runInTenant(deps.tenant, async (tx) => {
       // Per-(tenant, cycle) advisory lock — prevents two concurrent
       // admin cancels from racing past the pre-load check. Same lock
