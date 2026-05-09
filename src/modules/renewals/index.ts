@@ -193,11 +193,14 @@ export {
 } from './application/ports/tier-upgrade-suggestion-repo';
 
 export {
+  ESCALATION_UNASSIGNED_FILTER,
   EscalationTaskNotFoundError,
   type RenewalEscalationTaskRepo,
   type NewEscalationTaskInput,
   type ListEscalationTasksOpts,
   type EscalationTaskPage,
+  type EscalationTaskAdminQueuePage,
+  type EscalationTaskWithMember,
 } from './application/ports/renewal-escalation-task-repo';
 
 export type {
@@ -612,6 +615,39 @@ export {
   type ReconcilePendingApplicationsOutput,
   type ReconcilePendingApplicationsError,
 } from './application/use-cases/reconcile-pending-applications';
+
+// F8 Phase 8 (US6 Manual Escalation Task Queue) — T208–T211 use-cases.
+export {
+  createEscalationTask,
+  createEscalationTaskInputSchema,
+  type CreateEscalationTaskInput,
+  type CreateEscalationTaskOutput,
+  type CreateEscalationTaskError,
+} from './application/use-cases/create-escalation-task';
+
+export {
+  completeEscalationTask,
+  completeEscalationTaskInputSchema,
+  type CompleteEscalationTaskInput,
+  type CompleteEscalationTaskOutput,
+  type CompleteEscalationTaskError,
+} from './application/use-cases/complete-escalation-task';
+
+export {
+  skipEscalationTask,
+  skipEscalationTaskInputSchema,
+  type SkipEscalationTaskInput,
+  type SkipEscalationTaskOutput,
+  type SkipEscalationTaskError,
+} from './application/use-cases/skip-escalation-task';
+
+export {
+  reassignEscalationTask,
+  reassignEscalationTaskInputSchema,
+  type ReassignEscalationTaskInput,
+  type ReassignEscalationTaskOutput,
+  type ReassignEscalationTaskError,
+} from './application/use-cases/reassign-escalation-task';
 
 export {
   rescheduleOnPlanChange,

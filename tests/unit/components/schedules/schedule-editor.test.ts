@@ -15,7 +15,12 @@
  * browser→message mapping rationale.
  */
 import { describe, expect, it } from 'vitest';
-import { isOfflineFetchError } from '@/app/(staff)/admin/renewals/settings/schedules/_components/schedule-editor';
+// F8 Phase 8 path-alignment fix — schedule-editor.tsx moved to
+// `(staff)/admin/settings/renewals/schedules/...` post-Wave K16. The
+// test's import path lagged behind the source move; corrected here so
+// `pnpm typecheck` stays green on the F8 branch (regression surfaced
+// after .next type-generation refreshed at Phase 8 ship).
+import { isOfflineFetchError } from '@/app/(staff)/admin/settings/renewals/schedules/_components/schedule-editor';
 
 describe('isOfflineFetchError() — schedule-editor offline detection', () => {
   describe('returns true for browser-emitted offline TypeErrors', () => {

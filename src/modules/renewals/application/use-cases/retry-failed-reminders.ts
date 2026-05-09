@@ -40,6 +40,7 @@ import { randomUUID } from 'node:crypto';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { asCycleId } from '../../domain/renewal-cycle';
+import type { CycleId } from '../../domain/renewal-cycle';
 import { asTaskId } from '../../domain/renewal-escalation-task';
 import { MANUAL_OUTREACH_TASK_TYPE } from './reset-email-unverified';
 import type { DispatchCandidate } from '../ports/dispatch-candidate-repo';
@@ -455,7 +456,10 @@ async function emitPermanentFailure(
             task_id: insert.row.taskId,
             task_type: MANUAL_OUTREACH_TASK_TYPE,
             member_id: candidate.member.memberId as MemberId,
-            cycle_id: event.cycleId,
+            // F8 Phase 8 T213 brand alignment — `event.cycleId` is a
+            // string from the DB row mapping; cast to CycleId for the
+            // typed payload (zero-cost narrowing).
+            cycle_id: event.cycleId as CycleId,
             trigger_reason: 'retry_budget_exhausted',
           },
         },

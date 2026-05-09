@@ -41,7 +41,9 @@ import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth/domain/branded';
 import { asCreditNoteId, asInvoiceId } from '@/modules/invoicing';
+import type { CreditNoteId } from '@/modules/invoicing';
 import { asTenantId } from '@/modules/members';
+import type { MemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type { F5RefundBridge } from '../ports/f5-refund-bridge';
 import {
@@ -365,10 +367,14 @@ export async function adminRejectReactivation(
               payload: {
                 task_id: taskInsert.row.taskId,
                 task_type: POST_REFUND_REVIEW_TASK_TYPE,
-                member_id: lockedCycle.memberId,
-                cycle_id: cycleId,
+                // F8 Phase 8 T213 brand alignment — pre-Phase-8 emit
+                // landed bare strings; the typed payload added in T213
+                // requires brand casts. Domain runtime is unaffected
+                // (zero-cost type-only narrowing).
+                member_id: lockedCycle.memberId as MemberId,
+                cycle_id: cycleId as CycleId,
                 trigger_reason: 'admin_reject_with_refund',
-                refund_credit_note_id: refundCreditNoteId,
+                refund_credit_note_id: refundCreditNoteId as CreditNoteId,
               },
             },
             {

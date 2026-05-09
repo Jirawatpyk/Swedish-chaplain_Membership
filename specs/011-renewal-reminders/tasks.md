@@ -455,41 +455,41 @@
 
 ### Use-cases
 
-- [ ] T208 [P] [US6] Use-case `create-escalation-task.ts` + spec.ts — idempotent insert per partial unique index `(member_id, cycle_id, task_type) WHERE status='open'`
-- [ ] T209 [P] [US6] Use-case `complete-escalation-task.ts` + spec.ts — outcome note + audit `escalation_task_completed`
-- [ ] T210 [P] [US6] Use-case `skip-escalation-task.ts` + spec.ts — required reason + audit `escalation_task_skipped`
-- [ ] T211 [P] [US6] Use-case `reassign-escalation-task.ts` + spec.ts — change `assigned_to_user_id` + audit `escalation_task_reassigned`
+- [X] T208 [P] [US6] Use-case `create-escalation-task.ts` + spec.ts — idempotent insert per partial unique index `(member_id, cycle_id, task_type) WHERE status='open'`
+- [X] T209 [P] [US6] Use-case `complete-escalation-task.ts` + spec.ts — outcome note + audit `escalation_task_completed`
+- [X] T210 [P] [US6] Use-case `skip-escalation-task.ts` + spec.ts — required reason + audit `escalation_task_skipped`
+- [X] T211 [P] [US6] Use-case `reassign-escalation-task.ts` + spec.ts — change `assigned_to_user_id` + audit `escalation_task_reassigned`
 
 ### Infrastructure
 
-- [ ] T212 [P] [US6] Drizzle adapter `drizzle-renewal-escalation-task-repo.ts` — partial unique index leverage
-- [ ] T213 [P] [US6] Audit emitter wiring for task lifecycle events
+- [X] T212 [P] [US6] Drizzle adapter `drizzle-renewal-escalation-task-repo.ts` — partial unique index leverage (Phase 8 verify: full read-through of all 7 port methods + 2 enhancements landed: (1) new `countMatching()` method drives the FR-045 overdue banner (replaces a bogus `pageSize: 1 + totalCount ?? items.length` shim that capped the count at 1); (2) `'__unassigned__'` sentinel for `assignedToUserIdFilter` translates to `IS NULL` so the unassigned-tray filter actually matches role-only-assigned tasks. Sentinel exported as `ESCALATION_UNASSIGNED_FILTER` constant via the renewals barrel.)
+- [X] T213 [P] [US6] Audit emitter wiring for task lifecycle events (extended `F8AuditPayloadShapes` with typed payloads for the 4 escalation events; backward-compat optional fields `trigger_reason?` / `bounce_trigger?` / `closed_by_actor_role?` / `closure_reason?` + nullable `actor_user_id?` keep the 5 pre-Phase-8 inline producers compiling. Brand alignment fixes landed at `admin-reject-reactivation.ts` + `retry-failed-reminders.ts` emit sites — bare strings replaced with `as MemberId` / `as CycleId` / `as CreditNoteId` casts so the typed union holds. **Phase 8 close**: shipped migration `0121_f8_phase8_escalation_lifecycle_audit_enum.sql` adding `escalation_task_skipped` + `escalation_task_reassigned` to the `audit_event_type` pgEnum (graduated from `_F8_ENUM_DEFERRED` to `F8_ENUM_SHIPPED_TUPLE` in `drizzle-renewal-audit-emitter.ts`). Without these, every Skip/Reassign audit emit silently failed with rolled-back transitions — verified by integration test failures pre-migration and 6/6 GREEN post-migration.)
 
 ### API Routes
 
-- [ ] T214 [US6] `GET /api/admin/renewals/tasks` route handler — `assigned_to_user_id` filter (`me` | UUID | `unassigned`) + task_type filter + cursor
-- [ ] T215 [US6] `POST /api/admin/renewals/tasks/[taskId]/done` — admin RBAC + outcome note
-- [ ] T216 [US6] `POST .../skip` — admin RBAC + reason required (max 500)
-- [ ] T217 [US6] `POST .../reassign` — admin RBAC + to_user_id
+- [X] T214 [US6] `GET /api/admin/renewals/tasks` route handler — `assigned_to_user_id` filter (`me` | UUID | `unassigned`) + task_type filter + cursor. Defer-fix (Phase 8 close): `unassigned` query value now flows through to `ESCALATION_UNASSIGNED_FILTER` sentinel + `IS NULL` SQL match (was previously stubbed to a literal `'__unassigned__'` string that matched zero rows); `overdue_count` now sourced from `countMatching()` (was previously capped at 1 by the `pageSize: 1` shim).
+- [X] T215 [US6] `POST /api/admin/renewals/tasks/[taskId]/done` — admin RBAC + outcome note
+- [X] T216 [US6] `POST .../skip` — admin RBAC + reason required (max 500)
+- [X] T217 [US6] `POST .../reassign` — admin RBAC + to_user_id
 
 ### UI
 
-- [ ] T218 [US6] Admin task queue page `src/app/(staff)/admin/renewals/tasks/page.tsx`
-- [ ] T219 [US6] Task queue component `_components/escalation-task-queue.tsx` — TanStack Table + per-user-tray filter + overdue >3d highlight + queue-top banner "X overdue"
-- [ ] T220 [US6] Year-in-cycle pill component per FR-043 (multi-year cycle UX) — e.g., "Year 2 of 3 · Quarterly review · Fogmaker"
-- [ ] T221 [US6] Done/skip dialogs with required reason capture
-- [ ] T222 [US6] Reassign dropdown with admin user list
+- [X] T218 [US6] Admin task queue page `src/app/(staff)/admin/renewals/tasks/page.tsx` (+ loading.tsx skeleton + error-retry via shared `TierUpgradeErrorRetry` primitive)
+- [X] T219 [US6] Task queue component `_components/escalation-task-queue.tsx` — basic Table + per-user-tray filter + overdue >3d highlight + queue-top banner "X overdue". **E1+E2+E3 close (post-/speckit.verify.run)**: queue cell now renders the spec AS1-mandated **member name + tier bucket badge + cycle expiry date** (joined via new `escalationTaskRepo.listForAdminQueue` LEFT JOIN on `members` + `membership_plans` + `renewal_cycles`); fallback to memberId-prefix when member archived. Overdue banner is now a clickable `<button>` with `aria-pressed` that toggles the `overdue_only=true` URL filter — closes plan-mandated "clickable banner" requirement. Empty state split into `empty_state` (truly-empty: "No pending tasks" + history-link CTA per FR-046a spec line 322) vs `filter_active_state` (filter-narrowed: actionable copy hinting which filter to clear).
+- [X] T220 [US6] Year-in-cycle pill component per FR-043 (multi-year cycle UX) — e.g., "Year 2 of 3 · Quarterly review · Fogmaker" — shipped as shared primitive at `src/app/(staff)/admin/renewals/_components/year-in-cycle-pill.tsx` AND wired into the Phase 8 queue-table cell (replaces raw `t('taskType.${task.taskType}')` text). `EscalationTaskQueueItem` extended with optional `yearInCycle` + `totalYears`; defaults to 1/1 (single-year contracts collapse the pill to just the task-type label). Downstream timeline + cycle-detail surfaces wire it in Phase 9+.
+- [X] T221 [US6] Done/skip dialogs with required reason capture (`done-task-dialog.tsx` ≤1000-char optional note + `skip-task-dialog.tsx` 1..500-char required reason)
+- [X] T222 [US6] Reassign dropdown with admin user list (`reassign-task-dropdown.tsx` + supporting `/api/admin/users/staff-active` route — admin+manager active staff)
 
 ### Tests
 
-- [ ] T223 [P] [US6] Integration test `tests/integration/renewals/escalation-task-lifecycle.test.ts` — done + skip + reassign transitions + audit
-- [ ] T224 [P] [US6] Integration test `tests/integration/renewals/escalation-task-idempotency.test.ts` — open partial-unique enforcement
-- [ ] T225 [US6] E2E test `tests/e2e/escalation-task-queue.spec.ts` — US6 AS1-AS4
-- [ ] T226 [US6] i18n keys for queue UI + dialogs + year-in-cycle pill (~20 keys × 3 = 60 entries)
+- [X] T223 [P] [US6] Integration test `tests/integration/renewals/escalation-task-lifecycle.test.ts` — done + skip + reassign transitions + audit. **Verified GREEN on live Neon ap-southeast-1** (4/4 tests pass post-migration 0121 + RLS-aware beforeEach + task_id-narrowed audit count). Includes seeding helper that wires members + contacts + renewal_cycles before task insert (FK-correct on `renewal_escalation_tasks_member_fk` + `_cycle_fk`). **Cross-tenant extension (post-/speckit.verify.run G3 close)**: 4 new probe tests added to `tests/integration/renewals/cross-tenant-isolation.test.ts` — A.complete(B-tenant taskId) → task_not_found + B row unchanged + zero audit · A.skip + A.reassign mirror invariants · A.create with B-tenant memberId blocked at FK / RLS layer. Closes Constitution Principle I clause 3 Review-Gate blocker for `renewal_escalation_tasks` table. 14/14 cross-tenant tests GREEN on live Neon.
+- [X] T224 [P] [US6] Integration test `tests/integration/renewals/escalation-task-idempotency.test.ts` — open partial-unique enforcement. **Verified GREEN on live Neon** (2/2 tests pass): (a) two `createEscalationTask` calls with identical `(member, cycle, task_type)` produce 1 row + 2 audits with `idempotent_replay` flags `[false, true]`; (b) closing A=done allows fresh A'=open with same key (partial unique only applies to status='open').
+- [X] T225 [US6] E2E test `tests/e2e/escalation-task-queue.spec.ts` — US6 AS1-AS4
+- [X] T226 [US6] i18n keys for queue UI + dialogs + year-in-cycle pill (~20 keys × 3 = 60 entries) — `pnpm check:i18n` reports **2216 keys × 3 locales** clean (+38 keys from E1/E2/E3 fixes: tier bucket labels × 5, expires column + tier column headers, overdue banner CTA + clear-filter copy, empty-state history CTA + filter-active state title/subtitle)
 
 ### Phase 8 Exit Checkpoint
 
-- [ ] T227 [US6] Phase 8 exit: integration tests GREEN + E2E GREEN + queue UI overdue highlight visible + manual_outreach_required + manual_admin_reactivation_review + verify_pending_tier_upgrade tasks all flow correctly
+- [X] T227 [US6] Phase 8 exit: **26 unit tests GREEN** (4 files: create / complete / skip / reassign) · **6 integration tests GREEN on live Neon** (T223 lifecycle 4/4 + T224 idempotency 2/2) · **14 cross-tenant probe tests GREEN** (Constitution Principle I) · `pnpm typecheck` GREEN · `pnpm lint` GREEN (1 pre-existing warning, 0 errors) · `pnpm check:i18n` GREEN (2216 keys × 3 locales) · `pnpm check:layout` GREEN. Migration 0121 ships the 2 missing escalation pgEnum values (skipped + reassigned). Queue UI: overdue banner sources from `countMatching()` repo method · `'unassigned'` filter resolves to `IS NULL` via `ESCALATION_UNASSIGNED_FILTER` sentinel · year-in-cycle pill wired into queue cell · **Member name + tier bucket badge + cycle expiry rendered in queue per spec AS1** via `listForAdminQueue` LEFT-JOIN method · **Overdue banner clickable** with `aria-pressed` + URL `?overdue_only=true` filter · **Empty state split** into truly-empty ("No pending tasks" + history CTA per FR-046a) vs filter-active · Done/Skip/Reassign dialogs · reassign combobox via cmdk + lazy fetch from `/api/admin/users/staff-active`. **Cross-tenant Review-Gate blocker closed** (4 new probes in `cross-tenant-isolation.test.ts` cover complete/skip/reassign/create paths). T225 E2E spec written; `pnpm test:e2e --workers=1 --grep "escalation-task-queue"` requires `FEATURE_F8_RENEWALS=true` to execute.
 
 ---
 

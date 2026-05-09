@@ -56,10 +56,14 @@ import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
 import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
 import {
+  completeEscalationTask,
+  createEscalationTask,
   detectBounceThreshold,
   dispatchRenewalCycle,
   makeRenewalsDeps,
+  reassignEscalationTask,
   sendReminderNow,
+  skipEscalationTask,
 } from '@/modules/renewals';
 import { lookupMemberByEmail } from '@/modules/renewals/infrastructure/lookup-member-by-email';
 import {
@@ -578,5 +582,206 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
         });
       }
     });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. Escalation-task lifecycle (Phase 8 T223 cross-tenant extension)
+  //    Constitution Principle I clause 3 — every cross-tenant access
+  //    attempt MUST refuse + audit OR return null/empty under the
+  //    tenant binding. The Phase 8 admin queue surfaces (Done / Skip /
+  //    Reassign) operate on a `taskId` looked up by `findById` which
+  //    is RLS-bound; cross-tenant attempts MUST resolve `task_not_found`
+  //    + emit zero state mutation in the foreign tenant's row.
+  // ---------------------------------------------------------------------------
+  describe('escalation-task admin actions (Phase 8 T223 extension)', () => {
+    it('A.complete(B-tenant taskId) → task_not_found + B row unchanged + zero audit', async () => {
+      // Seed an open escalation task in tenant B's binding.
+      const taskBId = randomUUID();
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx.insert(renewalEscalationTasks).values({
+          tenantId: tenantB.ctx.slug,
+          taskId: taskBId,
+          memberId: seedB.memberId,
+          cycleId: seedB.cycleId,
+          taskType: 'phone_call',
+          assignedToRole: 'admin',
+          assignedToUserId: null,
+          dueAt: new Date('2026-07-01T00:00:00.000Z'),
+          status: 'open',
+        });
+      });
+
+      // Tenant A attempts to complete tenant B's task.
+      const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+      const r = await completeEscalationTask(depsA, {
+        tenantId: tenantA.ctx.slug,
+        taskId: taskBId,
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+
+      // RLS-bound findById returns null under A's binding → task_not_found.
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('task_not_found');
+
+      // CRITICAL invariant: B's task row stays open (no cross-tenant write).
+      const bRow = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select({ status: renewalEscalationTasks.status })
+          .from(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, taskBId)),
+      );
+      expect(bRow[0]?.status).toBe('open');
+
+      // No `escalation_task_completed` audit emitted in either tenant for this taskId.
+      const audits = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.eventType, 'escalation_task_completed' as never));
+      const matched = audits.filter(
+        (a) =>
+          (a.payload as { task_id?: string } | null)?.task_id === taskBId,
+      );
+      expect(matched).toHaveLength(0);
+
+      // Cleanup the seeded B-tenant task.
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx
+          .delete(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, taskBId));
+      });
+    }, 60_000);
+
+    it('A.skip(B-tenant taskId) → task_not_found + zero state mutation', async () => {
+      const taskBId = randomUUID();
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx.insert(renewalEscalationTasks).values({
+          tenantId: tenantB.ctx.slug,
+          taskId: taskBId,
+          memberId: seedB.memberId,
+          cycleId: seedB.cycleId,
+          taskType: 'in_person_meeting',
+          assignedToRole: 'admin',
+          assignedToUserId: null,
+          dueAt: new Date('2026-07-01T00:00:00.000Z'),
+          status: 'open',
+        });
+      });
+
+      const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+      const r = await skipEscalationTask(depsA, {
+        tenantId: tenantA.ctx.slug,
+        taskId: taskBId,
+        skippedReason: 'cross-tenant probe',
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('task_not_found');
+
+      const bRow = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select({
+            status: renewalEscalationTasks.status,
+            skippedReason: renewalEscalationTasks.skippedReason,
+          })
+          .from(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, taskBId)),
+      );
+      expect(bRow[0]?.status).toBe('open');
+      expect(bRow[0]?.skippedReason).toBeNull();
+
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx
+          .delete(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, taskBId));
+      });
+    }, 60_000);
+
+    it('A.reassign(B-tenant taskId) → task_not_found + B assignee unchanged', async () => {
+      const taskBId = randomUUID();
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx.insert(renewalEscalationTasks).values({
+          tenantId: tenantB.ctx.slug,
+          taskId: taskBId,
+          memberId: seedB.memberId,
+          cycleId: seedB.cycleId,
+          taskType: 'board_escalation',
+          assignedToRole: 'admin',
+          assignedToUserId: null,
+          dueAt: new Date('2026-07-01T00:00:00.000Z'),
+          status: 'open',
+        });
+      });
+
+      const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+      const r = await reassignEscalationTask(depsA, {
+        tenantId: tenantA.ctx.slug,
+        taskId: taskBId,
+        toUserId: user.userId,
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('task_not_found');
+
+      const bRow = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select({ assignedToUserId: renewalEscalationTasks.assignedToUserId })
+          .from(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, taskBId)),
+      );
+      expect(bRow[0]?.assignedToUserId).toBeNull();
+
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx
+          .delete(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.taskId, taskBId));
+      });
+    }, 60_000);
+
+    it('A.create(B-tenant memberId) → task lands in tenant A, NOT B (RLS pins inserted row to current tenant)', async () => {
+      // The use-case input passes `tenantId: A.slug` + `memberId: seedB.memberId`.
+      // Under tenant A's binding, the `members` FK lookup will fail (RLS hides
+      // B's member row), so the INSERT errors out at the FK constraint —
+      // proving cross-tenant insert is blocked at the DB layer.
+      const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+      const r = await createEscalationTask(depsA, {
+        tenantId: tenantA.ctx.slug,
+        memberId: seedB.memberId, // PROBE — A constructs a task for B's member
+        cycleId: null,
+        taskType: 'manual_outreach_required',
+        assignedToRole: 'admin',
+        dueAt: new Date('2026-07-01T00:00:00.000Z').toISOString(),
+        triggerReason: 'cross-tenant probe',
+        actorUserId: user.userId,
+        actorRole: 'admin',
+        correlationId: randomUUID(),
+      });
+      // The use-case wraps the FK violation in `runInTenant` → maps to
+      // server_error. Either way, NO row is created in tenant A AND no
+      // row appears in tenant B's binding for B's member with this task type.
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('server_error');
+
+      const bRows = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalEscalationTasks)
+          .where(
+            and(
+              eq(renewalEscalationTasks.memberId, seedB.memberId),
+              eq(
+                renewalEscalationTasks.taskType,
+                'manual_outreach_required',
+              ),
+            ),
+          ),
+      );
+      expect(bRows).toHaveLength(0);
+    }, 60_000);
   });
 });

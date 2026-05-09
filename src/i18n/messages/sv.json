@@ -2025,6 +2025,133 @@
             "error": "Kunde inte skapa utkast"
           }
         }
+      },
+      "tasks": {
+        "title": "Uppföljningsuppgifter",
+        "subtitle": "Manuella kontaktpunkter som genereras av förnyelseschemat — telefonsamtal, fysiska möten och administrativa granskningar.",
+        "overdue_banner": "{count, plural, one {# försenad uppgift} other {# försenade uppgifter}}",
+        "overdue_banner_cta": "Klicka för att filtrera kön till endast försenade uppgifter",
+        "overdue_banner_clear": "Filter aktivt — klicka för att visa alla öppna uppgifter igen",
+        "overdue_badge": "Försenad",
+        "status_tabs_aria": "Filtrera på uppgiftsstatus",
+        "task_type_filter_aria": "Filtrera på uppgiftstyp",
+        "task_type_filter_all": "Alla typer",
+        "status_tab": {
+          "open": "Öppen",
+          "done": "Klar",
+          "skipped": "Hoppad"
+        },
+        "assignment_tab": {
+          "all": "Alla",
+          "mine": "Mina",
+          "unassigned": "Otilldelade"
+        },
+        "columns": {
+          "member": "Medlem",
+          "tier": "Nivå",
+          "expiresAt": "Förfaller",
+          "taskType": "Uppgiftstyp",
+          "dueAt": "Förfaller",
+          "assignedTo": "Tilldelad",
+          "status": "Status",
+          "actions": "Åtgärder"
+        },
+        "status": {
+          "open": "Öppen",
+          "done": "Klar",
+          "skipped": "Hoppad"
+        },
+        "assigneeRole": {
+          "admin": "Administratör",
+          "manager": "Chef",
+          "executive_director": "Verkställande direktör"
+        },
+        "tierBucket": {
+          "thai_alumni": "Thai Alumni",
+          "start_up": "Start-up",
+          "regular": "Standardmedlem",
+          "premium": "Premium",
+          "partnership": "Partnerskap"
+        },
+        "taskType": {
+          "quarterly_review_meeting": "Kvartalsvis avstämningsmöte",
+          "benefit_fulfillment_report": "Rapport om förmånsanvändning",
+          "phone_call": "Telefonsamtal",
+          "in_person_meeting": "Fysiskt möte",
+          "board_escalation": "Eskalering till styrelsen",
+          "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
+          "manual_outreach_required": "Manuell kontakt krävs",
+          "manual_admin_reactivation_review": "Granska reaktivering"
+        },
+        "yearInCycle": {
+          "pill": "År {year} av {total}",
+          "aria_label": "År {year} av {total} · {taskType} · {company}"
+        },
+        "empty_state": {
+          "title": "Inga väntande uppgifter",
+          "subtitle": "Inga uppföljningar har skapats idag, eller alla uppgifter är stängda. Justera filtret för att se historiska uppgifter.",
+          "cta_history": "Visa hela uppgiftshistoriken (Klar + Hoppad)"
+        },
+        "filter_active_state": {
+          "title": "Inga uppgifter matchar nuvarande filter",
+          "subtitle": "Prova ett annat status-, tilldelnings- eller uppgiftstypsfilter, eller rensa försenat-toggle."
+        },
+        "error_state": {
+          "title": "Kunde inte ladda uppföljningsuppgifter",
+          "subtitle": "Databasförfrågan misslyckades. Försök igen eller kontakta supporten om problemet kvarstår.",
+          "retry": "Försök igen",
+          "retrying": "Försöker igen…"
+        },
+        "actions": {
+          "done": {
+            "label": "Klar",
+            "success": "Uppgift markerad som klar",
+            "error": "Kunde inte markera uppgift som klar"
+          },
+          "skip": {
+            "label": "Hoppa över",
+            "success": "Uppgift hoppad",
+            "error": "Kunde inte hoppa över uppgift"
+          },
+          "reassign": {
+            "label": "Tilldela om",
+            "success": "Uppgift omtilldelad",
+            "error": "Kunde inte tilldela om uppgiften"
+          }
+        },
+        "done_dialog": {
+          "title": "Markera uppgift som klar?",
+          "description": "Du kan valfritt lägga till en kort utfallsanteckning för spårbarheten. Uppgiften flyttas till Klar och tas bort från den öppna kön.",
+          "outcome_note_label": "Utfallsanteckning (valfri)",
+          "outcome_note_placeholder": "Vad hände? Något viktigt att notera?",
+          "chars_remaining": "{count} tecken kvar",
+          "cancel": "Avbryt",
+          "confirm": "Markera klar",
+          "submitting": "Sparar…"
+        },
+        "skip_dialog": {
+          "title": "Hoppa över uppgift?",
+          "description": "En orsak krävs så att granskningsspåret dokumenterar varför kontaktpunkten hoppades över. Uppgiften flyttas till Hoppad och tas bort från den öppna kön.",
+          "reason_label": "Orsak",
+          "reason_placeholder": "t.ex. Medlemmen kunde inte nås; återupptas vid T-30",
+          "chars_remaining": "{count} tecken kvar",
+          "cancel": "Avbryt",
+          "confirm": "Hoppa över uppgift",
+          "submitting": "Sparar…"
+        },
+        "reassign_dialog": {
+          "title": "Tilldela om uppgift",
+          "description": "Välj en annan aktiv medarbetare som ska ta över. Den tidigare tilldelade ser inte längre uppgiften under sitt \"Mina\"-filter.",
+          "assignee_label": "Tilldelad",
+          "placeholder": "Välj en medarbetare",
+          "search_placeholder": "Sök på namn eller e-post…",
+          "no_results": "Ingen medarbetare matchar din sökning.",
+          "load_error": "Kunde inte ladda medarbetarlistan. Försök igen.",
+          "current_assignee_badge": "nuvarande",
+          "cancel": "Avbryt",
+          "confirm": "Tilldela om",
+          "submitting": "Sparar…"
+        }
       }
     },
     "refund": {

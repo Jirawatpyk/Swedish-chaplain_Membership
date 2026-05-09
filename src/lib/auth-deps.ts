@@ -85,6 +85,14 @@ import type { HeartbeatDeps } from '@/modules/auth/application/heartbeat';
 // is the Chamber-OS composition adapter layer (eslint allow-listed).
 export { rateLimiter };
 
+// F8 Phase 8 T222 — userRepo re-export for the staff-active list helper
+// (reassign-task combobox). Same composition-root rationale as
+// rateLimiter above: presentation layer MUST NOT deep-import
+// `@/modules/auth/infrastructure/db/user-repo` directly per Constitution
+// Principle III (eslint `no-restricted-imports`); routing through
+// `src/lib/auth-deps` keeps the boundary intact.
+export { userRepo };
+
 // Shared default clock — single source of truth for "now" across every
 // default deps object. Tests still override `now` via their own stubs;
 // production call sites all share this reference.

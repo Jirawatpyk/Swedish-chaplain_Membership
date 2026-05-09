@@ -598,6 +598,123 @@ export interface F8AuditPayloadShapes {
     readonly failure_message: string;
   };
   /**
+   * F8 Phase 8 T213 — `escalation_task_created` typed payload.
+   *
+   * Pre-Phase-8 the 5 inline producers (`dispatch-one-cycle` ladder,
+   * `dispatch-one-cycle` no-primary-contact, `detect-bounce-threshold`,
+   * `admin-reject-reactivation`, `retry-failed-reminders`) emitted with
+   * a `Record<string, unknown>` fallback. Phase 8 adds the canonical
+   * `createEscalationTask` use-case (T208) and pins the payload shape:
+   *
+   *   - `task_id` / `task_type` / `member_id` are mandatory across every
+   *     producer.
+   *   - `cycle_id` is nullable for non-cycle tasks (e.g.
+   *     `verify_pending_tier_upgrade` — FR-039 step 3).
+   *   - `trigger_reason` is OPTIONAL — backward-compat with the 5
+   *     pre-Phase-8 producers that did not carry an explicit reason. The
+   *     T208 canonical use-case always sets it.
+   *   - `idempotent_replay` flips when the partial unique index
+   *     short-circuits an open task; emit sites still emit so the
+   *     forensic chain documents the no-op replay (mirrors
+   *     `dispatch-one-cycle.ts` ~L933 pattern).
+   *
+   * Optional context fields (`step_id`, `year_in_cycle`, `assignee_role`,
+   * `refund_credit_note_id`, `related_suggestion_id`) cover the per-
+   * producer extras without forcing a payload migration on existing
+   * inline call sites.
+   */
+  readonly escalation_task_created: {
+    readonly task_id: TaskId;
+    readonly task_type: string;
+    readonly member_id: MemberId;
+    readonly cycle_id: CycleId | null;
+    readonly trigger_reason?: string;
+    readonly assignee_role?: 'admin' | 'manager' | 'executive_director';
+    readonly idempotent_replay?: boolean;
+    readonly step_id?: string;
+    readonly year_in_cycle?: number;
+    readonly refund_credit_note_id?: CreditNoteId | null;
+    readonly related_suggestion_id?: SuggestionId | null;
+    /**
+     * Producer-specific discriminator from `detectBounceThreshold` —
+     * one of `'hard_bounce' | 'soft_streak_in_cycle' | 'soft_rolling_30d'`.
+     * Pre-Phase-8 emit; kept optional for backward compat.
+     */
+    readonly bounce_trigger?: string;
+  };
+  /**
+   * F8 Phase 8 T209 — `escalation_task_completed` typed payload.
+   *
+   * Admin clicks "Done" with optional outcome note (≤1000 chars per
+   * `renewal_escalation_tasks.outcome_note` CHECK + Domain invariant).
+   * `actor_user_id` is the closing admin (F1 `users.id`).
+   *
+   * `outcome_note` is `string | null` — NULL when admin closed without
+   * a note. Stored as NULL in DB; emitted as `null` for consumer
+   * simplicity (vs omit-the-field).
+   */
+  readonly escalation_task_completed: {
+    readonly task_id: TaskId;
+    readonly task_type: string;
+    readonly member_id: MemberId;
+    /**
+     * Optional for backward-compat with `reset-email-unverified.ts`
+     * (Phase 4 producer) which closes `manual_outreach_required` tasks
+     * without explicit cycle linkage. New producers (T209
+     * `completeEscalationTask`) always set it.
+     */
+    readonly cycle_id?: CycleId | null;
+    /**
+     * Outcome note. The T209 admin-Done path sets `null` when admin
+     * closed without a note. Other producers (e.g. reset-email-unverified)
+     * may omit; the AuditContext's `summary` carries human-readable
+     * context in that case.
+     */
+    readonly outcome_note?: string | null;
+    /**
+     * Required for the T209 admin-Done path. Optional for system-driven
+     * producers (e.g. reset-email-unverified) that close on behalf of
+     * the F1 webhook — the AuditContext carries `actorUserId` separately
+     * for those.
+     */
+    readonly actor_user_id?: UserId;
+    /** Producer-specific tags carried by reset-email-unverified.ts. */
+    readonly closed_by_actor_role?: string;
+    readonly closure_reason?: string;
+  };
+  /**
+   * F8 Phase 8 T210 — `escalation_task_skipped` typed payload.
+   *
+   * Admin clicks "Skip" with REQUIRED reason (1..500 chars per
+   * `renewal_escalation_tasks.skipped_reason` CHECK + Domain invariant +
+   * use-case zod schema `min(1).max(500)`).
+   */
+  readonly escalation_task_skipped: {
+    readonly task_id: TaskId;
+    readonly task_type: string;
+    readonly member_id: MemberId;
+    readonly cycle_id: CycleId | null;
+    readonly skipped_reason: string;
+    readonly actor_user_id: UserId;
+  };
+  /**
+   * F8 Phase 8 T211 — `escalation_task_reassigned` typed payload.
+   *
+   * Admin reassigns the task's `assigned_to_user_id`. `from_user_id` is
+   * captured pre-mutation (NULL when previously assigned by role only —
+   * no specific user). `actor_user_id` is the admin who performed the
+   * reassignment (NOT the recipient).
+   */
+  readonly escalation_task_reassigned: {
+    readonly task_id: TaskId;
+    readonly task_type: string;
+    readonly member_id: MemberId;
+    readonly cycle_id: CycleId | null;
+    readonly from_user_id: UserId | null;
+    readonly to_user_id: UserId;
+    readonly actor_user_id: UserId;
+  };
+  /**
    * The `BandTransition` DU prevents emitting same-band "transitions"
    * at compile time (e.g. `{ previous_band: 'healthy', new_band: 'healthy' }`
    * would be a TS error — there's no arm matching that pair). `score`

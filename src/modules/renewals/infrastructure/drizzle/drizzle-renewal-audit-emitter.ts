@@ -210,6 +210,13 @@ const F8_ENUM_SHIPPED_TUPLE = [
   //     declared in F8_ENUM_SHIPPED_TUPLE since Phase 7 baseline. ---
   'tier_upgrade_catalogue_row_dropped',
   'tier_upgrade_apply_post_invoice_paid_failed',
+  // --- F8 Phase 8 T213 (migration 0121) — escalation-task lifecycle ----
+  // Phase 4 (migration 0102) shipped `escalation_task_completed` for the
+  // webhook-driven reset-email-unverified close path. Phase 8 ships the
+  // admin Done/Skip/Reassign surfaces (T209/T210/T211 use-cases) so the
+  // remaining 2 enum values graduate from `_F8_ENUM_DEFERRED` here.
+  'escalation_task_skipped',
+  'escalation_task_reassigned',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(
@@ -243,12 +250,10 @@ const _F8_ENUM_DEFERRED = [
   // F8_ENUM_SHIPPED_TUPLE in Phase 7 (T179-T185). Migration 0116
   // adds the matching pgEnum values. The audit emit sites land in
   // the 8 use-cases under `src/modules/renewals/application/use-cases/`.
-  // Escalation-task expansion (F8 Phase 8+) — `reassigned` covers
-  // admin re-assignment of finance follow-ups; `skipped` covers
-  // auto-archived tasks past 30d. Domain type union shipped in
-  // Phase 5 Wave A.5 for forward compat; emit sites land later.
-  'escalation_task_reassigned',
-  'escalation_task_skipped',
+  // F8 Phase 8 T213 — `escalation_task_skipped` + `_reassigned`
+  // graduated to F8_ENUM_SHIPPED_TUPLE (migration 0121) when the
+  // admin Done/Skip/Reassign surfaces shipped (T209/T210/T211 use-
+  // cases). Forward-compat hold removed.
   // Reserved for the `renewal_payment_failed` audit on F5 webhook
   // payment_intent.payment_failed → mark_paid_offline cancel path
   // (Phase 5 Wave B follow-up; current path emits at the F4 layer).

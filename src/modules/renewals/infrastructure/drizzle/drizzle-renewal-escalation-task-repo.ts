@@ -22,13 +22,19 @@
  * `findById`, `reassign`. Adapter ships full surface so no rework is
  * needed when those waves land.
  */
-import { and, eq, sql, asc, desc } from 'drizzle-orm';
+import { and, eq, sql, asc, desc, isNull, count, lt, or, gt } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalEscalationTasks, type RenewalEscalationTaskRow } from '../schema-renewal-escalation-tasks';
+import { renewalCycles } from '../schema-renewal-cycles';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import {
+  ESCALATION_UNASSIGNED_FILTER,
   EscalationTaskNotFoundError,
+  type EscalationTaskAdminQueuePage,
   type EscalationTaskPage,
+  type EscalationTaskWithMember,
   type ListEscalationTasksOpts,
   type NewEscalationTaskInput,
   type RenewalEscalationTaskRepo,
@@ -187,30 +193,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
       opts: ListEscalationTasksOpts,
     ): Promise<EscalationTaskPage> {
       return runInTenant(tenant, async (tx) => {
-        // Build conjunctive WHERE clause from filter opts.
-        const conditions = [];
-        if (opts.statusFilter && opts.statusFilter.length > 0) {
-          conditions.push(
-            sql`${renewalEscalationTasks.status} IN ${opts.statusFilter}`,
-          );
-        }
-        if (opts.assignedToUserIdFilter !== undefined) {
-          conditions.push(
-            eq(
-              renewalEscalationTasks.assignedToUserId,
-              opts.assignedToUserIdFilter,
-            ),
-          );
-        }
-        if (opts.overdueOnly === true) {
-          conditions.push(sql`${renewalEscalationTasks.dueAt} < NOW()`);
-        }
-        const whereExpr =
-          conditions.length === 0
-            ? undefined
-            : conditions.length === 1
-            ? conditions[0]
-            : and(...conditions);
+        const whereExpr = buildListWhereExpr(opts);
 
         const orderExpr =
           opts.sort === 'due_at_desc'
@@ -339,5 +322,201 @@ export function makeDrizzleRenewalEscalationTaskRepo(
       }
       return rowToDomain(updated[0]);
     },
+
+    async countMatching(
+      _tenantId: string,
+      opts: Pick<
+        ListEscalationTasksOpts,
+        'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly'
+      >,
+    ): Promise<number> {
+      return runInTenant(tenant, async (tx) => {
+        const whereExpr = buildListWhereExpr(opts);
+        const rows = whereExpr
+          ? await tx
+              .select({ value: count() })
+              .from(renewalEscalationTasks)
+              .where(whereExpr)
+          : await tx
+              .select({ value: count() })
+              .from(renewalEscalationTasks);
+        return Number(rows[0]?.value ?? 0);
+      });
+    },
+
+    async listForAdminQueue(
+      _tenantId: string,
+      opts: ListEscalationTasksOpts,
+    ): Promise<EscalationTaskAdminQueuePage> {
+      return runInTenant(tenant, async (tx) => {
+        const whereParts: Array<ReturnType<typeof eq>> = [];
+        const baseWhere = buildListWhereExpr(opts);
+        if (baseWhere !== undefined) {
+          whereParts.push(baseWhere as ReturnType<typeof eq>);
+        }
+        // Cursor: opaque "<dueAtIso>|<taskId>" — keyset paginate by
+        // (due_at, task_id). Newer cursor format keeps deterministic
+        // ordering when many tasks share the same due_at minute.
+        if (opts.cursor !== undefined && opts.cursor.length > 0) {
+          const sep = opts.cursor.indexOf('|');
+          if (sep > 0) {
+            const cursorDueAt = opts.cursor.slice(0, sep);
+            const cursorTaskId = opts.cursor.slice(sep + 1);
+            const cursorDate = new Date(cursorDueAt);
+            if (!Number.isNaN(cursorDate.getTime())) {
+              const cmp =
+                opts.sort === 'due_at_desc'
+                  ? or(
+                      lt(renewalEscalationTasks.dueAt, cursorDate),
+                      and(
+                        eq(renewalEscalationTasks.dueAt, cursorDate),
+                        lt(renewalEscalationTasks.taskId, cursorTaskId),
+                      ),
+                    )
+                  : or(
+                      gt(renewalEscalationTasks.dueAt, cursorDate),
+                      and(
+                        eq(renewalEscalationTasks.dueAt, cursorDate),
+                        gt(renewalEscalationTasks.taskId, cursorTaskId),
+                      ),
+                    );
+              if (cmp !== undefined) {
+                whereParts.push(cmp as ReturnType<typeof eq>);
+              }
+            }
+          }
+        }
+        const whereExpr =
+          whereParts.length === 0
+            ? undefined
+            : whereParts.length === 1
+              ? whereParts[0]
+              : and(...whereParts);
+
+        const orderExpr =
+          opts.sort === 'due_at_desc'
+            ? desc(renewalEscalationTasks.dueAt)
+            : opts.sort === 'created_at_desc'
+              ? desc(renewalEscalationTasks.createdAt)
+              : asc(renewalEscalationTasks.dueAt);
+
+        // LEFT JOIN members + renewal_cycles + membership_plans so we
+        // surface the AS1-mandated company name + tier bucket + cycle
+        // expiry alongside the task row in a single round-trip. RLS+FORCE
+        // on `members` + `renewal_cycles` shields cross-tenant rows.
+        const baseQuery = tx
+          .select({
+            task: renewalEscalationTasks,
+            companyName: members.companyName,
+            tierBucket: membershipPlans.renewalTierBucket,
+            cycleExpiresAt: renewalCycles.expiresAt,
+          })
+          .from(renewalEscalationTasks)
+          .leftJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalEscalationTasks.tenantId),
+              eq(members.memberId, renewalEscalationTasks.memberId),
+            ),
+          )
+          .leftJoin(
+            membershipPlans,
+            and(
+              eq(membershipPlans.tenantId, members.tenantId),
+              eq(membershipPlans.planId, members.planId),
+            ),
+          )
+          .leftJoin(
+            renewalCycles,
+            and(
+              eq(renewalCycles.tenantId, renewalEscalationTasks.tenantId),
+              eq(renewalCycles.cycleId, renewalEscalationTasks.cycleId),
+            ),
+          );
+        const rows = whereExpr
+          ? await baseQuery
+              .where(whereExpr)
+              .orderBy(
+                orderExpr,
+                opts.sort === 'due_at_desc'
+                  ? desc(renewalEscalationTasks.taskId)
+                  : asc(renewalEscalationTasks.taskId),
+              )
+              .limit(opts.pageSize + 1)
+          : await baseQuery
+              .orderBy(
+                orderExpr,
+                opts.sort === 'due_at_desc'
+                  ? desc(renewalEscalationTasks.taskId)
+                  : asc(renewalEscalationTasks.taskId),
+              )
+              .limit(opts.pageSize + 1);
+
+        const hasMore = rows.length > opts.pageSize;
+        const pageRows = hasMore ? rows.slice(0, opts.pageSize) : rows;
+        const items: EscalationTaskWithMember[] = pageRows.map((r) => ({
+          ...rowToDomain(r.task),
+          memberCompanyName: r.companyName ?? null,
+          memberTierBucket: r.tierBucket ?? null,
+          cycleExpiresAt: r.cycleExpiresAt
+            ? r.cycleExpiresAt.toISOString()
+            : null,
+        }));
+        const last = items[items.length - 1];
+        const nextCursor =
+          hasMore && last ? `${last.dueAt}|${last.taskId}` : null;
+        return { items, nextCursor };
+      });
+    },
   };
+}
+
+/**
+ * F8 Phase 8 T214 — shared filter-builder used by both `list` and
+ * `countMatching` so the queue-top overdue banner counts what the rows
+ * below it would actually display.
+ */
+function buildListWhereExpr(
+  opts: Pick<
+    ListEscalationTasksOpts,
+    'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly'
+  >,
+): ReturnType<typeof and> | undefined {
+  const conditions: Array<ReturnType<typeof eq>> = [];
+  if (opts.statusFilter && opts.statusFilter.length > 0) {
+    conditions.push(
+      sql`${renewalEscalationTasks.status} IN ${opts.statusFilter}` as unknown as ReturnType<
+        typeof eq
+      >,
+    );
+  }
+  if (opts.assignedToUserIdFilter !== undefined) {
+    if (opts.assignedToUserIdFilter === ESCALATION_UNASSIGNED_FILTER) {
+      // Phase 8 T214 — `'__unassigned__'` sentinel matches NULL
+      // (tasks assigned by role only). Maps to the per-user partial
+      // index's complement.
+      conditions.push(
+        isNull(renewalEscalationTasks.assignedToUserId) as unknown as ReturnType<
+          typeof eq
+        >,
+      );
+    } else {
+      conditions.push(
+        eq(
+          renewalEscalationTasks.assignedToUserId,
+          opts.assignedToUserIdFilter,
+        ),
+      );
+    }
+  }
+  if (opts.overdueOnly === true) {
+    conditions.push(
+      sql`${renewalEscalationTasks.dueAt} < NOW()` as unknown as ReturnType<
+        typeof eq
+      >,
+    );
+  }
+  if (conditions.length === 0) return undefined;
+  if (conditions.length === 1) return conditions[0];
+  return and(...conditions);
 }

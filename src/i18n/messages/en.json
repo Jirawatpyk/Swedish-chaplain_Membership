@@ -2025,6 +2025,133 @@
             "error": "Failed to draft outreach"
           }
         }
+      },
+      "tasks": {
+        "title": "Escalation tasks",
+        "subtitle": "Manual touchpoints surfaced by the renewal schedule — phone calls, in-person meetings, and admin review tasks.",
+        "overdue_banner": "{count, plural, one {# overdue task} other {# overdue tasks}}",
+        "overdue_banner_cta": "Click to filter the queue to overdue tasks only",
+        "overdue_banner_clear": "Filter active — click to show all open tasks again",
+        "overdue_badge": "Overdue",
+        "status_tabs_aria": "Filter by task status",
+        "task_type_filter_aria": "Filter by task type",
+        "task_type_filter_all": "All types",
+        "status_tab": {
+          "open": "Open",
+          "done": "Done",
+          "skipped": "Skipped"
+        },
+        "assignment_tab": {
+          "all": "All",
+          "mine": "Mine",
+          "unassigned": "Unassigned"
+        },
+        "columns": {
+          "member": "Member",
+          "tier": "Tier",
+          "expiresAt": "Expiry",
+          "taskType": "Task type",
+          "dueAt": "Due",
+          "assignedTo": "Assigned to",
+          "status": "Status",
+          "actions": "Actions"
+        },
+        "status": {
+          "open": "Open",
+          "done": "Done",
+          "skipped": "Skipped"
+        },
+        "assigneeRole": {
+          "admin": "Admin",
+          "manager": "Manager",
+          "executive_director": "Executive Director"
+        },
+        "tierBucket": {
+          "thai_alumni": "Thai Alumni",
+          "start_up": "Start-up",
+          "regular": "Regular",
+          "premium": "Premium",
+          "partnership": "Partnership"
+        },
+        "taskType": {
+          "quarterly_review_meeting": "Quarterly review meeting",
+          "benefit_fulfillment_report": "Benefit fulfillment report",
+          "phone_call": "Phone call",
+          "in_person_meeting": "In-person meeting",
+          "board_escalation": "Board escalation",
+          "verify_pending_tier_upgrade": "Verify pending tier upgrade",
+          "manual_outreach_required": "Manual outreach required",
+          "manual_admin_reactivation_review": "Manual reactivation review"
+        },
+        "yearInCycle": {
+          "pill": "Year {year} of {total}",
+          "aria_label": "Year {year} of {total} · {taskType} · {company}"
+        },
+        "empty_state": {
+          "title": "No pending tasks",
+          "subtitle": "Either no escalation steps fired today, or every task is closed. Adjust the status or assignment filter to view past tasks.",
+          "cta_history": "Show all-tasks history (Done + Skipped)"
+        },
+        "filter_active_state": {
+          "title": "No tasks match the current filter",
+          "subtitle": "Try a different status, assignment, or task-type filter, or clear the overdue toggle."
+        },
+        "error_state": {
+          "title": "Could not load escalation tasks",
+          "subtitle": "The database query failed. Please retry or contact support if the problem persists.",
+          "retry": "Retry",
+          "retrying": "Retrying…"
+        },
+        "actions": {
+          "done": {
+            "label": "Done",
+            "success": "Task marked done",
+            "error": "Failed to mark task done"
+          },
+          "skip": {
+            "label": "Skip",
+            "success": "Task skipped",
+            "error": "Failed to skip task"
+          },
+          "reassign": {
+            "label": "Reassign",
+            "success": "Task reassigned",
+            "error": "Failed to reassign task"
+          }
+        },
+        "done_dialog": {
+          "title": "Mark task done?",
+          "description": "Optionally capture a brief outcome note for the forensic chain. The task will transition to done and be removed from the open queue.",
+          "outcome_note_label": "Outcome note (optional)",
+          "outcome_note_placeholder": "What happened? Anything notable to capture?",
+          "chars_remaining": "{count} characters remaining",
+          "cancel": "Cancel",
+          "confirm": "Mark done",
+          "submitting": "Saving…"
+        },
+        "skip_dialog": {
+          "title": "Skip task?",
+          "description": "A reason is required so the audit trail captures why this touchpoint was skipped. The task will transition to skipped and be removed from the open queue.",
+          "reason_label": "Reason",
+          "reason_placeholder": "e.g. Member unreachable; will revisit at T-30",
+          "chars_remaining": "{count} characters remaining",
+          "cancel": "Cancel",
+          "confirm": "Skip task",
+          "submitting": "Saving…"
+        },
+        "reassign_dialog": {
+          "title": "Reassign task",
+          "description": "Choose another active staff member to take ownership. The previous assignee will lose visibility under their \"Mine\" filter.",
+          "assignee_label": "Assignee",
+          "placeholder": "Select a staff member",
+          "search_placeholder": "Search by name or email…",
+          "no_results": "No staff member matches your search.",
+          "load_error": "Could not load staff users. Please try again.",
+          "current_assignee_badge": "current",
+          "cancel": "Cancel",
+          "confirm": "Reassign",
+          "submitting": "Saving…"
+        }
       }
     },
     "refund": {
