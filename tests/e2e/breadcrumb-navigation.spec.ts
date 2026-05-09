@@ -16,6 +16,7 @@
  */
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { signInAsAdmin } from './helpers/admin-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -28,11 +29,14 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
   });
 
   test('filtered-depth < 2 renders no breadcrumb; filtered-depth ≥ 2 does', async ({ page }) => {
-    await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+    // Use shared `signInAsAdmin` helper — it routes the email +
+    // password fills through `fillField` which has WebKit-specific
+    // click→clear→pressSequentially handling. Inline `.fill()` calls
+    // (the previous shape of this test) deterministically failed on
+    // mobile-safari at the post-sign-in `waitForURL` because Safari
+    // didn't register the controlled-input value before the form
+    // submitted.
+    await signInAsAdmin(page);
 
     // /admin/users → raw=2 → filtered=1 (admin dropped) → no breadcrumb
     await page.goto('/admin/users');
@@ -51,11 +55,7 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
 
   test('mobile truncation shows ellipsis + parent + current', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 900 });
-    await page.goto('/admin/sign-in');
-    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
-    await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
+    await signInAsAdmin(page);
 
     // /admin/settings/renewals/schedules → raw=4 → filtered=3 (admin
     // dropped). Mobile truncation triggers when filtered > 2.
