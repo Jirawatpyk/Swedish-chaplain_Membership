@@ -2847,7 +2847,23 @@
       "tier_upgrade_tenant_disabled": "ปิดใช้งานการอัปเกรดสำหรับองค์กรนี้",
       "cron_bearer_auth_rejected": "ปฏิเสธการยืนยันตัวตนของ cron",
       "lapsed_member_action_blocked": "บล็อกการดำเนินการ — สมาชิกหมดอายุ",
-      "renewal_kill_switch_blocked": "บล็อกการดำเนินการ — kill switch เปิดใช้งาน"
+      "renewal_kill_switch_blocked": "บล็อกการดำเนินการ — kill switch เปิดใช้งาน",
+      "invoice_draft_created": "สร้างใบแจ้งหนี้แบบร่าง",
+      "invoice_draft_updated": "อัปเดตใบแจ้งหนี้แบบร่าง",
+      "invoice_draft_deleted": "ลบใบแจ้งหนี้แบบร่าง",
+      "invoice_issued": "ออกใบแจ้งหนี้",
+      "invoice_paid": "ทำเครื่องหมายใบแจ้งหนี้ชำระแล้ว",
+      "invoice_voided": "ยกเลิกใบแจ้งหนี้",
+      "invoice_overdue_detected": "ใบแจ้งหนี้เกินกำหนด",
+      "credit_note_issued": "ออกใบลดหนี้",
+      "invoice_pdf_resent": "ส่ง PDF ใบแจ้งหนี้ซ้ำ",
+      "receipt_pdf_resent": "ส่ง PDF ใบเสร็จรับเงินซ้ำ",
+      "credit_note_pdf_resent": "ส่ง PDF ใบลดหนี้ซ้ำ",
+      "invoice_pdf_regenerated": "สร้าง PDF ใบแจ้งหนี้ใหม่",
+      "pdf_render_failed": "สร้าง PDF ไม่สำเร็จ",
+      "pdf_render_permanently_failed": "สร้าง PDF ล้มเหลวถาวร",
+      "auto_email_delivery_failed": "ส่งอีเมลอัตโนมัติไม่สำเร็จ",
+      "receipt_rendered": "สร้างใบเสร็จรับเงินแล้ว"
     }
   },
   "pagination": {

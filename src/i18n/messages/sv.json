@@ -2847,7 +2847,23 @@
       "tier_upgrade_tenant_disabled": "Nivåuppgradering inaktiverad för denna kammare",
       "cron_bearer_auth_rejected": "Cron-autentisering nekad",
       "lapsed_member_action_blocked": "Åtgärd blockerad — förfallen medlem",
-      "renewal_kill_switch_blocked": "Åtgärd blockerad — kill switch aktiv"
+      "renewal_kill_switch_blocked": "Åtgärd blockerad — kill switch aktiv",
+      "invoice_draft_created": "Fakturautkast skapat",
+      "invoice_draft_updated": "Fakturautkast uppdaterat",
+      "invoice_draft_deleted": "Fakturautkast borttaget",
+      "invoice_issued": "Faktura utfärdad",
+      "invoice_paid": "Faktura markerad som betald",
+      "invoice_voided": "Faktura makulerad",
+      "invoice_overdue_detected": "Faktura förfallen",
+      "credit_note_issued": "Kreditnota utfärdad",
+      "invoice_pdf_resent": "Faktura-PDF skickad igen",
+      "receipt_pdf_resent": "Kvitto-PDF skickat igen",
+      "credit_note_pdf_resent": "Kreditnota-PDF skickad igen",
+      "invoice_pdf_regenerated": "Faktura-PDF återskapad",
+      "pdf_render_failed": "PDF-rendering misslyckades",
+      "pdf_render_permanently_failed": "PDF-rendering misslyckades permanent",
+      "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
+      "receipt_rendered": "Kvitto renderat"
     }
   },
   "pagination": {

@@ -2847,7 +2847,23 @@
       "tier_upgrade_tenant_disabled": "Tier upgrade disabled for tenant",
       "cron_bearer_auth_rejected": "Cron auth rejected",
       "lapsed_member_action_blocked": "Action blocked — lapsed member",
-      "renewal_kill_switch_blocked": "Action blocked — kill switch active"
+      "renewal_kill_switch_blocked": "Action blocked — kill switch active",
+      "invoice_draft_created": "Invoice draft created",
+      "invoice_draft_updated": "Invoice draft updated",
+      "invoice_draft_deleted": "Invoice draft deleted",
+      "invoice_issued": "Invoice issued",
+      "invoice_paid": "Invoice marked paid",
+      "invoice_voided": "Invoice voided",
+      "invoice_overdue_detected": "Invoice overdue",
+      "credit_note_issued": "Credit note issued",
+      "invoice_pdf_resent": "Invoice PDF resent",
+      "receipt_pdf_resent": "Receipt PDF resent",
+      "credit_note_pdf_resent": "Credit-note PDF resent",
+      "invoice_pdf_regenerated": "Invoice PDF regenerated",
+      "pdf_render_failed": "PDF render failed",
+      "pdf_render_permanently_failed": "PDF render permanently failed",
+      "auto_email_delivery_failed": "Auto email delivery failed",
+      "receipt_rendered": "Receipt rendered"
     }
   },
   "pagination": {
