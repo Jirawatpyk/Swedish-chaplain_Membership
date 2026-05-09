@@ -39,7 +39,7 @@ export async function generateMetadata({
   const { year, planId } = await params;
   const yearNum = Number(year);
   if (!Number.isInteger(yearNum) || !/^[a-z0-9-]{1,63}$/.test(planId)) {
-    return { title: 'Plan · SweCham' };
+    return { title: 'Plan' };
   }
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
@@ -49,7 +49,8 @@ export async function generateMetadata({
     asPlanYear(yearNum),
   );
   const displayName = plan?.plan_name.en ?? planId;
-  return { title: `${displayName} · Plans · SweCham` };
+  // Layout template appends "· SweCham Membership" automatically.
+  return { title: `${displayName} · Plans` };
 }
 
 export default async function PlanDetailPage({

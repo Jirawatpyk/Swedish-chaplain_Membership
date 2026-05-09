@@ -26,7 +26,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { NewPlanClient } from './new-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'New plan · SweCham' };
+  return { title: 'New plan' };
 }
 
 export default async function NewPlanPage() {

@@ -50,8 +50,10 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  if (!UUID_RE.test(memberId)) return { title: 'Edit · SweCham' };
-  return { title: `Edit · SweCham` };
+  // Layout template appends "· SweCham Membership"; bare title here
+  // avoids the "Edit · SweCham · SweCham Membership" redundancy.
+  if (!UUID_RE.test(memberId)) return { title: 'Edit member' };
+  return { title: 'Edit member' };
 }
 
 export default async function EditMemberPage({ params }: PageProps) {

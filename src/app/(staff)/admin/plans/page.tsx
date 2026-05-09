@@ -25,7 +25,7 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Plans · SweCham' };
+  return { title: 'Plans' };
 }
 
 interface SearchParams {

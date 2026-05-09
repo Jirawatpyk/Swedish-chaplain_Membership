@@ -41,7 +41,7 @@ import {
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.settings.schedules');
-  return { title: `${t('title')} · SweCham`, description: t('subtitle') };
+  return { title: t('title'), description: t('subtitle') };
 }
 
 export default async function RenewalSchedulesSettingsPage() {

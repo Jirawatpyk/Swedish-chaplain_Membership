@@ -22,7 +22,7 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EditPlanClient } from './edit-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Edit plan · SweCham' };
+  return { title: 'Edit plan' };
 }
 
 export default async function EditPlanPage({

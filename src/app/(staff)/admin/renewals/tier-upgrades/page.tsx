@@ -27,7 +27,7 @@ import { TierUpgradeErrorRetry } from './_components/tier-upgrade-error-retry';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
-  return { title: `${t('title')} · SweCham`, description: t('subtitle') };
+  return { title: t('title'), description: t('subtitle') };
 }
 
 export default async function TierUpgradeQueuePage() {

@@ -46,8 +46,12 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  if (!UUID_RE.test(memberId)) return { title: 'Timeline · SweCham' };
-  return { title: 'Timeline · SweCham' };
+  // The root layout's metadata template (`%s · SweCham Membership`)
+  // appends the brand suffix; returning a bare page name here keeps
+  // the final title as "Timeline · SweCham Membership" instead of
+  // "Timeline · SweCham · SweCham Membership".
+  if (!UUID_RE.test(memberId)) return { title: 'Timeline' };
+  return { title: 'Timeline' };
 }
 
 export default async function MemberTimelinePage({ params }: PageProps) {

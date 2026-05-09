@@ -37,7 +37,7 @@ import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/inv
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Invoice settings · SweCham' };
+  return { title: 'Invoice settings' };
 }
 
 const DEFAULTS: InvoiceSettingsFormInitialValues = {

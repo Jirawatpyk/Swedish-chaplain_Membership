@@ -43,7 +43,7 @@ import { ResultCountAnnouncer } from '@/components/renewals/result-count-announc
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals');
-  return { title: `${t('title')} · SweCham`, description: t('subtitle') };
+  return { title: t('title'), description: t('subtitle') };
 }
 
 const URGENCY_VALUES: ReadonlySet<UrgencyBucket> = new Set([
