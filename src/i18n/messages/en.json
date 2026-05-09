@@ -950,6 +950,22 @@
       "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
     },
+    "settings": {
+      "index": {
+        "title": "Settings",
+        "subtitle": "Configure tenant-wide invoicing and renewal-reminder behaviour.",
+        "categories": {
+          "invoicing": {
+            "title": "Invoice settings",
+            "description": "VAT, currency, registration fee, and document defaults for invoices, receipts, and credit notes."
+          },
+          "renewalSchedules": {
+            "title": "Reminder schedules",
+            "description": "Cadence and channel for renewal reminders, configurable per member tier."
+          }
+        }
+      }
+    },
     "invoiceSettings": {
       "title": "Invoice settings",
       "subtitle": "Tenant-level invoice configuration (legal identity, VAT, numbering, logo).",
@@ -2157,6 +2173,7 @@
       "users": "Users",
       "settings": "Settings",
       "settingsInvoices": "Invoice Settings",
+      "settingsRenewalSchedules": "Reminder schedules",
       "sections": {
         "main": "Main",
         "settings": "Settings"
@@ -2166,7 +2183,8 @@
       "ariaLabel": "Staff navigation",
       "members": "Members",
       "invoices": "Invoices",
-      "broadcasts": "Broadcasts"
+      "broadcasts": "Broadcasts",
+      "renewals": "Renewals"
     },
     "member": {
       "dashboard": "Dashboard",
@@ -2198,7 +2216,9 @@
     "credit-notes": "Credit Notes",
     "newCreditNote": "New Credit Note",
     "void": "Void",
-    "pay": "Record Payment"
+    "pay": "Record Payment",
+    "renewals": "Renewals",
+    "schedules": "Reminder schedules"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",

@@ -29,11 +29,10 @@ export default async function Loading() {
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
       <FormContainer>
-        <PageHeader
-          title={t('title')}
-          subtitle={t('subtitle')}
-          actions={<SkeletonBlock className="h-6 w-20" />}
-        />
+        {/* Header role-Badge skeleton dropped to match the loaded
+            page (the badge itself was removed — role indicator lives
+            in the top-right user-menu instead). */}
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardHeader>
             <CardTitle>{t('card.title')}</CardTitle>

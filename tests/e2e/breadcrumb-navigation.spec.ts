@@ -1,9 +1,18 @@
 /**
  * T035 + T036 — E2E: F4 US3 breadcrumb navigation + mobile truncation.
  *
- * - Depth ≥ 3 renders trail
- * - Depth < 3 renders no breadcrumb
- * - Mobile (<640px) truncates to parent + current with ellipsis
+ * Updated for the SaaS-convention filter that drops the leading
+ * `admin` portal-root segment from the breadcrumb (Stripe / Linear /
+ * GitHub / Notion convention; sidebar branding + role badge already
+ * indicate the portal).
+ *
+ * - Filtered depth ≥ 2 renders trail (raw depth ≥ 3 typically; e.g.
+ *   `/admin/settings/invoicing` raw=3 → filtered=2 → renders).
+ * - Filtered depth < 2 renders no breadcrumb (e.g. `/admin/users`
+ *   raw=2 → filtered=1 → no breadcrumb; sidebar + h1 covers it).
+ * - Mobile (<640px) truncates to parent + current with ellipsis when
+ *   filtered depth > 2 (e.g. `/admin/settings/renewals/schedules`
+ *   raw=4 → filtered=3 → ellipsis fires).
  */
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
@@ -18,25 +27,26 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     await clearE2ERateLimits();
   });
 
-  test('depth < 3 pages render no breadcrumb; depth ≥ 3 do', async ({ page }) => {
+  test('filtered-depth < 2 renders no breadcrumb; filtered-depth ≥ 2 does', async ({ page }) => {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
-    // /admin/users → depth 2 → no breadcrumb
+    // /admin/users → raw=2 → filtered=1 (admin dropped) → no breadcrumb
     await page.goto('/admin/users');
     await expect(page.locator('[data-slot="breadcrumb"]')).toHaveCount(0);
 
-    // /admin/settings/invoicing → depth 3 → breadcrumb
+    // /admin/settings/invoicing → raw=3 → filtered=2 → breadcrumb
+    // shows [Settings, Invoice settings] (admin segment dropped).
     await page.goto('/admin/settings/invoicing');
     // Component renders both desktop + mobile breadcrumb lists for
     // responsive switching; count only the visible (desktop) list.
     const crumbs = page
       .locator('[data-slot="breadcrumb-list"]:visible [data-slot="breadcrumb-item"]');
     await expect(crumbs.first()).toBeVisible();
-    await expect(crumbs).toHaveCount(3);
+    await expect(crumbs).toHaveCount(2);
   });
 
   test('mobile truncation shows ellipsis + parent + current', async ({ page }) => {
@@ -47,7 +57,9 @@ test.describe('F4 US3 — breadcrumb navigation @layout', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 
-    await page.goto('/admin/settings/invoicing');
+    // /admin/settings/renewals/schedules → raw=4 → filtered=3 (admin
+    // dropped). Mobile truncation triggers when filtered > 2.
+    await page.goto('/admin/settings/renewals/schedules');
     const ellipsis = page.locator('[data-slot="breadcrumb-ellipsis"]');
     await expect(ellipsis).toBeVisible();
   });

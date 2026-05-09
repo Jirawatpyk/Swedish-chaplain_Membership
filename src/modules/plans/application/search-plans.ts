@@ -217,7 +217,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
   {
     id: 'nav.renewalSchedules',
     label: 'palette.navigate.renewalSchedules',
-    url: '/admin/renewals/settings/schedules',
+    url: '/admin/settings/renewals/schedules',
     // Manager role can READ the schedule editor (it renders read-only
     // for them server-side per `requireRenewalAdminContext('read')`).
     // Admin-only mutations are still gated at the route handler.

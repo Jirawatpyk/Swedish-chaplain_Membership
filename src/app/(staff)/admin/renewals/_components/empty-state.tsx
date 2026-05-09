@@ -34,7 +34,7 @@ export function RenewalsEmptyState() {
             {t('cta')}
           </Link>
           <Link
-            href="/admin/renewals/settings/schedules"
+            href="/admin/settings/renewals/schedules"
             className="text-sm text-muted-foreground underline-offset-4 hover:underline"
           >
             {t('settingsLink')}

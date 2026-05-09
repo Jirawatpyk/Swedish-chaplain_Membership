@@ -22,7 +22,7 @@
  *     async ≥100 ms operations should show explicit pending indicators.
  *
  * Reused on both `/admin/renewals` (pipeline) and
- * `/admin/renewals/settings/schedules` error states. Each surface passes
+ * `/admin/settings/renewals/schedules` error states. Each surface passes
  * its own `goBackHref` and pre-translated labels (component stays free
  * of `next-intl` imports — small enough to be parameter-driven).
  *

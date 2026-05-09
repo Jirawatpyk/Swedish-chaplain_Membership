@@ -39,7 +39,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
+  TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
@@ -296,8 +296,21 @@ function StepRow({
               }
             }}
           >
-            <SelectTrigger id={`channel-${idPrefix}`}>
-              <SelectValue />
+            <SelectTrigger id={`channel-${idPrefix}`} className="w-full">
+              {/* Base UI's `<SelectValue />` renders the raw value string
+                  ("email" / "task") not the translated children of the
+                  selected `<SelectItem>` — so the trigger looked
+                  un-translated AND truncated. `<TranslatedSelectValue>`
+                  passes the raw value through `t()` to render the same
+                  label as the dropdown items. `w-full` on the trigger
+                  makes it span the form column so the translated label
+                  isn't clipped (line-clamp-1 was hiding longer locales). */}
+              <TranslatedSelectValue
+                placeholder={t('stepCard.channelLabel')}
+                translate={(v) =>
+                  v ? t(`stepCard.channel.${v}` as 'stepCard.channel.email') : null
+                }
+              />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="email">
@@ -366,8 +379,20 @@ function StepRow({
                   })
                 }
               >
-                <SelectTrigger id={`assignee-${idPrefix}`}>
-                  <SelectValue />
+                <SelectTrigger id={`assignee-${idPrefix}`} className="w-full">
+                  {/* Same un-translated-trigger fix as the channel
+                      Select above — Base UI's `<SelectValue />` renders
+                      the raw enum literal. */}
+                  <TranslatedSelectValue
+                    placeholder={t('stepCard.assigneeLabel')}
+                    translate={(v) =>
+                      v
+                        ? t(
+                            `stepCard.assigneeRole.${v}` as 'stepCard.assigneeRole.admin',
+                          )
+                        : null
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {/*

@@ -950,6 +950,22 @@
       "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
     },
+    "settings": {
+      "index": {
+        "title": "Inställningar",
+        "subtitle": "Konfigurera fakturering och förnyelsepåminnelser för hela kammaren.",
+        "categories": {
+          "invoicing": {
+            "title": "Fakturainställningar",
+            "description": "Moms, valuta, registreringsavgift och standardvärden för fakturor, kvitton och kreditnotor."
+          },
+          "renewalSchedules": {
+            "title": "Påminnelseschema",
+            "description": "Frekvens och kanal för förnyelsepåminnelser, konfigurerbart per medlemsnivå."
+          }
+        }
+      }
+    },
     "invoiceSettings": {
       "title": "Fakturainställningar",
       "subtitle": "Konfiguration på kammarnivå: juridisk identitet, moms, numrering och logotyp.",
@@ -2157,6 +2173,7 @@
       "users": "Användare",
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
+      "settingsRenewalSchedules": "Påminnelseschema",
       "sections": {
         "main": "Allmänt",
         "settings": "Inställningar"
@@ -2166,7 +2183,8 @@
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
       "invoices": "Fakturor",
-      "broadcasts": "Utskick"
+      "broadcasts": "Utskick",
+      "renewals": "Förnyelser"
     },
     "member": {
       "dashboard": "Instrumentpanel",
@@ -2198,7 +2216,9 @@
     "credit-notes": "Kreditnotor",
     "newCreditNote": "Ny kreditnota",
     "void": "Annullera",
-    "pay": "Registrera betalning"
+    "pay": "Registrera betalning",
+    "renewals": "Förnyelser",
+    "schedules": "Påminnelseschema"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

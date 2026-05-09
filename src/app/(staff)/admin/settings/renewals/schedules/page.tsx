@@ -1,6 +1,9 @@
 /**
- * F8 Phase 4 Wave I1b · T086 — `/admin/renewals/settings/schedules`
- * server component.
+ * F8 Phase 4 Wave I1b · T086 — `/admin/settings/renewals/schedules`
+ * server component (relocated from `/admin/renewals/settings/schedules`
+ * for IA consistency with `/admin/settings/invoicing` — settings are
+ * centralized under `/admin/settings/<feature>/...`. The old path is
+ * 301-redirected to the new path via `next.config.ts redirects()`).
  *
  * Reads all 5 tier-bucket schedule policies via `loadSchedulePolicies`
  * and renders the client-side `ScheduleEditor` (T087) with `readOnly`
@@ -8,12 +11,15 @@
  *
  * Authz: admin OR manager. Manager view is read-only; PUT route at
  * /api/admin/renewals/settings/schedules/[tierBucket] enforces the
- * canonical RBAC gate (defence-in-depth).
+ * canonical RBAC gate (defence-in-depth). NOTE: API routes intentionally
+ * stayed at /api/admin/renewals/* — only the UI page was relocated.
  *
- * Layout: wrapped in `<DetailContainer>` (max-width 72rem) per
- * docs/ux-standards.md § 18 — settings/edit surfaces use detail width;
- * 5 tabs with form rows fit better than the wider TableContainer
- * 96rem used for the pipeline list.
+ * Layout: wrapped in `<FormContainer>` (max-width 42rem) per
+ * docs/ux-standards.md § 18 — settings/edit surfaces use form width
+ * (matches sister `/admin/settings/invoicing`). Earlier draft used
+ * `<FormContainer>` (72rem) reasoning "5 tabs with form rows fit
+ * better than 96rem" — but that compared against TableContainer not
+ * FormContainer. The 42rem standard width is the right call.
  */
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
@@ -22,7 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
 import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { DetailContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -33,7 +39,7 @@ import {
   makeRenewalsDeps,
   reminderStepToJson,
 } from '@/modules/renewals';
-import { ErrorCardActions } from '../../_components/error-card-actions';
+import { ErrorCardActions } from '../../../renewals/_components/error-card-actions';
 import {
   ScheduleEditor,
   type SchedulePolicyWire,
@@ -55,7 +61,7 @@ export default async function RenewalSchedulesSettingsPage() {
   if (!env.features.f8Renewals) {
     const tShared = await getTranslations('admin.renewals');
     return (
-      <DetailContainer>
+      <FormContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent
@@ -66,13 +72,13 @@ export default async function RenewalSchedulesSettingsPage() {
             {tShared('error.featureDisabled')}
           </CardContent>
         </Card>
-      </DetailContainer>
+      </FormContainer>
     );
   }
 
   const reqHeaders = await headers();
   const fakeRequest = new Request(
-    `http://${reqHeaders.get('host') ?? 'localhost'}/admin/renewals/settings/schedules`,
+    `http://${reqHeaders.get('host') ?? 'localhost'}/admin/settings/renewals/schedules`,
     { headers: reqHeaders },
   );
   const tenantCtx = resolveTenantFromRequest(fakeRequest);
@@ -93,7 +99,7 @@ export default async function RenewalSchedulesSettingsPage() {
     );
     const tShared = await getTranslations('admin.renewals');
     return (
-      <DetailContainer>
+      <FormContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Card>
           <CardContent
@@ -128,7 +134,7 @@ export default async function RenewalSchedulesSettingsPage() {
             />
           </CardContent>
         </Card>
-      </DetailContainer>
+      </FormContainer>
     );
   }
 
@@ -141,9 +147,9 @@ export default async function RenewalSchedulesSettingsPage() {
   );
 
   return (
-    <DetailContainer>
+    <FormContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <ScheduleEditor initialPolicies={initialPolicies} readOnly={readOnly} />
-    </DetailContainer>
+    </FormContainer>
   );
 }

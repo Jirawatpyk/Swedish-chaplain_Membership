@@ -27,7 +27,13 @@ describe('parseBreadcrumbPath', () => {
     ).toEqual([]);
   });
 
-  it('resolves static segment labels from i18n map', () => {
+  it('drops the leading "admin" portal-root segment', () => {
+    // Per the SaaS-convention filter (Stripe / Linear / GitHub /
+    // Notion all skip the workspace/dashboard prefix in breadcrumb),
+    // the leading `admin` segment is filtered from the parsed output.
+    // Hrefs for the surviving segments still include `/admin/`
+    // because they were reconstructed BEFORE the filter ran — only
+    // the visible label is dropped.
     const result = parseBreadcrumbPath({
       pathname: '/admin/plans',
       staticLabels,
@@ -35,12 +41,11 @@ describe('parseBreadcrumbPath', () => {
     });
 
     expect(result).toEqual([
-      { href: '/admin', segment: 'admin', label: 'Admin', isCurrent: false },
       { href: '/admin/plans', segment: 'plans', label: 'Plans', isCurrent: true },
     ]);
   });
 
-  it('resolves dynamic segment labels from provider map', () => {
+  it('drops "admin" + resolves dynamic segment labels for the rest', () => {
     const dynamicLabels = new Map([['abc123', 'Corporate Gold']]);
 
     const result = parseBreadcrumbPath({
@@ -50,7 +55,6 @@ describe('parseBreadcrumbPath', () => {
     });
 
     expect(result.map((s) => s.label)).toEqual([
-      'Admin',
       'Plans',
       '2026',
       'Corporate Gold',
@@ -68,15 +72,16 @@ describe('parseBreadcrumbPath', () => {
     expect(result.at(-1)?.label).toBe('unknown-slug');
   });
 
-  it('builds cumulative href per segment', () => {
+  it('builds cumulative href per segment (after dropping admin prefix)', () => {
     const result = parseBreadcrumbPath({
       pathname: '/admin/settings/fees',
       staticLabels,
       dynamicLabels: new Map(),
     });
 
+    // `admin` filtered; remaining hrefs still rooted at `/admin/...`
+    // because hrefs are computed pre-filter.
     expect(result.map((s) => s.href)).toEqual([
-      '/admin',
       '/admin/settings',
       '/admin/settings/fees',
     ]);
@@ -101,12 +106,14 @@ describe('parseBreadcrumbPath', () => {
 
   it('treats consecutive slashes as a single separator', () => {
     // Empty segments from `//` are filtered out (`filter(p => p.length > 0)`).
+    // Note: `admin` is also filtered out by the portal-root drop, so
+    // the visible trail is just `[plans]`.
     const result = parseBreadcrumbPath({
       pathname: '/admin//plans',
       staticLabels,
       dynamicLabels: new Map(),
     });
-    expect(result.map((s) => s.segment)).toEqual(['admin', 'plans']);
+    expect(result.map((s) => s.segment)).toEqual(['plans']);
   });
 
   it('strips the query string so label lookup still resolves', () => {

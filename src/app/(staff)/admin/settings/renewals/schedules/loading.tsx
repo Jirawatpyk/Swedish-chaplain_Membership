@@ -1,22 +1,22 @@
 /**
  * F8 Phase 4 Wave I1b · T086 — Route-level loading skeleton for
- * `/admin/renewals/settings/schedules`. Matches editor shape (5 tab
+ * `/admin/settings/renewals/schedules`. Matches editor shape (5 tab
  * triggers + 3 step-row placeholders) so layout shifts are minimal
  * (CLS=0 per docs/ux-standards.md § 2.1).
  *
- * Wrapped in `<DetailContainer>` so `pnpm check:layout` invariant
+ * Wrapped in `<FormContainer>` so `pnpm check:layout` invariant
  * (page+loading both use the same variant) holds.
  */
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { DetailContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export default async function Loading() {
   const t = await getTranslations('admin.renewals.settings.schedules');
   return (
-    <DetailContainer>
+    <FormContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <div className="flex flex-col gap-3" aria-hidden>
         {/* 5-tab placeholder */}
@@ -45,6 +45,6 @@ export default async function Loading() {
           </Card>
         ))}
       </div>
-    </DetailContainer>
+    </FormContainer>
   );
 }

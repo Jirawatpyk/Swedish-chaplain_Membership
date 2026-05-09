@@ -4,7 +4,7 @@
  * Read-only listing of all tier-bucket schedule policies for a tenant.
  * Powers two surfaces:
  *
- *   1. Admin schedule editor `/admin/renewals/settings/schedules`
+ *   1. Admin schedule editor `/admin/settings/renewals/schedules`
  *      (T086) — renders 5 tabs (one per tier_bucket) with the current
  *      step list per bucket. Manager has read-only access; admin can
  *      mutate via `update-schedule-policy` (T082).

@@ -92,7 +92,7 @@ export function TierUpgradeQueueClient({
         </p>
         {/* Phase 7 review-fix S-UX-3: empty-state CTA per FR-046a. */}
         <Link
-          href="/admin/renewals/settings/schedules"
+          href="/admin/settings/renewals/schedules"
           className="mt-3 inline-block text-sm text-primary underline-offset-4 hover:underline"
         >
           {t('empty_state.cta')}
