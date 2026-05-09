@@ -97,15 +97,19 @@ describe('skipEscalationTask (T210)', () => {
     expect(findByIdMock).not.toHaveBeenCalled();
   });
 
-  // R6 C-3 close — TOCTOU race (see complete-escalation-task.test).
-  it('TOCTOU race — transitionStatus throws → kind:task_not_open (not server_error)', async () => {
-    const { deps, transitionStatusMock } = fakeDeps(openTaskRow());
+  // R6 C-3 + R7 IMP-C close — TOCTOU race: repo throws
+  // EscalationTaskNotFoundError between findById and the partial-
+  // unique UPDATE; use-case MUST remap to task_not_open (409) AND
+  // skip the audit emit (Constitution Principle VIII).
+  it('TOCTOU race — transitionStatus throws → kind:task_not_open + zero audit emit', async () => {
+    const { deps, transitionStatusMock, emitInTxMock } = fakeDeps(openTaskRow());
     transitionStatusMock.mockImplementationOnce(async () => {
       throw new EscalationTaskNotFoundError(TASK_UUID);
     });
     const r = await skipEscalationTask(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('task_not_open');
+    expect(emitInTxMock).not.toHaveBeenCalled();
   });
 
   it('happy path — emits audit with skipped_reason', async () => {

@@ -229,13 +229,17 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
       await expect(
         page.getByRole('heading', { name: /escalation tasks/i }),
       ).toBeVisible();
-      // R6 IMP-14 close — assert globals.css reduced-motion rule
-      // actually neutralises `.animate-spin` keyframes. Pre-fix the
-      // test only verified the page rendered; it would pass even if
-      // the global rule were deleted entirely. Now we assert the
-      // computed animation-duration is 0s on a `.animate-spin`
-      // element (any spinner instance — we synth one via DOM eval to
-      // avoid coupling to a particular UI state).
+      // R6 IMP-14 + R7 C3-3 close — assert globals.css reduced-motion
+      // rule actually neutralises `.animate-spin` keyframes. Pre-fix
+      // the test only verified the page rendered; it would pass even
+      // if the global rule were deleted. We synth a probe via DOM
+      // eval to avoid coupling to a particular UI state.
+      //
+      // R7 C3-3: parse animationDuration as ms and assert ≤ 1ms (the
+      // global rule sets 0.01ms !important to keep iteration count
+      // sane; previous regex `=== '0s'` was structurally broken and
+      // would always fail). Threshold 1ms is generous — anything in
+      // that ballpark is effectively imperceptible motion.
       const animationDurations = await page.evaluate(() => {
         const probe = document.createElement('div');
         probe.className = 'animate-spin';
@@ -250,14 +254,24 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
         document.body.removeChild(probe);
         return result;
       });
-      // The reduced-motion media query in globals.css sets
-      // `animation-duration: 0s` (or removes the keyframe assignment)
-      // when prefers-reduced-motion: reduce.
+
+      function parseDurationMs(s: string): number {
+        // CSS computed value: '0s', '0.01ms', '1500ms', '1.5s'.
+        if (s.endsWith('ms')) return Number.parseFloat(s);
+        if (s.endsWith('s')) return Number.parseFloat(s) * 1000;
+        return Number.NaN;
+      }
+      const effectiveDurationMs = parseDurationMs(
+        animationDurations.animationDuration,
+      );
+      const isNeutralised =
+        animationDurations.animationName === 'none' ||
+        (Number.isFinite(effectiveDurationMs) && effectiveDurationMs <= 1);
       expect(
-        animationDurations.animationDuration === '0s' ||
-          animationDurations.animationName === 'none',
-        `Expected reduced-motion to neutralise .animate-spin; got ` +
+        isNeutralised,
+        `Expected reduced-motion to neutralise .animate-spin (≤1ms); got ` +
           `duration="${animationDurations.animationDuration}" ` +
+          `(${effectiveDurationMs}ms) ` +
           `name="${animationDurations.animationName}"`,
       ).toBe(true);
     } finally {

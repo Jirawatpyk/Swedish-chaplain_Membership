@@ -24,7 +24,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -52,6 +52,7 @@ import {
 import { DoneTaskDialog } from './done-task-dialog';
 import { SkipTaskDialog } from './skip-task-dialog';
 import { ReassignTaskDropdown } from './reassign-task-dropdown';
+import { StatusTablist } from './status-tablist';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
 
 export interface EscalationTaskQueueItem {
@@ -81,12 +82,20 @@ export interface EscalationTaskQueueItem {
   readonly assignedToRole: 'admin' | 'manager' | 'executive_director';
   readonly assignedToUserId: string | null;
   /**
-   * Round 5 I-13 close — joined `users.display_name` for the
-   * `assigned_to_user_id`. NULL when role-only or user deleted.
+   * Round 5 I-13 + R7 IMP-F close — joined `users.display_name` for
+   * the `assigned_to_user_id`. NULL when role-only or user deleted.
+   * Required (`string | null`, not `?: ...`) so a future SSR
+   * projection that forgets to map this field fails at compile time
+   * — the prior optional shape silently let the page render UUID
+   * slices when the field was omitted (Round 2 C-1 regression).
    */
-  readonly assignedToDisplayName?: string | null;
-  /** Round 5 I-13 close — fallback display when display_name is null. */
-  readonly assignedToEmail?: string | null;
+  readonly assignedToDisplayName: string | null;
+  /**
+   * Round 5 I-13 + R7 IMP-F close — fallback display when
+   * `display_name` is null. See above for required-vs-optional
+   * rationale.
+   */
+  readonly assignedToEmail: string | null;
   readonly dueAt: string;
   readonly status: 'open' | 'done' | 'skipped';
   readonly createdAt: string;
@@ -145,97 +154,13 @@ const WIRE_ERROR_CODES = [
   'server_error',
 ] as const;
 type WireErrorCode = (typeof WIRE_ERROR_CODES)[number];
-/** Client-synthetic codes (NEVER wire-format). The catch handler
- * passes these in directly without going through the wire-validator. */
-type ClientErrorCode = 'offline';
-type KnownErrorCode = WireErrorCode | ClientErrorCode;
 
 function isWireErrorCode(code: string): code is WireErrorCode {
   return (WIRE_ERROR_CODES as readonly string[]).includes(code);
 }
 
-const STATUS_TABS = ['open', 'done', 'skipped'] as const;
-type StatusTab = (typeof STATUS_TABS)[number];
-
-/**
- * R6 C-5 close — ARIA APG composite-widget tablist with roving
- * tabIndex + Arrow-key navigation. Required for WCAG 2.1 SC 4.1.2
- * (Name, Role, Value) compliance in tablist role.
- *
- * - Tab key: Tab IN reaches the selected tab; Tab OUT exits the group
- * - Arrow keys: ArrowLeft/ArrowRight wrap-around navigate within group
- * - Home / End: jump to first / last tab
- * - Activation: clicking OR pressing Enter/Space (default Button) on
- *   a focused tab fires onSelect (URL update via setSearchParam)
- */
-function StatusTablist({
-  status,
-  t,
-  onSelect,
-}: {
-  readonly status: string;
-  readonly t: (key: string) => string;
-  readonly onSelect: (next: StatusTab) => void;
-}) {
-  const refs = useRef<Array<HTMLButtonElement | null>>([]);
-
-  function focusByIndex(idx: number): void {
-    const wrapped = (idx + STATUS_TABS.length) % STATUS_TABS.length;
-    refs.current[wrapped]?.focus();
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
-    const currentIdx = STATUS_TABS.findIndex((s) => s === status);
-    if (currentIdx === -1) return;
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      focusByIndex(currentIdx - 1);
-      onSelect(STATUS_TABS[(currentIdx - 1 + STATUS_TABS.length) % STATUS_TABS.length]!);
-    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      focusByIndex(currentIdx + 1);
-      onSelect(STATUS_TABS[(currentIdx + 1) % STATUS_TABS.length]!);
-    } else if (e.key === 'Home') {
-      e.preventDefault();
-      focusByIndex(0);
-      onSelect(STATUS_TABS[0]!);
-    } else if (e.key === 'End') {
-      e.preventDefault();
-      focusByIndex(STATUS_TABS.length - 1);
-      onSelect(STATUS_TABS[STATUS_TABS.length - 1]!);
-    }
-  }
-
-  return (
-    <div
-      className="flex gap-1"
-      role="tablist"
-      aria-label={t('status_tabs_aria')}
-      onKeyDown={handleKeyDown}
-    >
-      {STATUS_TABS.map((s, idx) => {
-        const selected = status === s;
-        return (
-          <Button
-            key={s}
-            ref={(el) => {
-              refs.current[idx] = el;
-            }}
-            size="sm"
-            variant={selected ? 'default' : 'outline'}
-            role="tab"
-            aria-selected={selected}
-            aria-controls="escalation-tasks-tabpanel"
-            tabIndex={selected ? 0 : -1}
-            onClick={() => onSelect(s)}
-          >
-            {t(`status_tab.${s}`)}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
+// R7 IMP-D close — STATUS_TABS + StatusTab + StatusTablist extracted
+// to sibling `status-tablist.tsx` for unit-testability.
 
 export function EscalationTaskQueue({
   actorRole,
@@ -319,29 +244,33 @@ export function EscalationTaskQueue({
    * keys. Unknown codes fall through to the `unknown` key so admins
    * always see human copy.
    *
-   * R6 IMP-3 + IMP-8 close — only WIRE codes (from API responses)
-   * are accepted from the response body. CLIENT codes (e.g.
-   * `'offline'`) are passed in directly by the catch handler.
+   * R6 IMP-3 close — only WIRE codes (from API responses) are
+   * filtered through `isWireErrorCode`. CLIENT codes (`'offline'`)
+   * are passed in directly by the catch handler — never trusted from
+   * a remote source.
    *
-   * R7 HV-4 close — i18n key consolidation. 9 of the 10 error codes
-   * have byte-identical copy across the 3 actions (only `forbidden`
-   * varies because the verb differs: "mark tasks done" vs "skip
-   * tasks" vs "reassign tasks"). Use the shared
-   * `actions.errors.<code>` namespace for everything except
-   * `forbidden`, which keeps the per-action override
-   * (`actions.<action>.errors.forbidden`). Net −54 i18n keys (90→36).
+   * R7 HV-4 + R7 IMP-J close — i18n consolidation: 9 of 10 error
+   * codes have byte-identical copy across actions; only `forbidden`
+   * varies. Shared `actions.errors.<code>` namespace + per-action
+   * `forbidden` override. Net -18 unique key paths (was 30 per
+   * locale × 3 = 90 entries → 12 per locale × 3 = 36 entries).
+   *
+   * R7 S-1 close — inlined `safeWireCode` (the previous helper had
+   * exactly two call sites and added a separation that didn't
+   * survive the consolidation).
    */
   function describeError(
     action: 'done' | 'skip' | 'reassign',
-    code: KnownErrorCode | 'unknown',
+    rawCode: string,
   ): string {
-    if (code === 'forbidden') {
+    if (rawCode === 'forbidden') {
       return t(`actions.${action}.errors.forbidden`);
     }
-    return t(`actions.errors.${code}`);
-  }
-  function safeWireCode(code: string): WireErrorCode | 'unknown' {
-    return isWireErrorCode(code) ? code : 'unknown';
+    // Filter wire codes; pass `offline` through (client-synthetic);
+    // anything else falls to `unknown`.
+    const safeCode: WireErrorCode | 'offline' | 'unknown' =
+      rawCode === 'offline' || isWireErrorCode(rawCode) ? rawCode : 'unknown';
+    return t(`actions.errors.${safeCode}`);
   }
 
   async function postAction(
@@ -365,7 +294,7 @@ export function EscalationTaskQueue({
           .catch(() => ({ error: { code: 'unknown' } }));
         const code: string = errBody?.error?.code ?? 'unknown';
         toast.error(t(`actions.${action}.error`), {
-          description: describeError(action, safeWireCode(code)),
+          description: describeError(action, code),
         });
         return false;
       }
@@ -569,7 +498,9 @@ export function EscalationTaskQueue({
       <div
         id="escalation-tasks-tabpanel"
         role="tabpanel"
-        aria-label={t(`status_tab.${status}`)}
+        // R7 IMP-H close — APG-recommended `aria-labelledby` referencing
+        // the controlling tab's id (ids assigned by StatusTablist).
+        aria-labelledby={`task-status-tab-${status}`}
       >
         {filteredItems.length === 0 ? (
           // E3 close — distinct copy for "no tasks at all" vs "filter

@@ -695,19 +695,24 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
         );
         assertBRow(bRow[0]);
 
-        // R6 IMP-13 close — Constitution Principle I clause 4: every
-        // cross-tenant access attempt MUST refuse + emit zero audit
-        // leak. Even if RLS lets a write through (it shouldn't), the
-        // forensic chain in audit_log must NOT show a leak. Probe
-        // ALL escalation_task_* events for the foreign taskId across
-        // both tenants — should be zero rows. This invariant was lost
-        // when HV-2 collapsed the 3 sequential probes into it.each;
-        // restoring it here preserves the original Round 1 T223 close.
-        const audits = await db
+        // R6 IMP-13 + R7 IMP-E close — Constitution Principle I
+        // clause 4: every cross-tenant access attempt MUST refuse +
+        // emit zero audit leak. Probe ALL audit events for the
+        // foreign taskId — should be zero rows.
+        //
+        // R7 IMP-E: also probe payload-text containment so a future
+        // event renaming `task_id` → `taskId`/`task` would still fail
+        // the test (defends against silent field-rename regressions).
+        const auditsBySpecificField = await db
           .select()
           .from(auditLog)
           .where(sql`payload ->> 'task_id' = ${taskBId}`);
-        expect(audits).toHaveLength(0);
+        expect(auditsBySpecificField).toHaveLength(0);
+        const auditsByContainment = await db
+          .select()
+          .from(auditLog)
+          .where(sql`payload::text LIKE ${`%${taskBId}%`}`);
+        expect(auditsByContainment).toHaveLength(0);
 
         // Cleanup.
         await runInTenant(tenantB.ctx, async (tx) => {

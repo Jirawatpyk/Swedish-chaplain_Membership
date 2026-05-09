@@ -18,7 +18,7 @@
  */
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   AlertDialog,
@@ -35,17 +35,21 @@ export interface TaskActionDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /**
-   * Called WHEN the dialog is closing (`open` prop becomes false).
-   * Use to reset dialog-internal form state (textarea / combobox /
-   * touched flag).
+   * Called WHEN the dialog is closing (`open` prop transitions from
+   * true → false), regardless of who initiated the close. Use to
+   * reset dialog-internal form state (textarea / combobox / touched
+   * flag).
    *
-   * R6 IMP-6 close — fires on BOTH:
-   *   1. base-ui internal close (Escape, click outside) via
-   *      `onOpenChange(false)`, AND
-   *   2. parent flipping `open={false}` after a successful submit
-   *      (via `useEffect` watching `open`). The earlier implementation
-   *      only handled (1) — note state could leak between dialog
-   *      sessions.
+   * R6 IMP-6 + R7 C3-4 close — fires exactly ONCE per close, via a
+   * `useRef`-guarded `useEffect`. The fix:
+   *   1. Skips initial mount (`open=false` is the default state, not
+   *      a close transition).
+   *   2. Eliminates the prior double-fire on user-driven close
+   *      (`onOpenChange(false)` + useEffect both ran the handler).
+   *   Now `onClose` fires for both paths:
+   *     - Base-ui internal close (Escape, click outside)
+   *     - Parent flipping `open={false}` after successful submit
+   *   ...via the single useEffect transition watcher.
    */
   readonly onClose?: () => void;
   readonly title: string;
@@ -81,29 +85,31 @@ export function TaskActionDialog({
   variant = 'default',
   children,
 }: TaskActionDialogProps) {
-  // R6 IMP-6 close — fire onClose when the parent flips `open={false}`
-  // (e.g. after a successful submit), in addition to base-ui's own
-  // close events. Without this, dialog-internal form state (textarea
-  // value, touched flag, selected combobox option) leaks across the
-  // next dialog session — admin could submit the previous task's note
-  // against a different task.
+  // R6 IMP-6 + R7 C3-4 close — fire onClose exactly once per close,
+  // via a `wasOpen` ref-guarded `useEffect`. The ref skips initial
+  // mount (when `open=false` is the default state, not a close
+  // transition) and ensures both close paths (base-ui internal close
+  // OR parent-flipped success path) trigger the same single handler.
+  // The `onOpenChange` wrapper is now a clean pass-through — no
+  // duplicate `onClose?.()` invocation.
+  //
+  // `onCloseRef` captures the latest `onClose` so callers passing
+  // inline closures don't get a stale view.
+  const wasOpenRef = useRef(false);
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    if (!open) {
-      onClose?.();
+    onCloseRef.current = onClose;
+  });
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+    } else if (wasOpenRef.current) {
+      onCloseRef.current?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          onClose?.();
-        }
-        onOpenChange(next);
-      }}
-    >
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>

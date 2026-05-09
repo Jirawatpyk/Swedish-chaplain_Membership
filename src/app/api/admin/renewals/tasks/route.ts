@@ -39,7 +39,7 @@ import {
   ESCALATION_UNASSIGNED_FILTER,
   InvalidCursorError,
   makeRenewalsDeps,
-  type UnassignedFilter,
+  type AssigneeFilter,
 } from '@/modules/renewals';
 
 const VALID_STATUSES = new Set(['open', 'done', 'skipped'] as const);
@@ -83,10 +83,14 @@ export async function GET(request: NextRequest) {
       ? (statusParam as StatusFilter)
       : 'open';
 
-  let assignedToUserIdFilter: string | UnassignedFilter | undefined;
+  // R7 C3-1 close — discriminated AssigneeFilter (see page.tsx).
+  let assignedToUserIdFilter: AssigneeFilter | undefined;
   if (assignedParam !== null) {
     if (assignedParam === 'me') {
-      assignedToUserIdFilter = ctx.current.user.id;
+      assignedToUserIdFilter = {
+        kind: 'specific',
+        userId: ctx.current.user.id,
+      };
     } else if (assignedParam === 'unassigned') {
       assignedToUserIdFilter = ESCALATION_UNASSIGNED_FILTER;
     } else {
@@ -94,7 +98,7 @@ export async function GET(request: NextRequest) {
       const UUID_RE =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (UUID_RE.test(assignedParam)) {
-        assignedToUserIdFilter = assignedParam;
+        assignedToUserIdFilter = { kind: 'specific', userId: assignedParam };
       } else {
         return errorResponse({
           status: 400,

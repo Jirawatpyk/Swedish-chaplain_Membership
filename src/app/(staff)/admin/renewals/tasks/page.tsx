@@ -36,8 +36,8 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   ESCALATION_UNASSIGNED_FILTER,
   makeRenewalsDeps,
+  type AssigneeFilter,
   type EscalationTaskStatus,
-  type UnassignedFilter,
 } from '@/modules/renewals';
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
@@ -100,17 +100,17 @@ export default async function EscalationTaskQueuePage({
   const overdueRaw = pickFirst(sp['overdue_only']);
   const overdueOnly = overdueRaw === 'true' || overdueRaw === '1';
 
-  let assignedToUserIdFilter: string | UnassignedFilter | undefined;
+  // R7 C3-1 close — build a discriminated AssigneeFilter so typos
+  // cannot reach the repo. The route handler also runtime-validates
+  // userId UUID shape for defence-in-depth.
+  let assignedToUserIdFilter: AssigneeFilter | undefined;
   if (assignment === 'mine') {
-    assignedToUserIdFilter = session.user.id;
+    assignedToUserIdFilter = { kind: 'specific', userId: session.user.id };
   } else if (assignment === 'unassigned') {
     assignedToUserIdFilter = ESCALATION_UNASSIGNED_FILTER;
-  } else {
-    // Allow direct UUID via ?assignment=<uuid> for sharing a colleague's
-    // tray (defence-in-depth: only accept on UUID shape).
-    if (assignmentRaw !== undefined && UUID_RE.test(assignmentRaw)) {
-      assignedToUserIdFilter = assignmentRaw;
-    }
+  } else if (assignmentRaw !== undefined && UUID_RE.test(assignmentRaw)) {
+    // Direct UUID via ?assignment=<uuid> for sharing a colleague's tray.
+    assignedToUserIdFilter = { kind: 'specific', userId: assignmentRaw };
   }
 
   let queueItems: Awaited<

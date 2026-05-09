@@ -44,6 +44,7 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
+import { logUnexpectedError } from './_lib/log-unexpected-error';
 import {
   asTaskId,
   ESCALATION_ASSIGNEE_ROLES,
@@ -183,9 +184,10 @@ export async function createEscalationTask(
         // Constitution Principle VIII reverse-direction atomicity — an
         // audit emit failure inside the tx MUST propagate so the outer
         // runInTenant rolls the insertIfAbsent back.
-        logger.error(
+        // R7 IMP-B close — demoted to warn (breadcrumb only).
+        logger.warn(
           { err: e instanceof Error ? e.message : String(e), taskId },
-          '[create-escalation-task] audit emit failed inside tx — rolling back',
+          '[create-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
         );
         throw e;
       }
@@ -197,16 +199,12 @@ export async function createEscalationTask(
       });
     });
   } catch (e) {
-    // R6 C-2 close — log before wrapping (see complete-escalation-task).
-    logger.error(
-      {
-        err: e instanceof Error ? e : new Error(String(e)),
-        tenantId: rawInput.tenantId,
-        memberId: rawInput.memberId,
-        correlationId: rawInput.correlationId,
-      },
-      '[create-escalation-task] unexpected error → server_error',
-    );
+    // R6 C-2 + R7 S-3 close — shared logUnexpectedError helper.
+    logUnexpectedError('create-escalation-task', e, {
+      tenantId: rawInput.tenantId,
+      memberId: rawInput.memberId,
+      correlationId: rawInput.correlationId,
+    });
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

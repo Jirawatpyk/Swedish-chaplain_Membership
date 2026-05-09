@@ -23,6 +23,7 @@ import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
+import { logUnexpectedError } from './_lib/log-unexpected-error';
 import {
   parseTaskId,
   type TaskId,
@@ -132,9 +133,13 @@ export async function completeEscalationTask(
           },
         );
       } catch (e) {
-        logger.error(
+        // R7 IMP-B close — demoted to logger.warn (breadcrumb only).
+        // The outer catch's logger.error is the canonical Sentry-
+        // alerting incident; inner ERROR-severity caused double-noise
+        // because the same exception bubbled out and re-logged.
+        logger.warn(
           { err: e instanceof Error ? e.message : String(e), taskId },
-          '[complete-escalation-task] audit emit failed inside tx — rolling back',
+          '[complete-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
         );
         throw e;
       }
@@ -151,20 +156,16 @@ export async function completeEscalationTask(
     if (e instanceof EscalationTaskNotFoundError) {
       return err({ kind: 'task_not_open' });
     }
-    // R6 C-2 close — log the underlying exception BEFORE wrapping it
-    // into a server_error Result. Without this, a real DB outage /
-    // advisory-lock contention / RLS violation surfaces as a generic
-    // 500 toast and produces ZERO Sentry signal (the route's outer
-    // catch never fires because the use-case already returned ok-ish).
-    logger.error(
-      {
-        err: e instanceof Error ? e : new Error(String(e)),
-        tenantId: input.tenantId,
-        taskId: input.taskId,
-        correlationId: input.correlationId,
-      },
-      '[complete-escalation-task] unexpected error → server_error',
-    );
+    // R6 C-2 + R7 S-3 close — log the underlying exception BEFORE
+    // wrapping it into a server_error Result. The shared helper
+    // centralises the log tag ('[<use-case>] unexpected error →
+    // server_error') and the err+ctx shape across all 4 escalation
+    // use-cases.
+    logUnexpectedError('complete-escalation-task', e, {
+      tenantId: input.tenantId,
+      taskId: input.taskId,
+      correlationId: input.correlationId,
+    });
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

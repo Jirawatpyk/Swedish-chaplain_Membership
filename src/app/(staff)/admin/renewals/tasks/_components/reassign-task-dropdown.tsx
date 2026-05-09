@@ -147,7 +147,23 @@ export function ReassignTaskDropdown({
           {t('assignee_label')}
         </span>
         {loadError ? (
-          <p className="text-sm text-destructive">{t('load_error')}</p>
+          // R7 IMP-G close — wire the dormant `reassign_dialog.retry`
+          // i18n key. Resetting `users=null` + `loadError=false`
+          // re-triggers the lazy-load useEffect on the next render.
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-destructive">{t('load_error')}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setLoadError(false);
+                setUsers(null);
+              }}
+            >
+              {t('retry')}
+            </Button>
+          </div>
         ) : (
           <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
             <PopoverTrigger

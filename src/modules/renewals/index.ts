@@ -196,6 +196,8 @@ export {
   ESCALATION_UNASSIGNED_FILTER,
   EscalationTaskNotFoundError,
   InvalidCursorError,
+  isUnassignedFilter,
+  type AssigneeFilter,
   type RenewalEscalationTaskRepo,
   type NewEscalationTaskInput,
   type ListEscalationTasksOpts,

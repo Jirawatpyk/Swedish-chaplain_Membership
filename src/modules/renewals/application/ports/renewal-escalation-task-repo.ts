@@ -32,51 +32,63 @@ export interface ListEscalationTasksOpts {
   readonly pageSize: number;
   readonly statusFilter?: ReadonlyArray<EscalationTaskStatus>;
   /**
-   * Per-user-tray filter. Accepts:
-   *   - A specific user UUID — matches `assigned_to_user_id = <uuid>`
-   *   - `ESCALATION_UNASSIGNED_FILTER` constant (NOT a string literal)
-   *     — matches `assigned_to_user_id IS NULL`.
+   * Per-user-tray filter. Discriminated union — typos are
+   * compile-time errors because there is no free-form `string` slot.
    *
-   * Round 5 I-8 + R6 C-4 close — the prior narrowing
-   * `string | typeof ESCALATION_UNASSIGNED_FILTER` collapsed to bare
-   * `string` (TS literal-into-string widening) so typos like
-   * `'__unassined__'` compiled fine. The fix uses a `unique symbol`
-   * sentinel value that does NOT widen with `string`. Callers MUST
-   * import the constant by name; arbitrary strings are valid only as
-   * UUIDs (the route handler runtime-validates).
+   *   - `{ kind: 'specific', userId: '<uuid>' }` — matches
+   *     `assigned_to_user_id = <uuid>`. The route handler still
+   *     runtime-validates `userId` as a UUID for defence-in-depth.
+   *   - `ESCALATION_UNASSIGNED_FILTER` (the `{ kind: 'unassigned' }`
+   *     singleton) — matches `assigned_to_user_id IS NULL` (tasks
+   *     assigned by role only).
+   *
+   * R7 C3-1 close — the prior `string | UnassignedFilter` union
+   * collapsed to bare `string` at the call site (TS literal-into-
+   * string widening) so typos like `'__unassined__'` compiled. The
+   * discriminated union has no `string` slot at all; the only way to
+   * supply a userId is through the `kind: 'specific'` arm.
    */
-  readonly assignedToUserIdFilter?: string | UnassignedFilter;
+  readonly assignedToUserIdFilter?: AssigneeFilter;
   readonly overdueOnly?: boolean;
   readonly sort?: 'due_at_asc' | 'due_at_desc' | 'created_at_desc';
 }
 
 /**
- * F8 Phase 8 T214 + R6 C-4 close — unassigned-tray sentinel for
- * `assignedToUserIdFilter`.
- *
- * Implemented as a unique-symbol-typed Object so it does NOT widen
- * with `string` in a union. A typo like `'__unassined__'` is now a
- * compile error (cannot match the symbol-tagged shape).
+ * F8 Phase 8 T214 + R7 C3-1 close — assignee filter discriminated
+ * union. No `string` slot anywhere; typos are compile-time errors
+ * because the only way to construct a filter is through one of the
+ * two named `kind` arms.
  *
  * The Drizzle adapter (`drizzle-renewal-escalation-task-repo.ts`)
- * detects the sentinel via reference equality.
+ * narrows on `kind` exhaustively.
  */
-declare const unassignedFilterBrand: unique symbol;
-export type UnassignedFilter = { readonly [unassignedFilterBrand]: true };
-export const ESCALATION_UNASSIGNED_FILTER: UnassignedFilter = Object.freeze({
-  [Symbol.for('renewals.escalation.unassigned-filter')]: true,
-} as unknown as UnassignedFilter);
+export type AssigneeFilter =
+  | { readonly kind: 'specific'; readonly userId: string }
+  | { readonly kind: 'unassigned' };
 
 /**
- * Type guard for the sentinel. Used by repo adapters to narrow
- * `string | UnassignedFilter` unions; the reference-equality check
- * doesn't narrow at the type level because TS can't see through the
- * `unique symbol` brand without a guard helper.
+ * Singleton for the unassigned-tray case. Frozen for safety — the
+ * sentinel is identity-stable across the module graph.
+ *
+ * Backward-compat alias: pre-R7 code referenced `UnassignedFilter`
+ * type; that name is now exported as the unassigned arm of the
+ * discriminated union for callers that imported it.
+ */
+export const ESCALATION_UNASSIGNED_FILTER: AssigneeFilter = Object.freeze({
+  kind: 'unassigned',
+});
+
+export type UnassignedFilter = Extract<AssigneeFilter, { kind: 'unassigned' }>;
+
+/**
+ * Type guard for the sentinel. After R7 C3-1 the discriminated union
+ * narrows automatically via `kind`; this helper remains as a stable
+ * symbol for adapters that prefer the explicit predicate form.
  */
 export function isUnassignedFilter(
-  value: string | UnassignedFilter,
+  value: AssigneeFilter,
 ): value is UnassignedFilter {
-  return value === ESCALATION_UNASSIGNED_FILTER;
+  return value.kind === 'unassigned';
 }
 
 export interface EscalationTaskPage {

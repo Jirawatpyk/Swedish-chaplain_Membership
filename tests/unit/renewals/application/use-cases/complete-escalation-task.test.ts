@@ -163,14 +163,19 @@ describe('completeEscalationTask (T209)', () => {
   // the task between findById and the partial-unique UPDATE; the repo
   // throws EscalationTaskNotFoundError. The use-case MUST remap to
   // task_not_open (409), NOT server_error (500).
-  it('TOCTOU race — transitionStatus throws → kind:task_not_open (not server_error)', async () => {
-    const { deps, transitionStatusMock } = fakeDeps(openTaskRow());
+  // R7 IMP-C close — also assert audit was NOT emitted (Constitution
+  // Principle VIII order invariant: audit only fires AFTER state
+  // mutation succeeds; a future refactor moving audit before
+  // transitionStatus would silently emit phantom "task closed" rows).
+  it('TOCTOU race — transitionStatus throws → kind:task_not_open + zero audit emit', async () => {
+    const { deps, transitionStatusMock, emitInTxMock } = fakeDeps(openTaskRow());
     transitionStatusMock.mockImplementationOnce(async () => {
       throw new EscalationTaskNotFoundError(TASK_UUID);
     });
     const r = await completeEscalationTask(deps, baseInput);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('task_not_open');
+    expect(emitInTxMock).not.toHaveBeenCalled();
   });
 
   it('reverse-direction atomicity — audit failure rolls back', async () => {

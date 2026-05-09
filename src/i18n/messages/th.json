@@ -2089,9 +2089,9 @@
           "manual_admin_reactivation_review": "ตรวจสอบการเปิดใช้ใหม่"
         },
         "yearInCycle": {
-          "pill": "ปีที่ {year} จาก {total}",
-          "aria_label": "ปีที่ {year} จาก {total} · {taskType} · {company}",
-          "aria_label_no_company": "ปีที่ {year} จาก {total} · {taskType}"
+          "pill": "ปีที่ {year} ของ {total} ปี",
+          "aria_label": "ปีที่ {year} ของ {total} ปี · {taskType} · {company}",
+          "aria_label_no_company": "ปีที่ {year} ของ {total} ปี · {taskType}"
         },
         "empty_state": {
           "title": "ไม่มีงานที่ค้างอยู่",
