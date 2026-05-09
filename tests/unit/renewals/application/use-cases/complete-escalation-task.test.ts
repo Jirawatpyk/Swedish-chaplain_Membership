@@ -186,7 +186,6 @@ describe('completeEscalationTask (T209)', () => {
   // this fallback path be exercised (was uncovered pre-R10).
   it('non-Error throw — wrapped via String(e) + kind:server_error', async () => {
     const { deps } = fakeDeps(openTaskRow(), async () => {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw 'audit-DB-down-string';
     });
     const r = await completeEscalationTask(deps, baseInput);

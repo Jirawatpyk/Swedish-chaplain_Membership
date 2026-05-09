@@ -26,6 +26,12 @@ function buildTask(
     assignedToRole: 'admin' as const,
     assignedToUserId: null,
     dueAt: '2026-06-01T00:00:00Z',
+    // R10 W-1 close — yearInCycle promoted to RenewalEscalationTaskBase
+    // by R10 S5; provide it explicitly so the factory output satisfies
+    // the domain contract without needing the `as RenewalEscalationTask`
+    // type-cast escape hatch (which would hide future missing fields).
+    // Default 1 matches the DB column DEFAULT for single-year cycles.
+    yearInCycle: 1,
     status: 'open' as const,
     outcomeNote: null,
     skippedReason: null,
@@ -34,6 +40,14 @@ function buildTask(
     createdAt: '2026-05-01T00:00:00Z',
     closedAt: null,
     ...overrides,
+    // R10 W-1 close — `as RenewalEscalationTask` is STILL required after
+    // adding `yearInCycle: 1` because `RenewalEscalationTask` is a
+    // discriminated union over `status` (open / done / skipped) with
+    // status-conditional anchor fields. Spread merging cannot narrow the
+    // DU on its own — TS reports the literal {} as wider than any of the
+    // 3 arms. The cast is a load-bearing escape hatch for the test
+    // factory, NOT a missing-field suppressor: every required field is
+    // explicitly set above.
   } as RenewalEscalationTask;
 }
 

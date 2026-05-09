@@ -31,6 +31,7 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -122,6 +123,22 @@ export default async function EscalationTaskQueuePage({
   let overdueCount = 0;
   let hasError = false;
 
+  // R10 T277g close — page-load wall-clock for F8-SLO-Esc-1 (queue load
+  // p95 < 500 ms @ 200 open tasks per tenant). Recorded once per render
+  // around the bundled list + countMatching calls.
+  const queueLoadStartMs = Date.now();
+  // Resolve the assignment filter discriminator once for the metric
+  // label below. Bounded enum: all | mine | unassigned | specific
+  // (specific = direct ?assignment=<uuid> for colleague-tray sharing).
+  const assignmentLabel: 'all' | 'mine' | 'unassigned' | 'specific' =
+    assignedToUserIdFilter === undefined
+      ? 'all'
+      : assignedToUserIdFilter === ESCALATION_UNASSIGNED_FILTER
+        ? 'unassigned'
+        : assignment === 'mine'
+          ? 'mine'
+          : 'specific';
+
   try {
     // E1 close — `listForAdminQueue` JOINs members + renewal_cycles +
     // membership_plans so the AS1-mandated member-name + tier + expiry
@@ -160,12 +177,30 @@ export default async function EscalationTaskQueuePage({
           overdueThresholdDays: 3,
         },
       );
+      // R10 T277g close — emit overdue-count gauge with the filtered
+      // value. Cardinality bound by (tenant_id) only; safe.
+      renewalsMetrics.observeEscalationTaskOverdueCount(
+        tenantCtx.slug,
+        overdueCount,
+      );
     }
   } catch (e) {
     hasError = true;
     logger.error(
       { err: e instanceof Error ? e : new Error(String(e)) },
       'admin.renewals.tasks.page_load_failed',
+    );
+  } finally {
+    // R10 T277g close — record duration on every render path (success
+    // OR error) so the SLO histogram captures the worst-case latency
+    // including DB-error cold paths.
+    renewalsMetrics.escalationTaskQueueLoadDurationMs(
+      Date.now() - queueLoadStartMs,
+      {
+        tenant: tenantCtx.slug,
+        assignment_filter: assignmentLabel,
+        status_filter: status,
+      },
     );
   }
 

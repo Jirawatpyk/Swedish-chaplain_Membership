@@ -54,7 +54,7 @@ import { DoneTaskDialog } from './done-task-dialog';
 import { SkipTaskDialog } from './skip-task-dialog';
 import { ReassignTaskDropdown } from './reassign-task-dropdown';
 import { StatusTablist, STATUS_TABS, type StatusTab } from './status-tablist';
-import { selectActionErrorKey } from './_describe-error';
+import { selectActionErrorKey } from './describe-error';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
 
 export interface EscalationTaskQueueItem {
@@ -151,7 +151,7 @@ const OVERDUE_HIGHLIGHT_MS = OVERDUE_HIGHLIGHT_DAYS * 24 * 60 * 60 * 1000;
  */
 // R10 S11 close — WIRE_ERROR_CODES + isWireErrorCode + the pure
 // `selectActionErrorKey` dispatcher were extracted to sibling
-// `_describe-error.ts` so the 8 wire codes × 3 actions × forbidden-
+// `describe-error.ts` so the 8 wire codes × 3 actions × forbidden-
 // override branch can be exercised by Vitest without rendering the
 // component. The component imports the dispatcher directly.
 
@@ -266,7 +266,7 @@ export function EscalationTaskQueue({
     action: 'done' | 'skip' | 'reassign',
     rawCode: string,
   ): string {
-    // R10 S11 close — dispatcher logic moved to `_describe-error.ts`
+    // R10 S11 close — dispatcher logic moved to `describe-error.ts`
     // for unit-testability. The component just resolves the returned
     // i18n key through `t(...)`.
     return t(selectActionErrorKey(action, rawCode));

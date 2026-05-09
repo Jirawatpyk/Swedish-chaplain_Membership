@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import { logUnexpectedError } from './_lib/log-unexpected-error';
@@ -124,6 +125,11 @@ export async function skipEscalationTask(
         logger.warn(
           { err: e instanceof Error ? e.message : String(e), taskId },
           '[skip-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
+        );
+        // R10 T277g close — F8-A2 alarm rolls up via this counter.
+        renewalsMetrics.escalationTaskAuditEmitFailed(
+          input.tenantId,
+          'skipped',
         );
         throw e;
       }

@@ -12,6 +12,12 @@
  * union — extracting it removes the need for a heavyweight
  * @testing-library/react render to exercise 8 wire codes × 3 actions
  * = 24 cases.
+ *
+ * R10 regression-review S-1 close — filename initially used the `_`
+ * underscore prefix (private-folder convention) but the helper is
+ * imported by both the component and the unit test, so it is no longer
+ * "private to a single consumer". Renamed to `describe-error.ts` to
+ * match the S12 precedent (`task-action-dialog.tsx` rename).
  */
 export const WIRE_ERROR_CODES = [
   'task_not_open',

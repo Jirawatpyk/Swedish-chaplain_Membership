@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   errorResponse,
@@ -75,6 +76,14 @@ export async function POST(
       correlationId: ctx.correlationId,
     });
     if (!result.ok) {
+      // R10 T277g close — emit per-outcome counter for F8-A8 alarm
+      // (renewals_escalation_task_action_total{outcome='server_error'}
+      // ≥ 3 in any 5-min window).
+      renewalsMetrics.escalationTaskAction(
+        tenantCtx.slug,
+        'done',
+        result.error.kind,
+      );
       switch (result.error.kind) {
         case 'invalid_input':
           return errorResponse({
@@ -105,6 +114,7 @@ export async function POST(
       const _exhaustive: never = result.error;
       return _exhaustive;
     }
+    renewalsMetrics.escalationTaskAction(tenantCtx.slug, 'done', 'success');
     return successResponse(
       {
         task_id: result.value.taskId,
@@ -120,6 +130,11 @@ export async function POST(
         taskId,
       },
       'admin.renewals.tasks.done_unexpected_error',
+    );
+    renewalsMetrics.escalationTaskAction(
+      tenantCtx.slug,
+      'done',
+      'server_error',
     );
     return errorResponse({
       status: 500,

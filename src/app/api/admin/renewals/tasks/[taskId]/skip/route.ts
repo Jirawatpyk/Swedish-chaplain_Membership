@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   errorResponse,
@@ -76,6 +77,12 @@ export async function POST(
       correlationId: ctx.correlationId,
     });
     if (!result.ok) {
+      // R10 T277g close — F8-A8 alarm rolls up via this counter.
+      renewalsMetrics.escalationTaskAction(
+        tenantCtx.slug,
+        'skip',
+        result.error.kind,
+      );
       switch (result.error.kind) {
         case 'invalid_input':
           return errorResponse({
@@ -106,6 +113,7 @@ export async function POST(
       const _exhaustive: never = result.error;
       return _exhaustive;
     }
+    renewalsMetrics.escalationTaskAction(tenantCtx.slug, 'skip', 'success');
     return successResponse(
       {
         task_id: result.value.taskId,
@@ -121,6 +129,11 @@ export async function POST(
         taskId,
       },
       'admin.renewals.tasks.skip_unexpected_error',
+    );
+    renewalsMetrics.escalationTaskAction(
+      tenantCtx.slug,
+      'skip',
+      'server_error',
     );
     return errorResponse({
       status: 500,

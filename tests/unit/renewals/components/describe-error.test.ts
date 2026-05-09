@@ -15,7 +15,7 @@ import {
   WIRE_ERROR_CODES,
   isWireErrorCode,
   selectActionErrorKey,
-} from '@/app/(staff)/admin/renewals/tasks/_components/_describe-error';
+} from '@/app/(staff)/admin/renewals/tasks/_components/describe-error';
 
 describe('selectActionErrorKey (R10 S11)', () => {
   it('forbidden → per-action key for done', () => {

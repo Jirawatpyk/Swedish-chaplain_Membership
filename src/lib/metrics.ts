@@ -1838,4 +1838,302 @@ export const renewalsMetrics = {
       });
     },
   },
+
+  // ==========================================================================
+  // F8 Phase 9 / T231 — business-volume counters per spec FR-054 + § 23.1
+  //
+  // Distinct from the operational counters above (bounce-hook-failed,
+  // audit-emit-failed, redis-fallback) which page on incident; these
+  // counters power the ops dashboard view of "what F8 actually did
+  // today" and feed the SLO panels per docs/observability.md § 23.2.
+  //
+  // Cardinality discipline: every label is a bounded enum or small-
+  // cardinality string. NEVER use member id / email / IP as a label —
+  // those belong in traces + logs, not metrics.
+  // ==========================================================================
+
+  /**
+   * `renewals_reminders_sent_total{tier_bucket, offset_day}` — total
+   * count of reminder emails successfully dispatched. Pivot table for
+   * dispatcher health; correlates with Resend deliverability metrics.
+   * `tier_bucket` ∈ 5-value enum (regular | premium | partner_silver |
+   * partner_gold | partner_diamond). `offset_day` ∈ ~6-value bounded
+   * set (90 / 60 / 30 / 14 / 7 / 0).
+   */
+  remindersSent(tier_bucket: string, offset_day: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminders_sent_total',
+        'F8 reminder emails successfully dispatched (FR-010)',
+      ).add(1, { tier_bucket, offset_day: String(offset_day) });
+    });
+  },
+
+  /**
+   * `renewals_reminders_skipped_total{reason}` — count of reminders
+   * the dispatcher chose NOT to send, by skip reason (FR-012). Pairs
+   * with `dispatch-one-cycle.ts:emitSkipAudit` skip-reason matrix.
+   * Dashboard view: stack-bar across reasons over time. Sustained
+   * spike in `bounce_threshold` or `member_opted_out` rates may
+   * signal a drop in chamber-side data hygiene.
+   */
+  remindersSkipped(reason: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminders_skipped_total',
+        'F8 reminder skipped at dispatch (FR-012 skip-reason taxonomy)',
+      ).add(1, { reason });
+    });
+  },
+
+  /**
+   * `renewals_reminders_failed_total{reason}` — count of reminders
+   * that failed at the gateway boundary (FR-010a retry-budget path).
+   * `reason` is a Resend-error kind (`network` | `provider_5xx` |
+   * `auth` | `unknown`). Sustained non-zero is an alert signal.
+   */
+  remindersFailed(reason: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminders_failed_total',
+        'F8 reminder dispatch failed at gateway boundary (FR-010a)',
+      ).add(1, { reason });
+    });
+  },
+
+  /**
+   * `renewals_self_service_completed_total{tenant}` — successful
+   * member-confirm events on `/portal/renewal/[memberId]/confirm`
+   * (US3). Per-tenant cardinality is bounded (single-digit tenants in
+   * MVP). Powers the conversion-funnel dashboard alongside the
+   * `self_service_failed_total` denominator.
+   */
+  selfServiceCompleted(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_self_service_completed_total',
+        'F8 member self-service renewal confirm succeeded (US3)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * `renewals_self_service_failed_total{tenant, reason}` — confirm
+   * failures by reason (`f4_invoice_create_failed` |
+   * `payment_failed` | `cycle_terminal` | `token_invalid`). The F4
+   * + F5 integration boundaries surface here; sustained
+   * `f4_invoice_create_failed` is a stop-the-line for the
+   * F4 onPaid bridge.
+   */
+  selfServiceFailed(tenant: string, reason: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_self_service_failed_total',
+        'F8 member self-service renewal confirm failed (US3)',
+      ).add(1, { tenant, reason });
+    });
+  },
+
+  /**
+   * `at_risk_scores_recomputed_total{tenant}` — total score writes
+   * per recompute pass. Pairs with the per-tenant `recompute_duration_ms`
+   * histogram already in the operational block above. Sustained
+   * step-function drop = active-member churn signal.
+   */
+  atRiskScoresRecomputed(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'at_risk_scores_recomputed_total',
+        'F8 at-risk score recomputed per member per pass (FR-029)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * `at_risk_threshold_crossings_total{tenant, from_band, to_band}` —
+   * count of members whose risk band moved between bands (low /
+   * medium / high / critical) on a recompute pass. Both directions
+   * (improving + degrading) so dashboards can plot net flow.
+   * Bounded label cardinality: 4 × 4 = 16 combinations max per
+   * tenant. Crossings into `high`/`critical` are the value-add
+   * signal that powers the at-risk widget badge.
+   */
+  atRiskThresholdCrossing(
+    tenant: string,
+    from_band: string,
+    to_band: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'at_risk_threshold_crossings_total',
+        'F8 at-risk band crossing per member per recompute pass (FR-029)',
+      ).add(1, { tenant, from_band, to_band });
+    });
+  },
+
+  /**
+   * `tier_upgrade_suggestions_created_total{tenant, target_tier}` —
+   * cron creates a new `open` suggestion. `target_tier` is the same
+   * 5-bucket enum as `remindersSent`. Pivot view: cross-tenant
+   * funnel of suggestions vs accepts vs dismisses (FR-037 → FR-039).
+   */
+  tierUpgradeSuggestionsCreated(
+    tenant: string,
+    target_tier: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'tier_upgrade_suggestions_created_total',
+        'F8 cron created a tier-upgrade suggestion (FR-037)',
+      ).add(1, { tenant, target_tier });
+    });
+  },
+
+  /**
+   * `tier_upgrade_suggestions_accepted_total{tenant}` — admin Accept
+   * action on the tier-upgrade queue (FR-039). Dashboard ratio with
+   * `created_total` measures admin engagement; sustained zero
+   * suggests UI-discoverability or copy issues.
+   */
+  tierUpgradeSuggestionsAccepted(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'tier_upgrade_suggestions_accepted_total',
+        'F8 admin accepted a tier-upgrade suggestion (FR-039)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * Observable gauges for renewal_cycles state. Coordinator routes
+   * call `observeCycleStateGauge(tenant, 'active' | 'in_grace' |
+   * 'lapsed_total', count)` after each cron pass; the OTel async
+   * observer reads from `gaugeValues` at scrape time.
+   *
+   * Cardinality bound: small-tenant-count × 3-state-enum. Lazy-
+   * registers the observable on first call per state.
+   */
+  observeCycleStateGauge(
+    tenant: string,
+    state: 'active' | 'in_grace' | 'lapsed_total',
+    value: number,
+  ): void {
+    safeMetric(() => {
+      const gaugeName = `renewals_cycles_${state}`;
+      const stateBucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+      stateBucket.set(tenant, value);
+      gaugeValues.set(gaugeName, stateBucket);
+
+      if (!observableGauges.has(gaugeName)) {
+        const descriptions: Record<typeof state, string> = {
+          active: 'F8 active renewal cycles per tenant (FR-046)',
+          in_grace: 'F8 cycles within grace-period window per tenant (FR-004)',
+          lapsed_total: 'F8 lapsed cycles per tenant (FR-007a denominator)',
+        };
+        const gauge = meter().createObservableGauge(gaugeName, {
+          description: descriptions[state],
+        });
+        observableGauges.set(gaugeName, gauge);
+        gauge.addCallback((result) => {
+          const bucket = gaugeValues.get(gaugeName);
+          if (!bucket) return;
+          for (const [tenantLabel, count] of bucket.entries()) {
+            result.observe(count, { tenant: tenantLabel });
+          }
+        });
+      }
+    });
+  },
+
+  // ============================================================
+  // F8 Phase 8 — Escalation task queue (R10 W9 + T277g close)
+  // ============================================================
+  // Wires the 4 metrics documented at `docs/observability.md` § 23
+  // Phase 8 R10 W9 forward block. F8-SLO-Esc-1 + F8-A8 reference.
+  // ============================================================
+
+  /**
+   * `renewals_escalation_task_queue_load_duration_ms` — `tasks/page.tsx`
+   * server component records the wall-clock for the bundled `repo.list`
+   * + `repo.countMatching` calls. Powers F8-SLO-Esc-1 (p95 < 500 ms
+   * @ 200 open tasks per tenant). Labels kept low-cardinality:
+   * `tenant_id`, `assignment_filter ∈ {all,mine,unassigned,specific}`,
+   * `status_filter ∈ {open,done,skipped}`.
+   */
+  escalationTaskQueueLoadDurationMs(
+    ms: number,
+    labels: {
+      tenant: string;
+      assignment_filter: 'all' | 'mine' | 'unassigned' | 'specific';
+      status_filter: 'open' | 'done' | 'skipped';
+    },
+  ): void {
+    safeMetric(() => {
+      histogram(
+        'renewals_escalation_task_queue_load_duration_ms',
+        'F8 escalation task queue page-load latency, p95 target 500ms (F8-SLO-Esc-1)',
+        'ms',
+      ).record(ms, labels);
+    });
+  },
+
+  /**
+   * `renewals_escalation_task_action_total` — done/skip/reassign POST
+   * outcomes. `outcome` discriminator covers the Result.error union +
+   * happy path. Powers F8-A8 alarm on `outcome="server_error" ≥ 3 / 5min`.
+   */
+  escalationTaskAction(
+    tenant: string,
+    action: 'done' | 'skip' | 'reassign',
+    outcome:
+      | 'success'
+      | 'task_not_found'
+      | 'task_not_open'
+      | 'invalid_input'
+      | 'server_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_escalation_task_action_total',
+        'F8 escalation task admin action outcomes (done/skip/reassign × success/4xx/5xx)',
+      ).add(1, { tenant, action, outcome });
+    });
+  },
+
+  /**
+   * `renewals_escalation_task_overdue_count` — async observable gauge.
+   * `tasks/page.tsx` calls this after each page-load with the
+   * `countMatching({overdueOnly:true,overdueThresholdDays:3})` value.
+   * Powers FR-045 banner-count panel.
+   */
+  observeEscalationTaskOverdueCount(tenant: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'renewals_escalation_task_overdue_count',
+        'F8 open escalation tasks more than 3 days past due, per tenant (FR-045)',
+        { tenant },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `renewals_escalation_task_audit_emit_failed_total` — incremented in
+   * the catch arm of the 3 mutating use-cases (complete/skip/reassign)
+   * when `auditEmitter.emitInTx` fails inside the tx. The use-case
+   * still propagates the throw to roll the state change back per
+   * Constitution VIII; this counter feeds F8-A2 (rolls into the existing
+   * audit-emit alarm on the coordinator namespace).
+   */
+  escalationTaskAuditEmitFailed(
+    tenant: string,
+    event_type: 'completed' | 'skipped' | 'reassigned',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_escalation_task_audit_emit_failed_total',
+        'F8 escalation task audit emit failed inside use-case tx (rolls back per Constitution VIII)',
+      ).add(1, { tenant, event_type });
+    });
+  },
 } as const;
