@@ -129,8 +129,39 @@ export async function seedF8Renewals(): Promise<SeedResult | null> {
         ${lapsedExpiresAt.toISOString()}::timestamptz, 'lapsed'
       )
     `;
+    // Round 6 W-015 — seed an OPEN tier_upgrade_suggestion for the same
+    // e2e-member so `auto-tier-upgrade.spec.ts` AlertDialog focus test
+    // actually runs (was vacuous-skip per FR-058 §4 Cancel-default
+    // assertion). Idempotency: drop any existing open/pending
+    // suggestion for this member first (other terminal-status rows
+    // stay so audit history is preserved).
+    await sql`
+      DELETE FROM tier_upgrade_suggestions
+      WHERE tenant_id = ${TENANT_ID}
+        AND member_id = ${member.member_id}::uuid
+        AND status IN ('open', 'accepted_pending_apply')
+    `;
+    const suggestionId = randomUUID();
+    await sql`
+      INSERT INTO tier_upgrade_suggestions (
+        tenant_id, suggestion_id, member_id,
+        from_plan_id, to_plan_id,
+        reason_code, evidence_jsonb, status
+      )
+      VALUES (
+        ${TENANT_ID}, ${suggestionId}::uuid, ${member.member_id}::uuid,
+        'regular', 'premium',
+        'declared_turnover_above_threshold',
+        ${JSON.stringify({
+          reasonCode: 'declared_turnover_above_threshold',
+          turnoverThb: 120_000_000,
+          thresholdMetAt: new Date().toISOString(),
+        })}::jsonb,
+        'open'
+      )
+    `;
     console.log(
-      `[e2e seed renewals] OK upcoming=${cycleId} lapsed=${lapsedCycleId} member=${member.member_id} expires=${expiresAt.toISOString()}`,
+      `[e2e seed renewals] OK upcoming=${cycleId} lapsed=${lapsedCycleId} suggestion=${suggestionId} member=${member.member_id} expires=${expiresAt.toISOString()}`,
     );
     return { cycleId, memberId: member.member_id };
   } finally {
