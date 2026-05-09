@@ -5,20 +5,25 @@
  * an `overdue_count` for the queue-top "X overdue tasks" banner
  * (FR-045).
  *
+ * Round 5 I-3 close — switched from bare `repo.list` to
+ * `repo.listForAdminQueue` so the AS1-mandated member name + tier
+ * bucket + cycle expiry + assignee display name fields appear in the
+ * response shape (`member_company_name`, `member_tier_bucket`,
+ * `cycle_expires_at`, `assigned_to_display_name`). Contract tests +
+ * future external consumers receive the same enriched shape the UI
+ * uses internally via SSR.
+ *
  * Filters (query params):
  *   - `status` — `'open' | 'done' | 'skipped'`. Default `'open'`.
  *   - `assigned_to_user_id` — `'me' | UUID | 'unassigned'`. `'me'`
- *     resolves to the calling admin's user id (per-user-tray filter
- *     T219). `'unassigned'` matches rows where `assigned_to_user_id IS
- *     NULL` (assignee handled by role only).
+ *     resolves to the calling admin's user id. `'unassigned'` matches
+ *     rows where `assigned_to_user_id IS NULL`.
  *   - `task_type` — exact-match string filter (e.g. `'phone_call'`).
  *   - `overdue_only` — `'true'` to filter rows where `due_at < now()`.
  *   - `limit` — 1..100, default 50. `cursor` — opaque string from a
  *     prior page's `next_cursor`.
  *
  * RBAC: `read` (admin + manager allowed; member denied at middleware).
- * `f8_role_violation_blocked` audit emits via the shared helper on
- * the unauthorised path.
  */
 import { type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
@@ -32,6 +37,7 @@ import {
 } from '@/lib/renewals-route-helpers';
 import {
   ESCALATION_UNASSIGNED_FILTER,
+  InvalidCursorError,
   makeRenewalsDeps,
 } from '@/modules/renewals';
 
@@ -101,20 +107,23 @@ export async function GET(request: NextRequest) {
   const overdueOnly = overdueParam === 'true' || overdueParam === '1';
 
   try {
-    const page = await deps.escalationTaskRepo.list(tenantCtx.slug, {
-      pageSize: limit,
-      ...(cursorParam !== null ? { cursor: cursorParam } : {}),
-      statusFilter: [status],
-      ...(assignedToUserIdFilter !== undefined
-        ? { assignedToUserIdFilter }
-        : {}),
-      ...(overdueOnly ? { overdueOnly: true } : {}),
-      sort: 'due_at_asc',
-    });
+    const page = await deps.escalationTaskRepo.listForAdminQueue(
+      tenantCtx.slug,
+      {
+        pageSize: limit,
+        ...(cursorParam !== null ? { cursor: cursorParam } : {}),
+        statusFilter: [status],
+        ...(assignedToUserIdFilter !== undefined
+          ? { assignedToUserIdFilter }
+          : {}),
+        ...(overdueOnly ? { overdueOnly: true } : {}),
+        sort: 'due_at_asc',
+      },
+    );
 
     // Filter by task_type in the result set (small page; no need for a
     // dedicated repo arg). Future Phase 9+ optimisation can push the
-    // filter into the repo.list signature.
+    // filter into the repo signature for stable cursor pagination.
     const items =
       taskTypeParam !== null && taskTypeParam.length > 0
         ? page.items.filter((t) => t.taskType === taskTypeParam)
@@ -138,10 +147,15 @@ export async function GET(request: NextRequest) {
         items: items.map((t) => ({
           task_id: t.taskId,
           member_id: t.memberId,
+          member_company_name: t.memberCompanyName,
+          member_tier_bucket: t.memberTierBucket,
           cycle_id: t.cycleId,
+          cycle_expires_at: t.cycleExpiresAt,
           task_type: t.taskType,
           assigned_to_role: t.assignedToRole,
           assigned_to_user_id: t.assignedToUserId,
+          assigned_to_display_name: t.assignedToDisplayName,
+          assigned_to_email: t.assignedToEmail,
           due_at: t.dueAt,
           status: t.status,
           related_suggestion_id: t.relatedSuggestionId,
@@ -156,6 +170,14 @@ export async function GET(request: NextRequest) {
       ctx.correlationId,
     );
   } catch (e) {
+    // Round 5 I-7 close — surface bad-cursor as 400, not 500.
+    if (e instanceof InvalidCursorError) {
+      return errorResponse({
+        status: 400,
+        code: 'invalid_cursor',
+        correlationId: ctx.correlationId,
+      });
+    }
     logger.error(
       {
         err: e instanceof Error ? e : new Error(String(e)),

@@ -22,6 +22,8 @@ const MEMBER_UUID = '00000000-0000-0000-0000-000000000211';
 const CYCLE_UUID = '11111111-1111-1111-1111-111111110211';
 const TO_USER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1';
 const FROM_USER = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa0';
+// Round 5 I-9 close — actorUserId now zod-validated as UUID.
+const ADMIN_UUID = '33333333-3333-3333-3333-333333330211';
 
 vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -78,12 +80,24 @@ const baseInput = {
   tenantId: TENANT_ID,
   taskId: TASK_UUID,
   toUserId: TO_USER,
-  actorUserId: 'admin-1',
+  actorUserId: ADMIN_UUID,
   actorRole: 'admin' as const,
   correlationId: 'corr-211',
 };
 
 describe('reassignEscalationTask (T211)', () => {
+  // Round 5 I-12 close — manager rejection at the zod gate.
+  it('invalid_input — manager actorRole rejected at zod gate', async () => {
+    const { deps, findByIdMock } = fakeDeps(openTaskRow(null));
+    const r = await reassignEscalationTask(deps, {
+      ...baseInput,
+      actorRole: 'manager' as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+    expect(findByIdMock).not.toHaveBeenCalled();
+  });
+
   it('happy path — from_user_id=null when previously unassigned', async () => {
     const { deps, reassignMock, emitInTxMock } = fakeDeps(openTaskRow(null));
     const r = await reassignEscalationTask(deps, baseInput);
@@ -99,7 +113,7 @@ describe('reassignEscalationTask (T211)', () => {
         task_id: TASK_UUID,
         from_user_id: null,
         to_user_id: TO_USER,
-        actor_user_id: 'admin-1',
+        actor_user_id: ADMIN_UUID,
       },
     });
   });

@@ -23,7 +23,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
-import { TierUpgradeErrorRetry } from './_components/tier-upgrade-error-retry';
+import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
@@ -98,7 +98,7 @@ export default async function TierUpgradeQueuePage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {t('error_state.subtitle')}
               </p>
-              <TierUpgradeErrorRetry
+              <RenewalsErrorRetry
                 label={t('error_state.retry')}
                 retryingLabel={t('error_state.retrying')}
               />

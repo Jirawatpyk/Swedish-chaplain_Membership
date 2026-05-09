@@ -27,6 +27,7 @@ import {
   parseTaskId,
   type TaskId,
 } from '../../domain/renewal-escalation-task';
+import { EscalationTaskNotFoundError } from '../ports/renewal-escalation-task-repo';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth/domain/branded';
@@ -36,7 +37,10 @@ export const completeEscalationTaskInputSchema = z.object({
   taskId: z.string().uuid(),
   /** Optional free-text outcome note. */
   outcomeNote: z.string().trim().max(1000).optional(),
-  actorUserId: z.string().min(1),
+  // Round 5 I-9 close — UUID brand promise: `actor_user_id` is cast to
+  // `UserId` at the audit-emit boundary; the schema MUST narrow to the
+  // brand's structural shape so the cast is justified.
+  actorUserId: z.string().uuid(),
   actorRole: z.literal('admin'),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
@@ -138,6 +142,15 @@ export async function completeEscalationTask(
       return ok({ taskId, closedAt });
     });
   } catch (e) {
+    // Round 5 I-1 close — `transitionStatus` throws this when the
+    // partial-unique `WHERE status='open'` clause loses the TOCTOU
+    // race (another admin already closed the task between findById
+    // and the UPDATE). Map to 409 task_not_open so the UI shows a
+    // clear "already-closed by another admin" toast instead of a
+    // generic 500.
+    if (e instanceof EscalationTaskNotFoundError) {
+      return err({ kind: 'task_not_open' });
+    }
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

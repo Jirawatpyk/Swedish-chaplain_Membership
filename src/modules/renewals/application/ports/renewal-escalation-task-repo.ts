@@ -36,9 +36,15 @@ export interface ListEscalationTasksOpts {
    *   - A specific user UUID — matches `assigned_to_user_id = <uuid>`
    *   - `'__unassigned__'` (Phase 8 T214 sentinel) — matches
    *     `assigned_to_user_id IS NULL` (tasks assigned by role only).
-   * Anything else falls through to a literal `eq()` comparison.
+   *
+   * Round 5 I-8 close — narrow the type so a typo at the call site
+   * (`'__unassined__'`) becomes a compile error rather than a silent
+   * zero-row match. The literal-union form preserves call-site
+   * explicitness while making the magic-string contract type-checked.
    */
-  readonly assignedToUserIdFilter?: string;
+  readonly assignedToUserIdFilter?:
+    | string
+    | typeof ESCALATION_UNASSIGNED_FILTER;
   readonly overdueOnly?: boolean;
   readonly sort?: 'due_at_asc' | 'due_at_desc' | 'created_at_desc';
 }
@@ -62,19 +68,43 @@ export interface EscalationTaskPage {
  * member's name, tier, expiry, suggested action, and links to the
  * member detail page". `task_type` (suggested action) + `cycleId`
  * (link target) come from the base task row; the additional fields
- * here are populated by a LEFT JOIN on `members` + `renewal_cycles`.
+ * here are populated by a LEFT JOIN on `members` + `renewal_cycles` +
+ * `membership_plans`.
  *
  * Modelled as an intersection (NOT `interface … extends …`) because
  * `RenewalEscalationTask` is a discriminated union — TS rejects an
  * interface extending a union.
  *
- * Fields are nullable — defensive against archived members or tasks
- * whose cycle was cancelled (UI falls back to the bare task data).
+ * **Nullability invariant** (Round 5 I-10 close — documented):
+ *   - `memberCompanyName === null` only when `members` row was
+ *     archived AFTER task creation (LEFT JOIN preserves the task row).
+ *   - `memberTierBucket === null` only when the member's `plan_id` was
+ *     deleted OR the `renewal_tier_bucket` column hasn't been
+ *     backfilled for that plan.
+ *   - `cycleExpiresAt === null` only when `cycleId === null` (cycle-
+ *     less task, e.g. `verify_pending_tier_upgrade`) OR when the
+ *     cycle row was hard-deleted (FK is `ON DELETE SET NULL` on
+ *     `renewal_escalation_tasks.cycle_id`). The combination
+ *     `cycleId !== null && cycleExpiresAt === null` is **possible**
+ *     but indicates referential drift — UI should render the task
+ *     without expiry rather than crash.
+ *
+ * The UI (`escalation-task-queue.tsx`) defensively renders an em-dash
+ * fallback for each null field. Do NOT promote these to NOT-NULL at
+ * the type level — the LEFT JOIN cannot guarantee them.
  */
 export type EscalationTaskWithMember = RenewalEscalationTask & {
   readonly memberCompanyName: string | null;
   readonly memberTierBucket: string | null;
   readonly cycleExpiresAt: string | null;
+  /**
+   * Round 5 I-13 close — joined `users.display_name` for the
+   * task's `assigned_to_user_id`. NULL when the assignee is role-only
+   * (no specific user), or when the user record was deleted.
+   */
+  readonly assignedToDisplayName: string | null;
+  /** Round 5 I-13 close — joined `users.email` (fallback display). */
+  readonly assignedToEmail: string | null;
 };
 
 export interface EscalationTaskAdminQueuePage {
@@ -192,5 +222,21 @@ export class EscalationTaskNotFoundError extends Error {
   override readonly name = 'EscalationTaskNotFoundError';
   constructor(public readonly taskId: string) {
     super(`renewal_escalation_tasks row ${taskId} not found`);
+  }
+}
+
+/**
+ * Round 5 I-7 close — `listForAdminQueue` throws this when the keyset
+ * cursor parses as malformed (`<dueAtIso>|<taskId>` shape violated, OR
+ * the date portion is non-parseable, OR the taskId portion is empty).
+ *
+ * Route handlers map to 400 `invalid_cursor` so the client clears the
+ * cursor and re-fetches the first page, instead of silently returning
+ * page-1 rows under a stale cursor (infinite-loop pagination hazard).
+ */
+export class InvalidCursorError extends Error {
+  override readonly name = 'InvalidCursorError';
+  constructor(public readonly cursor: string) {
+    super(`malformed escalation-task cursor: ${cursor}`);
   }
 }

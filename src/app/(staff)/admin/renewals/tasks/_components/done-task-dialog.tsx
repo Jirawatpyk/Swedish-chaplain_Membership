@@ -1,28 +1,22 @@
 /**
  * F8 Phase 8 T221 — `<DoneTaskDialog>` AlertDialog component.
  *
- * Admin Done CTA wraps a shadcn AlertDialog with optional outcome-note
- * textarea (≤1000 chars per Domain invariant + DB CHECK). Submit button
- * shows pending state via `useTransition`; failure surfaces inline error
- * from API. On success, parent closes dialog + calls `router.refresh()`.
+ * Admin Done CTA wraps a shared `<TaskActionDialog>` shell (Round 5
+ * HV-1 close) with optional outcome-note textarea (≤1000 chars per
+ * Domain invariant + DB CHECK). On success, parent closes dialog +
+ * calls `router.refresh()`.
+ *
+ * Round 5 I-21 close — HTML `maxLength={1000}` provides browser-
+ * native enforcement so over-length input cannot reach the server
+ * even if the JS slice handler is bypassed (paste, IME, automation).
  */
 'use client';
 
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { TaskActionDialog } from './_task-action-dialog';
 
 export interface DoneTaskDialogProps {
   readonly open: boolean;
@@ -51,57 +45,41 @@ export function DoneTaskDialog({
   }
 
   return (
-    <AlertDialog
+    <TaskActionDialog
       open={open}
-      onOpenChange={(next) => {
-        if (!next) {
-          setOutcomeNote('');
-        }
-        onOpenChange(next);
-      }}
+      onOpenChange={onOpenChange}
+      onClose={() => setOutcomeNote('')}
+      title={t('title')}
+      description={t('description')}
+      cancelLabel={t('cancel')}
+      confirmLabel={t('confirm')}
+      submittingLabel={t('submitting')}
+      isPending={isPending}
+      canSubmit
+      onSubmit={handleSubmit}
     >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('description')}</AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="grid gap-2">
-          <Label htmlFor="outcome-note">{t('outcome_note_label')}</Label>
-          <Textarea
-            id="outcome-note"
-            value={outcomeNote}
-            onChange={(e) => setOutcomeNote(e.target.value.slice(0, MAX_NOTE_LENGTH))}
-            placeholder={t('outcome_note_placeholder')}
-            disabled={isPending}
-            rows={4}
-            aria-describedby="outcome-note-counter"
-          />
-          <p
-            id="outcome-note-counter"
-            className="text-right text-xs text-muted-foreground"
-            aria-live="polite"
-          >
-            {t('chars_remaining', { count: charsRemaining })}
-          </p>
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>
-            {t('cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            disabled={isPending}
-            aria-busy={isPending}
-            onClick={handleSubmit}
-          >
-            {isPending && (
-              <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
-            )}
-            {isPending ? t('submitting') : t('confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <div className="grid gap-2">
+        <Label htmlFor="outcome-note">{t('outcome_note_label')}</Label>
+        <Textarea
+          id="outcome-note"
+          value={outcomeNote}
+          onChange={(e) =>
+            setOutcomeNote(e.target.value.slice(0, MAX_NOTE_LENGTH))
+          }
+          placeholder={t('outcome_note_placeholder')}
+          disabled={isPending}
+          rows={4}
+          maxLength={MAX_NOTE_LENGTH}
+          aria-describedby="outcome-note-counter"
+        />
+        <p
+          id="outcome-note-counter"
+          className="text-right text-xs text-muted-foreground"
+          aria-live="polite"
+        >
+          {t('chars_remaining', { count: charsRemaining })}
+        </p>
+      </div>
+    </TaskActionDialog>
   );
 }

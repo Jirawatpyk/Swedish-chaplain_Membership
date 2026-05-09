@@ -223,6 +223,28 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     // Admin-only mutations are still gated at the route handler.
     requires: 'read',
   },
+  // Round 5 SF-1 close — F8 Phase 8 escalation task queue palette
+  // entries (smart-chamber-features § MVP #4). Admin + manager can
+  // read the queue; mutating actions on individual rows live inline
+  // (Done/Skip/Reassign per row), not in the palette.
+  {
+    id: 'nav.escalationTasks',
+    label: 'palette.navigate.escalationTasks',
+    url: '/admin/renewals/tasks',
+    requires: 'read',
+  },
+  {
+    id: 'nav.escalationTasksMine',
+    label: 'palette.navigate.escalationTasksMine',
+    url: '/admin/renewals/tasks?assignment=mine',
+    requires: 'read',
+  },
+  {
+    id: 'nav.escalationTasksOverdue',
+    label: 'palette.navigate.escalationTasksOverdue',
+    url: '/admin/renewals/tasks?overdue_only=true',
+    requires: 'read',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

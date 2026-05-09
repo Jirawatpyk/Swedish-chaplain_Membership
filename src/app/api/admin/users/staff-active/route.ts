@@ -21,14 +21,26 @@ import { requireSession } from '@/lib/auth-session';
 import { userRepo } from '@/lib/auth-deps';
 
 export async function GET(_request: NextRequest) {
+  // Round 5 I-4 close — bind + log the catch so DB-down / Upstash-quota /
+  // session-store outages produce a Sentry signal instead of every
+  // request silently returning 401 (indistinguishable from a real
+  // unauthenticated state).
   let session;
+  const sessionCorrelationId = randomUUID();
   try {
     session = await requireSession('staff');
-  } catch {
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        correlationId: sessionCorrelationId,
+      },
+      'admin.users.staff-active.session_resolution_failed',
+    );
     return errorResponse({
       status: 401,
       code: 'unauthenticated',
-      correlationId: randomUUID(),
+      correlationId: sessionCorrelationId,
     });
   }
   if (session.user.role !== 'admin' && session.user.role !== 'manager') {

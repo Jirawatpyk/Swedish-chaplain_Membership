@@ -78,14 +78,31 @@ export function YearInCyclePill({
 
   // compact variant — used inside table cells with company name in a
   // separate column. Drops the company name to save horizontal space.
+  // Round 5 I-22 close — added `aria-label` so screen-reader users get
+  // the same year-context information that sighted users see in the
+  // visible "Year X of Y" pill (parity with `full` variant).
+  const compactAriaLabel =
+    showYearPrefix && memberCompanyName !== undefined
+      ? t('aria_label', {
+          year: yearInCycle,
+          total: totalYears,
+          taskType: taskTypeLabel,
+          company: memberCompanyName,
+        })
+      : showYearPrefix
+        ? `${label} · ${taskTypeLabel}`
+        : taskTypeLabel;
   return (
-    <span className="inline-flex items-center gap-1 text-xs">
+    <span
+      className="inline-flex items-center gap-1 text-xs"
+      aria-label={compactAriaLabel}
+    >
       {label !== null && (
-        <span className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
+        <span aria-hidden className="rounded bg-muted px-1.5 py-0.5 font-medium text-muted-foreground">
           {label}
         </span>
       )}
-      <span className="text-foreground">{taskTypeLabel}</span>
+      <span aria-hidden className="text-foreground">{taskTypeLabel}</span>
     </span>
   );
 }

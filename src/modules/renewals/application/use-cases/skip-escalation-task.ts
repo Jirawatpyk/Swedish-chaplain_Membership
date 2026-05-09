@@ -1,8 +1,9 @@
 /**
  * F8 Phase 8 T210 — `skipEscalationTask` use-case.
  *
- * Admin clicks "Skip" on an open escalation task per FR-044 + AS2 (skip
- * variant). REQUIRED reason (1..500 chars per Domain invariant +
+ * Admin clicks "Skip" on an open escalation task per FR-044 +
+ * Independent Test (spec.md § US6 line 169d). REQUIRED reason
+ * (1..500 chars per Domain invariant +
  * `renewal_escalation_tasks.skipped_reason` CHECK). Transitions the
  * task `open` → `skipped`, captures `closed_at` + `closed_by_user_id`,
  * emits `escalation_task_skipped` atomically.
@@ -24,6 +25,7 @@ import {
   parseTaskId,
   type TaskId,
 } from '../../domain/renewal-escalation-task';
+import { EscalationTaskNotFoundError } from '../ports/renewal-escalation-task-repo';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth/domain/branded';
@@ -33,7 +35,8 @@ export const skipEscalationTaskInputSchema = z.object({
   taskId: z.string().uuid(),
   /** REQUIRED reason. */
   skippedReason: z.string().trim().min(1).max(500),
-  actorUserId: z.string().min(1),
+  // Round 5 I-9 close — UUID brand promise (see complete schema).
+  actorUserId: z.string().uuid(),
   actorRole: z.literal('admin'),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
@@ -126,6 +129,11 @@ export async function skipEscalationTask(
       return ok({ taskId, closedAt });
     });
   } catch (e) {
+    // Round 5 I-1 close — concurrent-loss race maps to 409 (see
+    // complete-escalation-task.ts for full rationale).
+    if (e instanceof EscalationTaskNotFoundError) {
+      return err({ kind: 'task_not_open' });
+    }
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

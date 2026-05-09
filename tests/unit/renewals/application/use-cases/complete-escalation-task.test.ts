@@ -21,6 +21,10 @@ const TENANT_ID = 'tenantA';
 const TASK_UUID = '22222222-2222-2222-2222-222222220209';
 const MEMBER_UUID = '00000000-0000-0000-0000-000000000209';
 const CYCLE_UUID = '11111111-1111-1111-1111-111111110209';
+// Round 5 I-9 close — actorUserId now zod-validated as UUID. Replace
+// the previous `ADMIN_UUID` placeholder with a deterministic UUID so
+// the schema accepts it.
+const ADMIN_UUID = '33333333-3333-3333-3333-333333330209';
 
 vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -76,7 +80,7 @@ function fakeDeps(
 const baseInput = {
   tenantId: TENANT_ID,
   taskId: TASK_UUID,
-  actorUserId: 'admin-1',
+  actorUserId: ADMIN_UUID,
   actorRole: 'admin' as const,
   correlationId: 'corr-209',
 };
@@ -94,7 +98,7 @@ describe('completeEscalationTask (T209)', () => {
     expect(transitionStatusMock).toHaveBeenCalledOnce();
     expect(transitionStatusMock.mock.calls[0]?.[3]).toMatchObject({
       to: 'done',
-      closedByUserId: 'admin-1',
+      closedByUserId: ADMIN_UUID,
       outcomeNote: 'Spoke with member; renewing next week',
     });
     expect(emitInTxMock).toHaveBeenCalledOnce();
@@ -106,9 +110,21 @@ describe('completeEscalationTask (T209)', () => {
         member_id: MEMBER_UUID,
         cycle_id: CYCLE_UUID,
         outcome_note: 'Spoke with member; renewing next week',
-        actor_user_id: 'admin-1',
+        actor_user_id: ADMIN_UUID,
       },
     });
+  });
+
+  // Round 5 I-12 close — manager rejection at the zod gate.
+  it('invalid_input — manager actorRole rejected at zod gate', async () => {
+    const { deps, findByIdMock } = fakeDeps(openTaskRow());
+    const r = await completeEscalationTask(deps, {
+      ...baseInput,
+      actorRole: 'manager' as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+    expect(findByIdMock).not.toHaveBeenCalled();
   });
 
   it('happy path — without outcome note (audit payload has null)', async () => {
@@ -132,7 +148,7 @@ describe('completeEscalationTask (T209)', () => {
       ...openTaskRow(),
       status: 'done' as const,
       outcomeNote: 'prior',
-      closedByUserId: 'admin-old',
+      closedByUserId: '99999999-9999-9999-9999-999999999999',
       closedAt: '2026-04-01T00:00:00.000Z',
     };
     const { deps, transitionStatusMock } = fakeDeps(closedRow as never);

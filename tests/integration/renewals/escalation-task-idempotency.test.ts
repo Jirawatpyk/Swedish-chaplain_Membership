@@ -20,7 +20,7 @@ import {
   expect,
   it,
 } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -180,6 +180,9 @@ describe('F8 escalation task idempotency — integration (T224)', () => {
     expect(rows[0]?.status).toBe('open');
 
     // Both calls emit audits — second has idempotent_replay=true.
+    // Round 5 C-7 close — narrow by task_id so cross-tenant probes or
+    // prior-test leakage in the shared tenant cannot flip the count.
+    const taskId = r1.ok ? r1.value.taskId : '';
     const audits = await db
       .select()
       .from(auditLog)
@@ -187,6 +190,7 @@ describe('F8 escalation task idempotency — integration (T224)', () => {
         and(
           eq(auditLog.tenantId, tenant.ctx.slug),
           eq(auditLog.eventType, 'escalation_task_created' as never),
+          sql`payload ->> 'task_id' = ${taskId}`,
         ),
       );
     expect(audits.length).toBe(2);

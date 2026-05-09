@@ -29,9 +29,11 @@ import { renewalEscalationTasks, type RenewalEscalationTaskRow } from '../schema
 import { renewalCycles } from '../schema-renewal-cycles';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { users } from '@/modules/auth/infrastructure/db/schema';
 import {
   ESCALATION_UNASSIGNED_FILTER,
   EscalationTaskNotFoundError,
+  InvalidCursorError,
   type EscalationTaskAdminQueuePage,
   type EscalationTaskPage,
   type EscalationTaskWithMember,
@@ -357,33 +359,40 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         // Cursor: opaque "<dueAtIso>|<taskId>" — keyset paginate by
         // (due_at, task_id). Newer cursor format keeps deterministic
         // ordering when many tasks share the same due_at minute.
+        //
+        // Round 5 I-7 close — a malformed cursor used to silently fall
+        // through and return the FIRST page (page-1 stuck-loop hazard).
+        // Throw `InvalidCursorError` so the route maps to 400 and the
+        // client clears the bad cursor instead of looping.
         if (opts.cursor !== undefined && opts.cursor.length > 0) {
           const sep = opts.cursor.indexOf('|');
-          if (sep > 0) {
-            const cursorDueAt = opts.cursor.slice(0, sep);
-            const cursorTaskId = opts.cursor.slice(sep + 1);
-            const cursorDate = new Date(cursorDueAt);
-            if (!Number.isNaN(cursorDate.getTime())) {
-              const cmp =
-                opts.sort === 'due_at_desc'
-                  ? or(
-                      lt(renewalEscalationTasks.dueAt, cursorDate),
-                      and(
-                        eq(renewalEscalationTasks.dueAt, cursorDate),
-                        lt(renewalEscalationTasks.taskId, cursorTaskId),
-                      ),
-                    )
-                  : or(
-                      gt(renewalEscalationTasks.dueAt, cursorDate),
-                      and(
-                        eq(renewalEscalationTasks.dueAt, cursorDate),
-                        gt(renewalEscalationTasks.taskId, cursorTaskId),
-                      ),
-                    );
-              if (cmp !== undefined) {
-                whereParts.push(cmp as ReturnType<typeof eq>);
-              }
-            }
+          if (sep <= 0) {
+            throw new InvalidCursorError(opts.cursor);
+          }
+          const cursorDueAt = opts.cursor.slice(0, sep);
+          const cursorTaskId = opts.cursor.slice(sep + 1);
+          const cursorDate = new Date(cursorDueAt);
+          if (Number.isNaN(cursorDate.getTime()) || cursorTaskId.length === 0) {
+            throw new InvalidCursorError(opts.cursor);
+          }
+          const cmp =
+            opts.sort === 'due_at_desc'
+              ? or(
+                  lt(renewalEscalationTasks.dueAt, cursorDate),
+                  and(
+                    eq(renewalEscalationTasks.dueAt, cursorDate),
+                    lt(renewalEscalationTasks.taskId, cursorTaskId),
+                  ),
+                )
+              : or(
+                  gt(renewalEscalationTasks.dueAt, cursorDate),
+                  and(
+                    eq(renewalEscalationTasks.dueAt, cursorDate),
+                    gt(renewalEscalationTasks.taskId, cursorTaskId),
+                  ),
+                );
+          if (cmp !== undefined) {
+            whereParts.push(cmp as ReturnType<typeof eq>);
           }
         }
         const whereExpr =
@@ -400,16 +409,21 @@ export function makeDrizzleRenewalEscalationTaskRepo(
               ? desc(renewalEscalationTasks.createdAt)
               : asc(renewalEscalationTasks.dueAt);
 
-        // LEFT JOIN members + renewal_cycles + membership_plans so we
-        // surface the AS1-mandated company name + tier bucket + cycle
-        // expiry alongside the task row in a single round-trip. RLS+FORCE
-        // on `members` + `renewal_cycles` shields cross-tenant rows.
+        // LEFT JOIN members + renewal_cycles + membership_plans + users
+        // (Round 5 I-13 close — assignee display name) so we surface
+        // the AS1-mandated company name + tier bucket + cycle expiry +
+        // assignee display name alongside the task row in a single
+        // round-trip. RLS+FORCE on `members` + `renewal_cycles` shields
+        // cross-tenant rows. `users` is global (MTA model — no per-
+        // tenant scope yet).
         const baseQuery = tx
           .select({
             task: renewalEscalationTasks,
             companyName: members.companyName,
             tierBucket: membershipPlans.renewalTierBucket,
             cycleExpiresAt: renewalCycles.expiresAt,
+            assigneeDisplayName: users.displayName,
+            assigneeEmail: users.email,
           })
           .from(renewalEscalationTasks)
           .leftJoin(
@@ -432,6 +446,10 @@ export function makeDrizzleRenewalEscalationTaskRepo(
               eq(renewalCycles.tenantId, renewalEscalationTasks.tenantId),
               eq(renewalCycles.cycleId, renewalEscalationTasks.cycleId),
             ),
+          )
+          .leftJoin(
+            users,
+            eq(users.id, renewalEscalationTasks.assignedToUserId),
           );
         const rows = whereExpr
           ? await baseQuery
@@ -461,6 +479,8 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           cycleExpiresAt: r.cycleExpiresAt
             ? r.cycleExpiresAt.toISOString()
             : null,
+          assignedToDisplayName: r.assigneeDisplayName ?? null,
+          assignedToEmail: r.assigneeEmail ?? null,
         }));
         const last = items[items.length - 1];
         const nextCursor =

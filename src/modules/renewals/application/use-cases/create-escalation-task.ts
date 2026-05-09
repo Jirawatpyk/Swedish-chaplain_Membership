@@ -30,8 +30,11 @@
  *     when counting "fresh tasks created" vs "ladder run probes".
  *
  * RBAC: caller-authenticated. The use-case accepts `actorRole` ∈
- * `{ 'admin', 'cron', 'webhook', 'system' }` to cover every existing
- * producer; the route handlers enforce admin-only at the HTTP layer.
+ * `{ 'admin', 'manager', 'cron', 'webhook', 'system' }` to cover
+ * every existing producer (manager included for completeness, though
+ * F8 producers never invoke from a manager session — the producers
+ * are cron/system or admin); the route handlers enforce admin-only
+ * at the HTTP layer.
  *
  * Pure Application — no framework imports (Constitution Principle III).
  */
@@ -80,8 +83,11 @@ export const createEscalationTaskInputSchema = z.object({
   refundCreditNoteId: z.string().uuid().nullable().optional(),
   /** Pre-generated TaskId for callers that need to reference it. */
   taskId: z.string().uuid().optional(),
-  /** Caller identity. */
-  actorUserId: z.string().min(1).nullable(),
+  /**
+   * Caller identity. Round 5 I-9 close — UUID brand promise; nullable
+   * for cron/webhook/system producers where there's no user actor.
+   */
+  actorUserId: z.string().uuid().nullable(),
   actorRole: z.enum(['admin', 'manager', 'cron', 'webhook', 'system']),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),

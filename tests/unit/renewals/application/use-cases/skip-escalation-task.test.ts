@@ -20,6 +20,8 @@ const TENANT_ID = 'tenantA';
 const TASK_UUID = '22222222-2222-2222-2222-222222220210';
 const MEMBER_UUID = '00000000-0000-0000-0000-000000000210';
 const CYCLE_UUID = '11111111-1111-1111-1111-111111110210';
+// Round 5 I-9 close — actorUserId now zod-validated as UUID.
+const ADMIN_UUID = '33333333-3333-3333-3333-333333330210';
 
 vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -76,12 +78,24 @@ const baseInput = {
   tenantId: TENANT_ID,
   taskId: TASK_UUID,
   skippedReason: 'Member declined meeting; will revisit at T-30',
-  actorUserId: 'admin-1',
+  actorUserId: ADMIN_UUID,
   actorRole: 'admin' as const,
   correlationId: 'corr-210',
 };
 
 describe('skipEscalationTask (T210)', () => {
+  // Round 5 I-12 close — manager rejection at the zod gate.
+  it('invalid_input — manager actorRole rejected at zod gate', async () => {
+    const { deps, findByIdMock } = fakeDeps(openTaskRow());
+    const r = await skipEscalationTask(deps, {
+      ...baseInput,
+      actorRole: 'manager' as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+    expect(findByIdMock).not.toHaveBeenCalled();
+  });
+
   it('happy path — emits audit with skipped_reason', async () => {
     const { deps, transitionStatusMock, emitInTxMock } = fakeDeps(
       openTaskRow(),
@@ -90,7 +104,7 @@ describe('skipEscalationTask (T210)', () => {
     expect(r.ok).toBe(true);
     expect(transitionStatusMock.mock.calls[0]?.[3]).toMatchObject({
       to: 'skipped',
-      closedByUserId: 'admin-1',
+      closedByUserId: ADMIN_UUID,
       skippedReason: baseInput.skippedReason,
     });
     expect(emitInTxMock.mock.calls[0]?.[1]).toMatchObject({
@@ -98,7 +112,7 @@ describe('skipEscalationTask (T210)', () => {
       payload: {
         task_id: TASK_UUID,
         skipped_reason: baseInput.skippedReason,
-        actor_user_id: 'admin-1',
+        actor_user_id: ADMIN_UUID,
       },
     });
   });

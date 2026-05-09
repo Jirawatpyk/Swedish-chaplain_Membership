@@ -21,6 +21,8 @@ const MEMBER_UUID = '00000000-0000-0000-0000-000000000208';
 const CYCLE_UUID = '11111111-1111-1111-1111-111111110208';
 const TASK_UUID = '22222222-2222-2222-2222-222222220208';
 const SUGGESTION_UUID = '33333333-3333-3333-3333-333333330208';
+// Round 5 I-9 close — actorUserId now zod-validated as UUID.
+const ADMIN_UUID = '44444444-4444-4444-4444-444444440208';
 
 vi.mock('@/lib/db', () => ({
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
@@ -82,12 +84,26 @@ const baseInput = {
   dueAt: '2026-06-01T00:00:00.000Z',
   triggerReason: 'no_primary_contact',
   taskId: TASK_UUID,
-  actorUserId: 'admin-1',
+  actorUserId: ADMIN_UUID,
   actorRole: 'admin' as const,
   correlationId: 'corr-208',
 };
 
 describe('createEscalationTask (T208)', () => {
+  // Round 5 I-12 close — non-canonical actorRole rejected at the zod
+  // gate. The schema enum allows admin/manager/cron/webhook/system; a
+  // value outside that set (e.g. 'member') must trip invalid_input.
+  it('invalid_input — unknown actorRole rejected at zod gate', async () => {
+    const { deps, insertMock } = fakeDeps({ created: true });
+    const r = await createEscalationTask(deps, {
+      ...baseInput,
+      actorRole: 'member' as never,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
   it('happy path — created=true; emits audit with idempotent_replay=false', async () => {
     const { deps, insertMock, emitInTxMock } = fakeDeps({ created: true });
     const r = await createEscalationTask(deps, baseInput);

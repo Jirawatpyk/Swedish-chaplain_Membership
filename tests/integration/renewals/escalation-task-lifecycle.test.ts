@@ -213,6 +213,10 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
     expect(row[0]?.closedByUserId).toBe(admin.userId);
     expect(row[0]?.closedAt).not.toBeNull();
 
+    // Round 5 C-7 close — narrow by `payload ->> 'task_id' = ${taskId}`
+    // so a leaked audit row from an adjacent test (RLS-shielded
+    // beforeEach DELETE may not always clear if a prior tx commit
+    // barrier interleaves) doesn't flip the count and red the test.
     const audits = await db
       .select()
       .from(auditLog)
@@ -220,6 +224,7 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
         and(
           eq(auditLog.tenantId, tenant.ctx.slug),
           eq(auditLog.eventType, 'escalation_task_completed' as never),
+          sql`payload ->> 'task_id' = ${taskId}`,
         ),
       );
     expect(audits.length).toBe(1);
@@ -255,6 +260,7 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
     );
     expect(row[0]?.outcomeNote).toBeNull();
 
+    // Round 5 C-7 close — narrow by task_id (see complete test above).
     const audits = await db
       .select()
       .from(auditLog)
@@ -262,6 +268,7 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
         and(
           eq(auditLog.tenantId, tenant.ctx.slug),
           eq(auditLog.eventType, 'escalation_task_skipped' as never),
+          sql`payload ->> 'task_id' = ${taskId}`,
         ),
       );
     expect(audits.length).toBe(1);
@@ -297,6 +304,7 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
       .limit(1);
     expect(row[0]?.assignedToUserId).toBe(admin2.userId);
 
+    // Round 5 C-7 close — narrow by task_id (see complete test above).
     const audits = await db
       .select()
       .from(auditLog)
@@ -304,6 +312,7 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
         and(
           eq(auditLog.tenantId, tenant.ctx.slug),
           eq(auditLog.eventType, 'escalation_task_reassigned' as never),
+          sql`payload ->> 'task_id' = ${taskId}`,
         ),
       );
     expect(audits.length).toBe(1);

@@ -10,6 +10,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
+import { z } from 'zod';
 import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,12 +37,25 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-interface StaffUser {
-  readonly id: string;
-  readonly email: string;
-  readonly display_name: string | null;
-  readonly role: 'admin' | 'manager';
-}
+/**
+ * Round 5 I-6 close — runtime-shape validation prevents a silently
+ * empty combobox when the API response shape drifts (partial deploy,
+ * proxy injection of an HTML error page, future RBAC tightening that
+ * returns `{error:{}}` with status 200, etc.). zod is already in the
+ * client bundle (form validation) — incremental cost is zero.
+ */
+const staffUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  display_name: z.string().nullable(),
+  role: z.enum(['admin', 'manager']),
+});
+
+const staffActiveResponseSchema = z.object({
+  users: z.array(staffUserSchema),
+});
+
+type StaffUser = z.infer<typeof staffUserSchema>;
 
 export interface ReassignTaskDropdownProps {
   readonly open: boolean;
@@ -83,8 +97,16 @@ export function ReassignTaskDropdown({
           if (!cancelled) setLoadError(true);
           return;
         }
-        const body = (await res.json()) as { users: ReadonlyArray<StaffUser> };
-        if (!cancelled) setUsers(body.users);
+        // Round 5 I-6 close — zod validate the parsed shape so a drift
+        // (e.g. proxy-injected HTML, partial deploy, future RBAC change
+        // that returns `{error:{}}` with 200) does not produce a
+        // silently empty combobox.
+        const parsed = staffActiveResponseSchema.safeParse(await res.json());
+        if (!parsed.success) {
+          if (!cancelled) setLoadError(true);
+          return;
+        }
+        if (!cancelled) setUsers(parsed.data.users);
       } catch {
         if (!cancelled) setLoadError(true);
       }
@@ -151,7 +173,14 @@ export function ReassignTaskDropdown({
                   </Button>
                 }
               />
-              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+              {/* Round 5 C-2 close — base-ui Positioner exposes
+                  `--anchor-width` (NOT `--radix-popover-trigger-width`
+                  which is Radix-only). Pattern matches member-picker
+                  + searchable-combobox elsewhere in the codebase. */}
+              <PopoverContent
+                align="start"
+                className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)] p-0"
+              >
                 <Command>
                   <CommandInput placeholder={t('search_placeholder')} />
                   <CommandList>

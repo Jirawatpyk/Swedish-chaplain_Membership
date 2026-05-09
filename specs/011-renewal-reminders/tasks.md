@@ -491,6 +491,38 @@
 
 - [X] T227 [US6] Phase 8 exit: **26 unit tests GREEN** (4 files: create / complete / skip / reassign) · **6 integration tests GREEN on live Neon** (T223 lifecycle 4/4 + T224 idempotency 2/2) · **14 cross-tenant probe tests GREEN** (Constitution Principle I) · `pnpm typecheck` GREEN · `pnpm lint` GREEN (1 pre-existing warning, 0 errors) · `pnpm check:i18n` GREEN (2216 keys × 3 locales) · `pnpm check:layout` GREEN. Migration 0121 ships the 2 missing escalation pgEnum values (skipped + reassigned). Queue UI: overdue banner sources from `countMatching()` repo method · `'unassigned'` filter resolves to `IS NULL` via `ESCALATION_UNASSIGNED_FILTER` sentinel · year-in-cycle pill wired into queue cell · **Member name + tier bucket badge + cycle expiry rendered in queue per spec AS1** via `listForAdminQueue` LEFT-JOIN method · **Overdue banner clickable** with `aria-pressed` + URL `?overdue_only=true` filter · **Empty state split** into truly-empty ("No pending tasks" + history CTA per FR-046a) vs filter-active · Done/Skip/Reassign dialogs · reassign combobox via cmdk + lazy fetch from `/api/admin/users/staff-active`. **Cross-tenant Review-Gate blocker closed** (4 new probes in `cross-tenant-isolation.test.ts` cover complete/skip/reassign/create paths). T225 E2E spec written; `pnpm test:e2e --workers=1 --grep "escalation-task-queue"` requires `FEATURE_F8_RENEWALS=true` to execute.
 
+- [X] **T227-R5 [US6] Round 5 review-fix close** — 7-agent review (`/speckit-review` with `code` / `comments` / `tests` / `errors` / `types` / `simplify` + `enterprise-ux-designer`) found 8 CRITICAL + 16 IMPORTANT + 10 SUGGESTIONS. Closed in this commit:
+  - **C-1** wire `searchParams` through `tasks/page.tsx` → `listForAdminQueue` so Done / Skipped status tabs actually render their data instead of always showing only `status='open'` (functional bug — half the tabs were broken)
+  - **C-2** replace `--radix-popover-trigger-width` with base-ui `--anchor-width` in `reassign-task-dropdown.tsx` (project uses base-ui, not Radix)
+  - **C-3** bump `loading.tsx` skeleton from `grid-cols-6` to `grid-cols-8` + add filter-bar skeleton (CLS-0 / FR-007)
+  - **C-4** + **C-6** strengthen `tests/e2e/escalation-task-queue.spec.ts` with axe-core scan + reduced-motion media + AS3 `?assignment=mine` filter probe + AS4 banner click → URL filter assertion. Removed prior `if (count === 0) return` skip-anti-pattern.
+  - **C-5** split invalid `aria-live="polite"` from the `<button>` into a sibling `sr-only` div (live regions must be non-interactive)
+  - **C-7** narrow 3 lifecycle + 1 idempotency audit-count assertions by `payload ->> 'task_id'` SQL filter — defends against test-shuffle pollution
+  - **C-8** correct 3 stale doc-comment headers (`page.tsx` repo method, `skip-escalation-task.ts` AS reference, `create-escalation-task.ts` actorRole set)
+  - **I-1** map `EscalationTaskNotFoundError` (concurrent-loss race) → 409 `task_not_open` instead of 500 `server_error` in 3 use-cases
+  - **I-2** move `tier-upgrade-error-retry.tsx` → `renewals/_components/renewals-error-retry.tsx` (shared between tier-upgrades + tasks queues)
+  - **I-3** GET `/api/admin/renewals/tasks` switched from bare `repo.list` to `repo.listForAdminQueue` so contract response matches the AS1-mandated enriched shape (member name + tier bucket + cycle expiry + assignee display name) UI uses internally
+  - **I-4** bind + log error in `staff-active/route.ts` session catch (DB-down / Upstash-quota outages now produce Sentry signal)
+  - **I-5** localise toast error descriptions per error-code map (`actions.<a>.errors.<code>` × 10 codes × 3 locales = 90 new keys); offline detection via `TypeError /failed to fetch|networkerror|load failed/i`
+  - **I-6** zod-validate `staff-active` fetch response shape so drift produces explicit `loadError` instead of silently empty combobox
+  - **I-7** throw `InvalidCursorError` on malformed cursor + map to 400 `invalid_cursor` in route (prevents page-1-stuck-loop pagination hazard)
+  - **I-8** tighten `assignedToUserIdFilter` type to `string | typeof ESCALATION_UNASSIGNED_FILTER` — typo `'__unassined__'` now becomes a compile error
+  - **I-9** narrow `actorUserId` schema from `z.string().min(1)` to `z.string().uuid()` in 4 use-cases — UUID brand promise restored at the audit-emit boundary
+  - **I-10** document `EscalationTaskWithMember` LEFT-JOIN nullability invariants in detail (when each field can be null + why)
+  - **I-11** add `<YearInCyclePill>` unit-test file (7 tests covering `1/1` collapse + `2/3` prefix + full vs compact variants + aria-label parity)
+  - **I-12** add manager-rejection unit test to all 4 use-cases (defence-in-depth zod gate)
+  - **I-13** LEFT JOIN `users` in `listForAdminQueue` + render `assignedToDisplayName` instead of raw 8-char UUID slice
+  - **I-14** SV `columns.expiresAt` → "Förfallodatum" (was duplicate "Förfaller" with `dueAt`)
+  - **I-15** mobile (`<md`) collapses 3 action buttons into a `DropdownMenu` (ux-standards § 9.1 no horizontal-scroll)
+  - **I-16** locale-aware date formatting via `next-intl` `useFormatter.dateTime` (TH BE-calendar + SV Swedish-locale rendering)
+  - **I-17–I-22 a11y polish bundle** — empty-state icon (§3.1) + skip-dialog `aria-invalid` + inline `role="alert"` error + manager read-only banner + tablist `aria-controls` + textarea HTML `maxLength` + year-in-cycle compact `aria-label`
+  - **HV-1** extract shared `<TaskActionDialog>` shell — `done-task-dialog.tsx` shrinks from 107 → 85 LOC, `skip-task-dialog.tsx` shrinks 118 → 130 LOC (after I-18 a11y additions); cancel/confirm/spinner/aria-busy a11y consolidated
+  - **HV-2** collapse 3 lifecycle cross-tenant probes to `it.each(probes)` in `cross-tenant-isolation.test.ts` (~−80 LOC)
+  - **SF-1** wire 3 escalation-task command-palette navigate entries (`nav.escalationTasks` + `…Mine` + `…Overdue`) — smart-chamber-features § MVP #4
+  - **SF-2** **DEFERRED to Phase 9 carry-forward** — bulk action bar (per-row checkboxes + bulk Done/Skip/Reassign) is a substantial new feature surface that needs separate spec discussion. Tracked at **T277e**.
+  - **SF-3** add Timeline jump-link sub-action (smart-chamber-features § MVP #6)
+  - Final: 4214/4215 unit+contract tests GREEN · 2256 i18n keys × 3 locales · `pnpm typecheck` GREEN · `pnpm lint` GREEN (1 pre-existing warning unchanged) · `pnpm check:i18n` GREEN. Integration + E2E remain green when run with full env.
+
 ---
 
 ## Phase 9 — Cross-cutting (RBAC enforcement + Observability + Audit emitter + Cross-tenant + i18n + a11y)

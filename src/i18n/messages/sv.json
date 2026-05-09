@@ -2029,6 +2029,9 @@
       "tasks": {
         "title": "Uppföljningsuppgifter",
         "subtitle": "Manuella kontaktpunkter som genereras av förnyelseschemat — telefonsamtal, fysiska möten och administrativa granskningar.",
+        "loading": "Laddar uppföljningsuppgifter…",
+        "manager_read_only_notice": "Du visar denna kö som chef — endast administratörer kan markera uppgifter som klara, hoppa över eller tilldela om dem.",
+        "view_timeline": "Visa tidslinje",
         "overdue_banner": "{count, plural, one {# försenad uppgift} other {# försenade uppgifter}}",
         "overdue_banner_cta": "Klicka för att filtrera kön till endast försenade uppgifter",
         "overdue_banner_clear": "Filter aktivt — klicka för att visa alla öppna uppgifter igen",
@@ -2049,7 +2052,7 @@
         "columns": {
           "member": "Medlem",
           "tier": "Nivå",
-          "expiresAt": "Förfaller",
+          "expiresAt": "Förfallodatum",
           "taskType": "Uppgiftstyp",
           "dueAt": "Förfaller",
           "assignedTo": "Tilldelad",
@@ -2103,20 +2106,57 @@
           "retrying": "Försöker igen…"
         },
         "actions": {
+          "menu_label": "Åtgärder",
           "done": {
             "label": "Klar",
             "success": "Uppgift markerad som klar",
-            "error": "Kunde inte markera uppgift som klar"
+            "error": "Kunde inte markera uppgift som klar",
+            "errors": {
+              "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
+              "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
+              "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
+              "forbidden": "Endast administratörer kan markera uppgifter som klara.",
+              "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
+              "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
+              "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
+              "server_error": "Något gick fel hos oss. Försök igen om en stund.",
+              "unknown": "Ett oväntat fel inträffade. Försök igen.",
+              "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+            }
           },
           "skip": {
             "label": "Hoppa över",
             "success": "Uppgift hoppad",
-            "error": "Kunde inte hoppa över uppgift"
+            "error": "Kunde inte hoppa över uppgift",
+            "errors": {
+              "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
+              "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
+              "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
+              "forbidden": "Endast administratörer kan hoppa över uppgifter.",
+              "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
+              "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
+              "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
+              "server_error": "Något gick fel hos oss. Försök igen om en stund.",
+              "unknown": "Ett oväntat fel inträffade. Försök igen.",
+              "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+            }
           },
           "reassign": {
             "label": "Tilldela om",
             "success": "Uppgift omtilldelad",
-            "error": "Kunde inte tilldela om uppgiften"
+            "error": "Kunde inte tilldela om uppgiften",
+            "errors": {
+              "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
+              "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
+              "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
+              "forbidden": "Endast administratörer kan tilldela om uppgifter.",
+              "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
+              "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
+              "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
+              "server_error": "Något gick fel hos oss. Försök igen om en stund.",
+              "unknown": "Ett oväntat fel inträffade. Försök igen.",
+              "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+            }
           }
         },
         "done_dialog": {
@@ -2134,6 +2174,8 @@
           "description": "En orsak krävs så att granskningsspåret dokumenterar varför kontaktpunkten hoppades över. Uppgiften flyttas till Hoppad och tas bort från den öppna kön.",
           "reason_label": "Orsak",
           "reason_placeholder": "t.ex. Medlemmen kunde inte nås; återupptas vid T-30",
+          "reason_required": "En orsak krävs innan du kan hoppa över uppgiften.",
+          "required_marker": "obligatoriskt",
           "chars_remaining": "{count} tecken kvar",
           "cancel": "Avbryt",
           "confirm": "Hoppa över uppgift",
@@ -2147,6 +2189,7 @@
           "search_placeholder": "Sök på namn eller e-post…",
           "no_results": "Ingen medarbetare matchar din sökning.",
           "load_error": "Kunde inte ladda medarbetarlistan. Försök igen.",
+          "retry": "Försök igen",
           "current_assignee_badge": "nuvarande",
           "cancel": "Avbryt",
           "confirm": "Tilldela om",
@@ -2290,7 +2333,10 @@
       "creditNotesList": "Kreditnotalista",
       "broadcastsQueue": "Granskningskö för E-Blast",
       "renewalsList": "Förnyelsepipeline",
-      "renewalSchedules": "Förnyelseschemaprinciper"
+      "renewalSchedules": "Förnyelseschemaprinciper",
+      "escalationTasks": "Uppföljningsuppgifter",
+      "escalationTasksMine": "Uppföljningsuppgifter: mina",
+      "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade"
     }
   },
   "nav": {

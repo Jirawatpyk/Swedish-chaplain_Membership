@@ -29,6 +29,7 @@ import {
   parseTaskId,
   type TaskId,
 } from '../../domain/renewal-escalation-task';
+import { EscalationTaskNotFoundError } from '../ports/renewal-escalation-task-repo';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth/domain/branded';
@@ -37,7 +38,8 @@ export const reassignEscalationTaskInputSchema = z.object({
   tenantId: z.string().min(1),
   taskId: z.string().uuid(),
   toUserId: z.string().uuid(),
-  actorUserId: z.string().min(1),
+  // Round 5 I-9 close — UUID brand promise (see complete schema).
+  actorUserId: z.string().uuid(),
   actorRole: z.literal('admin'),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
@@ -136,6 +138,11 @@ export async function reassignEscalationTask(
       });
     });
   } catch (e) {
+    // Round 5 I-1 close — concurrent-loss race maps to 409 (see
+    // complete-escalation-task.ts for full rationale).
+    if (e instanceof EscalationTaskNotFoundError) {
+      return err({ kind: 'task_not_open' });
+    }
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),
