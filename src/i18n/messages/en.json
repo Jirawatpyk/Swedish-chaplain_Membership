@@ -1978,7 +1978,8 @@
         },
         "error_state": {
           "title": "Could not load tier-upgrade queue",
-          "subtitle": "The database query failed. Please refresh the page or contact support if the problem persists."
+          "subtitle": "The database query failed. Please retry or contact support if the problem persists.",
+          "retry": "Retry"
         },
         "dialog": {
           "cancel": "Cancel"

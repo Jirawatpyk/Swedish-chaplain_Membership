@@ -139,6 +139,15 @@ export const F8_AUDIT_EVENT_TYPES = [
   'tier_upgrade_pending_member_notify_skipped',
   'tier_upgrade_pending_member_notify_failed',
   'renewal_schedule_reschedule_skipped',
+  // --- F8 Phase 7 review-fix Round 2 (2) — silent-failure closure -----------
+  // Migration 0120 adds the 2 pgEnum values. Emit sites:
+  //   - tier_upgrade_catalogue_row_dropped (Round 2 IMP-6) → drizzle-plan-
+  //     catalog.ts when a row's renewal_tier_bucket fails parseTierBucket
+  //   - tier_upgrade_apply_post_invoice_paid_failed (Round 2 SUG-6) →
+  //     renewals-deps.ts when the F4 onPaidCallback INVALID_TX fallback
+  //     throws on apply-pending after F4 has committed the paid invoice
+  'tier_upgrade_catalogue_row_dropped',
+  'tier_upgrade_apply_post_invoice_paid_failed',
   // --- Phase 5 (US3 Member Self-Service) additions (4) --------------------
   // T120 race-window forensic event (research.md R1 § Token re-issuance,
   // spec.md § Edge Cases CHK033). Emitted when a token verifies on a
@@ -161,9 +170,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 62
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 64
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 62';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 64';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -433,16 +442,20 @@ export interface F8AuditPayloadShapes {
   /**
    * Phase 7 T179 (cron) — emitted once per cron pass when the tenant
    * has not configured turnover thresholds on any plan in their
-   * catalogue (i.e. `min_turnover_minor_units IS NULL` everywhere).
-   * Cron continues with next tenant.
+   * catalogue. Cron continues with next tenant.
    *
-   * Phase 7 review-fix I-TYPE-3: enriched with `catalogue_size` so
-   * dashboards can distinguish "tenant has 0 plans" (onboarding gap)
-   * from "tenant has N plans, none with thresholds" (config gap)
-   * without joining F2 `membership_plans`.
+   * Phase 7 review-fix I-TYPE-3: enriched with `catalogue_size`.
+   * Phase 7 review-fix Round 2 IMP-2: explicit `skip_reason`
+   * discriminator so dashboards + alert rules can distinguish
+   * `'no_plans'` (onboarding gap — tenant has zero active plans)
+   * from `'no_thresholds_set'` (config gap — tenant has N plans,
+   * none with `min_turnover_minor_units`). `catalogue_size: 0` ⇒
+   * `'no_plans'`; `catalogue_size > 0` ⇒ `'no_thresholds_set'`.
    */
   readonly tier_upgrade_skipped_no_thresholds_configured: {
+    /** Number of active non-deleted plans in the tenant catalogue (>=0). */
     readonly catalogue_size: number;
+    readonly skip_reason: 'no_plans' | 'no_thresholds_set';
   };
   /**
    * Phase 7 T185 (reconcile cron) — orphan detection: a suggestion in
@@ -493,9 +506,19 @@ export interface F8AuditPayloadShapes {
     readonly reason: 'no_primary_contact_email';
   };
   /**
-   * Phase 7 review-fix I-ERR-2 — emitted when the post-tx tier-
-   * upgrade approval email fails after the retry budget OR throws
-   * an exception. Mirrors F7 broadcast `_failed` audit precedent.
+   * Phase 7 review-fix I-ERR-2 + Round 2 IMP-3 — emitted when the
+   * post-tx tier-upgrade approval email fails after the retry budget
+   * OR throws an exception. `failure_kind` mirrors
+   * `SendRenewalEmailError['kind']` exactly (audit + port unions
+   * stay in lock-step) plus `'unknown'` for the catch-all branch
+   * that doesn't have a typed Result. `'render_failed'` was dropped
+   * — the gateway maps render exceptions to `gateway_4xx` so the
+   * audit shape no longer carries an unreachable arm.
+   *
+   * `failure_message` carries the gateway message OR (for
+   * `template_variables_missing`) a comma-joined `missing[]` list so
+   * the actionable metadata is preserved instead of being silently
+   * stripped to null (Round 2 IMP-3).
    */
   readonly tier_upgrade_pending_member_notify_failed: {
     readonly suggestion_id: SuggestionId;
@@ -508,7 +531,6 @@ export interface F8AuditPayloadShapes {
       | 'recipient_unsubscribed'
       | 'recipient_email_unverified'
       | 'template_variables_missing'
-      | 'render_failed'
       | 'unknown';
     readonly failure_message: string | null;
   };
@@ -525,6 +547,34 @@ export interface F8AuditPayloadShapes {
     readonly old_plan_id: PlanId;
     readonly new_plan_id: PlanId;
     readonly reason: 'old_plan_not_found' | 'new_plan_not_found' | 'both_not_found';
+  };
+  /**
+   * Phase 7 review-fix Round 2 IMP-6 — emitted when the Drizzle
+   * plan-catalog adapter drops a row whose `renewal_tier_bucket`
+   * value fails Domain `parseTierBucket`. Closes the silent-narrowing
+   * gap surfaced by Round 2 review (a DB drift would otherwise
+   * shrink the cron decision tree without forensic chain).
+   *
+   * `raw_bucket` carries the unparseable value (no PII risk — it's a
+   * tier-bucket string column).
+   */
+  readonly tier_upgrade_catalogue_row_dropped: {
+    readonly plan_id: PlanId;
+    readonly raw_bucket: string;
+  };
+  /**
+   * Phase 7 review-fix Round 2 SUG-6 — emitted from the F4
+   * onPaidCallback INVALID_TX fallback when `applyPendingTierUpgradeInTx`
+   * throws AFTER F4 has committed the paid invoice. The F4 invoice =
+   * paid, F8 suggestion stays in `accepted_pending_apply` against a
+   * still-active paid cycle; the reconcile cron will NOT recover this
+   * case (cycle isn't terminal). This audit closes the gap.
+   */
+  readonly tier_upgrade_apply_post_invoice_paid_failed: {
+    readonly invoice_id: InvoiceId;
+    readonly member_id: MemberId;
+    readonly cycle_id: CycleId;
+    readonly failure_message: string;
   };
   /**
    * The `BandTransition` DU prevents emitting same-band "transitions"

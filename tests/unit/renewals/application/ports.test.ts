@@ -28,9 +28,13 @@ import {
 import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
-  it('contains 62 unique event types (Phase 7 review-fix Round 1: +3 — silent-skip closure)', () => {
-    // Phase 7 review-fix Round 1: 59 → 62 (added 3 silent-skip audits
-    // surfaced by /speckit.review I-ERR-1/I-ERR-2/S-2-errors:
+  it('contains 64 unique event types (Phase 7 review-fix Round 2: +2 — silent-failure closure)', () => {
+    // Phase 7 review-fix Round 2: 62 → 64 (added 2 silent-failure audits
+    // surfaced by Round 2 IMP-6 + SUG-6:
+    // tier_upgrade_catalogue_row_dropped (TierBucket parse failure),
+    // tier_upgrade_apply_post_invoice_paid_failed (F4 committed; F8 threw)
+    // — migration 0120).
+    // Phase 7 review-fix Round 1: 59 → 62 (added 3 silent-skip audits:
     // tier_upgrade_pending_member_notify_skipped,
     // tier_upgrade_pending_member_notify_failed,
     // renewal_schedule_reschedule_skipped — migration 0119).
@@ -39,7 +43,7 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     // 3 lapsed-pending reminder-ladder events `_t-7` / `_t-3` / `_t-1`).
     // K6 (prior): 54 → 55 (added cron_bearer_auth_rejected per spec.md
     // line 365 taxonomy + verifyCronBearer 401 path now emits this audit).
-    expect(F8_AUDIT_EVENT_TYPES.length).toBe(62);
+    expect(F8_AUDIT_EVENT_TYPES.length).toBe(64);
     const set = new Set(F8_AUDIT_EVENT_TYPES);
     expect(set.size).toBe(F8_AUDIT_EVENT_TYPES.length);
   });
@@ -80,14 +84,17 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
       (F8_AUDIT_EVENT_TYPES as readonly string[]).filter((e) => e.startsWith('at_risk_')).length,
     ).toBe(6);
     // Phase 7 review-fix Round 1: 11 → 13 (+2 silent-skip audits
-    // tier_upgrade_pending_member_notify_skipped + _failed). The third
-    // new audit `renewal_schedule_reschedule_skipped` is in the
-    // renewal_* cluster, not tier_upgrade_*.
+    // tier_upgrade_pending_member_notify_skipped + _failed).
+    // Phase 7 review-fix Round 2: 13 → 15 (+2 silent-failure audits
+    // tier_upgrade_catalogue_row_dropped +
+    // tier_upgrade_apply_post_invoice_paid_failed). The
+    // `renewal_schedule_reschedule_skipped` audit is in the renewal_*
+    // cluster, not tier_upgrade_*.
     expect(
       (F8_AUDIT_EVENT_TYPES as readonly string[]).filter((e) =>
         e.startsWith('tier_upgrade_'),
       ).length,
-    ).toBe(13);
+    ).toBe(15);
   });
 });
 

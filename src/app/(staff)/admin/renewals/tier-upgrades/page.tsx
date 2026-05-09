@@ -23,6 +23,7 @@ import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
+import { TierUpgradeErrorRetry } from './_components/tier-upgrade-error-retry';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
@@ -73,19 +74,27 @@ export default async function TierUpgradeQueuePage() {
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       {hasError ? (
-        <Card className="border-destructive/40 bg-destructive/5">
+        // Phase 7 review-fix Round 2 IMP-8: role="alert" so screen-
+        // reader announces error on render. Retry button lets admin
+        // re-fetch without full-page refresh.
+        <Card
+          className="border-destructive/40 bg-destructive/5"
+          role="alert"
+          aria-live="assertive"
+        >
           <CardContent className="flex items-start gap-3 py-6">
             <AlertTriangle
               className="mt-0.5 size-5 shrink-0 text-destructive"
               aria-hidden
             />
-            <div>
+            <div className="flex-1">
               <p className="text-base font-medium text-destructive">
                 {t('error_state.title')}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 {t('error_state.subtitle')}
               </p>
+              <TierUpgradeErrorRetry label={t('error_state.retry')} />
             </div>
           </CardContent>
         </Card>

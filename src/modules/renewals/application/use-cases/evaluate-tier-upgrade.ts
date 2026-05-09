@@ -229,7 +229,13 @@ export async function evaluateTierUpgrade(
       await deps.auditEmitter.emit(
         {
           type: 'tier_upgrade_skipped_no_thresholds_configured',
-          payload: { catalogue_size: catalogue.length },
+          payload: {
+            catalogue_size: catalogue.length,
+            // Phase 7 review-fix Round 2 IMP-2: explicit discriminator
+            // so dashboards distinguish onboarding-gap (0 plans) from
+            // config-gap (N plans, no thresholds set).
+            skip_reason: catalogue.length === 0 ? 'no_plans' : 'no_thresholds_set',
+          },
         },
         {
           tenantId,
@@ -274,6 +280,37 @@ export async function evaluateTierUpgrade(
       const decision = decideUpgrade(candidate, catalogue);
       if (decision === null) {
         alreadyAtTarget++;
+        // Phase 7 review-fix Round 2 IMP-9: wire AS4 audit emit.
+        // Catalogue + JSDoc declared `tier_upgrade_already_at_target`
+        // since Phase 7 baseline but the counter-only short-circuit
+        // never persisted the audit row. Now atomic forensic chain:
+        // every alreadyAtTarget tick gets an audit (debug-level).
+        try {
+          await deps.auditEmitter.emit(
+            {
+              type: 'tier_upgrade_already_at_target',
+              payload: {
+                member_id: candidate.memberId as MemberId,
+                current_plan_id: candidate.currentPlanId as PlanId,
+              },
+            },
+            {
+              tenantId,
+              actorUserId: null,
+              actorRole: 'cron',
+              correlationId,
+              requestId: input.requestId ?? null,
+            },
+          );
+        } catch (e) {
+          logger.warn(
+            {
+              err: e instanceof Error ? e.message : String(e),
+              memberId: candidate.memberId,
+            },
+            '[evaluate-tier-upgrade] already_at_target audit emit failed — continuing',
+          );
+        }
         continue;
       }
 

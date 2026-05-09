@@ -537,7 +537,7 @@ export function f8OnPaidCallbacks(
       const { runInTenant: runInTenantFn, isTenantTx } = await import('@/lib/db');
       const { logger } = await import('@/lib/logger');
 
-      const apply = async (tx: TenantTx) => {
+      const apply = async (tx: TenantTx, isFallback: boolean) => {
         // Resolve the cycle linked to this invoice. Non-renewal
         // invoices return null and the callback is a no-op.
         const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
@@ -564,12 +564,62 @@ export function f8OnPaidCallbacks(
             },
             '[f8-onPaid] apply-pending-tier-upgrade failed — F4 tx rolling back',
           );
+          // Phase 7 review-fix Round 2 SUG-6: when running in the
+          // INVALID_TX fallback (F4 already committed), emit the
+          // post-paid-failed audit + counter so the orphan suggestion
+          // (paid invoice but tier-upgrade not applied) has a forensic
+          // chain entry. Reconcile cron will NOT recover this case
+          // because the cycle is not terminal. Emit happens BEFORE
+          // re-throw so it lands even when the inner runInTenant tx
+          // rolls back.
+          if (isFallback) {
+            const { renewalsMetrics: m } = await import('@/lib/metrics');
+            m.tierUpgradeApplyPostPaidFailed(evt.tenantId);
+            try {
+              const { renewalAuditEmitterStub } = await import(
+                '../infrastructure/audit-emitter-stub'
+              );
+              const auditEmitter =
+                process.env.NODE_ENV === 'production'
+                  ? makeDrizzleRenewalAuditEmitter(asTenantContext(evt.tenantId))
+                  : renewalAuditEmitterStub;
+              await auditEmitter.emit(
+                {
+                  type: 'tier_upgrade_apply_post_invoice_paid_failed',
+                  payload: {
+                    invoice_id: evt.invoiceId as unknown as import('@/modules/invoicing').InvoiceId,
+                    member_id: evt.memberId as unknown as import('@/modules/members').MemberId,
+                    cycle_id: cycle.cycleId,
+                    failure_message:
+                      e instanceof Error
+                        ? e.message.slice(0, 200)
+                        : 'unknown',
+                  },
+                },
+                {
+                  tenantId: evt.tenantId,
+                  actorUserId: null,
+                  actorRole: 'webhook',
+                  correlationId: `f8-onPaid:${evt.invoiceId}`,
+                  requestId: null,
+                },
+              );
+            } catch (auditErr) {
+              logger.error(
+                {
+                  err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                  tenantId: evt.tenantId,
+                },
+                '[f8-onPaid] post-paid-failed audit emit failed — counter still bumped',
+              );
+            }
+          }
           throw e;
         }
       };
 
       if (txUnknown !== undefined && isTenantTx(txUnknown)) {
-        await apply(txUnknown);
+        await apply(txUnknown, false);
       } else {
         // Phase 7 review-fix C-ERR-2: F4 contract drift surface —
         // when F4 invokes the callback WITHOUT a TenantTx (or with a
@@ -595,7 +645,7 @@ export function f8OnPaidCallbacks(
           },
           '[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected',
         );
-        await runInTenantFn(deps.tenant, apply);
+        await runInTenantFn(deps.tenant, (tx) => apply(tx, true));
       }
     },
   ];

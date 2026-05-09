@@ -112,13 +112,17 @@ export function TierUpgradeApprovalEmail({
 }: TierUpgradeApprovalEmailProps): React.ReactElement {
   const copy = COPY[locale];
   const effectiveDate = new Date(effectiveAtIso);
-  // Phase 7 review-fix S-1 UX: render body date as Gregorian for ALL
-  // locales. The dual-format (BE + Gregorian) is the footer's job —
-  // duplicating BE in the body for `th` locale created two BE dates
-  // per email which is visually noisy and inconsistent with F4
-  // reminder-email pattern. Mirrors that precedent.
+  // Phase 7 review-fix Round 2 CRIT-4: TH locale uses Buddhist Era
+  // calendar in body for cultural correctness (chamber's Thai-language
+  // emails consistently render dates as BE in body). The footer
+  // continues to render dual-format (BE + Gregorian) per
+  // `DualFormatDateFooter`. en/sv locales stay Gregorian-only in body.
   const effectiveAtFormatted = effectiveDate.toLocaleDateString(
-    locale === 'sv' ? 'sv-SE' : 'en-GB',
+    locale === 'th'
+      ? 'th-TH-u-ca-buddhist'
+      : locale === 'sv'
+        ? 'sv-SE'
+        : 'en-GB',
     { year: 'numeric', month: 'long', day: 'numeric' },
   );
 

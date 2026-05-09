@@ -1,0 +1,36 @@
+-- ---------------------------------------------------------------------------
+-- F8 Phase 7 review-fix Round 2 — extend audit_event_type pgEnum with 3 new
+-- silent-failure-closure audit events surfaced by /speckit.review Round 2
+-- (silent-failure hunter + type-design + enterprise-ux agents).
+--
+-- New event types:
+--
+--   1. `tier_upgrade_already_at_target` (Round 2 IMP-9 fix) —
+--      AS4 audit. Already declared in F8_AUDIT_EVENT_TYPES catalogue
+--      since Phase 7 baseline but the `evaluate-tier-upgrade` decideUpgrade
+--      counter-only short-circuit never emitted the audit row that
+--      JSDoc + AS4 spec promised. This migration aligns pgEnum so the
+--      now-wired emit at evaluate-tier-upgrade.ts can persist.
+--
+--   2. `tier_upgrade_catalogue_row_dropped` (Round 2 IMP-6 fix) —
+--      emitted when the Drizzle plan-catalog adapter drops a row whose
+--      `renewal_tier_bucket` value fails Domain `parseTierBucket`.
+--      Without this, a DB drift (raw SQL insert outside the typed path)
+--      silently shrinks the cron decision tree. Forensic chain explicit.
+--
+--   3. `tier_upgrade_apply_post_invoice_paid_failed` (Round 2 SUG-6 fix) —
+--      emitted from the F4 onPaidCallback INVALID_TX fallback path when
+--      `applyPendingTierUpgradeInTx` throws AFTER F4 has committed the
+--      paid invoice. The F4 invoice = paid, F8 suggestion stays in
+--      `accepted_pending_apply` against a still-active paid cycle; the
+--      reconcile cron will NOT recover this case (cycle isn't terminal).
+--      Explicit forensic-chain entry closes the observability gap.
+--
+-- All 3 events are 5-year retention (no F4 tax-document overlap).
+--
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
+-- transaction. Idempotent via IF NOT EXISTS.
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'tier_upgrade_catalogue_row_dropped';--> statement-breakpoint
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'tier_upgrade_apply_post_invoice_paid_failed';

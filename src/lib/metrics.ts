@@ -1431,16 +1431,77 @@ export const renewalsMetrics = {
    * indicates F4 contract drift on the apply-pending path — atomic-
    * single-tx invariant lost; F4 commit + F8 commit eventual-
    * consistency window re-opened.
+   *
+   * Phase 7 review-fix Round 2 IMP-1: label key re-aligned to `tenant`
+   * so dashboard joins against `onPaidInvalidTx` (which uses bare
+   * `tenant`) work correctly. Round 1 had `tenant_id` which dropped
+   * the alert-pair join.
    */
   applyPendingInvalidTx: {
-    add(_count: number, _attrs: { tenant_id: string }): void {
+    add(count: number, attrs: { tenant_id: string }): void {
       safeMetric(() => {
         counter(
           'renewals_apply_pending_invalid_tx_total',
           'F8 apply-pending-tier-upgrade callback received non-TenantTx from F4 — atomic-single-tx invariant lost',
-        ).add(_count, _attrs);
+        ).add(count, { tenant: attrs.tenant_id });
       });
     },
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 2 CRIT-2 — audit-emit failure counter.
+   * Fires when `auditEmitter.emit()` itself throws (production
+   * pgEnum drift triggers `pinoFallback` which throws). Distinct
+   * from `tierUpgradeNotifyFailed` so on-call can differentiate
+   * "email succeeded but audit row missing" (this counter) from
+   * "email send failed" (the other counter). Mirrors F7 broadcasts
+   * audit-emit-failed precedent.
+   */
+  tierUpgradeAuditEmitFailed(
+    auditType:
+      | 'tier_upgrade_pending_member_notified'
+      | 'tier_upgrade_pending_member_notify_skipped'
+      | 'tier_upgrade_pending_member_notify_failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_audit_emit_failed_total',
+        'F8 tier-upgrade audit emit failed (forensic chain may have a gap)',
+      ).add(1, { audit_type: auditType });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 2 IMP-6 — TierBucket parse-failure
+   * counter for the Drizzle plan-catalog adapter. Bumped per row
+   * dropped due to unparseable `renewal_tier_bucket`. Companion to
+   * the new audit `tier_upgrade_catalogue_row_dropped`. Vercel alert
+   * rule: any non-zero rate over 5 min indicates DB drift before it
+   * silently zeros eligibility decisions.
+   */
+  planCatalogueUnparseableBucket(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_plan_catalogue_unparseable_bucket_total',
+        'F8 plan-catalog adapter dropped a row whose renewal_tier_bucket failed parseTierBucket — DB drift signal',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 2 SUG-6 — apply-pending post-paid
+   * failure counter. Bumped from the F4 onPaidCallback INVALID_TX
+   * fallback when `applyPendingTierUpgradeInTx` throws after F4 has
+   * committed the paid invoice. Companion to the new audit
+   * `tier_upgrade_apply_post_invoice_paid_failed`.
+   */
+  tierUpgradeApplyPostPaidFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_apply_post_paid_failed_total',
+        'F8 apply-pending threw after F4 committed paid invoice — suggestion stuck in accepted_pending_apply against a paid cycle',
+      ).add(1, { tenant: tenantId });
+    });
   },
 
   /**

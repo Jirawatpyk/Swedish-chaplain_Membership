@@ -201,6 +201,15 @@ const F8_ENUM_SHIPPED_TUPLE = [
   'tier_upgrade_pending_member_notify_skipped',
   'tier_upgrade_pending_member_notify_failed',
   'renewal_schedule_reschedule_skipped',
+  // --- F8 Phase 7 review-fix Round 2 (migration 0120) — 2 silent-failure
+  //     closure events. Emit sites: drizzle-plan-catalog.ts (catalogue-
+  //     row-dropped) + renewals-deps.ts (apply-post-paid-failed).
+  //     IMP-9 fix also moves `tier_upgrade_already_at_target` from the
+  //     "deferred" intuition into actually-emitted by aligning evaluate-
+  //     tier-upgrade with its JSDoc claim — that event was already
+  //     declared in F8_ENUM_SHIPPED_TUPLE since Phase 7 baseline. ---
+  'tier_upgrade_catalogue_row_dropped',
+  'tier_upgrade_apply_post_invoice_paid_failed',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(

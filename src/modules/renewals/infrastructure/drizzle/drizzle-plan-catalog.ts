@@ -15,9 +15,13 @@
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import { parseTierBucket } from '../../domain/value-objects/tier-bucket';
+import { renewalAuditEmitterStub } from '../audit-emitter-stub';
+import { makeDrizzleRenewalAuditEmitter } from './drizzle-renewal-audit-emitter';
+import type { PlanId } from '@/modules/members';
 import type {
   PlanCatalogEntry,
   PlanCatalogPort,
@@ -56,10 +60,20 @@ async function listForTenantViaTx(
   // adapter boundary. Rows whose `renewal_tier_bucket` doesn't parse
   // are dropped + warn-logged so an upstream DB migration drift never
   // silently bypasses the eligibility decision tree.
+  //
+  // Phase 7 review-fix Round 2 IMP-6: explicit forensic chain on
+  // each drop — bumps `planCatalogueUnparseableBucket{tenant}`
+  // counter (Vercel alert target) + emits
+  // `tier_upgrade_catalogue_row_dropped` audit per dropped row.
   const result: PlanCatalogEntry[] = [];
+  const dropped: Array<{ planId: string; rawBucket: string }> = [];
   for (const row of rows) {
     const bucketParse = parseTierBucket(row.renewalTierBucket);
     if (!bucketParse.ok) {
+      dropped.push({
+        planId: row.planId,
+        rawBucket: row.renewalTierBucket,
+      });
       logger.warn(
         {
           tenantId,
@@ -78,6 +92,49 @@ async function listForTenantViaTx(
       isActive: row.isActive,
     });
   }
+
+  // Emit one audit + counter per dropped row. The audit emitter is
+  // tx-bound; we use the fire-and-forget `emit()` because dropping a
+  // row is an observability signal, not a state mutation we want to
+  // bind to the calling tx.
+  if (dropped.length > 0) {
+    const auditEmitter = makeDrizzleRenewalAuditEmitter(
+      asTenantContext(tenantId),
+    );
+    for (const drop of dropped) {
+      renewalsMetrics.planCatalogueUnparseableBucket(tenantId);
+      try {
+        await auditEmitter.emit(
+          {
+            type: 'tier_upgrade_catalogue_row_dropped',
+            payload: {
+              plan_id: drop.planId as PlanId,
+              raw_bucket: drop.rawBucket,
+            },
+          },
+          {
+            tenantId,
+            actorUserId: null,
+            actorRole: 'system',
+            correlationId: 'plan-catalog-unparseable',
+            requestId: null,
+          },
+        );
+      } catch (e) {
+        logger.error(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            tenantId,
+            planId: drop.planId,
+          },
+          '[plan-catalog] catalogue_row_dropped audit emit failed',
+        );
+      }
+    }
+  }
+  // `renewalAuditEmitterStub` re-export ensures stub composition for
+  // unit tests still type-checks against the audit-port shape.
+  void renewalAuditEmitterStub;
   return result;
 }
 

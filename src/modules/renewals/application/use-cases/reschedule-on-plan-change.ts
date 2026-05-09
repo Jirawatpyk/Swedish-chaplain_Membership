@@ -53,11 +53,15 @@ export type RescheduleOnPlanChangeInput = z.infer<
   typeof rescheduleOnPlanChangeInputSchema
 >;
 
+// Phase 7 review-fix Round 2 IMP-7: bucket fields use Domain
+// `TierBucket` literal-union instead of bare string.
+import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+
 export interface RescheduleOnPlanChangeOutput {
   readonly cancelledStepIds: ReadonlyArray<string>;
   readonly newStepIds: ReadonlyArray<string>;
-  readonly oldTierBucket: string | null;
-  readonly newTierBucket: string | null;
+  readonly oldTierBucket: TierBucket | null;
+  readonly newTierBucket: TierBucket | null;
 }
 
 export type RescheduleOnPlanChangeError =
@@ -109,36 +113,36 @@ export async function rescheduleOnPlanChangeInTx(
     const counterSide: 'old' | 'new' | 'both' =
       reason === 'both_not_found' ? 'both' : reason === 'old_plan_not_found' ? 'old' : 'new';
     renewalsMetrics.rescheduleBucketResolutionFailed(counterSide);
-    try {
-      await deps.auditEmitter.emitInTx(
-        _tx,
-        {
-          type: 'renewal_schedule_reschedule_skipped',
-          payload: {
-            member_id: args.memberId as MemberId,
-            old_plan_id: args.oldPlanId as PlanId,
-            new_plan_id: args.newPlanId as PlanId,
-            reason,
-          },
+    // Phase 7 review-fix Round 2 CRIT-1: emitInTx is the atomic-must-
+    // throw flavour — wrapping it in try/catch + swallow violates
+    // Constitution Principle VIII (the throw IS the rollback signal).
+    // The outer F2 plan-flip tx caller (`change-plan.ts`) wraps every
+    // listener through `wrapListener` which catches + log + counts +
+    // swallows for failure isolation, so an audit-emit throw here
+    // bubbles to that wrapper without rolling F2 back. Result: F2
+    // commits, audit row missing, BUT counter `rescheduleBucket
+    // ResolutionFailed` already fired BEFORE the emit and `manual
+    // PlanChangeListenerFailed` fires inside `wrapListener` — both
+    // observability signals intact.
+    await deps.auditEmitter.emitInTx(
+      _tx,
+      {
+        type: 'renewal_schedule_reschedule_skipped',
+        payload: {
+          member_id: args.memberId as MemberId,
+          old_plan_id: args.oldPlanId as PlanId,
+          new_plan_id: args.newPlanId as PlanId,
+          reason,
         },
-        {
-          tenantId: args.tenantId,
-          actorUserId: null,
-          actorRole: 'system',
-          correlationId: args.correlationId,
-          requestId: args.requestId,
-        },
-      );
-    } catch (auditErr) {
-      logger.error(
-        {
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-          tenantId: args.tenantId,
-          memberId: args.memberId,
-        },
-        '[reschedule-on-plan-change] audit emit failed for reschedule_skipped',
-      );
-    }
+      },
+      {
+        tenantId: args.tenantId,
+        actorUserId: null,
+        actorRole: 'system',
+        correlationId: args.correlationId,
+        requestId: args.requestId,
+      },
+    );
     logger.warn(
       {
         tenantId: args.tenantId,

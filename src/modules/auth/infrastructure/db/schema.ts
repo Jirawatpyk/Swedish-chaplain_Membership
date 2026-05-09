@@ -231,6 +231,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'tier_upgrade_pending_member_notify_skipped',
   'tier_upgrade_pending_member_notify_failed',
   'renewal_schedule_reschedule_skipped',
+  // --- F8 Phase 7 review-fix Round 2 (migration 0120) — 2 silent-failure
+  //     closure audits surfaced by Round 2 review:
+  //     IMP-6 catalogue-row-dropped (TierBucket parse failure at adapter)
+  //     SUG-6 apply-post-paid-failed (F4 committed; F8 apply threw)
+  'tier_upgrade_catalogue_row_dropped',
+  'tier_upgrade_apply_post_invoice_paid_failed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

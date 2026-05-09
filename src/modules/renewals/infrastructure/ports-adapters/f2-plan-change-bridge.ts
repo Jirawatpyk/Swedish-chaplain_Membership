@@ -37,10 +37,12 @@
  *     reconcile cron will NOT touch.
  *   - To close the supersede observability gap, every swallow now
  *     bumps `renewalsMetrics.manualPlanChangeListenerFailed{listener,
- *     tenant_id}`. Vercel alert rules attach to OTel counters not
- *     log strings. Any non-zero rate sustained >5 min indicates the
- *     audit chain is being silently lost — on-call investigates +
- *     replays via admin tooling.
+ *     tenant_id}`. The counter is the **single signal** for this
+ *     class of failure today; Vercel alert rule + on-call runbook +
+ *     admin replay tooling are tracked as a post-MVP follow-up
+ *     (no docs/runbooks/** entry exists yet for this metric).
+ *     Until that lands, on-call must grep the metric on Vercel
+ *     dashboards manually if a F2 plan-change incident is suspected.
  *
  * Pure Infrastructure — only `@/lib/db` + `@/lib/logger` +
  * `@/lib/metrics` imports.

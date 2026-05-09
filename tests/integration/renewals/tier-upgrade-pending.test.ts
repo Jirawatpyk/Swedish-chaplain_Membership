@@ -228,6 +228,88 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     }
   });
 
+  it('R2-CRIT-3.A — accept with no primary contact emits notify_skipped audit', async () => {
+    // Round 2 review-fix C-TEST-3.A — silent-skip audit coverage.
+    // Seed a member without a primary contact email; admin Accept
+    // should still succeed but emit `tier_upgrade_pending_member_notify_skipped`.
+    const memberId = randomUUID();
+    const cycleId = randomUUID();
+    const suggestionUuid = randomUUID();
+    const now = Date.now();
+    const expiresAt = new Date(now + 60 * MS_PER_DAY);
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'No Contact Co',
+        country: 'TH',
+        planId: 'regular',
+        planYear: 2026,
+        turnoverThb: 120_000_000,
+      });
+      // NOTE: NO contacts row inserted — primary contact missing.
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId,
+        memberId,
+        status: 'upcoming',
+        periodFrom: new Date(now - 30 * MS_PER_DAY),
+        periodTo: expiresAt,
+        expiresAt,
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: 'regular',
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+      });
+      await tx.insert(tierUpgradeSuggestions).values({
+        tenantId: tenant.ctx.slug,
+        suggestionId: suggestionUuid,
+        memberId,
+        fromPlanId: 'regular',
+        toPlanId: 'premium',
+        reasonCode: 'declared_turnover_above_threshold',
+        evidenceJsonb: {
+          reasonCode: 'declared_turnover_above_threshold',
+          turnoverThb: 120_000_000,
+          thresholdMetAt: new Date().toISOString(),
+        },
+        status: 'open',
+      });
+    });
+
+    const idResult = parseSuggestionId(suggestionUuid);
+    if (!idResult.ok) throw new Error('seeded id failed parse');
+    const suggestionId = idResult.value;
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.memberNotifiedDeliveryId).toBeNull();
+
+    const skippedAudits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          eq(
+            auditLog.eventType,
+            'tier_upgrade_pending_member_notify_skipped',
+          ),
+        ),
+    );
+    expect(skippedAudits.length).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
   it('AS2 — accept dispatches member email + emits notify audit', async () => {
     // Phase 7 review-fix C-TEST-1: explicit AS2 / FR-039 step 2
     // assertion. The accept-tier-upgrade post-tx path calls the stub

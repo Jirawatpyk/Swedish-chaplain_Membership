@@ -287,13 +287,25 @@ export async function changePlan(
         }
       }
 
-      // F8 Phase 7 T188 — atomic invocation of registered F8 listeners
-      // (supersede pending tier-upgrade + reschedule renewal cadence).
-      // Same tx as the plan flip + audits per Constitution Principle VIII.
-      // Any listener exception propagates → tx rollback → entire change-
-      // plan is undone. Internal listener catch-blocks log + swallow per
-      // their own contracts (the F8 reconcile cron provides defence-in-
-      // depth recovery for any silently-swallowed failures).
+      // F8 Phase 7 T188 — invocation of registered F8 listeners
+      // (supersede pending tier-upgrade + reschedule renewal cadence)
+      // inside the F3 tx. Each listener runs in F3's tx context.
+      //
+      // **Failure semantics** (review-fix Round 2 IMP-10):
+      //
+      // F8's production listeners go through `wrapListener`
+      // (`src/modules/renewals/infrastructure/ports-adapters/
+      // f2-plan-change-bridge.ts`) which catches + logs + counts
+      // (`manualPlanChangeListenerFailed{listener,tenant_id}`) +
+      // swallows. F2 plan-flip is the source of truth; an F8
+      // bookkeeping hiccup must NOT roll the plan-flip back.
+      //
+      // The catch + rethrow below is therefore unreachable for
+      // production F8 listeners. It exists ONLY as a safety net for
+      // hypothetical custom listeners (tests, future modules) that
+      // bypass `wrapListener` and propagate errors. For F8's two
+      // production listeners the swallow contract holds and the
+      // counter is the alert signal.
       const listeners = deps.manualPlanChangeListeners ?? [];
       if (listeners.length > 0) {
         const evt: ManualPlanChangeListenerEvent = {

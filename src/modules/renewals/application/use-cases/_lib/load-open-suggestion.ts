@@ -28,6 +28,16 @@ export type LoadOpenSuggestionError =
   | { readonly kind: 'suggestion_not_found' }
   | { readonly kind: 'suggestion_not_open' };
 
+/**
+ * Phase 7 review-fix Round 2 type SUG-3 — `suggestionId` and
+ * `suggestion.suggestionId` carry the SAME value. The dual field is
+ * intentional: `suggestionId` is the parsed-input brand (validated
+ * via `parseSuggestionId`), while `suggestion.suggestionId` is the
+ * DB-mint brand from the row mapper. They're guaranteed equal at
+ * this seam, but exposing both spares callers a redundant
+ * re-validation when they need just the id (e.g. for audit emit
+ * payloads that take the brand directly).
+ */
 export interface LoadOpenSuggestionResult {
   readonly suggestionId: SuggestionId;
   readonly suggestion: TierUpgradeSuggestion;

@@ -9,10 +9,12 @@
  *   - **FR-039 step 1** (transition `open` → `accepted_pending_apply`):
  *     in-tx · sets `accepted_at`, `accepted_by_user_id`,
  *     `target_apply_at_cycle_id`. Member's `members.plan_id` is NOT
- *     mutated (avoids surprise mid-year invoicing). The **F2
- *     `scheduleNextRenewalPlanChange`** call is the *mechanism* for
- *     step 1 (records the future plan-flip in F2's
- *     `scheduled_plan_changes`); not its own FR-039 step.
+ *     mutated (avoids surprise mid-year invoicing). The mechanism is
+ *     a direct call to `scheduledPlanChangeRepo.supersedeAndInsertPendingAtomically`
+ *     (review-fix Round 2 comment-S1: was previously documented as
+ *     "F2 scheduleNextRenewalPlanChange" use-case wrapper but the code
+ *     calls the repo method directly — same atomic supersede-and-insert
+ *     semantics, but grep-able to the actual call site).
  *
  *   - **FR-039 step 2** (member email): post-tx · single transactional
  *     email via `RenewalGateway.sendTierUpgradeApprovalEmail`. Failure
@@ -283,8 +285,29 @@ export async function acceptTierUpgrade(
       requestId: input.requestId ?? null,
     };
     let memberNotifiedDeliveryId: string | null = null;
+    // Phase 7 review-fix Round 2 CRIT-2: split outer catch into 2
+    // narrower scopes so an audit-emit failure (production pgEnum
+    // drift → pinoFallback throws) does NOT misclassify as a gateway
+    // failure. Audit-emit failures bump `tierUpgradeAuditEmitFailed`
+    // (separate counter) so on-call can differentiate "email
+    // succeeded but audit row missing" from "email send failed".
+    let dispatchInfo: Awaited<
+      ReturnType<typeof deps.dispatchCandidateRepo.findOne>
+    > = null;
+    let planName = suggestion.toPlanId;
+    let gatewayResult:
+      | { kind: 'no_recipient' }
+      | { kind: 'sent'; deliveryId: string; recipientHash: ReturnType<typeof sha256HexOf> }
+      | {
+          kind: 'failed';
+          recipientHash: ReturnType<typeof sha256HexOf>;
+          error: import('../ports/renewal-gateway').SendRenewalEmailError;
+        }
+      | { kind: 'threw'; error: unknown }
+      = { kind: 'no_recipient' };
+
     try {
-      const dispatchInfo = await deps.dispatchCandidateRepo.findOne(
+      dispatchInfo = await deps.dispatchCandidateRepo.findOne(
         input.tenantId,
         txResult.value.targetApplyAtCycleId,
       );
@@ -292,35 +315,13 @@ export async function acceptTierUpgrade(
         tenantId: input.tenantId,
         planId: suggestion.toPlanId,
       });
-      const planName =
+      planName =
         planFrozen.status === 'found'
           ? planFrozen.plan.tierBucket
           : suggestion.toPlanId;
 
       if (!dispatchInfo?.primaryContact?.email) {
-        // Phase 7 review-fix I-ERR-1: explicit notify-skipped audit so
-        // the missing primary-contact case has a forensic chain entry
-        // instead of a silent no-op. Admin can re-notify after onboarding.
-        renewalsMetrics.tierUpgradeNotifyFailed('no_primary_contact');
-        await deps.auditEmitter.emit(
-          {
-            type: 'tier_upgrade_pending_member_notify_skipped',
-            payload: {
-              suggestion_id: suggestionId,
-              member_id: suggestion.memberId as MemberId,
-              to_plan_id: suggestion.toPlanId as PlanId,
-              reason: 'no_primary_contact_email',
-            },
-          },
-          auditCtx,
-        );
-        logger.warn(
-          {
-            suggestionId: suggestion.suggestionId,
-            memberId: suggestion.memberId,
-          },
-          '[accept-tier-upgrade] member has no primary-contact email — notify skipped + audit recorded',
-        );
+        gatewayResult = { kind: 'no_recipient' };
       } else {
         const sendResult = await deps.renewalGateway.sendTierUpgradeApprovalEmail(
           {
@@ -343,65 +344,150 @@ export async function acceptTierUpgrade(
         );
         if (sendResult.ok) {
           memberNotifiedDeliveryId = sendResult.value.deliveryId;
-          await deps.auditEmitter.emit(
-            {
-              type: 'tier_upgrade_pending_member_notified',
-              payload: {
-                suggestion_id: suggestionId,
-                member_id: suggestion.memberId as MemberId,
-                to_plan_id: suggestion.toPlanId as PlanId,
-                recipient_email_hashed: recipientHash,
-                delivery_id: memberNotifiedDeliveryId,
-                effective_at: activeCycle.expiresAt,
-              },
-            },
-            auditCtx,
-          );
+          gatewayResult = {
+            kind: 'sent',
+            deliveryId: sendResult.value.deliveryId,
+            recipientHash,
+          };
         } else {
-          // Phase 7 review-fix I-ERR-2: explicit notify-failed audit
-          // closes the forensic chain when retry budget exhausts or
-          // gateway returns a permanent error.
-          renewalsMetrics.tierUpgradeNotifyFailed(sendResult.error.kind);
-          await deps.auditEmitter.emit(
-            {
-              type: 'tier_upgrade_pending_member_notify_failed',
-              payload: {
-                suggestion_id: suggestionId,
-                member_id: suggestion.memberId as MemberId,
-                to_plan_id: suggestion.toPlanId as PlanId,
-                recipient_email_hashed: recipientHash,
-                failure_kind: sendResult.error.kind,
-                failure_message:
-                  'message' in sendResult.error
-                    ? sendResult.error.message
-                    : null,
-              },
-            },
-            auditCtx,
-          );
-          logger.warn(
-            {
-              suggestionId: suggestion.suggestionId,
-              errorKind: sendResult.error.kind,
-            },
-            '[accept-tier-upgrade] member notification email failed — audit recorded',
-          );
+          gatewayResult = {
+            kind: 'failed',
+            recipientHash,
+            error: sendResult.error,
+          };
         }
       }
     } catch (e) {
-      // Catch-all for unexpected throws (dispatch repo unavailable,
-      // sha256 helper crash, etc.). Bump the unknown-failure metric
-      // but skip the audit emit (we don't have enough payload context
-      // to fill the typed shape).
+      // Gateway / lookup / hash crash — does NOT include audit-emit
+      // throws (those are isolated to the per-emit try/catch below).
+      gatewayResult = { kind: 'threw', error: e };
       renewalsMetrics.tierUpgradeNotifyFailed('unknown');
       logger.warn(
         {
           err: e instanceof Error ? e.message : String(e),
           suggestionId: suggestion.suggestionId,
         },
-        '[accept-tier-upgrade] member notification path threw — continuing',
+        '[accept-tier-upgrade] gateway / lookup path threw — emitting failed audit',
       );
     }
+
+    // Per-branch audit emit, each in its own try/catch + dedicated
+    // counter for emit failures (CRIT-2 forensic split).
+    if (gatewayResult.kind === 'no_recipient') {
+      renewalsMetrics.tierUpgradeNotifyFailed('no_primary_contact');
+      try {
+        await deps.auditEmitter.emit(
+          {
+            type: 'tier_upgrade_pending_member_notify_skipped',
+            payload: {
+              suggestion_id: suggestionId,
+              member_id: suggestion.memberId as MemberId,
+              to_plan_id: suggestion.toPlanId as PlanId,
+              reason: 'no_primary_contact_email',
+            },
+          },
+          auditCtx,
+        );
+      } catch (auditErr) {
+        renewalsMetrics.tierUpgradeAuditEmitFailed(
+          'tier_upgrade_pending_member_notify_skipped',
+        );
+        logger.error(
+          {
+            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            suggestionId: suggestion.suggestionId,
+          },
+          '[accept-tier-upgrade] notify_skipped audit emit failed — counter bumped',
+        );
+      }
+      logger.warn(
+        {
+          suggestionId: suggestion.suggestionId,
+          memberId: suggestion.memberId,
+        },
+        '[accept-tier-upgrade] member has no primary-contact email — notify skipped + audit attempted',
+      );
+    } else if (gatewayResult.kind === 'sent') {
+      try {
+        await deps.auditEmitter.emit(
+          {
+            type: 'tier_upgrade_pending_member_notified',
+            payload: {
+              suggestion_id: suggestionId,
+              member_id: suggestion.memberId as MemberId,
+              to_plan_id: suggestion.toPlanId as PlanId,
+              recipient_email_hashed: gatewayResult.recipientHash,
+              delivery_id: gatewayResult.deliveryId,
+              effective_at: activeCycle.expiresAt,
+            },
+          },
+          auditCtx,
+        );
+      } catch (auditErr) {
+        // CRIT-2: email shipped successfully — audit row missing is
+        // distinct from gateway failure. Bump audit-emit-failed
+        // counter, NOT tierUpgradeNotifyFailed.
+        renewalsMetrics.tierUpgradeAuditEmitFailed(
+          'tier_upgrade_pending_member_notified',
+        );
+        logger.error(
+          {
+            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            suggestionId: suggestion.suggestionId,
+            deliveryId: gatewayResult.deliveryId,
+          },
+          '[accept-tier-upgrade] notified audit emit failed (email shipped) — counter bumped',
+        );
+      }
+    } else if (gatewayResult.kind === 'failed') {
+      renewalsMetrics.tierUpgradeNotifyFailed(gatewayResult.error.kind);
+      // R2-IMP-3: preserve actionable metadata for the
+      // template_variables_missing variant (carries `missing[]` not
+      // `message`). Fall back to comma-joined missing list.
+      const failureMessage =
+        'message' in gatewayResult.error
+          ? gatewayResult.error.message
+          : 'missing' in gatewayResult.error
+            ? `template_variables_missing: ${(gatewayResult.error as { missing: ReadonlyArray<string> }).missing.join(',')}`
+            : null;
+      try {
+        await deps.auditEmitter.emit(
+          {
+            type: 'tier_upgrade_pending_member_notify_failed',
+            payload: {
+              suggestion_id: suggestionId,
+              member_id: suggestion.memberId as MemberId,
+              to_plan_id: suggestion.toPlanId as PlanId,
+              recipient_email_hashed: gatewayResult.recipientHash,
+              failure_kind: gatewayResult.error.kind,
+              failure_message: failureMessage,
+            },
+          },
+          auditCtx,
+        );
+      } catch (auditErr) {
+        renewalsMetrics.tierUpgradeAuditEmitFailed(
+          'tier_upgrade_pending_member_notify_failed',
+        );
+        logger.error(
+          {
+            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            suggestionId: suggestion.suggestionId,
+            errorKind: gatewayResult.error.kind,
+          },
+          '[accept-tier-upgrade] notify_failed audit emit failed — counter bumped',
+        );
+      }
+      logger.warn(
+        {
+          suggestionId: suggestion.suggestionId,
+          errorKind: gatewayResult.error.kind,
+        },
+        '[accept-tier-upgrade] member notification email failed — audit attempted',
+      );
+    }
+    // gatewayResult.kind === 'threw' branch already logged + counter
+    // bumped in the outer catch. No audit emit (no payload context).
 
     return ok({
       suggestionId,
