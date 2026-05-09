@@ -134,6 +134,16 @@ export async function skipEscalationTask(
     if (e instanceof EscalationTaskNotFoundError) {
       return err({ kind: 'task_not_open' });
     }
+    // R6 C-2 close — log before wrapping (see complete-escalation-task).
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        tenantId: input.tenantId,
+        taskId: input.taskId,
+        correlationId: input.correlationId,
+      },
+      '[skip-escalation-task] unexpected error → server_error',
+    );
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

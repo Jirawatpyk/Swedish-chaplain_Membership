@@ -46,7 +46,7 @@
  * cross-tenant integration tests.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -665,7 +665,7 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
     ];
 
     it.each(probes)(
-      'A.$name(B-tenant taskId) → task_not_found + B row unchanged',
+      'A.$name(B-tenant taskId) → task_not_found + B row unchanged + zero audit leak',
       async ({ taskType, call, assertBRow }) => {
         const taskBId = randomUUID();
         await runInTenant(tenantB.ctx, async (tx) => {
@@ -694,6 +694,20 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
             .where(eq(renewalEscalationTasks.taskId, taskBId)),
         );
         assertBRow(bRow[0]);
+
+        // R6 IMP-13 close — Constitution Principle I clause 4: every
+        // cross-tenant access attempt MUST refuse + emit zero audit
+        // leak. Even if RLS lets a write through (it shouldn't), the
+        // forensic chain in audit_log must NOT show a leak. Probe
+        // ALL escalation_task_* events for the foreign taskId across
+        // both tenants — should be zero rows. This invariant was lost
+        // when HV-2 collapsed the 3 sequential probes into it.each;
+        // restoring it here preserves the original Round 1 T223 close.
+        const audits = await db
+          .select()
+          .from(auditLog)
+          .where(sql`payload ->> 'task_id' = ${taskBId}`);
+        expect(audits).toHaveLength(0);
 
         // Cleanup.
         await runInTenant(tenantB.ctx, async (tx) => {

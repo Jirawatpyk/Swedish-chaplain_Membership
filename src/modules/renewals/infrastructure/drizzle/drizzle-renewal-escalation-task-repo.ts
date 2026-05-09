@@ -27,13 +27,19 @@ import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalEscalationTasks, type RenewalEscalationTaskRow } from '../schema-renewal-escalation-tasks';
 import { renewalCycles } from '../schema-renewal-cycles';
+// Cross-module schema deep imports — required for LEFT JOIN row
+// mapping. Permitted by eslint.config.mjs `ignores: ['src/modules/**']`
+// — adapter↔schema deep imports are the canonical Drizzle pattern;
+// the public-barrel boundary the rule enforces is Presentation↔Module,
+// not Adapter↔Adapter. See members + plans deep imports for prior
+// precedent (R6 IMP-4 audit confirmed acceptable).
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import {
-  ESCALATION_UNASSIGNED_FILTER,
   EscalationTaskNotFoundError,
   InvalidCursorError,
+  isUnassignedFilter,
   type EscalationTaskAdminQueuePage,
   type EscalationTaskPage,
   type EscalationTaskWithMember,
@@ -414,8 +420,18 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         // the AS1-mandated company name + tier bucket + cycle expiry +
         // assignee display name alongside the task row in a single
         // round-trip. RLS+FORCE on `members` + `renewal_cycles` shields
-        // cross-tenant rows. `users` is global (MTA model — no per-
-        // tenant scope yet).
+        // cross-tenant rows.
+        //
+        // R6 IMP-19 close — `users` is currently globally unique
+        // (F1 design — no `users.tenant_id` column yet). When
+        // multi-tenant user scoping lands (MTA-future-phase per
+        // saas-architecture.md), this JOIN MUST add
+        // `eq(users.tenantId, renewalEscalationTasks.tenantId)` or
+        // it will leak assignee names across tenants. Today the
+        // staff-active route filters the reassign combobox to same-
+        // tenant users (defence at the API), so cross-tenant
+        // assignment is blocked at the entry point — but the JOIN
+        // itself is not defensive.
         const baseQuery = tx
           .select({
             task: renewalEscalationTasks,
@@ -511,10 +527,12 @@ function buildListWhereExpr(
     );
   }
   if (opts.assignedToUserIdFilter !== undefined) {
-    if (opts.assignedToUserIdFilter === ESCALATION_UNASSIGNED_FILTER) {
-      // Phase 8 T214 — `'__unassigned__'` sentinel matches NULL
-      // (tasks assigned by role only). Maps to the per-user partial
-      // index's complement.
+    if (isUnassignedFilter(opts.assignedToUserIdFilter)) {
+      // Phase 8 T214 — sentinel matches NULL (tasks assigned by role
+      // only). Maps to the per-user partial index's complement.
+      // R6 C-4 close — sentinel is now a Symbol-tagged Object; the
+      // type-guard `isUnassignedFilter` narrows the else branch to
+      // `string` so eq() compiles cleanly without a cast.
       conditions.push(
         isNull(renewalEscalationTasks.assignedToUserId) as unknown as ReturnType<
           typeof eq

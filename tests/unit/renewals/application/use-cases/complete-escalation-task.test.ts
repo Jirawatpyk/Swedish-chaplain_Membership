@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { completeEscalationTask } from '@/modules/renewals/application/use-cases/complete-escalation-task';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import { asTaskId } from '@/modules/renewals/domain/renewal-escalation-task';
+import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 const TENANT_ID = 'tenantA';
 const TASK_UUID = '22222222-2222-2222-2222-222222220209';
@@ -156,6 +157,20 @@ describe('completeEscalationTask (T209)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('task_not_open');
     expect(transitionStatusMock).not.toHaveBeenCalled();
+  });
+
+  // R6 C-3 close — TOCTOU concurrent-loss race: another admin closed
+  // the task between findById and the partial-unique UPDATE; the repo
+  // throws EscalationTaskNotFoundError. The use-case MUST remap to
+  // task_not_open (409), NOT server_error (500).
+  it('TOCTOU race — transitionStatus throws → kind:task_not_open (not server_error)', async () => {
+    const { deps, transitionStatusMock } = fakeDeps(openTaskRow());
+    transitionStatusMock.mockImplementationOnce(async () => {
+      throw new EscalationTaskNotFoundError(TASK_UUID);
+    });
+    const r = await completeEscalationTask(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('task_not_open');
   });
 
   it('reverse-direction atomicity — audit failure rolls back', async () => {

@@ -20,6 +20,7 @@ const messages = {
         yearInCycle: {
           pill: 'Year {year} of {total}',
           aria_label: 'Year {year} of {total} · {taskType} · {company}',
+          aria_label_no_company: 'Year {year} of {total} · {taskType}',
         },
       },
     },
@@ -114,5 +115,54 @@ describe('<YearInCyclePill> (F8 T220 / Phase 8 R5 I-11)', () => {
     });
     const labelled = container.querySelector('[aria-label]');
     expect(labelled?.getAttribute('aria-label')).toBe('Phone call');
+  });
+
+  // R6 close — defensive against invalid totalYears claimed by the
+  // file header. `showYearPrefix = totalYears > 1` collapses to false
+  // for 0 / NaN / negative inputs; tests pin that contract.
+  it('totalYears=0 collapses to single-year (no "Year 1 of 0" rendered)', () => {
+    renderPill({
+      yearInCycle: 1,
+      totalYears: 0,
+      taskTypeLabel: 'Phone call',
+    });
+    expect(screen.queryByText(/year 1 of 0/i)).toBeNull();
+    expect(screen.getByText('Phone call')).toBeInTheDocument();
+  });
+
+  it('totalYears=NaN treated as single-year', () => {
+    renderPill({
+      yearInCycle: 1,
+      totalYears: Number.NaN,
+      taskTypeLabel: 'Phone call',
+    });
+    expect(screen.queryByText(/year/i)).toBeNull();
+    expect(screen.getByText('Phone call')).toBeInTheDocument();
+  });
+
+  it('totalYears=-1 (negative) treated as single-year', () => {
+    renderPill({
+      yearInCycle: 1,
+      totalYears: -1,
+      taskTypeLabel: 'Phone call',
+    });
+    expect(screen.queryByText(/year/i)).toBeNull();
+    expect(screen.getByText('Phone call')).toBeInTheDocument();
+  });
+
+  // R6 UX-I-3 close — when memberCompanyName is undefined and we have
+  // a year prefix, the compact aria-label uses the dedicated
+  // aria_label_no_company key (no raw template string concatenation).
+  it('full-without-company falls through to compact aria_label_no_company key', () => {
+    const { container } = renderPill({
+      yearInCycle: 2,
+      totalYears: 3,
+      taskTypeLabel: 'Quarterly review',
+      variant: 'full',
+    });
+    const labelled = container.querySelector('[aria-label]');
+    expect(labelled?.getAttribute('aria-label')).toBe(
+      'Year 2 of 3 · Quarterly review',
+    );
   });
 });

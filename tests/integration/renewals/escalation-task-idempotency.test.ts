@@ -182,7 +182,13 @@ describe('F8 escalation task idempotency — integration (T224)', () => {
     // Both calls emit audits — second has idempotent_replay=true.
     // Round 5 C-7 close — narrow by task_id so cross-tenant probes or
     // prior-test leakage in the shared tenant cannot flip the count.
-    const taskId = r1.ok ? r1.value.taskId : '';
+    // R6 IMP-20 close — fail loudly if r1 setup didn't succeed
+    // (previously the ternary fell back to '' and the audit-count
+    // assertion produced a confusing "expected 2 got 0" diagnostic).
+    if (!r1.ok) {
+      throw new Error(`r1 setup failed: ${JSON.stringify(r1.error)}`);
+    }
+    const taskId = r1.value.taskId;
     const audits = await db
       .select()
       .from(auditLog)

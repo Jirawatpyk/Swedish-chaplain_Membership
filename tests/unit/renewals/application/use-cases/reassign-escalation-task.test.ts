@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { reassignEscalationTask } from '@/modules/renewals/application/use-cases/reassign-escalation-task';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import { asTaskId } from '@/modules/renewals/domain/renewal-escalation-task';
+import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 const TENANT_ID = 'tenantA';
 const TASK_UUID = '22222222-2222-2222-2222-222222220211';
@@ -96,6 +97,17 @@ describe('reassignEscalationTask (T211)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
     expect(findByIdMock).not.toHaveBeenCalled();
+  });
+
+  // R6 C-3 close — TOCTOU race (see complete-escalation-task.test).
+  it('TOCTOU race — reassign throws → kind:task_not_open (not server_error)', async () => {
+    const { deps, reassignMock } = fakeDeps(openTaskRow(null));
+    reassignMock.mockImplementationOnce(async () => {
+      throw new EscalationTaskNotFoundError(TASK_UUID);
+    });
+    const r = await reassignEscalationTask(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('task_not_open');
   });
 
   it('happy path — from_user_id=null when previously unassigned', async () => {

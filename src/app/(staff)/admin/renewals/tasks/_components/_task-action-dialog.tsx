@@ -18,6 +18,7 @@
  */
 'use client';
 
+import { useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import {
   AlertDialog,
@@ -34,9 +35,17 @@ export interface TaskActionDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /**
-   * Called WHEN the dialog is closing (next === false). Use to reset
-   * dialog-internal form state (textarea / combobox / touched flag).
-   * Distinct from `onOpenChange` which fires for both open and close.
+   * Called WHEN the dialog is closing (`open` prop becomes false).
+   * Use to reset dialog-internal form state (textarea / combobox /
+   * touched flag).
+   *
+   * R6 IMP-6 close — fires on BOTH:
+   *   1. base-ui internal close (Escape, click outside) via
+   *      `onOpenChange(false)`, AND
+   *   2. parent flipping `open={false}` after a successful submit
+   *      (via `useEffect` watching `open`). The earlier implementation
+   *      only handled (1) — note state could leak between dialog
+   *      sessions.
    */
   readonly onClose?: () => void;
   readonly title: string;
@@ -48,8 +57,12 @@ export interface TaskActionDialogProps {
   /** Disables the confirm button when `false`. Cancel is always enabled (until pending). */
   readonly canSubmit: boolean;
   readonly onSubmit: () => void;
-  /** Renders the confirm button with the destructive variant (red). */
-  readonly destructive?: boolean;
+  /**
+   * Confirm-button visual variant (R6 IMP-10 close).
+   * `'destructive'` renders red for irreversible actions (Skip).
+   * Default: regular primary button.
+   */
+  readonly variant?: 'default' | 'destructive';
   readonly children: React.ReactNode;
 }
 
@@ -65,9 +78,22 @@ export function TaskActionDialog({
   isPending,
   canSubmit,
   onSubmit,
-  destructive = false,
+  variant = 'default',
   children,
 }: TaskActionDialogProps) {
+  // R6 IMP-6 close — fire onClose when the parent flips `open={false}`
+  // (e.g. after a successful submit), in addition to base-ui's own
+  // close events. Without this, dialog-internal form state (textarea
+  // value, touched flag, selected combobox option) leaks across the
+  // next dialog session — admin could submit the previous task's note
+  // against a different task.
+  useEffect(() => {
+    if (!open) {
+      onClose?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   return (
     <AlertDialog
       open={open}
@@ -89,7 +115,7 @@ export function TaskActionDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
-            {...(destructive ? { variant: 'destructive' as const } : {})}
+            variant={variant}
             disabled={isPending || !canSubmit}
             aria-busy={isPending}
             onClick={onSubmit}

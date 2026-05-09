@@ -2032,11 +2032,13 @@
         "loading": "Laddar uppföljningsuppgifter…",
         "manager_read_only_notice": "Du visar denna kö som chef — endast administratörer kan markera uppgifter som klara, hoppa över eller tilldela om dem.",
         "view_timeline": "Visa tidslinje",
+        "view_timeline_for": "Visa tidslinje för {company}",
         "overdue_banner": "{count, plural, one {# försenad uppgift} other {# försenade uppgifter}}",
         "overdue_banner_cta": "Klicka för att filtrera kön till endast försenade uppgifter",
         "overdue_banner_clear": "Filter aktivt — klicka för att visa alla öppna uppgifter igen",
         "overdue_badge": "Försenad",
         "status_tabs_aria": "Filtrera på uppgiftsstatus",
+        "assignment_filter_aria": "Filtrera på tilldelning",
         "task_type_filter_aria": "Filtrera på uppgiftstyp",
         "task_type_filter_all": "Alla typer",
         "status_tab": {
@@ -2088,7 +2090,8 @@
         },
         "yearInCycle": {
           "pill": "År {year} av {total}",
-          "aria_label": "År {year} av {total} · {taskType} · {company}"
+          "aria_label": "År {year} av {total} · {taskType} · {company}",
+          "aria_label_no_company": "År {year} av {total} · {taskType}"
         },
         "empty_state": {
           "title": "Inga väntande uppgifter",

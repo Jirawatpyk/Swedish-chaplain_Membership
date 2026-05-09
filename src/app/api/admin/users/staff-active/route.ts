@@ -25,18 +25,32 @@ export async function GET(_request: NextRequest) {
   // session-store outages produce a Sentry signal instead of every
   // request silently returning 401 (indistinguishable from a real
   // unauthenticated state).
+  //
+  // R6 IMP-2 close — `requireSession` calls `redirect()` for any
+  // request without a valid session, which throws `NEXT_REDIRECT`.
+  // Logging every such throw at ERROR severity floods Sentry with
+  // routine anonymous traffic. Filter it out — only genuine errors
+  // (DB outage, Upstash quota) reach the log call.
   let session;
   const sessionCorrelationId = randomUUID();
   try {
     session = await requireSession('staff');
   } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e : new Error(String(e)),
-        correlationId: sessionCorrelationId,
-      },
-      'admin.users.staff-active.session_resolution_failed',
-    );
+    const isNextRedirect =
+      e !== null &&
+      typeof e === 'object' &&
+      'digest' in e &&
+      typeof (e as { digest?: unknown }).digest === 'string' &&
+      (e as { digest: string }).digest.startsWith('NEXT_REDIRECT');
+    if (!isNextRedirect) {
+      logger.error(
+        {
+          err: e instanceof Error ? e : new Error(String(e)),
+          correlationId: sessionCorrelationId,
+        },
+        'admin.users.staff-active.session_resolution_failed',
+      );
+    }
     return errorResponse({
       status: 401,
       code: 'unauthenticated',

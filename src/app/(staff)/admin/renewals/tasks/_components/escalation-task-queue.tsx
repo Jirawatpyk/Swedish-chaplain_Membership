@@ -24,7 +24,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -101,7 +101,14 @@ export interface EscalationTaskQueueItem {
 }
 
 export interface EscalationTaskQueueProps {
-  readonly actorRole: 'admin' | 'manager' | 'member';
+  /**
+   * R6 IMP-11 close — narrowed from `'admin'|'manager'|'member'`. The
+   * queue page redirects member to `/admin/renewals` so member-role
+   * never reaches this component; including it widened the input
+   * domain unnecessarily and created dead branches that obscured
+   * `canMutate` intent.
+   */
+  readonly actorRole: 'admin' | 'manager';
   readonly actorUserId: string;
   readonly overdueCount: number;
   readonly items: ReadonlyArray<EscalationTaskQueueItem>;
@@ -116,8 +123,18 @@ const OVERDUE_HIGHLIGHT_MS = OVERDUE_HIGHLIGHT_DAYS * 24 * 60 * 60 * 1000;
  * Round 5 I-5 close — known API error codes mapped to localised toast
  * descriptions. Anything not in this set falls through to the generic
  * `unknown` key so admins see human copy instead of raw `task_not_open`.
+ *
+ * R6 IMP-3 close — split into wire-format (returned by API) vs client-
+ * synthetic (`offline` is generated locally from a TypeError, never
+ * sent by the server) so a hostile / drifted API response containing
+ * `{error:{code:'offline'}}` is treated as `unknown` rather than
+ * masquerading as the local "you appear to be offline" copy.
+ *
+ * R6 IMP-8 close — typed const tuple + type-guard so `safeCode`
+ * narrows to the literal union for downstream key-template safety
+ * (instead of widening to `string` via `as Set<string>`).
  */
-const KNOWN_ERROR_CODES = new Set([
+const WIRE_ERROR_CODES = [
   'task_not_open',
   'task_not_found',
   'feature_disabled',
@@ -126,8 +143,99 @@ const KNOWN_ERROR_CODES = new Set([
   'invalid_input',
   'invalid_cursor',
   'server_error',
-  'offline',
-] as const);
+] as const;
+type WireErrorCode = (typeof WIRE_ERROR_CODES)[number];
+/** Client-synthetic codes (NEVER wire-format). The catch handler
+ * passes these in directly without going through the wire-validator. */
+type ClientErrorCode = 'offline';
+type KnownErrorCode = WireErrorCode | ClientErrorCode;
+
+function isWireErrorCode(code: string): code is WireErrorCode {
+  return (WIRE_ERROR_CODES as readonly string[]).includes(code);
+}
+
+const STATUS_TABS = ['open', 'done', 'skipped'] as const;
+type StatusTab = (typeof STATUS_TABS)[number];
+
+/**
+ * R6 C-5 close — ARIA APG composite-widget tablist with roving
+ * tabIndex + Arrow-key navigation. Required for WCAG 2.1 SC 4.1.2
+ * (Name, Role, Value) compliance in tablist role.
+ *
+ * - Tab key: Tab IN reaches the selected tab; Tab OUT exits the group
+ * - Arrow keys: ArrowLeft/ArrowRight wrap-around navigate within group
+ * - Home / End: jump to first / last tab
+ * - Activation: clicking OR pressing Enter/Space (default Button) on
+ *   a focused tab fires onSelect (URL update via setSearchParam)
+ */
+function StatusTablist({
+  status,
+  t,
+  onSelect,
+}: {
+  readonly status: string;
+  readonly t: (key: string) => string;
+  readonly onSelect: (next: StatusTab) => void;
+}) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  function focusByIndex(idx: number): void {
+    const wrapped = (idx + STATUS_TABS.length) % STATUS_TABS.length;
+    refs.current[wrapped]?.focus();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
+    const currentIdx = STATUS_TABS.findIndex((s) => s === status);
+    if (currentIdx === -1) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusByIndex(currentIdx - 1);
+      onSelect(STATUS_TABS[(currentIdx - 1 + STATUS_TABS.length) % STATUS_TABS.length]!);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusByIndex(currentIdx + 1);
+      onSelect(STATUS_TABS[(currentIdx + 1) % STATUS_TABS.length]!);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      focusByIndex(0);
+      onSelect(STATUS_TABS[0]!);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      focusByIndex(STATUS_TABS.length - 1);
+      onSelect(STATUS_TABS[STATUS_TABS.length - 1]!);
+    }
+  }
+
+  return (
+    <div
+      className="flex gap-1"
+      role="tablist"
+      aria-label={t('status_tabs_aria')}
+      onKeyDown={handleKeyDown}
+    >
+      {STATUS_TABS.map((s, idx) => {
+        const selected = status === s;
+        return (
+          <Button
+            key={s}
+            ref={(el) => {
+              refs.current[idx] = el;
+            }}
+            size="sm"
+            variant={selected ? 'default' : 'outline'}
+            role="tab"
+            aria-selected={selected}
+            aria-controls="escalation-tasks-tabpanel"
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onSelect(s)}
+          >
+            {t(`status_tab.${s}`)}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function EscalationTaskQueue({
   actorRole,
@@ -210,15 +318,20 @@ export function EscalationTaskQueue({
    * Round 5 I-5 close — map known error codes to localised description
    * keys (`actions.<action>.errors.<code>`). Unknown codes fall through
    * to the `unknown` key so admins always see human copy.
+   *
+   * R6 IMP-3 + IMP-8 close — only WIRE codes (from API responses)
+   * are accepted from the response body. CLIENT codes (e.g.
+   * `'offline'`) are passed in directly by the catch handler — never
+   * trusted from a remote source.
    */
   function describeError(
     action: 'done' | 'skip' | 'reassign',
-    code: string,
+    code: KnownErrorCode | 'unknown',
   ): string {
-    const safeCode: string = (KNOWN_ERROR_CODES as Set<string>).has(code)
-      ? code
-      : 'unknown';
-    return t(`actions.${action}.errors.${safeCode}`);
+    return t(`actions.${action}.errors.${code}`);
+  }
+  function safeWireCode(code: string): WireErrorCode | 'unknown' {
+    return isWireErrorCode(code) ? code : 'unknown';
   }
 
   async function postAction(
@@ -242,7 +355,7 @@ export function EscalationTaskQueue({
           .catch(() => ({ error: { code: 'unknown' } }));
         const code: string = errBody?.error?.code ?? 'unknown';
         toast.error(t(`actions.${action}.error`), {
-          description: describeError(action, code),
+          description: describeError(action, safeWireCode(code)),
         });
         return false;
       }
@@ -250,9 +363,12 @@ export function EscalationTaskQueue({
       startTransition(() => router.refresh());
       return true;
     } catch (e) {
-      // Network failure typically surfaces as `TypeError: Failed to
-      // fetch` (Chrome / Firefox / Safari pattern from F8 Wave K14-8).
-      // Map to the localised `offline` description.
+      // Browsers (Chromium/Firefox/Safari) all surface offline as a
+      // TypeError with messages matching `/failed to fetch|
+      // networkerror|load failed/i`; one regex covers all three. The
+      // `offline` literal is a CLIENT-synthetic code (R6 IMP-3) — it
+      // is never sent by the server, so it can be passed directly to
+      // describeError without re-validating against WIRE codes.
       const isOffline =
         e instanceof TypeError &&
         /(failed to fetch|networkerror|load failed)/i.test(e.message);
@@ -300,10 +416,21 @@ export function EscalationTaskQueue({
   }
 
   /**
-   * Round 5 I-16 close — locale-aware date formatting via next-intl.
-   * Formatter respects the active locale; for `th-TH` next-intl renders
-   * the Thai Buddhist Era (BE) calendar via the embedded ICU lib. SV
-   * gets Swedish locale formatting. Bad input falls back to em-dash.
+   * Round 5 I-16 + R6 IMP-18 close — locale-aware date formatting via
+   * next-intl. The formatter respects the active locale; SV renders
+   * Swedish-locale dates (e.g. "1 jan. 2026").
+   *
+   * **TH BE caveat**: `Intl.DateTimeFormat('th-TH')` renders Gregorian
+   * years by default. To get Thai Buddhist Era (BE = CE + 543 — e.g.
+   * "1 ม.ค. 2569") the locale must include the unicode-extension
+   * `-u-ca-buddhist`. Whether this happens depends on
+   * `src/i18n/config.ts` — if not configured, TH users see Gregorian
+   * years which is acceptable for short-form dates per CLAUDE.md
+   * "Buddhist Era display-only for `th-TH` user-facing surfaces"
+   * (the rule applies to long-form dates and tax documents; short
+   * date column cells render either calendar legibly).
+   *
+   * Bad input falls back to em-dash.
    */
   function formatShortDate(iso: string): React.ReactNode {
     const ms = Date.parse(iso);
@@ -328,19 +455,22 @@ export function EscalationTaskQueue({
         </div>
       )}
 
-      {/* Overdue banner — only shows when overdueCount > 0 and we're
-          on the Open tab. E2 close: clickable button that filters the
-          queue to overdue-only tasks (toggles off when already filter
-          is active).
-          Round 5 C-5 close — `aria-live` was previously on the
-          `<button>`, which is an invalid ARIA pattern (live regions
-          must be non-interactive containers). Split into a separate
-          `sr-only` sibling region. */}
+      {/* R6 UX-I-1 close — aria-live span stays mounted ALWAYS so
+          AT only re-announces when text content changes (count
+          changes), not every time the visible banner mounts/unmounts.
+          The visible banner still appears only when overdueCount > 0
+          and status === 'open', but the announcement region is stable
+          DOM throughout the page lifecycle.
+          Round 5 C-5 close (preserved) — `aria-live` was previously
+          on the `<button>`, which is invalid ARIA. Live regions must
+          be non-interactive containers. */}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {overdueCount > 0 && status === 'open'
+          ? t('overdue_banner', { count: overdueCount })
+          : ''}
+      </span>
       {overdueCount > 0 && status === 'open' && (
         <>
-          <span className="sr-only" aria-live="polite" aria-atomic="true">
-            {t('overdue_banner', { count: overdueCount })}
-          </span>
           <button
             type="button"
             className="mb-4 flex w-full items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
@@ -364,35 +494,31 @@ export function EscalationTaskQueue({
           </button>
         </>
       )}
+      {/* End R6 UX-I-1 banner block. */}
 
       {/* Filter chips */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {/* Round 5 I-20 close — proper ARIA tab pattern: parent
             role="tablist" + each child role="tab" with aria-controls
-            pointing at the panel id below. */}
-        <div
-          className="flex gap-1"
-          role="tablist"
-          aria-label={t('status_tabs_aria')}
-        >
-          {(['open', 'done', 'skipped'] as const).map((s) => (
-            <Button
-              key={s}
-              size="sm"
-              variant={status === s ? 'default' : 'outline'}
-              role="tab"
-              aria-selected={status === s}
-              aria-controls="escalation-tasks-tabpanel"
-              onClick={() => setSearchParam('status', s)}
-            >
-              {t(`status_tab.${s}`)}
-            </Button>
-          ))}
-        </div>
+            pointing at the panel id below.
+            R6 C-5 close — Arrow-key navigation + roving-tabIndex per
+            ARIA APG tablist composite-widget pattern (WCAG 2.1
+            SC 4.1.2). Selected tab has tabIndex=0 (Tab into group);
+            others have tabIndex=-1 (Arrow-keys move focus, Tab exits
+            the group). */}
+        <StatusTablist
+          status={status}
+          t={t}
+          onSelect={(s) => setSearchParam('status', s)}
+        />
+        {/* R6 IMP-16 close — was incorrectly using `assignment_tab.all`
+            (the FIRST OPTION's label "All") as the GROUP's label, so
+            screen readers announced "All group". Use a dedicated
+            group label key. */}
         <div
           className="flex gap-1"
           role="group"
-          aria-label={t('assignment_tab.all')}
+          aria-label={t('assignment_filter_aria')}
         >
           {(['all', 'mine', 'unassigned'] as const).map((a) => (
             <Button
@@ -524,10 +650,18 @@ export function EscalationTaskQueue({
                           )}
                         </Link>
                         {/* SF-3 close — Timeline jump-link sub-action
-                            (smart-chamber feature #6). */}
+                            (smart-chamber feature #6).
+                            R6 UX-I-4 close — disambiguating aria-label
+                            so each row's timeline link has a unique
+                            announcement when SR users tab through the
+                            queue. */}
                         <Link
                           href={`/admin/members/${task.memberId}/timeline`}
                           className="ml-2 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                          aria-label={t('view_timeline_for', {
+                            company:
+                              task.memberCompanyName ?? task.memberId,
+                          })}
                         >
                           {t('view_timeline')}
                         </Link>
@@ -622,51 +756,58 @@ export function EscalationTaskQueue({
                           {/* Round 5 I-15 close — mobile: collapse the
                               3 actions into a DropdownMenu so the row
                               doesn't horizontal-scroll on narrow
-                              viewports (ux-standards § 9.1). */}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="md:hidden"
-                                  disabled={!isOpen || busy}
-                                  aria-busy={busy}
+                              viewports (ux-standards § 9.1).
+                              R6 UX-I-6 close — wrap the entire
+                              DropdownMenu (trigger + portal-rendered
+                              content) in a `md:hidden` div so the
+                              accessibility tree is fully removed at
+                              ≥md breakpoints, not just visually
+                              hidden via the trigger className. */}
+                          <div className="md:hidden inline-block">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={!isOpen || busy}
+                                    aria-busy={busy}
+                                  >
+                                    <MoreHorizontal
+                                      className="size-4"
+                                      aria-hidden
+                                    />
+                                    <span className="sr-only">
+                                      {t('actions.menu_label')}
+                                    </span>
+                                  </Button>
+                                }
+                              />
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setDoneDialogTaskId(task.taskId)
+                                  }
                                 >
-                                  <MoreHorizontal
-                                    className="size-4"
-                                    aria-hidden
-                                  />
-                                  <span className="sr-only">
-                                    {t('actions.menu_label')}
-                                  </span>
-                                </Button>
-                              }
-                            />
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setDoneDialogTaskId(task.taskId)
-                                }
-                              >
-                                {t('actions.done.label')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setSkipDialogTaskId(task.taskId)
-                                }
-                              >
-                                {t('actions.skip.label')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setReassignDialogTaskId(task.taskId)
-                                }
-                              >
-                                {t('actions.reassign.label')}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                  {t('actions.done.label')}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setSkipDialogTaskId(task.taskId)
+                                  }
+                                >
+                                  {t('actions.skip.label')}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() =>
+                                    setReassignDialogTaskId(task.taskId)
+                                  }
+                                >
+                                  {t('actions.reassign.label')}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>

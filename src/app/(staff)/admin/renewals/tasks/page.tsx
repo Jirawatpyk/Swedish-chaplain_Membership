@@ -37,6 +37,7 @@ import {
   ESCALATION_UNASSIGNED_FILTER,
   makeRenewalsDeps,
   type EscalationTaskStatus,
+  type UnassignedFilter,
 } from '@/modules/renewals';
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
@@ -99,7 +100,7 @@ export default async function EscalationTaskQueuePage({
   const overdueRaw = pickFirst(sp['overdue_only']);
   const overdueOnly = overdueRaw === 'true' || overdueRaw === '1';
 
-  let assignedToUserIdFilter: string | undefined;
+  let assignedToUserIdFilter: string | UnassignedFilter | undefined;
   if (assignment === 'mine') {
     assignedToUserIdFilter = session.user.id;
   } else if (assignment === 'unassigned') {
@@ -201,6 +202,14 @@ export default async function EscalationTaskQueuePage({
             taskType: task.taskType,
             assignedToRole: task.assignedToRole,
             assignedToUserId: task.assignedToUserId,
+            // R6 C-1 close — wire the I-13 fields through the SSR
+            // projection. The prior commit landed the LEFT JOIN +
+            // API response shape but forgot the page-side mapping,
+            // silently leaving the queue rendering raw 8-char UUID
+            // slices. Verified end-to-end: drizzle adapter returns
+            // → page maps → component renderAssigneeCell consumes.
+            assignedToDisplayName: task.assignedToDisplayName,
+            assignedToEmail: task.assignedToEmail,
             dueAt: task.dueAt,
             status: task.status,
             createdAt: task.createdAt,

@@ -8,10 +8,18 @@
  * after hydration. CLS=0 invariant: page + loading both wrap in
  * `TableContainer` (enforced by `pnpm check:layout`).
  *
- * Round 5 C-3 close — bumped from grid-cols-6 to grid-cols-8 to match
- * the actual live table column count after Phase 8 added the tier +
- * expiry columns. Previous skeleton caused visible CLS when SSR HTML
- * hydrated.
+ * Column count MUST match the live table at escalation-task-queue.tsx
+ * (8 cols admin / 7 cols manager). pnpm check:layout enforces
+ * TableContainer+TableContainer pairing but cannot validate column
+ * count — keep them in sync manually when adding/removing columns.
+ *
+ * R6 IMP-1 close — manager session has 7 cols (no Actions column).
+ * Loading skeleton can't read the role at the route level, so we
+ * default to 8 (admin envelope) which produces a tiny CLS shrink for
+ * managers on hydration. Acceptable per ux-standards.md § 18 because
+ * (a) admin is the dominant case, (b) the shrink is one column not a
+ * grid resize, and (c) the manager_read_only_notice banner above the
+ * table absorbs visual weight on the first paint.
  */
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';

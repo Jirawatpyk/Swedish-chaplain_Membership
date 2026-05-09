@@ -15,7 +15,7 @@
  */
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -38,6 +38,7 @@ export function SkipTaskDialog({
   const [skippedReason, setSkippedReason] = useState('');
   const [touched, setTouched] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const trimmed = skippedReason.trim();
   const isValid = trimmed.length >= 1 && trimmed.length <= MAX_REASON_LENGTH;
   const charsRemaining = MAX_REASON_LENGTH - skippedReason.length;
@@ -45,7 +46,15 @@ export function SkipTaskDialog({
 
   function handleSubmit(): void {
     setTouched(true);
-    if (!isValid) return;
+    if (!isValid) {
+      // R6 UX-I-2 close — return focus to the textarea so SR users
+      // land on the field with the inline error message after a
+      // submit-without-typing attempt. Without this, focus stays on
+      // the disabled Confirm button and the user has to Shift+Tab
+      // back to the field manually.
+      textareaRef.current?.focus();
+      return;
+    }
     startTransition(async () => {
       await onSubmit(trimmed);
     });
@@ -67,7 +76,7 @@ export function SkipTaskDialog({
       isPending={isPending}
       canSubmit={isValid}
       onSubmit={handleSubmit}
-      destructive
+      variant="destructive"
     >
       <div className="grid gap-2">
         <Label htmlFor="skipped-reason">
@@ -79,6 +88,7 @@ export function SkipTaskDialog({
         </Label>
         <Textarea
           id="skipped-reason"
+          ref={textareaRef}
           value={skippedReason}
           onChange={(e) =>
             setSkippedReason(e.target.value.slice(0, MAX_REASON_LENGTH))

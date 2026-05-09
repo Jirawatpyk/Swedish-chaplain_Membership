@@ -39,6 +39,7 @@ import {
   ESCALATION_UNASSIGNED_FILTER,
   InvalidCursorError,
   makeRenewalsDeps,
+  type UnassignedFilter,
 } from '@/modules/renewals';
 
 const VALID_STATUSES = new Set(['open', 'done', 'skipped'] as const);
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
       ? (statusParam as StatusFilter)
       : 'open';
 
-  let assignedToUserIdFilter: string | undefined;
+  let assignedToUserIdFilter: string | UnassignedFilter | undefined;
   if (assignedParam !== null) {
     if (assignedParam === 'me') {
       assignedToUserIdFilter = ctx.current.user.id;

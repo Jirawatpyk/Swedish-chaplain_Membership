@@ -34,23 +34,50 @@ export interface ListEscalationTasksOpts {
   /**
    * Per-user-tray filter. Accepts:
    *   - A specific user UUID — matches `assigned_to_user_id = <uuid>`
-   *   - `'__unassigned__'` (Phase 8 T214 sentinel) — matches
-   *     `assigned_to_user_id IS NULL` (tasks assigned by role only).
+   *   - `ESCALATION_UNASSIGNED_FILTER` constant (NOT a string literal)
+   *     — matches `assigned_to_user_id IS NULL`.
    *
-   * Round 5 I-8 close — narrow the type so a typo at the call site
-   * (`'__unassined__'`) becomes a compile error rather than a silent
-   * zero-row match. The literal-union form preserves call-site
-   * explicitness while making the magic-string contract type-checked.
+   * Round 5 I-8 + R6 C-4 close — the prior narrowing
+   * `string | typeof ESCALATION_UNASSIGNED_FILTER` collapsed to bare
+   * `string` (TS literal-into-string widening) so typos like
+   * `'__unassined__'` compiled fine. The fix uses a `unique symbol`
+   * sentinel value that does NOT widen with `string`. Callers MUST
+   * import the constant by name; arbitrary strings are valid only as
+   * UUIDs (the route handler runtime-validates).
    */
-  readonly assignedToUserIdFilter?:
-    | string
-    | typeof ESCALATION_UNASSIGNED_FILTER;
+  readonly assignedToUserIdFilter?: string | UnassignedFilter;
   readonly overdueOnly?: boolean;
   readonly sort?: 'due_at_asc' | 'due_at_desc' | 'created_at_desc';
 }
 
-/** F8 Phase 8 T214 — unassigned-tray sentinel for `assignedToUserIdFilter`. */
-export const ESCALATION_UNASSIGNED_FILTER = '__unassigned__' as const;
+/**
+ * F8 Phase 8 T214 + R6 C-4 close — unassigned-tray sentinel for
+ * `assignedToUserIdFilter`.
+ *
+ * Implemented as a unique-symbol-typed Object so it does NOT widen
+ * with `string` in a union. A typo like `'__unassined__'` is now a
+ * compile error (cannot match the symbol-tagged shape).
+ *
+ * The Drizzle adapter (`drizzle-renewal-escalation-task-repo.ts`)
+ * detects the sentinel via reference equality.
+ */
+declare const unassignedFilterBrand: unique symbol;
+export type UnassignedFilter = { readonly [unassignedFilterBrand]: true };
+export const ESCALATION_UNASSIGNED_FILTER: UnassignedFilter = Object.freeze({
+  [Symbol.for('renewals.escalation.unassigned-filter')]: true,
+} as unknown as UnassignedFilter);
+
+/**
+ * Type guard for the sentinel. Used by repo adapters to narrow
+ * `string | UnassignedFilter` unions; the reference-equality check
+ * doesn't narrow at the type level because TS can't see through the
+ * `unique symbol` brand without a guard helper.
+ */
+export function isUnassignedFilter(
+  value: string | UnassignedFilter,
+): value is UnassignedFilter {
+  return value === ESCALATION_UNASSIGNED_FILTER;
+}
 
 export interface EscalationTaskPage {
   readonly items: ReadonlyArray<RenewalEscalationTask>;
@@ -98,12 +125,35 @@ export type EscalationTaskWithMember = RenewalEscalationTask & {
   readonly memberTierBucket: string | null;
   readonly cycleExpiresAt: string | null;
   /**
-   * Round 5 I-13 close — joined `users.display_name` for the
-   * task's `assigned_to_user_id`. NULL when the assignee is role-only
-   * (no specific user), or when the user record was deleted.
+   * Round 5 I-13 + R6 IMP-9 close — joined `users.display_name` for
+   * the task's `assigned_to_user_id`.
+   *
+   * NULL when:
+   *   1. `assignedToUserId === null` (role-only assignment), OR
+   *   2. The joined user row is missing (user was deleted —
+   *      referential drift), OR
+   *   3. The user exists but `display_name IS NULL` (DB column is
+   *      nullable; admin onboarding may skip display-name capture).
+   *
+   * UI fallback chain in `escalation-task-queue.tsx::renderAssigneeCell`:
+   * `assignedToDisplayName ?? assignedToEmail ?? userId.slice(0,8)`.
    */
   readonly assignedToDisplayName: string | null;
-  /** Round 5 I-13 close — joined `users.email` (fallback display). */
+  /**
+   * Round 5 I-13 + R6 IMP-9 close — joined `users.email` (fallback
+   * display when `display_name` is null).
+   *
+   * NULL when:
+   *   1. `assignedToUserId === null` (role-only assignment), OR
+   *   2. The joined user row is missing (user was deleted —
+   *      referential drift).
+   *
+   * Invariant: `assignedToUserId !== null && assignedToEmail === null`
+   * ALWAYS indicates referential drift (the underlying DB column is
+   * `notNull`, so a non-null userId pointing to a non-deleted user
+   * always has an email). This is the canonical signal for
+   * "deleted user" vs "no display name".
+   */
   readonly assignedToEmail: string | null;
 };
 

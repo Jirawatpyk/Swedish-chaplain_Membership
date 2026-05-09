@@ -151,6 +151,20 @@ export async function completeEscalationTask(
     if (e instanceof EscalationTaskNotFoundError) {
       return err({ kind: 'task_not_open' });
     }
+    // R6 C-2 close — log the underlying exception BEFORE wrapping it
+    // into a server_error Result. Without this, a real DB outage /
+    // advisory-lock contention / RLS violation surfaces as a generic
+    // 500 toast and produces ZERO Sentry signal (the route's outer
+    // catch never fires because the use-case already returned ok-ish).
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        tenantId: input.tenantId,
+        taskId: input.taskId,
+        correlationId: input.correlationId,
+      },
+      '[complete-escalation-task] unexpected error → server_error',
+    );
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

@@ -23,7 +23,7 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { render, screen, act, cleanup } from '@testing-library/react';
+import { render, act, cleanup } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { NextIntlClientProvider } from 'next-intl';
 

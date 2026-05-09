@@ -202,6 +202,7 @@ export {
   type EscalationTaskPage,
   type EscalationTaskAdminQueuePage,
   type EscalationTaskWithMember,
+  type UnassignedFilter,
 } from './application/ports/renewal-escalation-task-repo';
 
 export type {

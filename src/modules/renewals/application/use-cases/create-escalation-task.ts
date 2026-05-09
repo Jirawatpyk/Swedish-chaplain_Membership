@@ -197,6 +197,16 @@ export async function createEscalationTask(
       });
     });
   } catch (e) {
+    // R6 C-2 close — log before wrapping (see complete-escalation-task).
+    logger.error(
+      {
+        err: e instanceof Error ? e : new Error(String(e)),
+        tenantId: rawInput.tenantId,
+        memberId: rawInput.memberId,
+        correlationId: rawInput.correlationId,
+      },
+      '[create-escalation-task] unexpected error → server_error',
+    );
     return err({
       kind: 'server_error',
       message: e instanceof Error ? e.message : String(e),

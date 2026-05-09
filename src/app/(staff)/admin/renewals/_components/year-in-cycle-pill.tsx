@@ -81,6 +81,9 @@ export function YearInCyclePill({
   // Round 5 I-22 close — added `aria-label` so screen-reader users get
   // the same year-context information that sighted users see in the
   // visible "Year X of Y" pill (parity with `full` variant).
+  // R6 UX-I-3 close — fallback case (multi-year, no company) now uses
+  // a dedicated i18n key `aria_label_no_company` so translators
+  // control the separator (raw "·" U+00B7 was inconsistent across SR).
   const compactAriaLabel =
     showYearPrefix && memberCompanyName !== undefined
       ? t('aria_label', {
@@ -90,7 +93,11 @@ export function YearInCyclePill({
           company: memberCompanyName,
         })
       : showYearPrefix
-        ? `${label} · ${taskTypeLabel}`
+        ? t('aria_label_no_company', {
+            year: yearInCycle,
+            total: totalYears,
+            taskType: taskTypeLabel,
+          })
         : taskTypeLabel;
   return (
     <span

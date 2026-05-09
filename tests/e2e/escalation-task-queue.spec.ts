@@ -201,8 +201,12 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tasks');
+    // R6 IMP-15 close — added wcag21a + wcag21aa tags so axe catches
+    // SC 2.4.11 (Focus Not Obscured) + SC 2.5.8 (Target Size ≥24×24)
+    // per F3 opportunistic adoption + project-wide pattern (matches
+    // 23 of 26 a11y test files including broadcast-axe + members-a11y).
     const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa'])
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
     expect(
       results.violations,
@@ -212,7 +216,7 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
     ).toEqual([]);
   });
 
-  test('a11y: prefers-reduced-motion still renders queue without motion', async ({
+  test('a11y: prefers-reduced-motion neutralises animation', async ({
     browser,
   }) => {
     const reducedMotionContext = await browser.newContext({
@@ -225,9 +229,37 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
       await expect(
         page.getByRole('heading', { name: /escalation tasks/i }),
       ).toBeVisible();
-      // Spinner / shimmer must not animate under reduced-motion (the
-      // global rule in globals.css neutralises `.animate-spin` and
-      // `.skeleton-shimmer` keyframes — tests the compose effect).
+      // R6 IMP-14 close — assert globals.css reduced-motion rule
+      // actually neutralises `.animate-spin` keyframes. Pre-fix the
+      // test only verified the page rendered; it would pass even if
+      // the global rule were deleted entirely. Now we assert the
+      // computed animation-duration is 0s on a `.animate-spin`
+      // element (any spinner instance — we synth one via DOM eval to
+      // avoid coupling to a particular UI state).
+      const animationDurations = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        probe.className = 'animate-spin';
+        probe.style.position = 'absolute';
+        probe.style.opacity = '0';
+        document.body.appendChild(probe);
+        const cs = window.getComputedStyle(probe);
+        const result = {
+          animationDuration: cs.animationDuration,
+          animationName: cs.animationName,
+        };
+        document.body.removeChild(probe);
+        return result;
+      });
+      // The reduced-motion media query in globals.css sets
+      // `animation-duration: 0s` (or removes the keyframe assignment)
+      // when prefers-reduced-motion: reduce.
+      expect(
+        animationDurations.animationDuration === '0s' ||
+          animationDurations.animationName === 'none',
+        `Expected reduced-motion to neutralise .animate-spin; got ` +
+          `duration="${animationDurations.animationDuration}" ` +
+          `name="${animationDurations.animationName}"`,
+      ).toBe(true);
     } finally {
       await reducedMotionContext.close();
     }
