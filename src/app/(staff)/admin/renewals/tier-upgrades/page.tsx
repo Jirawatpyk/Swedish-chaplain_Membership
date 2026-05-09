@@ -13,6 +13,8 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
+import { AlertTriangle } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
@@ -49,6 +51,7 @@ export default async function TierUpgradeQueuePage() {
   let queueItems: Awaited<
     ReturnType<typeof deps.tierUpgradeRepo.listForAdminQueue>
   >['items'] = [];
+  let hasError = false;
   try {
     const queue = await deps.tierUpgradeRepo.listForAdminQueue(
       tenantCtx.slug,
@@ -56,6 +59,10 @@ export default async function TierUpgradeQueuePage() {
     );
     queueItems = queue.items;
   } catch (e) {
+    // Phase 7 review-fix I-UX-1: render explicit error state instead of
+    // silently rendering empty-state copy (which would mislead admin
+    // into thinking no candidates exist when the DB query failed).
+    hasError = true;
     logger.error(
       { err: e instanceof Error ? e : new Error(String(e)) },
       'admin.renewals.tier-upgrades.page_load_failed',
@@ -65,17 +72,36 @@ export default async function TierUpgradeQueuePage() {
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <TierUpgradeQueueClient
-        items={queueItems.map((s) => ({
-          suggestionId: s.suggestionId,
-          memberId: s.memberId,
-          status: s.status,
-          fromPlanId: s.fromPlanId,
-          toPlanId: s.toPlanId,
-          reasonCode: s.reasonCode,
-          createdAt: s.createdAt,
-        }))}
-      />
+      {hasError ? (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="flex items-start gap-3 py-6">
+            <AlertTriangle
+              className="mt-0.5 size-5 shrink-0 text-destructive"
+              aria-hidden
+            />
+            <div>
+              <p className="text-base font-medium text-destructive">
+                {t('error_state.title')}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {t('error_state.subtitle')}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <TierUpgradeQueueClient
+          items={queueItems.map((s) => ({
+            suggestionId: s.suggestionId,
+            memberId: s.memberId,
+            status: s.status,
+            fromPlanId: s.fromPlanId,
+            toPlanId: s.toPlanId,
+            reasonCode: s.reasonCode,
+            createdAt: s.createdAt,
+          }))}
+        />
+      )}
     </TableContainer>
   );
 }

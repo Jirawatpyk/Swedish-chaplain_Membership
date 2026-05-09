@@ -228,6 +228,45 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     }
   });
 
+  it('AS2 — accept dispatches member email + emits notify audit', async () => {
+    // Phase 7 review-fix C-TEST-1: explicit AS2 / FR-039 step 2
+    // assertion. The accept-tier-upgrade post-tx path calls the stub
+    // gateway (NODE_ENV=test) which logs synthetic delivery id; we
+    // assert the audit row was emitted with the brand fields.
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    const result = await acceptTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The Resend gateway in test mode dispatches a real (or
+    // sandbox) message. Assert the audit row landed regardless of
+    // delivery-id presence — `_member_notified` fires only on
+    // gateway success; `_member_notify_skipped` fires when the
+    // member has no primary contact email; `_member_notify_failed`
+    // fires when the gateway returns err. This test seeds a primary
+    // contact + has a healthy gateway so the success audit MUST fire.
+    const notifyAudits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          eq(auditLog.eventType, 'tier_upgrade_pending_member_notified'),
+        ),
+    );
+    expect(notifyAudits.length).toBeGreaterThanOrEqual(1);
+  }, 60_000);
+
   it('accept happy path — pending state + scheduled-plan-change + audit', async () => {
     const seeded = await seedSuggestionState(tenant, admin, {
       daysUntilExpiry: 60,

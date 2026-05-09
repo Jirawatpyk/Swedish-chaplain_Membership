@@ -27,17 +27,24 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { TenantTx } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 // Type-only — runtime no-op brand cast (Constitution Principle III).
-import type { MemberId } from '@/modules/members';
+import type { MemberId, PlanId } from '@/modules/members';
 
+// Phase 7 review-fix C-CODE-1: F2 plan_id is `text` (slug-style — e.g.
+// 'regular', 'premium'), not UUID. See migration 0117 fix on
+// tier_upgrade_suggestions for the mirror precedent. The original
+// `.uuid()` constraint rejected every legitimate F2 plan id at runtime
+// (sister use-case `supersede-pending-tier-upgrade.ts:40` already
+// shipped the correct `.min(1)` shape).
 export const rescheduleOnPlanChangeInputSchema = z.object({
   tenantId: z.string().min(1),
   memberId: z.string().uuid(),
-  oldPlanId: z.string().uuid(),
-  newPlanId: z.string().uuid(),
+  oldPlanId: z.string().min(1),
+  newPlanId: z.string().min(1),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
 });
@@ -89,6 +96,49 @@ export async function rescheduleOnPlanChangeInTx(
     newPlan.status === 'found' ? newPlan.plan.tierBucket : null;
 
   if (oldBucket === null || newBucket === null) {
+    // Phase 7 review-fix S-2-errors: explicit forensic-chain entry.
+    // Without this audit + counter, a F2 plan-flip with broken plan
+    // lookup would commit silently and the reminder dispatcher would
+    // keep using the OLD bucket's policy unobserved.
+    const reason: 'old_plan_not_found' | 'new_plan_not_found' | 'both_not_found' =
+      oldBucket === null && newBucket === null
+        ? 'both_not_found'
+        : oldBucket === null
+          ? 'old_plan_not_found'
+          : 'new_plan_not_found';
+    const counterSide: 'old' | 'new' | 'both' =
+      reason === 'both_not_found' ? 'both' : reason === 'old_plan_not_found' ? 'old' : 'new';
+    renewalsMetrics.rescheduleBucketResolutionFailed(counterSide);
+    try {
+      await deps.auditEmitter.emitInTx(
+        _tx,
+        {
+          type: 'renewal_schedule_reschedule_skipped',
+          payload: {
+            member_id: args.memberId as MemberId,
+            old_plan_id: args.oldPlanId as PlanId,
+            new_plan_id: args.newPlanId as PlanId,
+            reason,
+          },
+        },
+        {
+          tenantId: args.tenantId,
+          actorUserId: null,
+          actorRole: 'system',
+          correlationId: args.correlationId,
+          requestId: args.requestId,
+        },
+      );
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          tenantId: args.tenantId,
+          memberId: args.memberId,
+        },
+        '[reschedule-on-plan-change] audit emit failed for reschedule_skipped',
+      );
+    }
     logger.warn(
       {
         tenantId: args.tenantId,
@@ -96,8 +146,9 @@ export async function rescheduleOnPlanChangeInTx(
         newPlanId: args.newPlanId,
         oldBucket,
         newBucket,
+        reason,
       },
-      '[reschedule-on-plan-change] could not resolve buckets — skipping diff',
+      '[reschedule-on-plan-change] could not resolve buckets — emitting reschedule_skipped audit',
     );
     return {
       cancelledStepIds: [],

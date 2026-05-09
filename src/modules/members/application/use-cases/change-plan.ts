@@ -13,7 +13,7 @@
  */
 
 import { z } from 'zod';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
@@ -60,30 +60,25 @@ export type ChangePlanError =
   | { type: 'startup_too_old'; foundedYear: number; maxAllowedYears: number }
   | { type: 'server_error'; message: string };
 
-/**
- * F8 listener event payload — emitted to `manualPlanChangeListeners`
- * after the `member_plan_manually_changed` audit row commits inside the
- * change-plan tx. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
- * factory returns the listener array; the route handler wires it.
- *
- * Each listener runs inside the F3 tx (the `tx` param) so failures
- * roll the F3 plan-change back per Constitution Principle VIII.
- * Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern.
- */
-export interface ManualPlanChangeListenerEvent {
-  readonly tenantId: string;
-  readonly memberId: string;
-  readonly oldPlanId: string;
-  readonly newPlanId: string;
-  readonly actorUserId: string;
-  readonly correlationId: string;
-  readonly requestId: string | null;
-}
+// F8 listener event payload — emitted to `manualPlanChangeListeners`
+// after the `member_plan_manually_changed` audit row commits inside
+// the change-plan tx. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
+// factory returns the listener array; the route handler wires it.
+//
+// Each listener runs inside the F3 tx (the `tx` param) so failures
+// roll the F3 plan-change back per Constitution Principle VIII.
+// Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern.
+//
+// Phase 7 review-fix C-TYPE-1 — the event shape lives in F8's port to
+// eliminate the prior duplicate F3 + F8 definitions that only worked
+// via TS structural typing.
+import type {
+  ManualPlanChangeEvent,
+  ManualPlanChangeListener as ManualPlanChangeListenerCanonical,
+} from '@/modules/renewals';
 
-export type ManualPlanChangeListener = (
-  evt: ManualPlanChangeListenerEvent,
-  tx: TenantTx,
-) => Promise<void>;
+export type ManualPlanChangeListenerEvent = ManualPlanChangeEvent;
+export type ManualPlanChangeListener = ManualPlanChangeListenerCanonical;
 
 export type ChangePlanDeps = {
   tenant: TenantContext;

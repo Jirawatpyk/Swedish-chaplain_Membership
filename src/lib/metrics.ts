@@ -1401,6 +1401,108 @@ export const renewalsMetrics = {
    * `reconcile`). Adding `cron_kind` lets SRE attach distinct alert
    * rules per stream + diagnose triage in seconds, not minutes.
    */
+  /**
+   * F8 Phase 7 review-fix C-ERR-1 — listener swallow observability.
+   *
+   * Counts failures from the F2 → F8 plan-change bridge listeners
+   * (`f2-plan-change-bridge.ts:f8OnManualPlanChangeCallbacks`). Each
+   * listener logs + swallows by design (the F2 plan-flip already
+   * committed; throwing would be after-the-fact). Vercel alert rules
+   * attach to OTel counters not log strings, so on-call detection
+   * needs this pair. Any non-zero rate sustained >5 min indicates
+   * the F8 supersede / reschedule audit chain is being silently lost.
+   */
+  manualPlanChangeListenerFailed(
+    listener: 'supersede' | 'reschedule',
+    tenantId: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_manual_plan_change_listener_failed_total',
+        'F8 listener attached to F2 member_plan_manually_changed event failed (audit chain silently lost)',
+      ).add(1, { listener, tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix C-ERR-2 — apply-pending callback INVALID_TX
+   * fallback observability. Sister metric to `onPaidInvalidTx` for
+   * the cycle-completion callback. Any non-zero rate sustained >5 min
+   * indicates F4 contract drift on the apply-pending path — atomic-
+   * single-tx invariant lost; F4 commit + F8 commit eventual-
+   * consistency window re-opened.
+   */
+  applyPendingInvalidTx: {
+    add(_count: number, _attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_apply_pending_invalid_tx_total',
+          'F8 apply-pending-tier-upgrade callback received non-TenantTx from F4 — atomic-single-tx invariant lost',
+        ).add(_count, _attrs);
+      });
+    },
+  },
+
+  /**
+   * F8 Phase 7 review-fix I-ERR-2 — tier-upgrade member-notify failure
+   * counter. Fires when `RenewalGateway.sendTierUpgradeApprovalEmail`
+   * returns err after retry-budget exhaustion OR when the post-tx
+   * notification path catches an exception. Companion to the new
+   * audit `tier_upgrade_pending_member_notify_failed`.
+   */
+  tierUpgradeNotifyFailed(
+    failureKind:
+      | 'gateway_4xx'
+      | 'gateway_5xx'
+      | 'recipient_unsubscribed'
+      | 'recipient_email_unverified'
+      | 'template_variables_missing'
+      | 'no_primary_contact'
+      | 'render_failed'
+      | 'unknown',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_notify_failed_total',
+        'F8 tier-upgrade approval email failed (member never told their upgrade was approved)',
+      ).add(1, { failure_kind: failureKind });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix S-2-errors — reschedule listener bucket-
+   * resolution failure counter. Fires when `loadPlanFrozenFields` for
+   * the old or new plan returns `not_found`, leaving the `renewal_
+   * schedule_rescheduled` audit unemitted. Companion to the new audit
+   * `renewal_schedule_reschedule_skipped`.
+   */
+  rescheduleBucketResolutionFailed(
+    side: 'old' | 'new' | 'both',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reschedule_bucket_resolution_failed_total',
+        'F8 reschedule listener could not resolve a tier-bucket for the F2 plan-change event',
+      ).add(1, { side });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix S-3-errors — per-orphan reconcile failure
+   * counter. Counts individual `tier_upgrade_pending_orphan_detected`
+   * dismiss-+-emit failures inside the weekly reconcile cron.
+   * `dismissed++` only on success, so this counter surfaces the
+   * difference for per-tenant alert routing.
+   */
+  tierUpgradeReconcileErrors(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_reconcile_errors_total',
+        'F8 reconcile-pending-applications failed to dismiss an orphan suggestion (continues with next)',
+      ).add(1, { tenant_id: tenantId });
+    });
+  },
+
   coordinatorAuditEmitFailed(
     cronKind:
       | 'dispatch'

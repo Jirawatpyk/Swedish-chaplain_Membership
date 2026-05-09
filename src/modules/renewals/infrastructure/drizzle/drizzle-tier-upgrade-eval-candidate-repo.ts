@@ -21,11 +21,13 @@
  */
 import { and, eq, sql, asc, gt, exists } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans';
 import { renewalCycles } from '../schema-renewal-cycles';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { parseTierBucket } from '../../domain/value-objects/tier-bucket';
 import type {
   TierUpgradeEvalCandidate,
   TierUpgradeEvalCandidateListArgs,
@@ -105,18 +107,35 @@ export function makeDrizzleTierUpgradeEvalCandidateRepo(
 
         void tenantId; // RLS already scopes; param kept for adapter symmetry.
 
-        const items: TierUpgradeEvalCandidate[] = rows
-          .slice(0, limit)
-          .map((row) => ({
+        // Phase 7 review-fix I-TYPE-1: narrow `renewal_tier_bucket` to
+        // the typed `TierBucket` union. Rows whose bucket value is
+        // unparseable are dropped + warn-logged so a DB drift cannot
+        // silently bypass the eligibility decision tree.
+        const items: TierUpgradeEvalCandidate[] = [];
+        for (const row of rows.slice(0, limit)) {
+          const bucketParse = parseTierBucket(row.renewalTierBucket);
+          if (!bucketParse.ok) {
+            logger.warn(
+              {
+                tenantId: row.tenantId,
+                memberId: row.memberId,
+                rawBucket: row.renewalTierBucket,
+              },
+              '[tier-upgrade-eval-candidate] dropping member with unparseable renewal_tier_bucket',
+            );
+            continue;
+          }
+          items.push({
             tenantId: row.tenantId,
             memberId: row.memberId,
             currentPlanId: row.currentPlanId,
-            currentRenewalTierBucket: row.renewalTierBucket,
+            currentRenewalTierBucket: bucketParse.value,
             turnoverThb: row.turnoverThb,
             // satang → THB (1 THB = 100 satang).
             paidInvoiceVolume12mThb:
               Number(row.paidInvoiceVolumeSatang ?? 0n) / 100,
-          }));
+          });
+        }
         const nextCursor =
           rows.length > limit ? rows[limit]!.memberId : null;
         return { items, nextCursor };

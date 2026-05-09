@@ -227,7 +227,10 @@ export async function evaluateTierUpgrade(
   if (!hasAnyThreshold) {
     try {
       await deps.auditEmitter.emit(
-        { type: 'tier_upgrade_skipped_no_thresholds_configured', payload: {} },
+        {
+          type: 'tier_upgrade_skipped_no_thresholds_configured',
+          payload: { catalogue_size: catalogue.length },
+        },
         {
           tenantId,
           actorUserId: null,

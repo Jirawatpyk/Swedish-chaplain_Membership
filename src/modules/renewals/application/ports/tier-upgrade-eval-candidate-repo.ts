@@ -17,15 +17,17 @@
  * `TierUpgradeEvalCandidateRepo` is the weekly cron composite
  * (~5,000 rows/week, different join shape).
  *
+ * Phase 7 review-fix I-TYPE-1: bucket label is `TierBucket` typed.
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 
 export interface TierUpgradeEvalCandidate {
   readonly tenantId: string;
   readonly memberId: string;
   readonly currentPlanId: string;
-  /** Joined from `membership_plans.renewal_tier_bucket`. */
-  readonly currentRenewalTierBucket: string;
+  /** Joined from `membership_plans.renewal_tier_bucket` (Domain TierBucket). */
+  readonly currentRenewalTierBucket: TierBucket;
   /** `members.turnover_thb` — nullable per F3 schema. */
   readonly turnoverThb: number | null;
   /**

@@ -9,7 +9,12 @@
  * Pure interface — no F2 SDK / Drizzle / framework imports
  * (Constitution Principle III). Adapter wires F2 barrel
  * `listPlans` + `membershipPlans` table to materialise this.
+ *
+ * Phase 7 review-fix I-TYPE-1: `renewalTierBucket` is the typed
+ * `TierBucket` literal-union (Domain const tuple) instead of bare
+ * string — typo / DB drift becomes compile-time error.
  */
+import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 
 /**
  * Lightweight projection of an F2 `MembershipPlan` carrying ONLY the
@@ -19,8 +24,8 @@
  */
 export interface PlanCatalogEntry {
   readonly planId: string;
-  /** Full bucket label per F2 5-bucket enum (`thai_alumni` | … | `partnership`). */
-  readonly renewalTierBucket: string;
+  /** Full bucket label per F2 5-bucket Domain enum (`thai_alumni` | … | `partnership`). */
+  readonly renewalTierBucket: TierBucket;
   /**
    * Minimum turnover threshold (in THB minor units → satang/baht stored
    * as integer). Null when the plan has no eligibility floor.

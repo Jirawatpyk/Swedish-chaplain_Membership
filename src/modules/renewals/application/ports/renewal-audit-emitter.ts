@@ -19,6 +19,8 @@
 import type { TenantTx } from '@/lib/db';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
+import type { TaskId } from '../../domain/renewal-escalation-task';
+import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 import type {
@@ -126,6 +128,17 @@ export const F8_AUDIT_EVENT_TYPES = [
   // 401 without a forensic record, so a sustained CRON_SECRET-rotation
   // incident or external probe was invisible in audit_log.
   'cron_bearer_auth_rejected',
+  // --- F8 Phase 7 review-fix Round 1 (3) — silent-skip closure --------------
+  // Migration 0119 adds the 3 pgEnum values. Emit sites:
+  //   - tier_upgrade_pending_member_notify_skipped → accept-tier-upgrade.ts
+  //     when dispatch-candidate primaryContact.email is missing
+  //   - tier_upgrade_pending_member_notify_failed → accept-tier-upgrade.ts
+  //     when sendTierUpgradeApprovalEmail returns err after retries OR throws
+  //   - renewal_schedule_reschedule_skipped → reschedule-on-plan-change.ts
+  //     when plan-lookup-port returns not_found for old or new plan
+  'tier_upgrade_pending_member_notify_skipped',
+  'tier_upgrade_pending_member_notify_failed',
+  'renewal_schedule_reschedule_skipped',
   // --- Phase 5 (US3 Member Self-Service) additions (4) --------------------
   // T120 race-window forensic event (research.md R1 § Token re-issuance,
   // spec.md § Edge Cases CHK033). Emitted when a token verifies on a
@@ -148,9 +161,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 59
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 62
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 59';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 62';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -336,6 +349,9 @@ export interface F8AuditPayloadShapes {
    * at + the F2 scheduled_plan_changes row id (forensic linkage to the
    * F2 supersede listener). Member's `members.plan_id` is NOT mutated
    * yet (FR-039 — no surprise mid-year invoicing).
+   *
+   * Phase 7 review-fix I-TYPE-4: `scheduled_change_id` carries the
+   * `ScheduledChangeId` brand for cross-module forensic linkage.
    */
   readonly tier_upgrade_accepted: {
     readonly suggestion_id: SuggestionId;
@@ -363,11 +379,14 @@ export interface F8AuditPayloadShapes {
    * Phase 7 T180 — T-180 verify-task scheduled when
    * `expires_at - today > 180 days`. Admin re-verifies the upgrade
    * still applies before the cycle rollover.
+   *
+   * Phase 7 review-fix I-TYPE-4: `verification_task_id` is the
+   * `TaskId` brand from the F8 escalation-task domain.
    */
   readonly tier_upgrade_pending_admin_verification_due: {
     readonly suggestion_id: SuggestionId;
     readonly member_id: MemberId;
-    readonly verification_task_id: string;
+    readonly verification_task_id: TaskId;
     readonly verification_due_at: string;
   };
   /**
@@ -416,8 +435,15 @@ export interface F8AuditPayloadShapes {
    * has not configured turnover thresholds on any plan in their
    * catalogue (i.e. `min_turnover_minor_units IS NULL` everywhere).
    * Cron continues with next tenant.
+   *
+   * Phase 7 review-fix I-TYPE-3: enriched with `catalogue_size` so
+   * dashboards can distinguish "tenant has 0 plans" (onboarding gap)
+   * from "tenant has N plans, none with thresholds" (config gap)
+   * without joining F2 `membership_plans`.
    */
-  readonly tier_upgrade_skipped_no_thresholds_configured: Record<string, never>;
+  readonly tier_upgrade_skipped_no_thresholds_configured: {
+    readonly catalogue_size: number;
+  };
   /**
    * Phase 7 T185 (reconcile cron) — orphan detection: a suggestion in
    * `accepted_pending_apply` whose `target_apply_at_cycle_id` cycle is
@@ -442,14 +468,63 @@ export interface F8AuditPayloadShapes {
    * `cancelled_step_ids` are old-bucket steps no longer scheduled;
    * `new_step_ids` are new-bucket steps newly scheduled. Same-bucket
    * plan changes do not emit (early-return inside the use-case).
+   *
+   * Phase 7 review-fix I-TYPE-2: bucket fields use Domain `TierBucket`
+   * literal-union instead of bare string.
    */
   readonly renewal_schedule_rescheduled: {
     readonly member_id: MemberId;
     readonly cycle_id: CycleId;
-    readonly old_tier_bucket: string;
-    readonly new_tier_bucket: string;
+    readonly old_tier_bucket: TierBucket;
+    readonly new_tier_bucket: TierBucket;
     readonly cancelled_step_ids: ReadonlyArray<string>;
     readonly new_step_ids: ReadonlyArray<string>;
+  };
+  /**
+   * Phase 7 review-fix I-ERR-1 — emitted when admin Accept commits
+   * the suggestion transition but the member has no primary contact
+   * email. FR-039 step 2 audit obligation surfaced explicitly so
+   * admin can re-notify after onboarding the contact.
+   */
+  readonly tier_upgrade_pending_member_notify_skipped: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly to_plan_id: PlanId;
+    readonly reason: 'no_primary_contact_email';
+  };
+  /**
+   * Phase 7 review-fix I-ERR-2 — emitted when the post-tx tier-
+   * upgrade approval email fails after the retry budget OR throws
+   * an exception. Mirrors F7 broadcast `_failed` audit precedent.
+   */
+  readonly tier_upgrade_pending_member_notify_failed: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly to_plan_id: PlanId;
+    readonly recipient_email_hashed: Sha256Hex;
+    readonly failure_kind:
+      | 'gateway_4xx'
+      | 'gateway_5xx'
+      | 'recipient_unsubscribed'
+      | 'recipient_email_unverified'
+      | 'template_variables_missing'
+      | 'render_failed'
+      | 'unknown';
+    readonly failure_message: string | null;
+  };
+  /**
+   * Phase 7 review-fix S-2-errors — emitted when the F2 → F8
+   * reschedule listener cannot resolve the OLD or NEW plan via
+   * `loadPlanFrozenFields`. The `renewal_schedule_rescheduled` audit
+   * cannot fire (no buckets to compare); this skipped-audit closes
+   * the forensic chain so the F2 plan-flip never appears as an
+   * un-acknowledged event.
+   */
+  readonly renewal_schedule_reschedule_skipped: {
+    readonly member_id: MemberId;
+    readonly old_plan_id: PlanId;
+    readonly new_plan_id: PlanId;
+    readonly reason: 'old_plan_not_found' | 'new_plan_not_found' | 'both_not_found';
   };
   /**
    * The `BandTransition` DU prevents emitting same-band "transitions"

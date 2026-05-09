@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import type { CycleId } from '../../domain/renewal-cycle';
@@ -119,6 +120,13 @@ export async function reconcilePendingApplications(
       });
       dismissed++;
     } catch (e) {
+      // Phase 7 review-fix S-3-errors: per-tenant counter so multi-
+      // tenant fan-out can route alerts when one tenant's orphans
+      // persistently fail to dismiss. The aggregate
+      // `orphansDetected vs orphansDismissed` mismatch was already
+      // returned in the result, but Vercel alert rules attach to OTel
+      // counters not log strings.
+      renewalsMetrics.tierUpgradeReconcileErrors(input.tenantId);
       logger.error(
         {
           err: e instanceof Error ? e.message : String(e),

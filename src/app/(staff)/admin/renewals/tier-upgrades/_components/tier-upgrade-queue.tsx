@@ -19,10 +19,12 @@
  */
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -34,6 +36,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Table,
   TableBody,
@@ -82,6 +90,13 @@ export function TierUpgradeQueueClient({
         <p className="mt-2 text-sm text-muted-foreground">
           {t('empty_state.subtitle')}
         </p>
+        {/* Phase 7 review-fix S-UX-3: empty-state CTA per FR-046a. */}
+        <Link
+          href="/admin/renewals/settings/schedules"
+          className="mt-3 inline-block text-sm text-primary underline-offset-4 hover:underline"
+        >
+          {t('empty_state.cta')}
+        </Link>
       </div>
     );
   }
@@ -141,9 +156,13 @@ export function TierUpgradeQueueClient({
               const busy = pendingId === item.suggestionId;
               const isOpen = item.status === 'open';
               return (
-                <TableRow key={item.suggestionId}>
+                <TableRow key={item.suggestionId} aria-busy={busy}>
+                  {/* Phase 7 review-fix I-UX-2: full member id available
+                      to assistive tech via sr-only span; visible label
+                      stays truncated (8-char prefix) for compact display. */}
                   <TableCell className="font-mono text-xs">
-                    {item.memberId.slice(0, 8)}
+                    <span aria-hidden="true">{item.memberId.slice(0, 8)}</span>
+                    <span className="sr-only">{item.memberId}</span>
                   </TableCell>
                   <TableCell className="font-mono text-xs">
                     {item.fromPlanId}
@@ -157,43 +176,96 @@ export function TierUpgradeQueueClient({
                       {t(`status.${item.status}`)}
                     </span>
                   </TableCell>
-                  <TableCell className="space-x-2 text-right">
-                    <Button
-                      size="sm"
-                      variant="default"
-                      disabled={!isOpen || busy}
-                      onClick={() =>
-                        setDialog({
-                          action: 'accept',
-                          suggestionId: item.suggestionId,
-                        })
-                      }
-                    >
-                      {t('actions.accept.label')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!isOpen || busy}
-                      onClick={() =>
-                        void callAction(item.suggestionId, 'escalate')
-                      }
-                    >
-                      {t('actions.escalate.label')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={!isOpen || busy}
-                      onClick={() =>
-                        setDialog({
-                          action: 'dismiss',
-                          suggestionId: item.suggestionId,
-                        })
-                      }
-                    >
-                      {t('actions.dismiss.label')}
-                    </Button>
+                  {/* Phase 7 review-fix I-UX-3: 3 buttons inline at md+,
+                      DropdownMenu collapse below md so 44×44 tap-target
+                      (WCAG 2.5.5) is preserved on tablet/mobile. */}
+                  <TableCell className="text-right">
+                    <div className="hidden gap-2 md:inline-flex">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        disabled={!isOpen || busy}
+                        aria-busy={busy}
+                        onClick={() =>
+                          setDialog({
+                            action: 'accept',
+                            suggestionId: item.suggestionId,
+                          })
+                        }
+                      >
+                        {t('actions.accept.label')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!isOpen || busy}
+                        aria-busy={busy}
+                        onClick={() =>
+                          void callAction(item.suggestionId, 'escalate')
+                        }
+                      >
+                        {t('actions.escalate.label')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={!isOpen || busy}
+                        aria-busy={busy}
+                        onClick={() =>
+                          setDialog({
+                            action: 'dismiss',
+                            suggestionId: item.suggestionId,
+                          })
+                        }
+                      >
+                        {t('actions.dismiss.label')}
+                      </Button>
+                    </div>
+                    <div className="md:hidden">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          disabled={!isOpen || busy}
+                          aria-busy={busy}
+                          aria-label={t('actions.row_menu_aria')}
+                          className="inline-flex size-8 items-center justify-center rounded-md border border-input bg-background text-sm shadow-xs hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            disabled={!isOpen || busy}
+                            onSelect={() =>
+                              setDialog({
+                                action: 'accept',
+                                suggestionId: item.suggestionId,
+                              })
+                            }
+                          >
+                            {t('actions.accept.label')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!isOpen || busy}
+                            onSelect={() =>
+                              void callAction(item.suggestionId, 'escalate')
+                            }
+                          >
+                            {t('actions.escalate.label')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!isOpen || busy}
+                            onSelect={() =>
+                              setDialog({
+                                action: 'dismiss',
+                                suggestionId: item.suggestionId,
+                              })
+                            }
+                            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                          >
+                            {t('actions.dismiss.label')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -220,7 +292,16 @@ export function TierUpgradeQueueClient({
             <AlertDialogCancel>
               {t('dialog.cancel')}
             </AlertDialogCancel>
+            {/* Phase 7 review-fix C-UX-2: destructive variant for Dismiss
+                (irreversible — 90d suppression). Accept stays default
+                (positive action). ux-standards.md § 6.2 requires the
+                visual destructive affordance for irreversible actions. */}
             <AlertDialogAction
+              className={
+                dialog?.action === 'dismiss'
+                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20'
+                  : undefined
+              }
               onClick={() => {
                 if (!dialog) return;
                 const { action, suggestionId } = dialog;

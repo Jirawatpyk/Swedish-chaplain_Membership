@@ -1973,12 +1973,18 @@
         },
         "empty_state": {
           "title": "No upgrade candidates this week",
-          "subtitle": "The weekly evaluation cron found no members crossing an upgrade threshold."
+          "subtitle": "The weekly evaluation cron found no members crossing an upgrade threshold.",
+          "cta": "Review tier eligibility settings"
+        },
+        "error_state": {
+          "title": "Could not load tier-upgrade queue",
+          "subtitle": "The database query failed. Please refresh the page or contact support if the problem persists."
         },
         "dialog": {
           "cancel": "Cancel"
         },
         "actions": {
+          "row_menu_aria": "Open row actions menu",
           "accept": {
             "label": "Accept",
             "dialog_title": "Accept tier upgrade?",

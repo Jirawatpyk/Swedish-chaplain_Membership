@@ -374,6 +374,50 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     expect(audits.length).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
+  it('AS4 — member already on highest qualifying plan emits already_at_target audit', async () => {
+    // Phase 7 review-fix C-TEST-2: AS4 explicit coverage. Seed a member
+    // already on `premium` (the highest plan they qualify for at 120M
+    // turnover); evaluate cron should produce zero new suggestions and
+    // emit `tier_upgrade_already_at_target` per spec § AS4.
+    await seedPlan(tenant, admin, {
+      planId: 'regular',
+      tierBucket: 'regular',
+      minTurnoverMinorUnits: 50_000_000,
+    });
+    await seedPlan(tenant, admin, {
+      planId: 'premium',
+      tierBucket: 'premium',
+      minTurnoverMinorUnits: 100_000_000,
+    });
+    // Member is already on premium; their 120M turnover qualifies them
+    // for premium but not for any plan above (no higher plan seeded).
+    await seedMember(tenant, admin, {
+      planId: 'premium',
+      turnoverThb: 120_000_000,
+    });
+    await setAutoUpgradeEnabled(tenant, true);
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await evaluateTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      correlationId: randomUUID(),
+      pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.tenantSkipped).toBeNull();
+    expect(result.value.suggestionsCreated).toBe(0);
+    // The member's plan_id ('premium') is the highest so the decision
+    // tree returns null → counted as `alreadyAtTarget` per the
+    // use-case decideUpgrade contract.
+    expect(result.value.alreadyAtTarget).toBeGreaterThanOrEqual(1);
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx.select().from(tierUpgradeSuggestions),
+    );
+    expect(rows).toHaveLength(0);
+  }, 60_000);
+
   it('suppression — dismissed row in last 90d hides the member', async () => {
     await seedPlan(tenant, admin, {
       planId: 'regular',

@@ -1,17 +1,21 @@
 /**
  * F8 Phase 7 T183 — `applyPendingTierUpgrade` use-case.
  *
- * Called from the F4 renewal-invoice-creation hook. When F4 issues a
- * fresh renewal invoice, it consults `getEffectivePlanForRenewal`
- * (F2 barrel) which returns the upgraded plan id when an
- * `accepted_pending_apply` `ScheduledPlanChange` row exists for the
- * cycle. F4 invoices at the resolved plan's price; this use-case
- * then transitions the corresponding tier-upgrade suggestion(s) to
- * `applied` + emits the audit trail.
+ * Called from the F4 invoice-paid hook. When F4 marks an invoice
+ * paid (mark-paid-offline path or Stripe-webhook path), it fires
+ * the `f8OnPaidCallbacks` array. The 2nd entry of that array
+ * (registered in `renewals-deps.ts:f8OnPaidCallbacks` post Phase 7
+ * review-fix E2) resolves the cycle linked to the invoice and
+ * invokes `applyPendingTierUpgradeInTx` atomically with the F4 tx.
+ * This use-case then transitions any `accepted_pending_apply`
+ * suggestion targeting that cycle to `applied` + emits the audit.
  *
- * Per FR-039 step 4: F4's `createMembershipInvoice` is the caller —
- * the call site is wired in F8 → F4 bridge (`f4-invoice-bridge.ts`)
- * + the F2 `transitionStatus(..., 'applied')` is the F2 side.
+ * Per FR-039 step 4: the F4 invoice-paid event is the trigger;
+ * `applyPendingTierUpgradeInTx` runs inside F4's tx. The F2 plan-
+ * flip itself is driven by F2's `getEffectivePlanForRenewal`
+ * resolver consulted at F4 invoice-creation time + F2's
+ * `transitionStatus(..., 'applied')` on its own
+ * `scheduled_plan_changes` row at invoice-paid time.
  *
  * Audit: emits `tier_upgrade_applied_at_renewal` (atomic with the
  * suggestion transition).
@@ -28,9 +32,9 @@ import type { TenantTx } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
-import type { CycleId } from '../../domain/renewal-cycle';
+import { parseCycleId, type CycleId } from '../../domain/renewal-cycle';
 import type { MemberId, PlanId } from '@/modules/members';
-import type { InvoiceId } from '@/modules/invoicing';
+import { parseInvoiceId, type InvoiceId } from '@/modules/invoicing';
 
 export const applyPendingTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -143,12 +147,26 @@ export async function applyPendingTierUpgrade(
   if (!inputResult.ok) return err(inputResult.error);
   const input = inputResult.value;
 
+  // Phase 7 review-fix C-TYPE-2: parse the brand types at the trust
+  // boundary instead of bare `as` cast. Mirrors the parseSuggestionId
+  // discipline in `accept-tier-upgrade.ts`. The Zod `.uuid()` check
+  // is necessary but not sufficient — brand parsers run the canonical
+  // validator (which may add format constraints beyond UUID shape).
+  const cycleParse = parseCycleId(input.cycleId);
+  if (!cycleParse.ok) {
+    return err({ kind: 'invalid_input', message: 'invalid cycle id' });
+  }
+  const invoiceParse = parseInvoiceId(input.invoiceId);
+  if (!invoiceParse.ok) {
+    return err({ kind: 'invalid_input', message: 'invalid invoice id' });
+  }
+
   try {
     const applied = await runInTenant(deps.tenant, async (tx) => {
       return await applyPendingTierUpgradeInTx(deps, tx, {
         tenantId: input.tenantId,
-        cycleId: input.cycleId as CycleId,
-        invoiceId: input.invoiceId as InvoiceId,
+        cycleId: cycleParse.value,
+        invoiceId: invoiceParse.value,
         correlationId: input.correlationId,
         requestId: input.requestId ?? null,
       });

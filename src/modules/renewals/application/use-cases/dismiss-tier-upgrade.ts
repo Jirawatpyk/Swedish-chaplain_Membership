@@ -21,10 +21,8 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
-import {
-  parseSuggestionId,
-  type SuggestionId,
-} from '../../domain/tier-upgrade-suggestion';
+import { loadOpenSuggestion } from './_lib/load-open-suggestion';
+import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { MemberId } from '@/modules/members';
 
 export const dismissTierUpgradeInputSchema = z.object({
@@ -63,20 +61,15 @@ export async function dismissTierUpgrade(
   if (!inputResult.ok) return err(inputResult.error);
   const input = inputResult.value;
 
-  const idParse = parseSuggestionId(input.suggestionId);
-  if (!idParse.ok) {
-    return err({ kind: 'invalid_input', message: 'invalid suggestion id' });
-  }
-  const suggestionId = idParse.value;
-
-  const existing = await deps.tierUpgradeRepo.findById(
+  // Phase 7 review-fix S-Simplify-1: shared loader for the parse+find+
+  // status-check preamble. Same shape used in accept + escalate paths.
+  const loaded = await loadOpenSuggestion(
+    deps.tierUpgradeRepo,
     input.tenantId,
-    suggestionId,
+    input.suggestionId,
   );
-  if (existing === null) return err({ kind: 'suggestion_not_found' });
-  if (existing.status !== 'open') {
-    return err({ kind: 'suggestion_not_open' });
-  }
+  if (!loaded.ok) return err(loaded.error);
+  const { suggestionId, suggestion: existing } = loaded.value;
 
   const now = deps.clock.now();
   const closedAt = now.toISOString();

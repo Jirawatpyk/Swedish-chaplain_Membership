@@ -109,15 +109,14 @@ export function isPermanentGatewayError(
 
 /**
  * Phase 7 T200 — Tier-upgrade approval email.
+ *
+ * Phase 7 review-fix S-TYPE-1: `recipient` reuses the canonical
+ * `RenewalEmailRecipient` shape instead of inlining a parallel
+ * structure that would drift independently.
  */
 export interface SendTierUpgradeApprovalEmailInput {
   readonly tenantId: string;
-  readonly recipient: {
-    readonly memberId: string;
-    readonly toEmail: string;
-    readonly toName: string | null;
-    readonly preferredLocale: SupportedLocale;
-  };
+  readonly recipient: RenewalEmailRecipient;
   readonly memberCompanyName: string;
   readonly targetPlanName: string;
   /** ISO 8601 UTC — the cycle's expires_at (effective date). */

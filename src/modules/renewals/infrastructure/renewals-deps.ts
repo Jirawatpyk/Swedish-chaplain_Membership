@@ -337,27 +337,42 @@ export { renewalAuditEmitterStub } from './audit-emitter-stub';
 export type { AuditContext, F8AuditEvent, F8AuditEventType };
 
 /**
- * F4 onPaidCallbacks registration factory. Returns the F8
- * `markCycleCompleteFromInvoicePaid` callback (T123) bound to the
- * tenant's deps so F4's `recordPayment` / `markPaidFromProcessor`
- * fires it inside the same DB tx that flips invoice issued → paid.
+ * F4 onPaidCallbacks registration factory.
  *
- * I3 review-fix (Phase 5 backlog close): F4 now threads its internal
- * tx into the callback (`cb(evt, tx)`), and this wrapper passes that
- * tx through to T123 as `existingTx`. F8 reuses the F4 tx instead of
- * opening a separate `runInTenant`, collapsing the two-tx eventual-
+ * Returns an array of F8 callbacks bound to the tenant's deps:
+ *
+ *   1. **`markCycleCompleteFromInvoicePaid`** (T123, Phase 5 Wave B)
+ *      — flips the F8 `RenewalCycle` to `completed` (or
+ *      `pending_admin_reactivation` per FR-005b block override).
+ *
+ *   2. **`applyPendingTierUpgradeInTx`** (T183, Phase 7 + review-fix
+ *      E2/C-ERR-2) — resolves the cycle linked to the paid invoice
+ *      then transitions any `accepted_pending_apply` tier-upgrade
+ *      suggestion targeting it to `applied` + emits
+ *      `tier_upgrade_applied_at_renewal`. Mirrors the same atomic-
+ *      single-tx + INVALID_TX-fallback observability pattern as
+ *      callback #1 (counter `applyPendingInvalidTx`).
+ *
+ * Both callbacks honour the F4 tx-threading contract:
+ *
+ * I3 review-fix (Phase 5 backlog close): F4 threads its internal tx
+ * into each callback (`cb(evt, tx)`), and the wrapper passes that tx
+ * through to the T123/T183 InTx variants. F8 reuses the F4 tx instead
+ * of opening a separate `runInTenant`, collapsing the two-tx eventual-
  * consistency window into a single atomic transaction. F4's tx still
- * rolls back on any T123 throw via the onPaidCallback contract.
+ * rolls back on any callback throw via the onPaidCallback contract.
  *
- * Backward compat: if F4 happens to invoke without the tx parameter
- * (legacy callers), T123 falls through to `runInTenant` so the
- * callback never breaks. The Phase 5+ wiring always threads the tx.
+ * Backward compat: if F4 invokes without a tx (legacy callers) or
+ * with a non-TenantTx shape, both callbacks fall through to their
+ * own `runInTenant`. Each fallback bumps a dedicated OTel counter
+ * (`onPaidInvalidTx` for #1, `applyPendingInvalidTx` for #2) so
+ * Vercel alert rules can detect F4 contract drift before it causes
+ * silent state divergence.
  *
  * Called by F4's record-payment composition on every paid-invoice flip
  * (mark-paid-offline path via f4-invoice-bridge.ts; Stripe-webhook path
  * via `markPaidFromProcessor`, which forwards `onPaidCallbacks` through
- * `makeRecordPaymentDeps`). F4 threads its internal tx into the second
- * parameter so listeners can run atomically — see I3 review-fix below.
+ * `makeRecordPaymentDeps`).
  */
 export function f8OnPaidCallbacks(
   tenantId: string,
@@ -556,6 +571,30 @@ export function f8OnPaidCallbacks(
       if (txUnknown !== undefined && isTenantTx(txUnknown)) {
         await apply(txUnknown);
       } else {
+        // Phase 7 review-fix C-ERR-2: F4 contract drift surface —
+        // when F4 invokes the callback WITHOUT a TenantTx (or with a
+        // shape that fails the `isTenantTx` brand-check), the apply-
+        // pending path runs in its own runInTenant. F4 has already
+        // committed by then; if `apply` throws, the F8 audit chain
+        // for `tier_upgrade_applied_at_renewal` has a forensic gap.
+        // Mirror sister cycle-completion callback's INVALID_TX
+        // observability so on-call alert rules detect the drift.
+        const { renewalsMetrics: m } = await import('@/lib/metrics');
+        m.applyPendingInvalidTx.add(1, { tenant_id: tenantId });
+        logger.error(
+          {
+            errorId: 'F8.APPLY_TIER.INVALID_TX',
+            tenantId,
+            invoiceId: evt.invoiceId,
+            memberId: evt.memberId,
+            txKeys:
+              txUnknown !== null && typeof txUnknown === 'object'
+                ? Object.keys(txUnknown as Record<string, unknown>).slice(0, 10)
+                : null,
+            txType: typeof txUnknown,
+          },
+          '[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected',
+        );
         await runInTenantFn(deps.tenant, apply);
       }
     },

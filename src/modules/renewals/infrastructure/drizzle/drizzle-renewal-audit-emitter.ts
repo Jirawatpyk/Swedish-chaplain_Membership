@@ -194,6 +194,13 @@ const F8_ENUM_SHIPPED_TUPLE = [
   //     emitted by F2 → F8 plan-change listener when tier-bucket diff
   //     causes a schedule change. ---
   'renewal_schedule_rescheduled',
+  // --- F8 Phase 7 review-fix Round 1 (migration 0119) — 3 silent-skip
+  //     events that close audit-chain gaps surfaced by /speckit.review.
+  //     Emit sites: accept-tier-upgrade.ts (notify-skipped + notify-
+  //     failed) + reschedule-on-plan-change.ts (reschedule-skipped). ---
+  'tier_upgrade_pending_member_notify_skipped',
+  'tier_upgrade_pending_member_notify_failed',
+  'renewal_schedule_reschedule_skipped',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(

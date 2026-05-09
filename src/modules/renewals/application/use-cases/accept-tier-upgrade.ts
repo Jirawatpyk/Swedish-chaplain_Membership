@@ -2,29 +2,42 @@
  * F8 Phase 7 T180 — `acceptTierUpgrade` use-case.
  *
  * Admin clicks "Accept" on a tier-upgrade suggestion in the dashboard.
- * Per FR-039 (Q5 round 2 pending-state lifecycle):
+ * Per FR-039 (Q5 round 2 pending-state lifecycle), the implementation
+ * realises spec steps 1-3 atomically inside the in-tx block + step 2
+ * (member email) post-tx. Spec step numbers map to the in-tx work as:
  *
- *   1. Suggestion `open` → `accepted_pending_apply` with
- *      `accepted_at`, `accepted_by_user_id`, `target_apply_at_cycle_id`.
- *      Member's `members.plan_id` is NOT mutated (avoids surprise
- *      mid-year invoicing).
- *   2. F2 `scheduleNextRenewalPlanChange` is called atomically inside
- *      the same tx — F2 stores the pending plan flip in
- *      `scheduled_plan_changes` keyed by (member, target cycle).
- *   3. Single transactional email dispatched to member's primary
- *      contact email via `RenewalGateway.sendTierUpgradeApprovalEmail`
- *      with audit `tier_upgrade_pending_member_notified`. Email send
- *      runs OUTSIDE the tx (post-commit) — failure is logged but
- *      doesn't roll back the suggestion accept (member can be
- *      re-notified manually if needed).
- *   4. If `expires_at - today > 180 days`, a T-180 verify task is
- *      created in `renewal_escalation_tasks` so admin re-verifies
- *      circumstances later.
+ *   - **FR-039 step 1** (transition `open` → `accepted_pending_apply`):
+ *     in-tx · sets `accepted_at`, `accepted_by_user_id`,
+ *     `target_apply_at_cycle_id`. Member's `members.plan_id` is NOT
+ *     mutated (avoids surprise mid-year invoicing). The **F2
+ *     `scheduleNextRenewalPlanChange`** call is the *mechanism* for
+ *     step 1 (records the future plan-flip in F2's
+ *     `scheduled_plan_changes`); not its own FR-039 step.
  *
- * Audit emit:
+ *   - **FR-039 step 2** (member email): post-tx · single transactional
+ *     email via `RenewalGateway.sendTierUpgradeApprovalEmail`. Failure
+ *     is logged + audited (`tier_upgrade_pending_member_notify_failed`
+ *     or `_skipped`) but does NOT roll back the suggestion accept —
+ *     member can be re-notified manually.
+ *
+ *   - **FR-039 step 3** (T-180 verify task): in-tx · only when
+ *     `expires_at - today > 180 days` so admin re-verifies the upgrade
+ *     still applies before the cycle rollover.
+ *
+ *   - **FR-039 step 4** (apply at next renewal): NOT in this use-case;
+ *     fires from `applyPendingTierUpgradeInTx` via the F4 → F8
+ *     onPaidCallbacks bridge in `renewals-deps.ts`.
+ *
+ *   - **FR-039 step 5** (manual override supersede): NOT in this
+ *     use-case; fires from `supersedePendingTierUpgradeInTx` via the
+ *     F2 → F8 plan-change bridge.
+ *
+ * Audit emits from this use-case (Phase 7 review-fix Round 1 close):
  *   - `tier_upgrade_accepted`                              (in-tx, atomic)
  *   - `tier_upgrade_pending_admin_verification_due`        (in-tx, conditional)
- *   - `tier_upgrade_pending_member_notified`               (post-tx, on email success)
+ *   - `tier_upgrade_pending_member_notified`               (post-tx, on email ok)
+ *   - `tier_upgrade_pending_member_notify_skipped`         (post-tx, no contact email)
+ *   - `tier_upgrade_pending_member_notify_failed`          (post-tx, gateway err / throw)
  *
  * RBAC (FR-052a): admin role only. Manager attempts MUST be
  * rejected by the route handler before this use-case is invoked;
@@ -37,6 +50,12 @@ import { randomUUID } from 'node:crypto';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
+// Phase 7 review-fix S-static-import: pull the Domain hash helper as a
+// static import (was a per-call dynamic import). Domain modules are
+// cheap to load and the static reference makes the dependency graph
+// visible to bundler + typecheck.
+import { sha256HexOf } from '../../domain/value-objects/sha256-hex';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
@@ -121,7 +140,7 @@ export async function acceptTierUpgrade(
 
   try {
     const txResult = await runInTenant(deps.tenant, async (tx) => {
-      // ----- 1. F2 schedule plan change.
+      // ----- (a) F2 schedule plan change — mechanism for FR-039 step 1.
       let scheduledChangeId: string;
       try {
         const scheduled =
@@ -144,7 +163,7 @@ export async function acceptTierUpgrade(
         });
       }
 
-      // ----- 2. Optional T-180 verification task (FR-039 step 3).
+      // ----- (b) Optional T-180 verification task — FR-039 step 3.
       let verificationTaskId: TaskId | null = null;
       if (daysUntilExpiry > VERIFICATION_LEAD_DAYS) {
         try {
@@ -173,7 +192,8 @@ export async function acceptTierUpgrade(
         }
       }
 
-      // ----- 3. Suggestion transition open → accepted_pending_apply.
+      // ----- (c) Suggestion transition open → accepted_pending_apply
+      //          (the FR-039 step 1 status flip).
       const transitionArgs: Parameters<
         typeof deps.tierUpgradeRepo.transitionStatus
       >[3] = {
@@ -192,7 +212,7 @@ export async function acceptTierUpgrade(
         transitionArgs,
       );
 
-      // ----- 4. Audit emits (all atomic with state).
+      // ----- (d) Audit emits (all atomic with state — Principle VIII).
       await deps.auditEmitter.emitInTx(
         tx,
         {
@@ -247,11 +267,21 @@ export async function acceptTierUpgrade(
 
     if (!txResult.ok) return txResult;
 
-    // ----- 5. Post-tx member notification email (FR-039 step 2).
+    // ----- (e) Post-tx member notification email — FR-039 step 2.
     // Email send + audit emit run AFTER the runInTenant tx commits so
     // a transient Resend failure doesn't roll back the suggestion
-    // accept. Failure is logged + surfaced in the response (delivery
-    // id null); admin can re-notify manually if needed.
+    // accept. Failure is logged + observability-counted + closed via
+    // `_skipped` or `_failed` audits (Phase 7 review-fix I-ERR-1/2)
+    // so the FR-039 step 2 obligation has an explicit forensic chain
+    // entry whether the email shipped, was skipped (no contact), or
+    // failed (gateway / render / exception).
+    const auditCtx = {
+      tenantId: input.tenantId,
+      actorUserId: input.actorUserId,
+      actorRole: 'admin' as const,
+      correlationId: input.correlationId,
+      requestId: input.requestId ?? null,
+    };
     let memberNotifiedDeliveryId: string | null = null;
     try {
       const dispatchInfo = await deps.dispatchCandidateRepo.findOne(
@@ -266,7 +296,32 @@ export async function acceptTierUpgrade(
         planFrozen.status === 'found'
           ? planFrozen.plan.tierBucket
           : suggestion.toPlanId;
-      if (dispatchInfo?.primaryContact?.email) {
+
+      if (!dispatchInfo?.primaryContact?.email) {
+        // Phase 7 review-fix I-ERR-1: explicit notify-skipped audit so
+        // the missing primary-contact case has a forensic chain entry
+        // instead of a silent no-op. Admin can re-notify after onboarding.
+        renewalsMetrics.tierUpgradeNotifyFailed('no_primary_contact');
+        await deps.auditEmitter.emit(
+          {
+            type: 'tier_upgrade_pending_member_notify_skipped',
+            payload: {
+              suggestion_id: suggestionId,
+              member_id: suggestion.memberId as MemberId,
+              to_plan_id: suggestion.toPlanId as PlanId,
+              reason: 'no_primary_contact_email',
+            },
+          },
+          auditCtx,
+        );
+        logger.warn(
+          {
+            suggestionId: suggestion.suggestionId,
+            memberId: suggestion.memberId,
+          },
+          '[accept-tier-upgrade] member has no primary-contact email — notify skipped + audit recorded',
+        );
+      } else {
         const sendResult = await deps.renewalGateway.sendTierUpgradeApprovalEmail(
           {
             tenantId: input.tenantId,
@@ -283,12 +338,11 @@ export async function acceptTierUpgrade(
             correlationId: input.correlationId,
           },
         );
+        const recipientHash = sha256HexOf(
+          dispatchInfo.primaryContact.email.trim().toLowerCase(),
+        );
         if (sendResult.ok) {
           memberNotifiedDeliveryId = sendResult.value.deliveryId;
-          // Post-tx audit emit (no tx; uses .emit not .emitInTx).
-          const recipientHash = await sha256HexLower(
-            dispatchInfo.primaryContact.email,
-          );
           await deps.auditEmitter.emit(
             {
               type: 'tier_upgrade_pending_member_notified',
@@ -301,25 +355,45 @@ export async function acceptTierUpgrade(
                 effective_at: activeCycle.expiresAt,
               },
             },
-            {
-              tenantId: input.tenantId,
-              actorUserId: input.actorUserId,
-              actorRole: 'admin',
-              correlationId: input.correlationId,
-              requestId: input.requestId ?? null,
-            },
+            auditCtx,
           );
         } else {
+          // Phase 7 review-fix I-ERR-2: explicit notify-failed audit
+          // closes the forensic chain when retry budget exhausts or
+          // gateway returns a permanent error.
+          renewalsMetrics.tierUpgradeNotifyFailed(sendResult.error.kind);
+          await deps.auditEmitter.emit(
+            {
+              type: 'tier_upgrade_pending_member_notify_failed',
+              payload: {
+                suggestion_id: suggestionId,
+                member_id: suggestion.memberId as MemberId,
+                to_plan_id: suggestion.toPlanId as PlanId,
+                recipient_email_hashed: recipientHash,
+                failure_kind: sendResult.error.kind,
+                failure_message:
+                  'message' in sendResult.error
+                    ? sendResult.error.message
+                    : null,
+              },
+            },
+            auditCtx,
+          );
           logger.warn(
             {
               suggestionId: suggestion.suggestionId,
               errorKind: sendResult.error.kind,
             },
-            '[accept-tier-upgrade] member notification email failed — continuing',
+            '[accept-tier-upgrade] member notification email failed — audit recorded',
           );
         }
       }
     } catch (e) {
+      // Catch-all for unexpected throws (dispatch repo unavailable,
+      // sha256 helper crash, etc.). Bump the unknown-failure metric
+      // but skip the audit emit (we don't have enough payload context
+      // to fill the typed shape).
+      renewalsMetrics.tierUpgradeNotifyFailed('unknown');
       logger.warn(
         {
           err: e instanceof Error ? e.message : String(e),
@@ -344,11 +418,3 @@ export async function acceptTierUpgrade(
   }
 }
 
-async function sha256HexLower(
-  raw: string,
-): Promise<import('../../domain/value-objects/sha256-hex').Sha256Hex> {
-  const { sha256HexOf } = await import(
-    '../../domain/value-objects/sha256-hex'
-  );
-  return sha256HexOf(raw.trim().toLowerCase());
-}

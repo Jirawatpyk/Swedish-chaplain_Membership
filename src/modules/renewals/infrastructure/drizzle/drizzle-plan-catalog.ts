@@ -14,8 +14,10 @@
  */
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
+import { parseTierBucket } from '../../domain/value-objects/tier-bucket';
 import type {
   PlanCatalogEntry,
   PlanCatalogPort,
@@ -50,13 +52,33 @@ async function listForTenantViaTx(
       sql`${membershipPlans.minTurnoverMinorUnits} NULLS FIRST`,
       asc(membershipPlans.planId),
     );
-  return rows.map((row) => ({
-    planId: row.planId,
-    renewalTierBucket: row.renewalTierBucket,
-    minTurnoverThb: row.minTurnoverThb,
-    annualFeeThb: row.annualFeeThb,
-    isActive: row.isActive,
-  }));
+  // Phase 7 review-fix I-TYPE-1: narrow the raw `text` column at the
+  // adapter boundary. Rows whose `renewal_tier_bucket` doesn't parse
+  // are dropped + warn-logged so an upstream DB migration drift never
+  // silently bypasses the eligibility decision tree.
+  const result: PlanCatalogEntry[] = [];
+  for (const row of rows) {
+    const bucketParse = parseTierBucket(row.renewalTierBucket);
+    if (!bucketParse.ok) {
+      logger.warn(
+        {
+          tenantId,
+          planId: row.planId,
+          rawBucket: row.renewalTierBucket,
+        },
+        '[plan-catalog] dropping plan with unparseable renewal_tier_bucket',
+      );
+      continue;
+    }
+    result.push({
+      planId: row.planId,
+      renewalTierBucket: bucketParse.value,
+      minTurnoverThb: row.minTurnoverThb,
+      annualFeeThb: row.annualFeeThb,
+      isActive: row.isActive,
+    });
+  }
+  return result;
 }
 
 export const drizzlePlanCatalog: PlanCatalogPort = {

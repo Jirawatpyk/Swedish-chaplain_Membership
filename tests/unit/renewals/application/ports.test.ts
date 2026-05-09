@@ -28,13 +28,18 @@ import {
 import { EscalationTaskNotFoundError } from '@/modules/renewals/application/ports/renewal-escalation-task-repo';
 
 describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
-  it('contains 59 unique event types (Phase 5 US3: +4 — token-clicked-on-completed-cycle + 3 reminder ladder)', () => {
+  it('contains 62 unique event types (Phase 7 review-fix Round 1: +3 — silent-skip closure)', () => {
+    // Phase 7 review-fix Round 1: 59 → 62 (added 3 silent-skip audits
+    // surfaced by /speckit.review I-ERR-1/I-ERR-2/S-2-errors:
+    // tier_upgrade_pending_member_notify_skipped,
+    // tier_upgrade_pending_member_notify_failed,
+    // renewal_schedule_reschedule_skipped — migration 0119).
     // Phase 5 Wave A (T120/T138): 55 → 59 (added the CHK033 race-window
     // forensic event `renewal_token_clicked_on_completed_cycle` plus the
     // 3 lapsed-pending reminder-ladder events `_t-7` / `_t-3` / `_t-1`).
     // K6 (prior): 54 → 55 (added cron_bearer_auth_rejected per spec.md
     // line 365 taxonomy + verifyCronBearer 401 path now emits this audit).
-    expect(F8_AUDIT_EVENT_TYPES.length).toBe(59);
+    expect(F8_AUDIT_EVENT_TYPES.length).toBe(62);
     const set = new Set(F8_AUDIT_EVENT_TYPES);
     expect(set.size).toBe(F8_AUDIT_EVENT_TYPES.length);
   });
@@ -74,11 +79,15 @@ describe('F8_AUDIT_EVENT_TYPES catalogue (T051)', () => {
     expect(
       (F8_AUDIT_EVENT_TYPES as readonly string[]).filter((e) => e.startsWith('at_risk_')).length,
     ).toBe(6);
+    // Phase 7 review-fix Round 1: 11 → 13 (+2 silent-skip audits
+    // tier_upgrade_pending_member_notify_skipped + _failed). The third
+    // new audit `renewal_schedule_reschedule_skipped` is in the
+    // renewal_* cluster, not tier_upgrade_*.
     expect(
       (F8_AUDIT_EVENT_TYPES as readonly string[]).filter((e) =>
         e.startsWith('tier_upgrade_'),
       ).length,
-    ).toBe(11);
+    ).toBe(13);
   });
 });
 

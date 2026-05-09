@@ -626,8 +626,14 @@ export {
 // array consumed by F3's `changeMemberPlan` use-case).
 export {
   f8OnManualPlanChangeCallbacks,
-  type F2ManualPlanChangeEvent,
 } from './infrastructure/ports-adapters/f2-plan-change-bridge';
+
+// F8 Phase 7 review-fix C-TYPE-1 — canonical event shape (was duplicated
+// across F3 + F8 bridge before consolidation).
+export type {
+  ManualPlanChangeEvent,
+  ManualPlanChangeListener,
+} from './application/ports/manual-plan-change-event';
 
 // F8 Phase 7 — Phase 7-extended port surfaces (admin queue + cron).
 export type {

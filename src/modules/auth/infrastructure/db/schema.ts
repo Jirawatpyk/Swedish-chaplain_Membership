@@ -219,6 +219,18 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     plan-change shifts the member's tier-bucket and the not-yet-
   //     fired schedule steps change cadence. ---
   'renewal_schedule_rescheduled',
+  // --- F8 Phase 7 review-fix Round 1 (migration 0119) — 3 new silent-
+  //     skip audit events that close observability gaps surfaced by the
+  //     /speckit.review pass. Forensic chain is now explicit when:
+  //     (a) member has no primary contact email at accept time
+  //         → tier_upgrade_pending_member_notify_skipped (I-ERR-1)
+  //     (b) Resend retry-budget exhausted on tier-upgrade approval email
+  //         → tier_upgrade_pending_member_notify_failed (I-ERR-2)
+  //     (c) reschedule listener could not resolve old/new tier-bucket
+  //         → renewal_schedule_reschedule_skipped (S-2-errors)
+  'tier_upgrade_pending_member_notify_skipped',
+  'tier_upgrade_pending_member_notify_failed',
+  'renewal_schedule_reschedule_skipped',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

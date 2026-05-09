@@ -1973,12 +1973,18 @@
         },
         "empty_state": {
           "title": "Inga uppgraderingskandidater denna vecka",
-          "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln."
+          "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln.",
+          "cta": "Granska inställningar för nivåkvalifikation"
+        },
+        "error_state": {
+          "title": "Kunde inte ladda kön för nivåhöjningar",
+          "subtitle": "Databasfrågan misslyckades. Uppdatera sidan eller kontakta supporten om problemet kvarstår."
         },
         "dialog": {
           "cancel": "Avbryt"
         },
         "actions": {
+          "row_menu_aria": "Öppna radåtgärder",
           "accept": {
             "label": "Acceptera",
             "dialog_title": "Acceptera nivåhöjning?",

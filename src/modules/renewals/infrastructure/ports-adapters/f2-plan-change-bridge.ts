@@ -13,113 +13,119 @@
  *      tier-bucket differs from the old plan's; the not-yet-fired
  *      reminders shift to the new bucket's policy.
  *
- * Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern (renewals-deps.ts):
- * F2's `changeMemberPlan` use-case threads its tx into the
- * registered listener callbacks atomically. Both listeners run
- * inside the F2 tx so a thrown exception rolls F2's plan-change back.
+ * Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern. F3's
+ * `changeMemberPlan` use-case threads its tx into the registered
+ * listener callbacks atomically.
  *
- * **Wiring status**: this factory is READY for consumption. F3's
- * `change-plan.ts` (`src/modules/members/application/use-cases/change-plan.ts`)
- * must invoke `f8OnManualPlanChangeCallbacks(tenantId)` after its
- * `member_plan_manually_changed` audit emit, threading the F2 tx into
- * each callback. Wiring lands in a Phase 7 follow-up commit (or
- * Phase 10 polish sweep). Until then the reconcile cron (T185)
- * provides defence-in-depth: orphan-pending suggestions are detected
- * weekly and dismissed with `reason='orphan_target_cycle_terminal'`.
+ * **Failure semantics** (Phase 7 review-fix C-ERR-1):
  *
- * Pure Infrastructure — only `@/lib/db` + `@/lib/logger` imports.
+ * Both listeners fire AFTER F2 has emitted the `member_plan_manually_
+ * changed` audit row inside the F3 tx. If a listener throws, the F3
+ * tx rolls back the plan-flip + the manual-change audit + every
+ * other listener's writes. Inside this file, however, each listener
+ * body wraps its inner work in `try/catch + log + metric counter +
+ * swallow`. The listener does NOT re-throw. Rationale:
+ *
+ *   - The F2 plan-flip is the **source of truth**; rolling it back
+ *     because F8's bookkeeping had a transient hiccup would lose
+ *     admin intent.
+ *   - The reconcile cron (T185) catches orphan-pending suggestions
+ *     whose target cycle is `cancelled`/`lapsed` — that's defence-
+ *     in-depth for the apply-at-renewal path, NOT the supersede
+ *     path. A failed supersede leaves a healthy `accepted_pending_
+ *     apply` row attached to a still-active cycle which the
+ *     reconcile cron will NOT touch.
+ *   - To close the supersede observability gap, every swallow now
+ *     bumps `renewalsMetrics.manualPlanChangeListenerFailed{listener,
+ *     tenant_id}`. Vercel alert rules attach to OTel counters not
+ *     log strings. Any non-zero rate sustained >5 min indicates the
+ *     audit chain is being silently lost — on-call investigates +
+ *     replays via admin tooling.
+ *
+ * Pure Infrastructure — only `@/lib/db` + `@/lib/logger` +
+ * `@/lib/metrics` imports.
  */
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { TenantTx } from '@/lib/db';
 import { makeRenewalsDeps } from '../renewals-deps';
 import { supersedePendingTierUpgradeInTx } from '../../application/use-cases/supersede-pending-tier-upgrade';
 import { rescheduleOnPlanChangeInTx } from '../../application/use-cases/reschedule-on-plan-change';
+import type { ManualPlanChangeEvent } from '../../application/ports/manual-plan-change-event';
 
 /**
- * Event payload emitted by F3's `changeMemberPlan` after the
- * `member_plan_manually_changed` audit row commits. Mirrors the
- * audit payload's shape.
+ * Backward-compatible alias — keeps existing callers compiling while
+ * the canonical type now lives in the F8 port. Phase 7 review-fix
+ * C-TYPE-1 consolidated the duplicate F3 + F8 shapes.
+ *
+ * @deprecated Use `ManualPlanChangeEvent` from `@/modules/renewals`.
  */
-export interface F2ManualPlanChangeEvent {
-  readonly tenantId: string;
-  readonly memberId: string;
-  readonly oldPlanId: string;
-  readonly newPlanId: string;
-  readonly actorUserId: string;
-  readonly correlationId: string;
-  readonly requestId: string | null;
+export type F2ManualPlanChangeEvent = ManualPlanChangeEvent;
+
+/**
+ * Listener wrapper — runs `fn(evt, tx)` inside try/catch. On failure
+ * logs structured error + bumps the per-tenant per-listener metric
+ * counter. Returns void (does NOT re-throw — see file-level rationale).
+ */
+async function wrapListener(
+  listener: 'supersede' | 'reschedule',
+  evt: ManualPlanChangeEvent,
+  tx: TenantTx,
+  fn: (evt: ManualPlanChangeEvent, tx: TenantTx) => Promise<unknown>,
+): Promise<void> {
+  try {
+    await fn(evt, tx);
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        listener,
+        tenantId: evt.tenantId,
+        memberId: evt.memberId,
+      },
+      `[f8-onManualPlanChange] ${listener} listener failed — F2 audit chain may have a forensic gap; investigate via OTel counter`,
+    );
+    renewalsMetrics.manualPlanChangeListenerFailed(listener, evt.tenantId);
+  }
 }
 
 /**
  * F8 listener-callback factory. Returns an array of async callbacks
  * to be invoked by F3's `changeMemberPlan` after the manual-change
- * audit row commits. Each callback runs inside F3's tx (the second
- * `tx` parameter) so failures roll the F3 plan-change back —
- * Constitution Principle VIII atomic state+audit.
- *
- * Both callbacks are independent — a failure in one does NOT abort
- * the other (logged + counted). The F3 tx-rollback contract is only
- * triggered by a thrown exception, so the catch blocks here log and
- * swallow.
+ * audit row commits. Each callback runs inside F3's tx — on listener
+ * exception the wrapper logs + counts + swallows, so F3's tx commits
+ * the plan-flip even if F8 bookkeeping failed.
  */
 export function f8OnManualPlanChangeCallbacks(
   tenantId: string,
 ): ReadonlyArray<
-  (
-    evt: F2ManualPlanChangeEvent,
-    tx: TenantTx,
-  ) => Promise<void>
+  (evt: ManualPlanChangeEvent, tx: TenantTx) => Promise<void>
 > {
   const deps = makeRenewalsDeps(tenantId);
   return [
     // 1. Supersede pending tier-upgrade.
-    async (evt, tx) => {
-      try {
-        await supersedePendingTierUpgradeInTx(deps, tx, {
-          tenantId: evt.tenantId,
-          memberId: evt.memberId,
-          manualChangeActorUserId: evt.actorUserId,
-          supersedingPlanId: evt.newPlanId,
-          correlationId: evt.correlationId,
-          requestId: evt.requestId,
+    async (evt, tx) =>
+      wrapListener('supersede', evt, tx, async (e, t) => {
+        await supersedePendingTierUpgradeInTx(deps, t, {
+          tenantId: e.tenantId,
+          memberId: e.memberId,
+          manualChangeActorUserId: e.actorUserId,
+          supersedingPlanId: e.newPlanId,
+          correlationId: e.correlationId,
+          requestId: e.requestId,
         });
-      } catch (e) {
-        // Log + swallow — the F3 tx already committed the plan-change
-        // and audit; failing the listener should not roll those back
-        // unconditionally. The reconcile cron (T185) catches orphan-
-        // pending suggestions weekly so any missed supersede here is
-        // recovered defensively.
-        logger.error(
-          {
-            err: e instanceof Error ? e.message : String(e),
-            tenantId: evt.tenantId,
-            memberId: evt.memberId,
-          },
-          '[f8-onManualPlanChange] supersede listener failed — reconcile cron will recover',
-        );
-      }
-    },
+      }),
     // 2. Reschedule renewal cadence diff.
-    async (evt, tx) => {
-      try {
-        await rescheduleOnPlanChangeInTx(deps, tx, {
-          tenantId: evt.tenantId,
-          memberId: evt.memberId,
-          oldPlanId: evt.oldPlanId,
-          newPlanId: evt.newPlanId,
-          correlationId: evt.correlationId,
-          requestId: evt.requestId,
+    async (evt, tx) =>
+      wrapListener('reschedule', evt, tx, async (e, t) => {
+        await rescheduleOnPlanChangeInTx(deps, t, {
+          tenantId: e.tenantId,
+          memberId: e.memberId,
+          oldPlanId: e.oldPlanId,
+          newPlanId: e.newPlanId,
+          correlationId: e.correlationId,
+          requestId: e.requestId,
         });
-      } catch (e) {
-        logger.error(
-          {
-            err: e instanceof Error ? e.message : String(e),
-            tenantId: evt.tenantId,
-            memberId: evt.memberId,
-          },
-          '[f8-onManualPlanChange] reschedule listener failed',
-        );
-      }
-    },
+      }),
   ];
 }
