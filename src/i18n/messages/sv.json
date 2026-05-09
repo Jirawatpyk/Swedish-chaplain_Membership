@@ -2100,7 +2100,7 @@
         },
         "filter_active_state": {
           "title": "Inga uppgifter matchar nuvarande filter",
-          "subtitle": "Prova ett annat status-, tilldelnings- eller uppgiftstypsfilter, eller rensa försenat-toggle."
+          "subtitle": "Prova ett annat status-, tilldelnings- eller uppgiftstypsfilter, eller rensa försenat-filtret."
         },
         "error_state": {
           "title": "Kunde inte ladda uppföljningsuppgifter",
@@ -2131,7 +2131,7 @@
           },
           "skip": {
             "label": "Hoppa över",
-            "success": "Uppgift hoppad",
+            "success": "Uppgiften hoppades över",
             "error": "Kunde inte hoppa över uppgift",
             "errors": {
               "forbidden": "Endast administratörer kan hoppa över uppgifter."

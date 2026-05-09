@@ -184,7 +184,7 @@ export async function createEscalationTask(
         // Constitution Principle VIII reverse-direction atomicity — an
         // audit emit failure inside the tx MUST propagate so the outer
         // runInTenant rolls the insertIfAbsent back.
-        // R7 IMP-B close — demoted to warn (breadcrumb only).
+        // R8 IMP-B close — demoted to warn (breadcrumb only).
         logger.warn(
           { err: e instanceof Error ? e.message : String(e), taskId },
           '[create-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
@@ -199,7 +199,7 @@ export async function createEscalationTask(
       });
     });
   } catch (e) {
-    // R6 C-2 + R7 S-3 close — shared logUnexpectedError helper.
+    // R6 C-2 + R8 S-3 close — shared logUnexpectedError helper.
     logUnexpectedError('create-escalation-task', e, {
       tenantId: rawInput.tenantId,
       memberId: rawInput.memberId,

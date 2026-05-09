@@ -120,7 +120,7 @@ export async function skipEscalationTask(
           },
         );
       } catch (e) {
-        // R7 IMP-B close — demoted to warn (breadcrumb only).
+        // R8 IMP-B close — demoted to warn (breadcrumb only).
         logger.warn(
           { err: e instanceof Error ? e.message : String(e), taskId },
           '[skip-escalation-task] audit emit failed inside tx — rolling back (breadcrumb)',
@@ -136,7 +136,7 @@ export async function skipEscalationTask(
     if (e instanceof EscalationTaskNotFoundError) {
       return err({ kind: 'task_not_open' });
     }
-    // R6 C-2 + R7 S-3 close — shared logUnexpectedError helper.
+    // R6 C-2 + R8 S-3 close — shared logUnexpectedError helper.
     logUnexpectedError('skip-escalation-task', e, {
       tenantId: input.tenantId,
       taskId: input.taskId,

@@ -40,7 +40,7 @@ export interface TaskActionDialogProps {
    * reset dialog-internal form state (textarea / combobox / touched
    * flag).
    *
-   * R6 IMP-6 + R7 C3-4 close — fires exactly ONCE per close, via a
+   * R6 IMP-6 + R8 C3-4 close — fires exactly ONCE per close, via a
    * `useRef`-guarded `useEffect`. The fix:
    *   1. Skips initial mount (`open=false` is the default state, not
    *      a close transition).
@@ -85,7 +85,7 @@ export function TaskActionDialog({
   variant = 'default',
   children,
 }: TaskActionDialogProps) {
-  // R6 IMP-6 + R7 C3-4 close — fire onClose exactly once per close,
+  // R6 IMP-6 + R8 C3-4 close — fire onClose exactly once per close,
   // via a `wasOpen` ref-guarded `useEffect`. The ref skips initial
   // mount (when `open=false` is the default state, not a close
   // transition) and ensures both close paths (base-ui internal close

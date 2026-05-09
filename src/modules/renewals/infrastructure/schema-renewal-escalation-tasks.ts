@@ -9,6 +9,7 @@ import {
   index,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -39,6 +40,14 @@ export const renewalEscalationTasks = pgTable(
     skippedReason: text('skipped_reason'),
     closedByUserId: uuid('closed_by_user_id'),
     relatedSuggestionId: uuid('related_suggestion_id'),
+    /**
+     * R8 R4-IMP-5 close — yearInCycle in [1, 50] for FR-043 multi-year
+     * pill rendering. Migration 0122 adds the column with DEFAULT 1
+     * and a CHECK constraint. Producers compute year-in-cycle from
+     * the cycle metadata; backfilled rows show "Year 1 of …" (which
+     * is acceptable for audit-only legacy rows).
+     */
+    yearInCycle: smallint('year_in_cycle').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

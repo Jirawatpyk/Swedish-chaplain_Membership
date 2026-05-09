@@ -25,6 +25,13 @@ export interface NewEscalationTaskInput {
   readonly assignedToUserId?: string;
   readonly dueAt: string;
   readonly relatedSuggestionId?: string;
+  /**
+   * R8 R4-IMP-5 close — year-in-cycle for multi-year contracts.
+   * Defaults to 1 in the DB; producers can pass an explicit value
+   * (e.g. dispatch ladder Phase 4 wave) to render "Year N of M"
+   * pills correctly per FR-043. Range [1, 50] enforced at DB.
+   */
+  readonly yearInCycle?: number;
 }
 
 export interface ListEscalationTasksOpts {
@@ -42,7 +49,7 @@ export interface ListEscalationTasksOpts {
    *     singleton) — matches `assigned_to_user_id IS NULL` (tasks
    *     assigned by role only).
    *
-   * R7 C3-1 close — the prior `string | UnassignedFilter` union
+   * R8 C3-1 close — the prior `string | UnassignedFilter` union
    * collapsed to bare `string` at the call site (TS literal-into-
    * string widening) so typos like `'__unassined__'` compiled. The
    * discriminated union has no `string` slot at all; the only way to
@@ -54,7 +61,7 @@ export interface ListEscalationTasksOpts {
 }
 
 /**
- * F8 Phase 8 T214 + R7 C3-1 close — assignee filter discriminated
+ * F8 Phase 8 T214 + R8 C3-1 close — assignee filter discriminated
  * union. No `string` slot anywhere; typos are compile-time errors
  * because the only way to construct a filter is through one of the
  * two named `kind` arms.
@@ -69,27 +76,18 @@ export type AssigneeFilter =
 /**
  * Singleton for the unassigned-tray case. Frozen for safety — the
  * sentinel is identity-stable across the module graph.
- *
- * Backward-compat alias: pre-R7 code referenced `UnassignedFilter`
- * type; that name is now exported as the unassigned arm of the
- * discriminated union for callers that imported it.
  */
 export const ESCALATION_UNASSIGNED_FILTER: AssigneeFilter = Object.freeze({
   kind: 'unassigned',
 });
 
-export type UnassignedFilter = Extract<AssigneeFilter, { kind: 'unassigned' }>;
-
-/**
- * Type guard for the sentinel. After R7 C3-1 the discriminated union
- * narrows automatically via `kind`; this helper remains as a stable
- * symbol for adapters that prefer the explicit predicate form.
- */
-export function isUnassignedFilter(
-  value: AssigneeFilter,
-): value is UnassignedFilter {
-  return value.kind === 'unassigned';
-}
+// R8 R4-IMP-1 close — `UnassignedFilter` type alias and
+// `isUnassignedFilter` type guard removed. After R8 C3-1 collapsed
+// the assignee shape to a discriminated union, the discriminator
+// (`value.kind === 'unassigned'`) is the canonical narrow path; the
+// helpers had zero consumers and created the cognitive trap "should
+// I use the helper or the discriminator?". Single canonical narrow
+// path now.
 
 export interface EscalationTaskPage {
   readonly items: ReadonlyArray<RenewalEscalationTask>;
@@ -151,6 +149,16 @@ export type EscalationTaskWithMember = RenewalEscalationTask & {
    * `assignedToDisplayName ?? assignedToEmail ?? userId.slice(0,8)`.
    */
   readonly assignedToDisplayName: string | null;
+  /**
+   * R8 R4-IMP-5 close — multi-year cycle context for FR-043 pill.
+   * `yearInCycle` from the new `renewal_escalation_tasks.year_in_cycle`
+   * column (DEFAULT 1). `totalYears` derived in the adapter from the
+   * joined `renewal_cycles.cycle_length_months` (`Math.ceil(months/12)`,
+   * clamped to ≥1). Both default to 1 — single-year contracts skip
+   * the pill prefix per `<YearInCyclePill>` collapse rule.
+   */
+  readonly yearInCycle: number;
+  readonly totalYears: number;
   /**
    * Round 5 I-13 + R6 IMP-9 close — joined `users.email` (fallback
    * display when `display_name` is null).

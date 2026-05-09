@@ -100,7 +100,7 @@ export default async function EscalationTaskQueuePage({
   const overdueRaw = pickFirst(sp['overdue_only']);
   const overdueOnly = overdueRaw === 'true' || overdueRaw === '1';
 
-  // R7 C3-1 close — build a discriminated AssigneeFilter so typos
+  // R8 C3-1 close — build a discriminated AssigneeFilter so typos
   // cannot reach the repo. The route handler also runtime-validates
   // userId UUID shape for defence-in-depth.
   let assignedToUserIdFilter: AssigneeFilter | undefined;
@@ -210,6 +210,12 @@ export default async function EscalationTaskQueuePage({
             // → page maps → component renderAssigneeCell consumes.
             assignedToDisplayName: task.assignedToDisplayName,
             assignedToEmail: task.assignedToEmail,
+            // R8 R4-IMP-5 close — wire FR-043 yearInCycle/totalYears
+            // through SSR. Prior page projection silently dropped
+            // these (component fell back to ??1 defaults so multi-
+            // year prefix never rendered).
+            yearInCycle: task.yearInCycle,
+            totalYears: task.totalYears,
             dueAt: task.dueAt,
             status: task.status,
             createdAt: task.createdAt,

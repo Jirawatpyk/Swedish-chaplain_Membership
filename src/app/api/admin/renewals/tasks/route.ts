@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       ? (statusParam as StatusFilter)
       : 'open';
 
-  // R7 C3-1 close — discriminated AssigneeFilter (see page.tsx).
+  // R8 C3-1 close — discriminated AssigneeFilter (see page.tsx).
   let assignedToUserIdFilter: AssigneeFilter | undefined;
   if (assignedParam !== null) {
     if (assignedParam === 'me') {

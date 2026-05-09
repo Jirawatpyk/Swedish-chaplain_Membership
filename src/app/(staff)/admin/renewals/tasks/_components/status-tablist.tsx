@@ -1,9 +1,9 @@
 /**
- * F8 Phase 8 R6 C-5 + R7 C3-2 close — ARIA APG composite-widget
+ * F8 Phase 8 R6 C-5 + R8 C3-2 close — ARIA APG composite-widget
  * tablist with roving tabIndex + Arrow-key navigation, **manual
  * activation**. WCAG 2.1 SC 4.1.2 compliance.
  *
- * Activation policy (R7 C3-2):
+ * Activation policy (R8 C3-2):
  *   - Each status tab loads server-rendered data (Neon fetch). Per
  *     ARIA APG: "If the tab panel contains content that is not
  *     present until the tab is selected ... it is recommended to use
@@ -19,24 +19,37 @@
  *   - Home / End: focus first / last tab.
  *   - Enter / Space: activate the focused tab (default Button click).
  *
- * R7 SF-A close — `data-focused` attribute + ring-class on focused-
+ * R8 SF-A close — `data-focused` attribute + ring-class on focused-
  * but-not-selected tabs provides a visual cue so sighted keyboard
  * users see they have a pending selection that needs activation.
  *
- * Extracted as own file in R7 IMP-D close so the keyboard contract is
+ * Extracted as own file in R8 IMP-D close so the keyboard contract is
  * unit-testable (`status-tablist.test.tsx`).
  */
 'use client';
 
 import { useRef, useState } from 'react';
+import type { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 
 export const STATUS_TABS = ['open', 'done', 'skipped'] as const;
 export type StatusTab = (typeof STATUS_TABS)[number];
 
+/**
+ * R8 R4-IMP-2 close — `t` is the namespaced next-intl translator
+ * function (mirrors precedent at pipeline-table.tsx, schedule-editor,
+ * breadcrumb-nav). Restores ICU key safety inside StatusTablist so a
+ * typo in `t('status_tabs_aria')` or a key from a sibling namespace
+ * fails at compile time.
+ *
+ * R8 R4-IMP-3 close — `status` narrowed to `StatusTab` (from `string`).
+ * The `currentIdx === -1` defensive branch is removed because the
+ * type system now prevents an unknown status from reaching the
+ * tablist. Callers narrow upstream via the URL whitelist guard.
+ */
 export interface StatusTablistProps {
-  readonly status: string;
-  readonly t: (key: string) => string;
+  readonly status: StatusTab;
+  readonly t: ReturnType<typeof useTranslations<'admin.renewals.tasks'>>;
   readonly onSelect: (next: StatusTab) => void;
 }
 
@@ -55,9 +68,11 @@ export function StatusTablist({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>): void {
+    // R8 R4-IMP-3 close — `status: StatusTab` is type-narrowed so
+    // findIndex always returns a valid index; no defensive `=== -1`
+    // bail-out needed.
     const currentIdx =
       focusedIdx ?? STATUS_TABS.findIndex((s) => s === status);
-    if (currentIdx === -1) return;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
       e.preventDefault();
       focusByIndex(currentIdx - 1);

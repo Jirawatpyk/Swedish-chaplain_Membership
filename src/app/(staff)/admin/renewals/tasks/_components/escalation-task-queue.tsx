@@ -52,7 +52,7 @@ import {
 import { DoneTaskDialog } from './done-task-dialog';
 import { SkipTaskDialog } from './skip-task-dialog';
 import { ReassignTaskDropdown } from './reassign-task-dropdown';
-import { StatusTablist } from './status-tablist';
+import { StatusTablist, STATUS_TABS, type StatusTab } from './status-tablist';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
 
 export interface EscalationTaskQueueItem {
@@ -82,7 +82,7 @@ export interface EscalationTaskQueueItem {
   readonly assignedToRole: 'admin' | 'manager' | 'executive_director';
   readonly assignedToUserId: string | null;
   /**
-   * Round 5 I-13 + R7 IMP-F close — joined `users.display_name` for
+   * Round 5 I-13 + R8 IMP-F close — joined `users.display_name` for
    * the `assigned_to_user_id`. NULL when role-only or user deleted.
    * Required (`string | null`, not `?: ...`) so a future SSR
    * projection that forgets to map this field fails at compile time
@@ -91,7 +91,7 @@ export interface EscalationTaskQueueItem {
    */
   readonly assignedToDisplayName: string | null;
   /**
-   * Round 5 I-13 + R7 IMP-F close — fallback display when
+   * Round 5 I-13 + R8 IMP-F close — fallback display when
    * `display_name` is null. See above for required-vs-optional
    * rationale.
    */
@@ -100,13 +100,17 @@ export interface EscalationTaskQueueItem {
   readonly status: 'open' | 'done' | 'skipped';
   readonly createdAt: string;
   /**
-   * Optional multi-year cycle context for the year-in-cycle pill (T220).
+   * Multi-year cycle context for the year-in-cycle pill (T220 / FR-043).
    * `yearInCycle: 1` + `totalYears: 1` collapses the pill to just the
    * task-type label (single-year contracts get no "Year 1 of 1" prefix).
-   * Both fields default to 1/1 when the cycle metadata isn't surfaced.
+   * R8 R4-IMP-5 close — required (was optional). The repo always
+   * supplies these now (yearInCycle from new column DEFAULT 1;
+   * totalYears computed from cycle_length_months). The prior optional
+   * shape silently let the queue render single-year for ALL multi-
+   * year contracts because the projection forgot to map them.
    */
-  readonly yearInCycle?: number;
-  readonly totalYears?: number;
+  readonly yearInCycle: number;
+  readonly totalYears: number;
 }
 
 export interface EscalationTaskQueueProps {
@@ -159,7 +163,7 @@ function isWireErrorCode(code: string): code is WireErrorCode {
   return (WIRE_ERROR_CODES as readonly string[]).includes(code);
 }
 
-// R7 IMP-D close — STATUS_TABS + StatusTab + StatusTablist extracted
+// R8 IMP-D close — STATUS_TABS + StatusTab + StatusTablist extracted
 // to sibling `status-tablist.tsx` for unit-testability.
 
 export function EscalationTaskQueue({
@@ -182,7 +186,14 @@ export function EscalationTaskQueue({
 
   // Filters live in URL search params so the back button + sharing
   // works. Defaults: status='open', assignment='all'.
-  const status = searchParams.get('status') ?? 'open';
+  // R8 R4-IMP-3 close — narrow status to StatusTab via whitelist so
+  // `<StatusTablist status={status} />` has the tightened type.
+  const statusRaw = searchParams.get('status');
+  const status: StatusTab = (STATUS_TABS as readonly string[]).includes(
+    statusRaw ?? '',
+  )
+    ? (statusRaw as StatusTab)
+    : 'open';
   const assignmentRaw = searchParams.get('assignment');
   const assignment: AssignmentFilter =
     assignmentRaw === 'mine' || assignmentRaw === 'unassigned'
@@ -249,13 +260,13 @@ export function EscalationTaskQueue({
    * are passed in directly by the catch handler — never trusted from
    * a remote source.
    *
-   * R7 HV-4 + R7 IMP-J close — i18n consolidation: 9 of 10 error
+   * R8 HV-4 + R8 IMP-J close — i18n consolidation: 9 of 10 error
    * codes have byte-identical copy across actions; only `forbidden`
    * varies. Shared `actions.errors.<code>` namespace + per-action
    * `forbidden` override. Net -18 unique key paths (was 30 per
    * locale × 3 = 90 entries → 12 per locale × 3 = 36 entries).
    *
-   * R7 S-1 close — inlined `safeWireCode` (the previous helper had
+   * R8 S-1 close — inlined `safeWireCode` (the previous helper had
    * exactly two call sites and added a separation that didn't
    * survive the consolidation).
    */
@@ -498,7 +509,7 @@ export function EscalationTaskQueue({
       <div
         id="escalation-tasks-tabpanel"
         role="tabpanel"
-        // R7 IMP-H close — APG-recommended `aria-labelledby` referencing
+        // R8 IMP-H close — APG-recommended `aria-labelledby` referencing
         // the controlling tab's id (ids assigned by StatusTablist).
         aria-labelledby={`task-status-tab-${status}`}
       >
@@ -516,7 +527,13 @@ export function EscalationTaskQueue({
               ? 'filter_active_state'
               : 'empty_state';
             return (
-              <div className="py-12 text-center" role="status">
+              // R8 R4-IMP-6 close — `role="status"` was semantically
+              // incorrect on static markup (implies aria-live="polite"
+              // for dynamic content). The parent `role="tabpanel"`
+              // already provides AT announcement when entering the
+              // panel; the static empty-state markup needs no explicit
+              // status role.
+              <div className="py-12 text-center">
                 <ClipboardCheck
                   className="mx-auto mb-3 size-12 text-muted-foreground"
                   aria-hidden
@@ -637,8 +654,8 @@ export function EscalationTaskQueue({
                       </TableCell>
                       <TableCell>
                         <YearInCyclePill
-                          yearInCycle={task.yearInCycle ?? 1}
-                          totalYears={task.totalYears ?? 1}
+                          yearInCycle={task.yearInCycle}
+                          totalYears={task.totalYears}
                           taskTypeLabel={t(`taskType.${task.taskType}`)}
                         />
                       </TableCell>

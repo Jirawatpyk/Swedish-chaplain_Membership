@@ -17,7 +17,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { z } from 'zod';
-import { Check, ChevronsUpDown } from 'lucide-react';
+import { Check, ChevronsUpDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -70,15 +70,26 @@ export function ReassignTaskDropdown({
   const t = useTranslations('admin.renewals.tasks.reassign_dialog');
   const [users, setUsers] = useState<ReadonlyArray<StaffUser> | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  /**
+   * R8 R4-C1 close — retry-counter forces the lazy-load effect to
+   * re-run when the user clicks Retry. The previous shape relied on
+   * `users` flipping null→null which React skipped (state-set bail-
+   * out → effect deps unchanged → fetch never re-fired). Now Retry
+   * does `setRetryToken(t => t + 1)` and the effect deps include
+   * the counter so the next render re-runs the fetch.
+   */
+  const [retryToken, setRetryToken] = useState(0);
 
   // Lazy-load active staff users on open.
   useEffect(() => {
     if (!open) return;
     if (users !== null) return;
     let cancelled = false;
+    setIsLoadingUsers(true);
     (async () => {
       try {
         const res = await fetch('/api/admin/users/staff-active', {
@@ -101,14 +112,19 @@ export function ReassignTaskDropdown({
           return;
         }
         if (!cancelled) setUsers(parsed.data.users);
-      } catch {
+      } catch (e) {
+        if (typeof console !== 'undefined') {
+          console.warn('[reassign-task-dropdown] staff-active fetch failed', e);
+        }
         if (!cancelled) setLoadError(true);
+      } finally {
+        if (!cancelled) setIsLoadingUsers(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, users]);
+  }, [open, users, retryToken]);
 
   function handleSubmit(): void {
     if (selectedUserId === null) return;
@@ -132,6 +148,10 @@ export function ReassignTaskDropdown({
       onClose={() => {
         setSelectedUserId(null);
         setPopoverOpen(false);
+        // R8 close — also reset error/retry state so a re-open
+        // after a fetch error gets a fresh attempt.
+        setLoadError(false);
+        setRetryToken(0);
       }}
       title={t('title')}
       description={t('description')}
@@ -147,20 +167,28 @@ export function ReassignTaskDropdown({
           {t('assignee_label')}
         </span>
         {loadError ? (
-          // R7 IMP-G close — wire the dormant `reassign_dialog.retry`
-          // i18n key. Resetting `users=null` + `loadError=false`
-          // re-triggers the lazy-load useEffect on the next render.
+          // R8 R4-C1 + R4-IMP-7 close — Retry button now bumps a
+          // counter so the lazy-load useEffect actually re-runs
+          // (prior state-set was a no-op because `users` was already
+          // null). Loading state shows the spinner so admin sees
+          // async progress, not a disabled button with no signal.
           <div className="flex items-center gap-2">
             <p className="text-sm text-destructive">{t('load_error')}</p>
             <Button
               type="button"
               size="sm"
               variant="outline"
+              disabled={isLoadingUsers}
+              aria-busy={isLoadingUsers}
               onClick={() => {
                 setLoadError(false);
                 setUsers(null);
+                setRetryToken((n) => n + 1);
               }}
             >
+              {isLoadingUsers && (
+                <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
+              )}
               {t('retry')}
             </Button>
           </div>

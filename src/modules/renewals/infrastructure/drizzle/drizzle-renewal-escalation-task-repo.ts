@@ -147,6 +147,12 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           assignedToUserId: input.assignedToUserId ?? null,
           dueAt: new Date(input.dueAt),
           relatedSuggestionId: input.relatedSuggestionId ?? null,
+          // R8 R4-IMP-5 close — propagate producer-supplied year-in-
+          // cycle. Falls back to DB default 1 when omitted (legacy
+          // producers + single-year contracts).
+          ...(input.yearInCycle !== undefined
+            ? { yearInCycle: input.yearInCycle }
+            : {}),
         })
         .onConflictDoNothing({
           target: [
@@ -421,7 +427,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         // round-trip. RLS+FORCE on `members` + `renewal_cycles` shields
         // cross-tenant rows.
         //
-        // R6 IMP-19 + R7 IMP-L close — `users` is currently globally
+        // R6 IMP-19 + R8 IMP-L close — `users` is currently globally
         // unique (F1 design — no per-tenant scoping column yet).
         // When multi-tenant user scoping lands (MTA-future-phase per
         // saas-architecture.md), this JOIN MUST add an `eq(...)`
@@ -439,6 +445,9 @@ export function makeDrizzleRenewalEscalationTaskRepo(
             companyName: members.companyName,
             tierBucket: membershipPlans.renewalTierBucket,
             cycleExpiresAt: renewalCycles.expiresAt,
+            // R8 R4-IMP-5 close — surface cycle_length_months so we
+            // can compute totalYears for the FR-043 pill.
+            cycleLengthMonths: renewalCycles.cycleLengthMonths,
             assigneeDisplayName: users.displayName,
             assigneeEmail: users.email,
           })
@@ -489,16 +498,25 @@ export function makeDrizzleRenewalEscalationTaskRepo(
 
         const hasMore = rows.length > opts.pageSize;
         const pageRows = hasMore ? rows.slice(0, opts.pageSize) : rows;
-        const items: EscalationTaskWithMember[] = pageRows.map((r) => ({
-          ...rowToDomain(r.task),
-          memberCompanyName: r.companyName ?? null,
-          memberTierBucket: r.tierBucket ?? null,
-          cycleExpiresAt: r.cycleExpiresAt
-            ? r.cycleExpiresAt.toISOString()
-            : null,
-          assignedToDisplayName: r.assigneeDisplayName ?? null,
-          assignedToEmail: r.assigneeEmail ?? null,
-        }));
+        const items: EscalationTaskWithMember[] = pageRows.map((r) => {
+          // R8 R4-IMP-5 close — compute totalYears from cycle length.
+          // ceil(months/12), clamped to ≥1 so single-year cycles
+          // collapse the pill prefix per <YearInCyclePill> rule.
+          const cycleLenMonths = r.cycleLengthMonths ?? 12;
+          const totalYears = Math.max(1, Math.ceil(cycleLenMonths / 12));
+          return {
+            ...rowToDomain(r.task),
+            memberCompanyName: r.companyName ?? null,
+            memberTierBucket: r.tierBucket ?? null,
+            cycleExpiresAt: r.cycleExpiresAt
+              ? r.cycleExpiresAt.toISOString()
+              : null,
+            yearInCycle: r.task.yearInCycle ?? 1,
+            totalYears,
+            assignedToDisplayName: r.assigneeDisplayName ?? null,
+            assignedToEmail: r.assigneeEmail ?? null,
+          };
+        });
         const last = items[items.length - 1];
         const nextCursor =
           hasMore && last ? `${last.dueAt}|${last.taskId}` : null;
@@ -528,7 +546,7 @@ function buildListWhereExpr(
     );
   }
   if (opts.assignedToUserIdFilter !== undefined) {
-    // R7 C3-1 close — discriminated union narrows via `kind`. No
+    // R8 C3-1 close — discriminated union narrows via `kind`. No
     // free-form `string` slot at the type level → typos at the call
     // site are compile errors, not runtime fall-throughs.
     if (opts.assignedToUserIdFilter.kind === 'unassigned') {

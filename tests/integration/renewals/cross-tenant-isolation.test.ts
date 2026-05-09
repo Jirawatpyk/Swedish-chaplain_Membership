@@ -695,12 +695,12 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
         );
         assertBRow(bRow[0]);
 
-        // R6 IMP-13 + R7 IMP-E close — Constitution Principle I
+        // R6 IMP-13 + R8 IMP-E close — Constitution Principle I
         // clause 4: every cross-tenant access attempt MUST refuse +
         // emit zero audit leak. Probe ALL audit events for the
         // foreign taskId — should be zero rows.
         //
-        // R7 IMP-E: also probe payload-text containment so a future
+        // R8 IMP-E: also probe payload-text containment so a future
         // event renaming `task_id` → `taskId`/`task` would still fail
         // the test (defends against silent field-rename regressions).
         const auditsBySpecificField = await db

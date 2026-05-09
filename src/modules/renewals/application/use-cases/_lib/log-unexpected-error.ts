@@ -1,5 +1,5 @@
 /**
- * F8 Phase 8 R7 IMP-B + S-3 close — shared helper for the outer
+ * F8 Phase 8 R8 IMP-B + S-3 close — shared helper for the outer
  * catch in escalation-task use-cases.
  *
  * Why: the 4 use-cases (`{create,complete,skip,reassign}-escalation-
