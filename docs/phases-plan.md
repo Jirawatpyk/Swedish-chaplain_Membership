@@ -468,3 +468,20 @@ full rationale. Leaving this table for traceability.
 | R4 | Self-service vs admin-only               | Both: `admin`, `manager`, `member` roles            | ✅ Closed |
 | R5 | Excel data migration strategy            | Not required day 1; re-enter as needed              | ✅ Closed |
 | R6 | Repo rename `chaplain` → `chamber`       | Approved; **manual action required from user**     | ⏳ Pending manual |
+
+---
+
+## Post-MVP Observability Backlog
+
+Items below surfaced during F8 Phase 7 (Auto Tier-Upgrade Suggestions) reviews
+where the metric counter is the **single signal** today and a Vercel alert
+rule + on-call runbook + admin replay tooling is desired but deferred to
+post-MVP. Reference these IDs from source-code JSDocs (`POST-MVP-OBS-N`)
+instead of vague "future work" prose.
+
+| ID | Surface | Counter / Signal | Deferred Deliverables | Priority |
+|----|---------|------------------|------------------------|----------|
+| POST-MVP-OBS-7 | F8 manual-plan-change listeners + post-paid tier-upgrade-apply audit | `manualPlanChangeListenerFailed{listener,tenant_id}` + `rescheduleAuditEmitFailed{audit_type}` (R4 IMP-8) + `tierUpgradeApplyPostPaidFailed{tenant_id}` + `level=fatal` log line w/ `errorId='F8.APPLY_TIER.POST_PAID_AUDIT_EMIT_FAILED'` | (a) Vercel alert rule on each counter (sustained `>0` for 5 min) + alert on `level=fatal` log lines; (b) on-call runbook entry under `docs/runbooks/` describing the diagnostic steps when these counters spike; (c) admin replay tooling (UI button on tier-upgrade detail page that re-runs the apply use-case manually for a given suggestion in `accepted_pending_apply` whose cycle terminated without firing the post-paid hook) | Medium — manual grep on Vercel dashboards is the interim mitigation; counters and structured logs DO fire today |
+
+Add new `POST-MVP-OBS-N` rows here as needed. Source comments should cite
+this table (e.g. `POST-MVP-OBS-7 in docs/phases-plan.md`).

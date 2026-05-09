@@ -74,9 +74,14 @@ export default async function TierUpgradeQueuePage() {
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       {hasError ? (
-        // Phase 7 review-fix Round 2 IMP-8: role="alert" so screen-
-        // reader announces error on render. Retry button lets admin
-        // re-fetch without full-page refresh.
+        // Phase 7 review-fix Round 2 IMP-8 + Round 4 SUG-6: explicit
+        // role="alert" added here on the Card element. The Card
+        // primitive (src/components/ui/card.tsx) is a plain `<div>`
+        // with NO implicit ARIA role — the role="alert" attribute is
+        // load-bearing and provides the implicit aria-live="assertive"
+        // + aria-atomic="true" announcement (which is why aria-live
+        // was removed in Round 3 IMP-10 as redundant). DO NOT remove
+        // role="alert" without adding aria-live back.
         <Card
           className="border-destructive/40 bg-destructive/5"
           role="alert"
@@ -93,7 +98,10 @@ export default async function TierUpgradeQueuePage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 {t('error_state.subtitle')}
               </p>
-              <TierUpgradeErrorRetry label={t('error_state.retry')} />
+              <TierUpgradeErrorRetry
+                label={t('error_state.retry')}
+                retryingLabel={t('error_state.retrying')}
+              />
             </div>
           </CardContent>
         </Card>

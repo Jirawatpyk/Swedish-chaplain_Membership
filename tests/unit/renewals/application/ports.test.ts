@@ -107,7 +107,7 @@ describe('SKIP_REASONS catalogue', () => {
     // the safeguard so each commit has a chance to surface drift.
     // Mirrors the dual-coverage already in place for
     // F8_AUDIT_EVENT_TYPES (compile-time _AssertF8AuditEventCount +
-    // runtime `expect(F8_AUDIT_EVENT_TYPES.length).toBe(55)` above).
+    // runtime `expect(F8_AUDIT_EVENT_TYPES.length).toBe(N)` above).
     expect(SKIP_REASONS.length).toBe(13);
     const set = new Set(SKIP_REASONS);
     expect(set.size).toBe(SKIP_REASONS.length);

@@ -112,12 +112,19 @@ export interface DispatchContext {
 }
 
 /**
- * J9-M17 — closed set of gateway-error classifiers used by the audit
- * emit (`failure_kind` field on `renewal_reminder_send_failed` /
- * `renewal_reminder_send_failed_permanent`). Mirrors
- * `SendRenewalEmailError.kind` plus `dispatcher_crash` (J2-B2 synthetic
- * for uncaught throws). Forensic queries on `failure_kind` rely on
- * this closed set; previously the audit shape had `failure_kind: string`
+ * J9-M17 + Round 4 IMP-9 — closed set of gateway-error classifiers
+ * used by the audit emit (`failure_kind` field on
+ * `renewal_reminder_send_failed` /
+ * `renewal_reminder_send_failed_permanent`). Type-linked to
+ * `SendRenewalEmailError['kind']` (R4 back-port of the R3 IMP-7
+ * pattern from `tier_upgrade_pending_member_notify_failed`) plus
+ * `dispatcher_crash` (J2-B2 synthetic for uncaught throws).
+ *
+ * Drift prevention: when a future arm is added to `SendRenewalEmail
+ * Error`, the `['kind']` lookup propagates automatically through this
+ * alias and into the audit shape — no hand-mirrored literal union to
+ * keep in sync. Forensic queries on `failure_kind` rely on this
+ * closed set; previously the audit shape had `failure_kind: string`
  * which would silently accept typos like `'gateway_500'`.
  *
  * Outcome.reason still carries free-form text (provider error message)
@@ -125,12 +132,9 @@ export interface DispatchContext {
  * the same field — splitting that would be a contract break for
  * downstream toast UI strings.
  */
+import type { SendRenewalEmailError } from '../../ports/renewal-gateway';
 export type DispatchFailureKind =
-  | 'gateway_5xx'
-  | 'gateway_4xx'
-  | 'recipient_unsubscribed'
-  | 'recipient_email_unverified'
-  | 'template_variables_missing'
+  | SendRenewalEmailError['kind']
   | 'dispatcher_crash';
 
 export type DispatchOneCycleOutcome =

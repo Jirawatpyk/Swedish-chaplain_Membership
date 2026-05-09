@@ -1979,7 +1979,8 @@
         "error_state": {
           "title": "Kunde inte ladda kön för nivåhöjningar",
           "subtitle": "Databasfrågan misslyckades. Försök igen eller kontakta supporten om problemet kvarstår.",
-          "retry": "Försök igen"
+          "retry": "Försök igen",
+          "retrying": "Försöker igen…"
         },
         "dialog": {
           "cancel": "Avbryt"

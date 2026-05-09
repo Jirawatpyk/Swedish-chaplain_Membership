@@ -12,7 +12,13 @@ import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export function TierUpgradeErrorRetry({ label }: { readonly label: string }) {
+export function TierUpgradeErrorRetry({
+  label,
+  retryingLabel,
+}: {
+  readonly label: string;
+  readonly retryingLabel: string;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   return (
@@ -25,15 +31,17 @@ export function TierUpgradeErrorRetry({ label }: { readonly label: string }) {
       aria-busy={isPending}
       onClick={() => startTransition(() => router.refresh())}
     >
-      {/* Round 3 UX SUG-2: spinner during pending state per ux-standards § 5.
-          motion-reduce:hidden respects prefers-reduced-motion. */}
+      {/* Round 4 IMP-10: dropped per-component motion-reduce modifier;
+          globals.css § 428-434 already neutralises `.animate-spin` for
+          prefers-reduced-motion users (per ux-standards.md § 19 — "Do
+          not add per-component motion-reduce modifiers — the global
+          rule covers them"). Round 4 IMP-11: `retryingLabel` provides
+          a non-motion text fallback so reduced-motion users see textual
+          loading feedback (mirrors F7 broadcasts retry pattern). */}
       {isPending && (
-        <Loader2
-          className="mr-2 size-3.5 animate-spin motion-reduce:hidden"
-          aria-hidden
-        />
+        <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
       )}
-      {label}
+      {isPending ? retryingLabel : label}
     </Button>
   );
 }

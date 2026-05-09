@@ -1549,6 +1549,35 @@ export const renewalsMetrics = {
   },
 
   /**
+   * F8 Phase 7 review-fix Round 4 IMP-8 — dedicated audit-emit failure
+   * counter for the reschedule listener. Mirrors `tierUpgradeAuditEmit
+   * Failed` and `coordinatorAuditEmitFailed` precedents.
+   *
+   * Why a separate counter (not `manualPlanChangeListenerFailed`):
+   * after Round 3 CRIT-1 the reschedule emits use `emit()` (own tx);
+   * runtime DB faults are caught inside the emitter and logged but
+   * NEVER throw — so `wrapListener`'s `manualPlanChangeListenerFailed`
+   * counter does NOT fire for that subcase. Without this counter,
+   * audit-row loss on reschedule would conflate with the bucket-
+   * resolution counter (which fires before the emit) and silently
+   * masks the audit gap. On-call alert rule:
+   * `rate(renewals_reschedule_audit_emit_failed_total[5m]) > 0` for
+   * any sustained spike.
+   */
+  rescheduleAuditEmitFailed(
+    auditType:
+      | 'renewal_schedule_reschedule_skipped'
+      | 'renewal_schedule_rescheduled',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reschedule_audit_emit_failed_total',
+        'F8 reschedule listener audit emit failed (forensic chain may have a gap)',
+      ).add(1, { audit_type: auditType });
+    });
+  },
+
+  /**
    * F8 Phase 7 review-fix S-3-errors — per-orphan reconcile failure
    * counter. Counts individual `tier_upgrade_pending_orphan_detected`
    * dismiss-+-emit failures inside the weekly reconcile cron.

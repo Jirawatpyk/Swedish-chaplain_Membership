@@ -24,8 +24,15 @@ import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 // Round 3 IMP-7 — type-link to gateway error kind for audit
 // `tier_upgrade_pending_member_notify_failed.failure_kind`. Audit +
 // port unions stay in lock-step at compile time.
+//
+// Round 4 SUG-5 — exported alias for sharability across emit sites.
+// Round 4 IMP-9 — same pattern back-ported to `DispatchFailureKind`
+// (consumed by `renewal_reminder_send_failed_permanent.failure_kind`
+// below) so all hand-mirrored gateway-kind unions in F8 are now
+// type-linked to a single source of truth.
 import type { SendRenewalEmailError } from './renewal-gateway';
-type NotifyEmailErrorKind = SendRenewalEmailError['kind'];
+import type { DispatchFailureKind } from '../use-cases/_lib/dispatch-one-cycle';
+export type NotifyEmailErrorKind = SendRenewalEmailError['kind'];
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 import type {
@@ -729,19 +736,16 @@ export interface F8AuditPayloadShapes {
         readonly channel: 'email' | 'task';
         readonly template_id: string | null;
         /**
-         * J9-M17: closed set of gateway-error classifiers.
-         * Previously typed as bare `string` which silently accepted
-         * typos (e.g. `'gateway_500'`) + made forensic queries
-         * unreliable. Mirrors `DispatchFailureKind` from
-         * dispatch-one-cycle.ts.
+         * J9-M17 + Round 4 IMP-9: closed set of gateway-error
+         * classifiers, type-linked via `DispatchFailureKind`. The
+         * type alias resolves to `SendRenewalEmailError['kind'] |
+         * 'dispatcher_crash'` (5 + 1 arms). When a future arm is
+         * added to the gateway error union, this audit field type
+         * widens automatically — no hand-mirrored literal union to
+         * keep in sync. Closes the silent-drift gap that the bare
+         * `string` shape used to allow.
          */
-        readonly failure_kind:
-          | 'gateway_5xx'
-          | 'gateway_4xx'
-          | 'recipient_unsubscribed'
-          | 'recipient_email_unverified'
-          | 'template_variables_missing'
-          | 'dispatcher_crash';
+        readonly failure_kind: DispatchFailureKind;
         readonly failure_message: string | null;
         readonly via_retry_exhaustion: boolean;
         readonly retry_until?: string | null;

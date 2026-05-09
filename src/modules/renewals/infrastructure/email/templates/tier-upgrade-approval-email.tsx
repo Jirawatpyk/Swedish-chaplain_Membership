@@ -114,28 +114,23 @@ export function TierUpgradeApprovalEmail({
   portalUrl,
 }: TierUpgradeApprovalEmailProps): React.ReactElement {
   const copy = COPY[locale];
-  const effectiveDate = new Date(effectiveAtIso);
   // Phase 7 review-fix Round 3 UX SUG-1 — FR-014 compliance:
-  // TH-locale body MUST carry the dual-format pair (BE + Gregorian)
-  // inline, matching the F4 reminder-email precedent. Round 2 had
-  // TH body BE-only + footer dual-format (3 dates per email,
-  // redundant abbreviation in footer). Now TH body shows
-  // "<BE_date> (<Gregorian_date>)" and footer continues to render
-  // the same pair as a separate row. en/sv locales stay
-  // Gregorian-only in body.
-  let effectiveAtFormatted: string;
-  if (locale === 'th') {
-    const { gregorian, thaiBE } = formatDualFormatDate(
-      effectiveAtIso,
-      'th',
-    );
-    effectiveAtFormatted = `${thaiBE} (${gregorian})`;
-  } else {
-    effectiveAtFormatted = effectiveDate.toLocaleDateString(
-      locale === 'sv' ? 'sv-SE' : 'en-GB',
-      { year: 'numeric', month: 'long', day: 'numeric' },
-    );
-  }
+  // TH-locale body shows the dual-format pair (BE + Gregorian) inline
+  // matching the F4 reminder-email precedent; en/sv body shows
+  // Gregorian only. Both halves resolved via `formatDualFormatDate`,
+  // which honours Asia/Bangkok TZ to avoid midnight-UTC off-by-one-day.
+  //
+  // Round 4 SUG-7 design note: TH locale shows the date 3x (body BE+
+  // Gregorian + footer Gregorian/BE). Body uses BE-first to match
+  // reminder-email precedent; footer uses Gregorian-first per FR-014
+  // ("cross-confirm defence against off-by-543-years class of bug" —
+  // see dual-format-date-footer.tsx header). Order divergence is
+  // intentional defence-in-depth: a Thai reader who only reads the
+  // BE digit will see them in BOTH orderings, catching a malformed
+  // BE conversion that lined up by coincidence in one ordering.
+  const { gregorian, thaiBE } = formatDualFormatDate(effectiveAtIso, locale);
+  const effectiveAtFormatted =
+    locale === 'th' ? `${thaiBE} (${gregorian})` : gregorian;
 
   const vars = {
     firstName: memberFirstName,

@@ -19,19 +19,15 @@
 --      reconcile cron will NOT recover this case (cycle isn't terminal).
 --      Explicit forensic-chain entry closes the observability gap.
 --
--- Note (Round 3 CRIT-2 doc-fix): an earlier draft of this header listed
--- a 3rd event `tier_upgrade_already_at_target` as a Round 2 IMP-9 fix.
--- That was incorrect prose — that pgEnum value was already added by
--- migration 0116 in the original Phase 7 wave. Round 2 IMP-9 only
--- wired the emit-site in `evaluate-tier-upgrade.ts` (the audit value
--- existed in pgEnum + `F8_AUDIT_EVENT_TYPES` catalogue all along but
--- the use-case had a counter-only short-circuit). No SQL change for
--- IMP-9 — the migration here covers ONLY IMP-6 + SUG-6.
+-- Note: Round 2 IMP-9 (`tier_upgrade_already_at_target`) is wired
+-- emit-site only in `evaluate-tier-upgrade.ts`; that pgEnum value
+-- was already added by migration 0116 and is NOT part of this file.
 --
 -- All 2 events are 5-year retention (no F4 tax-document overlap).
--- F8_AUDIT_EVENT_TYPES count moves 62 → 64 (compile-time pin updated
--- in `_AssertF8AuditEventCount`; runtime test in
--- `tests/unit/renewals/application/ports.test.ts` asserts 64).
+-- F8 audit-event tuple count moves 62 → 64; see TypeScript test
+-- suite for compile-time + runtime assertions (Round 4 SUG-3 dropped
+-- specific file paths from this immutable SQL header to prevent
+-- rename-induced rot).
 --
 -- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
 -- transaction. Idempotent via IF NOT EXISTS.

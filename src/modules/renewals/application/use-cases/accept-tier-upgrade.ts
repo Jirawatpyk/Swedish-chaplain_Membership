@@ -75,9 +75,11 @@ import { asTaskId, type TaskId } from '../../domain/renewal-escalation-task';
 import type { CycleId } from '../../domain/renewal-cycle';
 // Type-only — runtime no-op brand cast (Constitution Principle III).
 import type { MemberId, PlanId } from '@/modules/members';
-// Round 3 type SUG-3 — hoist gateway error type to a top-of-file
-// `import type` instead of inline `import('...').Brand` inside the
-// discriminated-union literal.
+// Round 3 type SUG-3 + Round 4 SUG-1 — hoist gateway error type
+// to a top-of-file `import type` instead of inline dynamic-import
+// type-only reference inside the discriminated-union literal
+// (the inline form was a `SendRenewalEmailError` lookup, not a
+// TypeScript Brand — the prior comment misnamed the construct).
 import type { SendRenewalEmailError } from '../ports/renewal-gateway';
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 
@@ -511,13 +513,15 @@ export async function acceptTierUpgrade(
         '[accept-tier-upgrade] member notification email failed — audit attempted',
       );
     }
-    // gatewayResult.kind === 'threw' branch — Round 3 IMP-2 closes
-    // the forensic-chain gap. Round 1 originally emitted no audit
-    // because `recipient_email_hashed` was non-nullable; Round 3 fix
-    // relaxes that to `Sha256Hex | null` so all 4 outcomes have an
-    // audit row. The outer catch already bumped tierUpgradeNotifyFailed
-    // counter; this fires the corresponding `_failed` audit with
-    // `failure_kind: 'unknown'` + null hash.
+    // gatewayResult.kind === 'threw' branch — Round 3 IMP-2 + Round 4
+    // SUG-2 closes the forensic-chain gap. Rounds 1+2 emitted no audit
+    // for this branch because the audit shape required a non-null
+    // `recipient_email_hashed`, which the throw-path doesn't have
+    // (the hash is computed AFTER the gateway call resolves). Round 3
+    // relaxed the field to `Sha256Hex | null` so all 4 GatewayResult
+    // arms have an audit row. The outer catch already bumped
+    // tierUpgradeNotifyFailed counter; this fires the corresponding
+    // `_failed` audit with `failure_kind: 'unknown'` + null hash.
     else if (gatewayResult.kind === 'threw') {
       try {
         await deps.auditEmitter.emit(
@@ -549,6 +553,20 @@ export async function acceptTierUpgrade(
           '[accept-tier-upgrade] threw-branch notify_failed audit emit failed — counter bumped',
         );
       }
+    } else {
+      // Round 4 CRIT-3 — exhaustiveness pin on the GatewayResult
+      // discriminated union. If a future arm is added (e.g.
+      // 'rate_limited'), the `_exhaustive: never` type assertion
+      // FAILS at compile time, forcing the contributor to wire an
+      // audit-emit branch above. Pattern matches `renewal-gateway.ts`
+      // `isPermanentGatewayError` and `renewals-deps.ts` outcome
+      // dispatch. The runtime branch is unreachable but throws to
+      // surface logic-bug regressions loudly (no silent skip).
+      const _exhaustive: never = gatewayResult;
+      void _exhaustive;
+      throw new Error(
+        `[accept-tier-upgrade] unhandled GatewayResult kind — possible new arm without audit emit wiring`,
+      );
     }
 
     return ok({

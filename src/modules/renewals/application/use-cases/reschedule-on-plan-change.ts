@@ -14,8 +14,25 @@
  * This use-case computes the diff (cancelled vs new step ids) and
  * emits a single audit `renewal_schedule_rescheduled` carrying the
  * forensic chain so dashboards can attribute schedule changes to
- * mid-cycle plan flips. Atomic with the F2 plan-change tx via
- * `emitInTx` per Constitution Principle VIII.
+ * mid-cycle plan flips.
+ *
+ * **Failure semantics** (Round 4 CRIT-1 — both emits fire-and-forget):
+ *
+ * Both audit emits in this file (the bucket-resolution-failed
+ * `renewal_schedule_reschedule_skipped` AND the success-path
+ * `renewal_schedule_rescheduled`) use `emit()` (own tx), NOT
+ * `emitInTx(_tx)`. Round 2 had used `emitInTx` citing Constitution
+ * Principle VIII atomicity, but the listener wraps inside the F3-
+ * owned plan-change tx (members.change-plan use-case). An `emitInTx`
+ * INSERT failure would taint that tx and cause Postgres to downgrade
+ * the F3 COMMIT to ROLLBACK — losing the admin's plan-flip silently.
+ *
+ * Round 3 CRIT-1 fixed the early-return (skipped) emit; Round 4
+ * CRIT-1 closes the success-path symmetric gap. Defence-in-depth:
+ * `rescheduleAuditEmitFailed{audit_type}` counter (Round 4 IMP-8)
+ * fires inside the per-emit try/catch when the audit row never
+ * lands, so on-call retains a forensic signal even though the F3
+ * plan-flip commits.
  *
  * Idempotent: re-firing the listener for the same old→new bucket
  * pair is a no-op (the audit-port payload's `old_tier_bucket` +
@@ -100,10 +117,12 @@ export async function rescheduleOnPlanChangeInTx(
     newPlan.status === 'found' ? newPlan.plan.tierBucket : null;
 
   if (oldBucket === null || newBucket === null) {
-    // Phase 7 review-fix S-2-errors: explicit forensic-chain entry.
-    // Without this audit + counter, a F2 plan-flip with broken plan
-    // lookup would commit silently and the reminder dispatcher would
-    // keep using the OLD bucket's policy unobserved.
+    // Phase 7 review-fix S-2-errors + Round 4 IMP-3: explicit
+    // forensic-chain entry. Without this audit + counter, the F3-
+    // owned plan-change tx (members.change-plan use-case, semantically
+    // a F2 plan-management operation) would commit silently when plan
+    // lookup is broken and the reminder dispatcher would keep using
+    // the OLD bucket's policy unobserved.
     const reason: 'old_plan_not_found' | 'new_plan_not_found' | 'both_not_found' =
       oldBucket === null && newBucket === null
         ? 'both_not_found'
@@ -113,40 +132,50 @@ export async function rescheduleOnPlanChangeInTx(
     const counterSide: 'old' | 'new' | 'both' =
       reason === 'both_not_found' ? 'both' : reason === 'old_plan_not_found' ? 'old' : 'new';
     renewalsMetrics.rescheduleBucketResolutionFailed(counterSide);
-    // Phase 7 review-fix Round 3 CRIT-1: use fire-and-forget `emit()`
-    // (own tx) instead of `emitInTx(_tx)`. Round 2 CRIT-1 swapped
-    // try/catch+swallow for emitInTx throw-propagate to honour
-    // "Principle VIII emitInTx-must-throw" — but for a fire-and-forget
-    // observability event from a listener (where F2 plan-flip is the
-    // source of truth) this CAUSED F3 tx taint: emitInTx writes via
-    // the F3 tx, an INSERT failure aborts the tx, F3's COMMIT then
-    // downgrades to ROLLBACK and surfaces as 500 + plan-flip lost.
-    //
-    // Switching to `emit()` opens the audit's own tx so a row-level
-    // failure (RLS / NOT-NULL / pgEnum drift) is contained AND the
-    // F3 plan-flip commits. Counter `rescheduleBucketResolutionFailed`
-    // already fired BEFORE the emit; `manualPlanChangeListenerFailed`
-    // fires inside `wrapListener` if the entire listener throws — so
-    // observability signals stay intact even if the audit row never
-    // lands.
-    await deps.auditEmitter.emit(
-      {
-        type: 'renewal_schedule_reschedule_skipped',
-        payload: {
-          member_id: args.memberId as MemberId,
-          old_plan_id: args.oldPlanId as PlanId,
-          new_plan_id: args.newPlanId as PlanId,
+    // Phase 7 review-fix Round 3 CRIT-1 + Round 4 IMP-8: use fire-and-
+    // forget `emit()` (own tx) instead of `emitInTx(_tx)` so a row-
+    // level INSERT failure (RLS / NOT-NULL / pgEnum drift) does NOT
+    // taint the F3-owned plan-change tx (members.change-plan caller).
+    // The `rescheduleBucketResolutionFailed` counter above already
+    // fired BEFORE the emit (load-bearing forensic signal). Round 4
+    // IMP-8 added the dedicated `rescheduleAuditEmitFailed` counter
+    // inside the try/catch so audit-row loss is independently
+    // observable — `manualPlanChangeListenerFailed` only fires for
+    // pre-flight pgEnum-drift throws (the runtime DB-fault swallow
+    // contract inside the emitter does NOT escape to wrapListener).
+    try {
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_schedule_reschedule_skipped',
+          payload: {
+            member_id: args.memberId as MemberId,
+            old_plan_id: args.oldPlanId as PlanId,
+            new_plan_id: args.newPlanId as PlanId,
+            reason,
+          },
+        },
+        {
+          tenantId: args.tenantId,
+          actorUserId: null,
+          actorRole: 'system',
+          correlationId: args.correlationId,
+          requestId: args.requestId,
+        },
+      );
+    } catch (auditErr) {
+      renewalsMetrics.rescheduleAuditEmitFailed(
+        'renewal_schedule_reschedule_skipped',
+      );
+      logger.error(
+        {
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          tenantId: args.tenantId,
+          memberId: args.memberId,
           reason,
         },
-      },
-      {
-        tenantId: args.tenantId,
-        actorUserId: null,
-        actorRole: 'system',
-        correlationId: args.correlationId,
-        requestId: args.requestId,
-      },
-    );
+        '[reschedule-on-plan-change] reschedule_skipped audit emit failed — counter bumped; F3 plan-flip will still commit',
+      );
+    }
     logger.warn(
       {
         tenantId: args.tenantId,
@@ -230,30 +259,58 @@ export async function rescheduleOnPlanChangeInTx(
     };
   }
 
-  // Phase 7 verify-fix C2 — emit `renewal_schedule_rescheduled` audit
-  // (migration 0118 added the pgEnum value). Atomic with the F2 plan-
-  // change tx per Constitution Principle VIII.
-  await deps.auditEmitter.emitInTx(
-    _tx,
-    {
-      type: 'renewal_schedule_rescheduled',
-      payload: {
-        member_id: args.memberId as MemberId,
-        cycle_id: activeCycle.cycleId,
-        old_tier_bucket: oldBucket,
-        new_tier_bucket: newBucket,
-        cancelled_step_ids: cancelled,
-        new_step_ids: added,
+  // Phase 7 verify-fix C2 + Round 4 CRIT-1 — emit `renewal_schedule_
+  // rescheduled` audit (migration 0118 added the pgEnum value).
+  //
+  // Round 2 used `emitInTx(_tx)` per Principle VIII atomicity, but
+  // Round 3 CRIT-1 + Round 4 CRIT-1 traced a Postgres tainted-tx
+  // silent-rollback class: an INSERT failure aborts the F3-owned
+  // tx, F3's COMMIT downgrades to ROLLBACK, the admin's plan-flip
+  // is silently lost. The early-return path was fixed in Round 3;
+  // this success-path emit is the symmetric fix in Round 4.
+  //
+  // `emit()` (own tx) keeps the audit failure isolated; the
+  // `rescheduleAuditEmitFailed` counter (Round 4 IMP-8) inside
+  // the try/catch is the load-bearing observability signal because
+  // `manualPlanChangeListenerFailed` does NOT fire for runtime
+  // DB-fault swallows.
+  try {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_schedule_rescheduled',
+        payload: {
+          member_id: args.memberId as MemberId,
+          cycle_id: activeCycle.cycleId,
+          old_tier_bucket: oldBucket,
+          new_tier_bucket: newBucket,
+          cancelled_step_ids: cancelled,
+          new_step_ids: added,
+        },
       },
-    },
-    {
-      tenantId: args.tenantId,
-      actorUserId: null,
-      actorRole: 'system',
-      correlationId: args.correlationId,
-      requestId: args.requestId,
-    },
-  );
+      {
+        tenantId: args.tenantId,
+        actorUserId: null,
+        actorRole: 'system',
+        correlationId: args.correlationId,
+        requestId: args.requestId,
+      },
+    );
+  } catch (auditErr) {
+    renewalsMetrics.rescheduleAuditEmitFailed(
+      'renewal_schedule_rescheduled',
+    );
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        tenantId: args.tenantId,
+        memberId: args.memberId,
+        cycleId: activeCycle.cycleId,
+        oldTierBucket: oldBucket,
+        newTierBucket: newBucket,
+      },
+      '[reschedule-on-plan-change] rescheduled audit emit failed — counter bumped; F3 plan-flip will still commit',
+    );
+  }
 
   logger.debug(
     {

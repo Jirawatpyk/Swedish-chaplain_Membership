@@ -576,4 +576,70 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     );
     expect(supersededAudit.length).toBeGreaterThanOrEqual(1);
   }, 60_000);
+
+  it('R4-IMP-5 — threw-branch emits notify_failed audit (null hash + failure_kind unknown)', async () => {
+    // Round 4 IMP-5 — exercises the `kind: 'threw'` arm of the
+    // GatewayResult discriminated union (Round 3 IMP-2 added the
+    // emit; Round 4 locks it with an integration test). When the
+    // dispatchCandidateRepo / planLookup / gateway path throws,
+    // the audit MUST land with `recipient_email_hashed: null` +
+    // `failure_kind: 'unknown'` so forensic queries can distinguish
+    // the catch-all-throw class from the structured-error class.
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    // Override findOne to throw — simulates a transient DB read crash
+    // that lands BEFORE the gateway call. Other paths inside the try
+    // block would also drive 'threw' but findOne is the earliest +
+    // simplest seam. The repo override is post-construction so the
+    // outer F2 listener wiring stays intact.
+    const throwingDeps = {
+      ...deps,
+      dispatchCandidateRepo: {
+        ...deps.dispatchCandidateRepo,
+        findOne: async () => {
+          throw new Error('synthetic_dispatch_lookup_crash');
+        },
+      },
+    } as typeof deps;
+
+    const result = await acceptTierUpgrade(throwingDeps, {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin',
+      correlationId: randomUUID(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Acceptance still committed — gateway-side throw must NOT roll
+    // back the F3 tx (suggestion → accepted_pending_apply flip).
+    expect(result.value.memberNotifiedDeliveryId).toBeNull();
+
+    // Threw-branch audit row presence + payload-shape probe.
+    const threwAudit = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          eq(
+            auditLog.eventType,
+            'tier_upgrade_pending_member_notify_failed',
+          ),
+        ),
+    );
+    expect(threwAudit.length).toBeGreaterThanOrEqual(1);
+    const payload = threwAudit[0]?.payload as
+      | {
+          readonly failure_kind?: string;
+          readonly recipient_email_hashed?: string | null;
+          readonly failure_message?: string | null;
+        }
+      | null;
+    expect(payload?.failure_kind).toBe('unknown');
+    expect(payload?.recipient_email_hashed).toBeNull();
+    expect(payload?.failure_message).toMatch(/synthetic_dispatch_lookup_crash/);
+  }, 60_000);
 });

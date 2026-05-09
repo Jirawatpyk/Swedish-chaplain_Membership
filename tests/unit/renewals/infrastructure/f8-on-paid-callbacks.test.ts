@@ -42,14 +42,24 @@ const {
   onPaidInvalidTxAdd,
   onPaidUnknownOutcomeKindAdd,
   loggerErrorMock,
+  loggerFatalMock,
   markCycleCompleteInTxMock,
   markCycleCompleteFromInvoicePaidMock,
+  applyPendingTierUpgradeInTxMock,
+  tierUpgradeApplyPostPaidFailedMock,
+  applyPendingInvalidTxAdd,
+  auditEmitterEmitMock,
 } = vi.hoisted(() => ({
   onPaidInvalidTxAdd: vi.fn(),
   onPaidUnknownOutcomeKindAdd: vi.fn(),
   loggerErrorMock: vi.fn(),
+  loggerFatalMock: vi.fn(),
   markCycleCompleteInTxMock: vi.fn(),
   markCycleCompleteFromInvoicePaidMock: vi.fn(),
+  applyPendingTierUpgradeInTxMock: vi.fn(),
+  tierUpgradeApplyPostPaidFailedMock: vi.fn(),
+  applyPendingInvalidTxAdd: vi.fn(),
+  auditEmitterEmitMock: vi.fn(),
 }));
 
 vi.mock('@/lib/metrics', async (importOriginal) => {
@@ -63,6 +73,8 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       ...actual.renewalsMetrics,
       onPaidInvalidTx: { add: onPaidInvalidTxAdd },
       onPaidUnknownOutcomeKind: { add: onPaidUnknownOutcomeKindAdd },
+      tierUpgradeApplyPostPaidFailed: tierUpgradeApplyPostPaidFailedMock,
+      applyPendingInvalidTx: { add: applyPendingInvalidTxAdd },
     },
   };
 });
@@ -74,9 +86,45 @@ vi.mock('@/lib/logger', async (importOriginal) => {
     logger: {
       ...actual.logger,
       error: loggerErrorMock,
+      fatal: loggerFatalMock,
     },
   };
 });
+
+// Round 4 IMP-6 — stub the apply-pending-tier-upgrade use-case so we
+// can drive the post-paid audit-emit failure path without a live DB.
+vi.mock(
+  '@/modules/renewals/application/use-cases/apply-pending-tier-upgrade',
+  () => ({
+    applyPendingTierUpgradeInTx: applyPendingTierUpgradeInTxMock,
+  }),
+);
+
+// Round 4 IMP-6 — stub the cycle repo + audit emitter at the
+// composition-root seam so f8OnPaidCallbacks composes a deps tree
+// where `cyclesRepo.findByInvoiceIdInTx` returns a controllable
+// cycle and `auditEmitter.emit` is observable.
+const cyclesRepoFindByInvoiceIdInTxMock = vi.fn();
+const cyclesRepoFindByIdInTxMock = vi.fn();
+vi.mock(
+  '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo',
+  () => ({
+    makeDrizzleRenewalCycleRepo: () => ({
+      findByInvoiceIdInTx: cyclesRepoFindByInvoiceIdInTxMock,
+      findByIdInTx: cyclesRepoFindByIdInTxMock,
+    }),
+  }),
+);
+
+vi.mock(
+  '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-audit-emitter',
+  () => ({
+    makeDrizzleRenewalAuditEmitter: () => ({
+      emit: auditEmitterEmitMock,
+      emitInTx: vi.fn(async () => undefined),
+    }),
+  }),
+);
 
 // Stub the cycle-complete use-case at the dynamic-import path. The
 // f8OnPaidCallbacks dynamic-imports via `'../application/use-cases/...'`
@@ -89,6 +137,32 @@ vi.mock(
     markCycleCompleteFromInvoicePaid: markCycleCompleteFromInvoicePaidMock,
   }),
 );
+
+// Round 4 IMP-6 — mock `@/lib/db.runInTenant` so the callback[1]
+// fallback (invalid tx) path runs in a controlled tx-stub, AND
+// makeRenewalsDeps's outer cyclesRepo lookup is short-circuitable.
+// Also patches `auditEmitter.emit` via the renewals-deps composition
+// so we can drive the post-paid audit-emit failure branch.
+const fakeFallbackTx = {
+  execute: vi.fn(),
+  select: vi.fn(),
+  insert: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  transaction: vi.fn(),
+};
+
+vi.mock('@/lib/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/db')>();
+  return {
+    ...actual,
+    runInTenant: vi.fn(
+      async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
+        fn(fakeFallbackTx),
+    ),
+    isTenantTx: actual.isTenantTx,
+  };
+});
 
 import { f8OnPaidCallbacks } from '@/modules/renewals/infrastructure/renewals-deps';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
@@ -122,8 +196,15 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     onPaidInvalidTxAdd.mockReset();
     onPaidUnknownOutcomeKindAdd.mockReset();
     loggerErrorMock.mockReset();
+    loggerFatalMock.mockReset();
     markCycleCompleteInTxMock.mockReset();
     markCycleCompleteFromInvoicePaidMock.mockReset();
+    applyPendingTierUpgradeInTxMock.mockReset();
+    tierUpgradeApplyPostPaidFailedMock.mockReset();
+    applyPendingInvalidTxAdd.mockReset();
+    auditEmitterEmitMock.mockReset();
+    cyclesRepoFindByInvoiceIdInTxMock.mockReset();
+    cyclesRepoFindByIdInTxMock.mockReset();
   });
 
   it('valid TenantTx threaded → InTx variant called, no metric bumped (I3 atomic-tx happy path)', async () => {
@@ -219,5 +300,107 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     // The known-kind switch arms (completed/held_pending_admin/
     // no_cycle_for_invoice/cycle_not_payable) must NOT have been bumped.
     expect(onPaidInvalidTxAdd).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // Callback[1] — apply-pending-tier-upgrade dispatcher (R4-IMP-6)
+  // ─────────────────────────────────────────────────────────────────
+
+  it('R4-IMP-6 happy path: callback[1] valid tx + non-renewal cycle (null) — no-op', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValueOnce(null);
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    expect(callbacks).toHaveLength(2);
+
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    expect(cyclesRepoFindByInvoiceIdInTxMock).toHaveBeenCalledTimes(1);
+    expect(applyPendingTierUpgradeInTxMock).not.toHaveBeenCalled();
+    expect(tierUpgradeApplyPostPaidFailedMock).not.toHaveBeenCalled();
+  });
+
+  it('R4-IMP-6 valid-tx apply-throw: logger.error + NO post-paid audit (non-fallback)', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValueOnce({
+      cycleId: 'cyc-1',
+      memberId: 'mem-1',
+    });
+    applyPendingTierUpgradeInTxMock.mockRejectedValueOnce(
+      new Error('synthetic_apply_throw'),
+    );
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    await expect(
+      callbacks[1]!(buildEvent(), fakeValidTenantTx),
+    ).rejects.toThrow(/synthetic_apply_throw/);
+
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    // Non-fallback path: F4 tx will roll back; the post-paid audit
+    // is only emitted in the fallback branch.
+    expect(tierUpgradeApplyPostPaidFailedMock).not.toHaveBeenCalled();
+    expect(auditEmitterEmitMock).not.toHaveBeenCalled();
+    expect(loggerFatalMock).not.toHaveBeenCalled();
+  });
+
+  it('R4-IMP-6 fallback apply-throw: counter + audit emit + NO logger.fatal (audit succeeds)', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValueOnce({
+      cycleId: 'cyc-1',
+      memberId: 'mem-1',
+    });
+    applyPendingTierUpgradeInTxMock.mockRejectedValueOnce(
+      new Error('synthetic_apply_throw_in_fallback'),
+    );
+    auditEmitterEmitMock.mockResolvedValueOnce(undefined);
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    // Pass an invalid tx (missing methods) to force the fallback path.
+    const invalidTx = { execute: vi.fn() }; // 1/6 methods present
+    await expect(
+      callbacks[1]!(buildEvent(), invalidTx),
+    ).rejects.toThrow(/synthetic_apply_throw_in_fallback/);
+
+    expect(tierUpgradeApplyPostPaidFailedMock).toHaveBeenCalledWith(
+      'test-tenant',
+    );
+    expect(auditEmitterEmitMock).toHaveBeenCalledTimes(1);
+    const [event] = auditEmitterEmitMock.mock.calls[0] ?? [];
+    expect((event as { type?: string })?.type).toBe(
+      'tier_upgrade_apply_post_invoice_paid_failed',
+    );
+    // Audit succeeded → no fatal escalation.
+    expect(loggerFatalMock).not.toHaveBeenCalled();
+  });
+
+  it('R4-IMP-6 + R4-SUG-4 fallback apply-throw + audit-emit-fail: logger.fatal w/ stable errorId', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValueOnce({
+      cycleId: 'cyc-2',
+      memberId: 'mem-2',
+    });
+    applyPendingTierUpgradeInTxMock.mockRejectedValueOnce(
+      new Error('synthetic_apply_throw_audit_fail_chain'),
+    );
+    // Audit emit ALSO throws — production pgEnum drift / pinoFallback.
+    auditEmitterEmitMock.mockRejectedValueOnce(
+      new Error('synthetic_audit_emit_failure'),
+    );
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    const invalidTx = { execute: vi.fn() };
+    await expect(
+      callbacks[1]!(buildEvent(), invalidTx),
+    ).rejects.toThrow(/synthetic_apply_throw_audit_fail_chain/);
+
+    // Counter still bumped before audit-emit attempt.
+    expect(tierUpgradeApplyPostPaidFailedMock).toHaveBeenCalledWith(
+      'test-tenant',
+    );
+    // logger.fatal is the load-bearing escalation signal.
+    expect(loggerFatalMock).toHaveBeenCalledTimes(1);
+    const [payload, message] = loggerFatalMock.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      errorId: 'F8.APPLY_TIER.POST_PAID_AUDIT_EMIT_FAILED',
+      tenantId: 'test-tenant',
+      invoiceId: expect.any(String),
+      cycleId: 'cyc-2',
+    });
+    expect(message).toContain('manual replay required');
   });
 });
