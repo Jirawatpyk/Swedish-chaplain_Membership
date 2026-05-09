@@ -407,4 +407,50 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     });
     expect(message).toContain('manual replay required');
   });
+
+  // ─────────────────────────────────────────────────────────────────
+  // Round 6 W-012 — F4 webhook replay idempotency
+  //
+  // Stripe webhook delivery is at-least-once. F4's `markPaidFromProcessor`
+  // is idempotent at the F4 layer (invoice already paid → second call
+  // is a no-op). The F8 callback chain that runs inside the F4 tx must
+  // ALSO be idempotent: a second `applyPendingTierUpgradeInTx` call
+  // with the same cycleId must NOT double-apply the tier upgrade and
+  // must NOT emit a duplicate `tier_upgrade_applied_at_renewal` audit.
+  //
+  // The use-case relies on `findPendingForCycle` returning ZERO rows
+  // when the suggestion is already in `applied` status (the partial
+  // index `pending_apply_idx` filters by `status='accepted_pending_apply'`).
+  // This test asserts the callback is a no-op when the use-case is
+  // called twice in succession.
+  // ─────────────────────────────────────────────────────────────────
+
+  it('W-012 F4 webhook replay — second call with already-applied suggestion is no-op (no double audit, no double mutation)', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
+      cycleId: 'cyc-replay',
+      memberId: 'mem-replay',
+    });
+    // Second call: applyPendingTierUpgradeInTx returns
+    // `suggestionsApplied: []` because findPendingForCycle finds zero
+    // rows (the first call already transitioned the suggestion to
+    // `applied`, which the partial index excludes).
+    applyPendingTierUpgradeInTxMock
+      .mockResolvedValueOnce({ suggestionsApplied: ['sug-1'] })
+      .mockResolvedValueOnce({ suggestionsApplied: [] });
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+
+    // First webhook delivery — applies the tier upgrade.
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+    // Second (replay) — must be a clean no-op.
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    expect(applyPendingTierUpgradeInTxMock).toHaveBeenCalledTimes(2);
+    // Counter NOT bumped (apply succeeded both times — the second time
+    // it succeeds with an empty `suggestionsApplied` array).
+    expect(tierUpgradeApplyPostPaidFailedMock).not.toHaveBeenCalled();
+    // logger.error / logger.fatal NOT fired — replay is a normal path.
+    expect(loggerErrorMock).not.toHaveBeenCalled();
+    expect(loggerFatalMock).not.toHaveBeenCalled();
+  });
 });

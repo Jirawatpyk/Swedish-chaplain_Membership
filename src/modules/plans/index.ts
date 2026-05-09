@@ -296,6 +296,15 @@ export type {
   ScheduledPlanChangeRepo,
   CurrentPlanResolverPort,
 } from './application/ports';
+// Round 6 W-008 — REVERTED inline barrel re-export of
+// `drizzleScheduledPlanChangeRepo`. Adding a concrete Drizzle adapter
+// to this barrel pulled `postgres` (postgres-js) into the client
+// bundle through transitive `@/modules/plans` imports, breaking the
+// Vercel/Webpack build with `Can't resolve 'fs'`. The cleaner fix
+// (sub-barrel like `@/modules/plans/server` for server-only adapters,
+// or moving the F2 Drizzle ports out of the public Domain barrel) is
+// deferred to a follow-up task. Renewals' deep import remains the
+// pragmatic path for now.
 export {
   SCHEDULED_PLAN_CHANGE_STATUSES,
   isTerminalStatus,

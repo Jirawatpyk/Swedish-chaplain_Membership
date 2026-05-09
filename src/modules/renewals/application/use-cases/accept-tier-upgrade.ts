@@ -65,6 +65,12 @@ import { renewalsMetrics } from '@/lib/metrics';
 // cheap to load and the static reference makes the dependency graph
 // visible to bundler + typecheck.
 import { sha256HexOf } from '../../domain/value-objects/sha256-hex';
+// Round 6 W-004 — sanitize Resend SDK exception messages before
+// they land in audit_log.payload (5y retention). Prevents API key
+// prefix / email address leakage from raw `error.message` strings.
+// Imported from Domain (relocated in Round 6) so no
+// Application → Infrastructure boundary violation.
+import { sanitizeResendErrorMessage } from '../../domain/value-objects/sanitize-error-message';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
@@ -554,10 +560,14 @@ export async function acceptTierUpgrade(
               to_plan_id: suggestion.toPlanId as PlanId,
               recipient_email_hashed: null,
               failure_kind: 'unknown',
-              failure_message:
+              // Round 6 W-004 — sanitize Resend SDK exception messages
+              // (may contain API key prefix `re_…` or email addresses)
+              // before persisting in audit_log (5y retention).
+              failure_message: sanitizeResendErrorMessage(
                 gatewayResult.error instanceof Error
-                  ? gatewayResult.error.message.slice(0, 500)
-                  : String(gatewayResult.error).slice(0, 500),
+                  ? gatewayResult.error.message
+                  : String(gatewayResult.error),
+              ).slice(0, 500),
             },
           },
           auditCtx,

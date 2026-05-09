@@ -289,9 +289,19 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     expect(second.value.suggestionsCreated).toBe(0);
-    // Either conflictSkipped (idempotency caught) or alreadyAtTarget
-    // (because the open row blocks the eval pass at active-suggestion
-    // check). Both branches are valid — assert no NEW row created.
+    // Round 6 S-005 — tighten the discriminator. Originally accepted
+    // either conflictSkipped OR alreadyAtTarget. Reality: the eval
+    // candidate query already filters out members with an active
+    // (open / pending-apply) suggestion (member_open partial UNIQUE),
+    // so the second pass scans 0 candidates → BOTH counters stay 0
+    // and the suggestion-row count is unchanged at 1. The earlier
+    // "both branches valid" form would silently pass a regression
+    // where the cron actually inserted a row (then hit the partial
+    // UNIQUE) — leaking write amplification + audit noise.
+    expect(second.value.membersScanned).toBe(0);
+    expect(second.value.conflictSkipped).toBe(0);
+    expect(second.value.alreadyAtTarget).toBe(0);
+    expect(second.value.suppressedSkipped).toBe(0);
     const rows = await runInTenant(tenant.ctx, (tx) =>
       tx.select().from(tierUpgradeSuggestions),
     );

@@ -16,7 +16,7 @@ import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { asTenantContext } from '@/modules/tenants';
+import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import { parseTierBucket } from '../../domain/value-objects/tier-bucket';
 import { makeDrizzleRenewalAuditEmitter } from './drizzle-renewal-audit-emitter';
@@ -134,6 +134,46 @@ async function listForTenantViaTx(
   return result;
 }
 
+/**
+ * Round 6 S-001 — factory pattern matching sibling repos
+ * (`makeDrizzleTierUpgradeSuggestionRepo`, `makeDrizzleRenewalCycleRepo`,
+ * etc.). The previous singleton-with-internal-`asTenantContext` form
+ * worked correctly but diverged from the codebase factory convention,
+ * making it ambiguous to readers whether the singleton was thread-safe
+ * with respect to tenant scope.
+ *
+ * The singleton form is preserved as `drizzlePlanCatalog` for back-
+ * compat with the existing `renewals-deps.ts` wiring; new callsites
+ * SHOULD prefer `makeDrizzlePlanCatalog(tenantContext)` so the tenant
+ * binding is explicit.
+ */
+export function makeDrizzlePlanCatalog(
+  tenant: TenantContext,
+): PlanCatalogPort {
+  return {
+    async listForTenant(
+      tenantId: string,
+    ): Promise<ReadonlyArray<PlanCatalogEntry>> {
+      // Verify the caller's tenantId matches the bound tenant — fail
+      // loudly on mismatch (closes the gap where the old singleton
+      // would silently re-bind to whatever tenantId was passed).
+      if (tenantId !== tenant.slug) {
+        throw new Error(
+          `makeDrizzlePlanCatalog: tenantId mismatch — bound to ${tenant.slug} but called with ${tenantId}`,
+        );
+      }
+      return runInTenant(tenant, (tx) =>
+        listForTenantViaTx(tx, tenantId),
+      );
+    },
+  };
+}
+
+/**
+ * Back-compat singleton — accepts any tenantId and constructs the
+ * tenant context lazily. Pre-Round-6 export shape; new code should
+ * use the factory above.
+ */
 export const drizzlePlanCatalog: PlanCatalogPort = {
   async listForTenant(
     tenantId: string,

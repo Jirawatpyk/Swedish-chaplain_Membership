@@ -83,6 +83,16 @@ export const tierUpgradeSuggestions = pgTable(
     suppressedIdx: index('tier_upgrade_suggestions_suppressed_idx')
       .on(table.tenantId, table.status, table.suppressedUntil)
       .where(sql`status = 'dismissed'`),
+    // Round 6 S-008 — composite + partial for the per-member
+    // `isSuppressedForMember` query path. The original suppressed_idx
+    // (tenant + status + suppressed_until) lacked `member_id` in the
+    // leading columns, forcing a heap-filter at scale. Migration 0123
+    // ships the SQL.
+    memberSuppressedIdx: index(
+      'tier_upgrade_suggestions_member_suppressed_idx',
+    )
+      .on(table.tenantId, table.memberId, table.suppressedUntil)
+      .where(sql`status = 'dismissed'`),
     pendingApplyIdx: index('tier_upgrade_suggestions_pending_apply_idx')
       .on(table.tenantId, table.targetApplyAtCycleId)
       .where(sql`status = 'accepted_pending_apply'`),

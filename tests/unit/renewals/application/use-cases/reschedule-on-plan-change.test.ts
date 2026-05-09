@@ -228,4 +228,84 @@ describe('rescheduleOnPlanChangeInTx (R4 regression)', () => {
     expect(emitMock).toHaveBeenCalledTimes(1);
     expect(emitInTxMock).not.toHaveBeenCalled();
   });
+
+  // ─────────────────────────────────────────────────────────────────
+  // Round 6 W-014 — already-fired reminders are NOT recalled
+  //
+  // Spec edge case (line 184): "Already-sent reminders are NOT recalled."
+  // The use-case implements this implicitly via the `dispatchAt > now`
+  // time filter on `futureStepIdsFor`. This test pins the invariant —
+  // a step whose dispatch date is in the past must NOT appear in the
+  // `cancelledStepIds` even when the old policy contained it AND the
+  // new policy does not.
+  // ─────────────────────────────────────────────────────────────────
+  it('W-014 already-fired step (dispatchAt in past) is NOT in cancelledStepIds', async () => {
+    const emitMock = vi.fn(async () => undefined);
+    const emitInTxMock = vi.fn(async () => undefined);
+    const deps = {
+      tenant: { slug: TENANT_ID },
+      planLookupForRenewal: {
+        loadPlanFrozenFields: vi.fn(
+          async (args: { planId: string }) => ({
+            status: 'found' as const,
+            plan: {
+              tierBucket: args.planId === 'old' ? 'regular' : 'premium',
+            },
+          }),
+        ),
+      },
+      auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+      cyclesRepo: {
+        // Cycle expires 2026-10-01; "now" is 2026-08-15.
+        // Days remaining: ~47.
+        // - Step T-90 (offsetDays=90) dispatchAt = 2026-07-03 → IN PAST.
+        //   This step has already been "fired" (ie dispatched).
+        // - Step T-30 (offsetDays=30) dispatchAt = 2026-09-01 → IN FUTURE.
+        //   This step is still pending dispatch.
+        findActiveForMember: vi.fn(async () => ({
+          cycleId: 'cyc-fired',
+          expiresAt: '2026-10-01T00:00:00Z',
+        })),
+      },
+      schedulePolicyRepo: {
+        // Old (regular) policy has BOTH a past T-90 step AND a future
+        // T-30 step. The new (premium) policy has only T-14 (also future).
+        findByBucket: vi.fn(async (_t: string, bucket: string) =>
+          bucket === 'regular'
+            ? {
+                steps: [
+                  { stepId: 'r-90-already-fired', offsetDays: 90 },
+                  { stepId: 'r-30', offsetDays: 30 },
+                ],
+              }
+            : { steps: [{ stepId: 'p-14', offsetDays: 14 }] },
+        ),
+      },
+      clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+    } as unknown as RenewalsDeps;
+
+    const result = await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+
+    // Critical invariant: `r-90-already-fired` MUST NOT appear in the
+    // cancelled list even though it was in the OLD policy and is NOT
+    // in the NEW policy. The dispatch date is in the past so the
+    // corresponding email has already been sent — recalling it would
+    // be impossible (Resend already delivered it).
+    expect(result.cancelledStepIds).not.toContain('r-90-already-fired');
+    // The future step `r-30` from old policy IS cancelled (legitimately
+    // — it has not yet been dispatched).
+    expect(result.cancelledStepIds).toEqual(['r-30']);
+    // The new T-14 step is added (also in the future).
+    expect(result.newStepIds).toEqual(['p-14']);
+
+    // Audit emitted with the correct narrowed step set.
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    const firstCall = emitMock.mock.calls[0] as unknown as
+      | readonly [unknown, unknown]
+      | undefined;
+    const event = firstCall?.[0] as
+      | { payload?: { cancelled_step_ids?: ReadonlyArray<string> } }
+      | undefined;
+    expect(event?.payload?.cancelled_step_ids).toEqual(['r-30']);
+  });
 });

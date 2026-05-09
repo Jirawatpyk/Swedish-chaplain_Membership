@@ -56,14 +56,24 @@ import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
 import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
 import {
+  acceptTierUpgrade,
   completeEscalationTask,
   createEscalationTask,
   detectBounceThreshold,
+  dismissTierUpgrade,
   dispatchRenewalCycle,
+  escalateTierUpgrade,
+  evaluateTierUpgrade,
   makeRenewalsDeps,
   reassignEscalationTask,
   sendReminderNow,
   skipEscalationTask,
+} from '@/modules/renewals';
+import { tierUpgradeSuggestions } from '@/modules/renewals/infrastructure/schema-tier-upgrade-suggestions';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import {
+  parseSuggestionId,
+  type SuggestionId,
 } from '@/modules/renewals';
 import { lookupMemberByEmail } from '@/modules/renewals/infrastructure/lookup-member-by-email';
 import {
@@ -178,6 +188,10 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
     // → members → plans → audit_log).
     for (const t of [tenantA, tenantB]) {
       await db
+        .delete(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.tenantId, t.ctx.slug))
+        .catch(() => {});
+      await db
         .delete(renewalEscalationTasks)
         .where(eq(renewalEscalationTasks.tenantId, t.ctx.slug))
         .catch(() => {});
@@ -188,6 +202,10 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
       await db
         .delete(renewalCycles)
         .where(eq(renewalCycles.tenantId, t.ctx.slug))
+        .catch(() => {});
+      await db
+        .delete(membershipPlans)
+        .where(eq(membershipPlans.tenantId, t.ctx.slug))
         .catch(() => {});
     }
     await tenantA.cleanup().catch(() => {});
@@ -768,6 +786,272 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
           ),
       );
       expect(bRows).toHaveLength(0);
+    }, 60_000);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. Tier-upgrade cross-tenant probes (Phase 7 / Round 6 review-fix F-001)
+  //
+  // Constitution v1.4.0 Principle I clause 3 — Review-Gate blocker:
+  // every use-case that touches tenant-scoped data MUST be exercised by
+  // a cross-tenant integration probe. Phase 7 added 5 new use-cases
+  // (`evaluateTierUpgrade`, `acceptTierUpgrade`, `dismissTierUpgrade`,
+  // `escalateTierUpgrade`, `reconcilePendingApplications`) — none had
+  // probes before this block was added.
+  //
+  // Use-cases under probe:
+  //   - acceptTierUpgrade(tenantA, suggestionId=B) → suggestion_not_found
+  //     + B's row stays `open`
+  //   - dismissTierUpgrade(tenantA, suggestionId=B) → suggestion_not_found
+  //     + B's row stays `open`
+  //   - escalateTierUpgrade(tenantA, suggestionId=B) → suggestion_not_found
+  //     + B's row stays `open` + zero `at_risk_outreach` row in either
+  //     tenant
+  //   - evaluateTierUpgrade under tenantA — B's `tier_upgrade_suggestions`
+  //     count stays 0 (RLS hides B's members from A's candidate query)
+  //
+  // These use-cases do NOT emit `renewal_cross_tenant_probe` audits (by
+  // design — they all funnel through `loadOpenSuggestion` which uses
+  // RLS-bound `findById`, so the probe is invisible at the use-case
+  // layer). Tests therefore assert on post-condition state (B's row
+  // unchanged) + zero state mutation in the foreign tenant.
+  // ---------------------------------------------------------------------------
+  describe('tier-upgrade cross-tenant probes (Phase 7 / Round 6 F-001)', () => {
+    /**
+     * Seed an open `tier_upgrade_suggestions` row in `tenant`. Returns
+     * the parsed `SuggestionId` brand for input.
+     */
+    async function seedOpenSuggestion(
+      tenant: TestTenant,
+      memberId: string,
+    ): Promise<{ suggestionId: SuggestionId }> {
+      const suggestionUuid = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(tierUpgradeSuggestions).values({
+          tenantId: tenant.ctx.slug,
+          suggestionId: suggestionUuid,
+          memberId,
+          fromPlanId: 'regular',
+          toPlanId: 'premium',
+          reasonCode: 'declared_turnover_above_threshold',
+          evidenceJsonb: {
+            reasonCode: 'declared_turnover_above_threshold',
+            turnoverThb: 120_000_000,
+            thresholdMetAt: new Date().toISOString(),
+          },
+          status: 'open',
+        });
+      });
+      const idResult = parseSuggestionId(suggestionUuid);
+      if (!idResult.ok) throw new Error('seeded suggestion id failed parse');
+      return { suggestionId: idResult.value };
+    }
+
+    it('A.acceptTierUpgrade(B-tenant suggestionId) → suggestion_not_found + B row stays open', async () => {
+      const { suggestionId: bSuggestionId } = await seedOpenSuggestion(
+        tenantB,
+        seedB.memberId,
+      );
+      try {
+        const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+        const result = await acceptTierUpgrade(depsA, {
+          tenantId: tenantA.ctx.slug, // PROBE — A queries for B's suggestion
+          suggestionId: bSuggestionId,
+          actorUserId: user.userId,
+          actorRole: 'admin',
+          correlationId: randomUUID(),
+        });
+
+        // RLS-bound `findById` returns null under A's binding → load
+        // helper maps to `suggestion_not_found`.
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.kind).toBe('suggestion_not_found');
+
+        // Post-condition: B's suggestion stays in `open` (never
+        // transitioned to `accepted_pending_apply`).
+        const bRows = await runInTenant(tenantB.ctx, (tx) =>
+          tx
+            .select()
+            .from(tierUpgradeSuggestions)
+            .where(eq(tierUpgradeSuggestions.suggestionId, bSuggestionId)),
+        );
+        expect(bRows).toHaveLength(1);
+        expect(bRows[0]?.status).toBe('open');
+        expect(bRows[0]?.acceptedAt).toBeNull();
+        expect(bRows[0]?.acceptedByUserId).toBeNull();
+
+        // Audit isolation: no `tier_upgrade_accepted` ever landed in
+        // either tenant for B's suggestion id.
+        const auditByContainment = await db
+          .select()
+          .from(auditLog)
+          .where(sql`payload::text LIKE ${`%${bSuggestionId}%`}`);
+        expect(auditByContainment).toHaveLength(0);
+      } finally {
+        await runInTenant(tenantB.ctx, (tx) =>
+          tx
+            .delete(tierUpgradeSuggestions)
+            .where(eq(tierUpgradeSuggestions.suggestionId, bSuggestionId)),
+        ).catch(() => {});
+      }
+    }, 60_000);
+
+    it('A.dismissTierUpgrade(B-tenant suggestionId) → suggestion_not_found + B row stays open', async () => {
+      const { suggestionId: bSuggestionId } = await seedOpenSuggestion(
+        tenantB,
+        seedB.memberId,
+      );
+      try {
+        const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+        const result = await dismissTierUpgrade(depsA, {
+          tenantId: tenantA.ctx.slug, // PROBE
+          suggestionId: bSuggestionId,
+          reason: 'cross-tenant probe',
+          actorUserId: user.userId,
+          actorRole: 'admin',
+          correlationId: randomUUID(),
+        });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.kind).toBe('suggestion_not_found');
+
+        const bRows = await runInTenant(tenantB.ctx, (tx) =>
+          tx
+            .select()
+            .from(tierUpgradeSuggestions)
+            .where(eq(tierUpgradeSuggestions.suggestionId, bSuggestionId)),
+        );
+        expect(bRows[0]?.status).toBe('open');
+        expect(bRows[0]?.dismissedReason).toBeNull();
+        expect(bRows[0]?.suppressedUntil).toBeNull();
+
+        const auditByContainment = await db
+          .select()
+          .from(auditLog)
+          .where(sql`payload::text LIKE ${`%${bSuggestionId}%`}`);
+        expect(auditByContainment).toHaveLength(0);
+      } finally {
+        await runInTenant(tenantB.ctx, (tx) =>
+          tx
+            .delete(tierUpgradeSuggestions)
+            .where(eq(tierUpgradeSuggestions.suggestionId, bSuggestionId)),
+        ).catch(() => {});
+      }
+    }, 60_000);
+
+    it('A.escalateTierUpgrade(B-tenant suggestionId) → suggestion_not_found + B row stays open + zero outreach inserted', async () => {
+      const { atRiskOutreach } = await import(
+        '@/modules/renewals/infrastructure/schema-at-risk-outreach'
+      );
+      const { suggestionId: bSuggestionId } = await seedOpenSuggestion(
+        tenantB,
+        seedB.memberId,
+      );
+      try {
+        const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+        const result = await escalateTierUpgrade(depsA, {
+          tenantId: tenantA.ctx.slug, // PROBE
+          suggestionId: bSuggestionId,
+          actorUserId: user.userId,
+          actorRole: 'admin',
+          correlationId: randomUUID(),
+        });
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.kind).toBe('suggestion_not_found');
+
+        // No outreach row should land in either tenant — escalate
+        // returns before writing.
+        const aOutreach = await runInTenant(tenantA.ctx, (tx) =>
+          tx
+            .select()
+            .from(atRiskOutreach)
+            .where(eq(atRiskOutreach.memberId, seedB.memberId)),
+        );
+        expect(aOutreach).toHaveLength(0);
+        const bOutreach = await runInTenant(tenantB.ctx, (tx) =>
+          tx
+            .select()
+            .from(atRiskOutreach)
+            .where(eq(atRiskOutreach.memberId, seedB.memberId)),
+        );
+        expect(bOutreach).toHaveLength(0);
+      } finally {
+        await runInTenant(tenantB.ctx, (tx) =>
+          tx
+            .delete(tierUpgradeSuggestions)
+            .where(eq(tierUpgradeSuggestions.suggestionId, bSuggestionId)),
+        ).catch(() => {});
+      }
+    }, 60_000);
+
+    it('A.evaluateTierUpgrade — B tier_upgrade_suggestions count stays 0 (candidate query is RLS-bound)', async () => {
+      // Pre-condition: ensure B has no open suggestion (the eval probe
+      // verifies the candidate query CANNOT see B's members from
+      // tenant A's binding). Seed a plan catalogue in A so the eval
+      // doesn't short-circuit on `no_thresholds_configured`.
+      await runInTenant(tenantA.ctx, async (tx) => {
+        // Insert "regular" plan with a turnover threshold so the eval
+        // catalogue isn't empty. We don't need the member's plan to
+        // match — we only need the eval to pass the no-thresholds
+        // gate so it can iterate its (empty) candidate page.
+        await tx
+          .insert(membershipPlans)
+          .values({
+            tenantId: tenantA.ctx.slug,
+            planId: `xt-evalplan-${randomUUID().slice(0, 8)}`,
+            planYear: 2026,
+            planName: { en: 'Eval Probe Plan' },
+            description: { en: '' },
+            sortOrder: 99,
+            planCategory: 'corporate',
+            memberTypeScope: 'company',
+            annualFeeMinorUnits: 5_000_000,
+            includesCorporatePlanId: null,
+            minTurnoverMinorUnits: 50_000_000,
+            maxTurnoverMinorUnits: null,
+            maxDurationYears: null,
+            maxMemberAge: null,
+            benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+            renewalTierBucket: 'regular',
+            isActive: true,
+            createdBy: user.userId,
+            updatedBy: user.userId,
+          })
+          .onConflictDoNothing()
+          .catch(() => {});
+      });
+
+      const beforeCount = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(tierUpgradeSuggestions)
+          .where(eq(tierUpgradeSuggestions.tenantId, tenantB.ctx.slug)),
+      );
+      const baseline = beforeCount.length;
+
+      const depsA = makeRenewalsDeps(tenantA.ctx.slug);
+      const result = await evaluateTierUpgrade(depsA, {
+        tenantId: tenantA.ctx.slug,
+        correlationId: randomUUID(),
+        pageSize: 100,
+      });
+
+      // Eval succeeds; tenant B's suggestion count is unchanged because
+      // the candidate query under A's binding cannot see B's members.
+      // The result.ok==true case is the happy path; if `no_thresholds_configured`
+      // fires (catalogue with no min_turnover) the test still pins the
+      // isolation invariant via the post-condition assertion below.
+      expect(result.ok).toBe(true);
+
+      const afterCount = await runInTenant(tenantB.ctx, (tx) =>
+        tx
+          .select()
+          .from(tierUpgradeSuggestions)
+          .where(eq(tierUpgradeSuggestions.tenantId, tenantB.ctx.slug)),
+      );
+      expect(afterCount.length).toBe(baseline);
     }, 60_000);
   });
 });

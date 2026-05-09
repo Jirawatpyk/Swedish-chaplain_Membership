@@ -78,11 +78,19 @@ export async function POST(
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:tierupgrade:'||${tenantId}, 0))`,
       );
-      return await evaluateTierUpgrade(deps, {
-        tenantId,
-        correlationId,
-        pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
-      });
+      // Round 6 W-001 — thread the lock-holding tx through to the
+      // use-case so suggestion-insert + audit-emit writes happen on
+      // the same session as the advisory lock (no nested runInTenant
+      // pulling separate pool connections).
+      return await evaluateTierUpgrade(
+        deps,
+        {
+          tenantId,
+          correlationId,
+          pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+        },
+        tx,
+      );
     });
 
     if (!txResult.ok) {

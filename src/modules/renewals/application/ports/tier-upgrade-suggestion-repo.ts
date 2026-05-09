@@ -92,16 +92,30 @@ export interface TierUpgradeSuggestionRepo {
   ): Promise<TierUpgradeSuggestion>;
 
   /**
-   * Phase 7 T185 — orphan detection. Returns all suggestions in
-   * `accepted_pending_apply` state whose `target_apply_at_cycle_id`
-   * cycle is `cancelled` or `lapsed`. The reconcile cron transitions
-   * these to `dismissed` with `reason='orphan_target_cycle_terminal'`.
+   * Phase 7 T185 + Round 6 W-002 — orphan detection. Returns all
+   * suggestions in `accepted_pending_apply` state for any of three
+   * orphan shapes:
+   *
+   *   1. `targetCycleStatus === 'cancelled' | 'lapsed'` — the F4
+   *      invoice-paid hook will never fire (cycle is terminal).
+   *   2. `targetCycleStatus === 'manual_plan_change'` — the member's
+   *      current `members.plan_id` no longer matches EITHER the
+   *      suggestion's `from_plan_id` OR `to_plan_id`. Admin manually
+   *      changed the plan after Accept and the F8 supersede listener
+   *      either failed silently (`f2-plan-change-bridge` wrapper
+   *      swallows exceptions) or was not yet wired at the time. The
+   *      reconcile cron is the backstop that dismisses these suggestions
+   *      so a fresh eval pass can re-suggest cleanly.
+   *
+   * Reconcile cron transitions terminal-cycle orphans with
+   * `reason='orphan_target_cycle_terminal'` and plan-diverged orphans
+   * with `reason='orphan_member_plan_diverged'`.
    */
   listOrphanedPending(
     tenantId: string,
   ): Promise<ReadonlyArray<{
     readonly suggestion: TierUpgradeSuggestion;
-    readonly targetCycleStatus: 'cancelled' | 'lapsed';
+    readonly targetCycleStatus: 'cancelled' | 'lapsed' | 'manual_plan_change';
   }>>;
 
   /**

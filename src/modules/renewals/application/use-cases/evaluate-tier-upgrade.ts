@@ -31,7 +31,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
@@ -170,9 +170,29 @@ function decideUpgrade(
   return null;
 }
 
+/**
+ * Round 6 W-001 — optional `outerTx` parameter so callers that hold a
+ * per-tenant advisory lock (the per-tenant cron route) can thread their
+ * lock-holding tx through to the suggestion-insert + audit-emit writes.
+ *
+ * Without this thread, the route would open `runInTenant` for the lock,
+ * then `evaluateTierUpgrade` would open a SECOND `runInTenant` per
+ * suggestion via the global `db.transaction(...)` — which checks out a
+ * NEW pool connection. The lock holds on connection A; writes happen on
+ * connection B. Serialisation across cron passes still works (a second
+ * coordinator's lock-acquire blocks on connection A's tx) BUT the inner
+ * writes do not benefit from the lock-holding session's `SET LOCAL`
+ * scope and are diagnostically harder to trace as one logical work unit.
+ *
+ * Trade-off when `outerTx` is passed: a single audit-emit failure aborts
+ * the whole pass. Accepted because the partial-UNIQUE `member_open_uniq`
+ * catches the most common conflict path BEFORE tx abort, and other
+ * failures are rare-and-loud (server_error → cron retries next week).
+ */
 export async function evaluateTierUpgrade(
   deps: RenewalsDeps,
   rawInput: EvaluateTierUpgradeInput,
+  outerTx?: TenantTx,
 ): Promise<Result<EvaluateTierUpgradeOutput, EvaluateTierUpgradeError>> {
   const inputResult = parseInput(evaluateTierUpgradeInputSchema, rawInput);
   if (!inputResult.ok) return err(inputResult.error);
@@ -280,37 +300,16 @@ export async function evaluateTierUpgrade(
       const decision = decideUpgrade(candidate, catalogue);
       if (decision === null) {
         alreadyAtTarget++;
-        // Phase 7 review-fix Round 2 IMP-9: wire AS4 audit emit.
-        // Catalogue + JSDoc declared `tier_upgrade_already_at_target`
-        // since Phase 7 baseline but the counter-only short-circuit
-        // never persisted the audit row. Now atomic forensic chain:
-        // every alreadyAtTarget tick gets an audit (debug-level).
-        try {
-          await deps.auditEmitter.emit(
-            {
-              type: 'tier_upgrade_already_at_target',
-              payload: {
-                member_id: candidate.memberId as MemberId,
-                current_plan_id: candidate.currentPlanId as PlanId,
-              },
-            },
-            {
-              tenantId,
-              actorUserId: null,
-              actorRole: 'cron',
-              correlationId,
-              requestId: input.requestId ?? null,
-            },
-          );
-        } catch (e) {
-          logger.warn(
-            {
-              err: e instanceof Error ? e.message : String(e),
-              memberId: candidate.memberId,
-            },
-            '[evaluate-tier-upgrade] already_at_target audit emit failed — continuing',
-          );
-        }
+        // Round 6 W-010 — REMOVED per-member `tier_upgrade_already_at_target`
+        // audit emit. The Phase 7 Round 2 IMP-9 wire-up emitted one
+        // audit row per already-at-target member every weekly cron run.
+        // For a 5,000-member tenant this produced a 5,000-row write
+        // amplification per week (5y retention → 1.3M rows/tenant).
+        // The aggregate `tier_upgrade_already_at_target_summary` audit
+        // emitted ONCE per cron pass (after the loop, below) carries
+        // the same forensic value — the audit-log dashboard only needs
+        // to know "the cron evaluated N members and found K already
+        // upgraded", not the per-member fan-out.
         continue;
       }
 
@@ -326,42 +325,52 @@ export async function evaluateTierUpgrade(
       }
 
       // Insert suggestion + audit emit (atomic per Principle VIII).
-      try {
-        await runInTenant(deps.tenant, async (tx) => {
-          const newSuggestion: NewTierUpgradeSuggestionInput = {
+      // Round 6 W-001 — when `outerTx` is supplied (cron route holding
+      // the advisory lock), use it directly so the write happens on
+      // the lock-holding session. When absent (admin-triggered ad-hoc
+      // call, integration tests), open a per-iteration runInTenant
+      // for fault isolation.
+      const insertWithTx = async (tx: TenantTx) => {
+        const newSuggestion: NewTierUpgradeSuggestionInput = {
+          tenantId,
+          suggestionId: deps.suggestionIdGenerator(),
+          memberId: candidate.memberId,
+          fromPlanId: candidate.currentPlanId,
+          toPlanId: decision.toPlan.planId,
+          reasonCode: decision.reasonCode,
+          evidence: decision.evidence,
+        };
+        const inserted = await deps.tierUpgradeRepo.insertOpen(
+          tx,
+          newSuggestion,
+        );
+        await deps.auditEmitter.emitInTx(
+          tx,
+          {
+            type: 'tier_upgrade_suggested',
+            payload: {
+              suggestion_id: inserted.suggestionId,
+              member_id: candidate.memberId as MemberId,
+              from_plan_id: candidate.currentPlanId as PlanId,
+              to_plan_id: decision.toPlan.planId as PlanId,
+              reason_code: decision.reasonCode,
+            },
+          },
+          {
             tenantId,
-            suggestionId: deps.suggestionIdGenerator(),
-            memberId: candidate.memberId,
-            fromPlanId: candidate.currentPlanId,
-            toPlanId: decision.toPlan.planId,
-            reasonCode: decision.reasonCode,
-            evidence: decision.evidence,
-          };
-          const inserted = await deps.tierUpgradeRepo.insertOpen(
-            tx,
-            newSuggestion,
-          );
-          await deps.auditEmitter.emitInTx(
-            tx,
-            {
-              type: 'tier_upgrade_suggested',
-              payload: {
-                suggestion_id: inserted.suggestionId,
-                member_id: candidate.memberId as MemberId,
-                from_plan_id: candidate.currentPlanId as PlanId,
-                to_plan_id: decision.toPlan.planId as PlanId,
-                reason_code: decision.reasonCode,
-              },
-            },
-            {
-              tenantId,
-              actorUserId: null,
-              actorRole: 'cron',
-              correlationId,
-              requestId: input.requestId ?? null,
-            },
-          );
-        });
+            actorUserId: null,
+            actorRole: 'cron',
+            correlationId,
+            requestId: input.requestId ?? null,
+          },
+        );
+      };
+      try {
+        if (outerTx) {
+          await insertWithTx(outerTx);
+        } else {
+          await runInTenant(deps.tenant, insertWithTx);
+        }
         suggestionsCreated++;
       } catch (e) {
         if (e instanceof TierUpgradeOpenConflictError) {
@@ -378,6 +387,48 @@ export async function evaluateTierUpgrade(
     }
     cursor = page.nextCursor ?? undefined;
   } while (cursor !== undefined);
+
+  // Round 6 W-010 — single aggregate `tier_upgrade_already_at_target`
+  // audit per cron pass (replaces the per-member emit removed above).
+  // Mirrors the existing per-cron-run pattern of `tier_upgrade_tenant_disabled`
+  // (FR-AS6) and `tier_upgrade_skipped_no_thresholds_configured` (FR-AS5).
+  // Skip emit when `alreadyAtTarget === 0` to keep dashboards quiet.
+  if (alreadyAtTarget > 0) {
+    try {
+      await deps.auditEmitter.emit(
+        {
+          type: 'tier_upgrade_already_at_target',
+          // Per-cron summary fields (Round 6 W-010 aggregate shape).
+          // The audit-event-payload union has two variants:
+          //   - aggregate: { already_at_target_count, members_scanned }
+          //   - per-member (historical): { member_id, current_plan_id }
+          // We always emit the aggregate variant from this code path; the
+          // explicit literal lands on the aggregate arm of the union (no
+          // `Record<string, unknown>` widening needed).
+          payload: {
+            already_at_target_count: alreadyAtTarget,
+            members_scanned: membersScanned,
+          },
+        },
+        {
+          tenantId,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId,
+          alreadyAtTarget,
+        },
+        '[evaluate-tier-upgrade] aggregate already_at_target audit emit failed — counter only',
+      );
+    }
+  }
 
   return ok({
     tenantSkipped: null,

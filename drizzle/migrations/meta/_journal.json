@@ -862,6 +862,13 @@
       "when": 1793001600000,
       "tag": "0122_f8_phase8_escalation_year_in_cycle",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1793088000000,
+      "tag": "0123_f8_round6_tier_upgrade_suppressed_member_idx",
+      "breakpoints": true
     }
   ]
 }

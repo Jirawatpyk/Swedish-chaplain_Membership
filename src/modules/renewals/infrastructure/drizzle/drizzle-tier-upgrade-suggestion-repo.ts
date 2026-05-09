@@ -20,6 +20,9 @@ import {
   type TierUpgradeSuggestionRow,
 } from '../schema-tier-upgrade-suggestions';
 import { renewalCycles } from '../schema-renewal-cycles';
+// Round 6 W-002 — JOIN to members.plan_id for manual-plan-change
+// orphan detection in `listOrphanedPending`.
+import { members } from '@/modules/members/infrastructure/db/schema-members';
 import {
   TierUpgradeOpenConflictError,
   TierUpgradeSuggestionNotFoundError,
@@ -380,7 +383,13 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
     async listOrphanedPending(tenantId) {
       return runInTenant(tenant, async (tx) => {
         const txDb = tx as unknown as typeof db;
-        const rows = await txDb
+        // Round 6 W-002 — UNION two orphan detection paths:
+        //   (a) terminal-cycle orphans (cancelled/lapsed) — original
+        //   (b) manual-plan-change orphans — members.plan_id no longer
+        //       matches EITHER suggestion.from_plan_id OR to_plan_id.
+        //       Catches the case where the F2 supersede listener
+        //       failed silently after admin manually changed the plan.
+        const terminalRows = await txDb
           .select({
             suggestion: tierUpgradeSuggestions,
             cycleStatus: renewalCycles.status,
@@ -405,11 +414,57 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
               sql`${renewalCycles.status} IN ('cancelled','lapsed')`,
             ),
           );
+
+        const planDivergedRows = await txDb
+          .select({ suggestion: tierUpgradeSuggestions })
+          .from(tierUpgradeSuggestions)
+          .innerJoin(
+            members,
+            and(
+              eq(tierUpgradeSuggestions.memberId, members.memberId),
+              eq(tierUpgradeSuggestions.tenantId, members.tenantId),
+            ),
+          )
+          .where(
+            and(
+              eq(
+                tierUpgradeSuggestions.status,
+                'accepted_pending_apply',
+              ),
+              // members.plan_id has diverged from BOTH from_plan_id and
+              // to_plan_id — so neither the original snapshot NOR the
+              // pending upgrade target reflects the member's actual plan.
+              sql`${members.planId} IS DISTINCT FROM ${tierUpgradeSuggestions.fromPlanId}`,
+              sql`${members.planId} IS DISTINCT FROM ${tierUpgradeSuggestions.toPlanId}`,
+            ),
+          );
+
+        // De-dupe by suggestionId — a suggestion that's BOTH terminal-
+        // cycle AND plan-diverged shows up in terminalRows; we keep the
+        // terminal discriminator since that's the upstream cause.
+        const seen = new Set<string>();
+        const out: Array<{
+          suggestion: TierUpgradeSuggestion;
+          targetCycleStatus: 'cancelled' | 'lapsed' | 'manual_plan_change';
+        }> = [];
+        for (const r of terminalRows) {
+          if (seen.has(r.suggestion.suggestionId)) continue;
+          seen.add(r.suggestion.suggestionId);
+          out.push({
+            suggestion: rowToDomain(r.suggestion),
+            targetCycleStatus: r.cycleStatus as 'cancelled' | 'lapsed',
+          });
+        }
+        for (const r of planDivergedRows) {
+          if (seen.has(r.suggestion.suggestionId)) continue;
+          seen.add(r.suggestion.suggestionId);
+          out.push({
+            suggestion: rowToDomain(r.suggestion),
+            targetCycleStatus: 'manual_plan_change' as const,
+          });
+        }
         void tenantId;
-        return rows.map((r) => ({
-          suggestion: rowToDomain(r.suggestion),
-          targetCycleStatus: r.cycleStatus as 'cancelled' | 'lapsed',
-        }));
+        return out;
       });
     },
 

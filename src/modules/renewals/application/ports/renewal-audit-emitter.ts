@@ -440,14 +440,27 @@ export interface F8AuditPayloadShapes {
   };
   /**
    * Phase 7 T179 (cron) — debug-level signal that the cron evaluated
-   * a member whose `members.plan_id` already matches the would-be
-   * upgrade target. No-op + idempotent. Useful for dashboard
-   * "tier-upgrade evaluated but no-op" rate.
+   * member(s) whose `members.plan_id` already matches the would-be
+   * upgrade target. Round 6 W-010 collapsed the per-member emit
+   * (5,000 rows/week × 5y retention amplification hazard) into a
+   * single aggregate emit per cron pass. The pre-Round-6 per-member
+   * shape is retained as the second arm of the union so historical
+   * audit rows still type-check on read paths.
+   *
+   *   - Round 6 + post: aggregate per cron pass, fired ONCE after the
+   *     candidate loop completes. Skipped emit when count === 0.
+   *   - Pre-Round 6 (historical): per-member emit, fired inside the
+   *     loop for each candidate whose plan already matches the target.
    */
-  readonly tier_upgrade_already_at_target: {
-    readonly member_id: MemberId;
-    readonly current_plan_id: PlanId;
-  };
+  readonly tier_upgrade_already_at_target:
+    | {
+        readonly already_at_target_count: number;
+        readonly members_scanned: number;
+      }
+    | {
+        readonly member_id: MemberId;
+        readonly current_plan_id: PlanId;
+      };
   /**
    * Phase 7 T179 (cron) — emitted once per cron pass when
    * `tenant_renewal_settings.auto_upgrade_enabled = false`. Whole
@@ -473,18 +486,27 @@ export interface F8AuditPayloadShapes {
     readonly skip_reason: 'no_plans' | 'no_thresholds_set';
   };
   /**
-   * Phase 7 T185 (reconcile cron) — orphan detection: a suggestion in
-   * `accepted_pending_apply` whose `target_apply_at_cycle_id` cycle is
-   * either `cancelled` or `lapsed` (the F4 hook will never fire). The
-   * reconcile cron transitions the suggestion to `dismissed` with
-   * `reason='orphan_target_cycle_terminal'` so admins can re-suggest
-   * after a fresh cycle materialises.
+   * Phase 7 T185 (reconcile cron) — orphan detection. Three orphan
+   * shapes are detected and dismissed:
+   *
+   *   - `'cancelled'` / `'lapsed'`: the `target_apply_at_cycle_id`
+   *     cycle is in a terminal state, so the F4 invoice-paid hook
+   *     will never fire. Dismiss reason: `orphan_target_cycle_terminal`.
+   *   - `'manual_plan_change'` (Round 6 W-002): the member's current
+   *     `members.plan_id` no longer matches the suggestion's
+   *     `from_plan_id` AND no longer matches `to_plan_id` — admin
+   *     manually changed the plan after Accept and the F8 supersede
+   *     listener swallowed the resulting failure (or was never wired
+   *     at the time). Dismiss reason: `orphan_member_plan_diverged`.
    */
   readonly tier_upgrade_pending_orphan_detected: {
     readonly suggestion_id: SuggestionId;
     readonly member_id: MemberId;
     readonly target_apply_at_cycle_id: CycleId;
-    readonly target_cycle_status: 'cancelled' | 'lapsed';
+    readonly target_cycle_status:
+      | 'cancelled'
+      | 'lapsed'
+      | 'manual_plan_change';
   };
   /**
    * Phase 7 T188a — F2 → F8 reschedule-on-plan-change listener emit.

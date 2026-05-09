@@ -17,6 +17,20 @@
  *
  * Returns 200 (NOT 503 / 5xx) so cron-job.org does not retry-storm
  * during a dark-launch period.
+ *
+ * Round 6 S-010 — multi-tenant timeout policy (post-MVP planning):
+ * `Promise.allSettled` fan-out has NO per-tenant request timeout
+ * today. MVP+STD limits to `env.tenant.slug` (length 1) so wall-clock
+ * ≈ single per-tenant duration ≪ Vercel 300s function budget. When
+ * the platform moves to multi-tenant SaaS:
+ *   - Add `AbortController` per per-tenant `fetch(...)` with timeout
+ *     proportional to FR-057 budget (30s evaluate × 1.5 safety = 45s).
+ *   - Add hard ceiling at coordinator wall-clock 270s (300s budget
+ *     minus 30s for audit emit + JSON serialise). When exceeded,
+ *     remaining tenants get `{ tenant_id, error: 'coordinator_timed_out' }`.
+ *   - Add `tenants_timed_out` field to `OrchestratedSummary`.
+ * Tracked as F10+ post-MVP because today the runtime invariant
+ * (length=1) makes the gap unobservable.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { env } from '@/lib/env';
@@ -224,7 +238,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { tenantId, correlationId, reason: reasonStr.slice(0, 400) },
         'cron.renewals.tier_upgrade.coordinator.tenant_fetch_rejected',
       );
-      return { tenant_id: tenantId, error: reasonStr };
+      // Round 6 W-007 — cap the response-body `error` field to 200
+      // chars to prevent stack-trace / internal-hostname leakage to
+      // cron-job.org. Log slice (line above) keeps 400 chars for ops
+      // diagnostics; HTTP response body MUST stay tighter because
+      // cron-job.org persists it on their dashboard for ≤30 days.
+      return { tenant_id: tenantId, error: reasonStr.slice(0, 200) };
     }
     if (r.value.jsonParseFailed) {
       return {

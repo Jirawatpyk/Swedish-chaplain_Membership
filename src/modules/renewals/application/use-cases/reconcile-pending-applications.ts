@@ -48,7 +48,8 @@ export type ReconcilePendingApplicationsError =
   | { readonly kind: 'invalid_input'; readonly message: string }
   | { readonly kind: 'server_error'; readonly message: string };
 
-const ORPHAN_REASON = 'orphan_target_cycle_terminal';
+const ORPHAN_REASON_TERMINAL_CYCLE = 'orphan_target_cycle_terminal';
+const ORPHAN_REASON_PLAN_DIVERGED = 'orphan_member_plan_diverged';
 
 export async function reconcilePendingApplications(
   deps: RenewalsDeps,
@@ -85,6 +86,16 @@ export async function reconcilePendingApplications(
   const closedAt = now.toISOString();
 
   for (const orphan of orphans) {
+    // Round 6 W-002 — discriminate dismiss reason by orphan shape.
+    // Terminal-cycle orphans get the original
+    // `orphan_target_cycle_terminal` reason; manual-plan-change
+    // orphans (W-002) get the new `orphan_member_plan_diverged`
+    // reason so dashboards can attribute backstop frequency to the
+    // F2 supersede-listener failure rate vs cycle-terminal rate.
+    const dismissedReason =
+      orphan.targetCycleStatus === 'manual_plan_change'
+        ? ORPHAN_REASON_PLAN_DIVERGED
+        : ORPHAN_REASON_TERMINAL_CYCLE;
     try {
       await runInTenant(deps.tenant, async (tx) => {
         await deps.tierUpgradeRepo.transitionStatus(
@@ -93,7 +104,7 @@ export async function reconcilePendingApplications(
           orphan.suggestion.suggestionId,
           {
             to: 'dismissed' as const,
-            dismissedReason: ORPHAN_REASON,
+            dismissedReason,
             closedAt,
           },
         );

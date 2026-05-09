@@ -15,4 +15,4 @@
 -- mid-cycle plan flip.
 -- ---------------------------------------------------------------------------
 
-ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_schedule_rescheduled';
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_schedule_rescheduled';--> statement-breakpoint

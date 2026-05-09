@@ -648,4 +648,130 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     // Round 5 IMP-9 — bounded-payload cap (≤500 chars).
     expect(payload?.failure_message?.length ?? 0).toBeLessThanOrEqual(500);
   }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // Round 6 W-011 — concurrent-Accept race
+  //
+  // Two admins click "Accept" on the same suggestion at almost the same
+  // moment. The partial UNIQUE `tier_upgrade_suggestions_member_open_uniq`
+  // (status IN open, accepted_pending_apply) ensures the second
+  // transition fails with TierUpgradeOpenConflictError. The use-case
+  // catches it and the second caller sees an `open_conflict` error
+  // (or `suggestion_not_open` if first commit happened to land before
+  // the second's findById read).
+  // ---------------------------------------------------------------------------
+  it('W-011 concurrent Accept race — partial UNIQUE catches second writer + state remains pending exactly once', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    const acceptArgs = {
+      tenantId: tenant.ctx.slug,
+      suggestionId: seeded.suggestionId,
+      actorUserId: admin.userId,
+      actorRole: 'admin' as const,
+      correlationId: randomUUID(),
+    };
+
+    const [r1, r2] = await Promise.all([
+      acceptTierUpgrade(deps, { ...acceptArgs, correlationId: randomUUID() }),
+      acceptTierUpgrade(deps, { ...acceptArgs, correlationId: randomUUID() }),
+    ]);
+
+    // Exactly one wins, exactly one sees a conflict-shaped error
+    // (`suggestion_not_open` because the first transition committed
+    // before the second's loadOpenSuggestion query ran; OR
+    // `open_conflict` if both progressed past the load and raced
+    // at the partial-UNIQUE write — accept both forms because the
+    // outcome is timing-dependent).
+    const okCount = [r1, r2].filter((r) => r.ok).length;
+    expect(okCount).toBe(1);
+    const losers = [r1, r2].filter((r) => !r.ok);
+    for (const loser of losers) {
+      if (loser.ok) continue;
+      expect([
+        'suggestion_not_open',
+        'open_conflict',
+        'server_error',
+      ]).toContain(loser.error.kind);
+    }
+
+    // Suggestion ends in `accepted_pending_apply` exactly once.
+    const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(suggestion?.status).toBe('accepted_pending_apply');
+
+    // Audit emit — exactly one `tier_upgrade_accepted` row landed for
+    // this suggestion (the loser's tx aborted before audit emit).
+    const accepted = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.eventType, 'tier_upgrade_accepted')),
+    );
+    expect(accepted.length).toBe(1);
+  }, 60_000);
+
+  // ---------------------------------------------------------------------------
+  // Round 6 W-013 — manual-supersede with the suggestion still in `open`
+  //
+  // Spec: F2 manual plan change BEFORE admin clicks Accept. The
+  // supersede listener must fire with `fromStatus: 'open'` and
+  // transition the suggestion to `superseded`. Phase 7 only tested
+  // the `accepted_pending_apply` → superseded branch; this test
+  // covers the `open` → superseded branch.
+  // ---------------------------------------------------------------------------
+  it('W-013 manual-supersede on open suggestion — fromStatus=open + audit emitted', async () => {
+    const seeded = await seedSuggestionState(tenant, admin, {
+      daysUntilExpiry: 60,
+      turnoverThb: 120_000_000,
+    });
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+
+    // NOTE: do NOT call acceptTierUpgrade — keep suggestion in `open`.
+
+    const result = await supersedePendingTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      memberId: seeded.memberId,
+      manualChangeActorUserId: admin.userId,
+      supersedingPlanId: 'enterprise',
+      correlationId: randomUUID(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.fromStatus).toBe('open');
+    expect(result.value.supersededSuggestionId).toBe(seeded.suggestionId);
+
+    const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tierUpgradeSuggestions)
+        .where(eq(tierUpgradeSuggestions.suggestionId, seeded.suggestionId)),
+    );
+    expect(suggestion?.status).toBe('superseded');
+    expect(suggestion?.closedAt).not.toBeNull();
+
+    const supersededAudit = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          eq(
+            auditLog.eventType,
+            'tier_upgrade_pending_superseded_by_manual_change',
+          ),
+        ),
+    );
+    expect(supersededAudit.length).toBeGreaterThanOrEqual(1);
+    const payload = supersededAudit[0]?.payload as
+      | { superseded_from_status?: string }
+      | null;
+    expect(payload?.superseded_from_status).toBe('open');
+  }, 60_000);
 });

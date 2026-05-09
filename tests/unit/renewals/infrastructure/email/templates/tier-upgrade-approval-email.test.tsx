@@ -47,20 +47,43 @@ describe('<TierUpgradeApprovalEmail> — render coverage (R4-IMP-7 + R5-IMP-11)'
     expect(beBeforeGregorian).toBe(true);
   });
 
-  it('EN locale renders Gregorian only — no BE leak (Arabic or Thai numerals)', async () => {
+  // Round 6 S-006 — Helper: split rendered HTML into (body, footer)
+  // halves at the footer marker so EN/SV BE-leak assertions can be
+  // sharper than the prior `beOccurrences <= 1` guard. The pre-Round-6
+  // form would silently allow a BE year in the BODY as long as the
+  // total stayed at 1 — this helper ensures the body half NEVER
+  // contains BE while the footer (dual-format by Round 4 SUG-7 design)
+  // can still carry it once.
+  function splitBodyFromFooter(html: string): { body: string; footer: string } {
+    // The footer dual-format pair lives in the email's rendered footer
+    // section (after the CTA). Slice at the `portalUrl` token (which
+    // belongs to the CTA href, marking the body→footer transition);
+    // anything after is "footer". When the URL appears multiple times
+    // (rare but possible), use the last occurrence.
+    const splitIdx = html.lastIndexOf(FIXED_PROPS.portalUrl);
+    if (splitIdx === -1) {
+      return { body: html, footer: '' };
+    }
+    return {
+      body: html.slice(0, splitIdx),
+      footer: html.slice(splitIdx),
+    };
+  }
+
+  it('EN locale renders Gregorian only in BODY — BE only in FOOTER (Round 6 S-006 split)', async () => {
     const html = await render(
       <TierUpgradeApprovalEmail locale="en" {...FIXED_PROPS} />,
     );
     expect(html).toBeTruthy();
     expect(html).toContain(FIXTURE_YEAR_GREGORIAN_STR);
-    // EN body must NOT carry the BE year. Footer renders dual-
-    // format for ALL locales (Round 4 SUG-7 design — see
-    // tier-upgrade-approval-email.tsx). So Arabic-numeral '2569'
-    // appears in the footer and at most ONCE in the document.
-    const beOccurrences = (html.match(new RegExp(FIXTURE_YEAR_BE, 'g')) ?? []).length;
-    expect(beOccurrences).toBeLessThanOrEqual(1);
-    // Round 5 IMP-12 — also verify NO Thai-numeral BE leak (e.g.
-    // '๒๕๖๙' for 2569). EN/SV bodies must be Arabic-numeral only.
+    const { body, footer } = splitBodyFromFooter(html);
+    // Round 6 S-006 — BODY must NEVER contain the BE year. The prior
+    // `beOccurrences <= 1` guard could mask a body-leak when total
+    // stayed at 1 (e.g., body=1, footer=0 instead of body=0, footer=1).
+    expect(body).not.toContain(FIXTURE_YEAR_BE);
+    // Footer carries the BE year exactly once (dual-format design).
+    expect(footer).toContain(FIXTURE_YEAR_BE);
+    // Round 5 IMP-12 lock — NO Thai-numeral BE leak anywhere.
     const thaiNumeralYear = FIXTURE_YEAR_BE
       .split('')
       .map((d) => String.fromCharCode(0x0e50 + Number(d)))
@@ -68,14 +91,15 @@ describe('<TierUpgradeApprovalEmail> — render coverage (R4-IMP-7 + R5-IMP-11)'
     expect(html).not.toContain(thaiNumeralYear);
   });
 
-  it('SV locale renders Gregorian only — no BE leak (Arabic or Thai numerals)', async () => {
+  it('SV locale renders Gregorian only in BODY — BE only in FOOTER (Round 6 S-006 split)', async () => {
     const html = await render(
       <TierUpgradeApprovalEmail locale="sv" {...FIXED_PROPS} />,
     );
     expect(html).toBeTruthy();
     expect(html).toContain(FIXTURE_YEAR_GREGORIAN_STR);
-    const beOccurrences = (html.match(new RegExp(FIXTURE_YEAR_BE, 'g')) ?? []).length;
-    expect(beOccurrences).toBeLessThanOrEqual(1);
+    const { body, footer } = splitBodyFromFooter(html);
+    expect(body).not.toContain(FIXTURE_YEAR_BE);
+    expect(footer).toContain(FIXTURE_YEAR_BE);
     const thaiNumeralYear = FIXTURE_YEAR_BE
       .split('')
       .map((d) => String.fromCharCode(0x0e50 + Number(d)))

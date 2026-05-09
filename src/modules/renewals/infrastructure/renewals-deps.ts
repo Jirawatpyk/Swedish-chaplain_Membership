@@ -22,10 +22,17 @@
  */
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type { TenantTx } from '@/lib/db';
-import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
-import type { MemberId as MemberIdBrand } from '@/modules/members';
-import { renewalsMetrics } from '@/lib/metrics';
-import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
+import type { F4InvoicePaidEvent } from '@/modules/invoicing';
+// Round 6 S-003 — InvoiceId, MemberIdBrand, renewalsMetrics moved to
+// the extracted helper at `_lib/apply-tier-upgrade-on-paid-callback.ts`.
+// Round 6 W-008 — route F2 cross-module import through the
+// SERVER-ONLY sub-barrel `@/modules/plans/server` (Constitution
+// Principle III). The first attempt re-exported from the public
+// barrel `@/modules/plans` and broke the client bundle (`postgres`
+// package pulled `fs`); the sub-barrel pattern keeps the Drizzle
+// adapter visible to server composition roots without leaking it
+// into client builds.
+import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/server';
 
 import { eventAttendeesStub } from './event-attendees-stub';
 import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
@@ -52,7 +59,17 @@ import { makeF5PaymentAttemptsBridgeDrizzle } from './ports-adapters/f5-payment-
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
 import { makeDrizzleTierUpgradeSuggestionRepo } from './drizzle/drizzle-tier-upgrade-suggestion-repo';
 import { makeDrizzleTierUpgradeEvalCandidateRepo } from './drizzle/drizzle-tier-upgrade-eval-candidate-repo';
-import { drizzlePlanCatalog } from './drizzle/drizzle-plan-catalog';
+// Round 6 S-001 — switched from singleton `drizzlePlanCatalog` to
+// `makeDrizzlePlanCatalog(tenant)` factory so the per-tenant deps
+// composition holds an explicitly-bound port instance (matches the
+// makeDrizzleTierUpgradeSuggestionRepo / makeDrizzleRenewalCycleRepo
+// convention; closes a footgun where the singleton's tenant binding
+// was implicit-via-input rather than explicit-via-construction).
+import { makeDrizzlePlanCatalog } from './drizzle/drizzle-plan-catalog';
+// Round 6 S-003 — extracted apply-pending-tier-upgrade callback
+// (was a 125-line inline closure inside f8OnPaidCallbacks; the
+// wrapper here keeps the composition root readable).
+import { makeApplyTierUpgradeOnPaidCallback } from './_lib/apply-tier-upgrade-on-paid-callback';
 import { randomUUID } from 'node:crypto';
 import { asSuggestionId } from '../domain/tier-upgrade-suggestion';
 
@@ -326,7 +343,9 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     tierUpgradeRepo: makeDrizzleTierUpgradeSuggestionRepo(tenant),
     tierUpgradeEvalCandidateRepo:
       makeDrizzleTierUpgradeEvalCandidateRepo(tenant),
-    planCatalog: drizzlePlanCatalog,
+    // Round 6 S-001 — bind PlanCatalog to the per-call tenant via factory
+    // (was singleton `drizzlePlanCatalog` with implicit-via-arg binding).
+    planCatalog: makeDrizzlePlanCatalog(tenant),
     suggestionIdGenerator: () => asSuggestionId(randomUUID()),
   };
 }
@@ -544,131 +563,12 @@ export function f8OnPaidCallbacks(
     // `tier_upgrade_applied_at_renewal` audit. Atomic with the F4 tx
     // when threaded; opens its own runInTenant otherwise (degraded but
     // still correct because the suggestion-tx commits independently).
-    async (evt, txUnknown) => {
-      const { applyPendingTierUpgradeInTx } = await import(
-        '../application/use-cases/apply-pending-tier-upgrade'
-      );
-      const { runInTenant: runInTenantFn, isTenantTx } = await import('@/lib/db');
-      const { logger } = await import('@/lib/logger');
-
-      const apply = async (tx: TenantTx, isFallback: boolean) => {
-        // Resolve the cycle linked to this invoice. Non-renewal
-        // invoices return null and the callback is a no-op.
-        const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
-          tx,
-          evt.tenantId,
-          evt.invoiceId,
-        );
-        if (!cycle) return;
-        try {
-          await applyPendingTierUpgradeInTx(deps, tx, {
-            tenantId: evt.tenantId,
-            cycleId: cycle.cycleId,
-            invoiceId: evt.invoiceId as unknown as InvoiceId,
-            correlationId: `f8-onPaid:${evt.invoiceId}`,
-            requestId: null,
-          });
-        } catch (e) {
-          logger.error(
-            {
-              err: e instanceof Error ? e.message : String(e),
-              tenantId: evt.tenantId,
-              invoiceId: evt.invoiceId,
-              cycleId: cycle.cycleId,
-            },
-            '[f8-onPaid] apply-pending-tier-upgrade failed — F4 tx rolling back',
-          );
-          // Phase 7 review-fix Round 2 SUG-6: when running in the
-          // INVALID_TX fallback (F4 already committed), emit the
-          // post-paid-failed audit + counter so the orphan suggestion
-          // (paid invoice but tier-upgrade not applied) has a forensic
-          // chain entry. Reconcile cron will NOT recover this case
-          // because the cycle is not terminal. Emit happens BEFORE
-          // re-throw so it lands even when the inner runInTenant tx
-          // rolls back.
-          if (isFallback) {
-            // Phase 7 review-fix Round 3 IMP-1: always use the live
-            // Drizzle audit emitter — Round 2 had a NODE_ENV branch
-            // that fell through to the stub in dev/staging, breaking
-            // SUG-6's forensic-chain claim outside production. The
-            // stub is opt-in via test composition (see
-            // `audit-emitter-stub.ts:6-11`), not for runtime selection.
-            renewalsMetrics.tierUpgradeApplyPostPaidFailed(evt.tenantId);
-            try {
-              await deps.auditEmitter.emit(
-                {
-                  type: 'tier_upgrade_apply_post_invoice_paid_failed',
-                  payload: {
-                    invoice_id: evt.invoiceId as unknown as InvoiceId,
-                    member_id: evt.memberId as unknown as MemberIdBrand,
-                    cycle_id: cycle.cycleId,
-                    failure_message:
-                      e instanceof Error
-                        ? e.message.slice(0, 200)
-                        : 'unknown',
-                  },
-                },
-                {
-                  tenantId: evt.tenantId,
-                  actorUserId: null,
-                  actorRole: 'webhook',
-                  correlationId: `f8-onPaid:${evt.invoiceId}`,
-                  requestId: null,
-                },
-              );
-            } catch (auditErr) {
-              // Round 3 IMP-3: audit emit can throw in production via
-              // pgEnum drift's pinoFallback. Counter still bumped + log
-              // escalated to fatal so on-call sees both a counter rate
-              // alert AND a structured log entry. Reconcile cron T185
-              // does NOT recover this case (paid invoice + non-terminal
-              // cycle). Admin replay is the residual mitigation; tracked
-              // as POST-MVP-OBS-7 backlog.
-              logger.fatal(
-                {
-                  err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-                  tenantId: evt.tenantId,
-                  invoiceId: evt.invoiceId,
-                  cycleId: cycle.cycleId,
-                  errorId: 'F8.APPLY_TIER.POST_PAID_AUDIT_EMIT_FAILED',
-                },
-                '[f8-onPaid] post-paid-failed audit emit failed — counter still bumped, manual replay required',
-              );
-            }
-          }
-          throw e;
-        }
-      };
-
-      if (txUnknown !== undefined && isTenantTx(txUnknown)) {
-        await apply(txUnknown, false);
-      } else {
-        // Phase 7 review-fix C-ERR-2: F4 contract drift surface —
-        // when F4 invokes the callback WITHOUT a TenantTx (or with a
-        // shape that fails the `isTenantTx` brand-check), the apply-
-        // pending path runs in its own runInTenant. F4 has already
-        // committed by then; if `apply` throws, the F8 audit chain
-        // for `tier_upgrade_applied_at_renewal` has a forensic gap.
-        // Mirror sister cycle-completion callback's INVALID_TX
-        // observability so on-call alert rules detect the drift.
-        const { renewalsMetrics: m } = await import('@/lib/metrics');
-        m.applyPendingInvalidTx.add(1, { tenant_id: tenantId });
-        logger.error(
-          {
-            errorId: 'F8.APPLY_TIER.INVALID_TX',
-            tenantId,
-            invoiceId: evt.invoiceId,
-            memberId: evt.memberId,
-            txKeys:
-              txUnknown !== null && typeof txUnknown === 'object'
-                ? Object.keys(txUnknown as Record<string, unknown>).slice(0, 10)
-                : null,
-            txType: typeof txUnknown,
-          },
-          '[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected',
-        );
-        await runInTenantFn(deps.tenant, (tx) => apply(tx, true));
-      }
-    },
+    //
+    // Round 6 S-003 — body extracted to `_lib/apply-tier-upgrade-on-
+    // paid-callback.ts` so this composition root stays readable. The
+    // unit test (`f8-on-paid-callbacks.test.ts`) is unaffected because
+    // its `vi.mock` paths target the use-case + lib modules, not the
+    // wrapper closure shape.
+    makeApplyTierUpgradeOnPaidCallback(deps, tenantId),
   ];
 }
