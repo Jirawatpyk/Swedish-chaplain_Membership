@@ -31,7 +31,7 @@
 import { useMemo, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations, useFormatter, useLocale } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { toast } from 'sonner';
 import {
   flexRender,
@@ -61,6 +61,7 @@ import {
   CycleCompanyCell,
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
+import { RelativeTime } from '@/components/ui/relative-time';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
@@ -71,7 +72,6 @@ export interface PipelineTableProps {
 
 export function PipelineTable({ rows }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
-  const fmt = useFormatter();
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
     () => [
@@ -108,13 +108,18 @@ export function PipelineTable({ rows }: PipelineTableProps) {
           if (!row.original.lastReminderAt) {
             return <span className="text-muted-foreground">—</span>;
           }
+          // Root-cause hydration fix: `<RelativeTime>` renders an
+          // absolute date on the server (stable across SSR + first
+          // paint), then flips to "X seconds ago" relative-time after
+          // `useEffect` runs client-side. Replaces an earlier inline
+          // `Date.now()` call inside `useMemo` that produced
+          // different text on SSR vs CSR (the canonical "44 vs 45
+          // seconds ago" hydration mismatch).
           return (
-            <time
-              dateTime={row.original.lastReminderAt}
+            <RelativeTime
+              iso={row.original.lastReminderAt}
               className="text-sm text-muted-foreground tabular-nums"
-            >
-              {fmt.relativeTime(new Date(row.original.lastReminderAt), Date.now())}
-            </time>
+            />
           );
         },
       },
@@ -156,7 +161,7 @@ export function PipelineTable({ rows }: PipelineTableProps) {
         ),
       },
     ],
-    [t, fmt],
+    [t],
   );
 
   // Round 5 S-05 — memoise the data array reference so TanStack Table
