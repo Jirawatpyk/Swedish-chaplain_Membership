@@ -50,6 +50,14 @@ export interface RelativeTimeProps {
    */
   readonly locale?: string;
   /**
+   * Optional `title` attribute for the underlying `<time>` element.
+   * Renders as a native browser tooltip on hover — useful for
+   * showing the precise timestamp when the visible label is the
+   * relative-time approximation. Caller can pass either a localised
+   * absolute date or the raw ISO; the value is forwarded verbatim.
+   */
+  readonly title?: string;
+  /**
    * Refresh cadence in milliseconds. Defaults to 30_000 (30s) which
    * is sufficient for "minutes ago" precision. Pass `0` to disable
    * auto-refresh (renders once on mount and stays).
@@ -85,6 +93,7 @@ export function RelativeTime({
   iso,
   className,
   locale: localeProp,
+  title,
   refreshMs = 30_000,
 }: RelativeTimeProps) {
   const localeFromContext = useLocale();
@@ -100,6 +109,12 @@ export function RelativeTime({
   const [, setTick] = useState(0);
 
   useEffect(() => {
+    // The `setMounted(true)` flip is the canonical setState-on-mount
+    // pattern for SSR-safe rendering: server + first paint use the
+    // stable absolute fallback; post-hydration flips to relative.
+    // The lint rule is reasonable for most cases but this is the
+    // documented React 19 pattern (mirrors payment-form.tsx).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     if (refreshMs <= 0) return;
     const id = setInterval(() => setTick((t) => t + 1), refreshMs);
@@ -111,7 +126,7 @@ export function RelativeTime({
     : formatAbsolute(iso, locale);
 
   return (
-    <time dateTime={iso} className={className}>
+    <time dateTime={iso} className={className} title={title}>
       {label}
     </time>
   );

@@ -11,7 +11,7 @@
  */
 
 import { useTranslations, useLocale } from 'next-intl';
-import { formatRelativeTime } from '@/lib/relative-time';
+import { RelativeTime } from '@/components/ui/relative-time';
 
 export type TimelineItemProps = {
   readonly id: string;
@@ -182,14 +182,17 @@ export function TimelineEventItem({
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="font-medium text-sm">{eventLabel}</span>
-          <time
-            dateTime={timestamp}
+          {/* Root-cause hydration fix: `<RelativeTime>` renders a
+              stable absolute date during SSR + first paint, then
+              flips to the "X seconds ago" relative-time string after
+              `useEffect` runs (client-only). Replaces the previous
+              `suppressHydrationWarning` pattern. */}
+          <RelativeTime
+            iso={timestamp}
             title={formatLocalisedTimestamp(timestamp, locale)}
             className="text-xs text-muted-foreground"
-            suppressHydrationWarning
-          >
-            {formatRelativeTime(timestamp, locale)}
-          </time>
+            locale={locale}
+          />
         </div>
         {payloadDetail && (
           <p className="text-sm text-muted-foreground">{payloadDetail}</p>

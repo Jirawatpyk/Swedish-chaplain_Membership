@@ -24,7 +24,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations, useLocale } from 'next-intl';
-import { formatRelativeTime } from '@/lib/relative-time';
+import { RelativeTime } from '@/components/ui/relative-time';
 import {
   useReactTable,
   getCoreRowModel,
@@ -617,14 +617,18 @@ export function MembersTable({
       cell: (info) => {
         const v = info.getValue();
         if (!v) return <span className="text-muted-foreground">—</span>;
+        // Root-cause hydration fix: `<RelativeTime>` renders a stable
+        // absolute date during SSR + first paint, then flips to the
+        // "X seconds ago" relative-time string after `useEffect` runs
+        // (client-only). Replaces the previous `suppressHydrationWarning`
+        // pattern which only silenced the warning while still rendering
+        // wrong text on first paint.
         return (
-          <time
-            dateTime={v}
+          <RelativeTime
+            iso={v}
             title={v.replace('T', ' ').slice(0, 16)}
-            suppressHydrationWarning
-          >
-            {formatRelativeTime(v, locale)}
-          </time>
+            locale={locale}
+          />
         );
       },
     }),
