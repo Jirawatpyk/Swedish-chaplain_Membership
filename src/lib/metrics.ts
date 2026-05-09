@@ -1549,20 +1549,39 @@ export const renewalsMetrics = {
   },
 
   /**
-   * F8 Phase 7 review-fix Round 4 IMP-8 — dedicated audit-emit failure
-   * counter for the reschedule listener. Mirrors `tierUpgradeAuditEmit
-   * Failed` and `coordinatorAuditEmitFailed` precedents.
+   * F8 Phase 7 review-fix Round 4 IMP-8 + Round 5 IMP-6 — dedicated
+   * audit-emit failure counter for the reschedule listener. Mirrors
+   * `tierUpgradeAuditEmitFailed` and `coordinatorAuditEmitFailed`
+   * precedents.
    *
    * Why a separate counter (not `manualPlanChangeListenerFailed`):
-   * after Round 3 CRIT-1 the reschedule emits use `emit()` (own tx);
-   * runtime DB faults are caught inside the emitter and logged but
-   * NEVER throw — so `wrapListener`'s `manualPlanChangeListenerFailed`
-   * counter does NOT fire for that subcase. Without this counter,
-   * audit-row loss on reschedule would conflate with the bucket-
-   * resolution counter (which fires before the emit) and silently
-   * masks the audit gap. On-call alert rule:
-   * `rate(renewals_reschedule_audit_emit_failed_total[5m]) > 0` for
-   * any sustained spike.
+   * after Round 3 CRIT-1 the reschedule emits use `emit()` (own tx).
+   * Two failure subclasses with different observability paths:
+   *
+   *   1. **Pre-flight pgEnum-drift** — emitter calls `pinoFallback`
+   *      OUTSIDE its inner try/catch (drizzle-renewal-audit-emitter.ts
+   *      lines 374-381) which DOES throw in production. The throw
+   *      escapes `emit()` and gets caught by the per-emit try/catch
+   *      in reschedule-on-plan-change.ts → THIS counter bumps.
+   *   2. **Runtime DB faults** (RLS misconfig, NOT-NULL, infra outage)
+   *      — caught INSIDE the emitter (lines 386-409) with
+   *      `logger.error`, then swallowed (fire-and-forget contract).
+   *      Does NOT escape, so the per-emit try/catch never fires AND
+   *      this counter does NOT bump. The audit-row loss is signalled
+   *      ONLY by the pino log line at the emitter's catch site.
+   *
+   * Practical effect: this counter is the alert signal for the
+   * pgEnum-drift class; runtime DB-fault audit-row loss is signalled
+   * by a Sentry/Vercel pino-log scrape on `[F8 audit emit] ... DB
+   * insert failed` — the on-call runbook (POST-MVP-OBS-7 in
+   * docs/phases-plan.md) MUST cover both signals.
+   *
+   * Round 4 SUG-4 + Round 5 IMP-13 design note: counter signature
+   * uses a hand-mirrored audit-event literal-union by intention
+   * (Constitution Principle III — `src/lib/metrics.ts` is cross-
+   * cutting and must not import bounded-context types). Drift cost
+   * is bounded — 2-element set; an audit event-name rename would
+   * CI-fail at the audit emit site BEFORE reaching this counter.
    */
   rescheduleAuditEmitFailed(
     auditType:
@@ -1572,7 +1591,7 @@ export const renewalsMetrics = {
     safeMetric(() => {
       counter(
         'renewals_reschedule_audit_emit_failed_total',
-        'F8 reschedule listener audit emit failed (forensic chain may have a gap)',
+        'F8 reschedule listener audit emit failed (pgEnum-drift class only — runtime DB-fault losses signalled via pino log scrape)',
       ).add(1, { audit_type: auditType });
     });
   },

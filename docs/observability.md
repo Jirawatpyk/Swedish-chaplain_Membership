@@ -1188,3 +1188,27 @@ Inherits § 22.5: 10 % trace sampling in production; 100 % aggregation on metric
 ### 23.8 Owner
 
 **F8 section**: The maintainer who ships F8 (currently @Jirawatpyk) is the initial owner of metrics, SLOs, and alerts; ownership transfers to the Renewals product engineer once a dedicated team forms.
+
+### 23.9 `safeMetric` swallow contract — log scrape requirements (Round 5 SUG-6)
+
+The `safeMetric()` wrapper in `src/lib/metrics.ts` swallows OTel adapter
+errors via `console.warn` (NOT pino). This is intentional: the metrics
+module is loaded by client-bundled paths and pulling pino into the
+client bundle is forbidden by the Clean Architecture boundary. Practical
+effect for observability:
+
+- Vercel runtime-log aggregation captures BOTH `console.warn` and pino
+  JSON lines. Search filters that match only on pino's `{level: ...}`
+  shape will miss `safeMetric` swallow events.
+- Scrape rules for `metrics_emit_failed_swallowed` should match on the
+  string `"[metrics:safeMetric]"` prefix that the wrapper writes
+  before the swallowed error. See `src/lib/metrics.ts` for the exact
+  format.
+- For Sentry/Datadog scrape configs: include `console.warn` lines in
+  the F8 + F4 + F5 + F7 metric-failure alert rules — pino-only filters
+  miss this swallow class.
+
+This is documented as a known limitation; consolidating to a single
+log shape would either pull pino into the client bundle (forbidden)
+or lose the structured-JSON property of pino logs. The dual-source
+scrape is the deliberate trade-off.

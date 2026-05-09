@@ -35,14 +35,19 @@
  *     path. A failed supersede leaves a healthy `accepted_pending_
  *     apply` row attached to a still-active cycle which the
  *     reconcile cron will NOT touch.
- *   - To close the supersede observability gap, every swallow now
- *     bumps `renewalsMetrics.manualPlanChangeListenerFailed{listener,
- *     tenant_id}`. The counter is the **single signal** for this
- *     class of failure today; Vercel alert rule + on-call runbook +
- *     admin replay tooling are tracked as backlog item POST-MVP-OBS-7
- *     (`docs/phases-plan.md`). Until that lands, on-call must grep
- *     the metric on Vercel dashboards manually if a F2 plan-change
- *     incident is suspected.
+ *   - To close the supersede observability gap, every swallow bumps
+ *     `renewalsMetrics.manualPlanChangeListenerFailed{listener,
+ *     tenant_id}`. After Round 4 IMP-8 the reschedule listener
+ *     additionally bumps `renewalsMetrics.rescheduleAuditEmitFailed
+ *     {audit_type}` for the pgEnum-drift audit-row-loss subcase
+ *     (which the runtime DB-fault swallow contract inside the audit
+ *     emitter does NOT escape, so wrapListener's counter alone does
+ *     not detect it). Both counters together are the alert signals
+ *     for this class of failure; Vercel alert rule + on-call runbook
+ *     + admin replay tooling are tracked as backlog item
+ *     POST-MVP-OBS-7 (`docs/phases-plan.md`). Until that lands,
+ *     on-call must grep both metrics on Vercel dashboards manually
+ *     if a F2 plan-change incident is suspected.
  *
  * Pure Infrastructure — only `@/lib/db` + `@/lib/logger` +
  * `@/lib/metrics` imports.

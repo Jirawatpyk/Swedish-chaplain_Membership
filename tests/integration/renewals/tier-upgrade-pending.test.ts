@@ -595,12 +595,16 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     // block would also drive 'threw' but findOne is the earliest +
     // simplest seam. The repo override is post-construction so the
     // outer F2 listener wiring stays intact.
+    // Round 5 IMP-9 — also lock the FR-014/019 bounded-payload obligation:
+    // failure_message MUST be capped to 500 chars (audit-bloat / PII-leak
+    // defence). Use an oversized synthetic error to verify slice() applies.
+    const longSyntheticErr = 'synthetic_dispatch_lookup_crash:'.padEnd(800, 'x');
     const throwingDeps = {
       ...deps,
       dispatchCandidateRepo: {
         ...deps.dispatchCandidateRepo,
         findOne: async () => {
-          throw new Error('synthetic_dispatch_lookup_crash');
+          throw new Error(longSyntheticErr);
         },
       },
     } as typeof deps;
@@ -641,5 +645,7 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     expect(payload?.failure_kind).toBe('unknown');
     expect(payload?.recipient_email_hashed).toBeNull();
     expect(payload?.failure_message).toMatch(/synthetic_dispatch_lookup_crash/);
+    // Round 5 IMP-9 — bounded-payload cap (≤500 chars).
+    expect(payload?.failure_message?.length ?? 0).toBeLessThanOrEqual(500);
   }, 60_000);
 });

@@ -31,12 +31,14 @@ export function TierUpgradeErrorRetry({
       aria-busy={isPending}
       onClick={() => startTransition(() => router.refresh())}
     >
-      {/* Round 4 IMP-10: dropped per-component motion-reduce modifier;
-          globals.css § 428-434 already neutralises `.animate-spin` for
-          prefers-reduced-motion users (per ux-standards.md § 19 — "Do
-          not add per-component motion-reduce modifiers — the global
-          rule covers them"). Round 4 IMP-11: `retryingLabel` provides
-          a non-motion text fallback so reduced-motion users see textual
+      {/* Round 4 IMP-10 + Round 5 IMP-7: dropped per-component
+          motion-reduce modifier; globals.css (lines 422-433) already
+          neutralises `.animate-spin` for prefers-reduced-motion users
+          per ux-standards.md § 10 (canonical Motion & Animation —
+          "Do not add per-component motion-reduce modifiers; the
+          global rule covers them"; also restated in § 19 overflow-
+          menu prose). Round 4 IMP-11: `retryingLabel` provides a
+          non-motion text fallback so reduced-motion users see textual
           loading feedback (mirrors F7 broadcasts retry pattern). */}
       {isPending && (
         <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />

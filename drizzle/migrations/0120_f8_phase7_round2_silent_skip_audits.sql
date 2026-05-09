@@ -25,9 +25,7 @@
 --
 -- All 2 events are 5-year retention (no F4 tax-document overlap).
 -- F8 audit-event tuple count moves 62 → 64; see TypeScript test
--- suite for compile-time + runtime assertions (Round 4 SUG-3 dropped
--- specific file paths from this immutable SQL header to prevent
--- rename-induced rot).
+-- suite for compile-time + runtime assertions.
 --
 -- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
 -- transaction. Idempotent via IF NOT EXISTS.

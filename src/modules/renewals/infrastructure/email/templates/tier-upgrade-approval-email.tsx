@@ -120,14 +120,17 @@ export function TierUpgradeApprovalEmail({
   // Gregorian only. Both halves resolved via `formatDualFormatDate`,
   // which honours Asia/Bangkok TZ to avoid midnight-UTC off-by-one-day.
   //
-  // Round 4 SUG-7 design note: TH locale shows the date 3x (body BE+
-  // Gregorian + footer Gregorian/BE). Body uses BE-first to match
-  // reminder-email precedent; footer uses Gregorian-first per FR-014
-  // ("cross-confirm defence against off-by-543-years class of bug" —
-  // see dual-format-date-footer.tsx header). Order divergence is
-  // intentional defence-in-depth: a Thai reader who only reads the
-  // BE digit will see them in BOTH orderings, catching a malformed
-  // BE conversion that lined up by coincidence in one ordering.
+  // Round 4 SUG-7 + Round 5 IMP-5 design note: TH locale renders 4
+  // date strings (body BE + body Gregorian + footer Gregorian +
+  // footer BE) — each calendar half appears twice in opposite
+  // orderings. Body uses BE-first to match reminder-email precedent;
+  // footer uses Gregorian-first per FR-014 ("cross-confirm defence
+  // against off-by-543-years class of bug" — see dual-format-date-
+  // footer.tsx header). Order divergence is intentional defence-in-
+  // depth: a Thai reader who only reads the BE digit will see it in
+  // BOTH orderings, catching a malformed BE conversion that lined up
+  // by coincidence in one ordering. en/sv render only 2 dates
+  // (body Gregorian + footer dual-pair).
   const { gregorian, thaiBE } = formatDualFormatDate(effectiveAtIso, locale);
   const effectiveAtFormatted =
     locale === 'th' ? `${thaiBE} (${gregorian})` : gregorian;

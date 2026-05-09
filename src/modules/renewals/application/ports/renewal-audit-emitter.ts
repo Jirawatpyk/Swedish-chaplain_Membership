@@ -25,14 +25,17 @@ import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 // `tier_upgrade_pending_member_notify_failed.failure_kind`. Audit +
 // port unions stay in lock-step at compile time.
 //
-// Round 4 SUG-5 — exported alias for sharability across emit sites.
-// Round 4 IMP-9 — same pattern back-ported to `DispatchFailureKind`
-// (consumed by `renewal_reminder_send_failed_permanent.failure_kind`
-// below) so all hand-mirrored gateway-kind unions in F8 are now
-// type-linked to a single source of truth.
+// Round 5 SUG-3 — alias kept module-local (unexported); no current
+// external consumer needs it. If a future emit site wants the alias,
+// either re-add `export` or import `SendRenewalEmailError['kind']`
+// directly. Round 4 IMP-9 — same pattern back-ported to
+// `DispatchFailureKind` (consumed by
+// `renewal_reminder_send_failed_permanent.failure_kind` below) so all
+// hand-mirrored gateway-kind unions in F8 are now type-linked to a
+// single source of truth.
 import type { SendRenewalEmailError } from './renewal-gateway';
 import type { DispatchFailureKind } from '../use-cases/_lib/dispatch-one-cycle';
-export type NotifyEmailErrorKind = SendRenewalEmailError['kind'];
+type NotifyEmailErrorKind = SendRenewalEmailError['kind'];
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 import type {

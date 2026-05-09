@@ -98,6 +98,27 @@ type GatewayResult =
     }
   | { readonly kind: 'threw'; readonly error: unknown };
 
+// Round 5 SUG-1 — compile-time pin on the GatewayResult arm count.
+// Mutual subtype assertion: any divergence between the canonical
+// union and the explicit-arm tuple type fails compile, surfacing
+// arm additions/removals at the type-system layer (companion to
+// the runtime `_exhaustive: never` pin in the if-chain below).
+type _GatewayResultArmsLocked =
+  | { readonly kind: 'no_recipient' }
+  | { readonly kind: 'sent'; readonly deliveryId: string; readonly recipientHash: Sha256Hex }
+  | {
+      readonly kind: 'failed';
+      readonly recipientHash: Sha256Hex;
+      readonly error: SendRenewalEmailError;
+    }
+  | { readonly kind: 'threw'; readonly error: unknown };
+type _AssertGatewayResultLocked = [
+  _GatewayResultArmsLocked extends GatewayResult ? true : never,
+  GatewayResult extends _GatewayResultArmsLocked ? true : never,
+];
+const _gatewayResultArmsLocked: _AssertGatewayResultLocked = [true, true];
+void _gatewayResultArmsLocked;
+
 export const acceptTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
   suggestionId: z.string().uuid(),
@@ -554,18 +575,71 @@ export async function acceptTierUpgrade(
         );
       }
     } else {
-      // Round 4 CRIT-3 — exhaustiveness pin on the GatewayResult
-      // discriminated union. If a future arm is added (e.g.
-      // 'rate_limited'), the `_exhaustive: never` type assertion
-      // FAILS at compile time, forcing the contributor to wire an
-      // audit-emit branch above. Pattern matches `renewal-gateway.ts`
-      // `isPermanentGatewayError` and `renewals-deps.ts` outcome
-      // dispatch. The runtime branch is unreachable but throws to
-      // surface logic-bug regressions loudly (no silent skip).
+      // Round 4 CRIT-3 + Round 5 IMP-1/IMP-3 — exhaustiveness pin on
+      // the GatewayResult discriminated union. If a future arm is
+      // added (e.g. 'rate_limited'), the `_exhaustive: never` type
+      // assertion FAILS at compile time, forcing the contributor to
+      // wire an audit-emit branch above. Pattern matches `renewal-
+      // gateway.ts isPermanentGatewayError` and `renewals-deps.ts`
+      // outcome dispatch.
+      //
+      // Round 5 IMP-1 + IMP-3 — defence-in-depth for the unreachable
+      // runtime path: bump `tierUpgradeNotifyFailed('unknown')` (R5
+      // IMP-3 closes the missing-counter gap so a deploy-skew arm
+      // surfaces on dashboards, NOT only via 500-toast) AND emit the
+      // `_member_notify_failed` audit row before throwing (R5 IMP-1
+      // closes the state-mismatch UX gap — the DB tx already committed
+      // suggestion → accepted_pending_apply, so the admin's "error"
+      // toast must still leave a forensic trail explaining the silent
+      // server-side success).
+      renewalsMetrics.tierUpgradeNotifyFailed('unknown');
+      logger.error(
+        {
+          gatewayResultKind:
+            (gatewayResult as { kind?: string }).kind ?? 'unknown',
+          suggestionId: suggestion.suggestionId,
+        },
+        '[accept-tier-upgrade] unhandled GatewayResult kind — deploy-skew? See exhaustiveness pin below',
+      );
+      try {
+        await deps.auditEmitter.emit(
+          {
+            type: 'tier_upgrade_pending_member_notify_failed',
+            payload: {
+              suggestion_id: suggestionId,
+              member_id: suggestion.memberId as MemberId,
+              to_plan_id: suggestion.toPlanId as PlanId,
+              recipient_email_hashed: null,
+              failure_kind: 'unknown',
+              failure_message: `unhandled_gateway_arm:${(gatewayResult as { kind?: string }).kind ?? 'unknown'}`.slice(
+                0,
+                500,
+              ),
+            },
+          },
+          {
+            tenantId: input.tenantId,
+            actorUserId: input.actorUserId,
+            actorRole: input.actorRole,
+            correlationId: input.correlationId,
+            requestId: null,
+          },
+        );
+      } catch (auditErr) {
+        renewalsMetrics.tierUpgradeAuditEmitFailed(
+          'tier_upgrade_pending_member_notify_failed',
+        );
+        logger.error(
+          {
+            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            suggestionId: suggestion.suggestionId,
+          },
+          '[accept-tier-upgrade] unhandled-arm audit emit failed — counter bumped',
+        );
+      }
       const _exhaustive: never = gatewayResult;
-      void _exhaustive;
       throw new Error(
-        `[accept-tier-upgrade] unhandled GatewayResult kind — possible new arm without audit emit wiring`,
+        `[accept-tier-upgrade] unhandled GatewayResult kind '${(_exhaustive as { kind?: string }).kind ?? 'undefined'}' — possible new arm without audit emit wiring`,
       );
     }
 

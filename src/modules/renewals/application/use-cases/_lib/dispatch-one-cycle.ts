@@ -24,7 +24,12 @@
  * the success-tx are caught by `defensivelyMarkFailedForRetry` (J2-B2)
  * so a failed `pending` row never orphans.
  *
- * Private file (`_lib/`) — NOT exported via the F8 barrel.
+ * Located in `_lib/` (helper / coordinator location), but several
+ * symbols ARE re-exported via the F8 barrel (`SKIP_REASONS`,
+ * `SkipReason`, `DispatchContext`, `DispatchOneCycleOutcome`,
+ * `RETRY_BUDGET_HOURS`, `DispatchFailureKind`). The directory naming
+ * follows the project convention of "use-case orchestration helpers
+ * live under `_lib/`" — it does NOT imply private/non-exported.
  */
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -112,13 +117,21 @@ export interface DispatchContext {
 }
 
 /**
- * J9-M17 + Round 4 IMP-9 — closed set of gateway-error classifiers
- * used by the audit emit (`failure_kind` field on
+ * J9-M17 + Round 4 IMP-9 + Round 5 SUG-4 — closed set of gateway-
+ * error classifiers used by the audit emit (`failure_kind` field on
  * `renewal_reminder_send_failed` /
  * `renewal_reminder_send_failed_permanent`). Type-linked to
  * `SendRenewalEmailError['kind']` (R4 back-port of the R3 IMP-7
  * pattern from `tier_upgrade_pending_member_notify_failed`) plus
  * `dispatcher_crash` (J2-B2 synthetic for uncaught throws).
+ *
+ * Round 5 SUG-4 design note: this alias lives in `_lib/` (next to
+ * its primary consumer dispatch-one-cycle) but the audit-emitter
+ * port also imports it. A future refactor MAY relocate it to a
+ * port-co-located file (e.g. a new `application/ports/dispatch-
+ * failure-kind.ts`) so the audit-emitter port depends only on
+ * other ports — kept here for now to avoid the relocation churn
+ * in a late-cycle review pass.
  *
  * Drift prevention: when a future arm is added to `SendRenewalEmail
  * Error`, the `['kind']` lookup propagates automatically through this

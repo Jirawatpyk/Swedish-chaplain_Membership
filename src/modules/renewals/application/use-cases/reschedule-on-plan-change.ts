@@ -42,10 +42,9 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import type { TenantTx } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 // Type-only — runtime no-op brand cast (Constitution Principle III).
@@ -87,7 +86,14 @@ export type RescheduleOnPlanChangeError =
 
 /**
  * Listener entry point — called by the F2 plan-change bridge inside
- * the F2 tx. Atomic with the F2 plan-change.
+ * the F3-owned plan-change tx (members.change-plan use-case,
+ * semantically a F2 plan-management operation).
+ *
+ * **Not atomic with the surrounding tx by design** (Round 4 CRIT-1):
+ * see the file-level "Failure semantics" block above for why both
+ * audit emits use `emit()` (own tx) instead of `emitInTx(_tx)` —
+ * `emitInTx` would taint the F3 caller's tx and cause silent
+ * COMMIT→ROLLBACK on audit-row INSERT failure.
  */
 export async function rescheduleOnPlanChangeInTx(
   deps: RenewalsDeps,

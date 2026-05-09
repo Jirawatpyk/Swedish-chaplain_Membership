@@ -119,4 +119,113 @@ describe('rescheduleOnPlanChangeInTx (R4 regression)', () => {
     expect(emitMock).not.toHaveBeenCalled();
     expect(emitInTxMock).not.toHaveBeenCalled();
   });
+
+  it('R5-CRIT-3 — success-path emit() (NOT emitInTx) on actual rescheduled diff', async () => {
+    // Round 5 review-fix R5-CRIT-3 — locks the SUCCESS-path symmetric
+    // half of R4-CRIT-1. Without this test a future PR that reverts
+    // the success-path emit (line 277+ of the use-case) from emit() to
+    // emitInTx(_tx) would re-introduce the F3 plan-flip silent-rollback
+    // regression but pass green because all R4 tests fixture
+    // `cyclesRepo.findActiveForMember = null` (no active cycle = early
+    // return BEFORE the success-path emit fires).
+    //
+    // Here we wire DIFFERING buckets + active cycle + diverging
+    // policies so the use-case computes a non-empty cancelled[]/added[]
+    // step diff and reaches the success-path emit at line 277+.
+    const emitMock = vi.fn(async () => undefined);
+    const emitInTxMock = vi.fn(async () => undefined);
+    const deps = {
+      tenant: { slug: TENANT_ID },
+      planLookupForRenewal: {
+        loadPlanFrozenFields: vi.fn(
+          async (args: { planId: string }) => ({
+            status: 'found' as const,
+            plan: {
+              tierBucket: args.planId === 'old' ? 'regular' : 'premium',
+            },
+          }),
+        ),
+      },
+      auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+      cyclesRepo: {
+        findActiveForMember: vi.fn(async () => ({
+          cycleId: 'cyc-1',
+          expiresAt: '2026-10-01T00:00:00Z',
+        })),
+      },
+      schedulePolicyRepo: {
+        findByBucket: vi.fn(async (_t: string, bucket: string) =>
+          bucket === 'regular'
+            ? { steps: [{ stepId: 'r-30', offsetDays: 30 }] }
+            : { steps: [{ stepId: 'p-14', offsetDays: 14 }] },
+        ),
+      },
+      clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+    } as unknown as RenewalsDeps;
+
+    const result = await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+
+    expect(result.cancelledStepIds).toEqual(['r-30']);
+    expect(result.newStepIds).toEqual(['p-14']);
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    const firstCall = emitMock.mock.calls[0] as unknown as
+      | readonly [unknown, unknown]
+      | undefined;
+    const event = firstCall?.[0];
+    expect((event as { type?: string } | undefined)?.type).toBe(
+      'renewal_schedule_rescheduled',
+    );
+  });
+
+  it('R5-CRIT-3 — success-path audit emit failure SWALLOWED (caller tx not tainted)', async () => {
+    // Round 5 review-fix R5-CRIT-3 (negative companion) — locks the
+    // success-path try/catch swallow contract. A revert from emit() to
+    // emitInTx() would propagate this rejection up to the F3 caller
+    // tx → silent rollback. The catch + counter pattern from R4 IMP-8
+    // catches it instead.
+    const emitMock = vi.fn(async () => {
+      throw new Error('synthetic_success_path_audit_emit_failure');
+    });
+    const emitInTxMock = vi.fn(async () => undefined);
+    const deps = {
+      tenant: { slug: TENANT_ID },
+      planLookupForRenewal: {
+        loadPlanFrozenFields: vi.fn(
+          async (args: { planId: string }) => ({
+            status: 'found' as const,
+            plan: {
+              tierBucket: args.planId === 'old' ? 'regular' : 'premium',
+            },
+          }),
+        ),
+      },
+      auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+      cyclesRepo: {
+        findActiveForMember: vi.fn(async () => ({
+          cycleId: 'cyc-1',
+          expiresAt: '2026-10-01T00:00:00Z',
+        })),
+      },
+      schedulePolicyRepo: {
+        findByBucket: vi.fn(async (_t: string, bucket: string) =>
+          bucket === 'regular'
+            ? { steps: [{ stepId: 'r-30', offsetDays: 30 }] }
+            : { steps: [{ stepId: 'p-14', offsetDays: 14 }] },
+        ),
+      },
+      clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+    } as unknown as RenewalsDeps;
+
+    // The use-case MUST NOT throw — caller's tx must not see the audit
+    // failure as a poison-tx signal.
+    await expect(
+      rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs),
+    ).resolves.toMatchObject({
+      cancelledStepIds: ['r-30'],
+      newStepIds: ['p-14'],
+    });
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
 });

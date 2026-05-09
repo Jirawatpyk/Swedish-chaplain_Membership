@@ -361,10 +361,14 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
       'test-tenant',
     );
     expect(auditEmitterEmitMock).toHaveBeenCalledTimes(1);
-    const [event] = auditEmitterEmitMock.mock.calls[0] ?? [];
+    const [event, context] = auditEmitterEmitMock.mock.calls[0] ?? [];
     expect((event as { type?: string })?.type).toBe(
       'tier_upgrade_apply_post_invoice_paid_failed',
     );
+    // Round 5 IMP-10 — lock actorRole='webhook'. F4-driven post-paid
+    // hooks come from Stripe webhook context, NOT admin/system. Drift
+    // here would mis-classify forensic-chain provenance.
+    expect(context).toMatchObject({ actorRole: 'webhook' });
     // Audit succeeded → no fatal escalation.
     expect(loggerFatalMock).not.toHaveBeenCalled();
   });
