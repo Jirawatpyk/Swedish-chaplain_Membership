@@ -41,7 +41,13 @@ describe('parseBreadcrumbPath', () => {
     });
 
     expect(result).toEqual([
-      { href: '/admin/plans', segment: 'plans', label: 'Plans', isCurrent: true },
+      {
+        href: '/admin/plans',
+        segment: 'plans',
+        label: 'Plans',
+        isCurrent: true,
+        isLinkable: true,
+      },
     ]);
   });
 
@@ -153,6 +159,7 @@ describe('truncateForMobile', () => {
     segment,
     label,
     ...(isCurrent ? { isCurrent: true as const } : { isCurrent: false as const }),
+    isLinkable: true,
   });
 
   it('returns all segments with hasEllipsis=false when <=2 segments', () => {

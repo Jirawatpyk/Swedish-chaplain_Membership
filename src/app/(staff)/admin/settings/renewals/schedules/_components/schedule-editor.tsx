@@ -307,9 +307,19 @@ function StepRow({
                   isn't clipped (line-clamp-1 was hiding longer locales). */}
               <TranslatedSelectValue
                 placeholder={t('stepCard.channelLabel')}
-                translate={(v) =>
-                  v ? t(`stepCard.channel.${v}` as 'stepCard.channel.email') : null
-                }
+                translate={(v) => {
+                  if (!v) return null;
+                  // Round 5 SUG-6 — try/catch shields the runtime from
+                  // a `MISSING_MESSAGE` throw if a future channel enum
+                  // value (e.g. 'sms') ships before the i18n keys do.
+                  // Falls back to the raw enum literal — visible-but-
+                  // ugly is better than blank-trigger or 500-page.
+                  try {
+                    return t(`stepCard.channel.${v}` as 'stepCard.channel.email');
+                  } catch {
+                    return v;
+                  }
+                }}
               />
             </SelectTrigger>
             <SelectContent>
@@ -385,13 +395,18 @@ function StepRow({
                       the raw enum literal. */}
                   <TranslatedSelectValue
                     placeholder={t('stepCard.assigneeLabel')}
-                    translate={(v) =>
-                      v
-                        ? t(
-                            `stepCard.assigneeRole.${v}` as 'stepCard.assigneeRole.admin',
-                          )
-                        : null
-                    }
+                    translate={(v) => {
+                      if (!v) return null;
+                      // Round 5 SUG-6 — same MISSING_MESSAGE shield as
+                      // the channel select above.
+                      try {
+                        return t(
+                          `stepCard.assigneeRole.${v}` as 'stepCard.assigneeRole.admin',
+                        );
+                      } catch {
+                        return v;
+                      }
+                    }}
                   />
                 </SelectTrigger>
                 <SelectContent>

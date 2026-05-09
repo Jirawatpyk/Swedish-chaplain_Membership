@@ -105,7 +105,12 @@ function BreadcrumbFragment({
   return (
     <Fragment>
       <BreadcrumbItem>
-        {isLast ? (
+        {isLast || !segment.isLinkable ? (
+          // Last segment OR organisational non-routable segment
+          // (NON_ROUTE_BY_PARENT match — its href was rewritten to
+          // the parent's path so making it a link would create two
+          // adjacent trail items pointing at the same URL).
+          // `BreadcrumbPage` styles it as plain muted text.
           <BreadcrumbPage>{segment.label}</BreadcrumbPage>
         ) : (
           <BreadcrumbLink render={<Link href={segment.href} />}>

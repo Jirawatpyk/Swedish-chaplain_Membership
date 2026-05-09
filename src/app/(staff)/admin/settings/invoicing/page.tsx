@@ -36,7 +36,8 @@ import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/inv
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Invoice settings' };
+  const t = await getTranslations('admin.invoiceSettings');
+  return { title: t('title') };
 }
 
 const DEFAULTS: InvoiceSettingsFormInitialValues = {

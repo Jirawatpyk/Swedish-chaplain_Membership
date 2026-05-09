@@ -25,7 +25,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Plans' };
+  const t = await getTranslations('admin.plans');
+  return { title: t('title') };
 }
 
 interface SearchParams {

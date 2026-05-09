@@ -3,6 +3,16 @@ export type BreadcrumbSegment = {
   segment: string;
   label: string;
   isCurrent: boolean;
+  /**
+   * `false` when this segment exists in the URL but has no own
+   * page.tsx (NON_ROUTE_BY_PARENT match) — its `href` was rewritten
+   * to the parent's path, so rendering it as a clickable link would
+   * point at the same href as the previous segment in the trail.
+   * UI should render it as plain text (or a disabled muted label)
+   * to signal "this is an organisational segment, not a navigation
+   * target". Defaults to `true` for routable segments.
+   */
+  isLinkable: boolean;
 };
 
 export type ParseBreadcrumbOptions = {
@@ -98,12 +108,18 @@ export function parseBreadcrumbPath({
     .map((rawSegment, index) => {
       const decoded = decodedParts[index] ?? rawSegment;
       let href: string;
+      let isLinkable = true;
       if (isPlansYear(index)) {
         href = `/admin/plans?year=${decoded}`;
       } else if (isNonRouteSegment(index)) {
         // Point at the parent path (drop THIS segment); parent is the
-        // last routable ancestor.
+        // last routable ancestor. Mark as non-linkable so the UI
+        // renders this as plain text — clicking would otherwise
+        // bounce silently to the parent path which is the same href
+        // the previous trail item already points at (smell — two
+        // adjacent breadcrumb items resolving to the same URL).
         href = '/' + rawParts.slice(0, index).join('/');
+        isLinkable = false;
       } else {
         href = '/' + rawParts.slice(0, index + 1).join('/');
       }
@@ -112,6 +128,7 @@ export function parseBreadcrumbPath({
         segment: decoded,
         label: dynamicLabels.get(decoded) ?? staticLabels[decoded] ?? decoded,
         isCurrent: index === lastIndex,
+        isLinkable,
       };
     })
     // Drop the leading portal-root segment (`admin` / `portal`). The

@@ -17,7 +17,7 @@
  * Layout: wrapped in `<FormContainer>` (max-width 42rem) per
  * docs/ux-standards.md § 18 — settings/edit surfaces use form width
  * (matches sister `/admin/settings/invoicing`). Earlier draft used
- * `<FormContainer>` (72rem) reasoning "5 tabs with form rows fit
+ * `<DetailContainer>` (72rem) reasoning "5 tabs with form rows fit
  * better than 96rem" — but that compared against TableContainer not
  * FormContainer. The 42rem standard width is the right call.
  */

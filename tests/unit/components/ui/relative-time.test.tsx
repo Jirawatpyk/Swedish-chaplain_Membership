@@ -140,11 +140,17 @@ describe('<RelativeTime>', () => {
       await Promise.resolve();
     });
 
-    // The shared-tick singleton creates exactly ONE setInterval
-    // (or zero if a previous test already created it — at minimum
-    // far fewer than 5).
+    // The shared-tick singleton creates EXACTLY ONE setInterval for
+    // 5 default-cadence instances. Strictness matters here: a `<= 1`
+    // assertion would silently pass if the singleton broke and
+    // produced ZERO setInterval calls (state leak across tests, or
+    // useEffect not running). Test isolation is ensured by
+    // `cleanup()` in afterEach which unmounts all instances → their
+    // useEffect cleanups call unsubscribe → last unsubscribe clears
+    // the interval + nulls the id, so this test starts from a fresh
+    // singleton and observes exactly one new spy call.
     const newIntervalCalls = setIntervalSpy.mock.calls.length;
-    expect(newIntervalCalls).toBeLessThanOrEqual(1);
+    expect(newIntervalCalls).toBe(1);
 
     setIntervalSpy.mockRestore();
   });

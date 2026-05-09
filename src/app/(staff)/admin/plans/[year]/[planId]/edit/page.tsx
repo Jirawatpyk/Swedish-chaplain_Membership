@@ -22,7 +22,11 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EditPlanClient } from './edit-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Edit plan' };
+  const t = await getTranslations('admin.plans.edit');
+  // `t('title')` is "Edit {planName}" interpolated; planName isn't
+  // available in generateMetadata without a DB lookup. Use the
+  // pre-existing `titleGeneric` ("Edit plan") for the browser tab.
+  return { title: t('titleGeneric') };
 }
 
 export default async function EditPlanPage({

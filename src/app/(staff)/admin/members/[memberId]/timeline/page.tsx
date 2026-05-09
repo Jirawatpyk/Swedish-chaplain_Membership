@@ -46,12 +46,12 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  // The root layout's metadata template (`%s · SweCham Membership`)
-  // appends the brand suffix; returning a bare page name here keeps
-  // the final title as "Timeline · SweCham Membership" instead of
-  // "Timeline · SweCham · SweCham Membership".
-  if (!UUID_RE.test(memberId)) return { title: 'Timeline' };
-  return { title: 'Timeline' };
+  const t = await getTranslations('admin.members.timeline');
+  // Root layout template appends "· SweCham Membership". `pageTitle`
+  // interpolation needs companyName (DB lookup) — the page itself
+  // does the lookup downstream. Use the generic `title`.
+  if (!UUID_RE.test(memberId)) return { title: t('title') };
+  return { title: t('title') };
 }
 
 export default async function MemberTimelinePage({ params }: PageProps) {

@@ -27,8 +27,13 @@
  * deterministically-correct first paint.
  *
  * Locale resolution: pulls from `useLocale()` (next-intl) so the
- * caller doesn't have to thread it. Pass `locale` explicitly when
- * the component is invoked outside a next-intl context (rare).
+ * caller doesn't have to thread it. The `locale` prop overrides the
+ * context value (useful for previews/tests/storybooks). The
+ * component MUST mount inside a `<NextIntlClientProvider>` ancestor
+ * — `useLocale()` is called unconditionally and throws when no
+ * provider is in scope. All Chamber-OS staff/member pages already
+ * have a provider at the layout level so this is a no-op for
+ * production callers.
  */
 'use client';
 
