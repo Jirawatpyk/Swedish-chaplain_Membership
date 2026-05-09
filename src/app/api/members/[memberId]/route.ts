@@ -172,7 +172,16 @@ export async function PATCH(
   const isPlanChange = typeof body['new_plan_id'] === 'string';
 
   if (isPlanChange) {
-    const result = await changePlan(memberId, rawBody, meta, deps);
+    // F8 Phase 7 T188 — wire the F8 listener pair (supersede pending
+    // tier-upgrade + reschedule renewal cadence) into the change-plan
+    // call. Each listener runs inside the F3 tx atomically per
+    // Constitution Principle VIII.
+    const { f8OnManualPlanChangeCallbacks } = await import('@/modules/renewals');
+    const planChangeDeps = {
+      ...deps,
+      manualPlanChangeListeners: f8OnManualPlanChangeCallbacks(tenant.slug),
+    };
+    const result = await changePlan(memberId, rawBody, meta, planChangeDeps);
     if (result.ok) {
       const responseBody = serialiseMember(result.value);
       await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {

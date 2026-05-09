@@ -44,11 +44,12 @@ describe('makeRenewalsDeps composition root (T054)', () => {
   });
 });
 
-describe('f8OnPaidCallbacks (Phase 5 wired — T123 markCycleCompleteFromInvoicePaid)', () => {
-  it('returns the F8 cycle-complete callback (1 entry)', () => {
+describe('f8OnPaidCallbacks (Phase 5 wired — T123 markCycleCompleteFromInvoicePaid + Phase 7 T183 apply-pending-tier-upgrade)', () => {
+  it('returns the F8 cycle-complete + tier-upgrade-apply callbacks (2 entries)', () => {
     const callbacks = f8OnPaidCallbacks('any-tenant');
-    expect(callbacks).toHaveLength(1);
+    expect(callbacks).toHaveLength(2);
     expect(typeof callbacks[0]).toBe('function');
+    expect(typeof callbacks[1]).toBe('function');
   });
 });
 

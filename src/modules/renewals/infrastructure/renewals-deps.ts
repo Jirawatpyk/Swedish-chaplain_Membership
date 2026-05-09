@@ -48,6 +48,11 @@ import { drizzleReminderAuditQueryRepo } from './drizzle/drizzle-reminder-audit-
 import { makeDrizzleTenantRenewalSettingsRepo } from './drizzle/drizzle-tenant-renewal-settings-repo';
 import { makeF5PaymentAttemptsBridgeDrizzle } from './ports-adapters/f5-payment-attempts-bridge-drizzle';
 import { f4InvoiceBridge, type F4InvoiceBridge } from './ports-adapters/f4-invoice-bridge';
+import { makeDrizzleTierUpgradeSuggestionRepo } from './drizzle/drizzle-tier-upgrade-suggestion-repo';
+import { makeDrizzleTierUpgradeEvalCandidateRepo } from './drizzle/drizzle-tier-upgrade-eval-candidate-repo';
+import { drizzlePlanCatalog } from './drizzle/drizzle-plan-catalog';
+import { randomUUID } from 'node:crypto';
+import { asSuggestionId } from '../domain/tier-upgrade-suggestion';
 
 import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
 import type { EventAttendeesPort } from '../application/ports/event-attendees-port';
@@ -77,6 +82,10 @@ import type { BounceEventQuery } from '../application/ports/bounce-event-query';
 import type { ReminderAuditQueryPort } from '../application/ports/reminder-audit-query-repo';
 import type { F5PaymentAttemptsBridge } from '../application/ports/f5-payment-attempts-bridge';
 import type { TenantRenewalSettingsRepo } from '../application/ports/tenant-renewal-settings-repo';
+import type { TierUpgradeSuggestionRepo } from '../application/ports/tier-upgrade-suggestion-repo';
+import type { TierUpgradeEvalCandidateRepo } from '../application/ports/tier-upgrade-eval-candidate-repo';
+import type { PlanCatalogPort } from '../application/ports/plan-catalog-port';
+import type { SuggestionId } from '../domain/tier-upgrade-suggestion';
 import { type ClockPort, wallClock } from '../application/ports/clock-port';
 
 export interface RenewalsDeps {
@@ -254,6 +263,23 @@ export interface RenewalsDeps {
    * care about time.
    */
   readonly clock: ClockPort;
+  /**
+   * F8 Phase 7 T179-T185 — tier-upgrade suggestion repo + eval-candidate
+   * repo + F2 plan catalogue projection. The cron use-case consumes the
+   * eval-candidate composite (1 round-trip per page) + the catalogue
+   * snapshot (1 round-trip at start) + the suggestion repo for inserts
+   * + suppression checks. Admin queue + accept/dismiss/escalate flows
+   * also use the suggestion repo.
+   */
+  readonly tierUpgradeRepo: TierUpgradeSuggestionRepo;
+  readonly tierUpgradeEvalCandidateRepo: TierUpgradeEvalCandidateRepo;
+  readonly planCatalog: PlanCatalogPort;
+  /**
+   * Suggestion-id generator — defaults to `randomUUID()` cast through
+   * the SuggestionId brand. Test fixtures override with a deterministic
+   * counter.
+   */
+  readonly suggestionIdGenerator: () => SuggestionId;
 }
 
 /**
@@ -295,6 +321,11 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     tenantRenewalSettingsRepo: makeDrizzleTenantRenewalSettingsRepo(tenant),
     f5PaymentAttemptsBridge: makeF5PaymentAttemptsBridgeDrizzle(tenant),
     clock: wallClock,
+    tierUpgradeRepo: makeDrizzleTierUpgradeSuggestionRepo(tenant),
+    tierUpgradeEvalCandidateRepo:
+      makeDrizzleTierUpgradeEvalCandidateRepo(tenant),
+    planCatalog: drizzlePlanCatalog,
+    suggestionIdGenerator: () => asSuggestionId(randomUUID()),
   };
 }
 
@@ -474,6 +505,58 @@ export function f8OnPaidCallbacks(
           const _exhaustive: never = outcome;
           void _exhaustive;
         }
+      }
+    },
+    // F8 Phase 7 T183 — apply-pending-tier-upgrade callback. Fires after
+    // the cycle-completion callback above. Looks up the cycle linked to
+    // the invoice; if it's a renewal cycle with one or more
+    // `accepted_pending_apply` tier-upgrade suggestions targeting it,
+    // transitions them to `applied` + emits
+    // `tier_upgrade_applied_at_renewal` audit. Atomic with the F4 tx
+    // when threaded; opens its own runInTenant otherwise (degraded but
+    // still correct because the suggestion-tx commits independently).
+    async (evt, txUnknown) => {
+      const { applyPendingTierUpgradeInTx } = await import(
+        '../application/use-cases/apply-pending-tier-upgrade'
+      );
+      const { runInTenant: runInTenantFn, isTenantTx } = await import('@/lib/db');
+      const { logger } = await import('@/lib/logger');
+
+      const apply = async (tx: TenantTx) => {
+        // Resolve the cycle linked to this invoice. Non-renewal
+        // invoices return null and the callback is a no-op.
+        const cycle = await deps.cyclesRepo.findByInvoiceIdInTx(
+          tx,
+          evt.tenantId,
+          evt.invoiceId,
+        );
+        if (!cycle) return;
+        try {
+          await applyPendingTierUpgradeInTx(deps, tx, {
+            tenantId: evt.tenantId,
+            cycleId: cycle.cycleId,
+            invoiceId: evt.invoiceId as unknown as import('@/modules/invoicing').InvoiceId,
+            correlationId: `f8-onPaid:${evt.invoiceId}`,
+            requestId: null,
+          });
+        } catch (e) {
+          logger.error(
+            {
+              err: e instanceof Error ? e.message : String(e),
+              tenantId: evt.tenantId,
+              invoiceId: evt.invoiceId,
+              cycleId: cycle.cycleId,
+            },
+            '[f8-onPaid] apply-pending-tier-upgrade failed — F4 tx rolling back',
+          );
+          throw e;
+        }
+      };
+
+      if (txUnknown !== undefined && isTenantTx(txUnknown)) {
+        await apply(txUnknown);
+      } else {
+        await runInTenantFn(deps.tenant, apply);
       }
     },
   ];

@@ -22,6 +22,7 @@ import type {
   SendRenewalEmailError,
   SendRenewalEmailInput,
   SendRenewalEmailResult,
+  SendTierUpgradeApprovalEmailInput,
 } from '../application/ports/renewal-gateway';
 
 export const stubRenewalGateway: RenewalGateway = {
@@ -46,11 +47,33 @@ export const stubRenewalGateway: RenewalGateway = {
         stepId: input.stepId,
         templateId: input.templateId,
         recipientLocale: input.recipient.preferredLocale,
-        // memberId is hashed-friendly even in stub logs (privacy-by-default).
         memberId: input.recipient.memberId,
         deliveryId,
       },
       'stubRenewalGateway.sendRenewalEmail (no real Resend dispatch — Wave I3 swaps this)',
+    );
+    return ok({ deliveryId, dispatchedAt });
+  },
+
+  async sendTierUpgradeApprovalEmail(
+    input: SendTierUpgradeApprovalEmailInput,
+  ): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        `stubRenewalGateway.sendTierUpgradeApprovalEmail called in production`,
+      );
+    }
+    const deliveryId = `stub-tier-${randomUUID()}`;
+    const dispatchedAt = new Date().toISOString();
+    logger.info(
+      {
+        stub: true,
+        tenantId: input.tenantId,
+        memberId: input.recipient.memberId,
+        idempotencyKey: input.idempotencyKey,
+        deliveryId,
+      },
+      'stubRenewalGateway.sendTierUpgradeApprovalEmail (no real Resend dispatch)',
     );
     return ok({ deliveryId, dispatchedAt });
   },

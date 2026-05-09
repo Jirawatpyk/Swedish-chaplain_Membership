@@ -38,8 +38,11 @@ export const tierUpgradeSuggestions = pgTable(
       .notNull()
       .default(sql`gen_random_uuid()`),
     memberId: uuid('member_id').notNull(),
-    fromPlanId: uuid('from_plan_id').notNull(),
-    toPlanId: uuid('to_plan_id').notNull(),
+    // F8 Phase 7 fix (migration 0117): plan_id columns are TEXT (slug
+    // identifiers like 'regular', 'premium'), not UUID. The original
+    // migration 0091 typed these as `uuid` but F2 catalogue uses slugs.
+    fromPlanId: text('from_plan_id').notNull(),
+    toPlanId: text('to_plan_id').notNull(),
     reasonCode: text('reason_code').notNull(),
     evidenceJsonb: jsonb('evidence_jsonb')
       .$type<TierUpgradeEvidenceJson>()

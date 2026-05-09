@@ -813,6 +813,27 @@
       "when": 1792396800000,
       "tag": "0115_f8_audit_log_member_plan_changed_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1792483200000,
+      "tag": "0116_f8_phase7_tier_upgrade_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1792569600000,
+      "tag": "0117_f8_phase7_tier_upgrade_plan_id_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1792656000000,
+      "tag": "0118_f8_phase7_renewal_schedule_rescheduled_enum",
+      "breakpoints": true
     }
   ]
 }

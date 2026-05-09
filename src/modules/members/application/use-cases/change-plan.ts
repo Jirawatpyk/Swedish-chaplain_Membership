@@ -13,8 +13,9 @@
  */
 
 import { z } from 'zod';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asOverrideReason,
@@ -59,11 +60,46 @@ export type ChangePlanError =
   | { type: 'startup_too_old'; foundedYear: number; maxAllowedYears: number }
   | { type: 'server_error'; message: string };
 
+/**
+ * F8 listener event payload — emitted to `manualPlanChangeListeners`
+ * after the `member_plan_manually_changed` audit row commits inside the
+ * change-plan tx. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
+ * factory returns the listener array; the route handler wires it.
+ *
+ * Each listener runs inside the F3 tx (the `tx` param) so failures
+ * roll the F3 plan-change back per Constitution Principle VIII.
+ * Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern.
+ */
+export interface ManualPlanChangeListenerEvent {
+  readonly tenantId: string;
+  readonly memberId: string;
+  readonly oldPlanId: string;
+  readonly newPlanId: string;
+  readonly actorUserId: string;
+  readonly correlationId: string;
+  readonly requestId: string | null;
+}
+
+export type ManualPlanChangeListener = (
+  evt: ManualPlanChangeListenerEvent,
+  tx: TenantTx,
+) => Promise<void>;
+
 export type ChangePlanDeps = {
   tenant: TenantContext;
   memberRepo: MemberRepo;
   plans: PlanLookupPort;
   audit: AuditPort;
+  /**
+   * F8 Phase 7 T188 — listener array invoked atomically inside the
+   * change-plan tx after the `member_plan_manually_changed` audit
+   * commits. F8's `f8OnManualPlanChangeCallbacks(tenantId)` factory
+   * supplies the canonical pair (supersede pending tier-upgrade +
+   * reschedule renewal cadence). Optional — when undefined, change-
+   * plan still works (the reconcile cron T185 catches orphan-pending
+   * suggestions defensively).
+   */
+  manualPlanChangeListeners?: ReadonlyArray<ManualPlanChangeListener>;
 };
 
 export type ChangePlanCallMeta = {
@@ -253,6 +289,41 @@ export async function changePlan(
         });
         if (!bundleAudit.ok) {
           throw new TxAbort({ type: 'audit_failed' });
+        }
+      }
+
+      // F8 Phase 7 T188 — atomic invocation of registered F8 listeners
+      // (supersede pending tier-upgrade + reschedule renewal cadence).
+      // Same tx as the plan flip + audits per Constitution Principle VIII.
+      // Any listener exception propagates → tx rollback → entire change-
+      // plan is undone. Internal listener catch-blocks log + swallow per
+      // their own contracts (the F8 reconcile cron provides defence-in-
+      // depth recovery for any silently-swallowed failures).
+      const listeners = deps.manualPlanChangeListeners ?? [];
+      if (listeners.length > 0) {
+        const evt: ManualPlanChangeListenerEvent = {
+          tenantId: deps.tenant.slug,
+          memberId,
+          oldPlanId: current.planId,
+          newPlanId: data.new_plan_id,
+          actorUserId: meta.actorUserId,
+          correlationId: meta.requestId,
+          requestId: meta.requestId,
+        };
+        for (const listener of listeners) {
+          try {
+            await listener(evt, tx);
+          } catch (e) {
+            logger.error(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                tenantId: deps.tenant.slug,
+                memberId,
+              },
+              '[change-plan] manualPlanChangeListener threw — F3 tx rolling back',
+            );
+            throw e;
+          }
         }
       }
 

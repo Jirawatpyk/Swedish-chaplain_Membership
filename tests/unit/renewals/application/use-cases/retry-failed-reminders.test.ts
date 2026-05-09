@@ -375,7 +375,7 @@ describe('retryFailedReminders', () => {
           buildFailedEvent({ reminderEventId: 'event-2' }),
         ],
       });
-      const gateway = deps.renewalGateway as { sendRenewalEmail: ReturnType<typeof vi.fn> };
+      const gateway = deps.renewalGateway as unknown as { sendRenewalEmail: ReturnType<typeof vi.fn> };
       let i = 0;
       gateway.sendRenewalEmail = vi.fn(async () => {
         i += 1;

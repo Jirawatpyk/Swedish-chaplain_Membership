@@ -553,6 +553,95 @@ export {
   type LapseCyclesOnGraceExpiryError,
 } from './application/use-cases/lapse-cycles-on-grace-expiry';
 
+// --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
+export {
+  evaluateTierUpgrade,
+  evaluateTierUpgradeInputSchema,
+  DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+  type EvaluateTierUpgradeInput,
+  type EvaluateTierUpgradeOutput,
+  type EvaluateTierUpgradeError,
+} from './application/use-cases/evaluate-tier-upgrade';
+
+export {
+  acceptTierUpgrade,
+  acceptTierUpgradeInputSchema,
+  type AcceptTierUpgradeInput,
+  type AcceptTierUpgradeOutput,
+  type AcceptTierUpgradeError,
+} from './application/use-cases/accept-tier-upgrade';
+
+export {
+  dismissTierUpgrade,
+  dismissTierUpgradeInputSchema,
+  type DismissTierUpgradeInput,
+  type DismissTierUpgradeOutput,
+  type DismissTierUpgradeError,
+} from './application/use-cases/dismiss-tier-upgrade';
+
+export {
+  escalateTierUpgrade,
+  escalateTierUpgradeInputSchema,
+  type EscalateTierUpgradeInput,
+  type EscalateTierUpgradeOutput,
+  type EscalateTierUpgradeError,
+} from './application/use-cases/escalate-tier-upgrade';
+
+export {
+  applyPendingTierUpgrade,
+  applyPendingTierUpgradeInTx,
+  applyPendingTierUpgradeInputSchema,
+  type ApplyPendingTierUpgradeInput,
+  type ApplyPendingTierUpgradeOutput,
+  type ApplyPendingTierUpgradeError,
+} from './application/use-cases/apply-pending-tier-upgrade';
+
+export {
+  supersedePendingTierUpgrade,
+  supersedePendingTierUpgradeInTx,
+  supersedePendingTierUpgradeInputSchema,
+  type SupersedePendingTierUpgradeInput,
+  type SupersedePendingTierUpgradeOutput,
+  type SupersedePendingTierUpgradeError,
+} from './application/use-cases/supersede-pending-tier-upgrade';
+
+export {
+  reconcilePendingApplications,
+  reconcilePendingApplicationsInputSchema,
+  type ReconcilePendingApplicationsInput,
+  type ReconcilePendingApplicationsOutput,
+  type ReconcilePendingApplicationsError,
+} from './application/use-cases/reconcile-pending-applications';
+
+export {
+  rescheduleOnPlanChange,
+  rescheduleOnPlanChangeInTx,
+  rescheduleOnPlanChangeInputSchema,
+  type RescheduleOnPlanChangeInput,
+  type RescheduleOnPlanChangeOutput,
+  type RescheduleOnPlanChangeError,
+} from './application/use-cases/reschedule-on-plan-change';
+
+// F8 Phase 7 — F2 → F8 plan-change bridge (factory for the listener
+// array consumed by F3's `changeMemberPlan` use-case).
+export {
+  f8OnManualPlanChangeCallbacks,
+  type F2ManualPlanChangeEvent,
+} from './infrastructure/ports-adapters/f2-plan-change-bridge';
+
+// F8 Phase 7 — Phase 7-extended port surfaces (admin queue + cron).
+export type {
+  TierUpgradeEvalCandidate,
+  TierUpgradeEvalCandidatePage,
+  TierUpgradeEvalCandidateListArgs,
+  TierUpgradeEvalCandidateRepo,
+} from './application/ports/tier-upgrade-eval-candidate-repo';
+
+export type {
+  PlanCatalogEntry,
+  PlanCatalogPort,
+} from './application/ports/plan-catalog-port';
+
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

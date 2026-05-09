@@ -331,6 +331,127 @@ export interface F8AuditPayloadShapes {
     readonly superseding_plan_id: PlanId;
   };
   /**
+   * Phase 7 T180 — admin Accept transitions suggestion `open` →
+   * `accepted_pending_apply`. Carries the cycle the upgrade will apply
+   * at + the F2 scheduled_plan_changes row id (forensic linkage to the
+   * F2 supersede listener). Member's `members.plan_id` is NOT mutated
+   * yet (FR-039 — no surprise mid-year invoicing).
+   */
+  readonly tier_upgrade_accepted: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly from_plan_id: PlanId;
+    readonly to_plan_id: PlanId;
+    readonly target_apply_at_cycle_id: CycleId;
+    readonly scheduled_change_id: string;
+  };
+  /**
+   * Phase 7 T180 — single transactional email dispatched to the
+   * member's primary contact email after Accept. `delivery_id` is the
+   * Resend message id (forensic linkage to the F1 transactional
+   * delivery webhook).
+   */
+  readonly tier_upgrade_pending_member_notified: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly to_plan_id: PlanId;
+    readonly recipient_email_hashed: Sha256Hex;
+    readonly delivery_id: string | null;
+    readonly effective_at: string;
+  };
+  /**
+   * Phase 7 T180 — T-180 verify-task scheduled when
+   * `expires_at - today > 180 days`. Admin re-verifies the upgrade
+   * still applies before the cycle rollover.
+   */
+  readonly tier_upgrade_pending_admin_verification_due: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly verification_task_id: string;
+    readonly verification_due_at: string;
+  };
+  /**
+   * Phase 7 T183 — F4 renewal-invoice-creation hook applied the
+   * pending upgrade. Suggestion transitioned `accepted_pending_apply`
+   * → `applied`. The invoice id forensically links the upgrade to the
+   * actual F4 invoice + F2 plan flip.
+   */
+  readonly tier_upgrade_applied_at_renewal: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly from_plan_id: PlanId;
+    readonly to_plan_id: PlanId;
+    readonly applied_at_cycle_id: CycleId;
+    readonly applied_at_invoice_id: InvoiceId;
+  };
+  /**
+   * Phase 7 T181 — admin Dismiss with optional reason. Suppression
+   * persists for 90 days (cron skip-eligibility check via
+   * `tier_upgrade_suggestions_suppressed_idx`).
+   */
+  readonly tier_upgrade_dismissed: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly reason: string | null;
+    readonly suppressed_until: string;
+  };
+  /**
+   * Phase 7 T179 (cron) — debug-level signal that the cron evaluated
+   * a member whose `members.plan_id` already matches the would-be
+   * upgrade target. No-op + idempotent. Useful for dashboard
+   * "tier-upgrade evaluated but no-op" rate.
+   */
+  readonly tier_upgrade_already_at_target: {
+    readonly member_id: MemberId;
+    readonly current_plan_id: PlanId;
+  };
+  /**
+   * Phase 7 T179 (cron) — emitted once per cron pass when
+   * `tenant_renewal_settings.auto_upgrade_enabled = false`. Whole
+   * tenant skipped; cron continues with next tenant.
+   */
+  readonly tier_upgrade_tenant_disabled: Record<string, never>;
+  /**
+   * Phase 7 T179 (cron) — emitted once per cron pass when the tenant
+   * has not configured turnover thresholds on any plan in their
+   * catalogue (i.e. `min_turnover_minor_units IS NULL` everywhere).
+   * Cron continues with next tenant.
+   */
+  readonly tier_upgrade_skipped_no_thresholds_configured: Record<string, never>;
+  /**
+   * Phase 7 T185 (reconcile cron) — orphan detection: a suggestion in
+   * `accepted_pending_apply` whose `target_apply_at_cycle_id` cycle is
+   * either `cancelled` or `lapsed` (the F4 hook will never fire). The
+   * reconcile cron transitions the suggestion to `dismissed` with
+   * `reason='orphan_target_cycle_terminal'` so admins can re-suggest
+   * after a fresh cycle materialises.
+   */
+  readonly tier_upgrade_pending_orphan_detected: {
+    readonly suggestion_id: SuggestionId;
+    readonly member_id: MemberId;
+    readonly target_apply_at_cycle_id: CycleId;
+    readonly target_cycle_status: 'cancelled' | 'lapsed';
+  };
+  /**
+   * Phase 7 T188a — F2 → F8 reschedule-on-plan-change listener emit.
+   * Captured when an admin's manual plan-change shifts the member's
+   * tier-bucket and not-yet-fired reminders shift cadence. Per spec
+   * Edge Cases line 182, already-sent reminders are NOT recalled —
+   * only future schedule steps differ.
+   *
+   * `cancelled_step_ids` are old-bucket steps no longer scheduled;
+   * `new_step_ids` are new-bucket steps newly scheduled. Same-bucket
+   * plan changes do not emit (early-return inside the use-case).
+   */
+  readonly renewal_schedule_rescheduled: {
+    readonly member_id: MemberId;
+    readonly cycle_id: CycleId;
+    readonly old_tier_bucket: string;
+    readonly new_tier_bucket: string;
+    readonly cancelled_step_ids: ReadonlyArray<string>;
+    readonly new_step_ids: ReadonlyArray<string>;
+  };
+  /**
    * The `BandTransition` DU prevents emitting same-band "transitions"
    * at compile time (e.g. `{ previous_band: 'healthy', new_band: 'healthy' }`
    * would be a TS error — there's no arm matching that pair). `score`

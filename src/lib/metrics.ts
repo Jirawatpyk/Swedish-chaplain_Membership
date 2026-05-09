@@ -1402,7 +1402,13 @@ export const renewalsMetrics = {
    * rules per stream + diagnose triage in seconds, not minutes.
    */
   coordinatorAuditEmitFailed(
-    cronKind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile',
+    cronKind:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'lapse'
+      | 'reconcile'
+      | 'tier_upgrade_evaluate'
+      | 'tier_upgrade_reconcile',
   ): void {
     safeMetric(() => {
       counter(

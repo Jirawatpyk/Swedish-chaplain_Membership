@@ -173,6 +173,27 @@ const F8_ENUM_SHIPPED_TUPLE = [
   'renewal_kill_switch_blocked',
   'lapsed_member_action_blocked',
   'renewal_cross_member_probe',
+  // --- F8 Phase 7 (migration 0116) — 11 tier-upgrade events for
+  //     User Story 5 (Auto Tier-Upgrade Suggestions). Emit sites:
+  //     T179 evaluate-tier-upgrade (cron) · T180 accept · T181 dismiss ·
+  //     T183 apply-pending (F4 invoice-paid hook) · T184 supersede
+  //     listener · T185 reconcile-pending-applications. Spec FR-037..
+  //     FR-042 + research.md R7 pending lifecycle. ---
+  'tier_upgrade_suggested',
+  'tier_upgrade_accepted',
+  'tier_upgrade_pending_member_notified',
+  'tier_upgrade_pending_admin_verification_due',
+  'tier_upgrade_applied_at_renewal',
+  'tier_upgrade_pending_superseded_by_manual_change',
+  'tier_upgrade_dismissed',
+  'tier_upgrade_already_at_target',
+  'tier_upgrade_tenant_disabled',
+  'tier_upgrade_skipped_no_thresholds_configured',
+  'tier_upgrade_pending_orphan_detected',
+  // --- F8 Phase 7 T188a (migration 0118) — `renewal_schedule_rescheduled`
+  //     emitted by F2 → F8 plan-change listener when tier-bucket diff
+  //     causes a schedule change. ---
+  'renewal_schedule_rescheduled',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 
 const F8_ENUM_SHIPPED: ReadonlySet<F8AuditEventType> = new Set(
@@ -202,32 +223,21 @@ const _F8_ENUM_DEFERRED = [
   // markCycleCompleteFromInvoicePaid use-case in `f8OnPaidCallbacks`);
   // see FR-006 deferral target.
   'renewal_cycle_created',
-  // F8 Phase 7+ tier-upgrade-suggestion engine (FR-031 future scope —
-  // domain types + tests shipped in Phase 6 W-K27 but no production
-  // emit sites yet; pgEnum values reserved by catalogue, runtime
-  // emit deferred until a use case wires them).
-  'tier_upgrade_suggested',
-  'tier_upgrade_accepted',
-  'tier_upgrade_dismissed',
-  'tier_upgrade_already_at_target',
-  'tier_upgrade_tenant_disabled',
-  'tier_upgrade_skipped_no_thresholds_configured',
-  'tier_upgrade_applied_at_renewal',
-  'tier_upgrade_pending_member_notified',
-  'tier_upgrade_pending_admin_verification_due',
-  'tier_upgrade_pending_superseded_by_manual_change',
-  'tier_upgrade_pending_orphan_detected',
+  // F8 Phase 7 tier-upgrade-suggestion event types — MOVED to
+  // F8_ENUM_SHIPPED_TUPLE in Phase 7 (T179-T185). Migration 0116
+  // adds the matching pgEnum values. The audit emit sites land in
+  // the 8 use-cases under `src/modules/renewals/application/use-cases/`.
   // Escalation-task expansion (F8 Phase 8+) — `reassigned` covers
   // admin re-assignment of finance follow-ups; `skipped` covers
   // auto-archived tasks past 30d. Domain type union shipped in
   // Phase 5 Wave A.5 for forward compat; emit sites land later.
   'escalation_task_reassigned',
   'escalation_task_skipped',
-  // Reserved for cron-driven schedule rescheduling (Phase 7 admin
-  // bulk-shift) and the `renewal_payment_failed` audit on F5 webhook
+  // Reserved for the `renewal_payment_failed` audit on F5 webhook
   // payment_intent.payment_failed → mark_paid_offline cancel path
   // (Phase 5 Wave B follow-up; current path emits at the F4 layer).
-  'renewal_schedule_rescheduled',
+  // `renewal_schedule_rescheduled` graduated to F8_ENUM_SHIPPED_TUPLE
+  // at Phase 7 verify-fix (migration 0118).
   'renewal_payment_failed',
 ] as const satisfies ReadonlyArray<F8AuditEventType>;
 

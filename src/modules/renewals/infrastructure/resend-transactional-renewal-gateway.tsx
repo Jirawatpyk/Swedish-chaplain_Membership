@@ -34,6 +34,10 @@ import {
   type RenewalReminderEmailProps,
 } from './email/templates/renewal-reminder-email';
 import {
+  TierUpgradeApprovalEmail,
+  buildTierUpgradeApprovalSubject,
+} from './email/templates/tier-upgrade-approval-email';
+import {
   resolveCopy,
   interpolateCopy,
   TIER_LABELS,
@@ -48,6 +52,7 @@ import type {
   SendRenewalEmailError,
   SendRenewalEmailInput,
   SendRenewalEmailResult,
+  SendTierUpgradeApprovalEmailInput,
 } from '../application/ports/renewal-gateway';
 
 /**
@@ -484,6 +489,123 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
         lastErrorKind: lastError?.kind ?? 'unknown',
       },
       'resend.renewals.send.exhausted_retries',
+    );
+    return err(
+      lastError ?? {
+        kind: 'gateway_5xx',
+        retryable: true,
+        message: 'exhausted retries',
+      },
+    );
+  },
+
+  async sendTierUpgradeApprovalEmail(
+    input: SendTierUpgradeApprovalEmailInput,
+  ): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>> {
+    const subject = buildTierUpgradeApprovalSubject(
+      input.recipient.preferredLocale,
+      { planName: input.targetPlanName },
+    );
+
+    let html: string;
+    let text: string;
+    try {
+      [html, text] = await Promise.all([
+        render(
+          <TierUpgradeApprovalEmail
+            locale={input.recipient.preferredLocale}
+            memberFirstName={input.recipient.toName ?? ''}
+            memberCompanyName={input.memberCompanyName}
+            targetPlanName={input.targetPlanName}
+            effectiveAtIso={input.effectiveAtIso}
+            portalUrl={`${env.app.baseUrl}/portal`}
+          />,
+        ),
+        render(
+          <TierUpgradeApprovalEmail
+            locale={input.recipient.preferredLocale}
+            memberFirstName={input.recipient.toName ?? ''}
+            memberCompanyName={input.memberCompanyName}
+            targetPlanName={input.targetPlanName}
+            effectiveAtIso={input.effectiveAtIso}
+            portalUrl={`${env.app.baseUrl}/portal`}
+          />,
+          { plainText: true },
+        ),
+      ]);
+    } catch (e) {
+      logger.error(
+        {
+          err: e instanceof Error ? e : new Error(String(e)),
+          tenantId: input.tenantId,
+        },
+        'resend.renewals.tier_upgrade_approval.render_failed',
+      );
+      return err({
+        kind: 'gateway_4xx',
+        retryable: false,
+        message: sanitizeResendErrorMessage(
+          e instanceof Error ? e.message : 'render failed',
+        ),
+      });
+    }
+
+    const resend = resendClient();
+    const from = resolveFrom();
+    let lastError: SendRenewalEmailError | null = null;
+
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+      try {
+        const response = await resend.emails.send({
+          from,
+          to: input.recipient.toEmail,
+          subject,
+          html,
+          text,
+          headers: { 'idempotency-key': input.idempotencyKey },
+        });
+        if (response.error) {
+          const mapped = mapResendError(response.error);
+          if (mapped.kind !== 'gateway_5xx') {
+            return err(mapped);
+          }
+          lastError = mapped;
+        } else if (response.data?.id) {
+          return ok({
+            deliveryId: response.data.id,
+            dispatchedAt: new Date().toISOString(),
+          });
+        }
+      } catch (e) {
+        lastError = {
+          kind: 'gateway_5xx',
+          retryable: true,
+          message: sanitizeResendErrorMessage(
+            e instanceof Error ? e.message : 'unknown',
+          ),
+        };
+        logger.warn(
+          {
+            err: e instanceof Error ? e : new Error(String(e)),
+            tenantId: input.tenantId,
+            attempt,
+          },
+          'resend.renewals.tier_upgrade_approval.exception',
+        );
+      }
+      const delayMs = RETRY_DELAYS_MS[attempt];
+      if (delayMs !== undefined) {
+        await delay(delayMs);
+      }
+    }
+
+    logger.error(
+      {
+        tenantId: input.tenantId,
+        idempotencyKey: input.idempotencyKey,
+        lastErrorKind: lastError?.kind ?? 'unknown',
+      },
+      'resend.renewals.tier_upgrade_approval.exhausted_retries',
     );
     return err(
       lastError ?? {

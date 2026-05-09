@@ -669,7 +669,7 @@ describe('dispatchOneCycle', () => {
       // Override gateway to throw exception (NOT return err Result)
       // — simulates network panic, SDK crash, or any uncaught throw
       // between insertIfAbsent (row=pending) and transitionStatus.
-      const gateway = deps.renewalGateway as {
+      const gateway = deps.renewalGateway as unknown as {
         sendRenewalEmail: ReturnType<typeof vi.fn>;
       };
       gateway.sendRenewalEmail = vi.fn(async () => {

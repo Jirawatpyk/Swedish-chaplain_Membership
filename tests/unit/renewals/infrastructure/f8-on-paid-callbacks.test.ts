@@ -134,7 +134,10 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     });
 
     const callbacks = f8OnPaidCallbacks('test-tenant');
-    expect(callbacks).toHaveLength(1);
+    // Phase 7 T183 — callback array now has 2 entries: cycle-complete +
+    // apply-pending-tier-upgrade. Index 0 is the cycle-complete
+    // dispatcher this test exercises.
+    expect(callbacks).toHaveLength(2);
 
     await callbacks[0]!(buildEvent(), fakeValidTenantTx);
 

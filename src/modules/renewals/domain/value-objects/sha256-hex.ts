@@ -1,17 +1,20 @@
 /**
  * `Sha256Hex` — branded canonical lowercase SHA-256 hex digest.
  *
- * Used by F8 audit payloads (`renewal_reminder_send_failed_permanent`)
- * for `recipient_email_hashed` so a future emit-site cannot accidentally
- * pass a plaintext email — the type system enforces the redaction policy
- * from CLAUDE.md "Forbidden in logs".
+ * Used by F8 audit payloads (`renewal_reminder_send_failed_permanent`,
+ * `tier_upgrade_pending_member_notified`) for `recipient_email_hashed`
+ * so a future emit-site cannot accidentally pass a plaintext email —
+ * the type system enforces the redaction policy from CLAUDE.md
+ * "Forbidden in logs".
  *
  * Canonical form: 64 lowercase hex characters, optionally prefixed
  * `sha256:`. Validation lowercases input before storage so equality
  * comparisons across emit sites are stable.
  *
- * Pure value-object — no framework imports (Constitution Principle III).
+ * Pure value-object — Node `crypto` is allowed for hashing (used by
+ * F1 + F4 + F5 in similar value-object positions).
  */
+import { createHash } from 'node:crypto';
 import { ok, err, type Result } from '@/lib/result';
 
 declare const Sha256HexBrand: unique symbol;
@@ -51,6 +54,20 @@ export function asSha256Hex(raw: string): Sha256Hex {
  * `bounce_class` + `recipient_email_hashed`); the validator stays in
  * place for the F1 webhook integration that will turn on this signal.
  */
+/**
+ * Hash a raw input string into a canonical lowercase SHA-256 hex
+ * digest. Used by audit emit sites that capture an email-derived
+ * forensic identifier without leaking plaintext into the audit log
+ * (Constitution Principle I clause 4 + CLAUDE.md "Forbidden in logs").
+ *
+ * The caller is responsible for normalising the input (e.g.
+ * `email.trim().toLowerCase()`) so different emit sites that hash the
+ * same logical email produce equal digests.
+ */
+export function sha256HexOf(raw: string): Sha256Hex {
+  return createHash('sha256').update(raw, 'utf8').digest('hex') as Sha256Hex;
+}
+
 export function parseSha256Hex(
   raw: string,
 ): Result<Sha256Hex, Sha256HexError> {

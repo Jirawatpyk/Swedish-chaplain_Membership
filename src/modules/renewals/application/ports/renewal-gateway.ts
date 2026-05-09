@@ -107,6 +107,26 @@ export function isPermanentGatewayError(
   }
 }
 
+/**
+ * Phase 7 T200 — Tier-upgrade approval email.
+ */
+export interface SendTierUpgradeApprovalEmailInput {
+  readonly tenantId: string;
+  readonly recipient: {
+    readonly memberId: string;
+    readonly toEmail: string;
+    readonly toName: string | null;
+    readonly preferredLocale: SupportedLocale;
+  };
+  readonly memberCompanyName: string;
+  readonly targetPlanName: string;
+  /** ISO 8601 UTC — the cycle's expires_at (effective date). */
+  readonly effectiveAtIso: string;
+  /** Idempotency key — typically the suggestion_id UUID. */
+  readonly idempotencyKey: string;
+  readonly correlationId: string;
+}
+
 export interface RenewalGateway {
   /**
    * Dispatch one transactional renewal email. Adapter handles the
@@ -116,5 +136,15 @@ export interface RenewalGateway {
    */
   sendRenewalEmail(
     input: SendRenewalEmailInput,
+  ): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>>;
+
+  /**
+   * Phase 7 T200 — Send the "Your tier upgrade has been approved"
+   * email after admin Accept (FR-039 step 2). Reuses the same
+   * SendRenewalEmailError discriminated union so callers can share
+   * permanent-vs-transient classification logic.
+   */
+  sendTierUpgradeApprovalEmail(
+    input: SendTierUpgradeApprovalEmailInput,
   ): Promise<Result<SendRenewalEmailResult, SendRenewalEmailError>>;
 }

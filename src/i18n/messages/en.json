@@ -1942,6 +1942,65 @@
           "lapsed": " — needs reactivation",
           "pending_admin_reactivation": " — needs admin review"
         }
+      },
+      "tier_upgrades": {
+        "title": "Tier upgrade queue",
+        "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
+        "breadcrumbs": {
+          "renewals": "Renewals",
+          "tier_upgrades": "Tier upgrades"
+        },
+        "columns": {
+          "member": "Member",
+          "from_plan": "Current plan",
+          "to_plan": "Suggested plan",
+          "reason": "Reason",
+          "status": "Status",
+          "actions": "Actions"
+        },
+        "status": {
+          "open": "Open",
+          "accepted_pending_apply": "Pending apply",
+          "applied": "Applied",
+          "dismissed": "Dismissed",
+          "superseded": "Superseded",
+          "auto_resolved": "Auto-resolved"
+        },
+        "reason": {
+          "declared_turnover_above_threshold": "Turnover above threshold",
+          "paid_invoice_volume_above_threshold": "Invoice volume above threshold",
+          "multi_signal": "Multiple signals"
+        },
+        "empty_state": {
+          "title": "No upgrade candidates this week",
+          "subtitle": "The weekly evaluation cron found no members crossing an upgrade threshold."
+        },
+        "dialog": {
+          "cancel": "Cancel"
+        },
+        "actions": {
+          "accept": {
+            "label": "Accept",
+            "dialog_title": "Accept tier upgrade?",
+            "confirm": "The upgrade will apply at the member's next renewal. The member will be notified by email and a verification task will be scheduled if the renewal is more than 180 days away.",
+            "success": "Tier upgrade accepted",
+            "error": "Failed to accept tier upgrade"
+          },
+          "dismiss": {
+            "label": "Dismiss",
+            "dialog_title": "Dismiss tier upgrade suggestion?",
+            "confirm": "The suggestion will be closed and re-suggestion suppressed for 90 days. This action cannot be undone.",
+            "success": "Suggestion dismissed",
+            "error": "Failed to dismiss suggestion"
+          },
+          "escalate": {
+            "label": "Escalate",
+            "dialog_title": "Escalate to outreach?",
+            "confirm": "Draft an outreach email for this member?",
+            "success": "Outreach drafted",
+            "error": "Failed to draft outreach"
+          }
+        }
       }
     },
     "refund": {

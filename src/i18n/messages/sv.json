@@ -1942,6 +1942,65 @@
           "lapsed": " — kräver återaktivering",
           "pending_admin_reactivation": " — kräver administratörsgranskning"
         }
+      },
+      "tier_upgrades": {
+        "title": "Kö för medlemsnivåhöjning",
+        "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
+        "breadcrumbs": {
+          "renewals": "Förnyelser",
+          "tier_upgrades": "Nivåhöjningar"
+        },
+        "columns": {
+          "member": "Medlem",
+          "from_plan": "Nuvarande plan",
+          "to_plan": "Föreslagen plan",
+          "reason": "Anledning",
+          "status": "Status",
+          "actions": "Åtgärder"
+        },
+        "status": {
+          "open": "Öppen",
+          "accepted_pending_apply": "Väntar på tillämpning",
+          "applied": "Tillämpad",
+          "dismissed": "Avvisad",
+          "superseded": "Ersatt",
+          "auto_resolved": "Automatiskt åtgärdad"
+        },
+        "reason": {
+          "declared_turnover_above_threshold": "Omsättning över tröskelvärde",
+          "paid_invoice_volume_above_threshold": "Fakturavolym över tröskelvärde",
+          "multi_signal": "Flera signaler"
+        },
+        "empty_state": {
+          "title": "Inga uppgraderingskandidater denna vecka",
+          "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln."
+        },
+        "dialog": {
+          "cancel": "Avbryt"
+        },
+        "actions": {
+          "accept": {
+            "label": "Acceptera",
+            "dialog_title": "Acceptera nivåhöjning?",
+            "confirm": "Uppgraderingen träder i kraft vid medlemmens nästa förnyelse. Medlemmen meddelas via e-post och en verifieringsuppgift schemaläggs om förnyelsen är mer än 180 dagar bort.",
+            "success": "Nivåhöjning accepterad",
+            "error": "Kunde inte acceptera nivåhöjning"
+          },
+          "dismiss": {
+            "label": "Avvisa",
+            "dialog_title": "Avvisa förslaget om nivåhöjning?",
+            "confirm": "Förslaget stängs och nya förslag undertrycks i 90 dagar. Denna åtgärd kan inte ångras.",
+            "success": "Förslag avvisat",
+            "error": "Kunde inte avvisa förslag"
+          },
+          "escalate": {
+            "label": "Eskalera",
+            "dialog_title": "Eskalera till uppsökande?",
+            "confirm": "Skapa ett utkast till uppsökande e-post för medlemmen?",
+            "success": "Utkast till uppsökande skapad",
+            "error": "Kunde inte skapa utkast"
+          }
+        }
       }
     },
     "refund": {

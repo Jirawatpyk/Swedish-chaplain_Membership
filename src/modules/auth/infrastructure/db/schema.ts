@@ -197,6 +197,28 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'at_risk_outreach_recorded',
   'at_risk_skipped_below_min_tenure',
   'at_risk_compute_partial_failure',
+  // --- F8 Phase 7 (migration 0116) — 11 tier-upgrade events for
+  //     User Story 5 (Auto Tier-Upgrade Suggestions). Emit sites:
+  //     T179 evaluate-tier-upgrade (cron) · T180 accept · T181 dismiss ·
+  //     T183 apply-pending (F4 invoice-paid hook) · T184 supersede
+  //     listener · T185 reconcile-pending-applications. Spec FR-037..
+  //     FR-042 + research.md R7 pending lifecycle. ---
+  'tier_upgrade_suggested',
+  'tier_upgrade_accepted',
+  'tier_upgrade_pending_member_notified',
+  'tier_upgrade_pending_admin_verification_due',
+  'tier_upgrade_applied_at_renewal',
+  'tier_upgrade_pending_superseded_by_manual_change',
+  'tier_upgrade_dismissed',
+  'tier_upgrade_already_at_target',
+  'tier_upgrade_tenant_disabled',
+  'tier_upgrade_skipped_no_thresholds_configured',
+  'tier_upgrade_pending_orphan_detected',
+  // --- F8 Phase 7 T188a (migration 0118) — renewal-schedule rescheduled
+  //     audit emitted by `rescheduleOnPlanChangeInTx` when an F2 manual
+  //     plan-change shifts the member's tier-bucket and the not-yet-
+  //     fired schedule steps change cadence. ---
+  'renewal_schedule_rescheduled',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

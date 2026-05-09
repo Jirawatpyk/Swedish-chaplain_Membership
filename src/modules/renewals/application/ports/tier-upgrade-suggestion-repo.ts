@@ -90,6 +90,32 @@ export interface TierUpgradeSuggestionRepo {
       readonly closedAt?: string;
     },
   ): Promise<TierUpgradeSuggestion>;
+
+  /**
+   * Phase 7 T185 — orphan detection. Returns all suggestions in
+   * `accepted_pending_apply` state whose `target_apply_at_cycle_id`
+   * cycle is `cancelled` or `lapsed`. The reconcile cron transitions
+   * these to `dismissed` with `reason='orphan_target_cycle_terminal'`.
+   */
+  listOrphanedPending(
+    tenantId: string,
+  ): Promise<ReadonlyArray<{
+    readonly suggestion: TierUpgradeSuggestion;
+    readonly targetCycleStatus: 'cancelled' | 'lapsed';
+  }>>;
+
+  /**
+   * Phase 7 T193 — admin queue listing. Returns suggestions in `open`
+   * OR `accepted_pending_apply` state for the admin dashboard,
+   * ordered by `(created_at DESC, suggestion_id DESC)`.
+   */
+  listForAdminQueue(
+    tenantId: string,
+    args?: { readonly limit?: number; readonly cursor?: string },
+  ): Promise<{
+    readonly items: ReadonlyArray<TierUpgradeSuggestion>;
+    readonly nextCursor: string | null;
+  }>;
 }
 
 export class TierUpgradeOpenConflictError extends Error {

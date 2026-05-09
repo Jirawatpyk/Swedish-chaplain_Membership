@@ -324,16 +324,63 @@ Same pattern as dispatch coordinator with these differences:
 ## F8 — renewals/tier-upgrade-evaluate-coordinator (NEW — F8 Phase 7)
 
 Weekly evaluation of tier-upgrade eligibility per F2 plan thresholds
-(`declared_turnover_thb_min`, `lifetime_invoice_thb_min`). Creates
-`tier_upgrade_suggestions` rows for objective candidates + emits
-`tier_upgrade_suggested` audit.
+(`min_turnover_minor_units`). Creates `tier_upgrade_suggestions` rows
+for objective candidates + emits `tier_upgrade_suggested` audit.
+Branches on `tenant_renewal_settings.auto_upgrade_enabled` (skip when
+false → `tier_upgrade_tenant_disabled`) and on plan-catalogue presence
+of any `min_turnover` (skip when none configured →
+`tier_upgrade_skipped_no_thresholds_configured`). Idempotent —
+re-running produces zero duplicates (member_open partial UNIQUE).
 
 ### Setup steps
 
 - **Title**: `Chamber-OS · F8 tier-upgrade evaluate coordinator`
-- **URL**: `.../api/cron/renewals/tier-upgrade-evaluate-coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/tier-upgrade-evaluate-coordinator`
+- **Method**: `POST`
 - **Schedule**: `0 3 * * 0` (Sun 03:00 Asia/Bangkok — 1h after at-risk)
 - **Timeout**: 30 seconds (per-tenant SLO ≤30s @ 5k members per FR-057)
+- **Retries**: OFF (the route emits `cron_dispatch_orchestrated` audit on every pass — retry-on-failure would double-fire the orchestration audit)
+- **Auth**: HTTP header `Authorization: Bearer ${CRON_SECRET}` (same secret as F7 + F8 dispatch + F8 at-risk-recompute)
+- **Notification**: enable email-on-failure (cron-job.org built-in)
+
+### Expected response codes
+
+| Code | Body shape | Meaning |
+|------|------------|---------|
+| 200 | `{ skipped: false, tenants_enqueued, tenants_succeeded, tenants_failed, ... }` | Normal pass |
+| 200 | `{ skipped: true, reason: 'feature_flag_disabled' }` | `FEATURE_F8_RENEWALS=false` (dark launch) |
+| 401 | `{ error: { code: 'unauthorized' } }` | Bearer mismatch (rotate secret + reconfigure) |
+| 500 | (per-tenant fan-out caught at coordinator) | Per-tenant failures aggregated; coordinator returns 500 only on infra failure |
+
+## F8 — renewals/reconcile-pending-applications (NEW — F8 Phase 7)
+
+Weekly housekeeping cron that detects orphaned tier-upgrade
+suggestions in `accepted_pending_apply` whose `target_apply_at_cycle_id`
+is `cancelled` or `lapsed` (the F4 invoice-paid hook would never
+fire). Transitions each orphan to `dismissed` with
+`reason='orphan_target_cycle_terminal'` + emits
+`tier_upgrade_pending_orphan_detected`. Idempotent (dismissed orphans
+excluded from next pass).
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 reconcile pending tier-upgrade applications`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/reconcile-pending-applications`
+- **Method**: `POST`
+- **Schedule**: `0 5 * * 6` (Sat 05:00 Asia/Bangkok — distinct day-of-week from evaluate-coordinator so weekly streams stay disjoint)
+- **Timeout**: 30 seconds (small dataset — only `accepted_pending_apply` rows)
+- **Retries**: OFF (no orchestration audit; idempotent at suggestion-row level)
+- **Auth**: HTTP header `Authorization: Bearer ${CRON_SECRET}` (same secret)
+- **Notification**: enable email-on-failure
+
+### Expected response codes
+
+| Code | Body shape | Meaning |
+|------|------------|---------|
+| 200 | `{ skipped: false, tenant_id, orphans_detected, orphans_dismissed, duration_ms }` | Normal pass |
+| 200 | `{ skipped: true, reason: 'feature_flag_disabled' }` | `FEATURE_F8_RENEWALS=false` |
+| 401 | `{ error: { code: 'unauthorized' } }` | Bearer mismatch |
+| 500 | `{ error: { code: 'server_error' } }` | Repo-level failure; review pino logs |
 
 ## F8 — renewals/reconcile-pending-reactivations-coordinator (NEW — F8 Phase 5)
 
