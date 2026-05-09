@@ -36,6 +36,53 @@ import { useEffect, useState } from 'react';
 import { useLocale } from 'next-intl';
 import { formatRelativeTime } from '@/lib/relative-time';
 
+/**
+ * Default refresh cadence in milliseconds. Components using this exact
+ * value subscribe to a single shared `setInterval` (see
+ * `subscribeToSharedTick` below); components passing a custom cadence
+ * fall back to a per-instance interval.
+ *
+ * 30s is sufficient for "minutes ago" precision while keeping clock
+ * pressure low even at thousand-row table scale.
+ */
+const DEFAULT_REFRESH_MS = 30_000;
+
+/**
+ * Shared-tick singleton. The first `<RelativeTime>` instance that
+ * subscribes spins up a single `setInterval(DEFAULT_REFRESH_MS)`; the
+ * last subscriber to unmount tears it down. All subscribers re-render
+ * on the same tick (idiomatic publish-subscribe).
+ *
+ * Why a singleton (R5 follow-up A): a per-instance `setInterval` per
+ * `<RelativeTime>` cell scales O(rows) — for a 5000-row members table
+ * that's 5000 timers + 5000 setStates per tick. The singleton drops
+ * the timer count to 1 and the setState count to N (one per
+ * subscriber, unavoidable since each subscriber needs its own React
+ * re-render). Memory + CPU pressure is now O(rows) for setState only,
+ * not for both setInterval and setState.
+ */
+const sharedTickSubscribers = new Set<() => void>();
+let sharedTickIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function subscribeToSharedTick(cb: () => void): () => void {
+  sharedTickSubscribers.add(cb);
+  if (sharedTickIntervalId === null) {
+    sharedTickIntervalId = setInterval(() => {
+      // Snapshot the subscriber list before iteration so a subscriber
+      // that unsubscribes mid-tick (e.g. cell unmounts inside its own
+      // re-render path) does not mutate the iteration set.
+      for (const sub of [...sharedTickSubscribers]) sub();
+    }, DEFAULT_REFRESH_MS);
+  }
+  return () => {
+    sharedTickSubscribers.delete(cb);
+    if (sharedTickSubscribers.size === 0 && sharedTickIntervalId !== null) {
+      clearInterval(sharedTickIntervalId);
+      sharedTickIntervalId = null;
+    }
+  };
+}
+
 export interface RelativeTimeProps {
   /** ISO 8601 UTC timestamp (e.g. "2026-05-09T11:27:17.289Z"). */
   readonly iso: string;
@@ -94,7 +141,7 @@ export function RelativeTime({
   className,
   locale: localeProp,
   title,
-  refreshMs = 30_000,
+  refreshMs = DEFAULT_REFRESH_MS,
 }: RelativeTimeProps) {
   const localeFromContext = useLocale();
   const locale = localeProp ?? localeFromContext;
@@ -117,6 +164,13 @@ export function RelativeTime({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     if (refreshMs <= 0) return;
+    // Default cadence subscribes to the shared-tick singleton so a
+    // 5000-row table runs ONE setInterval (not 5000). Custom cadences
+    // keep their own per-instance interval — rare path, used when a
+    // surface needs sub-30s precision (e.g. live countdowns).
+    if (refreshMs === DEFAULT_REFRESH_MS) {
+      return subscribeToSharedTick(() => setTick((t) => t + 1));
+    }
     const id = setInterval(() => setTick((t) => t + 1), refreshMs);
     return () => clearInterval(id);
   }, [refreshMs]);
