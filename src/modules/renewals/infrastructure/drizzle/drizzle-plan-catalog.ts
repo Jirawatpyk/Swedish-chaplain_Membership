@@ -19,7 +19,6 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import { parseTierBucket } from '../../domain/value-objects/tier-bucket';
-import { renewalAuditEmitterStub } from '../audit-emitter-stub';
 import { makeDrizzleRenewalAuditEmitter } from './drizzle-renewal-audit-emitter';
 import type { PlanId } from '@/modules/members';
 import type {
@@ -132,9 +131,6 @@ async function listForTenantViaTx(
       }
     }
   }
-  // `renewalAuditEmitterStub` re-export ensures stub composition for
-  // unit tests still type-checks against the audit-port shape.
-  void renewalAuditEmitterStub;
   return result;
 }
 

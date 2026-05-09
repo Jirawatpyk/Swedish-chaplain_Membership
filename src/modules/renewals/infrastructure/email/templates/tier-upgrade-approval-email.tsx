@@ -19,7 +19,10 @@
 import * as React from 'react';
 import { Text } from '@react-email/components';
 import { BaseRenewalLayout } from './base-renewal-layout';
-import { DualFormatDateFooter } from './dual-format-date-footer';
+import {
+  DualFormatDateFooter,
+  formatDualFormatDate,
+} from './dual-format-date-footer';
 import type { RenewalEmailLocale } from './copy';
 
 export interface TierUpgradeApprovalEmailProps {
@@ -112,19 +115,27 @@ export function TierUpgradeApprovalEmail({
 }: TierUpgradeApprovalEmailProps): React.ReactElement {
   const copy = COPY[locale];
   const effectiveDate = new Date(effectiveAtIso);
-  // Phase 7 review-fix Round 2 CRIT-4: TH locale uses Buddhist Era
-  // calendar in body for cultural correctness (chamber's Thai-language
-  // emails consistently render dates as BE in body). The footer
-  // continues to render dual-format (BE + Gregorian) per
-  // `DualFormatDateFooter`. en/sv locales stay Gregorian-only in body.
-  const effectiveAtFormatted = effectiveDate.toLocaleDateString(
-    locale === 'th'
-      ? 'th-TH-u-ca-buddhist'
-      : locale === 'sv'
-        ? 'sv-SE'
-        : 'en-GB',
-    { year: 'numeric', month: 'long', day: 'numeric' },
-  );
+  // Phase 7 review-fix Round 3 UX SUG-1 — FR-014 compliance:
+  // TH-locale body MUST carry the dual-format pair (BE + Gregorian)
+  // inline, matching the F4 reminder-email precedent. Round 2 had
+  // TH body BE-only + footer dual-format (3 dates per email,
+  // redundant abbreviation in footer). Now TH body shows
+  // "<BE_date> (<Gregorian_date>)" and footer continues to render
+  // the same pair as a separate row. en/sv locales stay
+  // Gregorian-only in body.
+  let effectiveAtFormatted: string;
+  if (locale === 'th') {
+    const { gregorian, thaiBE } = formatDualFormatDate(
+      effectiveAtIso,
+      'th',
+    );
+    effectiveAtFormatted = `${thaiBE} (${gregorian})`;
+  } else {
+    effectiveAtFormatted = effectiveDate.toLocaleDateString(
+      locale === 'sv' ? 'sv-SE' : 'en-GB',
+      { year: 'numeric', month: 'long', day: 'numeric' },
+    );
+  }
 
   const vars = {
     firstName: memberFirstName,

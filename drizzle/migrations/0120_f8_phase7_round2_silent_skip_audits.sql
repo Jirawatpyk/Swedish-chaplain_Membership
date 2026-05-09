@@ -1,24 +1,17 @@
 -- ---------------------------------------------------------------------------
--- F8 Phase 7 review-fix Round 2 — extend audit_event_type pgEnum with 3 new
+-- F8 Phase 7 review-fix Round 2 — extend audit_event_type pgEnum with 2 new
 -- silent-failure-closure audit events surfaced by /speckit.review Round 2
 -- (silent-failure hunter + type-design + enterprise-ux agents).
 --
--- New event types:
+-- New event types added by THIS migration:
 --
---   1. `tier_upgrade_already_at_target` (Round 2 IMP-9 fix) —
---      AS4 audit. Already declared in F8_AUDIT_EVENT_TYPES catalogue
---      since Phase 7 baseline but the `evaluate-tier-upgrade` decideUpgrade
---      counter-only short-circuit never emitted the audit row that
---      JSDoc + AS4 spec promised. This migration aligns pgEnum so the
---      now-wired emit at evaluate-tier-upgrade.ts can persist.
---
---   2. `tier_upgrade_catalogue_row_dropped` (Round 2 IMP-6 fix) —
+--   1. `tier_upgrade_catalogue_row_dropped` (Round 2 IMP-6 fix) —
 --      emitted when the Drizzle plan-catalog adapter drops a row whose
 --      `renewal_tier_bucket` value fails Domain `parseTierBucket`.
 --      Without this, a DB drift (raw SQL insert outside the typed path)
 --      silently shrinks the cron decision tree. Forensic chain explicit.
 --
---   3. `tier_upgrade_apply_post_invoice_paid_failed` (Round 2 SUG-6 fix) —
+--   2. `tier_upgrade_apply_post_invoice_paid_failed` (Round 2 SUG-6 fix) —
 --      emitted from the F4 onPaidCallback INVALID_TX fallback path when
 --      `applyPendingTierUpgradeInTx` throws AFTER F4 has committed the
 --      paid invoice. The F4 invoice = paid, F8 suggestion stays in
@@ -26,7 +19,19 @@
 --      reconcile cron will NOT recover this case (cycle isn't terminal).
 --      Explicit forensic-chain entry closes the observability gap.
 --
--- All 3 events are 5-year retention (no F4 tax-document overlap).
+-- Note (Round 3 CRIT-2 doc-fix): an earlier draft of this header listed
+-- a 3rd event `tier_upgrade_already_at_target` as a Round 2 IMP-9 fix.
+-- That was incorrect prose — that pgEnum value was already added by
+-- migration 0116 in the original Phase 7 wave. Round 2 IMP-9 only
+-- wired the emit-site in `evaluate-tier-upgrade.ts` (the audit value
+-- existed in pgEnum + `F8_AUDIT_EVENT_TYPES` catalogue all along but
+-- the use-case had a counter-only short-circuit). No SQL change for
+-- IMP-9 — the migration here covers ONLY IMP-6 + SUG-6.
+--
+-- All 2 events are 5-year retention (no F4 tax-document overlap).
+-- F8_AUDIT_EVENT_TYPES count moves 62 → 64 (compile-time pin updated
+-- in `_AssertF8AuditEventCount`; runtime test in
+-- `tests/unit/renewals/application/ports.test.ts` asserts 64).
 --
 -- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
 -- transaction. Idempotent via IF NOT EXISTS.

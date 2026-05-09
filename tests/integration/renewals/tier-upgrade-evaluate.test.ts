@@ -374,6 +374,51 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     expect(audits.length).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
+  it('R3-IMP-8 — no_plans skip_reason discriminator (catalogue empty)', async () => {
+    // Round 3 review-fix: explicit `no_plans` branch test. Round 2
+    // added the discriminator but the original "no-thresholds" test
+    // hits `no_thresholds_set` (catalogue populated, thresholds null).
+    // Empty catalogue (no plans, no members) — cron reads catalogue
+    // FIRST so `hasAnyThreshold === false` short-circuits before any
+    // member iteration. No FK violation seeding needed.
+    await setAutoUpgradeEnabled(tenant, true);
+    // NOTE: do NOT seed any membership_plans — catalogue empty.
+    // NOTE: do NOT seed any members — would FK-fail without plans;
+    // also unnecessary since the cron's catalogue-empty short-circuit
+    // fires before member iteration.
+
+    const deps = makeRenewalsDeps(tenant.ctx.slug);
+    const result = await evaluateTierUpgrade(deps, {
+      tenantId: tenant.ctx.slug,
+      correlationId: randomUUID(),
+      pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.tenantSkipped).toEqual({
+      reason: 'no_thresholds_configured',
+    });
+
+    const audits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          eq(
+            auditLog.eventType,
+            'tier_upgrade_skipped_no_thresholds_configured',
+          ),
+        )
+        .orderBy(desc(auditLog.timestamp))
+        .limit(1),
+    );
+    expect(audits.length).toBeGreaterThanOrEqual(1);
+    // R3-IMP-8 payload assertion: skip_reason discriminator present.
+    const payload = audits[0]?.payload as { catalogue_size?: number; skip_reason?: string };
+    expect(payload?.catalogue_size).toBe(0);
+    expect(payload?.skip_reason).toBe('no_plans');
+  }, 60_000);
+
   it('AS4 — member already on highest qualifying plan emits already_at_target audit', async () => {
     // Phase 7 review-fix C-TEST-2: AS4 explicit coverage. Seed a member
     // already on `premium` (the highest plan they qualify for at 120M
@@ -416,6 +461,16 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
       tx.select().from(tierUpgradeSuggestions),
     );
     expect(rows).toHaveLength(0);
+
+    // R3-IMP-8 + R3-CRIT-3 fix: AS4 audit row assertion. Round 2 IMP-9
+    // wired the emit; Round 3 verifies the audit lands in audit_log.
+    const audits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.eventType, 'tier_upgrade_already_at_target')),
+    );
+    expect(audits.length).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
   it('suppression — dismissed row in last 90d hides the member', async () => {

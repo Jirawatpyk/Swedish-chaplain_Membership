@@ -22,7 +22,9 @@
  */
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type { TenantTx } from '@/lib/db';
-import type { F4InvoicePaidEvent } from '@/modules/invoicing';
+import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
+import type { MemberId as MemberIdBrand } from '@/modules/members';
+import { renewalsMetrics } from '@/lib/metrics';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
 
 import { eventAttendeesStub } from './event-attendees-stub';
@@ -353,6 +355,18 @@ export type { AuditContext, F8AuditEvent, F8AuditEventType };
  *      single-tx + INVALID_TX-fallback observability pattern as
  *      callback #1 (counter `applyPendingInvalidTx`).
  *
+ *      **Round 2 SUG-6 + Round 3 IMP-1/IMP-3 forensic chain**: when
+ *      the INVALID_TX fallback path runs (F4 already committed the
+ *      paid invoice) AND `applyPendingTierUpgradeInTx` throws, the
+ *      callback emits `tier_upgrade_apply_post_invoice_paid_failed`
+ *      audit + bumps `tierUpgradeApplyPostPaidFailed{tenant}`
+ *      counter. If the audit emit itself throws (production pgEnum
+ *      drift triggers `pinoFallback`), the counter still fires and
+ *      a structured `logger.fatal` log entry is written with
+ *      `errorId: 'F8.APPLY_TIER.POST_PAID_AUDIT_EMIT_FAILED'`. The
+ *      reconcile cron T185 will NOT recover this case (cycle isn't
+ *      terminal); admin replay is the residual mitigation.
+ *
  * Both callbacks honour the F4 tx-threading contract:
  *
  * I3 review-fix (Phase 5 backlog close): F4 threads its internal tx
@@ -550,7 +564,7 @@ export function f8OnPaidCallbacks(
           await applyPendingTierUpgradeInTx(deps, tx, {
             tenantId: evt.tenantId,
             cycleId: cycle.cycleId,
-            invoiceId: evt.invoiceId as unknown as import('@/modules/invoicing').InvoiceId,
+            invoiceId: evt.invoiceId as unknown as InvoiceId,
             correlationId: `f8-onPaid:${evt.invoiceId}`,
             requestId: null,
           });
@@ -573,22 +587,20 @@ export function f8OnPaidCallbacks(
           // re-throw so it lands even when the inner runInTenant tx
           // rolls back.
           if (isFallback) {
-            const { renewalsMetrics: m } = await import('@/lib/metrics');
-            m.tierUpgradeApplyPostPaidFailed(evt.tenantId);
+            // Phase 7 review-fix Round 3 IMP-1: always use the live
+            // Drizzle audit emitter — Round 2 had a NODE_ENV branch
+            // that fell through to the stub in dev/staging, breaking
+            // SUG-6's forensic-chain claim outside production. The
+            // stub is opt-in via test composition (see
+            // `audit-emitter-stub.ts:6-11`), not for runtime selection.
+            renewalsMetrics.tierUpgradeApplyPostPaidFailed(evt.tenantId);
             try {
-              const { renewalAuditEmitterStub } = await import(
-                '../infrastructure/audit-emitter-stub'
-              );
-              const auditEmitter =
-                process.env.NODE_ENV === 'production'
-                  ? makeDrizzleRenewalAuditEmitter(asTenantContext(evt.tenantId))
-                  : renewalAuditEmitterStub;
-              await auditEmitter.emit(
+              await deps.auditEmitter.emit(
                 {
                   type: 'tier_upgrade_apply_post_invoice_paid_failed',
                   payload: {
-                    invoice_id: evt.invoiceId as unknown as import('@/modules/invoicing').InvoiceId,
-                    member_id: evt.memberId as unknown as import('@/modules/members').MemberId,
+                    invoice_id: evt.invoiceId as unknown as InvoiceId,
+                    member_id: evt.memberId as unknown as MemberIdBrand,
                     cycle_id: cycle.cycleId,
                     failure_message:
                       e instanceof Error
@@ -605,12 +617,22 @@ export function f8OnPaidCallbacks(
                 },
               );
             } catch (auditErr) {
-              logger.error(
+              // Round 3 IMP-3: audit emit can throw in production via
+              // pgEnum drift's pinoFallback. Counter still bumped + log
+              // escalated to fatal so on-call sees both a counter rate
+              // alert AND a structured log entry. Reconcile cron T185
+              // does NOT recover this case (paid invoice + non-terminal
+              // cycle). Admin replay is the residual mitigation; tracked
+              // as POST-MVP-OBS-7 backlog.
+              logger.fatal(
                 {
                   err: auditErr instanceof Error ? auditErr.message : String(auditErr),
                   tenantId: evt.tenantId,
+                  invoiceId: evt.invoiceId,
+                  cycleId: cycle.cycleId,
+                  errorId: 'F8.APPLY_TIER.POST_PAID_AUDIT_EMIT_FAILED',
                 },
-                '[f8-onPaid] post-paid-failed audit emit failed — counter still bumped',
+                '[f8-onPaid] post-paid-failed audit emit failed — counter still bumped, manual replay required',
               );
             }
           }

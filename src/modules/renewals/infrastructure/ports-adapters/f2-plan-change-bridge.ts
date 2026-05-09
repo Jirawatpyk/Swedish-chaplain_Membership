@@ -39,10 +39,10 @@
  *     bumps `renewalsMetrics.manualPlanChangeListenerFailed{listener,
  *     tenant_id}`. The counter is the **single signal** for this
  *     class of failure today; Vercel alert rule + on-call runbook +
- *     admin replay tooling are tracked as a post-MVP follow-up
- *     (no docs/runbooks/** entry exists yet for this metric).
- *     Until that lands, on-call must grep the metric on Vercel
- *     dashboards manually if a F2 plan-change incident is suspected.
+ *     admin replay tooling are tracked as backlog item POST-MVP-OBS-7
+ *     (`docs/phases-plan.md`). Until that lands, on-call must grep
+ *     the metric on Vercel dashboards manually if a F2 plan-change
+ *     incident is suspected.
  *
  * Pure Infrastructure — only `@/lib/db` + `@/lib/logger` +
  * `@/lib/metrics` imports.

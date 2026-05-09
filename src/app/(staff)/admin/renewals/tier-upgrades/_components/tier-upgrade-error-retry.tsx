@@ -9,6 +9,7 @@
 
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function TierUpgradeErrorRetry({ label }: { readonly label: string }) {
@@ -24,6 +25,14 @@ export function TierUpgradeErrorRetry({ label }: { readonly label: string }) {
       aria-busy={isPending}
       onClick={() => startTransition(() => router.refresh())}
     >
+      {/* Round 3 UX SUG-2: spinner during pending state per ux-standards § 5.
+          motion-reduce:hidden respects prefers-reduced-motion. */}
+      {isPending && (
+        <Loader2
+          className="mr-2 size-3.5 animate-spin motion-reduce:hidden"
+          aria-hidden
+        />
+      )}
       {label}
     </Button>
   );

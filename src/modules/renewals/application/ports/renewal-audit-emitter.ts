@@ -21,6 +21,11 @@ import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { TaskId } from '../../domain/renewal-escalation-task';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+// Round 3 IMP-7 — type-link to gateway error kind for audit
+// `tier_upgrade_pending_member_notify_failed.failure_kind`. Audit +
+// port unions stay in lock-step at compile time.
+import type { SendRenewalEmailError } from './renewal-gateway';
+type NotifyEmailErrorKind = SendRenewalEmailError['kind'];
 import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 import type {
@@ -506,31 +511,37 @@ export interface F8AuditPayloadShapes {
     readonly reason: 'no_primary_contact_email';
   };
   /**
-   * Phase 7 review-fix I-ERR-2 + Round 2 IMP-3 — emitted when the
-   * post-tx tier-upgrade approval email fails after the retry budget
-   * OR throws an exception. `failure_kind` mirrors
+   * Phase 7 review-fix I-ERR-2 + Round 2 IMP-3 + Round 3 IMP-2/IMP-7 —
+   * emitted when the post-tx tier-upgrade approval email fails after
+   * the retry budget OR throws an exception (including the catch-all
+   * `'threw'` branch where the lookup/gateway crashed before
+   * computing `recipient_email_hashed`). `failure_kind` mirrors
    * `SendRenewalEmailError['kind']` exactly (audit + port unions
-   * stay in lock-step) plus `'unknown'` for the catch-all branch
-   * that doesn't have a typed Result. `'render_failed'` was dropped
-   * — the gateway maps render exceptions to `gateway_4xx` so the
-   * audit shape no longer carries an unreachable arm.
+   * stay in lock-step via the type-link) plus `'unknown'` for the
+   * catch-all branch.
+   *
+   * Round 3 IMP-2 fix: `recipient_email_hashed: Sha256Hex | null`
+   * — nullable so the `'threw'` branch emits this audit even when
+   * we crashed before computing the hash. FR-039 step 2 forensic
+   * chain now covers all 4 outcomes (sent / skipped / failed /
+   * threw); previously the threw-branch was metric-only.
    *
    * `failure_message` carries the gateway message OR (for
-   * `template_variables_missing`) a comma-joined `missing[]` list so
-   * the actionable metadata is preserved instead of being silently
-   * stripped to null (Round 2 IMP-3).
+   * `template_variables_missing`) a comma-joined `missing[]` list.
    */
   readonly tier_upgrade_pending_member_notify_failed: {
     readonly suggestion_id: SuggestionId;
     readonly member_id: MemberId;
     readonly to_plan_id: PlanId;
-    readonly recipient_email_hashed: Sha256Hex;
+    readonly recipient_email_hashed: Sha256Hex | null;
+    /**
+     * Round 3 IMP-7: typed-link to `SendRenewalEmailError['kind']`
+     * via the gateway port. A future port-side kind addition now
+     * triggers a TypeScript compile error here, eliminating the
+     * silent-drift risk Round 2 IMP-3 left open.
+     */
     readonly failure_kind:
-      | 'gateway_4xx'
-      | 'gateway_5xx'
-      | 'recipient_unsubscribed'
-      | 'recipient_email_unverified'
-      | 'template_variables_missing'
+      | NotifyEmailErrorKind
       | 'unknown';
     readonly failure_message: string | null;
   };

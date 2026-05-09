@@ -113,19 +113,23 @@ export async function rescheduleOnPlanChangeInTx(
     const counterSide: 'old' | 'new' | 'both' =
       reason === 'both_not_found' ? 'both' : reason === 'old_plan_not_found' ? 'old' : 'new';
     renewalsMetrics.rescheduleBucketResolutionFailed(counterSide);
-    // Phase 7 review-fix Round 2 CRIT-1: emitInTx is the atomic-must-
-    // throw flavour — wrapping it in try/catch + swallow violates
-    // Constitution Principle VIII (the throw IS the rollback signal).
-    // The outer F2 plan-flip tx caller (`change-plan.ts`) wraps every
-    // listener through `wrapListener` which catches + log + counts +
-    // swallows for failure isolation, so an audit-emit throw here
-    // bubbles to that wrapper without rolling F2 back. Result: F2
-    // commits, audit row missing, BUT counter `rescheduleBucket
-    // ResolutionFailed` already fired BEFORE the emit and `manual
-    // PlanChangeListenerFailed` fires inside `wrapListener` — both
-    // observability signals intact.
-    await deps.auditEmitter.emitInTx(
-      _tx,
+    // Phase 7 review-fix Round 3 CRIT-1: use fire-and-forget `emit()`
+    // (own tx) instead of `emitInTx(_tx)`. Round 2 CRIT-1 swapped
+    // try/catch+swallow for emitInTx throw-propagate to honour
+    // "Principle VIII emitInTx-must-throw" — but for a fire-and-forget
+    // observability event from a listener (where F2 plan-flip is the
+    // source of truth) this CAUSED F3 tx taint: emitInTx writes via
+    // the F3 tx, an INSERT failure aborts the tx, F3's COMMIT then
+    // downgrades to ROLLBACK and surfaces as 500 + plan-flip lost.
+    //
+    // Switching to `emit()` opens the audit's own tx so a row-level
+    // failure (RLS / NOT-NULL / pgEnum drift) is contained AND the
+    // F3 plan-flip commits. Counter `rescheduleBucketResolutionFailed`
+    // already fired BEFORE the emit; `manualPlanChangeListenerFailed`
+    // fires inside `wrapListener` if the entire listener throws — so
+    // observability signals stay intact even if the audit row never
+    // lands.
+    await deps.auditEmitter.emit(
       {
         type: 'renewal_schedule_reschedule_skipped',
         payload: {

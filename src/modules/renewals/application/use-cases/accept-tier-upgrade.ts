@@ -34,12 +34,19 @@
  *     use-case; fires from `supersedePendingTierUpgradeInTx` via the
  *     F2 → F8 plan-change bridge.
  *
- * Audit emits from this use-case (Phase 7 review-fix Round 1 close):
+ * Audit emits from this use-case (Phase 7 review-fix Round 1+2+3):
  *   - `tier_upgrade_accepted`                              (in-tx, atomic)
  *   - `tier_upgrade_pending_admin_verification_due`        (in-tx, conditional)
  *   - `tier_upgrade_pending_member_notified`               (post-tx, on email ok)
  *   - `tier_upgrade_pending_member_notify_skipped`         (post-tx, no contact email)
- *   - `tier_upgrade_pending_member_notify_failed`          (post-tx, gateway err / throw)
+ *   - `tier_upgrade_pending_member_notify_failed`          (post-tx, gateway err / threw — Round 3 IMP-2 added 'threw' branch)
+ *
+ * Counters wired in this use-case:
+ *   - `tierUpgradeNotifyFailed{failure_kind}`              (per-branch on send/skip/throw failure)
+ *   - `tierUpgradeAuditEmitFailed{audit_type}`             (Round 2 CRIT-2 differentiator — fires
+ *                                                           when audit emit itself throws so on-call
+ *                                                           can distinguish "email shipped, audit
+ *                                                           missing" from "email send failed")
  *
  * RBAC (FR-052a): admin role only. Manager attempts MUST be
  * rejected by the route handler before this use-case is invoked;
@@ -68,6 +75,26 @@ import { asTaskId, type TaskId } from '../../domain/renewal-escalation-task';
 import type { CycleId } from '../../domain/renewal-cycle';
 // Type-only — runtime no-op brand cast (Constitution Principle III).
 import type { MemberId, PlanId } from '@/modules/members';
+// Round 3 type SUG-3 — hoist gateway error type to a top-of-file
+// `import type` instead of inline `import('...').Brand` inside the
+// discriminated-union literal.
+import type { SendRenewalEmailError } from '../ports/renewal-gateway';
+import type { Sha256Hex } from '../../domain/value-objects/sha256-hex';
+
+/**
+ * Round 3 type SUG-3 + simplification — hoisted discriminated-union
+ * for the post-tx member-notification result. Each arm carries the
+ * data the corresponding audit emit branch needs.
+ */
+type GatewayResult =
+  | { readonly kind: 'no_recipient' }
+  | { readonly kind: 'sent'; readonly deliveryId: string; readonly recipientHash: Sha256Hex }
+  | {
+      readonly kind: 'failed';
+      readonly recipientHash: Sha256Hex;
+      readonly error: SendRenewalEmailError;
+    }
+  | { readonly kind: 'threw'; readonly error: unknown };
 
 export const acceptTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),
@@ -295,16 +322,14 @@ export async function acceptTierUpgrade(
       ReturnType<typeof deps.dispatchCandidateRepo.findOne>
     > = null;
     let planName = suggestion.toPlanId;
-    let gatewayResult:
-      | { kind: 'no_recipient' }
-      | { kind: 'sent'; deliveryId: string; recipientHash: ReturnType<typeof sha256HexOf> }
-      | {
-          kind: 'failed';
-          recipientHash: ReturnType<typeof sha256HexOf>;
-          error: import('../ports/renewal-gateway').SendRenewalEmailError;
-        }
-      | { kind: 'threw'; error: unknown }
-      = { kind: 'no_recipient' };
+    // Round 3 silent SUG-3 — initialise to `'threw'` so any failure
+    // to enter the try block (or refactor that moves work outside
+    // the try) surfaces loudly via the threw-branch audit emit
+    // instead of silently firing the no_recipient skip path.
+    let gatewayResult: GatewayResult = {
+      kind: 'threw',
+      error: new Error('not_yet_evaluated'),
+    };
 
     try {
       dispatchInfo = await deps.dispatchCandidateRepo.findOne(
@@ -486,8 +511,45 @@ export async function acceptTierUpgrade(
         '[accept-tier-upgrade] member notification email failed — audit attempted',
       );
     }
-    // gatewayResult.kind === 'threw' branch already logged + counter
-    // bumped in the outer catch. No audit emit (no payload context).
+    // gatewayResult.kind === 'threw' branch — Round 3 IMP-2 closes
+    // the forensic-chain gap. Round 1 originally emitted no audit
+    // because `recipient_email_hashed` was non-nullable; Round 3 fix
+    // relaxes that to `Sha256Hex | null` so all 4 outcomes have an
+    // audit row. The outer catch already bumped tierUpgradeNotifyFailed
+    // counter; this fires the corresponding `_failed` audit with
+    // `failure_kind: 'unknown'` + null hash.
+    else if (gatewayResult.kind === 'threw') {
+      try {
+        await deps.auditEmitter.emit(
+          {
+            type: 'tier_upgrade_pending_member_notify_failed',
+            payload: {
+              suggestion_id: suggestionId,
+              member_id: suggestion.memberId as MemberId,
+              to_plan_id: suggestion.toPlanId as PlanId,
+              recipient_email_hashed: null,
+              failure_kind: 'unknown',
+              failure_message:
+                gatewayResult.error instanceof Error
+                  ? gatewayResult.error.message.slice(0, 500)
+                  : String(gatewayResult.error).slice(0, 500),
+            },
+          },
+          auditCtx,
+        );
+      } catch (auditErr) {
+        renewalsMetrics.tierUpgradeAuditEmitFailed(
+          'tier_upgrade_pending_member_notify_failed',
+        );
+        logger.error(
+          {
+            err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+            suggestionId: suggestion.suggestionId,
+          },
+          '[accept-tier-upgrade] threw-branch notify_failed audit emit failed — counter bumped',
+        );
+      }
+    }
 
     return ok({
       suggestionId,

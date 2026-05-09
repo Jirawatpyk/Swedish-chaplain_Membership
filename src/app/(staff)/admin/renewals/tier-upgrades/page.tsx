@@ -80,7 +80,6 @@ export default async function TierUpgradeQueuePage() {
         <Card
           className="border-destructive/40 bg-destructive/5"
           role="alert"
-          aria-live="assertive"
         >
           <CardContent className="flex items-start gap-3 py-6">
             <AlertTriangle
