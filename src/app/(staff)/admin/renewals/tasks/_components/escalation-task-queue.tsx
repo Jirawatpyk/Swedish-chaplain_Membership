@@ -316,19 +316,29 @@ export function EscalationTaskQueue({
 
   /**
    * Round 5 I-5 close — map known error codes to localised description
-   * keys (`actions.<action>.errors.<code>`). Unknown codes fall through
-   * to the `unknown` key so admins always see human copy.
+   * keys. Unknown codes fall through to the `unknown` key so admins
+   * always see human copy.
    *
    * R6 IMP-3 + IMP-8 close — only WIRE codes (from API responses)
    * are accepted from the response body. CLIENT codes (e.g.
-   * `'offline'`) are passed in directly by the catch handler — never
-   * trusted from a remote source.
+   * `'offline'`) are passed in directly by the catch handler.
+   *
+   * R7 HV-4 close — i18n key consolidation. 9 of the 10 error codes
+   * have byte-identical copy across the 3 actions (only `forbidden`
+   * varies because the verb differs: "mark tasks done" vs "skip
+   * tasks" vs "reassign tasks"). Use the shared
+   * `actions.errors.<code>` namespace for everything except
+   * `forbidden`, which keeps the per-action override
+   * (`actions.<action>.errors.forbidden`). Net −54 i18n keys (90→36).
    */
   function describeError(
     action: 'done' | 'skip' | 'reassign',
     code: KnownErrorCode | 'unknown',
   ): string {
-    return t(`actions.${action}.errors.${code}`);
+    if (code === 'forbidden') {
+      return t(`actions.${action}.errors.forbidden`);
+    }
+    return t(`actions.errors.${code}`);
   }
   function safeWireCode(code: string): WireErrorCode | 'unknown' {
     return isWireErrorCode(code) ? code : 'unknown';

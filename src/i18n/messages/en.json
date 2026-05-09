@@ -2110,21 +2110,23 @@
         },
         "actions": {
           "menu_label": "Actions",
+          "errors": {
+            "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
+            "task_not_found": "This task no longer exists — refresh the list.",
+            "feature_disabled": "Renewals are temporarily disabled.",
+            "unauthenticated": "Your session expired — sign in again to continue.",
+            "invalid_input": "The submitted data is invalid. Please check the form and retry.",
+            "invalid_cursor": "Pagination state is stale — refresh the page.",
+            "server_error": "Something went wrong on our side. Please retry shortly.",
+            "unknown": "An unexpected error occurred. Please retry.",
+            "offline": "You appear to be offline — check your connection and retry."
+          },
           "done": {
             "label": "Done",
             "success": "Task marked done",
             "error": "Failed to mark task done",
             "errors": {
-              "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
-              "task_not_found": "This task no longer exists — refresh the list.",
-              "feature_disabled": "Renewals are temporarily disabled.",
-              "forbidden": "Only admins can mark tasks done.",
-              "unauthenticated": "Your session expired — sign in again to continue.",
-              "invalid_input": "The submitted data is invalid. Please check the form and retry.",
-              "invalid_cursor": "Pagination state is stale — refresh the page.",
-              "server_error": "Something went wrong on our side. Please retry shortly.",
-              "unknown": "An unexpected error occurred. Please retry.",
-              "offline": "You appear to be offline — check your connection and retry."
+              "forbidden": "Only admins can mark tasks done."
             }
           },
           "skip": {
@@ -2132,16 +2134,7 @@
             "success": "Task skipped",
             "error": "Failed to skip task",
             "errors": {
-              "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
-              "task_not_found": "This task no longer exists — refresh the list.",
-              "feature_disabled": "Renewals are temporarily disabled.",
-              "forbidden": "Only admins can skip tasks.",
-              "unauthenticated": "Your session expired — sign in again to continue.",
-              "invalid_input": "The submitted data is invalid. Please check the form and retry.",
-              "invalid_cursor": "Pagination state is stale — refresh the page.",
-              "server_error": "Something went wrong on our side. Please retry shortly.",
-              "unknown": "An unexpected error occurred. Please retry.",
-              "offline": "You appear to be offline — check your connection and retry."
+              "forbidden": "Only admins can skip tasks."
             }
           },
           "reassign": {
@@ -2149,16 +2142,7 @@
             "success": "Task reassigned",
             "error": "Failed to reassign task",
             "errors": {
-              "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
-              "task_not_found": "This task no longer exists — refresh the list.",
-              "feature_disabled": "Renewals are temporarily disabled.",
-              "forbidden": "Only admins can reassign tasks.",
-              "unauthenticated": "Your session expired — sign in again to continue.",
-              "invalid_input": "The submitted data is invalid. Please check the form and retry.",
-              "invalid_cursor": "Pagination state is stale — refresh the page.",
-              "server_error": "Something went wrong on our side. Please retry shortly.",
-              "unknown": "An unexpected error occurred. Please retry.",
-              "offline": "You appear to be offline — check your connection and retry."
+              "forbidden": "Only admins can reassign tasks."
             }
           }
         },

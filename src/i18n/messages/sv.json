@@ -2110,21 +2110,23 @@
         },
         "actions": {
           "menu_label": "Åtgärder",
+          "errors": {
+            "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
+            "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
+            "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
+            "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
+            "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
+            "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
+            "server_error": "Något gick fel hos oss. Försök igen om en stund.",
+            "unknown": "Ett oväntat fel inträffade. Försök igen.",
+            "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+          },
           "done": {
             "label": "Klar",
             "success": "Uppgift markerad som klar",
             "error": "Kunde inte markera uppgift som klar",
             "errors": {
-              "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
-              "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
-              "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
-              "forbidden": "Endast administratörer kan markera uppgifter som klara.",
-              "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
-              "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
-              "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
-              "server_error": "Något gick fel hos oss. Försök igen om en stund.",
-              "unknown": "Ett oväntat fel inträffade. Försök igen.",
-              "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+              "forbidden": "Endast administratörer kan markera uppgifter som klara."
             }
           },
           "skip": {
@@ -2132,16 +2134,7 @@
             "success": "Uppgift hoppad",
             "error": "Kunde inte hoppa över uppgift",
             "errors": {
-              "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
-              "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
-              "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
-              "forbidden": "Endast administratörer kan hoppa över uppgifter.",
-              "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
-              "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
-              "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
-              "server_error": "Något gick fel hos oss. Försök igen om en stund.",
-              "unknown": "Ett oväntat fel inträffade. Försök igen.",
-              "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+              "forbidden": "Endast administratörer kan hoppa över uppgifter."
             }
           },
           "reassign": {
@@ -2149,16 +2142,7 @@
             "success": "Uppgift omtilldelad",
             "error": "Kunde inte tilldela om uppgiften",
             "errors": {
-              "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
-              "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
-              "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
-              "forbidden": "Endast administratörer kan tilldela om uppgifter.",
-              "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
-              "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
-              "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
-              "server_error": "Något gick fel hos oss. Försök igen om en stund.",
-              "unknown": "Ett oväntat fel inträffade. Försök igen.",
-              "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+              "forbidden": "Endast administratörer kan tilldela om uppgifter."
             }
           }
         },
