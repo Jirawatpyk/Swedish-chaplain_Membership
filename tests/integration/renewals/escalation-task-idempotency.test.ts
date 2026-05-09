@@ -149,7 +149,8 @@ describe('F8 escalation task idempotency — integration (T224)', () => {
       taskType: 'manual_outreach_required',
       assignedToRole: 'admin' as const,
       dueAt: FUTURE_DUE_AT,
-      triggerReason: 'no_primary_contact',
+      // R10 S9 close — closed-enum triggerReason.
+      triggerReason: 'no_primary_contact' as const,
       actorUserId: admin.userId,
       actorRole: 'admin' as const,
       correlationId: randomUUID(),
@@ -216,7 +217,7 @@ describe('F8 escalation task idempotency — integration (T224)', () => {
       taskType: 'phone_call',
       assignedToRole: 'admin' as const,
       dueAt: FUTURE_DUE_AT,
-      triggerReason: 'scheduled_cron_step',
+      triggerReason: 'scheduled_cron_step' as const,
       actorUserId: admin.userId,
       actorRole: 'admin' as const,
       correlationId: randomUUID(),

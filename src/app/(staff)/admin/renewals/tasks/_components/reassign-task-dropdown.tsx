@@ -32,7 +32,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { TaskActionDialog } from './_task-action-dialog';
+import { TaskActionDialog } from './task-action-dialog';
 
 /**
  * Round 5 I-6 close — runtime-shape validation prevents a silently

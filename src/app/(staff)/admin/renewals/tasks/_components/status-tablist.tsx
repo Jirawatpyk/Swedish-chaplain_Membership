@@ -121,8 +121,11 @@ export function StatusTablist({
             onClick={() => onSelect(s)}
             onFocus={() => setFocusedIdx(idx)}
             data-focused={focused ? 'true' : undefined}
+            // R10 W11 close — bumped from ring-primary/40 to /60 so the
+            // supplemental focus-pending ring satisfies WCAG SC 1.4.11
+            // ≥3:1 non-text contrast against light backgrounds.
             className={
-              focused ? 'ring-2 ring-primary/40 ring-offset-2' : undefined
+              focused ? 'ring-2 ring-primary/60 ring-offset-2' : undefined
             }
           >
             {t(`status_tab.${s}`)}

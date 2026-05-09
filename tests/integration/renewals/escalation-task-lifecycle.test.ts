@@ -228,6 +228,17 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
         ),
       );
     expect(audits.length).toBe(1);
+    // R10 W6 close — pin the 5-year retention default (PDPA §24
+    // proportionality + member-data norm). F4 trigger covers tax-
+    // doc events only; F8 escalation events rely on column DEFAULT 5
+    // with no DB-layer enforcement trigger. Test-level pin defends
+    // against a future migration changing the column default. Raw SQL
+    // because `retention_years` exists in the DB (migration 0039) but
+    // is not yet wired into the Drizzle inferred type.
+    const retentionRows = (await db.execute(
+      sql`select retention_years from audit_log where id = ${audits[0]?.id}`,
+    )) as unknown as ReadonlyArray<{ retention_years: number }>;
+    expect(retentionRows[0]?.retention_years).toBe(5);
   }, 60_000);
 
   it('skip: open → skipped with required reason + audit', async () => {
@@ -272,6 +283,12 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
         ),
       );
     expect(audits.length).toBe(1);
+    // R10 W6 close — 5-year retention default for skip event (raw SQL
+    // because retention_years not yet in Drizzle inferred type).
+    const retentionRows = (await db.execute(
+      sql`select retention_years from audit_log where id = ${audits[0]?.id}`,
+    )) as unknown as ReadonlyArray<{ retention_years: number }>;
+    expect(retentionRows[0]?.retention_years).toBe(5);
     expect(
       (audits[0]?.payload as { skipped_reason?: string })?.skipped_reason,
     ).toBe('Member unreachable; will revisit at T-30');
@@ -324,6 +341,12 @@ describe('F8 escalation task lifecycle — integration (T223)', () => {
     expect(payload?.from_user_id).toBeNull();
     expect(payload?.to_user_id).toBe(admin2.userId);
     expect(payload?.actor_user_id).toBe(admin.userId);
+    // R10 W6 close — 5-year retention default for reassign event (raw
+    // SQL because retention_years not yet in Drizzle inferred type).
+    const retentionRows = (await db.execute(
+      sql`select retention_years from audit_log where id = ${audits[0]?.id}`,
+    )) as unknown as ReadonlyArray<{ retention_years: number }>;
+    expect(retentionRows[0]?.retention_years).toBe(5);
   }, 60_000);
 
   it('complete on already-done task → task_not_open + no duplicate audit', async () => {

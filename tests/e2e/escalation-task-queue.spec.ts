@@ -27,9 +27,11 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsManager } from './helpers/manager-session';
 import AxeBuilder from '@axe-core/playwright';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
+const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 
 test.describe('F8 — escalation task queue (US6) @a11y', () => {
@@ -194,6 +196,63 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
             'No overdue tasks seeded — overdue banner absent (acceptable state)',
         });
     }
+  });
+
+  test('W7: manager visits the queue → action column hidden + read-only notice rendered', async ({
+    page,
+  }) => {
+    test.skip(
+      !MANAGER_EMAIL,
+      'E2E_MANAGER_EMAIL missing — manager-role read-only assertion skipped (FR-052a).',
+    );
+    await signInAsManager(page);
+    await page.goto('/admin/renewals/tasks');
+    // Queue heading still renders (manager has READ access).
+    await expect(
+      page.getByRole('heading', { name: /escalation tasks/i }),
+    ).toBeVisible();
+    // R10 S3 close — manager banner has role="note" + i18n notice.
+    await expect(page.getByRole('note').first()).toBeVisible();
+    await expect(
+      page.getByText(/manager|chef|ผู้จัดการ/i).first(),
+    ).toBeVisible();
+    // Actions column header MUST NOT be present for the manager render
+    // (FR-052a — manager `read` only, mutations are admin-only).
+    await expect(
+      page.getByRole('columnheader', { name: /actions|åtgärder|การดำเนินการ/i }),
+    ).toHaveCount(0);
+    // No Done / Skip / Reassign action buttons rendered in any row.
+    await expect(page.getByRole('button', { name: /^done$/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^skip$/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^reassign$/i })).toHaveCount(0);
+  });
+
+  test('W8: clicking a member row link navigates to /admin/members/[id]', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/renewals/tasks');
+    // Each task row exposes the member name as a Next.js Link to the
+    // member detail page (FR-044 / AS1 mandate). Pick the first member
+    // link in the table; if no rows are seeded, annotate-and-skip
+    // (don't fail) — the same skip-with-annotation policy as AS2/AS3.
+    const memberLink = page
+      .getByRole('cell')
+      .getByRole('link')
+      .filter({ hasNotText: /timeline|view/i })
+      .first();
+    if ((await memberLink.count()) === 0) {
+      test.info().annotations.push({
+        type: 'note',
+        description:
+          'No tasks seeded — member-detail link assertion skipped (W8).',
+      });
+      return;
+    }
+    const href = await memberLink.getAttribute('href');
+    expect(href).toMatch(/^\/admin\/members\/[a-f0-9-]+$/i);
+    await memberLink.click();
+    await expect(page).toHaveURL(/\/admin\/members\/[a-f0-9-]+/);
   });
 
   test('a11y: axe-core scan finds no WCAG 2.1 AA violations', async ({

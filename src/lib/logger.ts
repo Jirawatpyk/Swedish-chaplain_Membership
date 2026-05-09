@@ -139,6 +139,26 @@ export const REDACT_PATHS = [
   '*.payment_reference',
   'paymentReference',
   '*.paymentReference',
+  // --- F8 escalation task free-text PII (Phase 8 R10 W5 close) ---
+  // Admin-entered outcome notes (≤1000 chars) and skip reasons
+  // (≤500 chars) can contain names, phone numbers, and operational
+  // PII captured during follow-up calls. These fields are
+  // intentionally persisted in `audit_log.payload` (forensic trail
+  // per Constitution Principle VIII + GDPR Art. 17(3)(b) legal
+  // obligation), but MUST NOT appear in pino logs at any level.
+  // Defence-in-depth: today the use-case catches log only
+  // `{ err.message, taskId }` (no free-text), but a future caller
+  // accidentally logging the input body or the Task row would leak
+  // PII. Redaction here is the final guard. Mirrors the F4
+  // payment_reference precedent above.
+  'outcomeNote',
+  '*.outcomeNote',
+  'outcome_note',
+  '*.outcome_note',
+  'skippedReason',
+  '*.skippedReason',
+  'skipped_reason',
+  '*.skipped_reason',
   // --- F5 payment PCI / Stripe secrets (T032, security.md § 6) ---
   // Under PCI DSS SAQ-A, cardholder data (PAN, CVV, track) MUST NEVER
   // touch the Chamber-OS server. If Stripe.js ever leaks these into a

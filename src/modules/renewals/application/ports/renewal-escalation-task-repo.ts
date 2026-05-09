@@ -57,6 +57,15 @@ export interface ListEscalationTasksOpts {
    */
   readonly assignedToUserIdFilter?: AssigneeFilter;
   readonly overdueOnly?: boolean;
+  /**
+   * R10 W4 close — banner-vs-highlight threshold mismatch fix.
+   * Days past `due_at` to count as "overdue" for the queue-top banner
+   * count + the row-level red highlight. Defaults to 0 (any task with
+   * `due_at < NOW()`) for backwards compatibility, but FR-045/AS4
+   * mandates 3 days for the queue UI — callers MUST pass 3 to align
+   * the count with the visual highlight.
+   */
+  readonly overdueThresholdDays?: number;
   readonly sort?: 'due_at_asc' | 'due_at_desc' | 'created_at_desc';
 }
 
@@ -151,13 +160,13 @@ export type EscalationTaskWithMember = RenewalEscalationTask & {
   readonly assignedToDisplayName: string | null;
   /**
    * R8 R4-IMP-5 close — multi-year cycle context for FR-043 pill.
-   * `yearInCycle` from the new `renewal_escalation_tasks.year_in_cycle`
-   * column (DEFAULT 1). `totalYears` derived in the adapter from the
-   * joined `renewal_cycles.cycle_length_months` (`Math.ceil(months/12)`,
-   * clamped to ≥1). Both default to 1 — single-year contracts skip
-   * the pill prefix per `<YearInCyclePill>` collapse rule.
+   * `totalYears` derived in the adapter from the joined
+   * `renewal_cycles.cycle_length_months` (`Math.ceil(months/12)`,
+   * clamped to ≥1). `yearInCycle` lives on the base
+   * `RenewalEscalationTask` (R10 S5 close — promoted to Domain).
+   * Single-year contracts (totalYears=1, yearInCycle=1) collapse
+   * the pill prefix per `<YearInCyclePill>` rule.
    */
-  readonly yearInCycle: number;
   readonly totalYears: number;
   /**
    * Round 5 I-13 + R6 IMP-9 close — joined `users.email` (fallback
@@ -267,7 +276,12 @@ export interface RenewalEscalationTaskRepo {
     tenantId: string,
     opts: Pick<
       ListEscalationTasksOpts,
-      'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly'
+      | 'statusFilter'
+      | 'assignedToUserIdFilter'
+      | 'overdueOnly'
+      // R10 W4 close — banner count must use the same threshold as the
+      // row-level red highlight (FR-045/AS4 ">3 days past due").
+      | 'overdueThresholdDays'
     >,
   ): Promise<number>;
 

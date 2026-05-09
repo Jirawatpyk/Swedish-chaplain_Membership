@@ -44,6 +44,7 @@ import {
 import {
   Table,
   TableBody,
+  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -53,6 +54,7 @@ import { DoneTaskDialog } from './done-task-dialog';
 import { SkipTaskDialog } from './skip-task-dialog';
 import { ReassignTaskDropdown } from './reassign-task-dropdown';
 import { StatusTablist, STATUS_TABS, type StatusTab } from './status-tablist';
+import { selectActionErrorKey } from './_describe-error';
 import { YearInCyclePill } from '../../_components/year-in-cycle-pill';
 
 export interface EscalationTaskQueueItem {
@@ -147,21 +149,11 @@ const OVERDUE_HIGHLIGHT_MS = OVERDUE_HIGHLIGHT_DAYS * 24 * 60 * 60 * 1000;
  * narrows to the literal union for downstream key-template safety
  * (instead of widening to `string` via `as Set<string>`).
  */
-const WIRE_ERROR_CODES = [
-  'task_not_open',
-  'task_not_found',
-  'feature_disabled',
-  'forbidden',
-  'unauthenticated',
-  'invalid_input',
-  'invalid_cursor',
-  'server_error',
-] as const;
-type WireErrorCode = (typeof WIRE_ERROR_CODES)[number];
-
-function isWireErrorCode(code: string): code is WireErrorCode {
-  return (WIRE_ERROR_CODES as readonly string[]).includes(code);
-}
+// R10 S11 close — WIRE_ERROR_CODES + isWireErrorCode + the pure
+// `selectActionErrorKey` dispatcher were extracted to sibling
+// `_describe-error.ts` so the 8 wire codes × 3 actions × forbidden-
+// override branch can be exercised by Vitest without rendering the
+// component. The component imports the dispatcher directly.
 
 // R8 IMP-D close — STATUS_TABS + StatusTab + StatusTablist extracted
 // to sibling `status-tablist.tsx` for unit-testability.
@@ -274,14 +266,10 @@ export function EscalationTaskQueue({
     action: 'done' | 'skip' | 'reassign',
     rawCode: string,
   ): string {
-    if (rawCode === 'forbidden') {
-      return t(`actions.${action}.errors.forbidden`);
-    }
-    // Filter wire codes; pass `offline` through (client-synthetic);
-    // anything else falls to `unknown`.
-    const safeCode: WireErrorCode | 'offline' | 'unknown' =
-      rawCode === 'offline' || isWireErrorCode(rawCode) ? rawCode : 'unknown';
-    return t(`actions.errors.${safeCode}`);
+    // R10 S11 close — dispatcher logic moved to `_describe-error.ts`
+    // for unit-testability. The component just resolves the returned
+    // i18n key through `t(...)`.
+    return t(selectActionErrorKey(action, rawCode));
   }
 
   async function postAction(
@@ -397,9 +385,14 @@ export function EscalationTaskQueue({
   return (
     <>
       {/* Round 5 I-19 close — manager-role banner so the absence of
-          the actions column has an explicit explanation. */}
+          the actions column has an explicit explanation.
+          R10 S3 close — `role="note"` semantic landmark for the
+          informational banner (ARIA role for supplementary content). */}
       {!canMutate && (
-        <div className="mb-3 flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+        <div
+          role="note"
+          className="mb-3 flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
+        >
           <Info className="size-4 shrink-0" aria-hidden />
           <span>{t('manager_read_only_notice')}</span>
         </div>
@@ -561,6 +554,10 @@ export function EscalationTaskQueue({
         ) : (
           <div className="rounded-md border">
             <Table>
+              {/* R10 S1 close — sr-only caption for richer AT context. */}
+              <TableCaption className="sr-only">
+                {t('table_caption')}
+              </TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('columns.member')}</TableHead>

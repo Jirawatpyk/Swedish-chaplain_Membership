@@ -19,7 +19,7 @@ import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { TaskActionDialog } from './_task-action-dialog';
+import { TaskActionDialog } from './task-action-dialog';
 
 export interface SkipTaskDialogProps {
   readonly open: boolean;
@@ -116,10 +116,11 @@ export function SkipTaskDialog({
             {t('reason_required')}
           </p>
         )}
+        {/* R10 W1 close — dropped aria-live (see done-task-dialog
+            for rationale; aria-describedby is the AT path). */}
         <p
           id="skipped-reason-counter"
           className="text-right text-xs text-muted-foreground"
-          aria-live="polite"
         >
           {t('chars_remaining', { count: charsRemaining })}
         </p>

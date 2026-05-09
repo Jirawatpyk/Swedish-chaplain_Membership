@@ -2033,6 +2033,7 @@
         "manager_read_only_notice": "You're viewing this queue as a manager — only admins can mark tasks done, skip, or reassign them.",
         "view_timeline": "View timeline",
         "view_timeline_for": "View timeline for {company}",
+        "table_caption": "Manual escalation tasks for the current tenant — sortable by status, assignment, and due date.",
         "overdue_banner": "{count, plural, one {# overdue task} other {# overdue tasks}}",
         "overdue_banner_cta": "Click to filter the queue to overdue tasks only",
         "overdue_banner_clear": "Filter active — click to show all open tasks again",

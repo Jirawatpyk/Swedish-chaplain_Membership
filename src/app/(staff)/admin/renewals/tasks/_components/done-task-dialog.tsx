@@ -16,7 +16,7 @@ import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { TaskActionDialog } from './_task-action-dialog';
+import { TaskActionDialog } from './task-action-dialog';
 
 export interface DoneTaskDialogProps {
   readonly open: boolean;
@@ -70,12 +70,18 @@ export function DoneTaskDialog({
           disabled={isPending}
           rows={4}
           maxLength={MAX_NOTE_LENGTH}
+          // R10 S2 close — explicit autoFocus removes reliance on
+          // base-ui DOM-order focus resolution.
+          autoFocus
           aria-describedby="outcome-note-counter"
         />
+        {/* R10 W1 close — dropped aria-live="polite" so SR doesn't
+            announce on every keystroke. The aria-describedby wiring on
+            the textarea above already exposes this counter to AT on
+            focus per ux-standards § 16. */}
         <p
           id="outcome-note-counter"
           className="text-right text-xs text-muted-foreground"
-          aria-live="polite"
         >
           {t('chars_remaining', { count: charsRemaining })}
         </p>

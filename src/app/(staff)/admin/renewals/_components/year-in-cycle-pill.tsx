@@ -16,7 +16,15 @@
  *
  * Variant `'compact'` is used inside the queue table cell; `'full'`
  * surfaces it as a standalone badge with the company name visible.
+ *
+ * R10 W10 close — `'use client'` directive added explicitly because
+ * `useTranslations` is a client-only hook. Today the component
+ * inherits its parent's client boundary, but a future Phase 9 server
+ * component (e.g. member detail timeline) that imports this file
+ * would throw "context not found" without an explicit boundary.
  */
+'use client';
+
 import { useTranslations } from 'next-intl';
 
 export interface YearInCyclePillProps {

@@ -178,6 +178,30 @@ describe('completeEscalationTask (T209)', () => {
     expect(emitInTxMock).not.toHaveBeenCalled();
   });
 
+  // R10 B-arch-1 close — pin the non-Error throw path through the
+  // outer catch + logUnexpectedError helper. A non-Error thrown
+  // value (`throw 'string'`, `throw 42`) is wrapped by the helper
+  // as `new Error(String(e))` and surfaced as `kind:'server_error'`.
+  // The Application-layer 100% branch coverage threshold requires
+  // this fallback path be exercised (was uncovered pre-R10).
+  it('non-Error throw — wrapped via String(e) + kind:server_error', async () => {
+    const { deps } = fakeDeps(openTaskRow(), async () => {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw 'audit-DB-down-string';
+    });
+    const r = await completeEscalationTask(deps, baseInput);
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'server_error') {
+      // Helper coerces String(e) into Error; the Result message
+      // surface picks up the stringified value. Narrow on `kind` first
+      // because `message` only exists on `invalid_input | server_error`
+      // variants.
+      expect(r.error.message).toBe('audit-DB-down-string');
+    } else {
+      throw new Error(`expected server_error result, got ${JSON.stringify(r)}`);
+    }
+  });
+
   it('reverse-direction atomicity — audit failure rolls back', async () => {
     const auditErr = new Error('audit-DB-down');
     const { deps } = fakeDeps(openTaskRow(), async () => {

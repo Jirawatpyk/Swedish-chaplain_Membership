@@ -523,6 +523,30 @@
   - **SF-3** add Timeline jump-link sub-action (smart-chamber-features § MVP #6)
   - Final: 4214/4215 unit+contract tests GREEN · 2256 i18n keys × 3 locales · `pnpm typecheck` GREEN · `pnpm lint` GREEN (1 pre-existing warning unchanged) · `pnpm check:i18n` GREEN. Integration + E2E remain green when run with full env.
 
+- [X] **T227-R10 [US6] Round 10 staff-review fix close (2026-05-10)** — staff-engineer-level review (5 specialised agents: drizzle-migration-reviewer + senior-tester + chamber-os-architect + chamber-os-ux-architect + pdpa-gdpr-compliance-officer) found 2 🔴 + 13 🟡 + 12 🟢 = 27 findings. Closed in this commit:
+  - **B1** drop `· SweCham` suffix in `tasks/page.tsx` `generateMetadata` (layout template adds it)
+  - **B-arch-1** unit-test the non-Error throw path in `complete-escalation-task` (string thrown is wrapped via `String(e)` → `kind:'server_error'`)
+  - **W1** drop `aria-live="polite"` on the chars-remaining counter (announces on every keystroke)
+  - **W2** + **W3** 4 contract tests added (done + skip + reassign route happy/RBAC/4xx/5xx mapping; staff-active 401 NEXT_REDIRECT vs catch-bound + 200 merge shape + 500 DB-outage)
+  - **W4** thread `overdueThresholdDays: 3` through `countMatching` so the banner count matches the row-level red highlight (FR-045/AS4 mandate ">3 days past due")
+  - **W5** add `outcomeNote` + `skippedReason` to REDACT_PATHS (defence-in-depth — admins may type PII into the audit-trail textareas)
+  - **W6** pin 5-year retention on the 3 lifecycle audit events via raw SQL `select retention_years from audit_log` (the column exists per migration 0039 but is not yet wired into Drizzle inferred type)
+  - **W7** + **W8** E2E manager-readonly assertion (no actions column, role="note" banner present, no Done/Skip/Reassign buttons) + member-detail link assertion (clicking member name navigates to `/admin/members/[id]`)
+  - **W9** OTel metrics + SLO entry in `docs/observability.md` § 23 (4 forward metrics + F8-SLO-Esc-1 queue-load p95 < 500ms + F8-A8 alert)
+  - **W10** add `'use client';` directive to `year-in-cycle-pill.tsx` (uses `useTranslations`)
+  - **W11** bump SF-A ring contrast `ring-primary/40` → `ring-primary/60` (WCAG SC 1.4.11 ≥3:1 non-text contrast)
+  - **W12** statement-breakpoint discipline reaffirmed in plan.md Complexity Tracking #8 (migration 0122 is single-statement DDL — no markers needed; Phase 9 sweeps will apply discipline to multi-statement migrations)
+  - **S1** sr-only `<TableCaption>` for richer AT context
+  - **S2** explicit `autoFocus` on the Done dialog `<Textarea>` (removes reliance on base-ui DOM-order focus resolution)
+  - **S3** `role="note"` on the manager read-only informational banner
+  - **S4** + **S7** + **S8** documented in plan.md Complexity Tracking #8 — 5 inline producers + audit-rollback drift + Drizzle schema gap forward-deferred (none block the Review Gate)
+  - **S5** promote `yearInCycle: number` from `EscalationTaskWithMember` (port-only) to `RenewalEscalationTaskBase` (domain) so future `findById` consumers get it without an infrastructure-layer leak
+  - **S6** `Promise.all([listWithFilter admin, listWithFilter manager])` in `staff-active/route.ts` (parallelizes the two role queries; current `UserListFilter.role: Role` is single-valued, future Phase 9 schema extension may collapse to a single query when `roles?: Role[]` is added)
+  - **S9** narrow `triggerReason` from `z.string().min(1).max(100)` to `z.enum([7 canonical values, 'cross-tenant probe' test-only])` (privacy-by-design — was free-text, allowed accidental PII into audit_log)
+  - **S10** + **S11** mount-guard test for `<TaskActionDialog>` (initial mount with open=false does NOT fire onClose; transition fires once; closure swap captures latest fn) + dispatcher test for the new pure `selectActionErrorKey` helper extracted from `escalation-task-queue.tsx` (8 wire codes × 3 actions × forbidden-override × offline × unknown fallback)
+  - **S12** rename `_task-action-dialog.tsx` → `task-action-dialog.tsx` (drop the underscore — the file is now imported by 3 sibling dialogs and is no longer "private to the component-only ladder")
+  - Final: typecheck GREEN · 20 new unit tests (S10+S11) GREEN · 29 new contract tests (W2+W3) GREEN · `pnpm check:i18n` GREEN with table_caption added in EN+TH+SV. **Forward-deferred**: 5 polish items in plan.md Complexity Tracking #8 (5 inline producers refactor + audit-emit atomic-rollback unification + Drizzle schema extension for retention_years/correlation_id + statement-breakpoint markers when next multi-statement migration ships + FR-043 consumer-wiring on member-detail timeline + cycle detail page).
+
 ---
 
 ## Phase 9 — Cross-cutting (RBAC enforcement + Observability + Audit emitter + Cross-tenant + i18n + a11y)

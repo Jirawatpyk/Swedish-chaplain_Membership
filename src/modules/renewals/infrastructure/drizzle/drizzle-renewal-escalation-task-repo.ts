@@ -77,6 +77,9 @@ export function rowToDomain(row: RenewalEscalationTaskRow): RenewalEscalationTas
     assignedToUserId: row.assignedToUserId,
     dueAt: row.dueAt.toISOString(),
     relatedSuggestionId: row.relatedSuggestionId,
+    // R10 S5 close — yearInCycle promoted to Domain entity. Default
+    // 1 if column missing on legacy rows (DB DEFAULT 1 also covers).
+    yearInCycle: row.yearInCycle ?? 1,
     createdAt: row.createdAt.toISOString(),
   };
   if (row.status === 'open') {
@@ -340,7 +343,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
       _tenantId: string,
       opts: Pick<
         ListEscalationTasksOpts,
-        'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly'
+        'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly' | 'overdueThresholdDays'
       >,
     ): Promise<number> {
       return runInTenant(tenant, async (tx) => {
@@ -505,13 +508,15 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           const cycleLenMonths = r.cycleLengthMonths ?? 12;
           const totalYears = Math.max(1, Math.ceil(cycleLenMonths / 12));
           return {
+            // rowToDomain now includes yearInCycle (R10 S5 close —
+            // promoted to Domain entity); only the JOIN-derived
+            // member fields + computed totalYears live here.
             ...rowToDomain(r.task),
             memberCompanyName: r.companyName ?? null,
             memberTierBucket: r.tierBucket ?? null,
             cycleExpiresAt: r.cycleExpiresAt
               ? r.cycleExpiresAt.toISOString()
               : null,
-            yearInCycle: r.task.yearInCycle ?? 1,
             totalYears,
             assignedToDisplayName: r.assigneeDisplayName ?? null,
             assignedToEmail: r.assigneeEmail ?? null,
@@ -534,7 +539,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
 function buildListWhereExpr(
   opts: Pick<
     ListEscalationTasksOpts,
-    'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly'
+    'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly' | 'overdueThresholdDays'
   >,
 ): ReturnType<typeof and> | undefined {
   const conditions: Array<ReturnType<typeof eq>> = [];
@@ -565,11 +570,24 @@ function buildListWhereExpr(
     }
   }
   if (opts.overdueOnly === true) {
-    conditions.push(
-      sql`${renewalEscalationTasks.dueAt} < NOW()` as unknown as ReturnType<
-        typeof eq
-      >,
-    );
+    // R10 W4 close — `overdueThresholdDays` aligns the count with
+    // FR-045/AS4 (UI uses NOW()-3d for the row highlight). Default 0
+    // preserves the prior `dueAt < NOW()` semantics for any caller
+    // not yet wired through; queue UI passes 3.
+    const thresholdDays = opts.overdueThresholdDays ?? 0;
+    if (thresholdDays > 0) {
+      conditions.push(
+        sql`${renewalEscalationTasks.dueAt} < NOW() - (${thresholdDays} || ' days')::interval` as unknown as ReturnType<
+          typeof eq
+        >,
+      );
+    } else {
+      conditions.push(
+        sql`${renewalEscalationTasks.dueAt} < NOW()` as unknown as ReturnType<
+          typeof eq
+        >,
+      );
+    }
   }
   if (conditions.length === 0) return undefined;
   if (conditions.length === 1) return conditions[0];

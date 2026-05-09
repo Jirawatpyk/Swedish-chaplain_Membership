@@ -1130,6 +1130,23 @@ All 4 coordinators emit a single `cron_dispatch_orchestrated` audit on completio
 | `renewals.coordinator.audit_emit_failed_total` | counter | `cron_kind` | error path |
 | `renewals.cron_bearer_auth_rejected_total` | counter | `route` | 401 path |
 
+**Phase 8 — Escalation task queue (US6, R10 W9 close)**
+
+The Phase 8 admin queue + 4 admin actions (`POST done|skip|reassign`) emit the audit events
+`escalation_task_completed`, `escalation_task_skipped`, `escalation_task_reassigned` (5-year retention each)
+plus the queue-load `escalation_task_created` already emitted by the 6 inline producers. The metrics below
+SHOULD be wired before the production flag-flip — they currently rely on the existing `cron_kind`-aware
+coordinator metrics + the F1-shared `pino`-derived structured logs. None are part of the SLO breach gate
+because the queue is admin-only (no member-facing latency SLO); the SLO row below covers the queue page
+load only.
+
+| Metric | Type | Tags | Source | SLO link |
+|---|---|---|---|---|
+| `renewals.escalation_task.queue_load_duration_ms` | histogram | `tenant_id`, `assignment_filter`, `status_filter` | `tasks/page.tsx` server component (R10 forward — not yet wired) | F8-SLO-Esc-1 |
+| `renewals.escalation_task.action_total` | counter | `tenant_id`, `action ∈ {done,skip,reassign}`, `outcome ∈ {success,task_not_found,task_not_open,server_error}` | `tasks/[taskId]/{done,skip,reassign}/route.ts` (R10 forward) | — |
+| `renewals.escalation_task.overdue_count` | gauge | `tenant_id` | per page-load summary (existing port `countMatching`) | — |
+| `renewals.escalation_task.audit_emit_failed_total` | counter | `event_type ∈ {completed,skipped,reassigned}` | use-case catch arm (existing pino warn breadcrumb) | F8-A2 (rolls up into the existing audit-emit alarm) |
+
 ### 23.2 SLOs — F8
 
 | SLO | Target | Window | Metric | Action on breach |
@@ -1140,6 +1157,7 @@ All 4 coordinators emit a single `cron_dispatch_orchestrated` audit on completio
 **SC-005 index dependency** (R5-WRN-3 staff-review-2026-05-09 Round 2): the at-risk CTE's correlated EXISTS sub-query against `audit_log` for FR-029 factor 8 (recent tier-downgrade signal) requires the partial index `audit_log_f8_tier_change_idx` (migration `0115_f8_audit_log_member_plan_changed_idx.sql`) for the planner to reach `member_plan_changed` rows via Index Scan. Without it the EXISTS branch falls back to a Bitmap Heap Scan + recheck and SC-005 confidence drops below MEDIUM at production scale (>50k audit rows per active tenant per month). DBAs investigating SC-005 latency regressions should `EXPLAIN ANALYZE` the CTE in `gatherAtRiskFactorsForTenant` (`src/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo.ts:417`) and verify the planner uses `audit_log_f8_tier_change_idx`.
 | **F8 cron dispatch** | p95 < 30 s per tenant | per-cron-run | `renewals.coordinator.duration_ms{cron_kind="dispatch"}` | investigate slow tenants |
 | **F8 audit emit failure** | < 0.1 % of state-mutating use-case calls | rolling 1 d | `renewals.coordinator.audit_emit_failed_total` | page on-call (audit invariant Constitution VIII) |
+| **F8-SLO-Esc-1** Escalation task queue load (Phase 8 R10 W9) | p95 < 500 ms @ 200 open tasks per tenant | rolling 1 d | `renewals.escalation_task.queue_load_duration_ms` (forward — see § metrics table above) | alarm `#oncall-platform`; check Neon RLS plan + `countMatching` index usage |
 
 **SC-005 measurement evidence (staff-review-2026-05-09 Round-4 closure)**: ran `RUN_PERF=1 pnpm test:integration tests/integration/renewals/at-risk-recompute-perf.test.ts` against Neon Singapore on 2026-05-09 04:05 UTC+7 with 5,000 seeded members:
 - `list=5491ms` (pre-recompute eligibility query)
@@ -1158,6 +1176,7 @@ All 4 coordinators emit a single `cron_dispatch_orchestrated` audit on completio
 | F8-A5 | `renewals.pipeline.load_duration_ms` p95 > 500 (SC-003) | alarm | `#oncall-platform` |
 | F8-A6 | `lapsed_member_action_blocked` audit emit ≥ 50 in any 1-h window per tenant | info → alarm | check for compromised member account or admin script |
 | F8-A7 | `renewal_cross_member_probe` audit emit ≥ 1 in any 1-h window per tenant | alarm | possible IDOR attempt — review actor |
+| F8-A8 | `renewals.escalation_task.action_total{outcome="server_error"}` ≥ 3 in any 5-min window | alarm | `#oncall-platform` — investigate transient repo or audit-emit failures (R10 W9 close) |
 
 ### 23.4 Forbidden log fields (F8-specific extension to § 3 universal list)
 

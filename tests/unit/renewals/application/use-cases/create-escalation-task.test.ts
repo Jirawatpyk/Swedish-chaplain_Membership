@@ -82,7 +82,9 @@ const baseInput = {
   taskType: 'manual_outreach_required',
   assignedToRole: 'admin' as const,
   dueAt: '2026-06-01T00:00:00.000Z',
-  triggerReason: 'no_primary_contact',
+  // R10 S9 close — `triggerReason` narrowed from free-text to a closed
+  // enum (privacy-by-design). Use the canonical literal.
+  triggerReason: 'no_primary_contact' as const,
   taskId: TASK_UUID,
   actorUserId: ADMIN_UUID,
   actorRole: 'admin' as const,
@@ -192,11 +194,17 @@ describe('createEscalationTask (T208)', () => {
     expect(insertMock).not.toHaveBeenCalled();
   });
 
-  it('invalid_input — empty triggerReason rejected', async () => {
+  it('invalid_input — non-canonical triggerReason rejected', async () => {
+    // R10 S9 close — triggerReason narrowed from free-text string to a
+    // closed enum (privacy-by-design). Empty string + arbitrary
+    // free-text both fail the zod gate; this test now exercises the
+    // non-canonical path via a string outside the enum.
     const { deps } = fakeDeps({ created: true });
     const r = await createEscalationTask(deps, {
       ...baseInput,
-      triggerReason: '',
+      // Cast: TS would reject this at compile-time; runtime zod path
+      // is what we're verifying here.
+      triggerReason: 'arbitrary_freetext' as never,
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {

@@ -2019,9 +2019,9 @@
           },
           "escalate": {
             "label": "Eskalera",
-            "dialog_title": "Eskalera till uppsökande?",
+            "dialog_title": "Skapa kontaktutskick?",
             "confirm": "Skapa ett utkast till uppsökande e-post för medlemmen?",
-            "success": "Utkast till uppsökande skapad",
+            "success": "Utkast till uppsökande skapat",
             "error": "Kunde inte skapa utkast"
           }
         }
@@ -2033,6 +2033,7 @@
         "manager_read_only_notice": "Du visar denna kö som chef — endast administratörer kan markera uppgifter som klara, hoppa över eller tilldela om dem.",
         "view_timeline": "Visa tidslinje",
         "view_timeline_for": "Visa tidslinje för {company}",
+        "table_caption": "Manuella uppföljningsuppgifter för aktuell organisation — sorterbara på status, tilldelning och förfallodatum.",
         "overdue_banner": "{count, plural, one {# försenad uppgift} other {# försenade uppgifter}}",
         "overdue_banner_cta": "Klicka för att filtrera kön till endast försenade uppgifter",
         "overdue_banner_clear": "Filter aktivt — klicka för att visa alla öppna uppgifter igen",

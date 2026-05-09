@@ -53,6 +53,13 @@ interface RenewalEscalationTaskBase {
   readonly assignedToUserId: string | null;
   readonly dueAt: string;
   readonly relatedSuggestionId: string | null;
+  /**
+   * R10 S5 close — multi-year cycle context (FR-043). Range [1, 50]
+   * enforced at DB. Defaults to 1 (single-year contracts collapse the
+   * pill). Promoted to Domain so `findById` consumers can read the
+   * field without an Infrastructure-layer leak.
+   */
+  readonly yearInCycle: number;
   readonly createdAt: string;
 }
 

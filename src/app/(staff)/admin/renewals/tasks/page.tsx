@@ -55,7 +55,10 @@ function pickStatus(raw: string | undefined): EscalationTaskStatus {
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tasks');
-  return { title: `${t('title')} · SweCham`, description: t('subtitle') };
+  // R10 B1 close — drop the hardcoded "· SweCham" suffix; the root
+  // layout's metadata template ('%s · SweCham Membership') appends it
+  // already (mirrors tier-upgrades/page.tsx convention).
+  return { title: t('title'), description: t('subtitle') };
 }
 
 export default async function EscalationTaskQueuePage({
@@ -144,11 +147,17 @@ export default async function EscalationTaskQueuePage({
     // Overdue banner only meaningful when status='open' and we're not
     // already filtered to overdue-only.
     if (status === 'open' && !overdueOnly) {
+      // R10 W4 close — overdueThresholdDays: 3 aligns the banner
+      // count with the row-level red highlight (FR-045/AS4 mandate
+      // ">3 days past due" for both). Without this, banner counts
+      // any task overdue by ≥1 minute but UI highlights only ≥3 days
+      // → admin sees "5 overdue tasks" but only 2 red rows.
       overdueCount = await deps.escalationTaskRepo.countMatching(
         tenantCtx.slug,
         {
           statusFilter: ['open'],
           overdueOnly: true,
+          overdueThresholdDays: 3,
         },
       );
     }

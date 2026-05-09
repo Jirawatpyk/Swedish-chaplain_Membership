@@ -44,6 +44,10 @@ function buildOpenTask(taskId: string): RenewalEscalationTask {
     dueAt: '2026-06-01T00:00:00Z',
     relatedSuggestionId: null,
     createdAt: '2026-05-01T00:00:00Z',
+    // R10 S5 close — yearInCycle promoted from EscalationTaskWithMember
+    // (port-only) to RenewalEscalationTaskBase (domain). Default 1 for
+    // single-year cycles (matches DB column default).
+    yearInCycle: 1,
     status: 'open',
     outcomeNote: null,
     skippedReason: null,

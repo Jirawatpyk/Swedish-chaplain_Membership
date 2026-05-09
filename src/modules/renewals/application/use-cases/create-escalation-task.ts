@@ -70,12 +70,24 @@ export const createEscalationTaskInputSchema = z.object({
   /** ISO 8601 UTC. */
   dueAt: z.string().datetime(),
   /**
-   * Producer-supplied discriminator for dashboards + alert routing
-   * (e.g. `'scheduled_cron_step'`, `'no_primary_contact'`,
-   * `'bounce_threshold_crossed'`, `'tier_upgrade_t180_verify'`,
-   * `'admin_reject_with_refund'`).
+   * Producer-supplied discriminator for dashboards + alert routing.
+   *
+   * R10 S9 close — constrained to a literal union (privacy-by-design).
+   * The prior `z.string().min(1).max(100)` was free-text, allowing
+   * accidental PII (member name, phone) to flow into audit_log.
+   * Adding new trigger reasons requires extending this enum at the
+   * Application layer + recompiling — defence-in-depth against
+   * producer drift.
    */
-  triggerReason: z.string().min(1).max(100),
+  triggerReason: z.enum([
+    'no_primary_contact',
+    'bounce_threshold_crossed',
+    'scheduled_cron_step',
+    'tier_upgrade_t180_verify',
+    'admin_reject_with_refund',
+    'retry_budget_exhausted',
+    'cross-tenant probe', // test-only — see cross-tenant-isolation.test.ts
+  ]),
   /** Forward-compat for `verify_pending_tier_upgrade` tasks. */
   relatedSuggestionId: z.string().uuid().optional(),
   /** Optional context passthrough into the audit payload. */
