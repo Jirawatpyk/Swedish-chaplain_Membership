@@ -40,6 +40,16 @@ export interface ListRenewalCyclesOpts {
   readonly pageSize: number;
   readonly statusFilter?: ReadonlyArray<CycleStatus>;
   readonly memberIdFilter?: string;
+  /**
+   * Exclude a single cycle by id from the result. Used by
+   * `loadRenewalSummary` to probe "does this member have ANY OTHER prior
+   * completed cycles?" without the current cycle false-counting itself
+   * when its own status is already `completed` (post-renew historical
+   * view). Without this filter `isFirstTimeRenewer` would falsely
+   * resolve to `false` for a true first-timer once their cycle reaches
+   * `completed`. Implemented as `cycle_id <> $1` at the DB level.
+   */
+  readonly excludeCycleId?: string;
   /** Optional T-N urgency bucket (data-model.md § 2.1 pipeline_idx hot-path). */
   readonly maxDaysUntilExpiry?: number;
   readonly sort?:

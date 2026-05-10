@@ -17,7 +17,7 @@
  * `listEligibleForDispatch`) are implemented for port completeness but
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
-import { and, eq, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
+import { and, eq, ne, sql, inArray, or, isNull, type SQL } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
@@ -480,6 +480,9 @@ export function makeDrizzleRenewalCycleRepo(
         }
         if (opts.memberIdFilter) {
           filters.push(eq(renewalCycles.memberId, opts.memberIdFilter));
+        }
+        if (opts.excludeCycleId) {
+          filters.push(ne(renewalCycles.cycleId, opts.excludeCycleId));
         }
         if (opts.maxDaysUntilExpiry !== undefined) {
           filters.push(

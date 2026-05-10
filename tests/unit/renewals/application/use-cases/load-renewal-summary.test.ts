@@ -100,13 +100,62 @@ describe('loadRenewalSummary (T121)', () => {
       expect(r.value.isFirstTimeRenewer).toBe(true);
     }
     // Confirm the probe ran with the right filter shape (statusFilter
-    // = completed, memberIdFilter, pageSize:1) — defends against a
-    // future refactor accidentally widening the probe.
+    // = completed, memberIdFilter, pageSize:1, excludeCycleId = current
+    // cycle) — defends against a future refactor accidentally widening
+    // the probe OR dropping the self-exclusion guard. Without
+    // `excludeCycleId` a member whose only cycle just turned completed
+    // would self-count and lose the first-time-renewer banner.
     expect(listMock).toHaveBeenCalledTimes(1);
     expect(listMock.mock.calls[0]?.[1]).toMatchObject({
       pageSize: 1,
       memberIdFilter: MEMBER_UUID,
       statusFilter: ['completed'],
+      excludeCycleId: CYCLE_UUID,
+    });
+  });
+
+  it('isFirstTimeRenewer TRUE when current cycle is itself completed (self-exclusion guard)', async () => {
+    // Regression guard for the post-Round 12 review finding: when the
+    // summary is loaded for a cycle that is already in `completed`
+    // status (e.g. member revisits the page after their first renewal
+    // landed), the `isFirstTimeRenewer` probe MUST exclude the current
+    // cycle from the count. Otherwise the probe finds the current
+    // cycle as a "prior completed" cycle and silently flips the flag
+    // to `false` for a genuine first-timer.
+    //
+    // Mock contract: the repo respects `excludeCycleId` and filters out
+    // the matching cycleId. The mock below returns an empty list when
+    // the only completed cycle in the test fixture is the current one,
+    // mirroring the real Drizzle adapter (`ne(cycle_id, $1)`).
+    const completedCurrent = buildCycle({ status: 'completed' });
+    const findByIdMock = vi.fn(async () => completedCurrent);
+    const listMock = vi.fn(async (_tenantId: string, opts: {
+      readonly excludeCycleId?: string;
+      readonly memberIdFilter?: string;
+      readonly statusFilter?: ReadonlyArray<string>;
+    }) => {
+      // Real adapter behaviour: a `cycle_id <> $1` filter would exclude
+      // the only completed cycle (the current one), leaving an empty
+      // page. Here we hand-roll the same shape from the fixture.
+      const allCompleted: ReadonlyArray<RenewalCycle> = [completedCurrent];
+      const filtered = allCompleted.filter(
+        (c) =>
+          (!opts.excludeCycleId || c.cycleId !== opts.excludeCycleId) &&
+          (!opts.memberIdFilter || c.memberId === opts.memberIdFilter) &&
+          (!opts.statusFilter || opts.statusFilter.includes(c.status)),
+      );
+      return { items: filtered, nextCursor: null };
+    });
+    const deps = {
+      tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
+      cyclesRepo: { findById: findByIdMock, list: listMock },
+      auditEmitter: { emit: vi.fn(), emitInTx: vi.fn() },
+    } as unknown as RenewalsDeps;
+    const r = await loadRenewalSummary(deps, baseInput);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.isFirstTimeRenewer).toBe(true);
+    expect(listMock.mock.calls[0]?.[1]).toMatchObject({
+      excludeCycleId: CYCLE_UUID,
     });
   });
 

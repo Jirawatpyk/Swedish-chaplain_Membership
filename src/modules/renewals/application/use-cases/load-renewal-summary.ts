@@ -199,10 +199,17 @@ export async function loadRenewalSummary(
   // access; T121 stays free of cross-module reads at this layer).
   // PR #24 review-fix — first-time-renewer detection wired via the
   // existing `cyclesRepo.list` port (no new sibling port needed). A
-  // member is "first-time renewing" when they have ZERO prior completed
-  // renewal cycles. We probe with `pageSize: 1` since we only care
-  // about existence; the query is bounded by `(tenant_id, member_id,
-  // status)` index and runs in <2ms on the F8 schema.
+  // member is "first-time renewing" when they have ZERO **prior**
+  // completed renewal cycles. We probe with `pageSize: 1` since we only
+  // care about existence; the query is bounded by `(tenant_id,
+  // member_id, status)` index and runs in <2ms on the F8 schema.
+  //
+  // `excludeCycleId: cycle.cycleId` is REQUIRED — without it, a member
+  // viewing the summary of their own already-completed cycle (e.g. a
+  // historical/post-renew read) would self-count and `isFirstTimeRenewer`
+  // would falsely resolve to `false` for a true first-timer the moment
+  // their cycle reaches `completed`. The filter scopes the probe to
+  // *other* completed cycles only (`cycle_id <> current`).
   //
   // UX-review R5/C3 prior default-to-`false` rationale still applies as
   // a fail-safe: if the probe throws or the port surface drifts, we
@@ -214,6 +221,7 @@ export async function loadRenewalSummary(
       pageSize: 1,
       memberIdFilter: cycle.memberId,
       statusFilter: ['completed'],
+      excludeCycleId: cycle.cycleId,
     });
     isFirstTimeRenewer = completedPage.items.length === 0;
   } catch (e) {
