@@ -30,7 +30,7 @@ import {
   expect,
   it,
 } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -691,9 +691,19 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     const losers = [r1, r2].filter((r) => !r.ok);
     for (const loser of losers) {
       if (loser.ok) continue;
+      // QA-2026-05-10 fix: accept-tier-upgrade.ts surfaces
+      // 'plan_change_failed' when F2 schedule-plan-change use-case
+      // rejects the second writer (the F2 layer's own concurrency
+      // protection beyond F8's partial-UNIQUE). Adding to the
+      // expected error.kind set so the W-011 race correctly
+      // tolerates either F8-side rejection (suggestion_not_open /
+      // open_conflict) OR F2-side rejection (plan_change_failed /
+      // server_error). All four are valid "loser" outcomes per the
+      // contract.
       expect([
         'suggestion_not_open',
         'open_conflict',
+        'plan_change_failed',
         'server_error',
       ]).toContain(loser.error.kind);
     }
@@ -709,13 +719,22 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
 
     // Audit emit — exactly one `tier_upgrade_accepted` row landed for
     // this suggestion (the loser's tx aborted before audit emit).
+    // QA-2026-05-10 fix: filter by THIS test's suggestionId. Tenant
+    // is shared across this describe block; earlier tests emitted
+    // `tier_upgrade_accepted` audits which polluted the unfiltered
+    // count. Same shared-tenant-pollution pattern fixed in W-013.
     const accepted = await runInTenant(tenant.ctx, (tx) =>
-      tx
+      (tx as unknown as typeof db)
         .select()
         .from(auditLog)
-        .where(eq(auditLog.eventType, 'tier_upgrade_accepted')),
+        .where(
+          and(
+            eq(auditLog.eventType, 'tier_upgrade_accepted'),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
+          ),
+        ),
     );
-    expect(accepted.length).toBe(1);
+    expect(accepted).toHaveLength(1);
   }, 60_000);
 
   // ---------------------------------------------------------------------------
@@ -757,18 +776,27 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     expect(suggestion?.status).toBe('superseded');
     expect(suggestion?.closedAt).not.toBeNull();
 
+    // QA-2026-05-10 fix: filter by THIS test's suggestionId. The
+    // tenant is shared across tests in this describe block; earlier
+    // tests in the file emitted superseded audits for
+    // accepted_pending_apply suggestions which polluted
+    // supersededAudit[0]. Filtering by suggestionId via JSONB payload
+    // selector ensures we read OUR test's audit row.
     const supersededAudit = await runInTenant(tenant.ctx, (tx) =>
-      tx
+      (tx as unknown as typeof db)
         .select()
         .from(auditLog)
         .where(
-          eq(
-            auditLog.eventType,
-            'tier_upgrade_pending_superseded_by_manual_change',
+          and(
+            eq(
+              auditLog.eventType,
+              'tier_upgrade_pending_superseded_by_manual_change',
+            ),
+            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
           ),
         ),
     );
-    expect(supersededAudit.length).toBeGreaterThanOrEqual(1);
+    expect(supersededAudit).toHaveLength(1);
     const payload = supersededAudit[0]?.payload as
       | { superseded_from_status?: string }
       | null;

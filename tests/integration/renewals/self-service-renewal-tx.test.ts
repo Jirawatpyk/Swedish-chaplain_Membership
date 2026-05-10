@@ -451,7 +451,13 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     // Simulate the F5 payment_failed timeline by NOT firing the
     // F4 onPaidCallback. The cycle should remain unchanged.
     const callbacks = f8OnPaidCallbacks(tenantA.ctx.slug);
-    expect(callbacks).toHaveLength(1);
+    // QA-2026-05-10 fix: Phase 7 T183 added a SECOND callback
+    // (tier-upgrade-apply) so the production factory now ships 2
+    // callbacks (cycle-completion + tier-upgrade-apply) per
+    // f4-callback-rollback.test.ts:49 which is the canonical pin.
+    // The "1 callback" assertion was stale from Phase 5 when only
+    // T123 cycle-completion existed.
+    expect(callbacks).toHaveLength(2);
     // INTENTIONALLY DO NOT INVOKE callbacks[0] — this models the
     // F5 payment_failed branch where F4 never transitions to paid.
 
@@ -519,9 +525,15 @@ describe('F8 markCycleCompleteFromInvoicePaid — integration (T145)', () => {
     void memberId; // referenced to satisfy `unused-var` lint on the seed return
   });
 
-  it('f8OnPaidCallbacks: production factory returns 1 callback (Phase 5 wired, was [] stub)', async () => {
+  it('f8OnPaidCallbacks: production factory returns 2 callbacks (Phase 5 T123 cycle-completion + Phase 7 T183 tier-upgrade-apply)', async () => {
     const callbacks = f8OnPaidCallbacks(tenantA.ctx.slug);
-    expect(callbacks).toHaveLength(1);
+    // QA-2026-05-10 fix: Phase 7 T183 added a SECOND callback
+    // (tier-upgrade-apply) so the production factory now ships 2
+    // callbacks (cycle-completion + tier-upgrade-apply) per
+    // f4-callback-rollback.test.ts:49 which is the canonical pin.
+    // The "1 callback" assertion was stale from Phase 5 when only
+    // T123 cycle-completion existed.
+    expect(callbacks).toHaveLength(2);
     expect(typeof callbacks[0]).toBe('function');
 
     // The callback wraps T123 — invoke it with the same no_cycle_for_invoice
