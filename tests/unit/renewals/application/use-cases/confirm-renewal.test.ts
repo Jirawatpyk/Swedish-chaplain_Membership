@@ -5,8 +5,14 @@
  * critical mutating path collecting member payment intent).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { confirmRenewal } from '@/modules/renewals/application/use-cases/confirm-renewal';
-import type { ConfirmRenewalDeps } from '@/modules/renewals/application/use-cases/confirm-renewal';
+import {
+  confirmRenewal,
+  selfServiceFailureReason,
+} from '@/modules/renewals/application/use-cases/confirm-renewal';
+import type {
+  ConfirmRenewalDeps,
+  ConfirmRenewalError,
+} from '@/modules/renewals/application/use-cases/confirm-renewal';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -430,5 +436,38 @@ describe('confirmRenewal (T122) — input validation', () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
+  });
+});
+
+describe('selfServiceFailureReason — error → SelfServiceFailureReason mapping', () => {
+  // Constitution Principle II coverage closure (R11) — pin the
+  // ConfirmRenewalError → SelfServiceFailureReason mapping explicitly so
+  // any future variant added to ConfirmRenewalError without a mapper
+  // case fails the test suite (typecheck `_exhaustive: never` is the
+  // first line of defence; this test is the second).
+
+  it.each([
+    [
+      { kind: 'invoice_creation_failed', stage: 'create', errorCode: 'X', detail: 'Y' },
+      'f4_invoice_create_failed',
+    ],
+    [{ kind: 'cycle_not_found' }, 'cycle_terminal'],
+    [{ kind: 'cycle_not_payable', currentStatus: 'completed' }, 'cycle_terminal'],
+    [{ kind: 'plan_not_found' }, 'plan_inactive'],
+    [{ kind: 'plan_inactive' }, 'plan_inactive'],
+    [{ kind: 'invalid_input', message: 'bad' }, 'invalid_input'],
+    [{ kind: 'cross_member_probe', attemptedMemberId: 'mid' }, 'cross_member'],
+    [{ kind: 'server_error', message: 'boom' }, 'server_error'],
+  ] as const)('maps %j → %s', (errorVariant, expectedReason) => {
+    const reason = selfServiceFailureReason(errorVariant as ConfirmRenewalError);
+    expect(reason).toBe(expectedReason);
+  });
+
+  it('throws on unmapped variant (exhaustiveness runtime guard)', () => {
+    // Cast through `unknown` to bypass the compile-time `never` check —
+    // the runtime throw exists for post-typecheck divergence (e.g.
+    // production polyfill bundle skew).
+    const rogue = { kind: 'rogue_variant_post_compile' } as unknown as ConfirmRenewalError;
+    expect(() => selfServiceFailureReason(rogue)).toThrow(/unmapped ConfirmRenewalError variant/);
   });
 });

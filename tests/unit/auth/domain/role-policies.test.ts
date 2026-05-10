@@ -81,6 +81,54 @@ describe('canAccess — member role', () => {
       expect(canAccess('member', resource, 'admin')).toBe(false);
     }
   });
+
+  // R11 coverage closure — member role on own-scoped F3+F7 resources.
+  it('permits member read/write on members:own (F3 self-service)', () => {
+    expect(canAccess('member', 'members:own', 'read')).toBe(true);
+    expect(canAccess('member', 'members:own', 'write')).toBe(true);
+  });
+
+  it('permits member read/write on contacts:own (F3 self-service)', () => {
+    expect(canAccess('member', 'contacts:own', 'read')).toBe(true);
+    expect(canAccess('member', 'contacts:own', 'write')).toBe(true);
+  });
+
+  it('forbids member delete on members:own / contacts:own', () => {
+    expect(canAccess('member', 'members:own', 'delete')).toBe(false);
+    expect(canAccess('member', 'contacts:own', 'delete')).toBe(false);
+  });
+
+  it('permits member compose+submit+read+delete on broadcast:own (F7 self-service)', () => {
+    expect(canAccess('member', 'broadcast:own', 'read')).toBe(true);
+    expect(canAccess('member', 'broadcast:own', 'write')).toBe(true);
+    expect(canAccess('member', 'broadcast:own', 'delete')).toBe(true);
+  });
+
+  it('forbids member admin on broadcast:own', () => {
+    expect(canAccess('member', 'broadcast:own', 'admin')).toBe(false);
+  });
+});
+
+describe('canAccess — members:bulk (F3 admin-only)', () => {
+  // R11 coverage closure — pin the admin/manager bulk-action branches
+  // explicitly so a future RBAC drift around bulk archive / bulk
+  // status-change surfaces here rather than in production audit logs.
+
+  it('admin: write on members:bulk → allow', () => {
+    expect(canAccess('admin', 'members:bulk', 'write')).toBe(true);
+  });
+
+  it('admin: read/delete/admin on members:bulk → deny (only write is meaningful)', () => {
+    expect(canAccess('admin', 'members:bulk', 'read')).toBe(false);
+    expect(canAccess('admin', 'members:bulk', 'delete')).toBe(false);
+    expect(canAccess('admin', 'members:bulk', 'admin')).toBe(false);
+  });
+
+  it('manager: read/write/delete on members:bulk → all deny (read-only never bulk)', () => {
+    expect(canAccess('manager', 'members:bulk', 'read')).toBe(false);
+    expect(canAccess('manager', 'members:bulk', 'write')).toBe(false);
+    expect(canAccess('manager', 'members:bulk', 'delete')).toBe(false);
+  });
 });
 
 describe('canAccess — exhaustive negative coverage', () => {

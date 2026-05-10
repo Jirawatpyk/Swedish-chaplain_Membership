@@ -74,6 +74,12 @@ describe('min-tenure gate (FR-035)', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.skippedBelowMinTenure).toBe(true);
   });
+
+  it('coerces missing tenureDays to null in result (R11 ?? branch coverage)', () => {
+    const r = computeAtRiskScore({}, ctxF6Available);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.tenureDays).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

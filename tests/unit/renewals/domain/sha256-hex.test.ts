@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   asSha256Hex,
   parseSha256Hex,
+  sha256HexOf,
 } from '@/modules/renewals/domain/value-objects/sha256-hex';
 
 const VALID_64_LOWER = 'a'.repeat(64);
@@ -90,5 +91,37 @@ describe('Sha256Hex.parseSha256Hex', () => {
   it('rejects null / undefined', () => {
     expect(parseSha256Hex(null as unknown as string).ok).toBe(false);
     expect(parseSha256Hex(undefined as unknown as string).ok).toBe(false);
+  });
+});
+
+describe('Sha256Hex.sha256HexOf (R11 coverage)', () => {
+  it('returns 64-char canonical lowercase hex digest', () => {
+    const out = sha256HexOf('hello world');
+    expect(out).toMatch(/^[0-9a-f]{64}$/);
+    // Pin the digest of "hello world" — the SHA-256 fingerprint is a
+    // well-known constant; if this drifts, hashing dependency changed.
+    expect(out).toBe(
+      'b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9',
+    );
+  });
+
+  it('produces stable output (deterministic — same input → same digest)', () => {
+    const a = sha256HexOf('alice@example.com');
+    const b = sha256HexOf('alice@example.com');
+    expect(a).toBe(b);
+  });
+
+  it('produces different digests for different inputs', () => {
+    const a = sha256HexOf('alice@example.com');
+    const b = sha256HexOf('bob@example.com');
+    expect(a).not.toBe(b);
+  });
+
+  it('handles empty string', () => {
+    const out = sha256HexOf('');
+    // SHA-256 of empty string is a well-known constant.
+    expect(out).toBe(
+      'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    );
   });
 });

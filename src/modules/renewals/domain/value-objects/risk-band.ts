@@ -76,15 +76,21 @@ export function bandForScore(score: number): Result<RiskBand, RiskBandError> {
   if (!Number.isFinite(score) || score < 0 || score > 100) {
     return err({ kind: 'score_out_of_range', score });
   }
-  for (const band of RISK_BANDS) {
+  // Find first matching band (RISK_BAND_THRESHOLDS covers 0–100
+  // contiguously, so after the guard above this WILL find one).
+  const matched = RISK_BANDS.find((band) => {
     const range = RISK_BAND_THRESHOLDS[band];
-    if (score >= range.minInclusive && score <= range.maxInclusive) {
-      return ok(band);
-    }
+    return score >= range.minInclusive && score <= range.maxInclusive;
+  });
+  // `matched` is provably defined here — the for-loop equivalent's
+  // "exhausted without finding" branch is dead code given the 0–100
+  // guard. Defence-in-depth assertion guards a future band-edit
+  // introducing a gap.
+  /* v8 ignore next 3 */
+  if (matched === undefined) {
+    return err({ kind: 'score_out_of_range', score });
   }
-  // Unreachable — `RISK_BAND_THRESHOLDS` covers 0–100 contiguously.
-  /* v8 ignore next */
-  return err({ kind: 'score_out_of_range', score });
+  return ok(matched);
 }
 
 /**

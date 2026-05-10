@@ -15,7 +15,10 @@ import {
   markCycleCompleteInTx,
 } from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
 import type { MarkCycleCompleteDeps } from '@/modules/renewals/application/use-cases/mark-cycle-complete-from-invoice-paid';
-import { CycleTransitionConflictError } from '@/modules/renewals/application/ports/renewal-cycle-repo';
+import {
+  CycleNotFoundError,
+  CycleTransitionConflictError,
+} from '@/modules/renewals/application/ports/renewal-cycle-repo';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 import type { RenewalCycle } from '@/modules/renewals/domain/renewal-cycle';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
@@ -290,5 +293,59 @@ describe('markCycleCompleteFromInvoicePaid (T123) — race + atomicity', () => {
     await expect(
       markCycleCompleteFromInvoicePaid(deps, buildEvent()),
     ).rejects.toThrow(/connection reset/);
+  });
+
+  // R11 coverage closure — holdForAdminReview private function had its
+  // catch branch (CycleTransitionConflictError + CycleNotFoundError +
+  // rethrow) uncovered. Same idempotent-skip semantics as the default
+  // markCycleCompleteInTx path: if a concurrent confirm flipped the
+  // cycle out of awaiting_payment, the F4 callback must NOT 5xx — it
+  // returns cycle_not_payable so F4 sees an idempotent acknowledgement.
+
+  it('blocked=true + transition CycleTransitionConflictError — idempotent skip (returns cycle_not_payable)', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps({
+      cycle,
+      blocked: true,
+      transitionImpl: async () => {
+        throw new CycleTransitionConflictError(
+          CYCLE_UUID,
+          'awaiting_payment',
+          'cancelled',
+        );
+      },
+    });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('cycle_not_payable');
+    if (r.kind === 'cycle_not_payable') {
+      expect(r.currentStatus).toBe('awaiting_payment');
+    }
+  });
+
+  it('blocked=true + transition CycleNotFoundError — idempotent skip (returns cycle_not_payable)', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps({
+      cycle,
+      blocked: true,
+      transitionImpl: async () => {
+        throw new CycleNotFoundError(CYCLE_UUID);
+      },
+    });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('cycle_not_payable');
+  });
+
+  it('blocked=true + non-conflict throw — propagates so F4 rolls back', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps({
+      cycle,
+      blocked: true,
+      transitionImpl: async () => {
+        throw new Error('hold-for-admin connection reset');
+      },
+    });
+    await expect(
+      markCycleCompleteFromInvoicePaid(deps, buildEvent()),
+    ).rejects.toThrow(/hold-for-admin connection reset/);
   });
 });

@@ -208,12 +208,17 @@ export async function initiatePayment(
           span.setAttribute('payments.resumed', result.value.resumed);
         }
         return result;
+        /* v8 ignore start — tracer error-status path; initiatePaymentBody
+         * always returns Result<...> instead of throwing. The catch is
+         * defence-in-depth for unexpected runtime exceptions (e.g. OOM,
+         * tracer-internal throw) that bypass the typed Result contract. */
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
           message: e instanceof Error ? e.message : 'initiate_threw',
         });
         throw e;
+        /* v8 ignore stop */
       } finally {
         paymentsMetrics.initiateDurationMs(
           input.method,
