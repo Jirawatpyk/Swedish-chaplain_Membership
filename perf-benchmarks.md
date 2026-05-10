@@ -107,3 +107,31 @@ member loop at the same scale.
 - cron pass: 10374ms (SLO 60000ms; strict=false)
 - per-member avg: 2.07ms (batched — 4 round-trips total)
 - recomputed: 5000 · skipped<tenure: 0 · failed: 0
+
+## F8 Phase 10 T261 — loadPipeline @ 1000 members (2026-05-10T05:09:52.855Z)
+- members: 1000 (600 in 90-day window)
+- samples: 20 (warmup 5)
+- p50: 280.1ms · p95: 291.4ms · p99: 291.4ms · avg: 278.0ms
+- SLO: <500ms (FR-046/SC-003 @ 5k members; strict=false)
+- extrapolation: production target Vercel sin1↔Neon SG (~5ms RTT) ≈ p95/3-5× local-from-BKK (~25ms RTT)
+
+## F8 Phase 10 T262 — dispatchRenewalCycle @ 1000 cycles (2026-05-10T05:11:40.910Z)
+- candidates: 1000
+- cron pass: 84948ms (SLO 60000ms; strict=false)
+- per-candidate avg: 84.95ms
+- gateway: stubbed (measures F8 server-side; F1 Resend SLA separate)
+- extrapolation to 5k: ~424742ms (linear)
+
+## F8 Phase 10 T264 — evaluateTierUpgrade @ 1000 members (2026-05-10T05:12:11.163Z)
+- members scanned: 999
+- suggestions created: 0 · already at target: 999 · suppressed: 0 · conflict: 0
+- cron pass: 1153ms (SLO 30000ms; strict=false)
+- per-member avg: 1.15ms
+- extrapolation to 5k: ~5767ms (linear)
+
+## F8 Phase 10 T265 — confirmRenewal (F8-only) @ 50 samples (2026-05-10T05:14:56.048Z)
+- samples: 50 (warmup 5)
+- p50: 477.2ms · p95: 482.5ms · p99: 484.2ms · avg: 476.7ms
+- F4 bridge: stubbed (production total adds F4 invoice creation + F1 rate-limit overhead)
+- SLO TTFB: <600ms · total: <1200ms (SC-005)
+- bench measures F8 server-side state-transition + audit emit; real TTFB requires HTTP-layer measurement at staging
