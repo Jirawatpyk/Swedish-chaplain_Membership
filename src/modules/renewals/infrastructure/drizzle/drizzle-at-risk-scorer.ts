@@ -59,8 +59,12 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 // emitter at `drizzle-renewal-audit-emitter.ts:20`.
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
-import { broadcastDeliveries } from '@/modules/broadcasts/infrastructure/schema';
+import {
+  broadcastDeliveries,
+  broadcasts,
+} from '@/modules/broadcasts/infrastructure/schema';
 import { currentQuotaYear } from '@/modules/broadcasts';
+import { env } from '@/lib/env';
 import {
   computeAtRiskScore,
   type AtRiskFactors,
@@ -98,29 +102,23 @@ export function makeDrizzleAtRiskScorer(
     return runInTenant(deps.tenant, async (tx) => {
       // 1. F3 members row — tenure (via created_at proxy) + last
       //    activity timestamp (FR-029 line 7 contact-update factor uses
-      //    last_activity_at as the closest available signal).
+      //    last_activity_at as the closest available signal). Round 8
+      //    review-fix — folded plan_id + plan_year into the same SELECT
+      //    so we make ONE round-trip to the members PK instead of two
+      //    (Round 7 introduced a duplicate query; T262 already at
+      //    84.95s @ 1k cron-dispatch SLO so every avoidable round-trip
+      //    counts).
       const memberRows = await tx
         .select({
           createdAt: members.createdAt,
           lastActivityAt: members.lastActivityAt,
-        })
-        .from(members)
-        .where(eq(members.memberId, memberId))
-        .limit(1);
-      const memberRow = memberRows[0];
-
-      // F3 members.plan_id — needed for both the F2 tier-downgrade
-      // query (resolve "current plan annualFee") and the F7 e-blast
-      // quota lookup (resolve "tier's eblast_per_year").
-      const memberPlanRows = await tx
-        .select({
           planId: members.planId,
           planYear: members.planYear,
         })
         .from(members)
         .where(eq(members.memberId, memberId))
         .limit(1);
-      const memberPlan = memberPlanRows[0];
+      const memberRow = memberRows[0];
 
       // 2. F4 invoice aggregates — overdue count + max paid_at. Single
       //    aggregate query per member; with the (tenant_id, member_id)
@@ -207,8 +205,13 @@ export function makeDrizzleAtRiskScorer(
             AND np.annual_fee_minor_units < op.annual_fee_minor_units
         ) AS has_downgrade
       `);
-      const tierDowngradedLast12Months =
-        downgradeProbe[0]?.has_downgrade === true;
+      // Round 8 review-fix — defensive Boolean() coerce so a future
+      // refactor that switches the EXISTS to a CASE/COUNT shape (which
+      // would return string/number not native bool) still type-checks
+      // and produces correct truthy/falsy semantics.
+      const tierDowngradedLast12Months = Boolean(
+        downgradeProbe[0]?.has_downgrade,
+      );
 
       // ----------------------------------------------------------------
       // PR #24 Round 7 — F7 broadcast quota: eBlastQuotaPctUsed.
@@ -224,28 +227,48 @@ export function makeDrizzleAtRiskScorer(
       // Domain handles `undefined` as a 0-contribution skip per the
       // computeAtRiskScore contract.
       // ----------------------------------------------------------------
+      // Round 8 review-fix — `quota_year_consumed` lives on the
+      // `broadcasts` table (one row per send-batch), NOT on
+      // `broadcast_deliveries` (one row per recipient × broadcast). The
+      // Round 7 implementation queried a non-existent column and would
+      // have crashed every cron pass at runtime. Fix: JOIN deliveries →
+      // broadcasts ON broadcast_id, then filter the parent broadcast's
+      // quota_year_consumed.
+      //
+      // Round 8 review-fix — pass tenant timezone (env.tenant.timezone)
+      // to currentQuotaYear so the quota-year boundary aligns with
+      // however F7 wrote the broadcasts row at send time. SweCham is
+      // Bangkok-based so this is currently equivalent; future
+      // non-Bangkok tenants would have suffered a year-boundary
+      // misalignment without this fix.
       let eBlastQuotaPctUsed: number | undefined;
-      if (memberPlan != null) {
+      if (memberRow != null) {
         const planRows = await tx
           .select({
             benefitMatrix: membershipPlans.benefitMatrix,
           })
           .from(membershipPlans)
           .where(
-            sql`${membershipPlans.planId} = ${memberPlan.planId}
-                AND ${membershipPlans.planYear} = ${memberPlan.planYear}`,
+            sql`${membershipPlans.planId} = ${memberRow.planId}
+                AND ${membershipPlans.planYear} = ${memberRow.planYear}`,
           )
           .limit(1);
         const eblastQuota =
           planRows[0]?.benefitMatrix?.eblast_per_year ?? 0;
         if (eblastQuota > 0) {
-          const quotaYear = currentQuotaYear(new Date());
+          const quotaYear = currentQuotaYear(
+            new Date(),
+            env.tenant.timezone,
+          );
           const sentRows = await tx.execute<{ sent_count: string }>(sql`
             SELECT count(*)::text AS sent_count
-            FROM ${broadcastDeliveries}
-            WHERE recipient_member_id = ${memberId}
-              AND status = 'sent'
-              AND quota_year_consumed = ${quotaYear}
+            FROM ${broadcastDeliveries} bd
+            JOIN ${broadcasts} b
+              ON b.broadcast_id = bd.broadcast_id
+             AND b.tenant_id = bd.tenant_id
+            WHERE bd.recipient_member_id = ${memberId}
+              AND bd.status = 'sent'
+              AND b.quota_year_consumed = ${quotaYear}
           `);
           const sentCount = Number.parseInt(
             sentRows[0]?.sent_count ?? '0',

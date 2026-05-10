@@ -120,8 +120,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
 
     if (!verifyResult.ok) {
-      // Generic fail — `verifyRenewalLinkToken` already emitted the
-      // forensic audit (`renewal_token_invalid`) per its contract.
+      // Round 8 review-fix — `kind` fork: `invalid_input` is a
+      // programmer-error path (Zod schema reject — should be impossible
+      // given the explicit empty-token guard above) so we log loudly
+      // for ops triage. `invalid_token` is the security-rejection
+      // path which `verifyRenewalLinkToken` already emitted
+      // `renewal_token_invalid` audit for. Both paths return the same
+      // generic 302 (no oracle on token state per FR-027).
+      if (verifyResult.error.kind === 'invalid_input') {
+        logger.error(
+          {
+            correlationId,
+            tenantId: tenant.slug,
+            message: verifyResult.error.message,
+          },
+          '[redeem-renewal-link] programmer error — verifyRenewalLinkToken rejected input shape (no audit emitted by use-case)',
+        );
+      }
       return failureRedirect(request);
     }
 
@@ -165,15 +180,67 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return failureRedirect(request);
     }
 
+    // Round 8 review-fix — verify the linked user account is in a
+    // sign-in-eligible state BEFORE minting a session. sign-in.ts
+    // (lines 200-261) explicitly rejects `disabled`, `pending`,
+    // `locked`, and missing-password-hash cases; redeem-link
+    // previously bypassed all of these by calling sessionRepo.create
+    // directly. Without this guard, a disabled user's renewal-email
+    // click would: (1) consume the one-time token, (2) mint a session,
+    // (3) bounce off requireSession on the next page (which DOES
+    // re-check status), (4) leave the user stranded with no portal
+    // access AND a burned token.
+    //
+    // Note: the token has already been consumed by `verifyRenewalLinkToken`
+    // step 8 at this point. If the user is rejected here, the token is
+    // unrecoverable and an admin must re-issue. We log+audit loudly so
+    // ops triage can detect this case and reach out. Refactoring the
+    // use-case to defer consumption past the user-status check would
+    // be cleaner but is out of scope for the deep-review fix; the
+    // log+audit channel is sufficient for SweCham's 131-member volume.
+    // Mirrors sign-in.ts checks at lines 200-261: status==='active'
+    // (rejects 'disabled' + 'pending'), not locked, email verified
+    // (rejects email-change pending), no password-reset-required (F3
+    // FR-012b). passwordHash is NOT on UserAccount (lives only in the
+    // password-verify path); we treat status==='active' as the proxy
+    // for "has set a password" since pending users have status='pending'
+    // until they redeem their invite.
+    const userId = asUserId(primary.linkedUserId);
+    const now = new Date();
+    const linkedUser = await defaultSignInDeps.users.findById(userId);
+    const userBlocked =
+      linkedUser === null ||
+      linkedUser.status !== 'active' ||
+      !linkedUser.emailVerified ||
+      linkedUser.requiresPasswordReset ||
+      (linkedUser.lockedUntil !== null && linkedUser.lockedUntil > now);
+    if (userBlocked) {
+      logger.error(
+        {
+          correlationId,
+          tenantId: tenant.slug,
+          memberId,
+          userId,
+          userExists: linkedUser !== null,
+          userStatus: linkedUser?.status ?? null,
+          emailVerified: linkedUser?.emailVerified ?? null,
+          requiresPasswordReset: linkedUser?.requiresPasswordReset ?? null,
+          lockedUntil: linkedUser?.lockedUntil?.toISOString() ?? null,
+        },
+        '[redeem-renewal-link] linked user is not sign-in-eligible — token consumed but session refused; admin must re-issue link',
+      );
+      return failureRedirect(request);
+    }
+
     // Create a fresh session for the linked user. Mirrors sign-in.ts
-    // step 8 — same `sessionRepo.create({ userId, sourceIp, now })`
+    // step 8 — same `sessions.create({ userId, sourceIp, now })`
     // contract, same 12h absolute lifetime via session repo's internal
     // ABSOLUTE_LIFETIME_MS.
     const sourceIp = getClientIp(request);
     const session = await defaultSignInDeps.sessions.create({
-      userId: asUserId(primary.linkedUserId),
+      userId,
       sourceIp,
-      now: new Date(),
+      now,
     });
 
     // Idempotent (`cycle_already_completed`) and `success` both warrant

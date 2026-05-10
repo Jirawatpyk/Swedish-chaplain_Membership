@@ -28,14 +28,20 @@
 -- already exists. Re-running the migration after manual application
 -- is safe.
 
+-- Round 8 review-fix — idempotency check uses `pg_constraint.conname`
+-- (schema-agnostic OID lookup) instead of `information_schema
+-- .table_constraints WHERE constraint_schema = current_schema()`.
+-- The latter returns the FIRST schema in `search_path`, which can
+-- be set to a non-public schema by a session-level `SET search_path`
+-- — in that case the guard would mis-report the constraint as absent
+-- and the ALTER TABLE would fail on re-apply. `pg_constraint` matches
+-- the established pattern at migration 0082.
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
-    FROM information_schema.table_constraints
-    WHERE constraint_schema = current_schema()
-      AND table_name = 'scheduled_plan_changes'
-      AND constraint_name = 'scheduled_plan_changes_effective_at_cycle_fk'
+    FROM pg_constraint
+    WHERE conname = 'scheduled_plan_changes_effective_at_cycle_fk'
   ) THEN
     ALTER TABLE "scheduled_plan_changes"
       ADD CONSTRAINT "scheduled_plan_changes_effective_at_cycle_fk"

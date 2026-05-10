@@ -297,6 +297,19 @@ function mapVerifyErrorToReason(
       return 'expired';
     case 'tenant_mismatch':
       return 'cross_tenant';
+    /* v8 ignore next 6 */
+    default: {
+      // Round 8 review-fix — exhaustiveness guard. If the verifier
+      // adds a new error `kind` and someone forgets to update this
+      // map, `_exhaustive: never` errors at typecheck. If by chance
+      // it slips past typecheck (e.g. via `as never` cast), we throw
+      // loudly instead of returning `undefined` and silently
+      // suppressing the at-risk audit emission.
+      const _exhaustive: never = kind;
+      throw new Error(
+        `mapVerifyErrorToReason: unhandled verifier kind ${String(_exhaustive)}`,
+      );
+    }
   }
 }
 

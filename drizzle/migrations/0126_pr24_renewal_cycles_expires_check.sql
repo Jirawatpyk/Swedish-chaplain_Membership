@@ -18,14 +18,28 @@
 -- Idempotent: wraps in DO block to skip if the constraint already
 -- exists. Safe to re-run.
 
+-- Round 8 review-fix — defensive backfill BEFORE adding the CHECK
+-- constraint. The trigger has been live since migration 0087 so prod
+-- rows always satisfy the invariant, but a dev/staging environment
+-- that ever had the trigger disabled (pg_restore, ALTER TABLE DISABLE
+-- TRIGGER, manual superuser write) could have divergent rows. Without
+-- this UPDATE, ALTER TABLE ADD CONSTRAINT CHECK would raise
+-- "constraint is violated by some row" and abort the migration. The
+-- UPDATE is a no-op when the invariant already holds (zero-row write).
+UPDATE "renewal_cycles"
+   SET "expires_at" = "period_to"
+ WHERE "expires_at" IS DISTINCT FROM "period_to";
+
+-- Round 8 review-fix — idempotency check uses `pg_constraint.conname`
+-- (schema-agnostic OID lookup) instead of `information_schema
+-- .table_constraints WHERE constraint_schema = current_schema()`.
+-- See migration 0125 header comment for full rationale.
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
-    FROM information_schema.table_constraints
-    WHERE constraint_schema = current_schema()
-      AND table_name = 'renewal_cycles'
-      AND constraint_name = 'renewal_cycles_expires_at_eq_period_to_check'
+    FROM pg_constraint
+    WHERE conname = 'renewal_cycles_expires_at_eq_period_to_check'
   ) THEN
     ALTER TABLE "renewal_cycles"
       ADD CONSTRAINT "renewal_cycles_expires_at_eq_period_to_check"
