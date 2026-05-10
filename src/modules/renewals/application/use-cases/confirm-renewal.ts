@@ -398,10 +398,27 @@ function mapInvoiceError(
  * `renewalsMetrics.selfServiceFailed`. Exported here so the route
  * + its tests share one canonical mapping (catches dashboard
  * cardinality drift if a new error variant adds without a label).
+ *
+ * Phase 9 verify-fix Round-2 close — `SelfServiceFailureReason` is
+ * now a closed literal union covering the 7 mapped variants PLUS
+ * `'unexpected_error'` (the route's outer-catch path emits this on
+ * runtime exceptions outside the typed `ConfirmRenewalError` union).
+ * Closes the cardinality-drift loophole where the route emitted a
+ * label string outside the mapper's range.
  */
+export type SelfServiceFailureReason =
+  | 'f4_invoice_create_failed'
+  | 'cycle_terminal'
+  | 'plan_inactive'
+  | 'invalid_input'
+  | 'cross_member'
+  | 'server_error'
+  | 'unknown'
+  | 'unexpected_error';
+
 export function selfServiceFailureReason(
   err: ConfirmRenewalError,
-): string {
+): SelfServiceFailureReason {
   switch (err.kind) {
     case 'invoice_creation_failed':
       return 'f4_invoice_create_failed';

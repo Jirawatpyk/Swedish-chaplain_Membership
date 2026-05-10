@@ -468,6 +468,41 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // Phase 9 verify-fix Round-2 close — block production callers of
+    // test-only `__test__readGaugeValues` accessor in `src/lib/metrics.ts`.
+    // The accessor exposes the gauge-values per-process accumulator for
+    // unit tests to pin the multi-tenant accumulation invariant directly;
+    // a production caller would leak gauge state across tenants. The
+    // `__test__` prefix signals intent but the named-import restriction
+    // below converts it to a build-time error.
+    //
+    // Allowed callers: anything under `tests/**` + `*.test.ts` /
+    // `*.spec.ts` files. The rule's `files` glob targets production
+    // source paths; tests are excluded.
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: [
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/metrics",
+              importNames: ["__test__readGaugeValues"],
+              message:
+                "`__test__readGaugeValues` is a TEST-ONLY accessor exposing the per-process gauge-values accumulator (Phase 9 verify-fix Round-2 close). Production callers would leak gauge state across tenants. Use the OTel scrape pipeline instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Forbid direct === comparisons on password variables — always use argon2 verify() instead.
     files: ["src/modules/auth/**/*.ts", "src/modules/auth/**/*.tsx"],
     rules: {

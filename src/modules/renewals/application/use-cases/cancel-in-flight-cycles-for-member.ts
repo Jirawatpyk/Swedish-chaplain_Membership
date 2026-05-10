@@ -98,6 +98,40 @@ export interface CancelInFlightCyclesForMemberInput {
 }
 
 /**
+ * Phase 9 verify-fix Round-2 close — typed marker class for audit-emit
+ * failures. Replaces the prior Round-1 substring heuristic (`message
+ * .includes('audit')`) which had documented false-positive risk
+ * (Postgres `audit_log` table errors masquerade) AND false-negative
+ * risk (custom `AuditEmitError` whose message is "Resend webhook
+ * unavailable" wouldn't match).
+ *
+ * Audit emitter adapters (e.g. `drizzleRenewalAuditEmitter`) wrap
+ * `audit_log` insert errors in this class so the cascade use-case
+ * can classify via `instanceof AuditEmitError` — structural typing,
+ * not lexical heuristic.
+ *
+ * Carries `cause` per ES2022 Error options so the underlying
+ * Postgres / Drizzle error stack stays intact for triage.
+ */
+export class AuditEmitError extends Error {
+  override readonly name = 'AuditEmitError';
+  /**
+   * Underlying Postgres / Drizzle / network error class name —
+   * e.g. `'PostgresError'`, `'NeonDbError'`. Surfaces in adapter
+   * logs + cascade use-case Output's `auditEmitErrorName` field.
+   */
+  readonly underlyingErrorName: string;
+
+  constructor(
+    message: string,
+    options: { cause: unknown; underlyingErrorName: string },
+  ) {
+    super(message, { cause: options.cause });
+    this.underlyingErrorName = options.underlyingErrorName;
+  }
+}
+
+/**
  * Discriminated union over cascade outcome — Phase 9 verify-fix
  * close-on-review: replaces a flat `{outcome, counts}` interface where
  * `{outcome: 'cascade_failed', cancelledCount: 5}` was compile-
@@ -111,15 +145,23 @@ export interface CancelInFlightCyclesForMemberInput {
  *                                    failed via concurrent admin
  *                                    cancel race. Counts surface the
  *                                    skipped row.
- *   - `'cascade_audit_emit_failed'`→ Phase 9 verify-fix: distinct
- *                                    outcome for audit-emit failure
- *                                    inside the cascade tx (the tx
- *                                    rolled back per Principle VIII;
- *                                    the cycle stayed in its prior
- *                                    state). Operationally distinct
- *                                    from concurrent-skip — implies
- *                                    the audit pipeline itself is
- *                                    broken, not a benign race.
+ *   - `'cascade_audit_emit_failed'`→ distinct outcome for audit-emit
+ *                                    failure inside the cascade tx
+ *                                    (the tx rolled back per
+ *                                    Principle VIII; the cycle stayed
+ *                                    in its prior state).
+ *                                    Operationally distinct from
+ *                                    concurrent-skip — implies the
+ *                                    audit pipeline itself is broken,
+ *                                    not a benign race.
+ *                                    Round-2 close: carries
+ *                                    `auditEmitErrorName` +
+ *                                    `auditEmitErrorMessage` from the
+ *                                    typed `AuditEmitError` so the
+ *                                    F3 adapter can log the
+ *                                    underlying class without losing
+ *                                    forensic context across the
+ *                                    use-case ↔ adapter boundary.
  */
 export type CancelInFlightCyclesForMemberOutput =
   | {
@@ -136,19 +178,33 @@ export type CancelInFlightCyclesForMemberOutput =
       readonly outcome: 'cascade_audit_emit_failed';
       readonly cancelledCount: number;
       readonly skippedConcurrentCount: number;
+      /**
+       * Round-2 close: the underlying error class name from the
+       * typed `AuditEmitError.underlyingErrorName` (e.g.
+       * `'PostgresError'` / `'NeonDbError'`). Adapter logs this so
+       * dashboards can group on a stable label.
+       */
+      readonly auditEmitErrorName: string;
+      /**
+       * The raw `Error.message` from the underlying audit-emit
+       * failure. Sanitised at the adapter logging boundary
+       * (`renewals-cascade-adapter.ts`) — no PII per FR-049.
+       */
+      readonly auditEmitErrorMessage: string;
     };
 
 /**
  * Phase 9 verify-fix close-on-review — extend the Result error to
  * carry both `message` AND `errName` so the adapter can log the
- * underlying error class (PostgresError vs TypeError vs Upstash blip).
- * Previously only `message` propagated → operators had no way to
- * triage cascade-failed dashboards by error class.
+ * underlying error class. Round-2 close: `errName` is now REQUIRED
+ * (was optional). Producer at line ~365 uses sentinel fallback
+ * `'UnknownError'` when `e` is not an `Error` instance — eliminates
+ * the `?? 'unknown'` cast every dashboard query previously needed.
  */
 export type CancelInFlightCyclesForMemberError = {
   readonly kind: 'cascade.server_error';
   readonly message: string;
-  readonly errName?: string;
+  readonly errName: string;
 };
 
 const DEFAULT_REASON: RenewalsCascadeReason = 'originator_member_archived';
@@ -177,9 +233,11 @@ export async function cancelInFlightCyclesForMember(
 
   try {
     // Look up the at-most-one active cycle (status NOT IN terminal).
-    // Per data-model.md § 2.1 invariant L135 there is at most one
-    // non-terminal cycle per member; an archived member with no active
-    // cycle is the common case (idempotent replay returns 0).
+    // Per data-model.md § Invariants ("at most ONE cycle in status
+    // NOT IN ('lapsed','cancelled','completed') per (tenant_id,
+    // member_id)") there is at most one non-terminal cycle per
+    // member; an archived member with no active cycle is the common
+    // case (idempotent replay returns 0).
     const activeCycle = await deps.cyclesRepo.findActiveForMember(
       input.tenant.slug,
       input.memberId as string,
@@ -245,20 +303,26 @@ export async function cancelInFlightCyclesForMember(
           },
         );
 
-        await deps.auditEmitter.emitInTx(
-          tx,
-          {
-            type: 'renewal_cycle_cancelled',
-            payload: {
-              cycle_id: activeCycle.cycleId,
-              member_id: input.memberId,
-              // Cascade discriminator goes in `reason` — dashboards
-              // pivot on this value to distinguish system-initiated
-              // cascades from admin manual cancels.
-              reason,
-              previous_status: lockedCycle.status,
+        // Phase 9 verify-fix Round-2 — wrap the audit emit so the
+        // outer catch can structurally classify via `instanceof
+        // AuditEmitError` (replaces the prior fragile `'audit'`
+        // substring heuristic). Re-throw the typed error so
+        // `runInTenant` rolls back per Principle VIII.
+        try {
+          await deps.auditEmitter.emitInTx(
+            tx,
+            {
+              type: 'renewal_cycle_cancelled',
+              payload: {
+                cycle_id: activeCycle.cycleId,
+                member_id: input.memberId,
+                // Cascade discriminator goes in `reason` — dashboards
+                // pivot on this value to distinguish system-initiated
+                // cascades from admin manual cancels.
+                reason,
+                previous_status: lockedCycle.status,
+              },
             },
-          },
           {
             tenantId: input.tenant.slug,
             actorUserId: input.initiatedByUserId,
@@ -270,7 +334,24 @@ export async function cancelInFlightCyclesForMember(
             requestId: input.requestId,
             summary: `Renewal cycle ${activeCycle.cycleId} cancelled — ${reasonSummary(reason)}`,
           },
-        );
+          );
+        } catch (auditErr) {
+          // Wrap any audit-emit throw in the typed marker so the
+          // outer `txErr` catch can classify structurally. Re-throw
+          // INSIDE the runInTenant callback so the tx rolls back
+          // per Principle VIII (cycle UPDATE + audit emit are an
+          // atomic state↔audit pair).
+          throw new AuditEmitError(
+            auditErr instanceof Error
+              ? auditErr.message
+              : String(auditErr),
+            {
+              cause: auditErr,
+              underlyingErrorName:
+                auditErr instanceof Error ? auditErr.name : 'UnknownError',
+            },
+          );
+        }
 
         cancelledCount += 1;
       });
@@ -292,19 +373,40 @@ export async function cancelInFlightCyclesForMember(
           skippedConcurrentCount,
         });
       }
-      // Phase 9 verify-fix — distinguish audit-emit failure (Principle
-      // VIII rollback path) from concurrent-skip. Audit-emit throws
-      // bubble out of `runInTenant` as generic errors; recognise via
-      // the `audit` substring in the error message OR the constructor
-      // name. The runInTenant rollback already reverted the cycle
-      // transition; this branch records the operational signal.
+      // Phase 9 verify-fix Round-2 close — distinguish audit-emit
+      // failure (Principle VIII rollback path) from concurrent-skip
+      // via STRUCTURAL `instanceof AuditEmitError` check (was a
+      // fragile `'audit'/'emit'` substring heuristic in Round-1).
+      // `runInTenant` rollback already reverted the cycle transition;
+      // this branch records the operational signal + threads the
+      // typed underlying-error class through the discriminated-union
+      // arm so the F3 adapter can log + emit the right metric label
+      // without losing forensic context.
       const errMessage =
         txErr instanceof Error ? txErr.message : String(txErr);
       const errName =
-        txErr instanceof Error ? txErr.name : undefined;
-      const isAuditEmitFailure =
-        errMessage.toLowerCase().includes('audit') ||
-        errMessage.toLowerCase().includes('emit');
+        txErr instanceof Error ? txErr.name : 'UnknownError';
+      if (txErr instanceof AuditEmitError) {
+        logger.error(
+          {
+            err: errMessage,
+            errName,
+            underlyingErrorName: txErr.underlyingErrorName,
+            tenantId: input.tenant.slug,
+            memberId: input.memberId as string,
+            cycleId: activeCycle.cycleId,
+            cascade: 'f3_member_archival_or_erasure',
+          },
+          'renewals.cascade.audit_emit_failed',
+        );
+        return ok({
+          outcome: 'cascade_audit_emit_failed',
+          cancelledCount,
+          skippedConcurrentCount,
+          auditEmitErrorName: txErr.underlyingErrorName,
+          auditEmitErrorMessage: errMessage,
+        });
+      }
       logger.error(
         {
           err: errMessage,
@@ -313,19 +415,9 @@ export async function cancelInFlightCyclesForMember(
           memberId: input.memberId as string,
           cycleId: activeCycle.cycleId,
           cascade: 'f3_member_archival_or_erasure',
-          isAuditEmitFailure,
         },
-        isAuditEmitFailure
-          ? 'renewals.cascade.audit_emit_failed'
-          : 'renewals.cascade.tx_failed',
+        'renewals.cascade.tx_failed',
       );
-      if (isAuditEmitFailure) {
-        return ok({
-          outcome: 'cascade_audit_emit_failed',
-          cancelledCount,
-          skippedConcurrentCount,
-        });
-      }
       return ok({
         outcome: 'cascade_partial_failure',
         cancelledCount,
@@ -360,13 +452,14 @@ export async function cancelInFlightCyclesForMember(
       },
       'renewals.cascade.lookup_failed',
     );
-    // Phase 9 verify-fix — propagate `errName` through the Result
-    // so the F3 cascade adapter can log the underlying error class
-    // (PostgresError vs TypeError vs Upstash blip) for triage.
+    // Phase 9 verify-fix Round-2 — `errName` is now REQUIRED
+    // (sentinel `'UnknownError'` for non-Error throws). Eliminates
+    // the `?? 'unknown'` cast every dashboard query previously
+    // needed and makes group-by-errName statements safe.
     return err({
       kind: 'cascade.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
-      ...(e instanceof Error ? { errName: e.name } : {}),
+      errName: e instanceof Error ? e.name : 'UnknownError',
     });
   }
 }

@@ -43,7 +43,7 @@
  * + Phase 9 / T239 dep wiring) — together they prove the full F3 ↔ F8
  * cascade contract.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -279,6 +279,102 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
       expect(cycleRows[0]!.status).toBe('cancelled');
     } finally {
       await tenantB.cleanup().catch(() => {});
+    }
+  });
+
+  it('Phase 9 verify-fix Round-2 — typed AuditEmitError thrown inside tx classifies as cascade_audit_emit_failed (structural, not heuristic)', async () => {
+    // Round-2 close: replaces the prior `'audit'`/`'emit'` substring
+    // heuristic with `instanceof AuditEmitError`. Spy on the audit
+    // emitter to throw a generic Postgres-shaped error when emitting
+    // `renewal_cycle_cancelled`; the use-case wraps it in
+    // `AuditEmitError` BEFORE the outer catch sees it, so the catch
+    // can classify structurally. A regression that drops the wrap
+    // would surface the throw as `cascade_partial_failure` instead.
+    const baseDeps = makeRenewalsDeps(tenant.ctx.slug);
+    const realEmitInTx = baseDeps.auditEmitter.emitInTx.bind(
+      baseDeps.auditEmitter,
+    );
+    const spy = vi
+      .spyOn(baseDeps.auditEmitter, 'emitInTx')
+      .mockImplementation(async (tx, event, ctx) => {
+        if (event.type === 'renewal_cycle_cancelled') {
+          // Pretend a Postgres pgEnum violation surfaced from
+          // `tx.insert(auditLog).values(...)`. The use-case wraps
+          // any throw from emitInTx in `AuditEmitError`.
+          const pgErr = new Error(
+            'NeonDbError: invalid input value for enum',
+          );
+          pgErr.name = 'NeonDbError';
+          throw pgErr;
+        }
+        return realEmitInTx(tx, event, ctx);
+      });
+
+    // Need a fresh active cycle for this test (the prior cancel test
+    // already terminated `cycleId`). Seed a new one inline.
+    const newCycleId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: newCycleId,
+        memberId,
+        status: 'awaiting_payment',
+        periodFrom: PERIOD_FROM,
+        periodTo: EXPIRES_AT,
+        expiresAt: EXPIRES_AT,
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: 'audit-emit-failed-test',
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+      });
+    });
+    try {
+      const correlationId = randomUUID();
+      const result = await cancelInFlightCyclesForMember(baseDeps, {
+        tenant: tenant.ctx,
+        memberId: memberId as never,
+        cascadeReason: 'originator_member_archived',
+        initiatedByUserId: admin.userId,
+        requestId: null,
+        correlationId,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.outcome).toBe('cascade_audit_emit_failed');
+      if (result.value.outcome !== 'cascade_audit_emit_failed') return;
+      // Round-2 close: assert the typed error fields from the
+      // discriminated-union arm (replaces the prior generic-log
+      // gap where the underlying error class was dropped).
+      expect(result.value.auditEmitErrorName).toBe('NeonDbError');
+      expect(result.value.auditEmitErrorMessage).toContain(
+        'invalid input value for enum',
+      );
+      // Cycle row should NOT be 'cancelled' — the runInTenant tx
+      // rolled back per Principle VIII when AuditEmitError fired.
+      const cycleRow = await db
+        .select({ status: renewalCycles.status })
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenant.ctx.slug),
+            eq(renewalCycles.cycleId, newCycleId),
+          ),
+        );
+      expect(cycleRow[0]!.status).toBe('awaiting_payment');
+    } finally {
+      spy.mockRestore();
+      // Clean up the per-test cycle row.
+      await db
+        .delete(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenant.ctx.slug),
+            eq(renewalCycles.cycleId, newCycleId),
+          ),
+        )
+        .catch(() => {});
     }
   });
 

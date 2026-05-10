@@ -29,6 +29,7 @@ import {
   confirmRenewal,
   makeRenewalsDeps,
   selfServiceFailureReason,
+  type SelfServiceFailureReason,
 } from '@/modules/renewals';
 
 const BodySchema = z.object({
@@ -206,7 +207,13 @@ export async function POST(
     // TypeError, OTel adapter throw) would log + 500 but the
     // FR-046 conversion-funnel dashboard would record ZERO failures
     // → green-flagged broken portal.
-    renewalsMetrics.selfServiceFailed(ctx.tenant.slug, 'unexpected_error');
+    //
+    // Round-2 close: pin the label as `'unexpected_error'` via the
+    // shared `SelfServiceFailureReason` literal union (closes the
+    // cardinality-drift loophole where the route was emitting a
+    // label string outside the mapper's range).
+    const unhandledReason: SelfServiceFailureReason = 'unexpected_error';
+    renewalsMetrics.selfServiceFailed(ctx.tenant.slug, unhandledReason);
     logger.error(
       {
         err: e instanceof Error ? e : new Error(String(e)),

@@ -13,6 +13,7 @@ import {
   makeRenewalsDeps,
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { randomUUID } from 'node:crypto';
 import type {
   RenewalsCascadePort,
@@ -112,16 +113,27 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       }
       if (result.value.outcome === 'cascade_audit_emit_failed') {
         // Audit-emit failure during the cascade tx — Principle VIII
-        // rollback already reverted the cycle transition. Surface as
-        // partial-failure to the F3 port (with explicit log
-        // distinguisher). Operators triage via the structured-log
-        // `cascade: 'f8_audit_emit_failure'` field.
+        // rollback already reverted the cycle transition. Phase 9
+        // verify-fix Round-2 close: emit the metric counter with the
+        // distinguishing `'audit_emit_failed'` label HERE (at the
+        // adapter, BEFORE collapsing to port-level
+        // `cascade_partial_failure`). This closes the runbook gap
+        // where archive-member.ts emitted `'concurrent_skip'` for
+        // ALL `cascade_partial_failure` outcomes — operators can now
+        // page on `audit_emit_failed` distinctly via metric.
+        renewalsMetrics.cascadeOutcome(tenant.slug, 'audit_emit_failed');
         logger.error(
           {
             tenantId: tenant.slug,
             memberId: memberId as string,
             cancelledCount: result.value.cancelledCount,
             skippedConcurrentCount: result.value.skippedConcurrentCount,
+            // Round-2 close: log the underlying error class + message
+            // from the typed `AuditEmitError` so dashboards can group
+            // on a stable label (vs the prior "generic warn without
+            // the underlying class" gap).
+            auditEmitErrorName: result.value.auditEmitErrorName,
+            auditEmitErrorMessage: result.value.auditEmitErrorMessage,
             cascade: 'f8_audit_emit_failure',
           },
           'members.archive.renewals_cascade_audit_emit_failed',

@@ -482,6 +482,7 @@ export {
   type ConfirmRenewalInput,
   type ConfirmRenewalOutput,
   type ConfirmRenewalError,
+  type SelfServiceFailureReason,
 } from './application/use-cases/confirm-renewal';
 
 export {
