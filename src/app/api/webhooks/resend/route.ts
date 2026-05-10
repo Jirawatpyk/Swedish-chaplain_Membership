@@ -37,7 +37,7 @@ import { db } from '@/lib/db';
 // schema table is used by NO Application use case — webhooks are a
 // pure ingest path; wrapping in a passthrough use case would add no
 // behaviour. Documented escape hatch for webhook ingest handlers.
-// eslint-disable-next-line no-restricted-imports
+ 
 import {
   emailDeliveryEvents,
   type EmailDeliveryEventInsert,

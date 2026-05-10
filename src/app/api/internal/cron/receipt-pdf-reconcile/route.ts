@@ -74,12 +74,12 @@ import { asTenantContext } from '@/modules/tenants';
 // tenant ops surface (mirrors `sweep-stale-pending-refunds` pattern).
 // Top-level Application use case for cross-tenant orchestration is
 // out of scope; this is a maintenance path, not a user flow.
-/* eslint-disable no-restricted-imports */
+ 
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { receiptPdfRenderEnqueueAdapter } from '@/modules/invoicing/infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
-/* eslint-enable no-restricted-imports */
+ 
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -27,14 +27,14 @@ import {
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
 // `getForIssue`, not a deep reach into internals.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 // Same escape-hatch as the tenant-settings repo read above: a public-
 // port read (`findByOriginalInvoice`) used to populate the "Credit
 // Notes attached" section. No Application-layer use-case exists yet
 // for this list (Phase 10 candidate); the infra repo is called
 // directly.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
@@ -45,7 +45,7 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
 // Raw repo read mirrors the escape hatch used by /admin/users page.tsx —
 // an Application-layer `getStaffUser` would be a passthrough. Read is
 // admin-gated by the layout guard.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { DetailContainer } from '@/components/layout';

@@ -31,7 +31,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { sql } from 'drizzle-orm';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { db, runInTenant } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';

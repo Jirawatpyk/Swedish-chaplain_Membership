@@ -37,23 +37,18 @@ import { createHash } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
-/* eslint-disable no-restricted-imports --
- * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
- * is the operational drain path, not a user flow. Same escape hatch
- * as /api/cron/lockout-cleanup. */
+ 
 import {
   auditLog,
   notificationsOutbox,
   type NotificationsOutboxRow,
 } from '@/modules/auth/infrastructure/db/schema';
-/* eslint-enable no-restricted-imports */
+ 
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
-/* eslint-disable no-restricted-imports --
- * Cron dispatcher is operational infrastructure — the same escape
- * hatch /api/cron/lockout-cleanup uses. */
+ 
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { buildEmailVerificationEmail } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/email/email-change-revert-email';
@@ -66,7 +61,7 @@ import {
 } from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
 import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
 import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
-/* eslint-enable no-restricted-imports */
+ 
 import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing';
 import {
   buildBroadcastDeliveredEmail,
