@@ -95,14 +95,36 @@ async function openRowMenuIfMobile(page: Page): Promise<boolean> {
   return true;
 }
 
-// Round 6 Round-7 IMP-1 — `clickRowAction` (unified desktop+mobile
-// activation helper) was removed in favor of the explicit-skip
-// viewport-split pattern below: Radix DropdownMenuItem `onSelect`
-// fires unreliably under mobile-chrome / mobile-safari simulators
-// (force-click + keyboard Enter both verified failing 2026-05-10),
-// so the mobile row-menu surface is asserted only at the menu-open
-// + item-enabled level via `openRowMenuIfMobile`. Desktop AlertDialog
-// flow uses `findInlineActionButton` directly.
+/**
+ * Round 6 Round-7 UX-fix — restored unified `clickRowAction` helper
+ * after the queue component migrated DropdownMenuItem from `onSelect`
+ * to `onClick` (matching F8 Phase 8 `escalation-task-queue.tsx`
+ * pattern). The `onClick` handler fires on the underlying `<button>`
+ * element directly, bypassing Radix's onSelect → popper-close race
+ * that previously broke under mobile-chrome / mobile-safari
+ * simulators. No more viewport-split, no more skips — single test
+ * runs the AlertDialog flow on every browser project.
+ */
+async function clickRowAction(
+  page: Page,
+  label: RegExp,
+): Promise<void> {
+  const inline = await findInlineActionButton(page, label);
+  if (inline !== null) {
+    await inline.click();
+    return;
+  }
+  const opened = await openRowMenuIfMobile(page);
+  if (!opened) {
+    throw new Error(
+      `clickRowAction: neither inline button nor row-menu trigger found for ${label}`,
+    );
+  }
+  const menu = page.getByRole('menu').first();
+  const menuItem = menu.getByRole('menuitem', { name: label });
+  await menuItem.waitFor({ state: 'visible', timeout: 5_000 });
+  await menuItem.click();
+}
 
 // Round 6 W-015 — describe-level skip when feature flag is OFF. Use
 // `test.describe.skip` instead of `test.skip()` inside beforeAll so
@@ -174,38 +196,21 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
     ).toBeVisible();
   });
 
-  // Round 6 W-015 + Round-7 IMP-1 final resolution — split into two
-  // viewport-gated tests with EXPLICIT `test.skip(condition, reason)`.
-  // Each test runs on the viewport it covers AND skip-by-design on the
-  // other (visible in Playwright reporter as "skipped: by design"
-  // with a reason — distinct from silent zero-assertion passes).
-  //
-  // Why split + skip instead of a single unified test: Radix
-  // DropdownMenuItem `onSelect` does not fire reliably under
-  // mobile-safari / mobile-chrome simulators (force-click + keyboard
-  // Enter both verified failing 2026-05-10). The mobile invariant
-  // is therefore restricted to "menu opens, item is enabled" — the
-  // actual `setDialog → AlertDialog` open is environment-dependent
-  // on real devices and not deterministically reproducible in CI.
-  // The desktop AlertDialog flow is fully covered on chromium.
-
-  test('Accept opens AlertDialog with Cancel focused (FR-058 §4 — desktop)', async ({
+  // Round 6 W-015 + Round-7 final — single unified test runs the
+  // AlertDialog flow on every browser project. The queue component's
+  // DropdownMenuItem now uses `onClick` (not `onSelect`) per F8 Phase 8
+  // pattern, so the mobile touch event chain reliably fires
+  // `setDialog → AlertDialog open`. No skips, no viewport split.
+  test('Accept opens AlertDialog with Cancel focused (FR-058 §4) on every viewport', async ({
     page,
-    viewport,
   }) => {
-    test.skip(
-      (viewport?.width ?? Infinity) < 768,
-      'Desktop-only — FR-058 §4 focus assertion runs on chromium project (viewport ≥ 768). Mobile viewport covered by sibling row-menu test below.',
-    );
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tier-upgrades');
-    const acceptInline = await findInlineActionButton(page, /^accept$/i);
-    expect(
-      acceptInline,
-      'expected an inline Accept button on desktop viewport — was the seed run?',
-    ).not.toBeNull();
-    await acceptInline!.click();
+    // `clickRowAction` handles both desktop (inline button) and mobile
+    // (row-menu → menu item via onClick on the underlying <button>).
+    await clickRowAction(page, /^accept$/i);
 
+    // AlertDialog opens with title + description + Cancel button.
     await expect(
       page.getByRole('alertdialog').getByRole('heading'),
     ).toBeVisible();
@@ -213,28 +218,13 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
       .getByRole('alertdialog')
       .getByRole('button', { name: /cancel/i });
     await expect(cancelBtn).toBeVisible();
+
+    // FR-058 §4 focus-on-Cancel default. Locked across all 3 browser
+    // projects after the onSelect → onClick migration.
     await expect(cancelBtn).toBeFocused();
+
+    // Cancel keeps the suggestion in queue.
     await cancelBtn.click();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
-  });
-
-  test('Row menu opens with Accept item enabled (mobile)', async ({
-    page,
-    viewport,
-  }) => {
-    test.skip(
-      (viewport?.width ?? Infinity) >= 768,
-      'Mobile-only — row-menu UX. Desktop viewport covered by sibling AlertDialog test above.',
-    );
-    await signInAsAdmin(page);
-    await page.goto('/admin/renewals/tier-upgrades');
-    const opened = await openRowMenuIfMobile(page);
-    expect(opened, 'expected a row-menu trigger on mobile viewport').toBe(true);
-    const acceptItem = page
-      .getByRole('menu')
-      .first()
-      .getByRole('menuitem', { name: /^accept$/i });
-    await expect(acceptItem).toBeVisible();
-    await expect(acceptItem).toBeEnabled();
   });
 });

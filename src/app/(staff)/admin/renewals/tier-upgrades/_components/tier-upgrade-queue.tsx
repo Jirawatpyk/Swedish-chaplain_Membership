@@ -232,9 +232,19 @@ export function TierUpgradeQueueClient({
                           <MoreHorizontal className="size-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
+                          {/* Round 6 Round-7 UX-fix — switched onSelect →
+                              onClick to align with F8 Phase 8
+                              `escalation-task-queue.tsx` pattern that
+                              shipped successfully through review.
+                              Radix DropdownMenuItem.onSelect interacts
+                              poorly with mobile touch event chains
+                              (verified failing under Playwright
+                              mobile-chrome / mobile-safari simulators
+                              2026-05-10); onClick on the underlying
+                              <button> bypasses the popper-close race. */}
                           <DropdownMenuItem
                             disabled={!isOpen || busy}
-                            onSelect={() =>
+                            onClick={() =>
                               setDialog({
                                 action: 'accept',
                                 suggestionId: item.suggestionId,
@@ -245,7 +255,7 @@ export function TierUpgradeQueueClient({
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={!isOpen || busy}
-                            onSelect={() =>
+                            onClick={() =>
                               void callAction(item.suggestionId, 'escalate')
                             }
                           >
@@ -253,7 +263,7 @@ export function TierUpgradeQueueClient({
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             disabled={!isOpen || busy}
-                            onSelect={() =>
+                            onClick={() =>
                               setDialog({
                                 action: 'dismiss',
                                 suggestionId: item.suggestionId,
