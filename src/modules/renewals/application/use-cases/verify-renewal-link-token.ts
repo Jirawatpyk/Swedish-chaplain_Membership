@@ -63,6 +63,33 @@ export type VerifyRenewalLinkTokenInput = z.infer<
   typeof verifyRenewalLinkTokenInputSchema
 >;
 
+/**
+ * PR #24 Round 9 — pre-consume gate.
+ *
+ * Optional callback invoked AFTER structural verification (HMAC +
+ * payload + cycle lookup) but BEFORE the atomic markConsumed step.
+ * Lets the caller perform additional eligibility checks against the
+ * resolved (memberId, cycleId) — e.g. "is the linked user account
+ * sign-in-eligible?" — and abort token consumption when the check
+ * fails. Critical for the redeem-link route: without this gate, a
+ * disabled-user click would consume the one-time token before the
+ * route discovered the user could not sign in, leaving the user
+ * stranded with a burned link.
+ *
+ * Return:
+ *   - 'allow' — verify proceeds with markConsumed (default behaviour
+ *      when no gate is supplied).
+ *   - 'block' — verify aborts WITHOUT consuming the token. The token
+ *      remains valid for re-issue or retry. The use-case returns
+ *      `kind: 'invalid_token'` with reason `'member_not_found_in_tenant'`
+ *      (generic no-oracle response per FR-027); the caller is
+ *      responsible for its own forensic logging.
+ */
+export type PreConsumeGate = (args: {
+  readonly memberId: string;
+  readonly cycleId: string;
+}) => Promise<'allow' | 'block'>;
+
 export type VerifyRenewalLinkTokenSuccess =
   | {
       readonly kind: 'success';
@@ -129,6 +156,13 @@ export interface VerifyRenewalLinkTokenDeps
 export async function verifyRenewalLinkToken(
   deps: VerifyRenewalLinkTokenDeps,
   rawInput: VerifyRenewalLinkTokenInput,
+  /**
+   * PR #24 Round 9 — optional pre-consume gate. See `PreConsumeGate`
+   * docstring above. Pass when the caller needs to abort token
+   * consumption based on resolved (memberId, cycleId) — typically a
+   * user-status eligibility check.
+   */
+  preConsumeGate?: PreConsumeGate,
 ): Promise<
   Result<VerifyRenewalLinkTokenSuccess, VerifyRenewalLinkTokenError>
 > {
@@ -232,6 +266,33 @@ export async function verifyRenewalLinkToken(
       cycleId: payload.cid,
       verifiedWith,
     });
+  }
+
+  // ---- PR #24 Round 9 — pre-consume gate. Caller-supplied predicate
+  // runs AFTER structural verification but BEFORE markConsumed so the
+  // token stays valid if the gate denies (e.g. linked user is disabled).
+  // We emit the same generic 'member_not_found_in_tenant' reason the
+  // route would have surfaced anyway — caller logs the real reason
+  // privately. Token is NOT consumed; admin can re-issue or member can
+  // retry after the underlying issue is fixed.
+  if (preConsumeGate !== undefined) {
+    const gateResult = await preConsumeGate({
+      memberId: payload.mid,
+      cycleId: payload.cid,
+    });
+    if (gateResult === 'block') {
+      await emitTokenInvalid(
+        deps,
+        tenantId,
+        input,
+        'member_not_found_in_tenant',
+        tokenSha256,
+      );
+      return err({
+        kind: 'invalid_token',
+        reason: 'member_not_found_in_tenant',
+      });
+    }
   }
 
   // ---- Step 6 + 8: atomic mark consumed (replay detection via PK).

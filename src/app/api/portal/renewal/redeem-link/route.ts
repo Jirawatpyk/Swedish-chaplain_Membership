@@ -102,6 +102,90 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const renewalsDeps = makeRenewalsDeps(tenant.slug);
+    const membersDeps = buildMembersDeps(tenantCtx);
+    const now = new Date();
+
+    // Round 9 — pre-consume gate. Resolve the member's primary-contact
+    // linked user + run the same eligibility checks as sign-in.ts BEFORE
+    // verify proceeds to markConsumed. Returning 'block' aborts token
+    // consumption so the link stays valid for retry/re-issue. Closes the
+    // Round 8 half-fix where the token was consumed BEFORE we discovered
+    // the user was ineligible, leaving the user stranded with a burned
+    // link.
+    //
+    // The gate captures `resolvedUserId` in a closure so the post-verify
+    // session creation can use the same UserId without a second lookup.
+    let resolvedUserId: ReturnType<typeof asUserId> | null = null;
+    const preConsumeGate = async (args: {
+      readonly memberId: string;
+      readonly cycleId: string;
+    }): Promise<'allow' | 'block'> => {
+      const contactsResult = await membersDeps.contactRepo.listByMember(
+        tenantCtx,
+        asMemberId(args.memberId),
+      );
+      if (!contactsResult.ok) {
+        logger.error(
+          {
+            correlationId,
+            tenantId: tenant.slug,
+            memberId: args.memberId,
+            cycleId: args.cycleId,
+            err: contactsResult.error.code,
+          },
+          '[redeem-renewal-link] preConsumeGate: failed to list member contacts',
+        );
+        return 'block';
+      }
+      const primary = contactsResult.value.find(
+        (c: Contact) => c.isPrimary && !c.removedAt,
+      );
+      if (!primary || !primary.linkedUserId) {
+        logger.warn(
+          {
+            correlationId,
+            tenantId: tenant.slug,
+            memberId: args.memberId,
+            hasPrimary: primary !== undefined,
+            hasLinkedUser: primary?.linkedUserId != null,
+          },
+          '[redeem-renewal-link] preConsumeGate: member has no primary-contact linked user — token NOT consumed',
+        );
+        return 'block';
+      }
+      // Mirror sign-in.ts checks (lines 200-261): status==='active',
+      // emailVerified, !requiresPasswordReset, not locked.
+      const userId = asUserId(primary.linkedUserId);
+      const linkedUser = await defaultSignInDeps.users.findById(userId);
+      const userBlocked =
+        linkedUser === null ||
+        linkedUser.status !== 'active' ||
+        !linkedUser.emailVerified ||
+        linkedUser.requiresPasswordReset ||
+        (linkedUser.lockedUntil !== null && linkedUser.lockedUntil > now);
+      if (userBlocked) {
+        logger.error(
+          {
+            correlationId,
+            tenantId: tenant.slug,
+            memberId: args.memberId,
+            cycleId: args.cycleId,
+            userId,
+            userExists: linkedUser !== null,
+            userStatus: linkedUser?.status ?? null,
+            emailVerified: linkedUser?.emailVerified ?? null,
+            requiresPasswordReset:
+              linkedUser?.requiresPasswordReset ?? null,
+            lockedUntil: linkedUser?.lockedUntil?.toISOString() ?? null,
+          },
+          '[redeem-renewal-link] preConsumeGate: linked user is not sign-in-eligible — token NOT consumed; admin can re-enable + member retries link',
+        );
+        return 'block';
+      }
+      resolvedUserId = userId;
+      return 'allow';
+    };
+
     const verifyResult = await verifyRenewalLinkToken(
       {
         tokenVerifier: renewalsDeps.tokenVerifier,
@@ -115,8 +199,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         expectedTenantId: tenant.slug,
         correlationId,
         requestId: null,
-        now: new Date(),
+        now,
       },
+      preConsumeGate,
     );
 
     if (!verifyResult.ok) {
@@ -141,96 +226,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
 
     const memberId = verifyResult.value.memberId;
-
-    // Resolve linked user id via the member's primary contact. Admin-
-    // only members (no contact OR contact with no linked_user_id) cannot
-    // sign in — they would never receive a renewal email anyway, but we
-    // defend in depth.
-    const membersDeps = buildMembersDeps(tenantCtx);
-    const contactsResult = await membersDeps.contactRepo.listByMember(
-      tenantCtx,
-      asMemberId(memberId),
-    );
-    if (!contactsResult.ok) {
+    // The preConsumeGate captured `resolvedUserId` on the success path.
+    // Verify success implies the gate returned 'allow', which implies
+    // the user lookup succeeded and was eligible. The token has already
+    // been consumed by `verifyRenewalLinkToken` step 8.
+    if (resolvedUserId === null) {
+      // Defensive — should be unreachable. If it ever fires, the gate
+      // contract has drifted and we want a loud signal.
       logger.error(
-        {
-          correlationId,
-          tenantId: tenant.slug,
-          memberId,
-          err: contactsResult.error.code,
-        },
-        '[redeem-renewal-link] failed to list member contacts',
+        { correlationId, tenantId: tenant.slug, memberId },
+        '[redeem-renewal-link] verify succeeded but preConsumeGate did not capture userId — gate contract drift',
       );
       return failureRedirect(request);
     }
-    const primary = contactsResult.value.find(
-      (c: Contact) => c.isPrimary && !c.removedAt,
-    );
-    if (!primary || !primary.linkedUserId) {
-      logger.warn(
-        {
-          correlationId,
-          tenantId: tenant.slug,
-          memberId,
-          hasPrimary: primary !== undefined,
-          hasLinkedUser: primary?.linkedUserId != null,
-        },
-        '[redeem-renewal-link] member has no primary-contact linked user',
-      );
-      return failureRedirect(request);
-    }
-
-    // Round 8 review-fix — verify the linked user account is in a
-    // sign-in-eligible state BEFORE minting a session. sign-in.ts
-    // (lines 200-261) explicitly rejects `disabled`, `pending`,
-    // `locked`, and missing-password-hash cases; redeem-link
-    // previously bypassed all of these by calling sessionRepo.create
-    // directly. Without this guard, a disabled user's renewal-email
-    // click would: (1) consume the one-time token, (2) mint a session,
-    // (3) bounce off requireSession on the next page (which DOES
-    // re-check status), (4) leave the user stranded with no portal
-    // access AND a burned token.
-    //
-    // Note: the token has already been consumed by `verifyRenewalLinkToken`
-    // step 8 at this point. If the user is rejected here, the token is
-    // unrecoverable and an admin must re-issue. We log+audit loudly so
-    // ops triage can detect this case and reach out. Refactoring the
-    // use-case to defer consumption past the user-status check would
-    // be cleaner but is out of scope for the deep-review fix; the
-    // log+audit channel is sufficient for SweCham's 131-member volume.
-    // Mirrors sign-in.ts checks at lines 200-261: status==='active'
-    // (rejects 'disabled' + 'pending'), not locked, email verified
-    // (rejects email-change pending), no password-reset-required (F3
-    // FR-012b). passwordHash is NOT on UserAccount (lives only in the
-    // password-verify path); we treat status==='active' as the proxy
-    // for "has set a password" since pending users have status='pending'
-    // until they redeem their invite.
-    const userId = asUserId(primary.linkedUserId);
-    const now = new Date();
-    const linkedUser = await defaultSignInDeps.users.findById(userId);
-    const userBlocked =
-      linkedUser === null ||
-      linkedUser.status !== 'active' ||
-      !linkedUser.emailVerified ||
-      linkedUser.requiresPasswordReset ||
-      (linkedUser.lockedUntil !== null && linkedUser.lockedUntil > now);
-    if (userBlocked) {
-      logger.error(
-        {
-          correlationId,
-          tenantId: tenant.slug,
-          memberId,
-          userId,
-          userExists: linkedUser !== null,
-          userStatus: linkedUser?.status ?? null,
-          emailVerified: linkedUser?.emailVerified ?? null,
-          requiresPasswordReset: linkedUser?.requiresPasswordReset ?? null,
-          lockedUntil: linkedUser?.lockedUntil?.toISOString() ?? null,
-        },
-        '[redeem-renewal-link] linked user is not sign-in-eligible — token consumed but session refused; admin must re-issue link',
-      );
-      return failureRedirect(request);
-    }
+    const userId: ReturnType<typeof asUserId> = resolvedUserId;
 
     // Create a fresh session for the linked user. Mirrors sign-in.ts
     // step 8 — same `sessions.create({ userId, sourceIp, now })`
