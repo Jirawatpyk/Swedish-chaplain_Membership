@@ -647,9 +647,15 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           escalationTasks. `loadCycleDetail` populates both arrays via
           existing port reads (reminderEventRepo.listForCycle +
           escalationTaskRepo.listForCycle); the previous unconditional
-          EmptyState was wasting two DB reads per page load. Both
-          surfaces are bounded scope (≤5 rows each per cycle) so flat
-          lists are appropriate; no pagination needed. */}
+          EmptyState was wasting two DB reads per page load.
+          Round 3 — bounded-scope claim corrected: reminderHistory
+          scales with `steps × years_in_cycle` (regular tier ~6,
+          premium/partnership ~9 per year per migration 0089); a
+          2-year premium cycle could reach ~18 reminder events.
+          escalationTasks stays small (created only on failures, ~5
+          typical). Flat <ul> still appropriate at SweCham scale —
+          revisit pagination only if a single cycle accumulates >50
+          events. */}
       <Card>
         <CardContent>
           <section aria-labelledby="cycle-detail-activity-heading">
@@ -722,11 +728,17 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
                             <span className="text-muted-foreground">
                               {fmtDate(task.dueAt)}
                             </span>
-                            {task.assignedToUserId !== null && (
-                              <span className="text-xs text-muted-foreground">
-                                {task.assignedToRole}
-                              </span>
-                            )}
+                            {/* PR #24 review-fix Round 3 — `assignedToRole`
+                                is non-nullable on the Domain type and is
+                                always present (dispatcher-created tasks
+                                set role but no specific user). The earlier
+                                guard on `assignedToUserId !== null` hid
+                                the role label for every system-generated
+                                task. Render the role unconditionally so
+                                admins always see the assignment target. */}
+                            <span className="text-xs text-muted-foreground">
+                              {task.assignedToRole}
+                            </span>
                           </li>
                         ))}
                       </ul>
