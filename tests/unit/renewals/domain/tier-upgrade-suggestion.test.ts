@@ -329,40 +329,110 @@ describe('Round 6 S-007 — state-machine property tests (fast-check, 256 cases)
     );
   });
 
-  it('I3 — accepted_pending_apply requires acceptedAt + acceptedByUserId + targetApplyAtCycleId all non-null', () => {
+  // Round 6 Round-7 review-fix CRIT-1 NOTE — pre-fix I3/I4 were
+  // tautological (`expect(typeof boolean).toBe('boolean')`). The
+  // first fix attempt asserted that `assertSuggestionInvariants`
+  // rejects accepted_pending_apply / applied with missing anchors;
+  // that was structurally wrong because the Domain function only
+  // enforces the `dismissedReason.length ≤ 500` rule at runtime
+  // (the status-anchor invariants are COMPILE-TIME-only via the
+  // `TierUpgradeSuggestion` discriminated union — see Domain JSDoc
+  // at `tier-upgrade-suggestion.ts:251-256`). Replaced with two
+  // tests that exercise actual runtime behaviour:
+  //   - I3-runtime: the only runtime invariant kicks in when
+  //     `dismissedReason.length > 500`.
+  //   - I4-compile-time: a TypeScript @ts-expect-error pin at the
+  //     bottom of this file already covers the discriminated-union
+  //     enforcement (no property test adds value beyond that).
+  it('I3-runtime — assertSuggestionInvariants rejects dismissed suggestions with reason >500 chars', () => {
     fc.assert(
       fc.property(
-        fc.option(fc.date(), { nil: null }),
-        fc.option(fc.uuid(), { nil: null }),
-        fc.option(fc.uuid(), { nil: null }),
-        (acceptedAt, acceptedByUserId, targetApplyAtCycleId) => {
-          // Predicate I3: status='accepted_pending_apply' is INVALID
-          // unless all 3 anchors are present.
-          const allAnchorsPresent =
-            acceptedAt !== null &&
-            acceptedByUserId !== null &&
-            targetApplyAtCycleId !== null;
-          // For ANY combination, the boolean is well-defined; the type
-          // system rejects the invalid construction at compile time.
-          expect(typeof allAnchorsPresent).toBe('boolean');
+        // Generate strings of length 0..1000 — both inside-budget
+        // and over-budget cases are exercised.
+        fc.string({ minLength: 0, maxLength: 1000 }),
+        (reason) => {
+          const candidate = buildSuggestion({
+            status: 'dismissed',
+            dismissedReason: reason,
+            suppressedUntil: '2026-08-15T00:00:00Z',
+            closedAt: '2026-05-10T00:00:00Z',
+          } as Partial<TierUpgradeSuggestion>);
+          const result = assertSuggestionInvariants(candidate);
+          // The single runtime invariant: dismissedReason ≤ 500 chars.
+          expect(result.ok).toBe(reason.length <= 500);
+          if (!result.ok) {
+            expect(result.error.kind).toBe('dismissed_reason_too_long');
+            expect(result.error.length).toBe(reason.length);
+          }
         },
       ),
       { numRuns: 256 },
     );
   });
 
-  it('I4 — applied state requires appliedAt + appliedAtInvoiceId both non-null', () => {
+  it('I4-runtime — assertSuggestionInvariants accepts every status × valid-shape combination (smoke pass)', () => {
+    // Property-test the happy path across all 6 statuses. For each
+    // status, we construct a discriminator-correct suggestion (the
+    // factory's `Partial` cast lets us flip status + the required
+    // anchor combo). The runtime-only invariant
+    // (dismissedReason.length ≤ 500) is satisfied via short reason
+    // string; assertSuggestionInvariants MUST accept all of them.
     fc.assert(
       fc.property(
-        fc.option(fc.date(), { nil: null }),
-        fc.option(fc.uuid(), { nil: null }),
-        (appliedAt, appliedAtInvoiceId) => {
-          const allAppliedAnchorsPresent =
-            appliedAt !== null && appliedAtInvoiceId !== null;
-          expect(typeof allAppliedAnchorsPresent).toBe('boolean');
+        fc.constantFrom(...TIER_UPGRADE_STATUSES),
+        (status: TierUpgradeStatus) => {
+          let overrides: Partial<TierUpgradeSuggestion>;
+          switch (status) {
+            case 'open':
+              overrides = { status, closedAt: null };
+              break;
+            case 'accepted_pending_apply':
+              overrides = {
+                status,
+                acceptedAt: '2026-05-09T00:00:00Z',
+                acceptedByUserId: '00000000-0000-0000-0000-0000000000aa',
+                targetApplyAtCycleId:
+                  '00000000-0000-0000-0000-0000000000bb',
+                closedAt: null,
+              };
+              break;
+            case 'applied':
+              overrides = {
+                status,
+                acceptedAt: '2026-05-09T00:00:00Z',
+                acceptedByUserId: '00000000-0000-0000-0000-0000000000aa',
+                targetApplyAtCycleId:
+                  '00000000-0000-0000-0000-0000000000bb',
+                appliedAt: '2026-05-10T00:00:00Z',
+                appliedAtInvoiceId:
+                  '00000000-0000-0000-0000-0000000000cc',
+                closedAt: '2026-05-10T00:00:00Z',
+              };
+              break;
+            case 'dismissed':
+              overrides = {
+                status,
+                dismissedReason: 'short reason',
+                suppressedUntil: '2026-08-15T00:00:00Z',
+                closedAt: '2026-05-10T00:00:00Z',
+              };
+              break;
+            case 'superseded':
+            case 'auto_resolved':
+              overrides = {
+                status,
+                closedAt: '2026-05-10T00:00:00Z',
+              };
+              break;
+          }
+          const candidate = buildSuggestion(
+            overrides as Partial<TierUpgradeSuggestion>,
+          );
+          const result = assertSuggestionInvariants(candidate);
+          expect(result.ok).toBe(true);
         },
       ),
-      { numRuns: 256 },
+      { numRuns: 64 },
     );
   });
 

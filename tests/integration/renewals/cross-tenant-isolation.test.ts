@@ -1038,12 +1038,21 @@ describe('F8 cross-tenant probes — Constitution Principle I (J3-B7 + H3)', () 
         pageSize: 100,
       });
 
-      // Eval succeeds; tenant B's suggestion count is unchanged because
-      // the candidate query under A's binding cannot see B's members.
-      // The result.ok==true case is the happy path; if `no_thresholds_configured`
-      // fires (catalogue with no min_turnover) the test still pins the
-      // isolation invariant via the post-condition assertion below.
+      // Round 6 Round-7 review-fix IMP-2 — assertion + comment now
+      // agree. The eval cron may legitimately short-circuit on either
+      // (a) ok=true with `tenantSkipped: { reason: 'no_thresholds_configured' }`
+      // when the seeded plan lacks `min_turnover_minor_units`, or
+      // (b) ok=true with `tenantSkipped: null` and a normal scan over
+      // A's members (none crossing thresholds in this test).
+      // Both prove the candidate query did not see B's members; the
+      // load-bearing assertion is the post-condition that B's
+      // suggestion count is unchanged.
       expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect([null, 'no_thresholds_configured']).toContain(
+          result.value.tenantSkipped?.reason ?? null,
+        );
+      }
 
       const afterCount = await runInTenant(tenantB.ctx, (tx) =>
         tx

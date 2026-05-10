@@ -189,6 +189,19 @@ function decideUpgrade(
  * the whole pass. Accepted because the partial-UNIQUE `member_open_uniq`
  * catches the most common conflict path BEFORE tx abort, and other
  * failures are rare-and-loud (server_error → cron retries next week).
+ *
+ * **IMPORTANT scope limit (Round 6 Round-7 CRITICAL-2)**: only the
+ * suggestion-insert + audit-emit WRITE paths participate in `outerTx`.
+ * The early-stage READS — `tenantRenewalSettingsRepo.findByTenant` and
+ * `planCatalog.listForTenant` and `tierUpgradeRepo.isSuppressedForMember`
+ * — still run on their own connections (their port signatures don't
+ * accept a `tx` param yet). Implication: in the rare TOCTOU window
+ * between lock-acquire and the loop body, an admin who flips
+ * `auto_upgrade_enabled = false` could see suggestions still inserted
+ * for that pass (the settings read happened pre-flip). The suggestion-
+ * insert idempotency + the next cron pass's tenant_disabled gate
+ * absorb the residual risk; documenting the gap so future work
+ * (extending the read repos to accept `tx`) has a known target.
  */
 export async function evaluateTierUpgrade(
   deps: RenewalsDeps,
