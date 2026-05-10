@@ -229,9 +229,21 @@ export function proxy(request: NextRequest): NextResponse {
 
   // 1b. FEATURE_F3_MEMBERS kill-switch (T036). Applies to BOTH reads and
   //     writes on the F3 surfaces because the whole feature is disabled.
+  //
+  //     Deep-review fix — F8 portal API surfaces (`/api/portal/renewal/**`
+  //     + `/api/portal/preferences/renewals`) are nested under
+  //     `/api/portal` but DO NOT belong to F3. The earlier blanket match
+  //     would silently kill F8 portal endpoints with the wrong error
+  //     code (`read_only_mode` instead of `feature_disabled`) when an
+  //     operator disabled F3 for maintenance while F8 was live. We now
+  //     exclude the F8 portal sub-trees so each kill-switch returns its
+  //     own canonical error code.
+  const isF8PortalApiPath =
+    nextUrl.pathname.startsWith('/api/portal/renewal') ||
+    nextUrl.pathname.startsWith('/api/portal/preferences/renewals');
   const isF3Path =
     nextUrl.pathname.startsWith('/api/members') ||
-    nextUrl.pathname.startsWith('/api/portal');
+    (nextUrl.pathname.startsWith('/api/portal') && !isF8PortalApiPath);
   if (!env.features.f3Members && isF3Path) {
     return build503(
       'read_only_mode',
@@ -351,6 +363,12 @@ export function proxy(request: NextRequest): NextResponse {
     nextUrl.pathname.startsWith('/api/portal/renewal') ||
     nextUrl.pathname.startsWith('/api/portal/preferences/renewals') ||
     /^\/admin\/renewals(?:\/|$)/.test(nextUrl.pathname) ||
+    // Deep-review fix — `/admin/settings/renewals/**` (schedule editor)
+    // was previously NOT proxied; the page component had its own flag
+    // guard, but defence-in-depth wants the proxy as first gate so a
+    // disabled-F8 deploy doesn't render Next.js layouts + invoke
+    // server-component data fetches before short-circuiting.
+    /^\/admin\/settings\/renewals(?:\/|$)/.test(nextUrl.pathname) ||
     /^\/portal\/renewal(?:\/|$)/.test(nextUrl.pathname) ||
     /^\/portal\/preferences\/renewals(?:\/|$)/.test(nextUrl.pathname);
   if (!env.features.f8Renewals && isF8Path) {

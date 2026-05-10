@@ -5,14 +5,28 @@
  * `reconcilePendingReactivations` use-case (T138) which walks pending
  * cycles + emits reminder ladder audits + auto-times-out at >= 30 days.
  *
- * Auth: Bearer `CRON_SECRET` (same as coordinator). Kill-switch
- * mirrors coordinator semantics — short-circuits with 200 + skipped.
+ * Auth: Bearer `CRON_SECRET` via `gateCronBearerOrRespond` — gives this
+ * route the same defence as the dispatch + at-risk + lapse per-tenant
+ * routes (rate-limit on 401 + `cron_bearer_auth_rejected` audit emit).
+ * Kill-switch mirrors coordinator semantics — 200 + skipped.
+ *
+ * Per-tenant advisory lock: `renewals:reconcile:<tenantId>`. Auto-
+ * released at tx end. Concurrent cron-job.org retries serialise so the
+ * "list pending cycles" query is not double-issued.
+ *
+ * MVP single-tenant guard: only `env.tenant.slug` accepted. Mirrors the
+ * dispatch + at-risk + lapse per-tenant convention; closes the
+ * deep-review gap.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { sql } from 'drizzle-orm';
+import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
+import { renewalsMetrics } from '@/lib/metrics';
+import { asTenantContext } from '@/modules/tenants';
 import {
   reconcilePendingReactivations,
   makeRenewalsDeps,
@@ -21,18 +35,20 @@ import {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const ROUTE_LABEL =
+  '/api/cron/renewals/reconcile-pending-reactivations/[tenantId]';
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ tenantId: string }> },
 ): Promise<NextResponse> {
-  if (
-    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
-  ) {
-    return NextResponse.json(
-      { error: { code: 'unauthorized' } },
-      { status: 401 },
-    );
-  }
+  // Bearer + rate-limit + 401 audit (matches dispatch/at-risk/lapse).
+  const gate = await gateCronBearerOrRespond(request, {
+    route: ROUTE_LABEL,
+    metricsCounter: () => renewalsMetrics.coordinatorAuditEmitFailed('reconcile'),
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
+  });
+  if (gate !== null) return gate;
 
   if (!env.features.f8Renewals) {
     return NextResponse.json(
@@ -42,42 +58,64 @@ export async function POST(
   }
 
   const { tenantId } = await context.params;
-  const correlationId =
-    request.headers.get('x-request-id') ?? uuidv7();
+
+  // MVP single-tenant guard.
+  if (tenantId !== env.tenant.slug) {
+    logger.warn(
+      { tenantId, expectedTenant: env.tenant.slug },
+      'cron.renewals.reconcile-pending.unknown_tenant',
+    );
+    return NextResponse.json(
+      { error: { code: 'unknown_tenant' } },
+      { status: 400 },
+    );
+  }
+
+  // Generate fresh correlationId — never trust inbound `x-request-id`.
+  const correlationId = uuidv7();
+  const tenantCtx = asTenantContext(tenantId);
   const startedAt = Date.now();
 
   try {
-    const deps = makeRenewalsDeps(tenantId);
-    const result = await reconcilePendingReactivations(deps, {
-      tenantId,
-      now: new Date(),
-      correlationId,
-    });
-    if (!result.ok) {
-      return NextResponse.json(
-        {
-          error: {
-            code: result.error.kind,
-            message: result.error.message,
-          },
-        },
-        { status: 400 },
+    return await runInTenant(tenantCtx, async (tx) => {
+      // Per-tenant advisory lock — `renewals:reconcile:<tenantId>` is
+      // distinct from `renewals:dispatch:` + `renewals:at-risk:` +
+      // `renewals:lapse:` + `renewals:tierupgrade:` so all five cron
+      // passes can run concurrently on the same tenant. Auto-released
+      // at tx-end.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:reconcile:'||${tenantId}, 0))`,
       );
-    }
-    return NextResponse.json({
-      skipped: false,
-      cycles_processed: result.value.cyclesProcessed,
-      reminders_t7: result.value.remindersT7,
-      reminders_t3: result.value.remindersT3,
-      reminders_t1: result.value.remindersT1,
-      // Round 2 review-fix (I-6): SRE-visible reminder-emit failures.
-      // Round 1 silently swallowed these into a `logger.warn`. Now the
-      // success counters above only bump on emit-success and this
-      // counter tracks failures (parity with timeout_refund_failures).
-      reminders_failed: result.value.remindersFailed,
-      timed_out: result.value.timedOut,
-      timeout_refund_failures: result.value.timeoutRefundFailures,
-      duration_ms: Date.now() - startedAt,
+
+      const deps = makeRenewalsDeps(tenantId);
+      const result = await reconcilePendingReactivations(deps, {
+        tenantId,
+        now: new Date(),
+        correlationId,
+      });
+      if (!result.ok) {
+        return NextResponse.json(
+          {
+            error: {
+              code: result.error.kind,
+              message: result.error.message,
+            },
+          },
+          { status: 400 },
+        );
+      }
+      return NextResponse.json({
+        skipped: false,
+        cycles_processed: result.value.cyclesProcessed,
+        reminders_t7: result.value.remindersT7,
+        reminders_t3: result.value.remindersT3,
+        reminders_t1: result.value.remindersT1,
+        // Round 2 review-fix (I-6): SRE-visible reminder-emit failures.
+        reminders_failed: result.value.remindersFailed,
+        timed_out: result.value.timedOut,
+        timeout_refund_failures: result.value.timeoutRefundFailures,
+        duration_ms: Date.now() - startedAt,
+      });
     });
   } catch (e) {
     logger.error(

@@ -34,25 +34,38 @@ function base64urlDecode(s: string): Buffer | null {
   }
 }
 
-function base64urlEncode(buf: Buffer): string {
-  return buf
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
+/**
+ * Compare two HMAC results in constant time at the BYTE level.
+ *
+ * Round-4 deep-review fix — the previous string-level implementation
+ * short-circuited on `a.length !== b.length` BEFORE running
+ * `timingSafeEqual`, which is itself constant-time only across same-
+ * length inputs. While HMAC-SHA256 base64url output is always 43
+ * chars, the early-return path still exposed a measurable timing
+ * difference for forged tokens whose MAC fragment was padded to a
+ * non-43-char length: the rejection happened without any Buffer
+ * allocation or HMAC compare. Attackers could probe for "is my MAC
+ * the right shape?" faster than for "is my MAC the right value?"
+ *
+ * Fix — accept raw Buffers (always 32 bytes from SHA-256), feed
+ * timingSafeEqual a fixed-shape pair. If the user-supplied MAC
+ * decodes to a different byte length, allocate a same-length zero
+ * buffer and compare anyway so the rejection latency is independent
+ * of the supplied length.
+ */
+function constantTimeEqualBytes(expected: Buffer, supplied: Buffer): boolean {
+  if (supplied.length !== expected.length) {
+    // Compare expected against a zeroed buffer of the same shape so
+    // the call still runs the same number of byte ops; result is
+    // discarded — the length mismatch already disqualifies the MAC.
+    timingSafeEqual(expected, Buffer.alloc(expected.length));
+    return false;
+  }
+  return timingSafeEqual(expected, supplied);
 }
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return timingSafeEqual(ab, bb);
-}
-
-function hmacWith(secret: string, b64Payload: string): string {
-  return base64urlEncode(
-    createHmac('sha256', secret).update(b64Payload).digest(),
-  );
+function hmacWithBytes(secret: string, b64Payload: string): Buffer {
+  return createHmac('sha256', secret).update(b64Payload).digest();
 }
 
 export const renewalLinkTokenVerifier: RenewalLinkTokenVerifier = {
@@ -70,19 +83,25 @@ export const renewalLinkTokenVerifier: RenewalLinkTokenVerifier = {
     }
     const [, b64Payload, mac] = parts as [string, string, string];
 
-    const primaryMac = hmacWith(
+    // Decode the user-supplied MAC up front so the comparison runs at
+    // byte level. `null` (invalid base64url) is treated as a length-0
+    // buffer; the constant-time compare then runs against the
+    // expected 32-byte HMAC and rejects in constant latency.
+    const suppliedMacBytes = base64urlDecode(mac) ?? Buffer.alloc(0);
+
+    const primaryMacBytes = hmacWithBytes(
       env.renewals.linkTokenSecretPrimary,
       b64Payload,
     );
     let verifiedWith: 'primary' | 'fallback' | null = null;
-    if (constantTimeEqual(primaryMac, mac)) {
+    if (constantTimeEqualBytes(primaryMacBytes, suppliedMacBytes)) {
       verifiedWith = 'primary';
     } else if (env.renewals.linkTokenSecretFallback) {
-      const fallbackMac = hmacWith(
+      const fallbackMacBytes = hmacWithBytes(
         env.renewals.linkTokenSecretFallback,
         b64Payload,
       );
-      if (constantTimeEqual(fallbackMac, mac)) {
+      if (constantTimeEqualBytes(fallbackMacBytes, suppliedMacBytes)) {
         verifiedWith = 'fallback';
       }
     }

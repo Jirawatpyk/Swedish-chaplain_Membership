@@ -333,6 +333,18 @@ export interface F8AuditPayloadShapes {
       | 'replayed'
       | 'cross_tenant'
       | 'member_not_found_in_tenant';
+    /**
+     * Deep-review fix — token fingerprint for forensic correlation
+     * across multiple rejection events. `null` for rejection paths
+     * that occur BEFORE HMAC verification produces a sha256 (e.g.
+     * malformed_token, mac_mismatch); populated for paths where the
+     * verifier already ran (replayed, cross_tenant,
+     * member_not_found_in_tenant). The raw token is NEVER logged —
+     * only the SHA-256 hex of the raw token, which is safe to record
+     * (one-way + bounded length) and lets SRE correlate replay-storm
+     * attempts on a specific emailed token.
+     */
+    readonly token_sha256?: string;
   };
   readonly renewal_kill_switch_blocked: {
     readonly route: string;

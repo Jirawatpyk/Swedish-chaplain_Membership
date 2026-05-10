@@ -876,6 +876,13 @@
       "when": 1793174400000,
       "tag": "0124_pr24_trigger_search_path_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1793260800000,
+      "tag": "0125_pr24_scheduled_plan_changes_fk",
+      "breakpoints": true
     }
   ]
 }

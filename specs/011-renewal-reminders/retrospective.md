@@ -74,9 +74,9 @@ All 6 user stories' AS coverage GREEN per Phase 3-8 Exit Checkpoints. Spot-check
 |---|---|---|
 | `src/modules/renewals/` bounded context | ✅ Match | Domain + Application + Infrastructure layers; ESLint barrel guard enforced |
 | 9 F8-owned tables (8 + 1 cross-module `scheduled_plan_changes`) | ✅ Match | All in SCOPED_TABLES list per `pnpm check:multi-tenant` 24/24 PASS |
-| 22 migrations (0086-0098 + 0115 + 0121-0122) | ✅ Match | Inlined indexes per F7 precedent (no CONCURRENTLY needed at F8 scale) |
-| 64 audit event types | ✅ Match | `F8_ENUM_SHIPPED_TUPLE` + contract test parity |
-| 4 cron coordinators | ✅ Match | dispatch + at-risk + lapse + reconcile-pending-reactivations |
+| Migrations 0086-0098 + 0115 + 0121-0125 (40 F8-tagged migrations including review-fix waves + PR #24 deep-review hardenings 0124-0125) | ✅ Match | Inlined indexes per F7 precedent (no CONCURRENTLY needed at F8 scale); narrative previously mis-counted as "22" — corrected after deep review |
+| 64 audit event types | ✅ Match | `F8_ENUM_SHIPPED_TUPLE` + contract test parity (spec.md § Audit-event-types section snapshot stale at "58" — code-side compile-time guard authoritative) |
+| 5 cron coordinators | ✅ Match | dispatch + at-risk + lapse + reconcile-pending-reactivations + tier-upgrade-evaluate (5th surfaced via PR #24 deep review — `docs/runbooks/cron-jobs.md` lines 38-42 lists all five with cadence + auth) |
 | 12 OTel metrics + 5 spans + 4 alerts + 4 runbooks | ✅ Match | Phase 9 T231-T235 wiring |
 
 **Architecture adherence**: 100%. No drift.
@@ -203,7 +203,7 @@ if (successes.length > 0) {
 | **V — i18n EN+TH+SV** | ✅ COMPLIANT | 2242 keys × 3 locales; `pnpm check:i18n` PASS in CI; T268 i18n E2E pins `<html lang>` + BE display + viewport-overflow |
 | **VI — Inclusive UX** | ✅ COMPLIANT | T267 axe-core E2E on 6 surfaces × 2 themes + reduced-motion; TanStack Table v8 keyboard accessible by default; `prefers-reduced-motion` neutralizes animations (Phase 9 T249) |
 | **VII — Perf & Observability** | ⚡ PARTIAL | 12 metrics + 5 spans + 4 alerts + 4 runbooks shipped (Phase 9 T231-T235); 5 perf benches with explicit SLO assertions (Phase 10 T261-T265). **T262 finding flagged for Phase 11 batched-write optimization**; not blocking F8 ship at SweCham scale (single-tenant, ~131 members → cron ~11s) |
-| **VIII — Reliability** | ✅ COMPLIANT | 4 cron coordinators with READ_ONLY_MODE early-return + idempotency primitives + advisory-lock namespacing; 47 audit events with append-only trigger; `runInTenant` tenant-bound cooperative-bug guard |
+| **VIII — Reliability** | ✅ COMPLIANT | 5 cron coordinators with READ_ONLY_MODE early-return + idempotency primitives + advisory-lock namespacing; 47 audit events with append-only trigger; `runInTenant` tenant-bound cooperative-bug guard |
 | **IX — Code Quality** | ✅ COMPLIANT | 20 cumulative review rounds (5 review + 7 staff-review + 8 verify-fix waves); R4 (Phase 10) found 3 HIGH + 3 MEDIUM all closed inline; 0 BLOCKER/CRITICAL outstanding |
 | **X — Simplicity** | ✅ COMPLIANT | Single-tenant SweCham deployment validates MVP simplicity; no premature multi-tenant abstractions (port-based F1 abstraction handles future F10 transition transparently) |
 
@@ -265,7 +265,33 @@ Run `pnpm test:e2e --workers=1` on Chrome / Edge / Firefox / Safari latest 2 + M
 
 ### 6. cron-job.org configuration (T277b)
 
-Create the daily-07:00 Asia/Bangkok cron-job.org entry pointing to `https://swecham.zyncdata.app/api/cron/renewals/reconcile-pending-reactivations-coordinator` with `Authorization: Bearer <CRON_SECRET>` per `docs/runbooks/cron-jobs.md` table row line 41 + setup section line 301-314. Without this entry, FR-005c (30-day pending_admin_reactivation auto-timeout) silently does not run after flag-flip — leaving members in pending state indefinitely.
+Create cron-job.org entries for ALL F8 coordinators per
+`docs/runbooks/cron-jobs.md` § Job catalogue lines 38-44. Five F8
+coordinators are required (PR #24 deep review surfaced that the original
+T277b text only listed reconcile-pending-reactivations):
+
+1. `POST /api/cron/renewals/dispatch-coordinator` — daily 06:00
+   Asia/Bangkok. Without it: no renewal reminders ever dispatched.
+2. `POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator` —
+   daily 06:30 Asia/Bangkok. Without it: cycles past grace expiry
+   never transition to `lapsed`.
+3. `POST /api/cron/renewals/reconcile-pending-reactivations-coordinator`
+   — daily 07:00 Asia/Bangkok. Without it: FR-005c (30-day
+   pending_admin_reactivation auto-timeout) silently never runs;
+   pending members stay pending indefinitely.
+4. `POST /api/cron/renewals/at-risk-recompute-coordinator` — Sun 02:00
+   Asia/Bangkok. Without it: at-risk score never refreshed; admin
+   pipeline shows stale risk bands.
+5. `POST /api/cron/renewals/tier-upgrade-evaluate-coordinator` — Sun
+   03:00 Asia/Bangkok. Without it: US5 tier-upgrade suggestions never
+   generated.
+
+All five take `Authorization: Bearer <CRON_SECRET>` and **must have
+"failure retry" disabled** per the F7+F8 retry-policy contract
+(`docs/runbooks/cron-jobs.md` § "Retry policy contract"). Two
+housekeeping jobs (prune consumed link tokens + reconcile pending
+tier-upgrades, lines 43-44 of the runbook) also need entries; they are
+weekly cadence and lower-impact if missed.
 
 ### 7. Staging /speckit.qa.run (T282)
 

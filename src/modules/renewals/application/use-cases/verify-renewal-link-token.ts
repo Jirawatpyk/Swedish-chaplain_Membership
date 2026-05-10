@@ -130,7 +130,10 @@ export async function verifyRenewalLinkToken(
   });
   if (!verifyResult.ok) {
     const reason = mapVerifyErrorToReason(verifyResult.error.kind);
-    await emitTokenInvalid(deps, tenantId, input, reason);
+    // Pre-HMAC paths (malformed_token / mac_mismatch) have no
+    // tokenSha256 — verifier returns it only on success. Pass null;
+    // emit helper threads it through optionally.
+    await emitTokenInvalid(deps, tenantId, input, reason, null);
     return err({ kind: 'invalid_token', reason });
   }
   const { payload, tokenSha256, verifiedWith } = verifyResult.value;
@@ -146,6 +149,7 @@ export async function verifyRenewalLinkToken(
       tenantId,
       input,
       'member_not_found_in_tenant',
+      tokenSha256,
     );
     return err({
       kind: 'invalid_token',
@@ -159,6 +163,7 @@ export async function verifyRenewalLinkToken(
       tenantId,
       input,
       'member_not_found_in_tenant',
+      tokenSha256,
     );
     return err({
       kind: 'invalid_token',
@@ -213,7 +218,7 @@ export async function verifyRenewalLinkToken(
     cycleId: payload.cid,
   });
   if (markResult.status === 'replay') {
-    await emitTokenInvalid(deps, tenantId, input, 'replayed');
+    await emitTokenInvalid(deps, tenantId, input, 'replayed', tokenSha256);
     return err({ kind: 'invalid_token', reason: 'replayed' });
   }
 
@@ -276,15 +281,29 @@ async function emitTokenInvalid(
   tenantId: string,
   input: VerifyRenewalLinkTokenInput,
   reason: Exclude<VerifyRenewalLinkTokenError['reason'], 'invalid_input'>,
+  tokenSha256: Uint8Array | null,
 ): Promise<void> {
+  const sha256Hex =
+    tokenSha256 === null
+      ? null
+      : Array.from(tokenSha256, (b) => b.toString(16).padStart(2, '0')).join('');
   // Constitution Principle VIII: every reject emits an audit event for
   // forensic visibility. `try/catch` because audit-emit is fire-and-
   // forget and MUST NOT mask the verify-failure response.
+  //
+  // Deep-review fix — token fingerprint included on post-HMAC paths
+  // (replayed / cross_tenant / member_not_found_in_tenant) so SRE can
+  // correlate multiple rejection events back to the same emailed token
+  // (e.g. detect a replay-storm against one specific link). Pre-HMAC
+  // paths pass `null` (verifier hasn't produced a sha256 yet).
   try {
     await deps.auditEmitter.emit(
       {
         type: 'renewal_token_invalid' as const,
-        payload: { reason },
+        payload: {
+          reason,
+          ...(sha256Hex !== null ? { token_sha256: sha256Hex } : {}),
+        },
       },
       {
         tenantId,

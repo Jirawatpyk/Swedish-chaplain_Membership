@@ -71,6 +71,42 @@ export default async function RenewalPortalPage({
     notFound();
   }
   if (memberLookup.value.memberId !== urlMemberId) {
+    // Deep-review fix — page-level cross-member probe MUST emit
+    // `renewal_cross_member_probe` audit per the file header JSDoc
+    // ("mismatch returns 404 + emits renewal_cross_member_probe").
+    // The earlier silent `notFound()` left attacker URL-enumeration
+    // attempts with no forensic trail. Audit emit is fire-and-forget
+    // (try/catch) so a broken audit infrastructure never blocks the
+    // 404 response — Constitution Principle I clause 4 / FR-027
+    // generic-error policy preserved.
+    try {
+      const renewalsDepsForProbe = makeRenewalsDeps(tenant.slug);
+      await renewalsDepsForProbe.auditEmitter.emit(
+        {
+          type: 'renewal_cross_member_probe',
+          payload: {
+            actor_member_id: memberLookup.value.memberId,
+            attempted_member_id: urlMemberId as typeof memberLookup.value.memberId,
+          },
+        },
+        {
+          tenantId: tenant.slug,
+          actorUserId: user.id,
+          actorRole: 'member',
+          correlationId: `renewal-page-probe:${urlMemberId}`,
+          requestId: null,
+        },
+      );
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId: tenant.slug,
+          attemptedMemberId: urlMemberId,
+        },
+        '[renewal-page] cross-member probe audit emit failed (swallowed — never blocks 404)',
+      );
+    }
     notFound();
   }
 
