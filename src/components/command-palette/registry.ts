@@ -19,7 +19,7 @@
 // chain-pulls `@node-rs/argon2` into the client bundle whenever a
 // client component transitively imports from it. See the same
 // rationale in `search-plans.ts` and `command-palette.tsx`.
- 
+// eslint-disable-next-line no-restricted-imports
 import type { Role } from '@/modules/auth/domain/role';
 
 // --- Entity (plan) hit shape -------------------------------------------------

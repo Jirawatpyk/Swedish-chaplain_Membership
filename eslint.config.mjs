@@ -226,6 +226,24 @@ const eslintConfig = defineConfig([
       "no-restricted-imports": [
         "error",
         {
+          // Phase 9 Round-3 close — block production callers of
+          // test-only `__test__readGaugeValues` accessor in
+          // `src/lib/metrics.ts`. Folded INTO the existing
+          // cross-module barrel block (vs. a separate config object)
+          // because ESLint flat-config does NOT merge `no-restricted-
+          // imports` rules across blocks — a separate block would
+          // SHADOW the patterns below for every file in `src/**`,
+          // silently disabling Constitution Principle III barrel
+          // enforcement. The named-import restriction works alongside
+          // pattern-based restrictions in the same rule entry.
+          paths: [
+            {
+              name: "@/lib/metrics",
+              importNames: ["__test__readGaugeValues"],
+              message:
+                "`__test__readGaugeValues` is a TEST-ONLY accessor exposing the per-process gauge-values accumulator. Production callers would leak gauge state across tenants. Use the OTel scrape pipeline instead.",
+            },
+          ],
           patterns: [
             {
               group: [
@@ -461,41 +479,6 @@ const eslintConfig = defineConfig([
               message:
                 "F3 Plan E2 — members module must not import `@/modules/auth/domain/**`. " +
                 "Model `linked_user_id` as a branded opaque `UserId` in members/domain/ instead.",
-            },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    // Phase 9 verify-fix Round-2 close — block production callers of
-    // test-only `__test__readGaugeValues` accessor in `src/lib/metrics.ts`.
-    // The accessor exposes the gauge-values per-process accumulator for
-    // unit tests to pin the multi-tenant accumulation invariant directly;
-    // a production caller would leak gauge state across tenants. The
-    // `__test__` prefix signals intent but the named-import restriction
-    // below converts it to a build-time error.
-    //
-    // Allowed callers: anything under `tests/**` + `*.test.ts` /
-    // `*.spec.ts` files. The rule's `files` glob targets production
-    // source paths; tests are excluded.
-    files: ["src/**/*.ts", "src/**/*.tsx"],
-    ignores: [
-      "**/*.test.ts",
-      "**/*.test.tsx",
-      "**/*.spec.ts",
-      "**/*.spec.tsx",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "@/lib/metrics",
-              importNames: ["__test__readGaugeValues"],
-              message:
-                "`__test__readGaugeValues` is a TEST-ONLY accessor exposing the per-process gauge-values accumulator (Phase 9 verify-fix Round-2 close). Production callers would leak gauge state across tenants. Use the OTel scrape pipeline instead.",
             },
           ],
         },

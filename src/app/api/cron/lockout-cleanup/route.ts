@@ -25,10 +25,10 @@ import { db } from '@/lib/db';
 // Application use case exists for bulk cleanup — it is a
 // maintenance path, not a user flow. Wrapping in a passthrough
 // use case would add no behaviour. Documented escape hatch.
- 
+/* eslint-disable no-restricted-imports */
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
- 
+/* eslint-enable no-restricted-imports */
 import { asUserId } from '@/modules/auth';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';

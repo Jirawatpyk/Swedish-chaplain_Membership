@@ -26,9 +26,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { and, inArray, lt } from 'drizzle-orm';
 import { db } from '@/lib/db';
- 
+/* eslint-disable no-restricted-imports --
+ * Cron purge is operational infrastructure — same escape hatch as
+ * /api/cron/outbox-dispatch + /api/cron/lockout-cleanup. The auth
+ * module does not expose the notifications_outbox table through its
+ * public barrel because it is a dispatcher-internal detail, not an
+ * Application-layer port. */
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
- 
+/* eslint-enable no-restricted-imports */
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';

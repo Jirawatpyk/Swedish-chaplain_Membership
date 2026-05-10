@@ -44,7 +44,7 @@ import {
 // via RLS, and this page reaches here only after getInvoice has
 // already validated member ownership of the invoice — any CN rows
 // against that invoice are, by construction, this member's.
- 
+// eslint-disable-next-line no-restricted-imports
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { asInvoiceId } from '@/modules/invoicing';
 // F5 G4 — presentation-only settings read (FR-016/FR-030 render-gate).
@@ -52,14 +52,14 @@ import { asInvoiceId } from '@/modules/invoicing';
 // layer read-only loader is a Phase-9 consolidation candidate once
 // the admin-settings use-case lands. The repo does its own RLS-
 // scoped read under `runInTenant`, so this is safe tenant-wise.
- 
+// eslint-disable-next-line no-restricted-imports
 import { makeDrizzleTenantPaymentSettingsRepo } from '@/modules/payments/infrastructure/repos/drizzle-tenant-payment-settings-repo';
 // H-8 (review 2026-04-27): query audit_log for the auto-refund signal
 // to drive the member-facing refund banner. Same escape-hatch pattern
 // as tenant-payment-settings + CN repo above; the repo is RLS-scoped
 // + read-only. Application-layer use-case is a Phase-10 consolidation
 // candidate.
- 
+// eslint-disable-next-line no-restricted-imports
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { env } from '@/lib/env';

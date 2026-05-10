@@ -406,6 +406,18 @@ function mapInvoiceError(
  * Closes the cardinality-drift loophole where the route emitted a
  * label string outside the mapper's range.
  */
+/**
+ * Phase 9 Round-3 close — collapsed redundant `'unknown' |
+ * 'unexpected_error'` into a single `'unexpected_error'` value.
+ * Both meant "we don't know" semantically — splitting them across
+ * two labels would fragment a single dashboard cardinality bucket
+ * and make triage harder. The mapper's `_exhaustive: never` pin
+ * already makes the default arm unreachable when the union is
+ * well-formed; round-3 makes the default arm THROW so a future
+ * `ConfirmRenewalError` variant added without a mapper case fails
+ * loudly at runtime (compile-time will already error at the
+ * producer site).
+ */
 export type SelfServiceFailureReason =
   | 'f4_invoice_create_failed'
   | 'cycle_terminal'
@@ -413,7 +425,6 @@ export type SelfServiceFailureReason =
   | 'invalid_input'
   | 'cross_member'
   | 'server_error'
-  | 'unknown'
   | 'unexpected_error';
 
 export function selfServiceFailureReason(
@@ -436,8 +447,15 @@ export function selfServiceFailureReason(
       return 'server_error';
     default: {
       const _exhaustive: never = err;
-      void _exhaustive;
-      return 'unknown';
+      // Round-3 close — fail-loud on union drift instead of
+      // silently emitting an "unknown" label. The compile-time
+      // `_exhaustive: never` already errors at this line if a new
+      // `ConfirmRenewalError.kind` lands without a mapper case;
+      // the runtime throw is belt-and-suspenders for any post-
+      // typecheck divergence (e.g. a runtime polyfill bundle).
+      throw new Error(
+        `selfServiceFailureReason: unmapped ConfirmRenewalError variant — ${JSON.stringify(_exhaustive)}`,
+      );
     }
   }
 }

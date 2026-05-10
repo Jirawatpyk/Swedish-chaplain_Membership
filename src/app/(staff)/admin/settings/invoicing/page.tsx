@@ -32,7 +32,7 @@ import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/inv
 // /admin/users/page.tsx when the Application layer has nothing to
 // add over the repo's read shape. We only read `getForIssue` here,
 // which IS the public port.
- 
+// eslint-disable-next-line no-restricted-imports
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 
 export async function generateMetadata(): Promise<Metadata> {

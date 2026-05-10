@@ -43,7 +43,7 @@ import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { formatPaymentAmount } from '@/lib/format-payment-summary';
 // Type-only import of Role from the deep domain path — importing from
 // the auth barrel would chain-pull argon2 into the client bundle.
- 
+// eslint-disable-next-line no-restricted-imports
 import type { Role } from '@/modules/auth/domain/role';
 
 type MemberCommandPaletteProps = {

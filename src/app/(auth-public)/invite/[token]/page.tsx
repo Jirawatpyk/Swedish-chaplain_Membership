@@ -15,10 +15,10 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 // invitation — pre-validation MUST NOT). The two reads below are
 // scoped to display decisions only and are the documented escape
 // hatch for page-level pre-validation.
- 
+/* eslint-disable no-restricted-imports */
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
- 
+/* eslint-enable no-restricted-imports */
 import { isInvitationValid, asTokenId } from '@/modules/auth';
 
 /**

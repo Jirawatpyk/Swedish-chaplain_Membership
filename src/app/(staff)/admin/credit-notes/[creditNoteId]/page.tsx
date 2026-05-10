@@ -28,12 +28,12 @@ import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
 // G-5 — sibling-CN navigation. The list is an admin-view convenience
 // (no new use-case); same escape-hatch pattern as the settings +
 // credit-note list reads already used on the invoice detail page.
- 
+// eslint-disable-next-line no-restricted-imports
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 // Raw repo read mirrors the escape hatch used by the invoice detail
 // page (invoices/[invoiceId]/page.tsx:32). Application-layer
 // `getStaffUser` passthrough is pending Phase-10 consolidation.
- 
+// eslint-disable-next-line no-restricted-imports
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { DetailContainer } from '@/components/layout';

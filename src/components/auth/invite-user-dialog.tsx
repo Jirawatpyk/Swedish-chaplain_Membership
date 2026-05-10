@@ -49,7 +49,7 @@ import { MemberPicker } from '@/components/members/member-picker';
 // the `@/modules/auth` barrel transitively loads Node-only
 // Infrastructure modules and cannot be used from client code.
 // Domain types and constants are pure and safe to import directly.
- 
+// eslint-disable-next-line no-restricted-imports
 import { isRole, ROLES, type Role } from '@/modules/auth/domain/role';
 
 /**

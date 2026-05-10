@@ -38,9 +38,9 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 // invocation. No top-level Application use case exists for cross-
 // tenant orchestration — it is a maintenance path, not a user
 // flow. Documented escape hatch (mirrors lockout-cleanup pattern).
- 
+/* eslint-disable no-restricted-imports */
 import { tenantPaymentSettings } from '@/modules/payments/infrastructure/schema';
- 
+/* eslint-enable no-restricted-imports */
 import { eq } from 'drizzle-orm';
 import {
   sweepStalePendingRefunds,

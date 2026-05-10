@@ -24,7 +24,7 @@ import { requireSession } from '@/lib/auth-session';
 // admin-gated by the route guard in layout.tsx. F9 polish may add
 // a paginated query surface — until then this escape hatch is the
 // documented path.
- 
+// eslint-disable-next-line no-restricted-imports
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { Role } from '@/modules/auth';
 import { UserListTable } from '@/components/auth/user-list-table';

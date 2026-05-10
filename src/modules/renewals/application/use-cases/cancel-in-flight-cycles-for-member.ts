@@ -3,12 +3,13 @@
  * renewal cycles.
  *
  * Invoked by F3's `archive-member` use-case AFTER the member row
- * mutation commits. Per `data-model.md § Invariants` ("at most ONE
- * cycle in status NOT IN ('lapsed','cancelled','completed') per
- * `(tenant_id, member_id)`") there is at most ONE non-terminal cycle
- * per member, so this is a single-cycle cascade — but we route
- * through the `findActiveForMember` port to stay robust if the
- * invariant is ever relaxed.
+ * mutation commits. Per `data-model.md § renewal_cycles Invariants`
+ * ("at most ONE cycle in status NOT IN
+ * ('completed','lapsed','cancelled') per (tenant_id, member_id)")
+ * there is at most ONE non-terminal cycle per member, so this is a
+ * single-cycle cascade — but we route through the
+ * `findActiveForMember` port to stay robust if the invariant is
+ * ever relaxed.
  *
  * Behaviour:
  *   1. Look up the active cycle (status NOT IN
@@ -121,13 +122,29 @@ export class AuditEmitError extends Error {
    * logs + cascade use-case Output's `auditEmitErrorName` field.
    */
   readonly underlyingErrorName: string;
+  /**
+   * Phase 9 Round-3 close — Postgres / Drizzle SQLSTATE code if the
+   * underlying error carried one. Without this, operators triaging
+   * an "audit-emit failure" surge see `errName: 'NeonDbError'` but
+   * cannot distinguish `22P02` (invalid pgEnum) from `40001`
+   * (serialization failure) from `08006` (connection lost).
+   * `cause.code` is opaque to most call paths because pino's default
+   * Error serializer drops it (logger logs `err: errMessage` string,
+   * not the Error object), so capture it at construction time.
+   */
+  readonly underlyingErrorCode: string | undefined;
 
   constructor(
     message: string,
-    options: { cause: unknown; underlyingErrorName: string },
+    options: {
+      cause: unknown;
+      underlyingErrorName: string;
+      underlyingErrorCode?: string;
+    },
   ) {
     super(message, { cause: options.cause });
     this.underlyingErrorName = options.underlyingErrorName;
+    this.underlyingErrorCode = options.underlyingErrorCode;
   }
 }
 
@@ -191,6 +208,16 @@ export type CancelInFlightCyclesForMemberOutput =
        * (`renewals-cascade-adapter.ts`) — no PII per FR-049.
        */
       readonly auditEmitErrorMessage: string;
+      /**
+       * Round-3 close — Postgres / Drizzle SQLSTATE code when
+       * present (e.g. `'22P02'` for invalid pgEnum, `'40001'` for
+       * serialization-failure retry, `'08006'` for connection-lost).
+       * `undefined` when the underlying error has no SQLSTATE
+       * (e.g. plain `TypeError` from a programming bug).
+       * Distinguishes "audit pipeline broken" sub-classes that
+       * `auditEmitErrorName` alone cannot.
+       */
+      readonly auditEmitErrorCode: string | undefined;
     };
 
 /**
@@ -233,11 +260,11 @@ export async function cancelInFlightCyclesForMember(
 
   try {
     // Look up the at-most-one active cycle (status NOT IN terminal).
-    // Per data-model.md § Invariants ("at most ONE cycle in status
-    // NOT IN ('lapsed','cancelled','completed') per (tenant_id,
-    // member_id)") there is at most one non-terminal cycle per
-    // member; an archived member with no active cycle is the common
-    // case (idempotent replay returns 0).
+    // Per data-model.md § renewal_cycles Invariants ("at most ONE
+    // cycle in status NOT IN ('completed','lapsed','cancelled') per
+    // (tenant_id, member_id)") there is at most one non-terminal
+    // cycle per member; an archived member with no active cycle is
+    // the common case (idempotent replay returns 0).
     const activeCycle = await deps.cyclesRepo.findActiveForMember(
       input.tenant.slug,
       input.memberId as string,
@@ -340,7 +367,17 @@ export async function cancelInFlightCyclesForMember(
           // outer `txErr` catch can classify structurally. Re-throw
           // INSIDE the runInTenant callback so the tx rolls back
           // per Principle VIII (cycle UPDATE + audit emit are an
-          // atomic state↔audit pair).
+          // atomic state↔audit pair). Round-3 close: capture
+          // SQLSTATE `code` from the underlying error so dashboards
+          // can distinguish pgEnum-violation vs connection-lost vs
+          // serialization-failure without re-parsing message text.
+          const underlyingCode =
+            auditErr !== null &&
+            typeof auditErr === 'object' &&
+            'code' in auditErr &&
+            typeof (auditErr as { code: unknown }).code === 'string'
+              ? (auditErr as { code: string }).code
+              : undefined;
           throw new AuditEmitError(
             auditErr instanceof Error
               ? auditErr.message
@@ -349,6 +386,9 @@ export async function cancelInFlightCyclesForMember(
               cause: auditErr,
               underlyingErrorName:
                 auditErr instanceof Error ? auditErr.name : 'UnknownError',
+              ...(underlyingCode !== undefined
+                ? { underlyingErrorCode: underlyingCode }
+                : {}),
             },
           );
         }
@@ -392,6 +432,7 @@ export async function cancelInFlightCyclesForMember(
             err: errMessage,
             errName,
             underlyingErrorName: txErr.underlyingErrorName,
+            underlyingErrorCode: txErr.underlyingErrorCode,
             tenantId: input.tenant.slug,
             memberId: input.memberId as string,
             cycleId: activeCycle.cycleId,
@@ -405,6 +446,7 @@ export async function cancelInFlightCyclesForMember(
           skippedConcurrentCount,
           auditEmitErrorName: txErr.underlyingErrorName,
           auditEmitErrorMessage: errMessage,
+          auditEmitErrorCode: txErr.underlyingErrorCode,
         });
       }
       logger.error(
@@ -442,17 +484,50 @@ export async function cancelInFlightCyclesForMember(
       skippedConcurrentCount,
     });
   } catch (e) {
+    // Phase 9 Round-3 close — defense-in-depth `instanceof
+    // AuditEmitError` check at the outer catch. Currently
+    // unreachable (the inner runInTenant catch handles it), but a
+    // future refactor that extracts audit emit OUTSIDE runInTenant
+    // would otherwise mis-classify it as `cascade.server_error`,
+    // losing the `cascade_audit_emit_failed` outcome forensics.
+    if (e instanceof AuditEmitError) {
+      logger.error(
+        {
+          err: e.message,
+          errName: e.name,
+          underlyingErrorName: e.underlyingErrorName,
+          underlyingErrorCode: e.underlyingErrorCode,
+          tenantId: input.tenant.slug,
+          memberId: input.memberId as string,
+          cascade: 'f3_member_archival_or_erasure',
+        },
+        'renewals.cascade.audit_emit_failed_outer_catch',
+      );
+      return ok({
+        outcome: 'cascade_audit_emit_failed',
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        auditEmitErrorName: e.underlyingErrorName,
+        auditEmitErrorMessage: e.message,
+        auditEmitErrorCode: e.underlyingErrorCode,
+      });
+    }
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
-        errName: e instanceof Error ? e.name : undefined,
+        // Round-3 M1 close — sentinel `'UnknownError'` for non-Error
+        // throws (was `undefined`). Matches the producer convention
+        // at the Result.err return below + the runInTenant inner-
+        // catch convention. Single dashboard label across all
+        // cascade.server_error log lines.
+        errName: e instanceof Error ? e.name : 'UnknownError',
         tenantId: input.tenant.slug,
         memberId: input.memberId as string,
         cascade: 'f3_member_archival_or_erasure',
       },
       'renewals.cascade.lookup_failed',
     );
-    // Phase 9 verify-fix Round-2 — `errName` is now REQUIRED
+    // Phase 9 verify-fix Round-2 — `errName` is REQUIRED
     // (sentinel `'UnknownError'` for non-Error throws). Eliminates
     // the `?? 'unknown'` cast every dashboard query previously
     // needed and makes group-by-errName statements safe.
