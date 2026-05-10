@@ -42,6 +42,21 @@ vi.mock('@/lib/env', () => ({
     // the tenant slug literal rather than referencing TENANT_SLUG.
     tenant: { slug: 'tenanta' },
     log: { level: 'silent' },
+    // QA Round 1 fix — same as per-tenant.test.ts: transitive imports
+    // of `@/modules/renewals` reach upstash-rate-limiter which reads
+    // env.upstash.url|token at module-init.
+    upstash: {
+      url: 'https://test.upstash.io',
+      token: 'test-token-with-enough-length-for-zod-min-20',
+    },
+    // schedules route imports membersDeps → audit-deps which transitively
+    // pulls in the Resend transactional email client. Resend SDK is
+    // constructed at module-init with `env.resend.apiKey`; stub here.
+    resend: {
+      apiKey: 're_test_placeholder',
+      webhookSigningSecret: 'whsec_test_placeholder',
+      fromEmail: 'noreply@test.example',
+    },
     isProduction: false,
     isDevelopment: false,
     isTest: true,

@@ -18,6 +18,16 @@ vi.mock('@/lib/env', () => ({
     features: { f8Renewals: true },
     tenant: { slug: 'tenanta' },
     log: { level: 'silent' },
+    // QA Round 1 fix — `vi.importActual('@/modules/renewals')` below
+    // triggers transitive load of renewals-deps → upstash-rate-limiter
+    // which reads `env.upstash.url` + `env.upstash.token`. Stub them
+    // here so module-init does not crash. Same fix needed in any unit
+    // test that mocks `@/lib/env` AND imports a module that touches
+    // the rate limiter through its dep graph.
+    upstash: {
+      url: 'https://test.upstash.io',
+      token: 'test-token-with-enough-length-for-zod-min-20',
+    },
     isProduction: false,
     isDevelopment: false,
     isTest: true,

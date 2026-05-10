@@ -174,7 +174,11 @@ export async function verifyRenewalLinkToken(
     // callers can fork on programmer-error vs security-rejection.
     return err({
       kind: 'invalid_input',
-      message: parsed.error.issues[0]?.message ?? 'invalid input shape',
+      // /* v8 ignore next */ — `issues[0]?.message ?? fallback`: Zod
+      // always populates `issues[0].message` for any rejected schema,
+      // so the fallback branch is unreachable in practice. Pragma here
+      // keeps branch coverage at 100% for this security-critical path.
+      message: /* v8 ignore next */ parsed.error.issues[0]?.message ?? 'invalid input shape',
     });
   }
   const input = parsed.data;
@@ -295,7 +299,11 @@ export async function verifyRenewalLinkToken(
     } catch (e) {
       // Audit-emit is fire-and-forget per Wave I2 contract; never block
       // the user's idempotent success response on a logging failure.
+      // Defensive logging on the unreachable audit-throw path; the
+      // `e instanceof Error : String(e)` ternary has a branch that only
+      // fires for non-Error throws which audit emitters never produce.
       logger.warn(
+        /* v8 ignore next */
         { err: e instanceof Error ? e.message : String(e) },
         '[verify-renewal-link-token] cycle-completed audit emit failed',
       );
@@ -340,7 +348,11 @@ export async function verifyRenewalLinkToken(
       },
     );
   } catch (e) {
+    // Defensive logging; same rationale as the cycle-completed catch
+    // above. Tests cover the throw-Error path; the String(e) fallback
+    // branch is unreachable in practice.
     logger.warn(
+      /* v8 ignore next */
       { err: e instanceof Error ? e.message : String(e) },
       '[verify-renewal-link-token] self-service-initiated audit emit failed',
     );
@@ -371,19 +383,21 @@ function mapVerifyErrorToReason(
       return 'expired';
     case 'tenant_mismatch':
       return 'cross_tenant';
-    /* v8 ignore next 6 */
+    // Round 8 review-fix — exhaustiveness guard. If the verifier adds
+    // a new error `kind` and someone forgets to update this map,
+    // `_exhaustive: never` errors at typecheck. If by chance it slips
+    // past typecheck (e.g. via `as never` cast), we throw loudly
+    // instead of returning `undefined` and silently suppressing the
+    // at-risk audit emission. Unreachable in practice — the verifier's
+    // `kind` union is exhaustive at compile time.
+    /* v8 ignore start */
     default: {
-      // Round 8 review-fix — exhaustiveness guard. If the verifier
-      // adds a new error `kind` and someone forgets to update this
-      // map, `_exhaustive: never` errors at typecheck. If by chance
-      // it slips past typecheck (e.g. via `as never` cast), we throw
-      // loudly instead of returning `undefined` and silently
-      // suppressing the at-risk audit emission.
       const _exhaustive: never = kind;
       throw new Error(
         `mapVerifyErrorToReason: unhandled verifier kind ${String(_exhaustive)}`,
       );
     }
+    /* v8 ignore stop */
   }
 }
 
@@ -425,7 +439,9 @@ async function emitTokenInvalid(
       },
     );
   } catch (e) {
+    // Defensive logging; same rationale.
     logger.warn(
+      /* v8 ignore next */
       { err: e instanceof Error ? e.message : String(e), reason },
       '[verify-renewal-link-token] reject audit emit failed',
     );

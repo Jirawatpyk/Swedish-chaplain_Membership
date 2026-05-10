@@ -290,3 +290,149 @@ describe('verifyRenewalLinkToken (T120) — fire-and-forget audit', () => {
     if (r.ok) expect(r.value.kind).toBe('cycle_already_completed');
   });
 });
+
+// QA Round 1 fix — Round 9/10 added the optional `preConsumeGate`
+// parameter. Branch coverage was 80.48% (uncovered: `preConsumeGate
+// !== undefined` true branch + the gate-returns-block sub-branch).
+// These 4 cases pin all 3 gate branches + ensure markConsumed is NOT
+// called on block (so the token stays valid for retry).
+describe('verifyRenewalLinkToken (T120) — preConsumeGate (Round 9/10)', () => {
+  it('runs gate, allows, and proceeds to markConsumed when gate returns "allow"', async () => {
+    const cycle = buildCycle();
+    const { deps, markConsumedMock } = fakeDeps({
+      verifyResult: ok(verifiedToken),
+      cycle,
+    });
+    const gateMock = vi.fn(
+      async (_args: { memberId: string; cycleId: string }) => 'allow' as const,
+    );
+    const r = await verifyRenewalLinkToken(deps, baseInput, gateMock);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.kind).toBe('success');
+    expect(gateMock).toHaveBeenCalledTimes(1);
+    expect(gateMock.mock.calls[0]?.[0]).toEqual({
+      memberId: MEMBER_ID,
+      cycleId: CYCLE_UUID,
+    });
+    expect(markConsumedMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts with invalid_token when gate returns "block" — markConsumed NOT called', async () => {
+    const cycle = buildCycle();
+    const { deps, markConsumedMock, emitMock } = fakeDeps({
+      verifyResult: ok(verifiedToken),
+      cycle,
+    });
+    const gateMock = vi.fn(async () => 'block' as const);
+    const r = await verifyRenewalLinkToken(deps, baseInput, gateMock);
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'invalid_token') {
+      expect(r.error.reason).toBe('member_not_found_in_tenant');
+    }
+    expect(gateMock).toHaveBeenCalledTimes(1);
+    // CRITICAL: token must NOT be consumed when gate blocks (Round 9
+    // contract — preserves the token for retry/re-issue).
+    expect(markConsumedMock).not.toHaveBeenCalled();
+    // emitTokenInvalid still fires for forensic visibility (generic
+    // member_not_found_in_tenant reason — no oracle).
+    expect(emitMock).toHaveBeenCalled();
+    expect(emitMock.mock.calls[0]?.[0]).toMatchObject({
+      type: 'renewal_token_invalid',
+      payload: { reason: 'member_not_found_in_tenant' },
+    });
+  });
+
+  it('runs gate BEFORE cycle_already_completed early-return (Round 10 ordering fix)', async () => {
+    // Round 10 closed the regression where gate sat AFTER the
+    // cycle.status==='completed' early-return — a click on an
+    // already-completed cycle bypassed the gate so the redeem-link
+    // route's `resolvedUserId` capture never ran. Pin the new ordering:
+    // gate IS called for cycle_already_completed too.
+    const completedCycle = buildCycle({ status: 'completed' });
+    const { deps, markConsumedMock } = fakeDeps({
+      verifyResult: ok(verifiedToken),
+      cycle: completedCycle,
+    });
+    const gateMock = vi.fn(async () => 'allow' as const);
+    const r = await verifyRenewalLinkToken(deps, baseInput, gateMock);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.kind).toBe('cycle_already_completed');
+    // Gate MUST run on the cycle_already_completed path so the route
+    // can capture resolvedUserId.
+    expect(gateMock).toHaveBeenCalledTimes(1);
+    // markConsumed MUST NOT run on the already-completed path — CHK033
+    // invariant ("let repeated clicks within TTL keep landing on the
+    // same already-complete page") preserved across Round 10's gate
+    // re-ordering.
+    expect(markConsumedMock).not.toHaveBeenCalled();
+  });
+
+  it('gate-block on cycle_already_completed path also blocks (gate runs, then short-circuits before status check)', async () => {
+    const completedCycle = buildCycle({ status: 'completed' });
+    const { deps, markConsumedMock } = fakeDeps({
+      verifyResult: ok(verifiedToken),
+      cycle: completedCycle,
+    });
+    const gateMock = vi.fn(async () => 'block' as const);
+    const r = await verifyRenewalLinkToken(deps, baseInput, gateMock);
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'invalid_token') {
+      expect(r.error.reason).toBe('member_not_found_in_tenant');
+    }
+    expect(gateMock).toHaveBeenCalledTimes(1);
+    expect(markConsumedMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('verifyRenewalLinkToken (T120) — requestId nullable fallback (R11 branch coverage)', () => {
+  // Constitution Principle II — 100% branch on security-critical paths.
+  // The audit envelope's `requestId` accepts `string | null | undefined`
+  // (zod schema). When the caller omits / passes null (e.g. NextRequest
+  // without `x-request-id` header), the use-case must coerce it to
+  // explicit `null` for the audit emitter. The 3 emit sites
+  // (cycle-completed, self-service-initiated, renewal_token_invalid)
+  // each have their own `?? null` ternary; covering each here pins the
+  // fallback branch.
+
+  it('coerces requestId to null on success-path audit emit when caller omits requestId', async () => {
+    const { deps, emitMock, markConsumedMock } = fakeDeps({
+      verifyResult: ok(verifiedToken),
+      cycle: buildCycle({ status: 'awaiting_payment' }),
+      markConsumedResult: { status: 'fresh', consumedAt: NOW },
+    });
+    const r = await verifyRenewalLinkToken(deps, { ...baseInput, requestId: null });
+    expect(r.ok).toBe(true);
+    expect(markConsumedMock).toHaveBeenCalledOnce();
+    expect(emitMock).toHaveBeenCalledOnce();
+    const emitCall = emitMock.mock.calls[0];
+    expect(emitCall?.[0]?.type).toBe('renewal_self_service_initiated');
+    expect(emitCall?.[1]?.requestId).toBeNull();
+  });
+
+  it('coerces requestId to null on cycle-completed audit emit when caller omits requestId', async () => {
+    const { deps, emitMock, markConsumedMock } = fakeDeps({
+      verifyResult: ok(verifiedToken),
+      cycle: buildCycle({ status: 'completed' }),
+    });
+    const r = await verifyRenewalLinkToken(deps, { ...baseInput, requestId: null });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.kind).toBe('cycle_already_completed');
+    expect(markConsumedMock).not.toHaveBeenCalled();
+    expect(emitMock).toHaveBeenCalledOnce();
+    const emitCall = emitMock.mock.calls[0];
+    expect(emitCall?.[0]?.type).toBe('renewal_token_clicked_on_completed_cycle');
+    expect(emitCall?.[1]?.requestId).toBeNull();
+  });
+
+  it('coerces requestId to null on reject-path audit emit when caller omits requestId', async () => {
+    const { deps, emitMock } = fakeDeps({
+      verifyResult: err({ kind: 'expired', expSec: 1, nowSec: 2 }),
+    });
+    const r = await verifyRenewalLinkToken(deps, { ...baseInput, requestId: null });
+    expect(r.ok).toBe(false);
+    expect(emitMock).toHaveBeenCalledOnce();
+    const emitCall = emitMock.mock.calls[0];
+    expect(emitCall?.[0]?.type).toBe('renewal_token_invalid');
+    expect(emitCall?.[1]?.requestId).toBeNull();
+  });
+});

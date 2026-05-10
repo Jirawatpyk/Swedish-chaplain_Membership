@@ -21,6 +21,18 @@ vi.mock('@/lib/env', () => ({
     features: { f8Renewals: true, f8AtRiskDisabled: false },
     tenant: { slug: 'tenanta' },
     log: { level: 'silent' },
+    // QA Round 1 fix — `vi.importActual('@/modules/renewals')` triggers
+    // transitive load of renewals-deps → upstash-rate-limiter +
+    // resend-client which read these at module-init.
+    upstash: {
+      url: 'https://test.upstash.io',
+      token: 'test-token-with-enough-length-for-zod-min-20',
+    },
+    resend: {
+      apiKey: 're_test_placeholder',
+      webhookSigningSecret: 'whsec_test_placeholder',
+      fromEmail: 'noreply@test.example',
+    },
     isProduction: false,
     isDevelopment: false,
     isTest: true,
