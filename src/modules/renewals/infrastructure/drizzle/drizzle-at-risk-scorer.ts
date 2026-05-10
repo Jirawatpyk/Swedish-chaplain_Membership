@@ -8,28 +8,34 @@
  * `computeAtRiskScore` function (FR-029 + FR-029a F6-readiness fallback
  * + FR-030 proportional bands + FR-035 min-tenure gate).
  *
- * Factor coverage (3 of 8 implemented end-to-end; the rest stay at 0
- * contribution until follow-up waves wire F2/F6/F7 bridges):
+ * Factor coverage (5 of 8 implemented end-to-end as of PR #24 Round 7;
+ * the 3 F6-dependent factors stay at 0 contribution until F6
+ * EventCreate integration ships):
  *
- *   F6-INDEPENDENT (4):
+ *   F6-INDEPENDENT (5):
  *     ✓ tenureDays                 — F3 members.created_at proxy
  *     ✓ invoicesOverdueCount       — F4 invoices status='issued' AND
  *                                     created_at < now - 30d
  *     ✓ daysSinceLastPayment       — F4 max(paid_at) per member
- *     - daysSinceContactUpdate     — uses F3 members.last_activity_at
- *                                     (0 contribution if never set)
- *     ⊘ eBlastQuotaPctUsed         — F7 broadcast_deliveries quota
- *                                     bridge deferred to follow-up
- *     ⊘ tierDowngradedLast12Months — F2 audit-log scan deferred
+ *     ✓ daysSinceContactUpdate     — F3 members.last_activity_at
+ *     ✓ tierDowngradedLast12Months — F2 audit_log scan: looks for any
+ *                                     `member_plan_changed` event in the
+ *                                     last 12mo where new plan's
+ *                                     annual_fee < old plan's annual_fee
+ *                                     (PR #24 Round 7 — F2 ship unblocked)
+ *     ✓ eBlastQuotaPctUsed         — F7 broadcast_deliveries count vs
+ *                                     plan benefit_matrix.eblast_per_year
+ *                                     for current quota year
+ *                                     (PR #24 Round 7 — F7 ship unblocked)
  *
  *   F6-DEPENDENT (3):
  *     ⊘ eventsAttendedLast12Months — F6 EventCreate not shipped
  *     ⊘ eventsAttendedLast3Months  — same
  *     ⊘ culturalTicketQuotaPctUsed — F6 ticket data not shipped
  *
- * The 5 deferred factors return `undefined` from the gather step, which
- * the Domain function tolerates by skipping (contributes 0). Wave A1's
- * property-based test pins the "0-contribution-when-undefined"
+ * The 3 remaining deferred factors return `undefined` from the gather
+ * step, which the Domain function tolerates by skipping (contributes 0).
+ * Wave A1's property-based test pins the "0-contribution-when-undefined"
  * invariant (`tests/unit/renewals/domain/at-risk-score.test.ts`).
  *
  * Tenant isolation via RLS — adapter runs queries inside `runInTenant`
@@ -47,6 +53,14 @@ import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+// PR #24 Round 7 — F2/F7 ship + at-risk factor unblock. Adapter→Adapter
+// schema deep imports are the canonical Drizzle pattern (eslint config
+// exception for `src/modules/**`); same precedent as the F8 audit
+// emitter at `drizzle-renewal-audit-emitter.ts:20`.
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { broadcastDeliveries } from '@/modules/broadcasts/infrastructure/schema';
+import { currentQuotaYear } from '@/modules/broadcasts';
 import {
   computeAtRiskScore,
   type AtRiskFactors,
@@ -94,6 +108,19 @@ export function makeDrizzleAtRiskScorer(
         .where(eq(members.memberId, memberId))
         .limit(1);
       const memberRow = memberRows[0];
+
+      // F3 members.plan_id — needed for both the F2 tier-downgrade
+      // query (resolve "current plan annualFee") and the F7 e-blast
+      // quota lookup (resolve "tier's eblast_per_year").
+      const memberPlanRows = await tx
+        .select({
+          planId: members.planId,
+          planYear: members.planYear,
+        })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1);
+      const memberPlan = memberPlanRows[0];
 
       // 2. F4 invoice aggregates — overdue count + max paid_at. Single
       //    aggregate query per member; with the (tenant_id, member_id)
@@ -146,6 +173,88 @@ export function makeDrizzleAtRiskScorer(
         await deps.tenantRenewalSettingsRepo.findByTenant(tenantId);
       const minTenureDays = settings?.minTenureDaysForAtRisk ?? 30;
 
+      // ----------------------------------------------------------------
+      // PR #24 Round 7 — F2 audit-log scan: tier_downgraded_last_12mo.
+      // F2 + F7 shipped, so the at-risk scorer can now consume the
+      // `member_plan_changed` audit trail (emitted by F3 change-plan
+      // use-case) joined against `membership_plans` to detect a
+      // downgrade in the last 12 months. A "downgrade" is defined as
+      // any plan transition where `new.annual_fee_minor_units` <
+      // `old.annual_fee_minor_units` — a member moving from Premium
+      // (high fee) to Standard (lower fee). Tier-equal moves and
+      // upgrades both score as `false`.
+      //
+      // RLS scopes audit_log + membership_plans to the current tenant
+      // automatically (both tables ENABLE + FORCE RLS). Single query;
+      // O(1) per member regardless of plan-change history depth (we
+      // short-circuit on the first downgrade row found).
+      // ----------------------------------------------------------------
+      const downgradeProbe = await tx.execute<{ has_downgrade: boolean }>(sql`
+        SELECT EXISTS (
+          SELECT 1
+          FROM ${auditLog} al
+          JOIN ${membershipPlans} op
+            ON op.tenant_id = al.tenant_id
+           AND op.plan_id = al.payload->>'old_plan_id'
+           AND op.plan_year = (al.payload->>'old_plan_year')::int
+          JOIN ${membershipPlans} np
+            ON np.tenant_id = al.tenant_id
+           AND np.plan_id = al.payload->>'new_plan_id'
+           AND np.plan_year = (al.payload->>'new_plan_year')::int
+          WHERE al.event_type = 'member_plan_changed'
+            AND al.payload->>'member_id' = ${memberId}
+            AND al.timestamp > NOW() - INTERVAL '12 months'
+            AND np.annual_fee_minor_units < op.annual_fee_minor_units
+        ) AS has_downgrade
+      `);
+      const tierDowngradedLast12Months =
+        downgradeProbe[0]?.has_downgrade === true;
+
+      // ----------------------------------------------------------------
+      // PR #24 Round 7 — F7 broadcast quota: eBlastQuotaPctUsed.
+      // Member's plan benefit_matrix.eblast_per_year is the per-year
+      // delivery budget. We count `broadcast_deliveries` where
+      // `recipient_member_id = ?` AND `quota_year_consumed = current
+      // quota year` (Asia/Bangkok calendar year — matches F7
+      // `currentQuotaYear()` semantics). pct = sent / quota * 100.
+      //
+      // Returned `undefined` (skipped) when:
+      //   - member's plan has no benefit_matrix (orphan)
+      //   - eblast_per_year === 0 (plan with no quota — Junior tier)
+      // Domain handles `undefined` as a 0-contribution skip per the
+      // computeAtRiskScore contract.
+      // ----------------------------------------------------------------
+      let eBlastQuotaPctUsed: number | undefined;
+      if (memberPlan != null) {
+        const planRows = await tx
+          .select({
+            benefitMatrix: membershipPlans.benefitMatrix,
+          })
+          .from(membershipPlans)
+          .where(
+            sql`${membershipPlans.planId} = ${memberPlan.planId}
+                AND ${membershipPlans.planYear} = ${memberPlan.planYear}`,
+          )
+          .limit(1);
+        const eblastQuota =
+          planRows[0]?.benefitMatrix?.eblast_per_year ?? 0;
+        if (eblastQuota > 0) {
+          const quotaYear = currentQuotaYear(new Date());
+          const sentRows = await tx.execute<{ sent_count: string }>(sql`
+            SELECT count(*)::text AS sent_count
+            FROM ${broadcastDeliveries}
+            WHERE recipient_member_id = ${memberId}
+              AND status = 'sent'
+              AND quota_year_consumed = ${quotaYear}
+          `);
+          const sentCount = Number.parseInt(
+            sentRows[0]?.sent_count ?? '0',
+            10,
+          );
+          eBlastQuotaPctUsed = (sentCount / eblastQuota) * 100;
+        }
+      }
+
       const factors: AtRiskFactors = {
         ...(tenureDays !== undefined ? { tenureDays } : {}),
         ...(daysSinceContactUpdate !== undefined
@@ -155,7 +264,10 @@ export function makeDrizzleAtRiskScorer(
         ...(daysSinceLastPayment !== undefined
           ? { daysSinceLastPayment }
           : {}),
-        // F6 + F7 + F2 factors deferred — undefined ⇒ Domain skips.
+        // PR #24 Round 7 — F2 + F7 unblocked; 3 F6 factors still pending
+        // F6 EventCreate ship.
+        tierDowngradedLast12Months,
+        ...(eBlastQuotaPctUsed !== undefined ? { eBlastQuotaPctUsed } : {}),
       };
 
       return { factors, minTenureDays };
