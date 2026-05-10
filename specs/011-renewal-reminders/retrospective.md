@@ -89,8 +89,56 @@ All 6 user stories' AS coverage GREEN per Phase 3-8 Exit Checkpoints. Spot-check
 - **Cause**: Per-candidate dispatch loop issues 3-4 RTTs (insertIfAbsent reminder_event + updateCycleStatus + auditEmitter.emit). At ~25ms BKK→SG RTT, this is ~85ms/candidate; at production ~5ms RTT, ~17ms/candidate ⇒ 5k = ~85s.
 - **Severity**: SIGNIFICANT — affects future scale-out behaviour, NOT current SweCham single-tenant operation (~131 members, cron runs in ~11s).
 - **Severity nuance**: SweCham scale (single-tenant, ~131 members) is far below the 5k SLO threshold. F8 ships dark; SweCham operations unaffected. Multi-tenant fan-out (F10+) re-amortizes across tenants in the coordinator — per-tenant budget is what matters and SweCham's per-tenant cron stays comfortably under budget.
-- **Mitigation tracked**: `phase-10-backlog.md` + `perf-benchmarks.md` § T262 finding documents the recommended Phase 11 batched-write optimization (precedent: T159b at-risk batched-write delivered 38× speedup). 3 multi-row queries per page replace ~3-4 RTTs per candidate.
+- **Phase 10 in-session work**:
+  1. ✅ Added `bulkInsertIfAbsent` + `bulkTransitionToSent` to `RenewalReminderEventRepo` port — single-RTT alternatives to per-cycle `insertIfAbsent` + `transitionStatus`.
+  2. ✅ Implemented both bulk methods in `drizzle-renewal-reminder-event-repo.ts` using `INSERT … VALUES (…), (…) ON CONFLICT DO NOTHING RETURNING …` and `UPDATE … SET col = CASE WHEN id = … THEN … END WHERE id IN (…)` patterns.
+  3. ✅ Existing `dispatch-cron-idempotency.test.ts` continues to pass against the updated adapter (smoke-tested 2026-05-10 — single-row methods unchanged).
+  4. ⏭ **OUTER-LOOP WIRING — F8-EPIC FOLLOW-UP COMMIT** (NOT Phase 11): the bulk infrastructure is ready, but wiring `dispatchRenewalCycle`'s outer loop to use it requires extracting `decideThroughGate11` from the 967-LOC `dispatch-one-cycle.ts` (separating decision from emission across 13 audit-skip sites). The refactor risks regressions on the 32 existing dispatch tests + 4 cron route handlers. Sequenced as a focused follow-up commit on this branch (still F8 epic, NOT a new feature) so this Phase-10 close ships the green baseline.
 - **Prevention**: Future F8-scale features should perf-bench at production-equivalent RTT BEFORE shipping the per-row use-case pattern; favour batched ports from Day 1.
+
+**Continuation plan for the SEND-path bulk-flush** (commit-on-this-branch):
+
+```
+// dispatchRenewalCycle outer loop (per-chunk):
+
+// Phase A — per-cycle decision (no IO except settings + repo reads).
+const decisions = await Promise.all(
+  chunk.map(c => decideThroughGate11(deps, c, ctx))  // NEW helper extracted from dispatchOneCycle gates 1-11
+);
+
+// Phase B — bulk pre-claim reminder_events for SEND decisions (1 RTT).
+const sendDecisions = decisions.filter(d => d.kind === 'send-email');
+const preClaimResult = sendDecisions.length === 0 ? { inserted: [], conflicted: [] }
+  : await runInTenant(deps.tenant, tx =>
+      deps.reminderEventRepo.bulkInsertIfAbsent(tx, sendDecisions.map(d => ({...}))));
+
+// Phase C — concurrent gateway IO for inserted (not conflicted) decisions.
+const sendOutcomes = await Promise.all(
+  preClaimResult.inserted.map(async (reminderEvent, idx) => {
+    const decision = sendDecisions[idx];
+    const gatewayResult = await deps.renewalGateway.sendRenewalEmail({...});
+    return { decision, reminderEvent, gatewayResult };
+  })
+);
+
+// Phase D — bulk-flush successes + audits in 1 tx (2 RTTs total).
+const successes = sendOutcomes.filter(o => o.gatewayResult.ok);
+if (successes.length > 0) {
+  await runInTenant(deps.tenant, async tx => {
+    await deps.reminderEventRepo.bulkTransitionToSent(tx, successes.map(s => ({...})));
+    await deps.auditEmitter.bulkEmitInTx(tx, successes.map(s => ({type: 'renewal_reminder_sent', ...})), baseCtx);
+  });
+}
+
+// Per-failure: existing defensivelyMarkFailedForRetry handling stays inline (not bulk).
+// Conflicted pre-claims emit 'renewal_reminder_skipped { reason: "already_sent" }' via bulkEmitInTx.
+// Skip decisions from Phase A emit their corresponding renewal_reminder_skipped audits via bulkEmitInTx.
+```
+
+**Expected impact** when wired:
+- Before: ~7 RTTs per cycle (Gate 12 tx [3 RTT] + dispatchEmailStep tx [4 RTT]) = ~85ms/cycle local, ~17ms/cycle production
+- After: ~3 RTTs per chunk-page (bulk pre-claim + bulk flush + bulk skip emits), regardless of chunk size
+- Bench projection: 85s @ 1k → ~10s (8× speedup); production projection: 85s @ 5k → ~12s (well under 60s SLO).
 
 ## Innovation opportunities (8 POSITIVE)
 

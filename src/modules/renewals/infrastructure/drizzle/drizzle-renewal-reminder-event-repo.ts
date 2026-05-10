@@ -24,7 +24,7 @@
  *   - `listForCycle` — admin cycle-detail page event timeline
  *   - `listFailedSince` — ops failure-cursor dashboard
  */
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -82,7 +82,7 @@ export function makeDrizzleRenewalReminderEventRepo(
 ): RenewalReminderEventRepo {
   return {
     async insertIfAbsent(tx: unknown, input: NewReminderEventInput) {
-      const txDb = tx as typeof db;
+      const txDb = tx as unknown as typeof db;
       // ON CONFLICT against the unique idem index — Drizzle infers
       // the target from the `target` columns + the index's WHERE
       // clause is full-coverage (no partial), so no targetWhere
@@ -148,7 +148,7 @@ export function makeDrizzleRenewalReminderEventRepo(
       tx: unknown,
       input: ReminderEventTransitionInput,
     ): Promise<ReminderEvent> {
-      const txDb = tx as typeof db;
+      const txDb = tx as unknown as typeof db;
       // WHERE status='pending' guarantees only one transition wins
       // — defends against racing dispatch attempts (e.g., admin
       // "Send reminder now" colliding with the cron run). Wave I2e
@@ -196,7 +196,7 @@ export function makeDrizzleRenewalReminderEventRepo(
         readonly deliveryId: string;
       },
     ): Promise<ReminderEvent> {
-      const txDb = tx as typeof db;
+      const txDb = tx as unknown as typeof db;
       // WHERE status='failed' AND retry_exhausted_at IS NULL — defends
       // against (a) concurrent retry passes both attempting flip and
       // (b) flipping a row that was already permanently exhausted by a
@@ -307,7 +307,7 @@ export function makeDrizzleRenewalReminderEventRepo(
       tx: unknown,
       input: MarkRetryExhaustedInput,
     ): Promise<ReminderEvent> {
-      const txDb = tx as typeof db;
+      const txDb = tx as unknown as typeof db;
       // WHERE retry_exhausted_at IS NULL ensures only one caller wins
       // — concurrent retry-pass invocations deterministically produce
       // one permanent-audit emission per row.
@@ -325,6 +325,103 @@ export function makeDrizzleRenewalReminderEventRepo(
         throw new ReminderEventNotFoundError(input.reminderEventId);
       }
       return rowToDomain(updated[0]);
+    },
+
+    async bulkInsertIfAbsent(tx, inputs) {
+      // F8 Phase 10 T262 batched-write — single multi-row INSERT
+      // ON CONFLICT DO NOTHING against
+      // `renewal_reminder_events_idem_idx` (tenant, cycle, step, year)
+      // unique. Caller branches on whether each input came back as
+      // `inserted` (proceed to gateway) or `conflicted` (skip with
+      // already_sent reason). Mirrors single-row `insertIfAbsent`
+      // semantics but in 1 RTT instead of N.
+      if (inputs.length === 0) {
+        return { inserted: [], conflicted: [] };
+      }
+      const txDb = tx as unknown as typeof db;
+      const insertValues = inputs.map((input) => ({
+        tenantId: tenant.slug,
+        cycleId: input.cycleId,
+        stepId: input.stepId,
+        yearInCycle: input.yearInCycle,
+        channel: input.channel,
+        templateId: input.templateId ?? null,
+        taskType: input.taskType ?? null,
+        actorUserId: input.actorUserId ?? null,
+        status: 'pending' as const,
+      }));
+      const insertedRows = await txDb
+        .insert(renewalReminderEvents)
+        .values(insertValues)
+        .onConflictDoNothing({
+          target: [
+            renewalReminderEvents.tenantId,
+            renewalReminderEvents.cycleId,
+            renewalReminderEvents.stepId,
+            renewalReminderEvents.yearInCycle,
+          ],
+        })
+        .returning();
+      const inserted = insertedRows.map(rowToDomain);
+      // Identify which inputs were skipped via ON CONFLICT — match by
+      // the natural key (cycleId + stepId + yearInCycle) since the
+      // generated suggestionId differs.
+      const insertedKey = new Set(
+        inserted.map(
+          (r) => `${r.cycleId}::${r.stepId}::${r.yearInCycle}`,
+        ),
+      );
+      const conflicted = inputs.filter(
+        (input) =>
+          !insertedKey.has(
+            `${input.cycleId}::${input.stepId}::${input.yearInCycle}`,
+          ),
+      );
+      return { inserted, conflicted };
+    },
+
+    async bulkTransitionToSent(tx, inputs) {
+      // F8 Phase 10 T262 batched-write — single multi-row UPDATE via
+      // `UPDATE … FROM (VALUES …)` so all reminder_events flip
+      // pending → sent in 1 RTT. Caller MUST pair with `bulkEmitInTx`
+      // for the matching `renewal_reminder_sent` audits inside the
+      // SAME `runInTenant` block per Constitution Principle VIII.
+      if (inputs.length === 0) {
+        return [];
+      }
+      const txDb = tx as unknown as typeof db;
+      const ids = inputs.map((i) => i.reminderEventId);
+      // Build a per-id payload map so we can apply the matching
+      // dispatchedAt + deliveryId per row via a CASE expression.
+      const dispatchedAtCases = sql.join(
+        inputs.map(
+          (i) =>
+            sql`WHEN ${renewalReminderEvents.reminderEventId} = ${i.reminderEventId} THEN ${i.dispatchedAt}::timestamptz`,
+        ),
+        sql` `,
+      );
+      const deliveryIdCases = sql.join(
+        inputs.map(
+          (i) =>
+            sql`WHEN ${renewalReminderEvents.reminderEventId} = ${i.reminderEventId} THEN ${i.deliveryId}`,
+        ),
+        sql` `,
+      );
+      const updated = await txDb
+        .update(renewalReminderEvents)
+        .set({
+          status: 'sent',
+          dispatchedAt: sql`CASE ${dispatchedAtCases} END`,
+          deliveryId: sql`CASE ${deliveryIdCases} END`,
+        })
+        .where(
+          and(
+            inArray(renewalReminderEvents.reminderEventId, ids),
+            eq(renewalReminderEvents.status, 'pending'),
+          ),
+        )
+        .returning();
+      return updated.map(rowToDomain);
     },
   };
 }

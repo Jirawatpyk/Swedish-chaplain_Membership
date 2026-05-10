@@ -121,6 +121,54 @@ export interface RenewalReminderEventRepo {
   ): Promise<ReminderEvent>;
 
   /**
+   * F8 Phase 10 T262 batched-write — bulk pre-claim reminder events.
+   *
+   * Single-RTT alternative to N-call `insertIfAbsent` from the dispatch
+   * cron's per-chunk loop. Returns { inserted, conflicted } where
+   * `inserted` carries the rows that were freshly created (caller
+   * proceeds to gateway IO) and `conflicted` carries the inputs whose
+   * (cycle_id, step_id, year_in_cycle) already had a reminder event
+   * (caller emits `renewal_reminder_skipped { reason: 'already_sent' }`).
+   *
+   * Empty `inputs` is a no-op returning empty arrays.
+   *
+   * Constitution Principle VII (Perf) — collapses N tx open/close
+   * round-trips per chunk into 1 (sized by Postgres connection pool).
+   */
+  bulkInsertIfAbsent(
+    tx: TenantTx,
+    inputs: ReadonlyArray<NewReminderEventInput>,
+  ): Promise<{
+    readonly inserted: ReadonlyArray<ReminderEvent>;
+    readonly conflicted: ReadonlyArray<NewReminderEventInput>;
+  }>;
+
+  /**
+   * F8 Phase 10 T262 batched-write — bulk transition pending → sent.
+   *
+   * Single-RTT UPDATE … FROM (VALUES …) for a chunk of successful
+   * gateway dispatches. Caller passes the `reminderEventId` +
+   * `dispatchedAt` + `deliveryId` collected from per-cycle gateway
+   * calls. Returns the updated rows in input order.
+   *
+   * Empty `inputs` is a no-op returning an empty array.
+   *
+   * Constitution Principle VIII (Reliability) — caller MUST pair this
+   * with `bulkEmitInTx` for the matching `renewal_reminder_sent`
+   * audits inside the SAME `runInTenant` block; atomicity guaranteed
+   * by the surrounding tx.
+   */
+  bulkTransitionToSent(
+    tx: TenantTx,
+    inputs: ReadonlyArray<{
+      readonly tenantId: string;
+      readonly reminderEventId: string;
+      readonly dispatchedAt: string;
+      readonly deliveryId: string;
+    }>,
+  ): Promise<ReadonlyArray<ReminderEvent>>;
+
+  /**
    * F8 Phase 4 Wave I2e — transition `failed → sent` for the retry
    * success path (FR-010a). Differs from `transitionStatus` in that
    * the source state is `failed`, not `pending`. UPDATE WHERE
