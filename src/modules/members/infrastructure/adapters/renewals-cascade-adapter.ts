@@ -81,10 +81,12 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
         // F8 cascade failure is non-fatal for F3 archival — the member
         // archive should succeed even if a cascade glitch leaves a
         // cycle in-flight. Log + return `cascade_failed` so the F3
-        // caller emits a metric / audit signal.
+        // caller emits a metric / audit signal. Phase 9 verify-fix —
+        // propagate `errName` from the use-case Result for triage.
         logger.error(
           {
             err: result.error.message,
+            errName: result.error.errName,
             tenantId: tenant.slug,
             memberId: memberId as string,
             cascade: 'f8_in_flight_cycle_cancel',
@@ -95,9 +97,35 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       }
 
       // Translate the F8 outcome to the F3-port outcome. F8's union
-      // already covers `'ok' | 'cascade_partial_failure' | 'cascade_failed'`
-      // 1-to-1 with F3 — pass through.
+      // covers `'ok' | 'cascade_partial_failure' |
+      // 'cascade_audit_emit_failed'` — the audit-emit-failed variant
+      // (Phase 9 verify-fix) maps to `cascade_partial_failure` at the
+      // port level so F3 callers do not need to learn an F8-specific
+      // outcome enum, but the inner classification is preserved in
+      // the structured log line below for ops triage.
       if (result.value.outcome === 'cascade_partial_failure') {
+        return {
+          outcome: 'cascade_partial_failure',
+          cancelledCount: result.value.cancelledCount,
+          skippedConcurrentCount: result.value.skippedConcurrentCount,
+        };
+      }
+      if (result.value.outcome === 'cascade_audit_emit_failed') {
+        // Audit-emit failure during the cascade tx — Principle VIII
+        // rollback already reverted the cycle transition. Surface as
+        // partial-failure to the F3 port (with explicit log
+        // distinguisher). Operators triage via the structured-log
+        // `cascade: 'f8_audit_emit_failure'` field.
+        logger.error(
+          {
+            tenantId: tenant.slug,
+            memberId: memberId as string,
+            cancelledCount: result.value.cancelledCount,
+            skippedConcurrentCount: result.value.skippedConcurrentCount,
+            cascade: 'f8_audit_emit_failure',
+          },
+          'members.archive.renewals_cascade_audit_emit_failed',
+        );
         return {
           outcome: 'cascade_partial_failure',
           cancelledCount: result.value.cancelledCount,

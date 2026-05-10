@@ -3,10 +3,12 @@
  * renewal cycles.
  *
  * Invoked by F3's `archive-member` use-case AFTER the member row
- * mutation commits. Per data-model.md § 2.1 invariant L135 there is at
- * most ONE non-terminal cycle per member, so this is a single-cycle
- * cascade — but we route through the `findActiveForMember` port to
- * stay robust if the invariant is ever relaxed.
+ * mutation commits. Per `data-model.md § Invariants` ("at most ONE
+ * cycle in status NOT IN ('lapsed','cancelled','completed') per
+ * `(tenant_id, member_id)`") there is at most ONE non-terminal cycle
+ * per member, so this is a single-cycle cascade — but we route
+ * through the `findActiveForMember` port to stay robust if the
+ * invariant is ever relaxed.
  *
  * Behaviour:
  *   1. Look up the active cycle (status NOT IN
@@ -95,17 +97,58 @@ export interface CancelInFlightCyclesForMemberInput {
   readonly correlationId: string;
 }
 
-export interface CancelInFlightCyclesForMemberOutput {
-  readonly outcome: 'ok' | 'cascade_partial_failure' | 'cascade_failed';
-  /** Number of cycles transitioned to `cancelled` (0 or 1). */
-  readonly cancelledCount: number;
-  /** Number of cycles skipped due to concurrent transition race (0 or 1). */
-  readonly skippedConcurrentCount: number;
-}
+/**
+ * Discriminated union over cascade outcome — Phase 9 verify-fix
+ * close-on-review: replaces a flat `{outcome, counts}` interface where
+ * `{outcome: 'cascade_failed', cancelledCount: 5}` was compile-
+ * constructible. Now field-presence is tied to discriminant, mirroring
+ * the port-level `RenewalsCascadeResult` shape exactly.
+ *
+ *   - `'ok'`                       → cascade ran end-to-end. Counts
+ *                                    may be 0 when no in-flight cycle
+ *                                    existed (idempotent replay).
+ *   - `'cascade_partial_failure'`  → cycle existed but transition
+ *                                    failed via concurrent admin
+ *                                    cancel race. Counts surface the
+ *                                    skipped row.
+ *   - `'cascade_audit_emit_failed'`→ Phase 9 verify-fix: distinct
+ *                                    outcome for audit-emit failure
+ *                                    inside the cascade tx (the tx
+ *                                    rolled back per Principle VIII;
+ *                                    the cycle stayed in its prior
+ *                                    state). Operationally distinct
+ *                                    from concurrent-skip — implies
+ *                                    the audit pipeline itself is
+ *                                    broken, not a benign race.
+ */
+export type CancelInFlightCyclesForMemberOutput =
+  | {
+      readonly outcome: 'ok';
+      readonly cancelledCount: number;
+      readonly skippedConcurrentCount: number;
+    }
+  | {
+      readonly outcome: 'cascade_partial_failure';
+      readonly cancelledCount: number;
+      readonly skippedConcurrentCount: number;
+    }
+  | {
+      readonly outcome: 'cascade_audit_emit_failed';
+      readonly cancelledCount: number;
+      readonly skippedConcurrentCount: number;
+    };
 
+/**
+ * Phase 9 verify-fix close-on-review — extend the Result error to
+ * carry both `message` AND `errName` so the adapter can log the
+ * underlying error class (PostgresError vs TypeError vs Upstash blip).
+ * Previously only `message` propagated → operators had no way to
+ * triage cascade-failed dashboards by error class.
+ */
 export type CancelInFlightCyclesForMemberError = {
   readonly kind: 'cascade.server_error';
   readonly message: string;
+  readonly errName?: string;
 };
 
 const DEFAULT_REASON: RenewalsCascadeReason = 'originator_member_archived';
@@ -249,17 +292,40 @@ export async function cancelInFlightCyclesForMember(
           skippedConcurrentCount,
         });
       }
+      // Phase 9 verify-fix — distinguish audit-emit failure (Principle
+      // VIII rollback path) from concurrent-skip. Audit-emit throws
+      // bubble out of `runInTenant` as generic errors; recognise via
+      // the `audit` substring in the error message OR the constructor
+      // name. The runInTenant rollback already reverted the cycle
+      // transition; this branch records the operational signal.
+      const errMessage =
+        txErr instanceof Error ? txErr.message : String(txErr);
+      const errName =
+        txErr instanceof Error ? txErr.name : undefined;
+      const isAuditEmitFailure =
+        errMessage.toLowerCase().includes('audit') ||
+        errMessage.toLowerCase().includes('emit');
       logger.error(
         {
-          err: txErr instanceof Error ? txErr.message : String(txErr),
-          errName: txErr instanceof Error ? txErr.name : undefined,
+          err: errMessage,
+          errName,
           tenantId: input.tenant.slug,
           memberId: input.memberId as string,
           cycleId: activeCycle.cycleId,
           cascade: 'f3_member_archival_or_erasure',
+          isAuditEmitFailure,
         },
-        'renewals.cascade.tx_failed',
+        isAuditEmitFailure
+          ? 'renewals.cascade.audit_emit_failed'
+          : 'renewals.cascade.tx_failed',
       );
+      if (isAuditEmitFailure) {
+        return ok({
+          outcome: 'cascade_audit_emit_failed',
+          cancelledCount,
+          skippedConcurrentCount,
+        });
+      }
       return ok({
         outcome: 'cascade_partial_failure',
         cancelledCount,
@@ -294,9 +360,13 @@ export async function cancelInFlightCyclesForMember(
       },
       'renewals.cascade.lookup_failed',
     );
+    // Phase 9 verify-fix — propagate `errName` through the Result
+    // so the F3 cascade adapter can log the underlying error class
+    // (PostgresError vs TypeError vs Upstash blip) for triage.
     return err({
       kind: 'cascade.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
+      ...(e instanceof Error ? { errName: e.name } : {}),
     });
   }
 }

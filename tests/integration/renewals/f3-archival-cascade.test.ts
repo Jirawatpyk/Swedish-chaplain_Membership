@@ -281,4 +281,46 @@ describe('F8 F3-archival cascade — Phase 9 / T240', () => {
       await tenantB.cleanup().catch(() => {});
     }
   });
+
+  it('Phase 9 verify-fix — unexpected-throw via injected lookup failure surfaces cascade.server_error with errName propagated', async () => {
+    // Inject a deps with a `cyclesRepo.findActiveForMember` that throws
+    // synchronously — simulates RLS context drift / transient connection
+    // failure / ports-adapter mis-wire that the adapter at
+    // `renewals-cascade-adapter.ts:108` documents as "a throw here means
+    // the use-case itself blew up unexpectedly". The use-case must
+    // catch + return Result.err with both `message` AND `errName`
+    // (Phase 9 verify-fix added the `errName` field so the adapter can
+    // log the underlying error class for triage).
+    const baseDeps = makeRenewalsDeps(tenant.ctx.slug);
+    class SyntheticAdapterError extends Error {
+      constructor() {
+        super('synthetic-adapter-throw — RLS context drift');
+        this.name = 'SyntheticAdapterError';
+      }
+    }
+    const throwingDeps = {
+      ...baseDeps,
+      cyclesRepo: {
+        ...baseDeps.cyclesRepo,
+        findActiveForMember: async () => {
+          throw new SyntheticAdapterError();
+        },
+      },
+    };
+    const correlationId = randomUUID();
+    const result = await cancelInFlightCyclesForMember(throwingDeps, {
+      tenant: tenant.ctx,
+      memberId: memberId as never,
+      cascadeReason: 'originator_member_archived',
+      initiatedByUserId: admin.userId,
+      requestId: null,
+      correlationId,
+    });
+    // Result is err with both fields populated.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('cascade.server_error');
+    expect(result.error.message).toContain('synthetic-adapter-throw');
+    expect(result.error.errName).toBe('SyntheticAdapterError');
+  });
 });

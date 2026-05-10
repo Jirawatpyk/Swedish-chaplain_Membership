@@ -26,7 +26,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsMetrics, renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { archive, type Member, type MemberId } from '../../domain/member';
@@ -328,6 +328,13 @@ export async function archiveMember(
         if (cascadeResult.outcome === 'cascade_failed') {
           // Adapter already logged the underlying error. F3 archival
           // remains successful; ops can re-run cleanup manually.
+          // Phase 9 verify-fix — emit cascadeOutcome metric so the
+          // audit-emit-loss runbook can alert on F8 cascade health
+          // (mirrors the F7 broadcastsMetrics.cascadeOutcome pattern).
+          renewalsMetrics.cascadeOutcome(
+            deps.tenant.slug,
+            'unexpected_error',
+          );
           logger.error(
             {
               tenantId: deps.tenant.slug,
@@ -341,6 +348,12 @@ export async function archiveMember(
           // Concurrent admin cancel won the race for the cycle — log
           // partial outcome so ops can verify the cycle landed in
           // `cancelled` (admin-initiated, not cascade-initiated).
+          // Phase 9 verify-fix — emit cascadeOutcome with concurrent_skip
+          // kind so the dashboard distinguishes race from real failure.
+          renewalsMetrics.cascadeOutcome(
+            deps.tenant.slug,
+            'concurrent_skip',
+          );
           logger.warn(
             {
               tenantId: deps.tenant.slug,
@@ -352,8 +365,23 @@ export async function archiveMember(
             },
             'archive-member: renewals cascade partial — concurrent admin cancel won race',
           );
+        } else if (cascadeResult.outcome === 'ok') {
+          // Phase 9 verify-fix — emit cascadeOutcome on the happy
+          // path too so the dashboard tracks normal cascade volume,
+          // not just incidents.
+          renewalsMetrics.cascadeOutcome(deps.tenant.slug, 'cancelled');
         }
       } catch (cascadeErr) {
+        // Phase 9 verify-fix — emit cascadeOutcome on the outer-catch
+        // throw path. The adapter is supposed to translate use-case
+        // failures into typed `cascade_failed` outcomes; reaching this
+        // catch implies the adapter ITSELF blew up (composition root
+        // mis-wire), which is a stop-the-line incident class distinct
+        // from the typed cascade_failed path.
+        renewalsMetrics.cascadeOutcome(
+          deps.tenant.slug,
+          'unexpected_error',
+        );
         logger.error(
           {
             err:

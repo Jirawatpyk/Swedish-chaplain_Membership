@@ -57,6 +57,26 @@ const observableGauges = new Map<string, ObservableGauge>();
 // at scrape time. Writers call `observeGauge(...)` to update.
 const gaugeValues = new Map<string, Map<string, number>>();
 
+/**
+ * Phase 9 verify-fix C1 — test-only accessor exposing the gauge-values
+ * accumulator so unit tests can pin the multi-tenant accumulation
+ * invariant directly (vs the prior `not.toThrow()`-only assertions
+ * which would have missed a `bucket.entries()` → `bucket.values()`
+ * regression).
+ *
+ * Returns the inner Map for the requested gauge name, or `undefined`
+ * if no observation has landed yet. Callers MUST treat the return
+ * value as read-only — mutations would silently corrupt production
+ * gauge state in the same process. Documented as test-only by the
+ * `__test__` prefix; production code paths use the observable-gauge
+ * callback registered inside `observeCycleStateGauge` instead.
+ */
+export function __test__readGaugeValues(
+  gaugeName: string,
+): ReadonlyMap<string, number> | undefined {
+  return gaugeValues.get(gaugeName);
+}
+
 function counter(name: string, description: string, unit?: string): Counter {
   let instr = counters.get(name);
   if (!instr) {
@@ -2025,8 +2045,20 @@ export const renewalsMetrics = {
    * Map's `.entries()` so every tenant slug appears as a distinct
    * label series at scrape time.
    *
-   * Pinned by `tests/unit/lib/metrics-cycle-state-gauge.test.ts`
-   * (Phase 9 verify-fix C1) — multi-tenant accumulation invariant.
+   * Smoke-tested by `tests/unit/lib/metrics-cycle-state-gauge.test.ts`
+   * (Phase 9 verify-fix C1). The unit test asserts the public API
+   * shape (no-throw on every documented call signature, including
+   * multi-tenant accumulation, overwrite-on-re-observe, state
+   * isolation, zero values, and 5000-member SLO ceiling). The
+   * end-to-end OTel callback path (gauge.addCallback iterating
+   * `bucket.entries()` at scrape time) is exercised in production
+   * through the `@vercel/otel` exporter wired by `instrumentation.ts`
+   * — vitest's no-exporter environment cannot invoke the callback,
+   * so `bucket.entries()`-vs-`bucket.values()` regressions would
+   * surface at deploy time via the OTel scrape, not at unit-test
+   * time. Document this gap explicitly so a future maintainer
+   * knows the invariant is end-to-end-tested via OTel staging,
+   * not unit-tested.
    *
    * Test-isolation note: vitest `beforeEach` does NOT reset
    * `gaugeValues` automatically (it's a module-level closure cache).
@@ -2064,6 +2096,60 @@ export const renewalsMetrics = {
           }
         });
       }
+    });
+  },
+
+  /**
+   * Phase 9 verify-fix close-on-review — F8 cascade outcome counter.
+   *
+   * Mirrors `broadcastsMetrics.cascadeOutcome` so the F3 ↔ F8 cascade
+   * (cancelInFlightCyclesForMember from archive-member) emits a
+   * dashboardable signal on every outcome. Without this, the F8
+   * cascade was log-only — `audit-emit-loss.md` runbook could not
+   * alert on F8 cascade health the way it can for F7. Constitution
+   * Principle VII (perf+observability) close.
+   *
+   * `kind` enum is bounded:
+   *   - `'cancelled'`         — cascade transitioned a cycle to cancelled
+   *   - `'concurrent_skip'`   — concurrent admin cancel won the race
+   *   - `'audit_emit_failed'` — audit-emit failure inside cascade tx
+   *                             (Principle VIII rollback path)
+   *   - `'unexpected_error'`  — outer-catch fallback / use-case throw
+   */
+  cascadeOutcome(
+    tenantId: string,
+    kind:
+      | 'cancelled'
+      | 'concurrent_skip'
+      | 'audit_emit_failed'
+      | 'unexpected_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_cascade_outcome_total',
+        'F8 F3-archival cascade outcome per member-archive event',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
+   * Phase 9 verify-fix close-on-review — coordinator READ_ONLY_MODE
+   * skip counter. The 4 coordinator routes return 200 + skipped on
+   * `env.flags.readOnlyMode === true` to avoid cron-job.org retry-
+   * storm; without a metric, operators cannot dashboard "how many
+   * cron passes were swallowed during the maintenance window". A
+   * flag-flap leaving READ_ONLY_MODE=true past the maintenance
+   * window would otherwise look identical to a normal cron response
+   * from outside.
+   */
+  coordinatorSkippedReadOnly(
+    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coordinator_skipped_read_only_total',
+        'F8 coordinator pass short-circuited by READ_ONLY_MODE flag',
+      ).add(1, { cron_kind });
     });
   },
 

@@ -200,6 +200,13 @@ export async function POST(
       correlationId,
     );
   } catch (e) {
+    // Phase 9 verify-fix C1 — emit selfServiceFailed counter on the
+    // outer-catch path BEFORE the 500 response. Without this, an
+    // unexpected throw (runInTenant connection drop, F4-bridge
+    // TypeError, OTel adapter throw) would log + 500 but the
+    // FR-046 conversion-funnel dashboard would record ZERO failures
+    // → green-flagged broken portal.
+    renewalsMetrics.selfServiceFailed(ctx.tenant.slug, 'unexpected_error');
     logger.error(
       {
         err: e instanceof Error ? e : new Error(String(e)),

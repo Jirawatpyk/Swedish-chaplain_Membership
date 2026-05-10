@@ -69,6 +69,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // audit) so cron-job.org does not retry-storm during maintenance.
   // See dispatch-coordinator for the full rationale.
   if (env.flags.readOnlyMode) {
+    // Phase 9 verify-fix — emit observability signal.
+    renewalsMetrics.coordinatorSkippedReadOnly('lapse');
     return NextResponse.json(
       { skipped: true, reason: 'read_only_mode' },
       { status: 200 },

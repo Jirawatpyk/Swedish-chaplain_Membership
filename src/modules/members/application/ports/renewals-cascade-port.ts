@@ -34,10 +34,17 @@ export interface RenewalsCascadePort {
    * Idempotent — replays return `{cancelledCount: 0}` once cascade has
    * run.
    *
-   * `cancellationReason` defaults to `'originator_member_deleted'`
-   * (matches the F7 + chamber DPO compliance enum); F3 callers may
-   * pass a more specific string (e.g. `'gdpr_erasure_request'`) for
-   * compliance differentiation in the audit trail.
+   * `cancellationReason` is OPTIONAL at the port level (no default).
+   * When omitted, the F8 adapter (`f8RenewalsCascadeAdapter` at
+   * `infrastructure/adapters/renewals-cascade-adapter.ts`) records
+   * the audit `payload.reason` as `'originator_member_archived'`
+   * (F8's internal vocabulary — distinct from F7's
+   * `'originator_member_deleted'` because F8 cascades only fire
+   * from archive in MVP, not hard-delete). F3 callers may pass an
+   * explicit `SystemCancellationReason` value (e.g.
+   * `'gdpr_erasure_request'`) for compliance differentiation; the
+   * adapter maps the F7-canonical enum into the F8 reason space
+   * via `toF8Reason()`.
    *
    * `initiatedByUserId` records the F3 admin who initiated the
    * archive/erasure. Audit `actor_user_id` carries it for forensic

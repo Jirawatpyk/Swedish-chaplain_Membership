@@ -85,6 +85,10 @@ vi.mock('@/lib/metrics', () => ({
     resetHookFailed: vi.fn(),
     webhookSchemaRejected: vi.fn(),
     unknownResendErrorName: unknownResendErrorNameMock,
+    // Phase 9 verify-fix close-on-review additions:
+    coordinatorSkippedReadOnly: vi.fn(),
+    cascadeOutcome: vi.fn(),
+    observeCycleStateGauge: vi.fn(),
   },
 }));
 
