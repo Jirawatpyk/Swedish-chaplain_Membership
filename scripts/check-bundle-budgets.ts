@@ -55,6 +55,12 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/renewals/tier-upgrades', maxKb: 120 },
   { route: '/portal/renewal/[memberId]', maxKb: 100 },
   { route: '/portal/preferences/renewals', maxKb: 60 },
+  // PR #24 review-fix — schedule editor is the only F8 admin surface
+  // with a non-trivial client component (`ScheduleEditor`); without a
+  // budget here a future refactor could silently regress JS payload.
+  // The `/portal/renewal/[memberId]/success` page is fully server-
+  // rendered and has no client JS, so no budget entry is needed.
+  { route: '/admin/settings/renewals/schedules', maxKb: 80 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');

@@ -39,7 +39,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { asUserId } from '@/modules/auth/domain/branded';
+import { asUserId } from '@/modules/auth';
 import { asCreditNoteId, asInvoiceId } from '@/modules/invoicing';
 import type { CreditNoteId } from '@/modules/invoicing';
 import { asTenantId } from '@/modules/members';

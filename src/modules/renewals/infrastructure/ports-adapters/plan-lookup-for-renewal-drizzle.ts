@@ -29,7 +29,7 @@
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans';
 import type {
   PlanFrozenFields,
   PlanLookupForRenewalPort,

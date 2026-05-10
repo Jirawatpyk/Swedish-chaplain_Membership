@@ -29,7 +29,7 @@ import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { MemberId, PlanId } from '@/modules/members';
-import type { UserId } from '@/modules/auth/domain/branded';
+import type { UserId } from '@/modules/auth';
 
 export const supersedePendingTierUpgradeInputSchema = z.object({
   tenantId: z.string().min(1),

@@ -136,6 +136,19 @@ export interface ProcessWebhookEventDeps {
    * root wires `paymentsLogger` (audit 2026-04-25 finding #5).
    */
   readonly logger?: LoggerPort;
+  /**
+   * F8 cross-module on-paid hooks. Forwarded into the inner
+   * `confirmPayment` deps for the `payment_intent.succeeded` branch so
+   * the F8 RenewalCycle transition lands inside F4's atomic tx alongside
+   * the invoice flip. Composition root injects via
+   * `f8OnPaidCallbacks(tenantId)` when `FEATURE_F8_RENEWALS=true`.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (
+      evt: import('@/modules/invoicing').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
+  >;
 }
 
 /**
@@ -304,6 +317,12 @@ async function processWebhookEventBody(
           // Audit 2026-04-25 #4: pass processorEventsRepo so the
           // sub-use-case can fold markProcessed into its own withTx.
           processorEventsRepo: deps.processorEventsRepo,
+          // F8: forward cross-module on-paid callbacks so the renewal
+          // cycle transition lands inside F4's atomic tx with the invoice
+          // flip. `undefined` when `FEATURE_F8_RENEWALS=false`.
+          ...(deps.onPaidCallbacks !== undefined
+            ? { onPaidCallbacks: deps.onPaidCallbacks }
+            : {}),
         },
         {
           tenantId,

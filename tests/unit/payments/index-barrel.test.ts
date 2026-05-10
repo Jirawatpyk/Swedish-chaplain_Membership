@@ -100,7 +100,12 @@ describe('payments barrel — public API contract', () => {
       ].sort(),
     );
 
-    // ProcessWebhookEventDeps shape (audit 2026-04-25 finding #5: +logger)
+    // ProcessWebhookEventDeps shape (audit 2026-04-25 finding #5: +logger;
+    // PR #24 review-fix: +onPaidCallbacks — F8 cycle-completion hook
+    // wired into F4's atomic webhook tx so a Stripe-paid renewal invoice
+    // transitions the F8 RenewalCycle inside the same commit). Test env
+    // pins `FEATURE_F8_RENEWALS=true` (tests/setup.ts) so the key MUST
+    // be present — its absence would silently regress the F5↔F8 wire.
     const webhookDeps = mod.makeProcessWebhookEventDeps('test-tenant');
     expect(Object.keys(webhookDeps).sort()).toEqual(
       [
@@ -108,6 +113,7 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'logger',
+        'onPaidCallbacks',
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',
@@ -118,7 +124,8 @@ describe('payments barrel — public API contract', () => {
 
     // ConfirmPaymentDeps shape (audit 2026-04-25 finding #4:
     // +processorEventsRepo for atomic markProcessed; review-20260428-102639.md
-    // H2 closure: +logger for Phase B stale-refund warn)
+    // H2 closure: +logger for Phase B stale-refund warn; PR #24 review-fix:
+    // +onPaidCallbacks — same F8 wire as the webhook deps above).
     const confirmDeps = mod.makeConfirmPaymentDeps('test-tenant');
     expect(Object.keys(confirmDeps).sort()).toEqual(
       [
@@ -126,6 +133,7 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'logger',
+        'onPaidCallbacks',
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',

@@ -303,8 +303,10 @@ export type {
 // Vercel/Webpack build with `Can't resolve 'fs'`. The cleaner fix
 // (sub-barrel like `@/modules/plans/server` for server-only adapters,
 // or moving the F2 Drizzle ports out of the public Domain barrel) is
-// deferred to a follow-up task. Renewals' deep import remains the
-// pragmatic path for now.
+// deferred to a follow-up task — but the *port type itself* IS exported
+// from this barrel (above), so cross-module consumers (renewals)
+// import the type via `@/modules/plans` and inject the concrete adapter
+// at their own composition root, avoiding the client-bundle pollution.
 export {
   SCHEDULED_PLAN_CHANGE_STATUSES,
   isTerminalStatus,

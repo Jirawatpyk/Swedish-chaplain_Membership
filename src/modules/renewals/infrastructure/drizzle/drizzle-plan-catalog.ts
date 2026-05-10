@@ -83,11 +83,21 @@ async function listForTenantViaTx(
       );
       continue;
     }
+    // Adapt minor-units (satang) → integer THB at the boundary so the
+    // Application layer's `decideUpgrade` can compare against
+    // `members.turnover_thb` (integer THB) without scale mismatch. The
+    // F2 schema stores annual fee + min turnover in `*_minor_units`
+    // (bigint, satang); F3 stores `members.turnover_thb` as integer THB.
+    // Without this conversion, `candidate.turnoverThb >= target.minTurnoverThb`
+    // compares THB to satang and is off by 100×.
     result.push({
       planId: row.planId,
       renewalTierBucket: bucketParse.value,
-      minTurnoverThb: row.minTurnoverThb,
-      annualFeeThb: row.annualFeeThb,
+      minTurnoverThb:
+        row.minTurnoverThb !== null
+          ? Math.floor(row.minTurnoverThb / 100)
+          : null,
+      annualFeeThb: Math.floor(row.annualFeeThb / 100),
       isActive: row.isActive,
     });
   }

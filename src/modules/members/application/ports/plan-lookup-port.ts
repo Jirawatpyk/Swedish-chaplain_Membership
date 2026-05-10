@@ -22,6 +22,12 @@ export type PlanSummary = {
   readonly planNameEn: string;
   readonly planCategory: 'corporate' | 'partnership';
   readonly memberTypeScope: 'company' | 'individual' | 'both';
+  /**
+   * Plan turnover band in **integer THB**. Adapter converts F2's
+   * `*_minor_units` (satang) → THB at the boundary so `checkTurnoverBand`
+   * (Domain policy) can compare against `members.turnover_thb` (integer
+   * THB) without scale mismatch.
+   */
   readonly minTurnoverThb: number | null;
   readonly maxTurnoverThb: number | null;
   readonly maxDurationYears: number | null;

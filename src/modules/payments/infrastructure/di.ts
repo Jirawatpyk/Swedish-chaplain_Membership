@@ -48,6 +48,17 @@ import { invoicingBridge } from './invoicing-bridge';
 export { stripeWebhookVerifier };
 import { f5AuditAdapter } from './audit/drizzle-payments-audit';
 import { paymentsLogger } from './logger/payments-logger';
+// F8 cross-module on-paid callbacks. Wired into the webhook + confirm
+// composition roots so Stripe-paid renewal invoices transition the F8
+// RenewalCycle inside F4's atomic tx. Gated by `FEATURE_F8_RENEWALS` so
+// non-F8 deployments stay unchanged. Renewals barrel exports the factory
+// without runtime side effects (the inner use-case uses dynamic import
+// to break a hot-reload init cycle); static import here is safe.
+import { f8OnPaidCallbacks } from '@/modules/renewals';
+
+function f8CallbacksFor(tenantId: string) {
+  return env.features.f8Renewals ? f8OnPaidCallbacks(tenantId) : undefined;
+}
 
 /**
  * Generate a fresh F5 Refund ID of the form `rfnd_<hex>` (mirrors
@@ -109,6 +120,7 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
 // this is independent of the tenantId we bind the other repos with.
 // ---------------------------------------------------------------------------
 export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEventDeps {
+  const f8Callbacks = f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     // CR-3 (review 2026-04-27): wire real refunds-repo so the
@@ -125,6 +137,7 @@ export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEve
     // Audit 2026-04-25 finding #5: route Application-layer warn lines
     // through pino instead of console.warn.
     logger: paymentsLogger,
+    ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
   };
 }
 
@@ -132,6 +145,7 @@ export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEve
 // T063 — confirmPayment composition.
 // ---------------------------------------------------------------------------
 export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
+  const f8Callbacks = f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
@@ -142,6 +156,7 @@ export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
+    ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
     // review-20260428-102639.md H2 closure — structured logger for
     // Phase B catch on stale-refund path.
     logger: {

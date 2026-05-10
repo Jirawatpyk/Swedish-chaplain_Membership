@@ -6,6 +6,8 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { recordPayment, recordPaymentSchema, makeRecordPaymentDeps } from '@/modules/invoicing';
+import { f8OnPaidCallbacks } from '@/modules/renewals';
+import { env } from '@/lib/env';
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -62,7 +64,18 @@ export async function POST(
     );
   }
 
-  const result = await recordPayment(makeRecordPaymentDeps(tenantCtx.slug), parsed.data);
+  // Wire F8 cycle-completion callback when the renewals feature is on.
+  // Without this, an admin marking a renewal invoice paid via this F4
+  // route leaves the F8 RenewalCycle stuck in `awaiting_payment`. The
+  // F8-specific mark-paid-offline route (`mark-paid-offline.ts`) wires
+  // its own callback; this is the catch-all for the legacy F4 path.
+  const f8Callbacks = env.features.f8Renewals
+    ? f8OnPaidCallbacks(tenantCtx.slug)
+    : undefined;
+  const result = await recordPayment(
+    makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks),
+    parsed.data,
+  );
   if (!result.ok) {
     logger.warn(
       {

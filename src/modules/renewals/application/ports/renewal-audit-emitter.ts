@@ -45,7 +45,7 @@ import type {
 } from '../../domain/at-risk-score';
 import type { OutreachId } from '../../domain/at-risk-outreach';
 import type { MemberId, PlanId } from '@/modules/members';
-import type { UserId } from '@/modules/auth/domain/branded';
+import type { UserId } from '@/modules/auth';
 import type { InvoiceId } from '@/modules/invoicing';
 import type { CreditNoteId } from '@/modules/invoicing';
 

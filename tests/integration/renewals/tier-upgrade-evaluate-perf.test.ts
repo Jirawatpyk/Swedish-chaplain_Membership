@@ -48,19 +48,20 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const REGULAR_PLAN_ID = 'tier-perf-regular';
 const PREMIUM_PLAN_ID = 'tier-perf-premium';
-// Mirror the existing tier-upgrade-evaluate.test.ts seed convention
-// (line 213-218): the catalog adapter exposes
-// `minTurnoverThb := membershipPlans.minTurnoverMinorUnits` AND
-// `members.turnoverThb := raw column value` — both compared as the
-// same scale in the decision tree at evaluate-tier-upgrade.ts:124.
-// Using mismatched scales (THB vs satang) silently fails the
-// suggestion-create branch with `alreadyAtTarget=N` 100% of the time.
-const REGULAR_FEE_MINOR = 5_000_000; // 50,000 THB equivalent at the comparison scale
-const PREMIUM_THRESHOLD_MINOR = 100_000_000; // 1,000,000 THB turnover threshold
-// `members.turnoverThb` value above which a member crosses the threshold.
-// Same scale as PREMIUM_THRESHOLD_MINOR (no /100 conversion).
-const ABOVE_THRESHOLD_TURNOVER = PREMIUM_THRESHOLD_MINOR + 1;
-const BELOW_THRESHOLD_TURNOVER = Math.floor(PREMIUM_THRESHOLD_MINOR / 2);
+// Money-unit convention (post tier-upgrade-money-unit fix):
+//  - `membershipPlans.{min_turnover,annual_fee}_minor_units` are in
+//    satang. The catalog adapter divides by 100 at the boundary so
+//    `PlanCatalogEntry.{minTurnoverThb,annualFeeThb}` are integer THB.
+//  - `members.turnoverThb` is integer THB (raw column).
+// Therefore `decideUpgrade` (evaluate-tier-upgrade.ts:121) compares
+// THB↔THB. Below we keep seed values in satang for DB inserts and
+// derive the THB-side threshold so the test mirrors production semantics.
+const REGULAR_FEE_MINOR = 5_000_000; // 5,000,000 satang = 50,000 THB annual fee
+const PREMIUM_THRESHOLD_MINOR = 100_000_000; // 100,000,000 satang = 1,000,000 THB threshold
+const PREMIUM_THRESHOLD_THB = Math.floor(PREMIUM_THRESHOLD_MINOR / 100); // 1,000,000 THB equivalent
+// Member's turnover (already in THB) above/below the THB-converted threshold.
+const ABOVE_THRESHOLD_TURNOVER = PREMIUM_THRESHOLD_THB + 1;
+const BELOW_THRESHOLD_TURNOVER = Math.floor(PREMIUM_THRESHOLD_THB / 2);
 
 interface SeededMember {
   readonly memberId: string;

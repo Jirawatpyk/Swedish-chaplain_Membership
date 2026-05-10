@@ -121,8 +121,13 @@ test.describe('@i18n T268 — Buddhist Era display rule (TH only)', () => {
     // (= Gregorian + 543). Storage stays Gregorian. Smoke check on
     // the pipeline page — at least one rendered date should contain
     // a year ≥ 2567 (= 2024 CE) when viewed in TH locale.
-    await setLocaleCookie(page, 'th');
+    // R4 H3 fix (parity with sibling tests at L60-61, L100-102): sign
+    // in FIRST, then set locale cookie. `signInAsAdmin` uses
+    // `getByLabel(/email/i)` which won't match the Thai label `อีเมล`,
+    // so flipping the cookie before sign-in causes the helper to hang
+    // 180s on the email field before timing out.
     await signInAsAdmin(page);
+    await setLocaleCookie(page, 'th');
     await page.goto('/admin/renewals');
     await page.waitForLoadState('domcontentloaded');
     // Pull the page text and check for a BE year in the visible range.

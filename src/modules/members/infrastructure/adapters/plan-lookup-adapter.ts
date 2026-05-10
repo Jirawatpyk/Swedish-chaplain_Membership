@@ -52,8 +52,18 @@ export const plansBarrelAdapter: PlanLookupPort = {
         planNameEn: plan.plan_name.en ?? plan.plan_id,
         planCategory: plan.plan_category,
         memberTypeScope: plan.member_type_scope,
-        minTurnoverThb: plan.min_turnover_minor_units,
-        maxTurnoverThb: plan.max_turnover_minor_units,
+        // Adapt minor-units (satang) → integer THB so `checkTurnoverBand`
+        // (Domain) can compare against `members.turnover_thb` (integer
+        // THB) without scale mismatch. Domain policy explicitly requires
+        // both sides in THB — see turnover-policy.ts header.
+        minTurnoverThb:
+          plan.min_turnover_minor_units !== null
+            ? Math.floor(plan.min_turnover_minor_units / 100)
+            : null,
+        maxTurnoverThb:
+          plan.max_turnover_minor_units !== null
+            ? Math.floor(plan.max_turnover_minor_units / 100)
+            : null,
         maxDurationYears: plan.max_duration_years,
         maxMemberAge: plan.max_member_age,
         includesCorporatePlanId: plan.includes_corporate_plan_id

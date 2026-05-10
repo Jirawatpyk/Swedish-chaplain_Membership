@@ -127,14 +127,14 @@ export async function recomputeAtRiskScoresBatch(
   // mutating `minTenureDaysForAtRisk` mid-cron must NOT cause settings
   // drift between read-time and CTE-compute-time. Single-row read; no
   // latency cost. Hoisted into `work` below.
-  // TODO(F6 ship): `f6Available` is read OUTSIDE the per-tenant
-  // advisory lock (settings hoist R4-W5 lifted only the renewal-
-  // settings read inside the lock). F7 ships the F6 EventAttendees
-  // stub returning `isAvailable() === false` constantly, so this is
-  // inert today. When F6 lands, fold this read INSIDE the runInTenant
-  // callback so a tenant flipping F6 mid-cron sees consistent state
-  // (matches the R4-W5 settings hoist rationale).
-  const f6Available = deps.eventAttendees.isAvailable();
+  //
+  // PR #24 review-fix — F6 availability read folded INTO the lock too.
+  // Previously read outside `runInTenant`, leaving a window where a
+  // tenant flipping F6 mid-cron could observe inconsistent state
+  // between this read and the CTE-compute-time. F7 currently stubs
+  // `isAvailable() === false`, so the prior placement was inert; the
+  // move here is a forward-compat hardening matching the R4-W5
+  // settings hoist rationale.
   // Round-5 H5: honour injected clock when provided; default to
   // wall-clock new Date(). Pinning here means `computedAt`,
   // `nowMs`, and downstream FR-035 min-tenure cutoff all reference
@@ -149,11 +149,16 @@ export async function recomputeAtRiskScoresBatch(
     ): Promise<
       Result<RecomputeAtRiskScoresBatchOutput, RecomputeAtRiskScoresBatchError>
     > => {
-      // 1. Read tenant settings inside the per-tenant lock (R4-W5).
+      // 1. Read tenant settings + F6 availability inside the per-tenant
+      //    lock (R4-W5 + PR #24 review-fix). Both reads must be
+      //    co-located with the CTE so a tenant flipping settings or F6
+      //    mid-cron cannot cause drift between read-time and
+      //    CTE-compute-time.
       const settings = await deps.tenantRenewalSettingsRepo.findByTenant(
         input.tenantId,
       );
       const minTenureDays = settings?.minTenureDaysForAtRisk ?? 30;
+      const f6Available = deps.eventAttendees.isAvailable();
       // 2. Single CTE: gather factor inputs for ALL active members in
       //    one round-trip via the port abstraction.
       const factorRows: ReadonlyArray<AtRiskBatchFactorRow> =

@@ -110,6 +110,18 @@ export interface ConfirmPaymentDeps {
    * warn so ops has a forensic trail before Stripe retries.
    * review-20260428-102639.md H2 closure.
    */
+  /**
+   * F8 cross-module on-paid hooks. Composition root injects
+   * `f8OnPaidCallbacks(tenantId)` when `FEATURE_F8_RENEWALS=true` so
+   * the F8 renewal-cycle transition lands inside the same atomic tx
+   * as the F4 invoice `issued → paid` flip.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (
+      evt: import('@/modules/invoicing').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
+  >;
   readonly logger?: {
     warn: (msg: string, ctx: Record<string, unknown>) => void;
   };
@@ -530,6 +542,12 @@ async function confirmPaymentBody(
               // with section reference so the comment doesn't rot when the
               // spec is reformatted.
               suppressReceiptEmail: !settings.autoEmailOnPayment,
+              // F8: forward cross-module on-paid callbacks (renewal-cycle
+              // transition) into F4's atomic tx. `undefined` when the
+              // feature flag is off → behaviour unchanged for non-F8 tenants.
+              ...(deps.onPaidCallbacks !== undefined
+                ? { onPaidCallbacks: deps.onPaidCallbacks }
+                : {}),
             },
             tx,
           );

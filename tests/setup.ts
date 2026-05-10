@@ -36,6 +36,14 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_placeholder_token',
   CRON_SECRET: 'cron-secret-test-placeholder-16+',
   FEATURE_F4_INVOICING: 'true',
+  // F8 Renewals — match canonical post-flag-flip production state so
+  // the test environment exercises the same wiring as prod (notably
+  // `onPaidCallbacks` injection in F5 webhook + confirm-payment deps).
+  // Without this, CI without `.env.local` would default to false and
+  // diverge from the local-dev/prod-with-flag-on shape.
+  FEATURE_F8_RENEWALS: 'true',
+  RENEWAL_LINK_TOKEN_SECRET_PRIMARY:
+    'test-renewal-link-token-secret-32-chars-min-padding',
 };
 
 for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {

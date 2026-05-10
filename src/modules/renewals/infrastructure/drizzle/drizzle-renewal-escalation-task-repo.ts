@@ -34,7 +34,7 @@ import { renewalCycles } from '../schema-renewal-cycles';
 // not Adapter↔Adapter. See members + plans deep imports for prior
 // precedent (R6 IMP-4 audit confirmed acceptable).
 import { members } from '@/modules/members/infrastructure/db/schema-members';
-import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import { membershipPlans } from '@/modules/plans';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import {
   EscalationTaskNotFoundError,
@@ -252,6 +252,21 @@ export function makeDrizzleRenewalEscalationTaskRepo(
             ),
           )
           .orderBy(asc(renewalEscalationTasks.dueAt));
+        return rows.map(rowToDomain);
+      });
+    },
+
+    async listForCycle(_tenantId: string, cycleId: string) {
+      // PR #24 review-fix — per-cycle list for the cycle-detail page.
+      // RLS handles tenant scoping; the WHERE clause filters by cycle_id
+      // only. Order `created_at DESC` so the most recent escalation
+      // surfaces first in the cycle-detail timeline.
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(renewalEscalationTasks)
+          .where(eq(renewalEscalationTasks.cycleId, cycleId))
+          .orderBy(desc(renewalEscalationTasks.createdAt));
         return rows.map(rowToDomain);
       });
     },

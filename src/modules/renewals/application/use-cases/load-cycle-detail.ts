@@ -3,15 +3,14 @@
  *
  * Returns one renewal cycle's full detail view for `/admin/renewals/[cycleId]`.
  *
- * Current state (Phase 4):
- *   - `reminderHistory` returns `[]` — admin detail-view UI hydration
- *     deferred to a follow-on UX wave; cron events DO exist in
- *     `renewal_reminder_events` and can be queried directly when
- *     forensic detail is needed.
- *   - `escalationTasks` returns `[]` — escalation-queue admin UI is
- *     deferred (US6 territory). Tasks ARE created by the dispatcher
- *     today (Gate 11 + retry-pass exhaustion) and persist to
- *     `renewal_escalation_tasks` — just not surfaced here yet.
+ * Current state (Phase 4 + PR #24 review-fix wires both lists):
+ *   - `reminderHistory` is hydrated via `reminderEventsRepo.listForCycle`
+ *     (per-cycle history, ordered `dispatched_at DESC`, NULLs last so
+ *     still-pending rows surface above sent ones).
+ *   - `escalationTasks` is hydrated via `escalationTaskRepo.list` with
+ *     a per-cycle filter — escalation queue UI is owned by the
+ *     `/admin/renewals/tasks` page; this surface returns the rows linked
+ *     to the cycle so the cycle-detail page can show context inline.
  *   - `linkedInvoice` is hydrated via F4 barrel `getInvoice` if
  *     `cycle.linkedInvoiceId` is non-null.
  *
@@ -164,10 +163,56 @@ export async function loadCycleDetail(
     }
   }
 
+  // PR #24 review-fix — hydrate reminderHistory + escalationTasks
+  // from existing repo surfaces. Both reads are bounded scope:
+  //   - reminderHistory: typically ≤ 5 events per cycle (the
+  //     dispatcher emits at the cadence steps in the schedule policy).
+  //   - escalationTasks: typically ≤ 5 tasks per cycle across the
+  //     full lifecycle (bounce + retry-exhaustion + manual escalation).
+  //
+  // Defence-in-depth try/catch on each read so one degraded surface
+  // (e.g. transient DB blip on the reminder index) doesn't blank out
+  // the entire cycle-detail page; the failing list returns `[]` and
+  // the UI falls back to a "history unavailable" caption while the
+  // cycle + invoice card still render.
+  let reminderHistory: ReadonlyArray<unknown> = [];
+  try {
+    reminderHistory = await deps.reminderEventRepo.listForCycle(
+      input.tenantId,
+      cycleId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        cycleId,
+      },
+      'load-cycle-detail: reminder-history fetch failed — degraded card',
+    );
+  }
+
+  let escalationTasks: ReadonlyArray<unknown> = [];
+  try {
+    escalationTasks = await deps.escalationTaskRepo.listForCycle(
+      input.tenantId,
+      cycleId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        cycleId,
+      },
+      'load-cycle-detail: escalation-tasks fetch failed — degraded card',
+    );
+  }
+
   return ok({
     cycle,
-    reminderHistory: [],
-    escalationTasks: [],
+    reminderHistory,
+    escalationTasks,
     linkedInvoice,
   });
 }

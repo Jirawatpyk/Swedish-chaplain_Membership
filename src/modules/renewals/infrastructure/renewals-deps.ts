@@ -73,7 +73,14 @@ import { makeApplyTierUpgradeOnPaidCallback } from './_lib/apply-tier-upgrade-on
 import { randomUUID } from 'node:crypto';
 import { asSuggestionId } from '../domain/tier-upgrade-suggestion';
 
-import type { ScheduledPlanChangeRepo } from '@/modules/plans/application/ports';
+// PR #24 review-fix — barrel-only import (Constitution Principle III).
+// `ScheduledPlanChangeRepo` is type-only and re-exported from the public
+// `@/modules/plans` barrel (see plans/index.ts:295-298), so this is a
+// pure compile-time symbol — no runtime dep on plans Infrastructure.
+// The barrel comment about "deferred sub-barrel" referred to the
+// concrete Drizzle adapter (which would pull `postgres-js` into the
+// client bundle); the type-only path is safe.
+import type { ScheduledPlanChangeRepo } from '@/modules/plans';
 import type { EventAttendeesPort } from '../application/ports/event-attendees-port';
 import type {
   AuditContext,

@@ -293,7 +293,19 @@ describe('Round 6 S-007 — state-machine property tests (fast-check, 256 cases)
     fc.assert(
       fc.property(
         fc.constantFrom(...TERMINAL_TIER_UPGRADE_STATUSES),
-        fc.option(fc.date({ min: new Date('2026-01-01'), max: new Date('2027-01-01') }), { nil: null }),
+        fc.option(
+          // fast-check 4.x defaults `noInvalidDate: false` and emits
+          // `new Date(NaN)` as an edge-case value. `.toISOString()` on
+          // an invalid Date throws `RangeError: Invalid time value`,
+          // which crashes this property test deterministically on
+          // certain seeds. We only care about real timestamps here.
+          fc.date({
+            min: new Date('2026-01-01'),
+            max: new Date('2027-01-01'),
+            noInvalidDate: true,
+          }),
+          { nil: null },
+        ),
         (status, suppressedUntilDate) => {
           const suppressedUntilIso = suppressedUntilDate?.toISOString() ?? null;
           // For non-dismissed terminal states (applied, superseded,

@@ -55,7 +55,7 @@ import {
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { SuggestionId } from '../../domain/tier-upgrade-suggestion';
 import type { MemberId } from '@/modules/members';
-import type { UserId } from '@/modules/auth/domain/branded';
+import type { UserId } from '@/modules/auth';
 import type { CreditNoteId } from '@/modules/invoicing';
 
 export const createEscalationTaskInputSchema = z.object({

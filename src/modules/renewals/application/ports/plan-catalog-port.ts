@@ -27,11 +27,16 @@ export interface PlanCatalogEntry {
   /** Full bucket label per F2 5-bucket Domain enum (`thai_alumni` | … | `partnership`). */
   readonly renewalTierBucket: TierBucket;
   /**
-   * Minimum turnover threshold (in THB minor units → satang/baht stored
-   * as integer). Null when the plan has no eligibility floor.
+   * Minimum turnover threshold in **integer THB** — adapter converts
+   * F2's `min_turnover_minor_units` (satang) → THB at the boundary.
+   * Null when the plan has no eligibility floor.
    */
   readonly minTurnoverThb: number | null;
-  /** Annual fee (THB minor units) — used for invoice-volume threshold (N×fee). */
+  /**
+   * Annual fee in **integer THB** — adapter converts F2's
+   * `annual_fee_minor_units` (satang) → THB at the boundary. Used for
+   * invoice-volume threshold (N×fee).
+   */
   readonly annualFeeThb: number;
   readonly isActive: boolean;
 }

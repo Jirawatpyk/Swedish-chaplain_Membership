@@ -217,6 +217,19 @@ export interface RenewalEscalationTaskRepo {
     opts: ListEscalationTasksOpts,
   ): Promise<EscalationTaskPage>;
 
+  /**
+   * PR #24 review-fix — per-cycle list for the cycle-detail page
+   * (`/admin/renewals/[cycleId]`). Returns ALL escalation tasks linked
+   * to one cycle (any status), ordered `created_at DESC`. Index-served
+   * by `(tenant_id, cycle_id)`. Bounded by single-cycle scope; no
+   * pagination (a typical cycle accumulates ≤ 5 tasks across the
+   * lifecycle: bounce, retry-exhaustion, manual escalation).
+   */
+  listForCycle(
+    tenantId: string,
+    cycleId: string,
+  ): Promise<ReadonlyArray<RenewalEscalationTask>>;
+
   /** Per-user "my open tasks" view (per_user_idx partial). */
   listOpenForUser(
     tenantId: string,

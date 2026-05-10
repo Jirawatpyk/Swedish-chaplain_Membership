@@ -197,6 +197,37 @@ export async function loadRenewalSummary(
   // already de-normalised onto the cycle (data-model.md § 2.1). Plan
   // name lookup is the route handler's job (it has F2 plans-repo
   // access; T121 stays free of cross-module reads at this layer).
+  // PR #24 review-fix — first-time-renewer detection wired via the
+  // existing `cyclesRepo.list` port (no new sibling port needed). A
+  // member is "first-time renewing" when they have ZERO prior completed
+  // renewal cycles. We probe with `pageSize: 1` since we only care
+  // about existence; the query is bounded by `(tenant_id, member_id,
+  // status)` index and runs in <2ms on the F8 schema.
+  //
+  // UX-review R5/C3 prior default-to-`false` rationale still applies as
+  // a fail-safe: if the probe throws or the port surface drifts, we
+  // continue to render with `isFirstTimeRenewer: false` (silent banner)
+  // rather than emitting a wrong-copy banner to a 5-year veteran.
+  let isFirstTimeRenewer = false;
+  try {
+    const completedPage = await deps.cyclesRepo.list(input.tenantId, {
+      pageSize: 1,
+      memberIdFilter: cycle.memberId,
+      statusFilter: ['completed'],
+    });
+    isFirstTimeRenewer = completedPage.items.length === 0;
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        cycleId: cycle.cycleId,
+        memberId: cycle.memberId,
+      },
+      '[load-renewal-summary] first-time-renewer probe failed; defaulting to false',
+    );
+  }
+
   return ok({
     cycleId: cycle.cycleId,
     memberId: cycle.memberId,
@@ -211,13 +242,6 @@ export async function loadRenewalSummary(
     expiresAt: cycle.expiresAt,
     benefits: [],
     benefitsAvailable: false,
-    // First-time-renewer detection deferred to a sibling read port
-    // (count completed cycles for this member). UX-review R5/C3
-    // (2026-05-09): defaulting to `true` showed every renewing member
-    // — including 5-year veterans — a "Welcome to your first renewal"
-    // banner, which read as broken. Default to `false` until the
-    // prior-cycle-count read port lands; a false-negative (silent
-    // banner) is preferable to a false-positive (wrong copy).
-    isFirstTimeRenewer: false,
+    isFirstTimeRenewer,
   });
 }

@@ -32,6 +32,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --import tsx scripts/run-migrations.ts",
     "db:migrate:prod": "node --env-file=.env.production --import tsx scripts/run-migrations.ts",
+    "db:repair-enums": "node --env-file=.env.local --import tsx scripts/repair-enum-drift.ts",
     "db:verify": "node --env-file=.env.local --import tsx scripts/verify-schema.ts",
     "db:verify:prod": "node --env-file=.env.production --import tsx scripts/verify-schema.ts",
     "db:seed-admin": "node --env-file=.env.local --import tsx scripts/seed-bootstrap-admin.ts",

@@ -1,5 +1,10 @@
 # T180 (Phase 9 / SC-011) — multi-tenant readiness nightly job.
 # Phase 9 / T254 (F8 extension, 2026-05-10) — adds F8 readiness checks.
+# PR #24 review-fix — split F7 and F8 into separate jobs so a hang or
+# failure in one feature's readiness suite cannot mask the other's
+# status (previously a single 15-min-timeout job interleaved both,
+# making "F7 passed" indistinguishable from "F8 hung and killed F7's
+# remaining steps along with itself").
 #
 # Runs the JCC-test tenant fixture (T179) on every weekday morning to
 # verify F7 + F8 (and future F-stack features) remain data-only
@@ -13,7 +18,8 @@
 # tenant-agnostic. Live Resend dispatch is exercised by the staging
 # promotion pipeline.
 #
-# Failure = ship blocker for the next F7.x or F8.x amendment.
+# Failure of either job = ship blocker for the next F7.x or F8.x
+# amendment of the failing feature only.
 name: F7 + F8 Multi-tenant readiness (nightly)
 
 on:
@@ -23,9 +29,10 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  fixture:
+  f7:
+    name: F7 broadcasts readiness
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     env:
       # Stub-Resend mode: T179 does not hit a real Resend account, so
       # API key + webhook secret are placeholder strings. They satisfy
@@ -36,13 +43,6 @@ jobs:
       UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
       CRON_SECRET: synthetic-ci-cron-secret
       FEATURE_F7_BROADCASTS: 'true'
-      # Phase 9 / T254 — F8 env vars for F8 multi-tenant readiness checks.
-      # `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` satisfies the zod ≥32-byte min
-      # length; `FEATURE_F8_RENEWALS=true` flips the kill-switch so F8
-      # paths are exercised. F8 module reuses the F1+F4 transactional
-      # `RESEND_API_KEY` — no new key needed for stub mode.
-      FEATURE_F8_RENEWALS: 'true'
-      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
@@ -54,7 +54,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
-      # --- F7 multi-tenant readiness ---------------------------------
       - name: Run F7 JCC-test fixture (stub-Resend mode)
         run: pnpm test:integration tests/integration/broadcasts/jcc-test-tenant-fixture.test.ts --reporter=verbose
       - name: Run F7 member-erasure-cascade test
@@ -62,7 +61,34 @@ jobs:
       - name: F7 audit catalogue parity check
         run: pnpm vitest run tests/integration/broadcasts/audit-event-type-parity.test.ts
 
-      # --- F8 multi-tenant readiness (Phase 9 / T254) ----------------
+      - name: F7 status badge
+        if: always()
+        run: echo "F7 broadcasts readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+  f8:
+    name: F8 renewals readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Phase 9 / T254 — F8 env vars for F8 multi-tenant readiness checks.
+      # `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` satisfies the zod ≥32-byte min
+      # length; `FEATURE_F8_RENEWALS=true` flips the kill-switch so F8
+      # paths are exercised. F8 module reuses the F1+F4 transactional
+      # `RESEND_API_KEY` — no new key needed for stub mode.
+      FEATURE_F8_RENEWALS: 'true'
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
+      CRON_SECRET: synthetic-ci-cron-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
       # F3↔F8 archival cascade — proves the renewals cascade port wires
       # tenant-agnostically (no hard-coded SweCham slug; runs against a
       # fresh test-tenant).
@@ -80,10 +106,6 @@ jobs:
       - name: F8 audit catalogue parity check
         run: pnpm vitest run tests/contract/renewals-audit-port.contract.test.ts
 
-      # --- Status banner ---------------------------------------------
-      - name: Status badge
+      - name: F8 status badge
         if: always()
-        run: |
-          echo "F7 JCC-test fixture: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "F8 multi-tenant readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "Multi-tenant readiness (overall): ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+        run: echo "F8 renewals readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

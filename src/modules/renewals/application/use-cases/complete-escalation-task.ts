@@ -32,7 +32,7 @@ import {
 import { EscalationTaskNotFoundError } from '../ports/renewal-escalation-task-repo';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { MemberId } from '@/modules/members';
-import type { UserId } from '@/modules/auth/domain/branded';
+import type { UserId } from '@/modules/auth';
 
 export const completeEscalationTaskInputSchema = z.object({
   tenantId: z.string().min(1),
