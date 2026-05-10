@@ -36,6 +36,15 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
+// Staff-R007 contract: `E2E_RENEWAL_CYCLE_ID` is a STAGING-time env var
+// pointing at a real seeded cycle in the staging tenant (not auto-
+// seeded per-test because admin-cycle-detail-page assertions need
+// stable data). Document the operator setup at
+// `docs/runbooks/e2e-test-data.md`. When unset (CI without the staging
+// fixture), the cycle-detail test cleanly skips with explicit
+// rationale — NOT a "skip is not pass" violation because the test
+// genuinely cannot exercise the cycle-detail surface without a
+// pre-seeded cycle id.
 const E2E_RENEWAL_CYCLE_ID = process.env.E2E_RENEWAL_CYCLE_ID;
 
 test.describe.configure({ mode: 'serial' });
@@ -53,7 +62,13 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
   test('manager sees /admin/renewals (read-only render)', async ({ page }) => {
     await signInAsManager(page);
     await page.goto('/admin/renewals');
-    await page.waitForLoadState('networkidle');
+    // Staff-R001 fix: domcontentloaded over networkidle. Turbopack
+    // RSC streaming keeps the network "active" indefinitely on
+    // hydration boundaries → networkidle never resolves → flaky
+    // 30s+ timeouts. domcontentloaded fires at the right moment for
+    // these read-only assertions; explicit element waits below pin
+    // the post-hydration state we actually need.
+    await page.waitForLoadState('domcontentloaded');
 
     // Page renders — heading visible.
     await expect(
@@ -105,7 +120,13 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
   }) => {
     await signInAsManager(page);
     await page.goto('/admin/renewals/tasks');
-    await page.waitForLoadState('networkidle');
+    // Staff-R001 fix: domcontentloaded over networkidle. Turbopack
+    // RSC streaming keeps the network "active" indefinitely on
+    // hydration boundaries → networkidle never resolves → flaky
+    // 30s+ timeouts. domcontentloaded fires at the right moment for
+    // these read-only assertions; explicit element waits below pin
+    // the post-hydration state we actually need.
+    await page.waitForLoadState('domcontentloaded');
     await expect(
       page.getByRole('heading', { level: 1 }).first(),
     ).toBeVisible();
@@ -123,7 +144,13 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
   }) => {
     await signInAsManager(page);
     await page.goto('/admin/renewals/tier-upgrades');
-    await page.waitForLoadState('networkidle');
+    // Staff-R001 fix: domcontentloaded over networkidle. Turbopack
+    // RSC streaming keeps the network "active" indefinitely on
+    // hydration boundaries → networkidle never resolves → flaky
+    // 30s+ timeouts. domcontentloaded fires at the right moment for
+    // these read-only assertions; explicit element waits below pin
+    // the post-hydration state we actually need.
+    await page.waitForLoadState('domcontentloaded');
     await expect(
       page.getByRole('heading', { level: 1 }).first(),
     ).toBeVisible();
@@ -143,7 +170,13 @@ test.describe('T271 — F8 manager read-only (Constitution RBAC + FR-003)', () =
     );
     await signInAsManager(page);
     await page.goto(`/admin/renewals/${E2E_RENEWAL_CYCLE_ID}`);
-    await page.waitForLoadState('networkidle');
+    // Staff-R001 fix: domcontentloaded over networkidle. Turbopack
+    // RSC streaming keeps the network "active" indefinitely on
+    // hydration boundaries → networkidle never resolves → flaky
+    // 30s+ timeouts. domcontentloaded fires at the right moment for
+    // these read-only assertions; explicit element waits below pin
+    // the post-hydration state we actually need.
+    await page.waitForLoadState('domcontentloaded');
     // Mark Paid Offline + Cancel Cycle + Reactivate are admin-only.
     expect(
       await page.getByRole('button', { name: /mark.+paid/i }).count(),

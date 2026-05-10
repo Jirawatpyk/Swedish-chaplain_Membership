@@ -1481,13 +1481,55 @@ export const renewalsMetrics = {
     auditType:
       | 'tier_upgrade_pending_member_notified'
       | 'tier_upgrade_pending_member_notify_skipped'
-      | 'tier_upgrade_pending_member_notify_failed',
+      | 'tier_upgrade_pending_member_notify_failed'
+      // Staff-R004 (2026-05-10): aggregate `tier_upgrade_already_at_target`
+      // audit emit at end of evaluateTierUpgrade cron pass. The catch
+      // arm previously had `logger.warn` only; adding this enum literal
+      // wires the alertable counter so SRE can detect silent dropped
+      // audits per Constitution Principle VIII visibility.
+      | 'tier_upgrade_already_at_target',
+    tenantId?: string,
   ): void {
     safeMetric(() => {
       counter(
         'renewals_tier_upgrade_audit_emit_failed_total',
         'F8 tier-upgrade audit emit failed (forensic chain may have a gap)',
-      ).add(1, { audit_type: auditType });
+      ).add(1, {
+        audit_type: auditType,
+        ...(tenantId !== undefined ? { tenant_id: tenantId } : {}),
+      });
+    });
+  },
+
+  /**
+   * R5-S1 close (Phase 10 R5 verify-fix) — at-risk-score audit emit
+   * failure counter. Companion to `tierUpgradeAuditEmitFailed` +
+   * `escalationTaskAuditEmitFailed`. Bumped from
+   * `compute-at-risk-score.ts` skip-audit catch arm (the audit row
+   * never lands but the cron rolls forward — without this counter
+   * the silent dropped audit is invisible to SRE). Vercel alert rule:
+   * any non-zero rate over 5 min indicates Constitution Principle VIII
+   * forensic chain gap.
+   *
+   * R6-types-IMP2 narrow: the union below originally included 3
+   * audit types but only `at_risk_skipped_below_min_tenure` is
+   * actually emitted from a swallow-able catch arm. The other two
+   * (`at_risk_score_recomputed` + `at_risk_score_threshold_crossed`)
+   * are emitted INSIDE `runInTenant(tx, ...)` blocks where any throw
+   * rolls back state atomically — there's no catch arm that swallows
+   * + bumps a counter. Narrowing the union to the actual call site
+   * makes the type honest + future drift surfaces at compile time
+   * if a new swallow-able audit emission lands.
+   */
+  atRiskAuditEmitFailed(
+    auditType: 'at_risk_skipped_below_min_tenure',
+    tenantId: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_at_risk_audit_emit_failed_total',
+        'F8 at-risk audit emit failed (forensic chain may have a gap)',
+      ).add(1, { audit_type: auditType, tenant_id: tenantId });
     });
   },
 

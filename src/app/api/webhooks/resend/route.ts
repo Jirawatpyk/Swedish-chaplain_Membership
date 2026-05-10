@@ -281,26 +281,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // propagates to a webhook 5xx (which would trigger Resend retry
   // storms with 24h exponential backoff).
   if (mapped === 'bounced' && env.features.f8Renewals && toEmail !== 'unknown') {
+    // R5-C3 fix: split the previously-merged catch into two layers so
+    // SRE can distinguish "DB lookup failed (no tenantId yet)" from
+    // "F8 detectBounceThreshold use-case threw (tenantId KNOWN)". The
+    // merged form set `metric.bounceHookFailed(null)` for both cases,
+    // which made it impossible to find the tenant on a per-tenant
+    // alert-pipeline dashboard. Two separate metric labels:
+    //   - lookupFailed: tenant unknown — generic alert
+    //   - hookFailed{tenant}: tenant known — per-tenant traceable
+    let lookup: Awaited<ReturnType<typeof lookupMemberByEmail>>;
     try {
-      const lookup = await lookupMemberByEmail(toEmail);
-      if (lookup) {
-        const deps = makeRenewalsDeps(lookup.tenantId);
-        await detectBounceThreshold(deps, {
-          tenantId: lookup.tenantId,
-          memberId: lookup.memberId,
-          correlationId: requestId,
-          actorRole: 'webhook',
-        });
-      }
+      lookup = await lookupMemberByEmail(toEmail);
     } catch (e) {
-      // J5-H2: elevated to logger.error + metric. Without this, a
-      // hard-bouncing member's `email_unverified` flag stays FALSE
-      // → the F8 dispatcher (Gate 6) keeps mailing the bouncing
-      // address → Resend reputation pool degrades. FR-012a is
-      // silently broken until Sender-Score telemetry catches up
-      // hours later. The metric is the alert-pipeline trigger.
-      // Webhook still returns 200 (intentionally) to prevent
-      // Resend retry storm.
+      // DB lookup failure — tenant unknown by definition.
       logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
@@ -308,11 +301,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           requestId,
           toEmail,
         },
-        'resend_webhook.f8_bounce_hook_failed',
+        'resend_webhook.f8_bounce_hook_failed_lookup',
       );
-      // We don't have a tenantId here if lookup itself failed — the
-      // metric label falls back to 'unknown' in that case.
       renewalsMetrics.bounceHookFailed(null);
+      // Webhook still returns 200 (intentionally) to prevent Resend
+      // retry storm — same contract as before.
+      return NextResponse.json({ ok: true }, { status: 200 });
+    }
+    if (lookup) {
+      try {
+        const deps = makeRenewalsDeps(lookup.tenantId);
+        await detectBounceThreshold(deps, {
+          tenantId: lookup.tenantId,
+          memberId: lookup.memberId,
+          correlationId: requestId,
+          actorRole: 'webhook',
+        });
+      } catch (e) {
+        // F8 use-case failure — tenantId IS known; tag the metric so
+        // SRE can trace per-tenant. Without this, hard-bouncing
+        // member's `email_unverified` flag stays FALSE → the F8
+        // dispatcher (Gate 6) keeps mailing the bouncing address →
+        // Resend reputation pool degrades. FR-012a is silently broken
+        // until Sender-Score telemetry catches up hours later.
+        logger.error(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            stack: e instanceof Error ? e.stack : undefined,
+            requestId,
+            tenantId: lookup.tenantId,
+            memberId: lookup.memberId,
+            toEmail,
+          },
+          'resend_webhook.f8_bounce_hook_failed',
+        );
+        renewalsMetrics.bounceHookFailed(lookup.tenantId);
+      }
     }
   }
 

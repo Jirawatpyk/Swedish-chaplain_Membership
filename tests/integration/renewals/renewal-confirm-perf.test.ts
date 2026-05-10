@@ -244,6 +244,17 @@ describe.skipIf(!RUN_PERF)(
         });
         const elapsed = performance.now() - t0;
         expect(r.ok).toBe(true);
+        // Staff-R006 fix: tighten beyond `r.ok` — confirm the use-case
+        // returned the expected output shape (planChanged=false default,
+        // payUrl populated, invoiceNumber non-empty). Without this, a
+        // future regression that returned `r.ok=true` with malformed
+        // output would still pass the bench. This is per-sample
+        // coverage — no extra DB hit, just verifies the contract.
+        if (r.ok) {
+          expect(r.value.planChanged).toBe(false);
+          expect(r.value.payUrl).toBeTruthy();
+          expect(r.value.invoiceNumber).toBeTruthy();
+        }
         samples.push(elapsed);
       }
 

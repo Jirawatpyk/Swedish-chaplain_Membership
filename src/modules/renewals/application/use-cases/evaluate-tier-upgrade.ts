@@ -304,15 +304,27 @@ export async function evaluateTierUpgrade(
   // F8 Phase 10 T262 batched-write — collapse the per-member RTT
   // amplification into 3 RTTs per page (bulk-suppression-check +
   // bulk-insert + bulk-emit) regardless of page size. Pre-batched
-  // implementation issued ~5 RTTs per above-threshold member on the
+  // implementation issued 3 RTTs per above-threshold member on the
   // outerTx-threaded path (suppression check + insert + audit emit) →
-  // T264 perf bench captured 98s @ 1k members. Post-batched expected
-  // <10s @ 1k. Phase 11 follow-up: extend the same batching to
-  // dispatchRenewalCycle (T262 cron path).
+  // T264 perf bench captured 98s @ 1k members. Post-batched: 2.21s
+  // @ 1k local (44× speedup); 11.4s @ 5k strict mode PASS.
+  // T262 dispatch path — bulk port methods landed at commit `2caa8d74`
+  // (`RenewalReminderEventRepo.bulkInsertIfAbsent` + `bulkTransitionToSent`).
+  // Per R5 verify-fix re-analysis (perf-benchmarks.md § T262 + retrospective
+  // § S1): the dispatch outer-loop is INTENTIONALLY NOT WIRED because
+  // production SLO is met today via Resend gateway-IO dominance +
+  // DISPATCH_CONCURRENCY=10 amortization. The bulk infrastructure is
+  // shipped + tested for future use if Resend latency drops. NOT a
+  // deferral — explicit non-usage decision.
   type PageDecision = {
     readonly candidate: import('../ports/tier-upgrade-eval-candidate-repo').TierUpgradeEvalCandidate;
     readonly decision: NonNullable<ReturnType<typeof decideUpgrade>>;
   };
+  // R5-B1 fix: flushPage no longer carries a serverError discriminator.
+  // Bulk-insert + bulk-emit failures THROW (not return Result.err) so
+  // `runInTenant` rolls back atomically per Constitution Principle VIII
+  // state↔audit atomicity. The outer loop catches at the use-case
+  // boundary and converts to err({kind:'server_error'}) for the route.
   const flushPage = async (
     tx: TenantTx,
     pageDecisions: ReadonlyArray<PageDecision>,
@@ -321,14 +333,12 @@ export async function evaluateTierUpgrade(
     readonly suppressedSkipped: number;
     readonly suggestionsCreated: number;
     readonly conflictSkipped: number;
-    readonly serverError: { kind: 'server_error'; message: string } | null;
   }> => {
     if (pageDecisions.length === 0) {
       return {
         suppressedSkipped: 0,
         suggestionsCreated: 0,
         conflictSkipped: 0,
-        serverError: null,
       };
     }
     const memberIds = pageDecisions.map((pd) => pd.candidate.memberId);
@@ -348,7 +358,6 @@ export async function evaluateTierUpgrade(
         suppressedSkipped: suppressedCount,
         suggestionsCreated: 0,
         conflictSkipped: 0,
-        serverError: null,
       };
     }
 
@@ -372,15 +381,18 @@ export async function evaluateTierUpgrade(
         insertInputs,
       );
     } catch (e) {
-      return {
-        suppressedSkipped: suppressedCount,
-        suggestionsCreated: 0,
-        conflictSkipped: 0,
-        serverError: {
-          kind: 'server_error',
-          message: `bulk_insert_open_failed: ${(e as Error)?.message ?? 'unknown'}`,
-        },
-      };
+      // R5-B1 fix (Constitution Principle VIII state↔audit atomicity):
+      // RE-THROW so `runInTenant` rolls back the surrounding tx. The
+      // previous `return err({serverError})` semantics let `runInTenant`
+      // commit a partial state (advisory lock acquired, no rows
+      // written here but the prior page's writes already committed),
+      // which combined with `member_open_uniq` partial UNIQUE blocked
+      // future replay. Re-throw preserves the all-or-nothing contract:
+      // either the whole page commits (insert + audit) or nothing does.
+      throw new Error(
+        `bulk_insert_open_failed: ${(e as Error)?.message ?? 'unknown'}`,
+        { cause: e },
+      );
     }
 
     // 1 RTT — bulk audit emit (T159b precedent on RenewalAuditEmitter).
@@ -413,15 +425,16 @@ export async function evaluateTierUpgrade(
           requestId: input.requestId ?? null,
         });
       } catch (e) {
-        return {
-          suppressedSkipped: suppressedCount,
-          suggestionsCreated: 0,
-          conflictSkipped: 0,
-          serverError: {
-            kind: 'server_error',
-            message: `bulk_emit_failed: ${(e as Error)?.message ?? 'unknown'}`,
-          },
-        };
+        // R5-B1 fix (Constitution Principle VIII state↔audit atomicity):
+        // RE-THROW so `runInTenant` rolls back the bulk INSERT we just
+        // landed above. Returning serverError here would leave
+        // `tier_upgrade_suggestions` rows persisted with NO matching
+        // audit row — a textbook state↔audit drift that future replay
+        // cannot recover (member_open_uniq blocks re-insert).
+        throw new Error(
+          `bulk_emit_failed: ${(e as Error)?.message ?? 'unknown'}`,
+          { cause: e },
+        );
       }
       // Phase 9 / T231 metrics — emit 1 counter per inserted suggestion
       // (in-memory only; no RTT cost). Preserves the per-tier-bucket
@@ -439,7 +452,6 @@ export async function evaluateTierUpgrade(
       suppressedSkipped: suppressedCount,
       suggestionsCreated: bulkResult.inserted.length,
       conflictSkipped: bulkResult.conflicted.length,
-      serverError: null,
     };
   };
 
@@ -465,18 +477,48 @@ export async function evaluateTierUpgrade(
       const nowIso = new Date().toISOString();
       // Use outerTx when supplied (cron route holds advisory lock).
       // Otherwise open a single runInTenant for the WHOLE page (3 RTTs
-      // total) instead of per-member (5 RTTs × N members).
-      const flushResult = outerTx
-        ? await flushPage(outerTx, pageDecisions, nowIso)
-        : await runInTenant(deps.tenant, (tx) =>
+      // total) instead of per-member (3 RTTs × N members).
+      // R5-B1 fix: bulk-insert + bulk-emit failures throw (not Result.err)
+      // so runInTenant rolls back atomically per Constitution VIII.
+      // R6-B1 fix: when `outerTx` is provided (production cron path),
+      // the throw MUST propagate up to the route's `runInTenant`
+      // closure so its tx rolls back. Catching here would let the
+      // outer tx COMMIT (because the closure returned normally with a
+      // Result.err value, which is NOT how runInTenant signals
+      // rollback) → state↔audit drift returns. The standalone
+      // (non-outerTx) path still converts to Result.err because the
+      // page-scoped runInTenant already rolled back atomically and
+      // the use-case caller expects a Result return.
+      if (outerTx) {
+        // Production cron path: do NOT swallow — let route's
+        // runInTenant rollback. flushPage failure is a real defect
+        // that pages on-call (F8-A1 + F8-A2 alerts).
+        const flushResult = await flushPage(outerTx, pageDecisions, nowIso);
+        suppressedSkipped += flushResult.suppressedSkipped;
+        suggestionsCreated += flushResult.suggestionsCreated;
+        conflictSkipped += flushResult.conflictSkipped;
+      } else {
+        // Standalone path (admin replay, integration test): open the
+        // page-scoped runInTenant so it rolls back on throw, then
+        // catch at the use-case boundary + convert to err({server_error}).
+        try {
+          const flushResult = await runInTenant(deps.tenant, (tx) =>
             flushPage(tx, pageDecisions, nowIso),
           );
-      if (flushResult.serverError !== null) {
-        return err(flushResult.serverError);
+          suppressedSkipped += flushResult.suppressedSkipped;
+          suggestionsCreated += flushResult.suggestionsCreated;
+          conflictSkipped += flushResult.conflictSkipped;
+        } catch (e) {
+          // R6-LOW2 close: prefer instanceof Error narrowing over
+          // `(e as Error)?.message` — handles non-Error throws safely.
+          const message =
+            e instanceof Error ? e.message : String(e ?? 'flush_page_failed');
+          return err({
+            kind: 'server_error',
+            message,
+          });
+        }
       }
-      suppressedSkipped += flushResult.suppressedSkipped;
-      suggestionsCreated += flushResult.suggestionsCreated;
-      conflictSkipped += flushResult.conflictSkipped;
     }
 
     cursor = page.nextCursor ?? undefined;
@@ -517,9 +559,20 @@ export async function evaluateTierUpgrade(
         {
           err: e instanceof Error ? e.message : String(e),
           tenantId,
+          correlationId,
           alreadyAtTarget,
         },
         '[evaluate-tier-upgrade] aggregate already_at_target audit emit failed — counter only',
+      );
+      // Staff-R004 fix: emit alertable counter so SRE can detect
+      // silent dropped audits (drift vs the R5-S1 atRiskAuditEmitFailed
+      // pattern). Without this counter, every aggregate audit-emit
+      // failure leaves only a logger.warn breadcrumb. Vercel alert
+      // rule per docs/observability.md F8-A11 (sustained ≥1 in 5 min
+      // → alarm). Per-tenant tag enables tenant-scoped dashboards.
+      renewalsMetrics.tierUpgradeAuditEmitFailed(
+        'tier_upgrade_already_at_target',
+        tenantId,
       );
     }
   }

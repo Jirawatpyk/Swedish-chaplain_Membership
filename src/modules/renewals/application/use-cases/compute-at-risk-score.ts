@@ -144,9 +144,26 @@ export async function computeAtRiskScore(
       // Skip audit failure is non-blocking — log + continue. The next
       // cron pass will retry. Cron-loop fault isolation only roll-back
       // the per-member tx, never blocks the cron-pass.
+      // R6-L1-err: include correlation context so SRE can find the
+      // member + cron-pass in logs.
       logger.warn(
-        { err: e instanceof Error ? e.message : String(e) },
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId: input.tenantId,
+          memberId: input.memberId,
+          correlationId: input.correlationId,
+        },
         '[compute-at-risk-score] skip audit emit failed — non-blocking',
+      );
+      // R5-S1 fix: emit alertable counter so SRE can see silent
+      // dropped audits (Constitution Principle VIII visibility — the
+      // audit_log row never lands but the cron rolls forward).
+      // Configure Vercel alert rule on
+      // `renewals_at_risk_audit_emit_failed_total` per
+      // docs/observability.md § 23.3 (sustained ≥1 in 5min → alarm).
+      renewalsMetrics.atRiskAuditEmitFailed(
+        'at_risk_skipped_below_min_tenure',
+        input.tenantId,
       );
     }
     return ok({

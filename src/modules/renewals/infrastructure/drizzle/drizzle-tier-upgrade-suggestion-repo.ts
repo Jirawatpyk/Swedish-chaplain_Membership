@@ -526,8 +526,23 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
       if (inputs.length === 0) {
         return { inserted: [], conflicted: [] };
       }
+      // R6-H2-err: tenantId guard symmetric with sister
+      // RenewalReminderEventRepo.bulkInsertIfAbsent (R5-C2). Without
+      // this, a future caller passing mixed-tenant inputs would let
+      // them all collapse onto whichever tenant the input.tenantId
+      // claimed — undetectable cross-tenant write because RLS scopes
+      // by `app.current_tenant` (set via runInTenant) which is the
+      // ADAPTER-bound tenant, NOT the input.tenantId. Constitution
+      // Principle I clause 1 (application-layer tenant scoping) is
+      // the binding rule here.
+      for (const input of inputs) {
+        if (input.tenantId !== tenant.slug) {
+          throw new Error(
+            `bulkInsertOpenIfAbsent: input.tenantId='${input.tenantId}' ≠ adapter tenant.slug='${tenant.slug}' — cross-tenant write blocked (Constitution Principle I)`,
+          );
+        }
+      }
       const txDb = tx as unknown as typeof db;
-      const inputMemberIds = inputs.map((i) => i.memberId);
       const insertValues = inputs.map((input) => ({
         tenantId: input.tenantId,
         suggestionId: input.suggestionId,
@@ -542,19 +557,30 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         .insert(tierUpgradeSuggestions)
         .values(insertValues)
         .onConflictDoNothing({
-          // Conflict target is the partial unique index. Drizzle's
-          // onConflictDoNothing without a target argument relies on any
-          // unique constraint hitting — the only such constraint on
-          // tier_upgrade_suggestions for `(tenant_id, member_id)` is
-          // tier_upgrade_suggestions_member_open_uniq + the PK on
-          // suggestion_id (which we always generate fresh). So a
-          // conflict here ALWAYS means the partial unique fired.
+          // R5-C1 fix: explicit conflict target so a PK collision (or
+          // any other future unique constraint) is NOT silently
+          // swallowed as "member already open". The only conflict path
+          // we want to absorb is the partial unique index
+          // `tier_upgrade_suggestions_member_open_uniq` covering
+          // `(tenant_id, member_id) WHERE status IN ('open',
+          // 'accepted_pending_apply')`. Naming it explicitly closes
+          // the bug-class where a future migration adds another
+          // unique constraint and silently turns its violations into
+          // "conflicted" no-ops.
+          target: [
+            tierUpgradeSuggestions.tenantId,
+            tierUpgradeSuggestions.memberId,
+          ],
+          where: sql`tier_upgrade_suggestions.status IN ('open','accepted_pending_apply')`,
         })
         .returning();
       const inserted = insertedRows.map(rowToDomain);
       const insertedMemberIds = new Set(inserted.map((s) => s.memberId));
-      const conflicted = inputMemberIds.filter(
-        (mid) => !insertedMemberIds.has(mid),
+      // R5-MED1 fix: return full input shape for conflicted rows
+      // (symmetric with bulkInsertIfAbsent on RenewalReminderEventRepo).
+      // Pre-fix returned just memberId strings.
+      const conflicted = inputs.filter(
+        (i) => !insertedMemberIds.has(i.memberId),
       );
       return { inserted, conflicted };
     },

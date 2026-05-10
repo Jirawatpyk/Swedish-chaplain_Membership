@@ -195,6 +195,12 @@ describe.skipIf(!RUN_PERF)(
       if (!result.ok) return;
 
       expect(result.value.summary.candidatesProcessed).toBeGreaterThan(0);
+      // R5-Q1 close: pin positive-path assertion. Without this, a
+      // bench-seed regression (e.g. all candidates skip via Gate 6 on
+      // members.email_unverified=true silently) would still pass the
+      // perf test by measuring only early-exit branches. Mirrors the
+      // T264 fix (commit 52637d75) for tier-upgrade-evaluate-perf.
+      expect(result.value.summary.emailsSent).toBeGreaterThan(0);
 
       const perCandidateMs =
         cronDurationMs / Math.max(1, result.value.summary.candidatesProcessed);

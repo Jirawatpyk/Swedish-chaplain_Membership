@@ -146,10 +146,21 @@ export interface RenewalReminderEventRepo {
   /**
    * F8 Phase 10 T262 batched-write — bulk transition pending → sent.
    *
-   * Single-RTT UPDATE … FROM (VALUES …) for a chunk of successful
-   * gateway dispatches. Caller passes the `reminderEventId` +
-   * `dispatchedAt` + `deliveryId` collected from per-cycle gateway
-   * calls. Returns the updated rows in input order.
+   * **2-RTT** UPDATE … FROM (VALUES …) + typed re-fetch SELECT for
+   * a chunk of successful gateway dispatches. Caller passes the
+   * `reminderEventId` + `dispatchedAt` + `deliveryId` collected from
+   * per-cycle gateway calls. Returns the updated rows.
+   *
+   * **R6-types-IMP1 honesty**: the implementation issues 2 round-trips
+   * (raw UPDATE for the multi-row state-change, then typed SELECT to
+   * re-fetch domain-shaped rows for the rowToDomain mapping). Still
+   * O(1) RTT regardless of input size N — the savings vs per-cycle
+   * `transitionStatus` (~2 RTTs each) scale linearly with N.
+   *
+   * **Return order**: NOT guaranteed to match input order. The re-fetch
+   * SELECT uses `WHERE id IN (...)` which Postgres may return in any
+   * physical-row order. Callers that need ordered output must
+   * re-key the returned array by `reminderEventId` themselves.
    *
    * Empty `inputs` is a no-op returning an empty array.
    *

@@ -338,6 +338,20 @@ export function makeDrizzleRenewalReminderEventRepo(
       if (inputs.length === 0) {
         return { inserted: [], conflicted: [] };
       }
+      // R5-C2 fix: assert input.tenantId matches the adapter-bound
+      // tenant slug. The single-row `insertIfAbsent` (line 84) silently
+      // substitutes `tenant.slug` for `input.tenantId`; replicating
+      // that contract here without a guard would let a future caller
+      // pass mixed-tenant inputs that all collapse onto the bound
+      // tenant — undetectable cross-tenant write. Assertion fails fast
+      // so the bug surfaces at the call site, not as silent corruption.
+      for (const input of inputs) {
+        if (input.tenantId !== tenant.slug) {
+          throw new Error(
+            `bulkInsertIfAbsent: input.tenantId='${input.tenantId}' ≠ adapter tenant.slug='${tenant.slug}' — cross-tenant write blocked (Constitution Principle I)`,
+          );
+        }
+      }
       const txDb = tx as unknown as typeof db;
       const insertValues = inputs.map((input) => ({
         tenantId: tenant.slug,
@@ -363,65 +377,141 @@ export function makeDrizzleRenewalReminderEventRepo(
         })
         .returning();
       const inserted = insertedRows.map(rowToDomain);
-      // Identify which inputs were skipped via ON CONFLICT — match by
-      // the natural key (cycleId + stepId + yearInCycle) since the
-      // generated suggestionId differs.
-      const insertedKey = new Set(
-        inserted.map(
-          (r) => `${r.cycleId}::${r.stepId}::${r.yearInCycle}`,
-        ),
-      );
-      const conflicted = inputs.filter(
-        (input) =>
-          !insertedKey.has(
-            `${input.cycleId}::${input.stepId}::${input.yearInCycle}`,
-          ),
-      );
+      // R6-H1-code fix: identify conflicted inputs via per-key COUNT
+      // bookkeeping so duplicate inputs (same natural key in the same
+      // batch) are handled correctly. Pre-fix: a Set-membership filter
+      // mis-classified the second occurrence of `[A, A]` as conflicted
+      // when in fact only ONE of them was inserted (Postgres ON
+      // CONFLICT DO NOTHING absorbs the second). The COUNT pattern:
+      //   - Each input contributes +1 to its natural-key bucket.
+      //   - Each inserted row consumes -1 from its bucket.
+      //   - Remaining +N counts represent N conflicted inputs.
+      // This handles both within-batch duplicates AND replay conflicts
+      // against pre-existing rows symmetrically.
+      const keyOf = (k: { cycleId: string; stepId: string; yearInCycle: number }) =>
+        `${k.cycleId}::${k.stepId}::${k.yearInCycle}`;
+      const inputCountByKey = new Map<string, number>();
+      for (const input of inputs) {
+        const key = keyOf(input);
+        inputCountByKey.set(key, (inputCountByKey.get(key) ?? 0) + 1);
+      }
+      for (const r of inserted) {
+        const key = keyOf(r);
+        const remaining = (inputCountByKey.get(key) ?? 0) - 1;
+        if (remaining > 0) inputCountByKey.set(key, remaining);
+        else inputCountByKey.delete(key);
+      }
+      // Project the remaining counts back to their input shapes by
+      // walking inputs once and emitting matches for each remaining
+      // count. Preserves input order for deterministic caller-side
+      // emission of `already_sent` audits.
+      const conflicted: Array<NewReminderEventInput> = [];
+      const consumed = new Map<string, number>();
+      for (const input of inputs) {
+        const key = keyOf(input);
+        const cnt = inputCountByKey.get(key) ?? 0;
+        const used = consumed.get(key) ?? 0;
+        if (cnt > used) {
+          conflicted.push(input);
+          consumed.set(key, used + 1);
+        }
+      }
       return { inserted, conflicted };
     },
 
     async bulkTransitionToSent(tx, inputs) {
       // F8 Phase 10 T262 batched-write — single multi-row UPDATE via
-      // `UPDATE … FROM (VALUES …)` so all reminder_events flip
-      // pending → sent in 1 RTT. Caller MUST pair with `bulkEmitInTx`
-      // for the matching `renewal_reminder_sent` audits inside the
-      // SAME `runInTenant` block per Constitution Principle VIII.
+      // `UPDATE … SET … FROM (VALUES …) v WHERE id = v.id`. All
+      // reminder_events flip pending → sent in 1 RTT. Caller MUST pair
+      // with `bulkEmitInTx` for the matching `renewal_reminder_sent`
+      // audits inside the SAME `runInTenant` block per Constitution
+      // Principle VIII state↔audit atomicity.
       if (inputs.length === 0) {
         return [];
       }
+      // R5-C2 fix: tenantId guard symmetric with bulkInsertIfAbsent.
+      for (const input of inputs) {
+        if (input.tenantId !== tenant.slug) {
+          throw new Error(
+            `bulkTransitionToSent: input.tenantId='${input.tenantId}' ≠ adapter tenant.slug='${tenant.slug}' — cross-tenant write blocked (Constitution Principle I)`,
+          );
+        }
+      }
       const txDb = tx as unknown as typeof db;
+      // R5-C2 fix: rewrite as `UPDATE … FROM (VALUES …)` instead of
+      // CASE WHEN. The CASE form had no ELSE arm — a row matched by
+      // `id IN (...)` but somehow missing from the CASE branches would
+      // be SET to NULL silently. The VALUES-join form makes the
+      // payload-to-row binding explicit and lets the WHERE clause join
+      // do the matching, so a missing row simply doesn't update
+      // (caller's row-count assertion below catches it).
+      const valuesRows = sql.join(
+        inputs.map(
+          (i) =>
+            sql`(${i.reminderEventId}::uuid, ${i.dispatchedAt}::timestamptz, ${i.deliveryId}::text)`,
+        ),
+        sql`, `,
+      );
+      // postgres-js returns rows as a plain array via drizzle's
+      // `.execute()`; cast to the schema's $inferSelect for downstream
+      // rowToDomain mapping. Note: snake_case column names from raw SQL
+      // do not auto-map to camelCase; the rowToDomain helper expects
+      // schema-typed rows so we re-fetch through the typed query layer
+      // after the raw UPDATE for correctness.
+      // R6-M3-err: tenant filter on the raw UPDATE itself (defence-in-
+       // depth alongside RLS). The `r.tenant_id = ${tenant.slug}` clause
+       // ensures even a future RLS misconfig cannot let this UPDATE
+       // touch another tenant's rows. Mirrors the J9-M1 single-row
+       // pattern.
+      await txDb.execute(
+        sql`
+          UPDATE ${renewalReminderEvents} AS r
+          SET status = 'sent',
+              dispatched_at = v.dispatched_at,
+              delivery_id = v.delivery_id
+          FROM (VALUES ${valuesRows}) AS v(reminder_event_id, dispatched_at, delivery_id)
+          WHERE r.reminder_event_id = v.reminder_event_id
+            AND r.tenant_id = ${tenant.slug}
+            AND r.status = 'pending'
+        `,
+      );
       const ids = inputs.map((i) => i.reminderEventId);
-      // Build a per-id payload map so we can apply the matching
-      // dispatchedAt + deliveryId per row via a CASE expression.
-      const dispatchedAtCases = sql.join(
-        inputs.map(
-          (i) =>
-            sql`WHEN ${renewalReminderEvents.reminderEventId} = ${i.reminderEventId} THEN ${i.dispatchedAt}::timestamptz`,
-        ),
-        sql` `,
-      );
-      const deliveryIdCases = sql.join(
-        inputs.map(
-          (i) =>
-            sql`WHEN ${renewalReminderEvents.reminderEventId} = ${i.reminderEventId} THEN ${i.deliveryId}`,
-        ),
-        sql` `,
-      );
-      const updated = await txDb
-        .update(renewalReminderEvents)
-        .set({
-          status: 'sent',
-          dispatchedAt: sql`CASE ${dispatchedAtCases} END`,
-          deliveryId: sql`CASE ${deliveryIdCases} END`,
-        })
+      const expectedDeliveryIds = inputs.map((i) => i.deliveryId);
+      const updatedRows = await txDb
+        .select()
+        .from(renewalReminderEvents)
         .where(
           and(
+            // R6-M3-err: defence-in-depth tenant filter at the
+            // application layer (RLS already enforces, but
+            // Constitution Principle I clause 1 mandates BOTH layers).
+            // Mirrors the J9-M1 pattern from the single-row insertIfAbsent
+            // (line 132) — closes the leak even if RLS is bypassed.
+            eq(renewalReminderEvents.tenantId, tenant.slug),
             inArray(renewalReminderEvents.reminderEventId, ids),
-            eq(renewalReminderEvents.status, 'pending'),
+            eq(renewalReminderEvents.status, 'sent'),
+            // R6-H1-err: also verify the deliveryId matches OUR
+            // expected values. Without this, a concurrent admin
+            // "Send reminder now" that updated the same row with a
+            // different deliveryId would still satisfy the row-count
+            // check (status='sent' + id matches) but the bench would
+            // return rows with the WRONG deliveryId. The IN-list
+            // ensures we only count rows OUR bulk-flush actually wrote.
+            inArray(renewalReminderEvents.deliveryId, expectedDeliveryIds),
           ),
-        )
-        .returning();
-      return updated.map(rowToDomain);
+        );
+      // R5-C2 fix: row-count assertion — partial UPDATE (e.g. a
+      // reminderEventId that doesn't exist OR is no longer 'pending'
+      // because of a concurrent admin "Send reminder now" race) MUST
+      // fail loudly so the caller's runInTenant rolls back and the
+      // outer cron pass surfaces a real error. Silent partial-update
+      // would leave audit emits dangling without state changes.
+      if (updatedRows.length !== inputs.length) {
+        throw new Error(
+          `bulkTransitionToSent: expected ${inputs.length} rows updated, got ${updatedRows.length} — concurrent state race or stale reminderEventId; tx will roll back`,
+        );
+      }
+      return updatedRows.map(rowToDomain);
     },
   };
 }

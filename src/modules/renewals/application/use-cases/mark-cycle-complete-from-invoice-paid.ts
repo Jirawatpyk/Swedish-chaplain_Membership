@@ -173,6 +173,32 @@ export async function markCycleCompleteInTx(
  * available (legacy paths, standalone admin replays, integration
  * tests). The F4 onPaidCallback path uses `markCycleCompleteInTx`
  * directly to participate in F4's tx for atomic single-tx completion.
+ *
+ * **R5-S3 / R6-IMP2c usage guidance** (refined): the F4 onPaidCallback
+ * path SHOULD use `markCycleCompleteInTx(deps, event, tx)` with the
+ * caller-provided F4 tx for atomic single-tx completion. The
+ * composition root at
+ * `src/modules/renewals/infrastructure/renewals-deps.ts:472-510`
+ * already implements this discipline: when F4 threads a `TenantTx`
+ * value, the in-tx variant is invoked; otherwise this wrapper is
+ * invoked as a **degraded-mode fallback** with the alert metric
+ * `onPaidInvalidTx{tenant_id}` paging on-call so the F4 contract
+ * drift surfaces.
+ *
+ * Direct callers OUTSIDE the composition root MUST use
+ * `markCycleCompleteInTx` if they have a caller-provided tx.
+ * This wrapper is the right choice ONLY for:
+ *   - Admin replay tools (no caller tx by definition)
+ *   - Integration tests that exercise the wrapper specifically
+ *   - The composition-root degraded-mode fallback above
+ *
+ * The wrapper's separate-tx semantics mean: if F4 has already
+ * committed the invoice flip then this wrapper throws, F4's invoice
+ * stays 'paid' but F8's cycle stays in 'awaiting_payment'. That
+ * state↔audit drift is what the `onPaidInvalidTx` alert exists to
+ * detect — a non-zero rate on the counter means the F4 contract is
+ * threading something that isn't a `TenantTx`, which the SRE
+ * runbook documents as needing F4-side investigation.
  */
 export async function markCycleCompleteFromInvoicePaid(
   deps: MarkCycleCompleteDeps,

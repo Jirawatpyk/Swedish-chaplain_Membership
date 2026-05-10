@@ -251,7 +251,13 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
         .orderBy(desc(auditLog.timestamp))
         .limit(5),
     );
-    expect(audits.length).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count assertion. Each test owns a fresh
+    // UUID-suffixed tenant via createTestTenant — runInTenant scopes
+    // the query via RLS to that tenant, so prior tests' audits cannot
+    // pollute this count. Greater-than-or-equal-1 hid the regression
+    // class where the cron dispatched 2 suggestions silently (e.g.
+    // pagination boundary bug); exact-count catches it.
+    expect(audits).toHaveLength(1);
   }, 60_000);
 
   it('idempotent — re-running the cron does not duplicate', async () => {
@@ -352,7 +358,8 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
         .where(eq(auditLog.eventType, 'tier_upgrade_tenant_disabled'))
         .limit(5),
     );
-    expect(audits.length).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count.
+    expect(audits).toHaveLength(1);
   }, 60_000);
 
   it('no-thresholds — catalogue without min_turnover skips with audit', async () => {
@@ -388,7 +395,8 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
         )
         .limit(5),
     );
-    expect(audits.length).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count.
+    expect(audits).toHaveLength(1);
   }, 60_000);
 
   it('R3-IMP-8 — no_plans skip_reason discriminator (catalogue empty)', async () => {
@@ -429,7 +437,8 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
         .orderBy(desc(auditLog.timestamp))
         .limit(1),
     );
-    expect(audits.length).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count.
+    expect(audits).toHaveLength(1);
     // R3-IMP-8 payload assertion: skip_reason discriminator present.
     const payload = audits[0]?.payload as { catalogue_size?: number; skip_reason?: string };
     expect(payload?.catalogue_size).toBe(0);
@@ -472,7 +481,8 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     // The member's plan_id ('premium') is the highest so the decision
     // tree returns null → counted as `alreadyAtTarget` per the
     // use-case decideUpgrade contract.
-    expect(result.value.alreadyAtTarget).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count. The test seeds exactly 1 member.
+    expect(result.value.alreadyAtTarget).toBe(1);
 
     const rows = await runInTenant(tenant.ctx, (tx) =>
       tx.select().from(tierUpgradeSuggestions),
@@ -487,7 +497,10 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
         .from(auditLog)
         .where(eq(auditLog.eventType, 'tier_upgrade_already_at_target')),
     );
-    expect(audits.length).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count. Round 6 W-010 collapsed the per-
+    // member audits into 1 aggregate emit per cron pass; this test
+    // runs evaluateTierUpgrade exactly once → expect exactly 1 audit.
+    expect(audits).toHaveLength(1);
   }, 60_000);
 
   it('suppression — dismissed row in last 90d hides the member', async () => {
@@ -538,7 +551,10 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.suggestionsCreated).toBe(0);
-    expect(result.value.suppressedSkipped).toBeGreaterThanOrEqual(1);
+    // Staff-R008 fix: exact-count. The test seeds exactly 1 suppressed
+    // member (line 506-543); a regression that double-counted
+    // suppressions would now fail.
+    expect(result.value.suppressedSkipped).toBe(1);
   }, 60_000);
 
   // Reference unused import for symmetry — `and` + `sql` may be used in

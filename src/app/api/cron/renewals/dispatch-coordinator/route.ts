@@ -474,10 +474,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Phase 9 / Cycle-state observable gauge wire-up. Run once per
       // successful tenant after the per-tenant fan-out completes; the
       // helper is best-effort + never blocks the coordinator.
-      for (const result of tenantsSucceededOrSkipped) {
-        if (result.skipped) continue;
-        await observeCycleStateGaugesForTenant(result.tenant_id);
-      }
+      // R5-S2 fix: parallelize via Promise.all so a slow Neon connection
+      // for one tenant doesn't block the others. Each call is self-
+      // contained (no shared state) + best-effort (own try/catch in the
+      // helper). Bounded by the number of tenants in this cron pass.
+      await Promise.all(
+        tenantsSucceededOrSkipped
+          .filter((result) => !result.skipped)
+          .map((result) => observeCycleStateGaugesForTenant(result.tenant_id)),
+      );
 
       logger.info(
         {

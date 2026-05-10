@@ -123,7 +123,7 @@ describe('F8 cross-module enum parity — Phase 10 / CHK040 close', () => {
     expect(new Set(F4_PAID_TRIGGERS).size).toBe(3);
   });
 
-  it('F4InvoicePaidEvent shape pins all 8 required fields', () => {
+  it('F4InvoicePaidEvent shape pins all 9 required fields', () => {
     // Compile-time check: any missing field on F4InvoicePaidEvent makes
     // this object literal fail to satisfy the type. Documents the
     // canonical shape for cross-module callers.

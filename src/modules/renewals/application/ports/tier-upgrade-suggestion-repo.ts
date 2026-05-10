@@ -174,7 +174,17 @@ export interface TierUpgradeSuggestionRepo {
     inputs: ReadonlyArray<NewTierUpgradeSuggestionInput>,
   ): Promise<{
     readonly inserted: ReadonlyArray<TierUpgradeSuggestion>;
-    readonly conflicted: ReadonlyArray<string>; // memberIds skipped
+    /**
+     * R5-MED1 fix: shape harmonized with sister
+     * `RenewalReminderEventRepo.bulkInsertIfAbsent` — both return the
+     * full input shape (NewTierUpgradeSuggestionInput / NewReminderEventInput)
+     * for skipped rows so callers can branch on input metadata
+     * (e.g. emit `tier_upgrade_skipped { reason: 'already_open' }`
+     * with the candidate's reasonCode + evidence) without re-fetching.
+     * Pre-fix returned `ReadonlyArray<string>` (just memberIds) which
+     * forced callers to re-look up the original input by member id.
+     */
+    readonly conflicted: ReadonlyArray<NewTierUpgradeSuggestionInput>;
   }>;
 }
 

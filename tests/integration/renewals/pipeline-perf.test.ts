@@ -202,7 +202,13 @@ describe.skipIf(!RUN_PERF)(
         });
         const elapsed = performance.now() - t0;
         expect(r.ok).toBe(true);
-        if (r.ok) expect(r.value.rows.length).toBeGreaterThanOrEqual(0);
+        // Staff-R005 fix: tighten from tautology `>= 0` to `> 0` so a
+        // bench-seed regression (e.g. cycles seeded outside the
+        // urgency window OR query filter mismatch) cannot silently
+        // pass. Seed at line 76-94 produces VISIBLE_RATIO×count cycles
+        // in 90-day window across 4 urgency tabs — every measured
+        // tab MUST return at least 1 row.
+        if (r.ok) expect(r.value.rows.length).toBeGreaterThan(0);
         samples.push(elapsed);
       }
       samples.sort((a, b) => a - b);
