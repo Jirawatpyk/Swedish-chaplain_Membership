@@ -16,6 +16,7 @@ vi.mock('@/lib/env', () => ({
   env: {
     cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
     features: { f8Renewals: true, f8AtRiskDisabled: false },
+    flags: { readOnlyMode: false },
     tenant: { slug: 'tenanta' },
     app: { baseUrl: 'http://localhost:3100' },
     log: { level: 'silent' },
@@ -112,6 +113,24 @@ describe('cron at-risk-recompute-coordinator route (Phase 6 review I9)', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       env.features.f8Renewals = true;
+    }
+  });
+
+  it('Phase 9 / T241 — 200 + skipped on READ_ONLY_MODE=true (no audit, no fan-out)', async () => {
+    const env = (await import('@/lib/env')).env as {
+      flags: { readOnlyMode: boolean };
+    };
+    env.flags.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.skipped).toBe(true);
+      expect(body.reason).toBe('read_only_mode');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(auditEmitMock).not.toHaveBeenCalled();
+    } finally {
+      env.flags.readOnlyMode = false;
     }
   });
 

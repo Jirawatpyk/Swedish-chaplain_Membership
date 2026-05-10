@@ -33,6 +33,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import {
@@ -363,6 +364,13 @@ export async function evaluateTierUpgrade(
             correlationId,
             requestId: input.requestId ?? null,
           },
+        );
+        // Phase 9 / T231 — tier-upgrade suggestion volume counter
+        // (FR-037 → FR-039 funnel). `target_tier` is the bounded
+        // 5-bucket enum from the F2 plan catalog.
+        renewalsMetrics.tierUpgradeSuggestionsCreated(
+          tenantId,
+          decision.toPlan.renewalTierBucket,
         );
       };
       try {

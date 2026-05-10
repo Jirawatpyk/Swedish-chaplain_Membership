@@ -35,6 +35,7 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
+import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
 import { findStepForDate } from '../../../domain/tenant-renewal-schedule-policy';
@@ -309,6 +310,11 @@ async function emitSkipAudit(
       requestId: ctx.requestId,
     },
   );
+  // Phase 9 / T231 — business-volume counter pairs with FR-012
+  // skip-reason taxonomy. Reason label is the same SkipReason union
+  // already pinned by the exhaustive switch above, so cardinality is
+  // bounded.
+  renewalsMetrics.remindersSkipped(reason);
 }
 
 // ---------------------------------------------------------------------------
@@ -803,6 +809,11 @@ async function dispatchEmailStep(
           summary: `Reminder sent to ${member.companyName} (${step.stepId})`,
         },
       );
+      // Phase 9 / T231 — business-volume counter (FR-010 dispatcher
+      // cadence dashboard). `tier_bucket` is bounded 5-value enum,
+      // `offset_day` is bounded by tier-bucket schedule policy
+      // (~6 distinct values across all 5 tiers).
+      renewalsMetrics.remindersSent(cycle.tierAtCycleStart, step.offsetDays);
       return {
         kind: 'sent',
         reminderEventId,
@@ -869,6 +880,10 @@ async function dispatchEmailStep(
       },
       'dispatchOneCycle: gateway send failed',
     );
+    // Phase 9 / T231 — business-volume counter (FR-010a retry-budget
+    // path). `err.kind` is the bounded `SendRenewalEmailError['kind']`
+    // union — cardinality bounded by gateway error taxonomy.
+    renewalsMetrics.remindersFailed(err.kind);
     return isPermanent
       ? {
           kind: 'failed_permanent' as const,

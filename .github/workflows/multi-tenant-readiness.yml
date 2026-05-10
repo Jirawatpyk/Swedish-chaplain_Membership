@@ -1,9 +1,10 @@
 # T180 (Phase 9 / SC-011) — multi-tenant readiness nightly job.
+# Phase 9 / T254 (F8 extension, 2026-05-10) — adds F8 readiness checks.
 #
 # Runs the JCC-test tenant fixture (T179) on every weekday morning to
-# verify F7 (and future F-stack features) remain data-only configurable
-# for new tenants — i.e. onboarding a new chamber requires zero code
-# change in `src/modules/**`.
+# verify F7 + F8 (and future F-stack features) remain data-only
+# configurable for new tenants — i.e. onboarding a new chamber requires
+# zero code change in `src/modules/**`.
 #
 # **Stub-Resend mode** (active by default): T179 uses an in-process
 # stub `BroadcastsGatewayPort` so this workflow needs no Resend
@@ -12,8 +13,8 @@
 # tenant-agnostic. Live Resend dispatch is exercised by the staging
 # promotion pipeline.
 #
-# Failure = ship blocker for the next F7.x amendment.
-name: F7 Multi-tenant readiness (nightly)
+# Failure = ship blocker for the next F7.x or F8.x amendment.
+name: F7 + F8 Multi-tenant readiness (nightly)
 
 on:
   schedule:
@@ -24,7 +25,7 @@ on:
 jobs:
   fixture:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       # Stub-Resend mode: T179 does not hit a real Resend account, so
       # API key + webhook secret are placeholder strings. They satisfy
@@ -35,6 +36,13 @@ jobs:
       UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
       CRON_SECRET: synthetic-ci-cron-secret
       FEATURE_F7_BROADCASTS: 'true'
+      # Phase 9 / T254 — F8 env vars for F8 multi-tenant readiness checks.
+      # `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` satisfies the zod ≥32-byte min
+      # length; `FEATURE_F8_RENEWALS=true` flips the kill-switch so F8
+      # paths are exercised. F8 module reuses the F1+F4 transactional
+      # `RESEND_API_KEY` — no new key needed for stub mode.
+      FEATURE_F8_RENEWALS: 'true'
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v3
@@ -45,14 +53,37 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Run JCC-test fixture (stub-Resend mode)
+
+      # --- F7 multi-tenant readiness ---------------------------------
+      - name: Run F7 JCC-test fixture (stub-Resend mode)
         run: pnpm test:integration tests/integration/broadcasts/jcc-test-tenant-fixture.test.ts --reporter=verbose
-      - name: Run member-erasure-cascade test
+      - name: Run F7 member-erasure-cascade test
         run: pnpm test:integration tests/integration/broadcasts/member-erasure-cascade.test.ts --reporter=verbose
-      - name: Audit catalogue parity check
+      - name: F7 audit catalogue parity check
         run: pnpm vitest run tests/integration/broadcasts/audit-event-type-parity.test.ts
+
+      # --- F8 multi-tenant readiness (Phase 9 / T254) ----------------
+      # F3↔F8 archival cascade — proves the renewals cascade port wires
+      # tenant-agnostically (no hard-coded SweCham slug; runs against a
+      # fresh test-tenant).
+      - name: Run F8 F3-archival cascade test
+        run: pnpm test:integration tests/integration/renewals/f3-archival-cascade.test.ts --reporter=verbose
+      # RBAC defence-in-depth — proves f8_role_violation_blocked audit
+      # persistence works against a fresh test-tenant.
+      - name: Run F8 RBAC defence-in-depth test
+        run: pnpm test:integration tests/integration/renewals/rbac-defence-in-depth.test.ts --reporter=verbose
+      # Kill-switch granular — proves renewal_kill_switch_blocked +
+      # cron_bearer_auth_rejected audit catalogue stays tenant-agnostic.
+      - name: Run F8 kill-switch granular test
+        run: pnpm test:integration tests/integration/renewals/kill-switch-granular.test.ts --reporter=verbose
+      # F8 audit-port catalogue parity check
+      - name: F8 audit catalogue parity check
+        run: pnpm vitest run tests/contract/renewals-audit-port.contract.test.ts
+
+      # --- Status banner ---------------------------------------------
       - name: Status badge
         if: always()
         run: |
-          echo "JCC-test fixture: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "Multi-tenant readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "F7 JCC-test fixture: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "F8 multi-tenant readiness: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "Multi-tenant readiness (overall): ${{ job.status }}" >> $GITHUB_STEP_SUMMARY

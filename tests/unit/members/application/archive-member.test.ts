@@ -188,6 +188,19 @@ function makeDeps(overrides: Partial<{
           }) as const,
       ),
     };
+  // Phase 9 / T239: renewalsCascade is REQUIRED on ArchiveMemberDeps.
+  // No-op stub mirrors the broadcastsCascade default; tests that assert
+  // cascade-failure paths can override.
+  const renewalsCascade: ArchiveMemberDeps['renewalsCascade'] = {
+    cancelInFlightForMember: vi.fn(
+      async () =>
+        ({
+          outcome: 'ok' as const,
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+        }) as const,
+    ),
+  };
   return {
     tenant,
     memberRepo,
@@ -197,6 +210,7 @@ function makeDeps(overrides: Partial<{
     audit,
     clock,
     broadcastsCascade,
+    renewalsCascade,
   } as unknown as StubbedArchiveDeps;
 }
 

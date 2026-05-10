@@ -2012,6 +2012,28 @@ export const renewalsMetrics = {
    *
    * Cardinality bound: small-tenant-count × 3-state-enum. Lazy-
    * registers the observable on first call per state.
+   *
+   * **Per-process accumulator semantics** (Phase 9 verify-fix C1):
+   * The `gaugeValues` map is a process-level singleton. Each call to
+   * `observeCycleStateGauge(tenantA, state, value)` writes to
+   * `gaugeValues[renewals_cycles_${state}][tenantA]`; subsequent
+   * scrapes read ALL tenants accumulated in the inner Map. This is
+   * INTENTIONAL multi-tenant accumulation — Vercel function instances
+   * may serve multiple tenants over their lifetime, and the gauge
+   * MUST report the most-recent observed value per tenant (not just
+   * the last writer's tenant). The OTel callback iterates the inner
+   * Map's `.entries()` so every tenant slug appears as a distinct
+   * label series at scrape time.
+   *
+   * Pinned by `tests/unit/lib/metrics-cycle-state-gauge.test.ts`
+   * (Phase 9 verify-fix C1) — multi-tenant accumulation invariant.
+   *
+   * Test-isolation note: vitest `beforeEach` does NOT reset
+   * `gaugeValues` automatically (it's a module-level closure cache).
+   * Tests that need a clean slate should call
+   * `gaugeValues.delete('renewals_cycles_<state>')` directly OR
+   * use unique tenant slugs per test (the recommended pattern —
+   * mirrors `createTestTenant`'s UUID-suffix isolation strategy).
    */
   observeCycleStateGauge(
     tenant: string,

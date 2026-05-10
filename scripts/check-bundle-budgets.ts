@@ -3,7 +3,7 @@
  *
  * Reads Next.js's build manifest + per-route app-build-manifest, sums
  * the on-disk size of every chunk file under `.next/static/chunks/`,
- * and fails the process if any tracked F7 route exceeds its KB
+ * and fails the process if any tracked F7 / F8 route exceeds its KB
  * ceiling.
  *
  * Run as a post-build step:
@@ -11,12 +11,22 @@
  *   pnpm build
  *   pnpm tsx scripts/check-bundle-budgets.ts
  *
- * Per-route ceilings (from perf.md CHK038):
- *   /portal/broadcasts/new          ≤ 180 KB  (Tiptap editor dominant)
- *   /admin/broadcasts               ≤ 120 KB  (queue list table)
- *   /admin/broadcasts/[id]          ≤ 100 KB  (detail panel)
- *   /portal/benefits/eblast         ≤  80 KB  (member quota dashboard)
- *   /unsubscribe/[token]            ≤  30 KB  (server-rendered, near-zero JS)
+ * Per-route ceilings:
+ *   F7 (perf.md CHK038):
+ *     /portal/broadcasts/new          ≤ 180 KB  (Tiptap editor dominant)
+ *     /admin/broadcasts               ≤ 120 KB  (queue list table)
+ *     /admin/broadcasts/[id]          ≤ 100 KB  (detail panel)
+ *     /portal/benefits/eblast         ≤  80 KB  (member quota dashboard)
+ *     /unsubscribe/[token]            ≤  30 KB  (server-rendered, near-zero JS)
+ *   F8 (Phase 9 / T255 — initial ceilings derived from F7 sibling
+ *   surfaces; tightened in Phase 10 after live measurement against
+ *   Vercel Speed Insights):
+ *     /admin/renewals                 ≤ 150 KB  (TanStack Table v8 pipeline)
+ *     /admin/renewals/[cycleId]       ≤ 130 KB  (cycle detail + timeline)
+ *     /admin/renewals/tasks           ≤ 130 KB  (escalation queue + dialogs)
+ *     /admin/renewals/tier-upgrades   ≤ 120 KB  (tier-upgrade queue)
+ *     /portal/renewal/[memberId]      ≤ 100 KB  (member self-service confirm)
+ *     /portal/preferences/renewals    ≤  60 KB  (preferences toggle only)
  *
  * The script is intentionally fail-soft when `.next/` is absent (e.g.
  * before the build runs in dev branches) so it can be added to a
@@ -32,11 +42,19 @@ interface RouteBudget {
 }
 
 const BUDGETS: ReadonlyArray<RouteBudget> = [
+  // --- F7 broadcasts ---------------------------------------------------
   { route: '/portal/broadcasts/new', maxKb: 180 },
   { route: '/admin/broadcasts', maxKb: 120 },
   { route: '/admin/broadcasts/[id]', maxKb: 100 },
   { route: '/portal/benefits/eblast', maxKb: 80 },
   { route: '/unsubscribe/[token]', maxKb: 30 },
+  // --- F8 renewals (Phase 9 / T255) ------------------------------------
+  { route: '/admin/renewals', maxKb: 150 },
+  { route: '/admin/renewals/[cycleId]', maxKb: 130 },
+  { route: '/admin/renewals/tasks', maxKb: 130 },
+  { route: '/admin/renewals/tier-upgrades', maxKb: 120 },
+  { route: '/portal/renewal/[memberId]', maxKb: 100 },
+  { route: '/portal/preferences/renewals', maxKb: 60 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');

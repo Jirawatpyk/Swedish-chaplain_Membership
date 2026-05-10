@@ -292,6 +292,10 @@ export async function acceptTierUpgrade(
           requestId: input.requestId ?? null,
         },
       );
+      // Phase 9 / T231 — tier-upgrade accept volume counter
+      // (FR-039 funnel signal). Pairs with `tierUpgradeSuggestionsCreated`
+      // — dashboard ratio measures admin engagement.
+      renewalsMetrics.tierUpgradeSuggestionsAccepted(input.tenantId);
 
       if (verificationTaskId !== null) {
         await deps.auditEmitter.emitInTx(

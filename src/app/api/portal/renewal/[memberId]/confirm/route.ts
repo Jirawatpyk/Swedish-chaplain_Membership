@@ -21,9 +21,15 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
+import { renewalsMetrics } from '@/lib/metrics';
 import { requireMemberContext } from '@/lib/member-context';
 import { errorResponse, successResponse } from '@/lib/renewals-route-helpers';
-import { confirmRenewal, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  confirmRenewal,
+  makeRenewalsDeps,
+  selfServiceFailureReason,
+} from '@/modules/renewals';
 
 const BodySchema = z.object({
   cycleId: z.string().uuid(),
@@ -88,19 +94,45 @@ export async function POST(
   const deps = makeRenewalsDeps(ctx.tenant.slug);
 
   try {
-    const result = await confirmRenewal(deps, {
-      tenantId: ctx.tenant.slug,
-      cycleId: parsed.data.cycleId,
-      memberId: urlMemberId,
-      ...(parsed.data.newPlanId !== undefined
-        ? { newPlanId: parsed.data.newPlanId }
-        : {}),
-      planYear: parsed.data.planYear,
-      actorUserId: ctx.current.user.id,
-      actorRole: 'member',
-      requestId: ctx.requestId,
-      correlationId,
-    });
+    // Phase 9 / T232 — `member_self_service_renewal` OTel root span
+    // wrapping the confirm-renewal use-case. The TTFB < 600ms +
+    // confirm p95 < 1.2s budgets per spec.md FR-046 / SC are bound
+    // to this span's histogram.
+    const result = await withActiveSpan(
+      renewalsTracer(),
+      'member_self_service_renewal',
+      {
+        'portal.renewal.tenant_id': ctx.tenant.slug,
+        'portal.renewal.has_plan_change':
+          parsed.data.newPlanId !== undefined,
+      },
+      () =>
+        confirmRenewal(deps, {
+          tenantId: ctx.tenant.slug,
+          cycleId: parsed.data.cycleId,
+          memberId: urlMemberId,
+          ...(parsed.data.newPlanId !== undefined
+            ? { newPlanId: parsed.data.newPlanId }
+            : {}),
+          planYear: parsed.data.planYear,
+          actorUserId: ctx.current.user.id,
+          actorRole: 'member',
+          requestId: ctx.requestId,
+          correlationId,
+        }),
+    );
+
+    // Phase 9 / T231 — emit per-tenant failure counter for FR-046
+    // conversion-funnel dashboard. The success counter is emitted
+    // inside confirm-renewal use-case (post-tx); the failure counter
+    // lives at the route boundary because the use-case does not
+    // have a "global try/catch -> failure metric" path.
+    if (!result.ok) {
+      renewalsMetrics.selfServiceFailed(
+        ctx.tenant.slug,
+        selfServiceFailureReason(result.error),
+      );
+    }
 
     if (!result.ok) {
       switch (result.error.kind) {

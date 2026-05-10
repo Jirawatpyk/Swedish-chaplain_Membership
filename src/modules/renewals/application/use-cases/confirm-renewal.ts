@@ -46,6 +46,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
@@ -362,6 +363,14 @@ export async function confirmRenewal(
       throw e;
     }
 
+    // Phase 9 / T231 — business-volume counter (US3 conversion funnel).
+    // Fires on the success leg of confirm-renewal — the F4 invoice has
+    // been created and linked, the audit row is committed inside the
+    // same tx. Member's actual payment outcome is tracked separately
+    // by F5 metrics; this counter answers "how many members reached
+    // the pay-url" which is the F8-side conversion signal.
+    renewalsMetrics.selfServiceCompleted(input.tenantId);
+
     return ok({
       invoiceId: invoiceResult.invoiceId,
       invoiceNumber: invoiceResult.invoiceNumber,
@@ -380,4 +389,38 @@ function mapInvoiceError(
     errorCode: result.errorCode,
     detail: result.detail,
   });
+}
+
+/**
+ * Phase 9 / T231 — caller helper for the per-tenant failure counter.
+ * Confirm-renewal route handlers translate `ConfirmRenewalError.kind`
+ * to a bounded `reason` label before calling
+ * `renewalsMetrics.selfServiceFailed`. Exported here so the route
+ * + its tests share one canonical mapping (catches dashboard
+ * cardinality drift if a new error variant adds without a label).
+ */
+export function selfServiceFailureReason(
+  err: ConfirmRenewalError,
+): string {
+  switch (err.kind) {
+    case 'invoice_creation_failed':
+      return 'f4_invoice_create_failed';
+    case 'cycle_not_found':
+    case 'cycle_not_payable':
+      return 'cycle_terminal';
+    case 'plan_not_found':
+    case 'plan_inactive':
+      return 'plan_inactive';
+    case 'invalid_input':
+      return 'invalid_input';
+    case 'cross_member_probe':
+      return 'cross_member';
+    case 'server_error':
+      return 'server_error';
+    default: {
+      const _exhaustive: never = err;
+      void _exhaustive;
+      return 'unknown';
+    }
+  }
 }

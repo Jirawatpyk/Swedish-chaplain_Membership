@@ -1089,6 +1089,27 @@ F8 ships dark behind `FEATURE_F8_RENEWALS=false` until F9 admin shell lands. All
 | `renewals.pipeline.row_count` | gauge | `tenant_id`, `urgency_band` | per-load summary | — |
 | `renewals.pipeline.lapsed_tab_visit_total` | counter | `tenant_id` | route handler | — |
 
+#### 23.1.1.b Phase 9 / T231 — business-volume counters
+
+These counters power the ops dashboard view of "what F8 actually did today". Distinct from operational/incident counters above; these feed the SLO panels for FR-046 + FR-029 + FR-037.
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `renewals_reminders_sent_total` | counter | `tier_bucket` (5-enum), `offset_day` (~6-enum) | `dispatch-one-cycle.ts` success path | FR-010 |
+| `renewals_reminders_skipped_total` | counter | `reason` (FR-012 SkipReason union, ~10-enum) | `dispatch-one-cycle.ts:emitSkipAudit` | FR-012 |
+| `renewals_reminders_failed_total` | counter | `reason` (gateway error kind, ~5-enum) | `dispatch-one-cycle.ts` failure path | FR-010a |
+| `renewals_self_service_completed_total` | counter | `tenant` | `confirm-renewal.ts` success | US3 |
+| `renewals_self_service_failed_total` | counter | `tenant`, `reason` (~6-enum from `selfServiceFailureReason`) | `/api/portal/renewal/[memberId]/confirm/route.ts` | US3 |
+| `at_risk_scores_recomputed_total` | counter | `tenant` | `compute-at-risk-score.ts` | FR-029 |
+| `at_risk_threshold_crossings_total` | counter | `tenant`, `from_band`, `to_band` (4 × 4 = 16) | `compute-at-risk-score.ts` band-cross | FR-031 |
+| `tier_upgrade_suggestions_created_total` | counter | `tenant`, `target_tier` (5-enum) | `evaluate-tier-upgrade.ts` insert path | FR-037 |
+| `tier_upgrade_suggestions_accepted_total` | counter | `tenant` | `accept-tier-upgrade.ts` | FR-039 |
+| `renewals_cycles_active` | observable gauge | `tenant` | `renewalsMetrics.observeCycleStateGauge('active', …)` | FR-046 |
+| `renewals_cycles_in_grace` | observable gauge | `tenant` | `renewalsMetrics.observeCycleStateGauge('in_grace', …)` | FR-004 |
+| `renewals_cycles_lapsed_total` | observable gauge | `tenant` | `renewalsMetrics.observeCycleStateGauge('lapsed_total', …)` | FR-007a |
+
+**Cardinality hygiene**: every label is a bounded enum or small-cardinality string. NEVER use member-id / email / IP as a label — those belong in traces + logs, not metrics.
+
 #### 23.1.2 At-risk widget + recompute
 
 | Metric | Type | Labels | Source | SLO ref |

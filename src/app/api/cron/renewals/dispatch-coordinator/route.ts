@@ -28,13 +28,78 @@
  * does NOT retry-storm a dark-launch period.
  */
 import { NextResponse, type NextRequest } from 'next/server';
+import { sql } from 'drizzle-orm';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { db, runInTenant } from '@/lib/db';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { renewalsMetrics } from '@/lib/metrics';
+import { asTenantContext } from '@/modules/tenants';
 import { makeRenewalsDeps } from '@/modules/renewals';
+
+/**
+ * Phase 9 / T231 + Cycle-state observable gauge wiring.
+ *
+ * Aggregates `renewal_cycles` row counts by state per tenant and
+ * emits to the `renewalsMetrics.observeCycleStateGauge` map. Runs
+ * inside the daily dispatch coordinator (once per day per tenant —
+ * sufficient cadence for SLO panels). Failure swallowed via try/
+ * catch — gauge observation must NEVER block the cron pass.
+ *
+ * Cardinality bound: 3 states × small tenant count.
+ */
+async function observeCycleStateGaugesForTenant(
+  tenantId: string,
+): Promise<void> {
+  try {
+    const ctx = asTenantContext(tenantId);
+    type Row = { active: number; in_grace: number; lapsed_total: number };
+    const rows = await runInTenant<ReadonlyArray<Row>>(ctx, async (tx) => {
+      const result = await tx.execute(sql`
+        SELECT
+          COUNT(*) FILTER (
+            WHERE status IN ('upcoming','reminded','awaiting_payment','pending_admin_reactivation')
+          )::int AS active,
+          COUNT(*) FILTER (
+            WHERE status = 'awaiting_payment' AND expires_at < NOW()
+          )::int AS in_grace,
+          COUNT(*) FILTER (WHERE status = 'lapsed')::int AS lapsed_total
+        FROM renewal_cycles
+      `);
+      // Drizzle's postgres-js driver returns the rows array directly.
+      // Cast through `unknown` because the helper-level Row type is
+      // narrower than the driver's untyped rowset.
+      return (result as unknown as ReadonlyArray<Row>) ?? [];
+    });
+    const row = rows[0];
+    if (!row) return;
+    renewalsMetrics.observeCycleStateGauge(tenantId, 'active', row.active);
+    renewalsMetrics.observeCycleStateGauge(
+      tenantId,
+      'in_grace',
+      row.in_grace,
+    );
+    renewalsMetrics.observeCycleStateGauge(
+      tenantId,
+      'lapsed_total',
+      row.lapsed_total,
+    );
+  } catch (e) {
+    // Gauge observation is best-effort — never block coordinator on
+    // a count-query glitch. Log loudly so ops can detect sustained
+    // failure (which would indicate broken aggregation queries).
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId,
+        gaugeKind: 'renewals_cycles_state',
+      },
+      'cron.renewals.coordinator.gauge_observe_failed',
+    );
+  }
+}
 
 // K12-6 (SEC-K-5) rate-limit + Upstash fail-open + audit emit on the
 // 401 path now lives in `gateCronBearerOrRespond` (`src/lib/cron-auth.ts`).
@@ -180,6 +245,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!env.features.f8Renewals) {
     return NextResponse.json(
       { skipped: true, reason: 'feature_flag_disabled' },
+      { status: 200 },
+    );
+  }
+
+  // Phase 9 / T241 — READ_ONLY_MODE short-circuit. Mirrors the kill-switch
+  // contract: 200 + skipped, no coordinator-level audit (the per-cycle
+  // `renewal_reminder_deferred_read_only` audit only fires for cycles that
+  // would have been dispatched, which is impossible during read-only). The
+  // proxy layer (`src/proxy.ts:220`) already returns 503 on state-changing
+  // member/admin/portal routes; coordinators run from cron-job.org which
+  // hits the external Bearer-protected route and must NOT 503 (that would
+  // trigger cron-job.org retry-storm) — so we return 200 like the
+  // feature-flag short-circuit.
+  if (env.flags.readOnlyMode) {
+    return NextResponse.json(
+      { skipped: true, reason: 'read_only_mode' },
       { status: 200 },
     );
   }
@@ -384,6 +465,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         perTenantResults,
         correlationId,
       );
+
+      // Phase 9 / Cycle-state observable gauge wire-up. Run once per
+      // successful tenant after the per-tenant fan-out completes; the
+      // helper is best-effort + never blocks the coordinator.
+      for (const result of tenantsSucceededOrSkipped) {
+        if (result.skipped) continue;
+        await observeCycleStateGaugesForTenant(result.tenant_id);
+      }
 
       logger.info(
         {

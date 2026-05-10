@@ -220,3 +220,176 @@ business categorisation, not special-category PII.
 |---|---|---|
 | 2026-04-29 | Initial F7 entry created (Batch D T034 spec scaffolding) | F7 implementation pass |
 
+---
+
+## F8 — Renewal Tracking + Smart Reminders
+
+**Status**: SHIPS DARK — branch `011-renewal-reminders`; production flag-flip
+at MVP-wide chamber go-live. This entry codifies the processing record at
+Phase 9 (cross-cutting hardening) so the `/speckit.review` privacy gate can
+verify the implementation matches the documented record before flag-flip.
+
+### Controller
+
+Same as F7 — the chamber tenant operating the Chamber-OS deployment.
+
+### Processors
+
+- **Vercel Inc.** — hosting platform (Singapore region). SCC-covered.
+- **Neon** — PostgreSQL database (Singapore region). SCC-covered.
+- **Upstash** — Redis rate-limit cache (Singapore region). SCC-covered.
+- **Resend Inc.** — transactional email API for renewal reminders + admin
+  alerts. **F8 reuses the F1+F4 transactional Resend surface** —
+  separate from the F7 Broadcasts API + suppression list. Renewal
+  reminders are operational notifications (not marketing), classified
+  under PDPA §24 paragraph 2 (necessary for performance of contract /
+  membership obligation), distinct from F7's marketing-consent regime.
+- **cron-job.org** — external HTTP scheduler triggering 5 F8 cron
+  endpoints (`/api/cron/renewals/dispatch-coordinator`,
+  `/api/cron/renewals/at-risk-recompute-coordinator`,
+  `/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`,
+  `/api/cron/renewals/reconcile-pending-reactivations-coordinator`,
+  `/api/cron/renewals/tier-upgrade-evaluate-coordinator`). Bearer-auth
+  only; no payload data. Not a processor under GDPR Art. 28 (no PII
+  flows through cron-job.org — only Bearer header + URL path).
+
+### Categories of data subjects
+
+- **Members** of the chamber tenant whose membership is in scope for
+  renewal (active, awaiting_payment, or in grace period).
+- **Lapsed members** for the post-lapse pending-reactivation flow
+  (FR-005c) — limited to the 30-day reactivation window.
+- **Admin + manager users** of the chamber tenant (auditable activity
+  on at-risk outreach + tier-upgrade actions + escalation tasks).
+
+### Categories of personal data
+
+| Field | Source | Sensitivity |
+|---|---|---|
+| `members.member_id`, `members.company_name`, `members.contact_name`, `members.primary_contact_email` | F3 (existing) | PII |
+| `members.expires_at`, `members.joined_at`, `members.last_activity_at` | F3 + F8-derived | activity metadata |
+| `members.email_unverified` (F8-added) | Resend bounce-event ingest via F1 webhook | derived signal |
+| `members.risk_score`, `members.risk_score_band`, `members.risk_score_factors` (F8-added) | F8 8-factor heuristic recompute | **systematic evaluation per PDPA §32 / GDPR Art. 22** — DPIA required |
+| `members.risk_snoozed_until` (F8-added) | Admin snooze action | operational state |
+| `renewal_cycles.frozen_plan_price_thb`, `period_from`, `period_to` | F4 + F8-derived | financial metadata |
+| `renewal_reminder_events.dispatched_at`, `step_id`, `recipient_email` | Resend dispatch | dispatch audit |
+| `at_risk_outreach.notes`, `channel`, `outcome` | Admin/manager outreach record | operational + free-text PII |
+| `tier_upgrade_suggestions.evidence` (turnover, paid-invoice volume) | F2 + F4 aggregates | financial signal |
+| `renewal_escalation_tasks.notes` | Admin task record | operational + free-text PII |
+
+**No special categories (Art. 9 / PDPA §26)** are processed by F8.
+
+### Purpose of processing
+
+1. **Renewal reminder dispatch** (FR-010, FR-011, FR-014) — operational
+   communication of upcoming membership expiry; lawful basis is
+   performance of contract (PDPA §24 ¶2 / GDPR Art. 6(1)(b)).
+2. **Renewal pipeline dashboard** (FR-046, SC-003) — admin oversight
+   of operational state; lawful basis is legitimate interest (chamber
+   admin function) under GDPR Art. 6(1)(f); PDPA §24 ¶3 (legitimate
+   interest of controller).
+3. **At-risk member detection** (FR-029, FR-030) — systematic evaluation
+   of natural persons. **Triggers PDPA §32 / GDPR Art. 22 obligations**:
+   the 8-factor formula is **rule-based + transparent** (no ML / black
+   box); the score is **human-reviewable** by admins; the score does
+   **not** produce automated decisions affecting members directly —
+   admin manual outreach is the only effect. Member can opt out of
+   reminders → kills score signal effectively. Lawful basis is
+   legitimate interest (member retention) under Art. 6(1)(f); the
+   transparency + opt-out mechanism + DPIA + no-automated-decision
+   structure satisfies Art. 22 constraints.
+4. **Tier upgrade suggestion** (FR-037, FR-038, FR-039) — admin-mediated
+   suggestion based on F4 paid-invoice volume + F2 declared turnover.
+   No automated effect; admin acceptance triggers a member-notification
+   email + manual verification task. Lawful basis: legitimate interest.
+5. **Escalation task queue** (FR-043, FR-044) — operational task queue
+   for admin follow-up on at-risk members. Lawful basis: legitimate
+   interest.
+
+### Recipients of personal data
+
+- **Member** of the renewing membership (recipient of reminder email
+  via Resend transactional, dispatched from `BROADCASTS_FROM_EMAIL`
+  domain).
+- **Chamber admin + manager users** (recipients of admin-pipeline view,
+  at-risk widget, tier-upgrade suggestions, escalation tasks).
+- **No third-party recipients** (no marketing list export, no analytics
+  cookie, no advertiser).
+
+### Cross-border data transfers
+
+Same as F7 — Singapore (Vercel + Neon + Upstash) under SCC + UK adequacy
+decision + Thailand PDPA §28 cross-border consent (members consent at
+membership-onboarding via F1 invitation flow). cron-job.org is EU-based
+(no PII flows; Bearer-only).
+
+### Retention periods
+
+| Data | Retention | Source |
+|---|---|---|
+| `renewal_cycles` rows (status='cancelled') | **5 years** | Constitution v1.4.0 default for non-tax-document audit |
+| `renewal_reminder_events` | **5 years** | dispatch-audit baseline |
+| `at_risk_outreach` rows | **5 years** | operational record per outreach |
+| `tier_upgrade_suggestions` rows | **5 years** | suggestion audit |
+| `renewal_escalation_tasks` rows | **5 years** | task audit |
+| `audit_log` rows for F8 events (64 event types) | **5 years** | all F8 events default 5y per `src/modules/renewals/application/ports/renewal-audit-emitter.ts` `F8_AUDIT_RETENTION_YEARS` constant |
+| `members.risk_score*` columns | **continuously recomputed weekly** — the column reflects current state only; historical scores not retained except via audit-log entries (`at_risk_score_recomputed`, `at_risk_score_threshold_crossed`) |
+
+### Technical + organisational measures (TOMs)
+
+- **Postgres RLS + FORCE on every F8 table** — Constitution Principle I
+  clause 3: `tenant_id = current_setting('app.current_tenant')` policy
+  enforced; `runInTenant(ctx, fn)` is the ONLY entry point for F8 use
+  cases. Cross-tenant integration test at
+  `tests/integration/renewals/tenant-isolation.test.ts` (50 probes ×
+  9 F8 tables) is a Review-Gate blocker.
+- **Application-layer cross-tenant probes** — every mutating F8 use-case
+  emits `renewal_cross_tenant_probe` audit on cross-tenant attempt
+  (defence-in-depth alongside RLS). Per-member analogue:
+  `renewal_cross_member_probe`.
+- **F8 RBAC matrix (FR-052a)** — admin-only mutations except
+  `manager_exception` for at-risk outreach record. Manager 403 emits
+  `f8_role_violation_blocked` audit. Defence-in-depth at route layer +
+  pinned by `tests/unit/lib/renewals-route-helpers.test.ts`.
+- **Pino redact paths** — `member.email`, `renewal_token`,
+  `renewal_link`, `RENEWAL_LINK_TOKEN_SECRET*`, `payment_method`,
+  `card.*` per FR-049. Logger-level redaction; PII never reaches
+  log aggregator.
+- **F3 archival cascade** (Phase 10 follow-up — currently scoped at
+  Phase 9 plan) — when F3 archives a member, F8 cancels all in-flight
+  renewal cycles, escalation tasks, tier-upgrade suggestions. Audit
+  trail retained per retention; live state cleared.
+- **READ_ONLY_MODE handling** — every F8 cron coordinator + every state
+  changing F8 route returns 503 (proxy layer) or 200+skipped
+  (coordinator layer) when `READ_ONLY_MODE=true`. Disaster-recovery
+  failsafe per Constitution § Reliability.
+- **Cron-secret rotation** — see [`docs/runbooks/secret-rotation.md`](../runbooks/secret-rotation.md) §B for the dual-key rotation procedure on
+  `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` + `_FALLBACK`.
+- **Kill-switch** — `FEATURE_F8_RENEWALS=false` halts all F8 surfaces in
+  ≤30s. Granular `FEATURE_F8_AT_RISK_DISABLED=true` toggles only the
+  at-risk surfaces. Both verified in
+  `tests/integration/renewals/kill-switch-granular.test.ts`
+  (scheduled for Phase 9 follow-up).
+
+### Data subject rights — exercise procedures
+
+| Right | Procedure |
+|---|---|
+| **Right to access (Art. 15 / §30)** | Member portal `/portal/profile` + audit-log query covers all F8-derived data including `risk_score*`, renewal-cycle history, reminder dispatch log |
+| **Right to rectification (Art. 16 / §32)** | F3 admin edit covers member + contact fields; F8-derived `risk_score*` recomputes weekly (no manual edit required) |
+| **Right to erasure (Art. 17 / §33)** | F3 archive triggers F8 cascade (Phase 10) — cycles cancelled, tasks closed, suggestions dismissed, outreach records retained per audit retention with PII redacted on member-erase request |
+| **Right to restrict processing (Art. 18 / §33)** | Member can opt out of renewal reminders via `/portal/preferences/renewals` (FR-016) — sets `members.renewal_reminders_opted_out=true`, dispatcher skips |
+| **Right to data portability (Art. 20)** | F1+F2+F3 portable export covers member + plan + contact data; F8 cycle + reminder history accessible via member portal |
+| **Right to object (Art. 21)** | Same as restrict — opt-out toggle terminates reminder processing |
+| **Right not to be subject to automated decision-making (Art. 22)** | F8 at-risk score is **not** an automated decision affecting the member — score is admin-facing only; admin manual outreach is the only effect; member can opt out of reminders to remove the input data; the formula is rule-based and explicable. DPIA documents the Art. 22 analysis. |
+
+### DPO contact
+
+Same as F7.
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-05-09 | Initial F8 entry created (Phase 9 / T257) | F8 Phase 9 implementation pass |
+

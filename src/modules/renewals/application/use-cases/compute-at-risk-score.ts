@@ -35,6 +35,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
 import type { RiskBand } from '../../domain/value-objects/risk-band';
@@ -212,6 +213,10 @@ export async function computeAtRiskScore(
           requestId: input.requestId ?? null,
         },
       );
+      // Phase 9 / T231 — business-volume counter (FR-029 score-recompute
+      // dashboard). One increment per per-member score write. Tenant-
+      // scoped so dashboards can compare cross-tenant volume.
+      renewalsMetrics.atRiskScoresRecomputed(input.tenantId);
 
       // FR-031 — emit threshold-crossed only on UP transitions
       // (deterioration). Down-crossings are silent.
@@ -223,6 +228,14 @@ export async function computeAtRiskScore(
           previousBand,
           newBand,
           scoreResult.score,
+        );
+        // Phase 9 / T231 — band crossing counter (FR-031 / FR-029
+        // up-transition signal). Both labels are bounded RiskBand
+        // enum values; cardinality 4 × 4 = 16 max per tenant.
+        renewalsMetrics.atRiskThresholdCrossing(
+          input.tenantId,
+          previousBand,
+          newBand,
         );
       }
     } catch (e) {

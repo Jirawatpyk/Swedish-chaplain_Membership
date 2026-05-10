@@ -478,6 +478,7 @@ export {
 export {
   confirmRenewal,
   confirmRenewalInputSchema,
+  selfServiceFailureReason,
   type ConfirmRenewalInput,
   type ConfirmRenewalOutput,
   type ConfirmRenewalError,
@@ -685,6 +686,21 @@ export type {
   PlanCatalogEntry,
   PlanCatalogPort,
 } from './application/ports/plan-catalog-port';
+
+// --- Phase 9 / T238 — F3 archival/erasure cascade -------------------------
+// Cancel in-flight renewal cycles owned by an archived/erased member.
+// Invoked from F3's `archive-member` use-case via the
+// `RenewalsCascadePort` adapter at
+// `src/modules/members/infrastructure/adapters/renewals-cascade-adapter.ts`.
+// Reuses `renewal_cycle_cancelled` audit event with a system-actor +
+// cascade-reason discriminator (no new pgEnum value needed).
+export {
+  cancelInFlightCyclesForMember,
+  type CancelInFlightCyclesForMemberInput,
+  type CancelInFlightCyclesForMemberOutput,
+  type CancelInFlightCyclesForMemberError,
+  type RenewalsCascadeReason,
+} from './application/use-cases/cancel-in-flight-cycles-for-member';
 
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';

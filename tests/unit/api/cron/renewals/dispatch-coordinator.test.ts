@@ -15,14 +15,32 @@ vi.mock('@/lib/env', () => ({
   env: {
     cron: { secret: 'test-secret-32-bytes-long-aaaaaa' },
     features: { f8Renewals: true },
+    flags: { readOnlyMode: false },
     tenant: { slug: 'tenanta' },
     app: { baseUrl: 'http://localhost:3100' },
     log: { level: 'silent' },
+    // Phase 9 / cycle-state gauge wire-up imports `db` + `runInTenant`
+    // from `@/lib/db` which reads `env.database.url` at module-init.
+    // Stub a synthetic value to satisfy the postgres-js init.
+    database: { url: 'postgresql://stub:stub@localhost/stub' },
     isProduction: false,
     isDevelopment: false,
     isTest: true,
     nodeEnv: 'test' as const,
   },
+}));
+
+// Phase 9 / cycle-state gauge — stub @/lib/db so the
+// `observeCycleStateGaugesForTenant` helper's one-off COUNT(*) query
+// doesn't require real Neon. The helper swallows errors via try/catch
+// so this is belt-and-suspenders; explicit stubs keep test output clean.
+vi.mock('@/lib/db', () => ({
+  db: { execute: vi.fn(async () => []) },
+  runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
+    fn({ execute: vi.fn(async () => []) } as unknown),
+}));
+vi.mock('@/modules/tenants', () => ({
+  asTenantContext: (slug: string) => ({ slug }),
 }));
 
 const auditEmitMock = vi.hoisted(() =>
@@ -177,6 +195,26 @@ describe('cron dispatch-coordinator route (T103)', () => {
       expect(auditEmitMock).not.toHaveBeenCalled();
     } finally {
       env.features.f8Renewals = true;
+    }
+  });
+
+  it('Phase 9 / T241 — 200 + skipped on READ_ONLY_MODE=true (no audit, no fan-out)', async () => {
+    const env = (await import('@/lib/env')).env as {
+      flags: { readOnlyMode: boolean };
+    };
+    env.flags.readOnlyMode = true;
+    try {
+      const res = await POST(makeRequest(VALID_AUTH));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.skipped).toBe(true);
+      expect(body.reason).toBe('read_only_mode');
+      // Mirrors kill-switch contract: no fan-out, no audit emit at the
+      // coordinator level. cron-job.org sees 200 → no retry-storm.
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(auditEmitMock).not.toHaveBeenCalled();
+    } finally {
+      env.flags.readOnlyMode = false;
     }
   });
 

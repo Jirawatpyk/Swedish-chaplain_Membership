@@ -154,6 +154,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 200 },
     );
   }
+  // Phase 9 / T241 — READ_ONLY_MODE short-circuit (200 + skipped, no
+  // audit) so cron-job.org does not retry-storm during maintenance.
+  // See dispatch-coordinator for the full rationale.
+  if (env.flags.readOnlyMode) {
+    return NextResponse.json(
+      { skipped: true, reason: 'read_only_mode' },
+      { status: 200 },
+    );
+  }
   if (env.features.f8AtRiskDisabled) {
     return NextResponse.json(
       { skipped: true, reason: 'at_risk_disabled' },

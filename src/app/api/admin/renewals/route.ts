@@ -12,6 +12,7 @@ import { type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   errorResponse,
@@ -125,7 +126,19 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    const result = await loadPipeline(deps, input);
+    // Phase 9 / T232 — `admin_pipeline_load` OTel root span. Wraps the
+    // `loadPipeline` use-case so the SC-003 p95 < 500ms budget is
+    // measurable per-tenant on the OTel histogram bound to this span.
+    const result = await withActiveSpan(
+      renewalsTracer(),
+      'admin_pipeline_load',
+      {
+        'admin.renewals.tier': parsed.data.tier ?? 'all',
+        'admin.renewals.urgency': parsed.data.urgency ?? 'all',
+        'admin.renewals.tenant_id': tenantCtx.slug,
+      },
+      () => loadPipeline(deps, input),
+    );
     if (!result.ok) {
       return errorResponse({
         status: 400,
