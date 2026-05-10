@@ -229,6 +229,46 @@ export async function verifyRenewalLinkToken(
     });
   }
 
+  // ---- PR #24 Round 10 — pre-consume gate runs BEFORE the cycle-status
+  // check so EVERY verify-success path (both `success` and
+  // `cycle_already_completed`) passes through the gate. Round 9 placed
+  // the gate AFTER the CHK033 early-return, which silently broke the
+  // idempotent UX: a click on an already-completed cycle bypassed the
+  // gate, the route's `resolvedUserId` capture never ran, and the
+  // post-verify defensive null-check redirected the member to the
+  // sign-in page instead of the "already complete" page. Moving the
+  // gate up here lets the route resolve userId for both outcomes; the
+  // CHK033 invariant ("do NOT consume the token on already-completed
+  // path") is preserved because the gate does not call markConsumed —
+  // only the explicit step further below does.
+  //
+  // Caller-supplied predicate runs AFTER structural verification but
+  // BEFORE markConsumed so the token stays valid if the gate denies
+  // (e.g. linked user is disabled). We emit the same generic
+  // 'member_not_found_in_tenant' reason the route would have surfaced
+  // anyway — caller logs the real reason privately. Token is NOT
+  // consumed; admin can re-issue or member can retry after the
+  // underlying issue is fixed.
+  if (preConsumeGate !== undefined) {
+    const gateResult = await preConsumeGate({
+      memberId: payload.mid,
+      cycleId: payload.cid,
+    });
+    if (gateResult === 'block') {
+      await emitTokenInvalid(
+        deps,
+        tenantId,
+        input,
+        'member_not_found_in_tenant',
+        tokenSha256,
+      );
+      return err({
+        kind: 'invalid_token',
+        reason: 'member_not_found_in_tenant',
+      });
+    }
+  }
+
   // ---- CHK033 race window: token verified but cycle already completed
   // (T-30 fired after T-90 closed the cycle). Idempotent no-op response;
   // do NOT consume the token (let repeated clicks within TTL keep
@@ -266,33 +306,6 @@ export async function verifyRenewalLinkToken(
       cycleId: payload.cid,
       verifiedWith,
     });
-  }
-
-  // ---- PR #24 Round 9 — pre-consume gate. Caller-supplied predicate
-  // runs AFTER structural verification but BEFORE markConsumed so the
-  // token stays valid if the gate denies (e.g. linked user is disabled).
-  // We emit the same generic 'member_not_found_in_tenant' reason the
-  // route would have surfaced anyway — caller logs the real reason
-  // privately. Token is NOT consumed; admin can re-issue or member can
-  // retry after the underlying issue is fixed.
-  if (preConsumeGate !== undefined) {
-    const gateResult = await preConsumeGate({
-      memberId: payload.mid,
-      cycleId: payload.cid,
-    });
-    if (gateResult === 'block') {
-      await emitTokenInvalid(
-        deps,
-        tenantId,
-        input,
-        'member_not_found_in_tenant',
-        tokenSha256,
-      );
-      return err({
-        kind: 'invalid_token',
-        reason: 'member_not_found_in_tenant',
-      });
-    }
   }
 
   // ---- Step 6 + 8: atomic mark consumed (replay detection via PK).
