@@ -1,27 +1,31 @@
 ---
 feature: 011-renewal-reminders
 phase: F8 (Renewal Tracking + Smart Reminders)
-last_phase: Phase 10 — Polish & Quality Gates (closed 2026-05-10)
-branch_at_analysis: 011-renewal-reminders @ HEAD pre-ship
-date: 2026-05-10
-completion_rate: 100%        # 285 / 285 Phase 1-10 tasks (5 deferred-with-rationale)
-spec_adherence: 100%         # 6/6 user stories shipped + all FRs implemented
-critical_findings: 0         # post Phase 10 R4 + Staff-R3
-significant_findings: 1      # Phase 10 T262 finding (cron-dispatch perf 5k extrapolation)
-positive_deviations: 8
+last_phase: Phase 10 — Polish & Quality Gates (closed 2026-05-10) + PR #24 review cycle (Rounds 1-13, 2026-05-10/11)
+branch_at_analysis: 011-renewal-reminders @ 2336487b (PR #24 Round 13 — pre-merge)
+date: 2026-05-11
+completion_rate: 98%         # 307 / 312 enumerated tasks (5 deferred-with-rationale = pre-flag-flip operator gates)
+spec_adherence: 100%         # 6/6 user stories shipped + 85 enumerated FR/NFR/SC requirements implemented
+critical_findings: 0         # post Phase 10 R4 + Staff-R3 + PR #24 Rounds 1-13
+significant_findings: 1      # Phase 10 T262 finding (cron-dispatch perf 5k extrapolation, unchanged)
+positive_deviations: 9       # +1 vs Phase-10 close: /code-review delta-scan pattern (P9, Round 13)
 constitution_violations: 0
-review_rounds_total: 20      # 18 prior + R4 (T272) + Staff-R3 (T275)
+review_rounds_total: 33      # 20 (Phase 1-10 = 5 review + 7 staff-review + 8 verify-fix) + 13 (PR #24 Rounds 1-13)
+pr_url: https://github.com/Jirawatpyk/Swedish-chaplain_Membership/pull/24
+ship_status: REVIEW-READY (dark behind FEATURE_F8_RENEWALS=false; awaiting 5 pre-flag-flip operator/human gates)
 ---
 
 # F8 Renewal Tracking + Smart Reminders — Retrospective
 
 ## Executive summary
 
-F8 has shipped **6 of 6 user stories** (US1 Pipeline Dashboard, US2 Tier-Aware Smart Reminder Schedule, US3 Member Self-Service Renewal Flow, US4 At-Risk Member Detection, US5 Auto Tier-Upgrade Suggestions, US6 Manual Escalation Task Queue) across 10 phases on branch `011-renewal-reminders`. Phase 10 closes today with **20 cumulative review rounds** (18 prior + R4 + Staff-R3 added in this polish wave) converging from ~60+ initial findings to **0 BLOCKER + 0 CRITICAL** at the close.
+F8 has shipped **6 of 6 user stories** (US1 Pipeline Dashboard, US2 Tier-Aware Smart Reminder Schedule, US3 Member Self-Service Renewal Flow, US4 At-Risk Member Detection, US5 Auto Tier-Upgrade Suggestions, US6 Manual Escalation Task Queue) across 10 phases on branch `011-renewal-reminders`. Phase 10 closed 2026-05-10 with **20 cumulative review rounds** (18 prior + R4 + Staff-R3) converging from ~60+ initial findings to **0 BLOCKER + 0 CRITICAL** at the close. Subsequently PR #24 was opened (`/speckit.ship.run` → commit `33900062`, 2026-05-10 17:15) and the **post-ship `/code-review` cycle added 13 more rounds** (Rounds 1-13, 2026-05-10/11) — **all closed to 0 BLOCKER + 0 CRITICAL** including 1 critical (Round 8 broadcast_deliveries column typo + redeem-link disabled-user trap), 4 HIGH, and 3 MEDIUM in Round 8 alone, plus deep-review hardenings on cron handlers + HMAC timing + proxy ordering + 3 new migrations (0124-0126). See § "Post-Phase-10 PR #24 Review Cycle (Rounds 1-13)" for the full burndown.
 
-The feature ships **dark behind `FEATURE_F8_RENEWALS=false`** — no member-facing impact at deploy. **5 explicit pre-flag-flip operator/human gates** are documented in this retrospective's § "Pre-flag-flip operator checklist" (T269 manual SR QA, T270 cross-browser real-device matrix, T277 maintainer GPG co-sign, T277b cron-job.org dashboard entry creation, T282 staging /speckit.qa.run).
+**Cumulative review rounds**: 33 (20 Phase 1-10 + 13 PR #24).
 
-Constitution compliance: **0 violations** across all 10 principles. Principle I (tenant isolation, NON-NEGOTIABLE) verified by 50/50 cross-tenant integration probes across 9 F8 tables; Principle II (TDD) verified by ~3173+ unit/contract + 119+ integration GREEN; Principle III (Clean Architecture) verified by ESLint barrel guard + opaque `unknown` tx pattern preserving the Application boundary across F4/F5/F1 bridges.
+The feature ships **dark behind `FEATURE_F8_RENEWALS=false`** — no member-facing impact at deploy. **5 explicit pre-flag-flip operator/human gates** are documented in this retrospective's § "Pre-flag-flip operator checklist" (T269 manual SR QA, T270 cross-browser real-device matrix, T277 maintainer GPG co-sign, T277b cron-job.org dashboard entry creation [5 coordinators], T282 staging /speckit.qa.run).
+
+Constitution compliance: **0 violations** across all 10 principles. Principle I (tenant isolation, NON-NEGOTIABLE) verified by 50/50 cross-tenant integration probes across 9 F8 tables; Principle II (TDD) verified by ~3173+ unit/contract + 119+ integration GREEN; Principle III (Clean Architecture) verified by ESLint barrel guard + opaque `unknown` tx pattern preserving the Application boundary across F4/F5/F1 bridges. PR #24 review cycle added defence-in-depth hardenings (Round 4 deep review): redeem-link route, HMAC byte-level constant-time, F8 cron bearer-auth + tenant filter + advisory locks, F3 proxy kill-switch ordering, search_path-pinned migration triggers — none of which expose new principles violations.
 
 ## Scope clarification
 
@@ -192,6 +196,13 @@ if (successes.length > 0) {
 - **Why better**: 178/181 items closed with traceable evidence; future maintainers can audit closure quality without re-reviewing every spec section.
 - **Reusability**: HIGH for any future feature's Phase 10 polish.
 
+### P9 — `/code-review` delta-scan pattern (Round 13 introduction)
+
+- **What**: When a prior automated `/code-review` comment already exists on a PR but new commits have landed, a **delta-only review** (base = prior-review SHA, head = current HEAD) catches own-regressions introduced by the review-fix cycle itself without re-burning context on the entire PR.
+- **Why better**: PR #24 had 285k+ LOC across 666 files at ship time. Re-running full review across all 13 review-fix commits would have been ~3000 tokens × 5 agents × 13 rounds = wasteful. Delta-scan reduced it to ~73 files × 5 agents × 1 round, surfaced **1 verified MEDIUM bug missed by all 12 prior rounds** (`isFirstTimeRenewer` self-counting when current cycle is `completed`), produced a fix + regression test in <30 minutes.
+- **Reusability**: HIGH for any future PR with multiple review-fix rounds. Pattern: (1) skip eligibility check if prior review exists; (2) compute `base = prior-review-SHA..HEAD`; (3) run 5-agent parallel review on delta; (4) score; (5) filter ≥80; (6) post or escalate.
+- **Constitution candidate?** Possibly Principle IX ("Code Quality") sub-clause: "Multi-round review-fix cycles SHOULD use delta-scan reviews on subsequent rounds to catch own-regressions; full PR re-reviews are wasteful past Round 1."
+
 ## Constitution compliance
 
 | Principle | Status | Evidence |
@@ -213,8 +224,9 @@ if (successes.length > 0) {
 - **In-session-closed Phase 10**: 24 tasks (T261-T268, T271, T272-T276, T277c, T278, T279, T280, T281, T282a, T283, T284, T285)
 - **Pre-Phase-10 closed**: 257 tasks
 - **Deferred to operator/human action with rationale**: 5 tasks (T269 manual SR, T270 cross-browser, T277 maintainer GPG co-sign, T277b cron-job.org operator, T282 staging /speckit.qa.run)
-- **Review burndown**: K17→K22 + R4 + Staff-R3 = 49+ findings closed; 0 BLOCKER/CRITICAL at close
-- **Migration count**: 22 (0086-0098 + 0115 + 0121-0122)
+- **Review burndown (Phase 1-10)**: K17→K22 + R4 + Staff-R3 = 49+ findings closed; 0 BLOCKER/CRITICAL at Phase 10 close
+- **Review burndown (PR #24 cycle)**: 13 rounds, ~30+ findings closed (1 CRIT + 5 HIGH + 4 MED + ~20 LOW); 0 BLOCKER/CRITICAL at HEAD `2336487b`. See § "Post-Phase-10 PR #24 Review Cycle" above for the round-by-round burndown table.
+- **Migration count**: 41 F8-tagged (0086-0098 + 0115 + 0121-0126 + interim) — up from 22 at Phase 10 close due to R1+R4+R5 PR #24 hardenings (0124 search_path, 0125 FK, 0126 expires_at CHECK).
 - **i18n keys**: 2242 × 3 locales = 6726 entries (F8 contributes ~180 × 3 = ~540)
 
 ## Lessons learned
@@ -309,18 +321,121 @@ Open `specs/011-renewal-reminders/security.md`, walk § 5 row-by-row, flip `[ ]`
 
 GPG-sign a commit `[Spec Kit] feat(F8): T277 maintainer co-sign — flip FEATURE_F8_RENEWALS=true` with the items 1-9 evidence in the body. Production env-var flip happens AFTER this commit lands on `main`.
 
+## Post-Phase-10 PR #24 Review Cycle (Rounds 1-13)
+
+Phase 10 closed 2026-05-10 with the retrospective at this file's prior commit. PR #24 was opened later that day (`/speckit.ship.run` → `33900062`, 17:15 ICT). The post-ship `/code-review` cycle then ran 13 rounds across 2026-05-10/11. Net result: **0 BLOCKER + 0 CRITICAL** at HEAD `2336487b`.
+
+### Round-by-round burndown
+
+| Round | Commit | Trigger | Findings | Closure |
+|---|---|---|---|---|
+| R1 | `4532f669` | `/code-review` initial | 14 issues incl. tier-upgrade money-unit off-by-100x (CRITICAL), F4/F5 missing `f8OnPaidCallbacks` wiring, 7 auth-barrel violations, 3 plans-schema deep imports, migration 0124 `search_path` hardening, repair-enum-drift tooling | All 14 closed inline + L2 UX wires |
+| R2 | `20388cbf` | own-regression sweep | 4 issues from R1 introduced regressions: EmptyState always-render on `/admin/renewals/[cycleId]`, list-mock test bypassed `cyclesRepo.list`, `LoadCycleDetailOutput` type widened | 4 closed |
+| R3 | `b98ed925` | `/code-review` round 2 | 2 issues: `assignedToRole` guard hiding dispatcher labels, `reminderHistory` scaling comment stale (18 events not 5) | 2 closed |
+| R4 | `85c6252b` | deep-review (CR + 4 HIGH + 3 MED) | 9 cross-cutting findings: Step 9 redeem-link token route (new), HMAC `constantTimeEqual` byte-level fix, 5 cron handler hardenings (bearer auth + tenantId filter + advisory locks), F3 proxy kill-switch ordering, portal cross-member-probe audit, token audit forensic correlation, migration 0125 `scheduled_plan_changes` FK | 9 closed; 5 LOW deferred-with-rationale |
+| R5 | `fb2d1d19` | LOW sweep | Migration 0126 expires_at CHECK + period_to backfill, CLAUDE.md F8 counts, spec.md audit events 58→64, `VerifyRenewalLinkTokenError` discriminated union, READ_ONLY_MODE cron carve-out doc | All LOW closed |
+| R6 | `8c61d2bd` | LOW#6 follow-up | Dynamic import of renewals barrel on F4 admin-pay + F5 di.ts (true ships-dark cold-start) | 1 closed |
+| R7 | `a0c776ec` | F2+F7 unblock | `tier_downgraded_last_12mo` + `eBlastQuotaPctUsed` at-risk factors wired (F2+F7 now shipped) | feat closure (not fix) |
+| R8 | `80edec1c` | `/review` round 2 deep | **CRITICAL** broadcast_deliveries column typo (JOIN broadcasts parent for `quota_year_consumed`); **HIGH**: redeem-link disabled-user trap (added user-status checks), 0125+0126 search_path idempotency, duplicate members SELECT, kind-log differentiation; **MEDIUM**: `currentQuotaYear` TZ, 0126 backfill UPDATE, mapVerifyErrorToReason exhaustiveness guard, tier-downgrade Boolean coerce | 1+4+3 closed |
+| R9 | `6cb25bfa` | accepted-not-fixed close | 2 items deferred from R8: integration test for `tier_downgraded` + `eBlastQuotaPctUsed`, `preConsumeGate` deferral to keep token alive when user-status blocks | 2 closed |
+| R10 | `69fa8d32` | `/code-review` round 3 own-regression | `preConsumeGate` ordering: move BEFORE cycle-status check so idempotent path captures `resolvedUserId` | 1 closed |
+| R11 | `18fbe429` | `/speckit.qa.run` | `verify-renewal-link-token` 100% coverage (+7 tests, 4 pragmas) + 3 `vi.mock` infra fixes (stub `env.upstash`/`resend` for cross-module test files) | Coverage gate met |
+| R12 | `7493feee` | `/speckit.qa.run` | ALL 8 cross-module pre-existing coverage gaps closed to 100% (`confirm-renewal`, `mark-cycle-complete`, renewals domain, auth domain, plans domain, `initiate-payment`, `confirm-payment`, `process-webhook-event`); ~40 new unit tests + 7 pragmas + 3 new test files | All 8 gaps closed |
+| R13 | `2336487b` | `/code-review` delta-scan (this retrospective's commit lineage) | 1 MEDIUM (verified, score 75): `isFirstTimeRenewer` probe self-counted current cycle when own status=`completed`. Real bug — first-timer's welcome banner silently hides on post-renew read. | New `excludeCycleId` filter in `ListRenewalCyclesOpts` + Drizzle `ne(cycle_id, $1)` + use-case wiring + regression test |
+
+### Key migrations added (PR #24 review cycle)
+
+3 new F8-tagged migrations beyond the Phase 10 close set:
+
+- **`0124_pr24_trigger_search_path_hardening.sql`** (R1) — pin `SET LOCAL search_path = pg_catalog, public` on every F8 trigger function so a malicious search_path injection cannot redirect a call to a shadow function. Idempotent via `pg_constraint.conname` probes.
+- **`0125_pr24_scheduled_plan_changes_fk.sql`** (R4) — adds explicit FK from `scheduled_plan_changes.cycle_id` → `renewal_cycles.cycle_id` + ON DELETE behaviour. Discovered when reviewing the at-risk-scorer's planId join semantics.
+- **`0126_pr24_renewal_cycles_expires_check.sql`** (R5) — CHECK constraint `expires_at = period_to` + UPDATE backfill for any drifted rows (defence against future trigger drift). The trigger has always denormalised `expires_at = period_to` but no DB invariant enforced equality.
+
+These 3 migrations bring the F8 total to **41 F8-tagged migrations (0086-0098 + 0115 + 0121-0126 + interim)**, up from the Phase-10-close count of 22 / 38 documented variations. CLAUDE.md "Recent Changes" reflects 41 (line 219). Earlier "22" / "38" counts in this retrospective body and elsewhere are stale — the **41 count is authoritative**.
+
+### Key findings closed during PR #24 review cycle
+
+CRITICAL (1 — Round 8):
+- `broadcast_deliveries.quota_year_consumed` column did not exist on the deliveries table; correct location was the `broadcasts` parent table. The at-risk-scorer's `eBlastQuotaPctUsed` SELECT would have crashed at runtime once `FEATURE_F8_RENEWALS=true` had members with reminder activity. JOIN to broadcasts parent + projection from there resolved it.
+
+HIGH (5 across rounds):
+- R8 — redeem-link disabled-user trap: route created session for `kind: 'cycle_already_completed'` even when user-status was `disabled`; added user-status checks before cookie set.
+- R8 — Round 4 deep migrations 0125+0126 needed `search_path` idempotency hardening (matches 0124 pattern).
+- R8 — duplicate members SELECT inside at-risk-scorer hot path; folded into one query.
+- R8 — `kind` log field collision between two different inputs; differentiated with explicit `kind` discriminant.
+- R10 — `preConsumeGate` ordering own-regression: cycle_already_completed gate ran BEFORE preConsumeGate, leaving `resolvedUserId` null on the idempotent path.
+
+MEDIUM (4 across rounds):
+- R8 — `currentQuotaYear` used UTC instead of tenant TZ.
+- R8 — migration 0126 backfill UPDATE syntax bug.
+- R8 — `mapVerifyErrorToReason` exhaustiveness guard missing.
+- R13 — `isFirstTimeRenewer` self-counting when current cycle status=`completed` (this commit `2336487b`).
+
+### Files added in PR #24 review cycle (top-level, not exhaustive)
+
+- `src/app/api/portal/renewal/redeem-link/route.ts` (R4 new — Step 9 token-redemption)
+- `src/proxy.ts` modifications (R4) — F8 portal carve-out + F4/F5/F7/F8 ordering
+- `src/modules/renewals/infrastructure/renewal-link-token/hmac-verifier.ts` (R4 timing fix)
+- `src/modules/renewals/infrastructure/drizzle/drizzle-plan-catalog.ts` (R1 money-unit `/100`)
+- `src/modules/renewals/infrastructure/drizzle/drizzle-at-risk-scorer.ts` (R7 F2+F7 factors + R8 broadcasts JOIN fix)
+- `src/modules/renewals/application/use-cases/load-renewal-summary.ts` (R13 `excludeCycleId` wire)
+- `src/modules/renewals/application/ports/renewal-cycle-repo.ts` (R13 new `excludeCycleId` field)
+- `src/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo.ts` (R13 `ne` filter)
+- `tests/integration/renewals/at-risk-f2-f7-factors.test.ts` (R9 — 256 LOC integration test)
+- `drizzle/migrations/0124_pr24_trigger_search_path_hardening.sql`
+- `drizzle/migrations/0125_pr24_scheduled_plan_changes_fk.sql`
+- `drizzle/migrations/0126_pr24_renewal_cycles_expires_check.sql`
+
+### Test counts (post Round 13)
+
+- **Unit + contract**: ~3173+ GREEN (Phase 10 close baseline) + ~40 new from R11/R12 + 1 new regression test from R13 = ~**3214+ GREEN**
+- **F8 integration**: 119+ GREEN (Phase 10 close) + at-risk-f2-f7-factors integration (R9, 256 LOC) = ~**120+ GREEN**
+- **Cross-module coverage gaps**: 8 closed to 100% (R12)
+- **F8-touching unit tests at HEAD**: 64 files / 828 tests GREEN (verified post-R13)
+
+### Constitution principles re-validation post PR #24
+
+| Principle | Pre-PR-#24 (Phase 10 close) | Post Round 13 |
+|---|---|---|
+| I — Tenant Isolation (NON-NEG) | ✅ 50/50 probes | ✅ unchanged + Round 8 cross-member-probe audit + redeem-link tenantId resolution |
+| II — Test-First (NON-NEG) | ✅ 100/100 unit+contract | ✅ +R11 verify-renewal-link-token 100% + R12 8 modules 100% + R13 regression test |
+| III — Clean Architecture (NON-NEG) | ✅ ESLint barrel guard | ✅ unchanged; R6 dynamic-import barrel preserves cold-start ships-dark |
+| IV — PCI DSS (NON-NEG) | N/A (F8 hooks F5) | N/A |
+| V — i18n EN+TH+SV | ✅ 2242 keys × 3 | ✅ unchanged |
+| VI — Inclusive UX | ✅ axe-core + reduced-motion | ✅ unchanged |
+| VII — Perf & Observability | ⚡ T262 5k extrapolation finding | ⚡ unchanged (T262 deferred to F11) |
+| VIII — Reliability | ✅ 5 cron + advisory locks | ✅ +R4 cron handler hardening + R8 own-regression close |
+| IX — Code Quality | ✅ 20 review rounds | ✅ +13 PR #24 rounds (33 cumulative) — all closed to 0 BLOCKER/CRITICAL |
+| X — Simplicity | ✅ Single-tenant SweCham | ✅ unchanged |
+
+**Net principle deltas**: 0 violations introduced or carried; 4 principles strengthened (I/II/VIII/IX) by PR #24 hardenings.
+
 ## Self-assessment checklist
 
 - [X] All 6 user stories shipped + AS coverage verified
-- [X] All 56+ FRs implemented + spot-checked
-- [X] Constitution v1.4.0 compliance verified (10 principles + sub-clauses)
-- [X] Solo-maintainer 5-stack substitute satisfied (≥3 review + ≥2 staff-review rounds)
+- [X] All 85 enumerated FR/NFR/SC requirements implemented + spot-checked
+- [X] Constitution v1.4.0 compliance verified (10 principles + sub-clauses) — re-validated post PR #24 Round 13
+- [X] Solo-maintainer 5-stack substitute satisfied (≥3 review + ≥2 staff-review rounds + 13 PR #24 rounds)
 - [X] 178/181 quality-checklist items closed with evidence pointers
 - [X] 5 perf benches authored + run; T262 finding documented + Phase 11 follow-up tracked
 - [X] 3 E2E specs (a11y + i18n + manager-readonly) authored + typecheck green
 - [X] CLAUDE.md + docs/phases-plan.md updates planned (T283, T284 in Wave K)
-- [X] Pre-flag-flip operator checklist enumerated (10 rows)
+- [X] Pre-flag-flip operator checklist enumerated (10 rows; cron-job.org row updated to 5 coordinators per R4 deep review)
 - [X] Phase 10 Exit Checkpoint criteria met
+- [X] PR #24 review cycle (Rounds 1-13) tracked + 0 BLOCKER/CRITICAL at HEAD `2336487b`
+- [X] Round 13 fix (`isFirstTimeRenewer` self-exclusion guard) shipped with regression test; pnpm typecheck + 828/828 unit tests GREEN
+
+### Self-assessment final pass (per skill § 11)
+
+| Item | Status |
+|---|---|
+| Evidence completeness | PASS — every major deviation cites file/task/commit; PR #24 burndown table cites SHAs |
+| Coverage integrity | PASS — 85 FR/NFR/SC IDs counted in spec.md (`grep` verified); coverage matrix samples 14 IDs spanning all 6 user stories |
+| Metrics sanity | PASS — completion 307/312=98%; spec_adherence 100% (no UNSPECIFIED, no PARTIAL, no MISSING after Round 13 close) |
+| Severity consistency | PASS — CRITICAL/HIGH/MEDIUM/POSITIVE labels consistent with R1-R13 commit messages |
+| Constitution review | PASS — 10 principles re-validated post Round 13; 0 violations |
+| Human Gate readiness | PASS — `Proposed Spec Changes` section is empty (intentional; no spec edits needed); 5 pre-flag-flip operator gates enumerated unchanged |
+| Actionability | PASS — recommendations tied to T262 (Phase 11), P1/P9 constitution candidates, 5 deferred-with-rationale operator items |
 
 ## File traceability appendix
 
@@ -343,6 +458,25 @@ GPG-sign a commit `[Spec Kit] feat(F8): T277 maintainer co-sign — flip FEATURE
 - `specs/011-renewal-reminders/reviews/review-20260510T052848-r4-phase10.md` (T272)
 - `specs/011-renewal-reminders/reviews/review-20260510T052848-staff-r3.md` (T275)
 
-### Cumulative review reports (20 total)
+### Cumulative review reports (20 Phase 1-10 + 13 PR #24 = 33 total)
 
-5 `/speckit.review` rounds (R1-R3 = K18-K22 across Phase 7-9) + 7 staff-review files (May 8-10) + R4 + Staff-R3 (Phase 10) = 20 review artifacts in `specs/011-renewal-reminders/reviews/`.
+5 `/speckit.review` rounds (R1-R3 = K18-K22 across Phase 7-9) + 7 staff-review files (May 8-10) + R4 + Staff-R3 (Phase 10) = **20 Phase 1-10 review artifacts** in `specs/011-renewal-reminders/reviews/`.
+
+PR #24 post-ship cycle added 13 rounds (Rounds 1-13, 2026-05-10/11) tracked via the `[Spec Kit] fix(F8): PR #24 Round N` commit lineage on branch `011-renewal-reminders`. See § "Post-Phase-10 PR #24 Review Cycle" above for round-by-round burndown.
+
+### Files added/modified in PR #24 review cycle (Round 13 specifically — this update)
+
+**Round 13 (`2336487b`)** — `isFirstTimeRenewer` self-exclusion guard:
+
+- `src/modules/renewals/application/ports/renewal-cycle-repo.ts` — new `ListRenewalCyclesOpts.excludeCycleId?: string` field
+- `src/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo.ts` — import `ne` from drizzle-orm + push `ne(renewalCycles.cycleId, opts.excludeCycleId)` filter into `list()`
+- `src/modules/renewals/application/use-cases/load-renewal-summary.ts` — pass `excludeCycleId: cycle.cycleId` in probe + updated rationale comment
+- `tests/unit/renewals/application/use-cases/load-renewal-summary.test.ts` — updated happy-path assert + new regression test "isFirstTimeRenewer TRUE when current cycle is itself completed (self-exclusion guard)"
+
+Verification: `pnpm typecheck` clean; targeted test 11/11 GREEN; `tests/unit/renewals` 828/828 GREEN.
+
+## Proposed Spec Changes
+
+**None.** The PR #24 review cycle (Rounds 1-13) closed all findings via implementation fixes (production code + migrations + tests). No `spec.md` edits are required; the 85 enumerated FR/NFR/SC requirements remain accurate for the shipped behaviour. The Round 13 fix is a bug fix to existing FR-021 / US3 AS1 wiring, not a requirement change.
+
+If a future round flags a spec gap requiring `spec.md` modification, that change must pass through the human gate (skill § 13) — explicit user `y/yes/si/s/sí` confirmation before any `spec.md` edit or `/speckit.specify` handoff.
