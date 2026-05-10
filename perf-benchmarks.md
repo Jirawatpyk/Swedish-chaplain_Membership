@@ -135,3 +135,31 @@ member loop at the same scale.
 - F4 bridge: stubbed (production total adds F4 invoice creation + F1 rate-limit overhead)
 - SLO TTFB: <600ms · total: <1200ms (SC-005)
 - bench measures F8 server-side state-transition + audit emit; real TTFB requires HTTP-layer measurement at staging
+
+## F8 Phase 10 T264 — evaluateTierUpgrade @ 1000 members (2026-05-10T06:25:26.274Z)
+- members scanned: 999
+- suggestions created: 333 · already at target: 666 · suppressed: 0 · conflict: 0
+- cron pass: 120103ms (SLO 30000ms; strict=false)
+- per-member avg: 120.22ms
+- extrapolation to 5k: ~600517ms (linear)
+
+## F8 Phase 10 T264 — evaluateTierUpgrade @ 1000 members (2026-05-10T06:30:09.323Z)
+- members scanned: 999
+- suggestions created: 334 · already at target: 665 · suppressed: 0 · conflict: 0
+- cron pass: 97834ms (SLO 30000ms; strict=false)
+- per-member avg: 97.93ms
+- extrapolation to 5k: ~489172ms (linear)
+
+## F8 Phase 10 T264 — evaluateTierUpgrade @ 1000 members (2026-05-10T06:49:50.036Z)
+- members scanned: 999
+- suggestions created: 333 · already at target: 666 · suppressed: 0 · conflict: 0
+- cron pass: 2207ms (SLO 30000ms; strict=false)
+- per-member avg: 2.21ms
+- extrapolation to 5k: ~11035ms (linear)
+
+## F8 Phase 10 T264 — evaluateTierUpgrade @ 5000 members (2026-05-10T06:50:37.404Z)
+- members scanned: 4991
+- suggestions created: 1664 · already at target: 3327 · suppressed: 0 · conflict: 0
+- cron pass: 11377ms (SLO 30000ms; strict=true)
+- per-member avg: 2.28ms
+- extrapolation to 5k: ~11377ms (linear)

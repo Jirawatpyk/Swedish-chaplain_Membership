@@ -11,7 +11,7 @@
  * Pure Infrastructure — only `@/lib/db` + tenants barrel imports
  * (Constitution Principle III).
  */
-import { and, eq, sql, desc, isNull } from 'drizzle-orm';
+import { and, eq, sql, desc, isNull, inArray } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
@@ -494,6 +494,69 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         void isNull;
         return { items, nextCursor };
       });
+    },
+
+    async bulkGetSuppressedMembers(tx, memberIds, nowIso) {
+      // F8 Phase 10 T262 batched-write — single-RTT alternative to
+      // N-call isSuppressedForMember. Uses the partial suppressed_idx
+      // (migration 0091) for an index-only scan.
+      if (memberIds.length === 0) {
+        return new Set<string>();
+      }
+      const txDb = tx as unknown as typeof db;
+      const rows = await txDb
+        .select({ memberId: tierUpgradeSuggestions.memberId })
+        .from(tierUpgradeSuggestions)
+        .where(
+          and(
+            inArray(tierUpgradeSuggestions.memberId, [...memberIds]),
+            eq(tierUpgradeSuggestions.status, 'dismissed'),
+            sql`${tierUpgradeSuggestions.suppressedUntil} > ${nowIso}::timestamptz`,
+          ),
+        );
+      return new Set(rows.map((r) => r.memberId));
+    },
+
+    async bulkInsertOpenIfAbsent(tx, inputs) {
+      // F8 Phase 10 T262 batched-write — single multi-row INSERT
+      // ON CONFLICT DO NOTHING leveraging the
+      // tier_upgrade_suggestions_member_open_uniq partial UNIQUE index
+      // (migration 0091) so members with an existing open/pending row
+      // are silently skipped.
+      if (inputs.length === 0) {
+        return { inserted: [], conflicted: [] };
+      }
+      const txDb = tx as unknown as typeof db;
+      const inputMemberIds = inputs.map((i) => i.memberId);
+      const insertValues = inputs.map((input) => ({
+        tenantId: input.tenantId,
+        suggestionId: input.suggestionId,
+        memberId: input.memberId,
+        fromPlanId: input.fromPlanId,
+        toPlanId: input.toPlanId,
+        reasonCode: input.reasonCode,
+        evidenceJsonb: input.evidence as unknown as Record<string, unknown>,
+        status: 'open' as const,
+      }));
+      const insertedRows = await txDb
+        .insert(tierUpgradeSuggestions)
+        .values(insertValues)
+        .onConflictDoNothing({
+          // Conflict target is the partial unique index. Drizzle's
+          // onConflictDoNothing without a target argument relies on any
+          // unique constraint hitting — the only such constraint on
+          // tier_upgrade_suggestions for `(tenant_id, member_id)` is
+          // tier_upgrade_suggestions_member_open_uniq + the PK on
+          // suggestion_id (which we always generate fresh). So a
+          // conflict here ALWAYS means the partial unique fired.
+        })
+        .returning();
+      const inserted = insertedRows.map(rowToDomain);
+      const insertedMemberIds = new Set(inserted.map((s) => s.memberId));
+      const conflicted = inputMemberIds.filter(
+        (mid) => !insertedMemberIds.has(mid),
+      );
+      return { inserted, conflicted };
     },
   };
 }

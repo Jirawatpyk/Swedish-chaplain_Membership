@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, inArray, type InferInsertModel } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
+import { sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -47,9 +48,19 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const REGULAR_PLAN_ID = 'tier-perf-regular';
 const PREMIUM_PLAN_ID = 'tier-perf-premium';
-const REGULAR_FEE_MINOR = 5_000_000; // 50,000 THB
-const PREMIUM_THRESHOLD_MINOR = 10_000_000; // 100,000 THB turnover
-const PREMIUM_THRESHOLD_THB = PREMIUM_THRESHOLD_MINOR / 100;
+// Mirror the existing tier-upgrade-evaluate.test.ts seed convention
+// (line 213-218): the catalog adapter exposes
+// `minTurnoverThb := membershipPlans.minTurnoverMinorUnits` AND
+// `members.turnoverThb := raw column value` — both compared as the
+// same scale in the decision tree at evaluate-tier-upgrade.ts:124.
+// Using mismatched scales (THB vs satang) silently fails the
+// suggestion-create branch with `alreadyAtTarget=N` 100% of the time.
+const REGULAR_FEE_MINOR = 5_000_000; // 50,000 THB equivalent at the comparison scale
+const PREMIUM_THRESHOLD_MINOR = 100_000_000; // 1,000,000 THB turnover threshold
+// `members.turnoverThb` value above which a member crosses the threshold.
+// Same scale as PREMIUM_THRESHOLD_MINOR (no /100 conversion).
+const ABOVE_THRESHOLD_TURNOVER = PREMIUM_THRESHOLD_MINOR + 1;
+const BELOW_THRESHOLD_TURNOVER = Math.floor(PREMIUM_THRESHOLD_MINOR / 2);
 
 interface SeededMember {
   readonly memberId: string;
@@ -143,8 +154,8 @@ async function seedBulkCandidates(
         planId: REGULAR_PLAN_ID,
         planYear: 2026,
         turnoverThb: aboveThreshold
-          ? PREMIUM_THRESHOLD_THB + 1
-          : Math.floor(PREMIUM_THRESHOLD_THB / 2),
+          ? ABOVE_THRESHOLD_TURNOVER
+          : BELOW_THRESHOLD_TURNOVER,
       });
       contactRows.push({
         tenantId: tenant.ctx.slug,
@@ -236,11 +247,29 @@ describe.skipIf(!RUN_PERF)(
     it(`per-tenant evaluation <${PERF_SLO_MS}ms @ ${MEMBER_COUNT} members (strict=${PERF_SLO_STRICT})`, async () => {
       const deps = makeRenewalsDeps(tenant.ctx.slug);
 
+      // R4-staff F3 close + production parity: mirror the
+      // tier-upgrade-evaluate cron route at
+      // src/app/api/cron/renewals/tier-upgrade-evaluate/[tenantId]/route.ts:77-94 —
+      // open a runInTenant for advisory lock acquisition, then thread
+      // the lock-holding tx as `outerTx` so suggestion-insert + audit-
+      // emit writes share the same connection (no per-iteration
+      // runInTenant pulling separate pool connections). The unwrapped
+      // bench was measuring N×runInTenant overhead (~3-4 RTT per call)
+      // which production explicitly avoids.
       const cronStart = performance.now();
-      const result = await evaluateTierUpgrade(deps, {
-        tenantId: tenant.ctx.slug,
-        correlationId: randomUUID(),
-        pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+      const result = await runInTenant(tenant.ctx, async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:tierupgrade:'||${tenant.ctx.slug}, 0))`,
+        );
+        return await evaluateTierUpgrade(
+          deps,
+          {
+            tenantId: tenant.ctx.slug,
+            correlationId: randomUUID(),
+            pageSize: DEFAULT_TIER_UPGRADE_EVAL_PAGE_SIZE,
+          },
+          tx,
+        );
       });
       const cronDurationMs = performance.now() - cronStart;
       expect(result.ok).toBe(true);
@@ -251,6 +280,14 @@ describe.skipIf(!RUN_PERF)(
       // catalogue-with-thresholds. Members scanned should equal seed count.
       expect(out.tenantSkipped).toBeNull();
       expect(out.membersScanned).toBeGreaterThan(0);
+      // R4-staff F3 close: pin the suggestion-create branch is exercised
+      // (not just the early-exit `alreadyAtTarget` branch). Without this
+      // assertion, a broken seed convention (e.g. mismatched units between
+      // members.turnoverThb and membershipPlans.minTurnoverMinorUnits)
+      // silently let the bench measure only the no-op path. ~33% of seeded
+      // members are above-threshold; expect ≥1 actual suggestion in any
+      // realistic scenario.
+      expect(out.suggestionsCreated).toBeGreaterThan(0);
       const perMemberMs = cronDurationMs / Math.max(1, out.membersScanned);
 
       console.log(

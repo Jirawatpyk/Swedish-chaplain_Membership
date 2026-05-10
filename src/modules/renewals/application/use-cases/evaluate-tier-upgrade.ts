@@ -36,10 +36,7 @@ import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseInput } from './_lib/parse-input';
-import {
-  TierUpgradeOpenConflictError,
-  type NewTierUpgradeSuggestionInput,
-} from '../ports/tier-upgrade-suggestion-repo';
+import type { NewTierUpgradeSuggestionInput } from '../ports/tier-upgrade-suggestion-repo';
 import type { TierUpgradeEvalCandidate } from '../ports/tier-upgrade-eval-candidate-repo';
 import type { PlanCatalogEntry } from '../ports/plan-catalog-port';
 import type {
@@ -304,108 +301,184 @@ export async function evaluateTierUpgrade(
   let suppressedSkipped = 0;
   let conflictSkipped = 0;
 
+  // F8 Phase 10 T262 batched-write — collapse the per-member RTT
+  // amplification into 3 RTTs per page (bulk-suppression-check +
+  // bulk-insert + bulk-emit) regardless of page size. Pre-batched
+  // implementation issued ~5 RTTs per above-threshold member on the
+  // outerTx-threaded path (suppression check + insert + audit emit) →
+  // T264 perf bench captured 98s @ 1k members. Post-batched expected
+  // <10s @ 1k. Phase 11 follow-up: extend the same batching to
+  // dispatchRenewalCycle (T262 cron path).
+  type PageDecision = {
+    readonly candidate: import('../ports/tier-upgrade-eval-candidate-repo').TierUpgradeEvalCandidate;
+    readonly decision: NonNullable<ReturnType<typeof decideUpgrade>>;
+  };
+  const flushPage = async (
+    tx: TenantTx,
+    pageDecisions: ReadonlyArray<PageDecision>,
+    nowIso: string,
+  ): Promise<{
+    readonly suppressedSkipped: number;
+    readonly suggestionsCreated: number;
+    readonly conflictSkipped: number;
+    readonly serverError: { kind: 'server_error'; message: string } | null;
+  }> => {
+    if (pageDecisions.length === 0) {
+      return {
+        suppressedSkipped: 0,
+        suggestionsCreated: 0,
+        conflictSkipped: 0,
+        serverError: null,
+      };
+    }
+    const memberIds = pageDecisions.map((pd) => pd.candidate.memberId);
+
+    // 1 RTT — bulk suppression check.
+    const suppressedSet = await deps.tierUpgradeRepo.bulkGetSuppressedMembers(
+      tx,
+      memberIds,
+      nowIso,
+    );
+    const unsuppressed = pageDecisions.filter(
+      (pd) => !suppressedSet.has(pd.candidate.memberId),
+    );
+    const suppressedCount = pageDecisions.length - unsuppressed.length;
+    if (unsuppressed.length === 0) {
+      return {
+        suppressedSkipped: suppressedCount,
+        suggestionsCreated: 0,
+        conflictSkipped: 0,
+        serverError: null,
+      };
+    }
+
+    // 1 RTT — bulk insert ON CONFLICT DO NOTHING.
+    const insertInputs: ReadonlyArray<NewTierUpgradeSuggestionInput> =
+      unsuppressed.map((pd) => ({
+        tenantId,
+        suggestionId: deps.suggestionIdGenerator(),
+        memberId: pd.candidate.memberId,
+        fromPlanId: pd.candidate.currentPlanId,
+        toPlanId: pd.decision.toPlan.planId,
+        reasonCode: pd.decision.reasonCode,
+        evidence: pd.decision.evidence,
+      }));
+    let bulkResult: Awaited<
+      ReturnType<typeof deps.tierUpgradeRepo.bulkInsertOpenIfAbsent>
+    >;
+    try {
+      bulkResult = await deps.tierUpgradeRepo.bulkInsertOpenIfAbsent(
+        tx,
+        insertInputs,
+      );
+    } catch (e) {
+      return {
+        suppressedSkipped: suppressedCount,
+        suggestionsCreated: 0,
+        conflictSkipped: 0,
+        serverError: {
+          kind: 'server_error',
+          message: `bulk_insert_open_failed: ${(e as Error)?.message ?? 'unknown'}`,
+        },
+      };
+    }
+
+    // 1 RTT — bulk audit emit (T159b precedent on RenewalAuditEmitter).
+    if (bulkResult.inserted.length > 0) {
+      const insertedByMember = new Map(
+        bulkResult.inserted.map((s) => [s.memberId, s]),
+      );
+      const auditEvents = unsuppressed
+        .map((pd) => {
+          const inserted = insertedByMember.get(pd.candidate.memberId);
+          if (!inserted) return null;
+          return {
+            type: 'tier_upgrade_suggested' as const,
+            payload: {
+              suggestion_id: inserted.suggestionId,
+              member_id: pd.candidate.memberId as MemberId,
+              from_plan_id: pd.candidate.currentPlanId as PlanId,
+              to_plan_id: pd.decision.toPlan.planId as PlanId,
+              reason_code: pd.decision.reasonCode,
+            },
+          };
+        })
+        .filter((e): e is NonNullable<typeof e> => e !== null);
+      try {
+        await deps.auditEmitter.bulkEmitInTx(tx, auditEvents, {
+          tenantId,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId,
+          requestId: input.requestId ?? null,
+        });
+      } catch (e) {
+        return {
+          suppressedSkipped: suppressedCount,
+          suggestionsCreated: 0,
+          conflictSkipped: 0,
+          serverError: {
+            kind: 'server_error',
+            message: `bulk_emit_failed: ${(e as Error)?.message ?? 'unknown'}`,
+          },
+        };
+      }
+      // Phase 9 / T231 metrics — emit 1 counter per inserted suggestion
+      // (in-memory only; no RTT cost). Preserves the per-tier-bucket
+      // dashboard granularity from the pre-batched path.
+      for (const pd of unsuppressed) {
+        if (insertedByMember.has(pd.candidate.memberId)) {
+          renewalsMetrics.tierUpgradeSuggestionsCreated(
+            tenantId,
+            pd.decision.toPlan.renewalTierBucket,
+          );
+        }
+      }
+    }
+    return {
+      suppressedSkipped: suppressedCount,
+      suggestionsCreated: bulkResult.inserted.length,
+      conflictSkipped: bulkResult.conflicted.length,
+      serverError: null,
+    };
+  };
+
   do {
     const page = await deps.tierUpgradeEvalCandidateRepo.list(tenantId, {
       pageSize: input.pageSize,
       ...(cursor !== undefined ? { cursor } : {}),
     });
+    const pageDecisions: PageDecision[] = [];
     for (const candidate of page.items) {
       membersScanned++;
       const decision = decideUpgrade(candidate, catalogue);
       if (decision === null) {
         alreadyAtTarget++;
         // Round 6 W-010 — REMOVED per-member `tier_upgrade_already_at_target`
-        // audit emit. The Phase 7 Round 2 IMP-9 wire-up emitted one
-        // audit row per already-at-target member every weekly cron run.
-        // For a 5,000-member tenant this produced a 5,000-row write
-        // amplification per week (5y retention → 1.3M rows/tenant).
-        // The aggregate `tier_upgrade_already_at_target_summary` audit
-        // emitted ONCE per cron pass (after the loop, below) carries
-        // the same forensic value — the audit-log dashboard only needs
-        // to know "the cron evaluated N members and found K already
-        // upgraded", not the per-member fan-out.
+        // audit emit. Aggregate audit emits once after the loop below.
         continue;
       }
-
-      // Suppression check (FR-AS3 — 90-day suppress after Dismiss).
-      const isSuppressed = await deps.tierUpgradeRepo.isSuppressedForMember(
-        tenantId,
-        candidate.memberId,
-        new Date().toISOString(),
-      );
-      if (isSuppressed) {
-        suppressedSkipped++;
-        continue;
-      }
-
-      // Insert suggestion + audit emit (atomic per Principle VIII).
-      // Round 6 W-001 — when `outerTx` is supplied (cron route holding
-      // the advisory lock), use it directly so the write happens on
-      // the lock-holding session. When absent (admin-triggered ad-hoc
-      // call, integration tests), open a per-iteration runInTenant
-      // for fault isolation.
-      const insertWithTx = async (tx: TenantTx) => {
-        const newSuggestion: NewTierUpgradeSuggestionInput = {
-          tenantId,
-          suggestionId: deps.suggestionIdGenerator(),
-          memberId: candidate.memberId,
-          fromPlanId: candidate.currentPlanId,
-          toPlanId: decision.toPlan.planId,
-          reasonCode: decision.reasonCode,
-          evidence: decision.evidence,
-        };
-        const inserted = await deps.tierUpgradeRepo.insertOpen(
-          tx,
-          newSuggestion,
-        );
-        await deps.auditEmitter.emitInTx(
-          tx,
-          {
-            type: 'tier_upgrade_suggested',
-            payload: {
-              suggestion_id: inserted.suggestionId,
-              member_id: candidate.memberId as MemberId,
-              from_plan_id: candidate.currentPlanId as PlanId,
-              to_plan_id: decision.toPlan.planId as PlanId,
-              reason_code: decision.reasonCode,
-            },
-          },
-          {
-            tenantId,
-            actorUserId: null,
-            actorRole: 'cron',
-            correlationId,
-            requestId: input.requestId ?? null,
-          },
-        );
-        // Phase 9 / T231 — tier-upgrade suggestion volume counter
-        // (FR-037 → FR-039 funnel). `target_tier` is the bounded
-        // 5-bucket enum from the F2 plan catalog.
-        renewalsMetrics.tierUpgradeSuggestionsCreated(
-          tenantId,
-          decision.toPlan.renewalTierBucket,
-        );
-      };
-      try {
-        if (outerTx) {
-          await insertWithTx(outerTx);
-        } else {
-          await runInTenant(deps.tenant, insertWithTx);
-        }
-        suggestionsCreated++;
-      } catch (e) {
-        if (e instanceof TierUpgradeOpenConflictError) {
-          // Idempotent — another cron pass beat us OR a member-open
-          // suggestion already exists. Silent no-op per FR-AS1.
-          conflictSkipped++;
-          continue;
-        }
-        return err({
-          kind: 'server_error',
-          message: `insert_open_failed: ${(e as Error)?.message ?? 'unknown'}`,
-        });
-      }
+      pageDecisions.push({ candidate, decision });
     }
+
+    if (pageDecisions.length > 0) {
+      const nowIso = new Date().toISOString();
+      // Use outerTx when supplied (cron route holds advisory lock).
+      // Otherwise open a single runInTenant for the WHOLE page (3 RTTs
+      // total) instead of per-member (5 RTTs × N members).
+      const flushResult = outerTx
+        ? await flushPage(outerTx, pageDecisions, nowIso)
+        : await runInTenant(deps.tenant, (tx) =>
+            flushPage(tx, pageDecisions, nowIso),
+          );
+      if (flushResult.serverError !== null) {
+        return err(flushResult.serverError);
+      }
+      suppressedSkipped += flushResult.suppressedSkipped;
+      suggestionsCreated += flushResult.suggestionsCreated;
+      conflictSkipped += flushResult.conflictSkipped;
+    }
+
     cursor = page.nextCursor ?? undefined;
   } while (cursor !== undefined);
 

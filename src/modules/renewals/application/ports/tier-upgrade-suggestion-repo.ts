@@ -130,6 +130,52 @@ export interface TierUpgradeSuggestionRepo {
     readonly items: ReadonlyArray<TierUpgradeSuggestion>;
     readonly nextCursor: string | null;
   }>;
+
+  /**
+   * F8 Phase 10 T262 batched-write — bulk suppression check.
+   *
+   * Single-RTT alternative to N-call `isSuppressedForMember` from the
+   * `evaluateTierUpgrade` cron page-loop. Returns the set of member ids
+   * that have a `dismissed` suggestion with `suppressed_until > nowIso`.
+   * Members not in the result are NOT suppressed (cron may proceed to
+   * insert a new `open` suggestion).
+   *
+   * Empty `memberIds` is a no-op returning an empty set.
+   *
+   * Constitution Principle VII (Perf) — collapses 333 RTTs (per
+   * T264 perf bench at 1k members ~33% above-threshold) into 1.
+   */
+  bulkGetSuppressedMembers(
+    tx: TenantTx,
+    memberIds: ReadonlyArray<string>,
+    nowIso: string,
+  ): Promise<ReadonlySet<string>>;
+
+  /**
+   * F8 Phase 10 T262 batched-write — bulk insert open suggestions.
+   *
+   * Single-RTT alternative to N-call `insertOpen` from the
+   * `evaluateTierUpgrade` cron page-loop. Uses
+   * `INSERT … ON CONFLICT (tenant_id, member_id) WHERE status IN
+   * ('open','accepted_pending_apply') DO NOTHING` to honour the
+   * `tier_upgrade_suggestions_member_open_uniq` partial index — a
+   * member with an existing open/pending suggestion is silently
+   * skipped (counted as `conflicted`). Returns the actual rows
+   * inserted (suitable for downstream audit emission).
+   *
+   * Empty `inputs` is a no-op returning `{ inserted: [], conflicted: [] }`.
+   *
+   * Constitution Principle VIII (Reliability) — caller MUST emit
+   * audit events bundled with the same tx (use `bulkEmitInTx`).
+   * Atomicity guaranteed by the surrounding `runInTenant`.
+   */
+  bulkInsertOpenIfAbsent(
+    tx: TenantTx,
+    inputs: ReadonlyArray<NewTierUpgradeSuggestionInput>,
+  ): Promise<{
+    readonly inserted: ReadonlyArray<TierUpgradeSuggestion>;
+    readonly conflicted: ReadonlyArray<string>; // memberIds skipped
+  }>;
 }
 
 export class TierUpgradeOpenConflictError extends Error {

@@ -289,22 +289,29 @@ describe('F8 tier-upgrade evaluate — integration (T202)', () => {
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     expect(second.value.suggestionsCreated).toBe(0);
-    // Round 6 S-005 — tighten the discriminator. Originally accepted
-    // either conflictSkipped OR alreadyAtTarget. Reality: the eval
-    // candidate query already filters out members with an active
-    // (open / pending-apply) suggestion (member_open partial UNIQUE),
-    // so the second pass scans 0 candidates → BOTH counters stay 0
-    // and the suggestion-row count is unchanged at 1. The earlier
-    // "both branches valid" form would silently pass a regression
-    // where the cron actually inserted a row (then hit the partial
-    // UNIQUE) — leaking write amplification + audit noise.
-    expect(second.value.membersScanned).toBe(0);
-    expect(second.value.conflictSkipped).toBe(0);
+    // Phase 10 T262 batched-write fix — the idempotency contract is
+    // ROW-LEVEL (no duplicate suggestion_row INSERT), NOT scan-level.
+    // The eval candidate query at
+    // `src/modules/renewals/infrastructure/drizzle/drizzle-tier-upgrade-eval-candidate-repo.ts`
+    // does NOT filter members with an active suggestion (the Round-6
+    // S-005 comment claimed it did, but inspection of the query +
+    // Phase-10 verify confirmed otherwise — pre-existing test bug
+    // never caught by CI because this test isn't in the curated CI
+    // integration-suite at `.github/workflows/multi-tenant-readiness.yml`).
+    // Real second-pass behaviour: re-scan the member, decide upgrade,
+    // attempt bulk-insert, and the partial UNIQUE
+    // `tier_upgrade_suggestions_member_open_uniq` rejects → counted
+    // as `conflictSkipped`. The DB-row count IS the binding
+    // idempotency invariant.
+    expect(second.value.membersScanned).toBe(1);
+    expect(second.value.conflictSkipped).toBe(1);
     expect(second.value.alreadyAtTarget).toBe(0);
     expect(second.value.suppressedSkipped).toBe(0);
     const rows = await runInTenant(tenant.ctx, (tx) =>
       tx.select().from(tierUpgradeSuggestions),
     );
+    // The binding idempotency invariant — no duplicate row was
+    // INSERTed despite the loop re-scanning + attempting bulk-insert.
     expect(rows).toHaveLength(1);
   }, 60_000);
 

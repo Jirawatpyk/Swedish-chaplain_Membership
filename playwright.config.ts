@@ -103,6 +103,37 @@ export default defineConfig({
       name: 'mobile-chrome',
       use: { ...devices['Pixel 5'] },
     },
+    // F8 Phase 10 / T270 close — Cross-browser matrix expansion for
+    // the spec'd "Chrome / Edge / Firefox / Safari latest 2 + Mobile
+    // Safari iOS 16+ + Chrome for Android 12+" requirement. Default-
+    // OFF to keep local + CI workflows fast (firefox + webkit each
+    // ~3-5× slower to spin up than chromium-headless). Toggle on with
+    // `CI_FULL_BROWSERS=1` in the cross-browser-matrix CI job OR
+    // before a maintainer manual run pre-merge.
+    //
+    // Browser executables MUST be installed first:
+    //   pnpm exec playwright install firefox webkit
+    //
+    // Edge uses the chromium engine — covered by the `chromium`
+    // project above (Microsoft Edge ships Chromium under the hood
+    // since 2020). Desktop-Safari is covered by `webkit`.
+    ...(process.env.CI_FULL_BROWSERS === '1'
+      ? [
+          {
+            name: 'firefox',
+            use: { ...devices['Desktop Firefox'] },
+          },
+          {
+            name: 'webkit',
+            use: {
+              ...devices['Desktop Safari'],
+              // Same WebKit cold-compile budget as mobile-safari.
+              actionTimeout: 90_000,
+              navigationTimeout: 90_000,
+            },
+          },
+        ]
+      : []),
   ],
   webServer: {
     command: 'pnpm dev --port 3100',
