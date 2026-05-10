@@ -211,7 +211,7 @@ describe('F8 verifyRenewalLinkToken — integration (T144)', () => {
       correlationId: randomUUID(),
     });
     expect(r2.ok).toBe(false);
-    if (!r2.ok) expect(r2.error.reason).toBe('replayed');
+    if (!r2.ok && r2.error.kind === 'invalid_token') expect(r2.error.reason).toBe('replayed');
   });
 
   it('cross_tenant: tenant B verifies token signed for tenant A → cross_tenant reject', async () => {
@@ -232,7 +232,7 @@ describe('F8 verifyRenewalLinkToken — integration (T144)', () => {
       correlationId: randomUUID(),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('cross_tenant');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('cross_tenant');
   });
 
   it('member_not_found_in_tenant: token cid does not match any cycle in tenant', async () => {
@@ -253,7 +253,7 @@ describe('F8 verifyRenewalLinkToken — integration (T144)', () => {
       correlationId: randomUUID(),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('member_not_found_in_tenant');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('member_not_found_in_tenant');
   });
 
   it('expired: token with past exp returns expired', async () => {
@@ -274,7 +274,7 @@ describe('F8 verifyRenewalLinkToken — integration (T144)', () => {
       correlationId: randomUUID(),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('expired');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('expired');
   });
 
   it('malformed_token: garbled wire format returns malformed_token', async () => {
@@ -286,7 +286,7 @@ describe('F8 verifyRenewalLinkToken — integration (T144)', () => {
       correlationId: randomUUID(),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('malformed_token');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('malformed_token');
   });
 
   it('mac_mismatch: payload tampered after signing returns mac_mismatch', async () => {
@@ -310,7 +310,7 @@ describe('F8 verifyRenewalLinkToken — integration (T144)', () => {
       correlationId: randomUUID(),
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) {
+    if (!r.ok && r.error.kind === 'invalid_token') {
       expect(['mac_mismatch', 'malformed_token']).toContain(r.error.reason);
     }
   });

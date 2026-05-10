@@ -217,6 +217,21 @@ export function proxy(request: NextRequest): NextResponse {
 
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
   //    scheduled maintenance per .env.local README).
+  //
+  //    F-stack cron handlers (`POST /api/cron/**`) are intentionally
+  //    INCLUDED in this gate. Rationale: an emergency write-freeze IS
+  //    intended to halt all state-mutating server work, including
+  //    scheduled jobs — otherwise a cron pass during the freeze could
+  //    corrupt state the operator is trying to stabilise. Cron-job.org
+  //    will log 503s but does not retry-storm because each cron entry
+  //    has retry-disabled per `docs/runbooks/cron-jobs.md` § "Retry
+  //    policy contract". F8 cron specifically: missed dispatch /
+  //    lapse-cycle / at-risk passes during a typical <24h freeze
+  //    window are acceptable — the next pass picks up where the
+  //    previous one left off (idempotent FR-011 + state-machine
+  //    convergence). If a future feature has time-critical cron that
+  //    MUST run during freeze (e.g., regulatory deadline), add an
+  //    explicit carve-out here with a paired Constitution amendment.
   if (env.flags.readOnlyMode && isStateChanging) {
     return build503(
       'read-only-mode',

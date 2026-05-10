@@ -77,23 +77,42 @@ export type VerifyRenewalLinkTokenSuccess =
       readonly verifiedWith: 'primary' | 'fallback';
     };
 
-export type VerifyRenewalLinkTokenError = {
-  readonly kind: 'invalid_token';
-  /**
-   * Mirrors `renewal_token_invalid.payload.reason` per audit-port. The
-   * caller MUST NOT propagate this reason to the user — FR-027
-   * mandates a generic "expired or invalid" page across all failure
-   * modes (no oracle).
-   */
-  readonly reason:
-    | 'malformed_token'
-    | 'mac_mismatch'
-    | 'expired'
-    | 'replayed'
-    | 'cross_tenant'
-    | 'member_not_found_in_tenant'
-    | 'invalid_input';
-};
+/**
+ * Discriminated union — splits programmer-error path (`invalid_input`,
+ * Zod schema rejection BEFORE token verification) from genuine
+ * security-rejection paths (HMAC mismatch, expiry, replay, cross-tenant,
+ * member-cycle mismatch). PR #24 deep-review fix — the previous shape
+ * folded both into `kind: 'invalid_token'` so a caller switching on
+ * `kind` could not distinguish "I should return HTTP 400 (programmer
+ * forgot to validate the URL)" from "I should return HTTP 404 generic
+ * (no-oracle policy per FR-027)". The `kind: 'invalid_input'` arm is
+ * NEVER user-facing; it surfaces only when a use-case wrapper passes a
+ * malformed shape. The route handler in `redeem-link/route.ts` treats
+ * BOTH kinds as the same generic-failure UX path, but the kind split
+ * lets the route distinguish in logs/metrics.
+ */
+export type VerifyRenewalLinkTokenError =
+  | {
+      readonly kind: 'invalid_token';
+      /**
+       * Mirrors `renewal_token_invalid.payload.reason` per audit-port.
+       * The caller MUST NOT propagate this reason to the user —
+       * FR-027 mandates a generic "expired or invalid" page across
+       * all failure modes (no oracle).
+       */
+      readonly reason:
+        | 'malformed_token'
+        | 'mac_mismatch'
+        | 'expired'
+        | 'replayed'
+        | 'cross_tenant'
+        | 'member_not_found_in_tenant';
+    }
+  | {
+      readonly kind: 'invalid_input';
+      /** Zod issue summary for ops triage — never user-facing. */
+      readonly message: string;
+    };
 
 /**
  * Subset of `RenewalsDeps` actually used by this use-case. Lets unit
@@ -117,7 +136,12 @@ export async function verifyRenewalLinkToken(
   if (!parsed.success) {
     // Pre-condition input failure — emit nothing (no token to forensically
     // record). Caller surface returns 400 (programmer error path).
-    return err({ kind: 'invalid_token', reason: 'invalid_input' });
+    // PR #24 deep-review fix: distinct `kind: 'invalid_input'` arm so
+    // callers can fork on programmer-error vs security-rejection.
+    return err({
+      kind: 'invalid_input',
+      message: parsed.error.issues[0]?.message ?? 'invalid input shape',
+    });
   }
   const input = parsed.data;
   const tenantId = input.expectedTenantId;
@@ -262,7 +286,7 @@ function mapVerifyErrorToReason(
     | 'wrong_version'
     | 'tenant_mismatch'
     | 'expired',
-): Exclude<VerifyRenewalLinkTokenError['reason'], 'invalid_input'> {
+): Extract<VerifyRenewalLinkTokenError, { kind: 'invalid_token' }>['reason'] {
   switch (kind) {
     case 'malformed_token':
     case 'wrong_version':
@@ -280,7 +304,7 @@ async function emitTokenInvalid(
   deps: VerifyRenewalLinkTokenDeps,
   tenantId: string,
   input: VerifyRenewalLinkTokenInput,
-  reason: Exclude<VerifyRenewalLinkTokenError['reason'], 'invalid_input'>,
+  reason: Extract<VerifyRenewalLinkTokenError, { kind: 'invalid_token' }>['reason'],
   tokenSha256: Uint8Array | null,
 ): Promise<void> {
   const sha256Hex =

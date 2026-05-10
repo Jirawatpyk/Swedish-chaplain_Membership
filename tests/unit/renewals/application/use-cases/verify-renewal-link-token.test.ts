@@ -106,7 +106,9 @@ describe('verifyRenewalLinkToken (T120) — input validation', () => {
     const { deps } = fakeDeps({ verifyResult: ok(verifiedToken) });
     const r = await verifyRenewalLinkToken(deps, { ...baseInput, rawToken: '' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('invalid_input');
+    // PR #24 deep-review fix — `invalid_input` is now its own discriminated
+    // arm, separate from the security-rejection `invalid_token` paths.
+    if (!r.ok) expect(r.error.kind).toBe('invalid_input');
   });
 });
 
@@ -141,7 +143,7 @@ describe('verifyRenewalLinkToken (T120) — 5 verifier-error paths', () => {
       });
       const r = await verifyRenewalLinkToken(deps, baseInput);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.reason).toBe(expectedReason);
+      if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe(expectedReason);
       expect(emitMock).toHaveBeenCalledTimes(1);
       expect(emitMock.mock.calls[0]![0]).toEqual({
         type: 'renewal_token_invalid',
@@ -159,7 +161,7 @@ describe('verifyRenewalLinkToken (T120) — step 7 member-tenant ownership', () 
     });
     const r = await verifyRenewalLinkToken(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('member_not_found_in_tenant');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('member_not_found_in_tenant');
     expect(emitMock.mock.calls[0]![0]).toMatchObject({
       type: 'renewal_token_invalid',
       payload: { reason: 'member_not_found_in_tenant' },
@@ -171,7 +173,7 @@ describe('verifyRenewalLinkToken (T120) — step 7 member-tenant ownership', () 
     const { deps } = fakeDeps({ verifyResult: ok(verifiedToken), cycle });
     const r = await verifyRenewalLinkToken(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('member_not_found_in_tenant');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('member_not_found_in_tenant');
   });
 
   it('rejects with member_not_found_in_tenant when payload.cid is not a valid UUID', async () => {
@@ -182,7 +184,7 @@ describe('verifyRenewalLinkToken (T120) — step 7 member-tenant ownership', () 
     const { deps, findByIdMock } = fakeDeps({ verifyResult: ok(verified) });
     const r = await verifyRenewalLinkToken(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('member_not_found_in_tenant');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('member_not_found_in_tenant');
     // Cycle lookup MUST NOT run — UUID parse failed first
     expect(findByIdMock).not.toHaveBeenCalled();
   });
@@ -218,7 +220,7 @@ describe('verifyRenewalLinkToken (T120) — replay detection', () => {
     });
     const r = await verifyRenewalLinkToken(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('replayed');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('replayed');
     expect(emitMock.mock.calls[0]![0]).toMatchObject({
       type: 'renewal_token_invalid',
       payload: { reason: 'replayed' },
@@ -271,7 +273,7 @@ describe('verifyRenewalLinkToken (T120) — fire-and-forget audit', () => {
     });
     const r = await verifyRenewalLinkToken(deps, baseInput);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.reason).toBe('expired');
+    if (!r.ok && r.error.kind === 'invalid_token') expect(r.error.reason).toBe('expired');
   });
 
   it('returns ok even if completed-cycle audit emit throws (idempotent path)', async () => {
