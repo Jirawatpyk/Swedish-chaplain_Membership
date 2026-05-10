@@ -106,7 +106,8 @@ describe('payments barrel — public API contract', () => {
     // transitions the F8 RenewalCycle inside the same commit). Test env
     // pins `FEATURE_F8_RENEWALS=true` (tests/setup.ts) so the key MUST
     // be present — its absence would silently regress the F5↔F8 wire.
-    const webhookDeps = mod.makeProcessWebhookEventDeps('test-tenant');
+    // Round 6 — factory is now async (dynamic F8 barrel import).
+    const webhookDeps = await mod.makeProcessWebhookEventDeps('test-tenant');
     expect(Object.keys(webhookDeps).sort()).toEqual(
       [
         'audit',
@@ -126,7 +127,8 @@ describe('payments barrel — public API contract', () => {
     // +processorEventsRepo for atomic markProcessed; review-20260428-102639.md
     // H2 closure: +logger for Phase B stale-refund warn; PR #24 review-fix:
     // +onPaidCallbacks — same F8 wire as the webhook deps above).
-    const confirmDeps = mod.makeConfirmPaymentDeps('test-tenant');
+    // Round 6 — factory is now async (dynamic F8 barrel import).
+    const confirmDeps = await mod.makeConfirmPaymentDeps('test-tenant');
     expect(Object.keys(confirmDeps).sort()).toEqual(
       [
         'audit',

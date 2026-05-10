@@ -515,7 +515,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   };
 
   try {
-    const deps = makeProcessWebhookEventDeps(tenantId);
+    const deps = await makeProcessWebhookEventDeps(tenantId);
     const useCaseInput = {
       tenantId,
       event: verifiedEvent,

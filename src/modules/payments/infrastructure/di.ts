@@ -51,13 +51,21 @@ import { paymentsLogger } from './logger/payments-logger';
 // F8 cross-module on-paid callbacks. Wired into the webhook + confirm
 // composition roots so Stripe-paid renewal invoices transition the F8
 // RenewalCycle inside F4's atomic tx. Gated by `FEATURE_F8_RENEWALS` so
-// non-F8 deployments stay unchanged. Renewals barrel exports the factory
-// without runtime side effects (the inner use-case uses dynamic import
-// to break a hot-reload init cycle); static import here is safe.
-import { f8OnPaidCallbacks } from '@/modules/renewals';
-
-function f8CallbacksFor(tenantId: string) {
-  return env.features.f8Renewals ? f8OnPaidCallbacks(tenantId) : undefined;
+// non-F8 deployments stay unchanged.
+//
+// Round 6 — dynamic import the renewals barrel ONLY when the feature
+// is on. Previously a top-level static `import { f8OnPaidCallbacks }
+// from '@/modules/renewals'` paid the cold-start cost (~50-150ms +
+// bundle pollution from 32+ TS files in the renewals composition root)
+// on EVERY Stripe webhook + confirm-payment request, even when F8 was
+// dark. Vercel Fluid Compute caches the dynamic import after first
+// hit, so F8-enabled tenants amortise the load cost across the
+// process lifetime; F4/F5-only deploys never load the renewals
+// barrel at all.
+async function f8CallbacksFor(tenantId: string) {
+  if (!env.features.f8Renewals) return undefined;
+  const { f8OnPaidCallbacks } = await import('@/modules/renewals');
+  return f8OnPaidCallbacks(tenantId);
 }
 
 /**
@@ -119,8 +127,12 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
 // pre-resolution window semantics documented in data-model.md § 5.4 —
 // this is independent of the tenantId we bind the other repos with.
 // ---------------------------------------------------------------------------
-export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEventDeps {
-  const f8Callbacks = f8CallbacksFor(tenantId);
+export async function makeProcessWebhookEventDeps(
+  tenantId: string,
+): Promise<ProcessWebhookEventDeps> {
+  // Round 6 — async to await the dynamic F8 barrel import. Caller is
+  // already async (Stripe webhook route handler).
+  const f8Callbacks = await f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     // CR-3 (review 2026-04-27): wire real refunds-repo so the
@@ -144,8 +156,11 @@ export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEve
 // ---------------------------------------------------------------------------
 // T063 — confirmPayment composition.
 // ---------------------------------------------------------------------------
-export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
-  const f8Callbacks = f8CallbacksFor(tenantId);
+export async function makeConfirmPaymentDeps(
+  tenantId: string,
+): Promise<ConfirmPaymentDeps> {
+  // Round 6 — async to await the dynamic F8 barrel import.
+  const f8Callbacks = await f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),

@@ -6,8 +6,13 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { recordPayment, recordPaymentSchema, makeRecordPaymentDeps } from '@/modules/invoicing';
-import { f8OnPaidCallbacks } from '@/modules/renewals';
 import { env } from '@/lib/env';
+// PR #24 Round 6 — F8 callbacks are dynamically imported below ONLY when
+// `FEATURE_F8_RENEWALS=true`. Previously this was a top-level static
+// import which loaded the entire renewals barrel (~50-150ms cold-start
+// + bundle pollution) on every F4 admin-pay request even when F8 was
+// dark. The dynamic import path keeps F4 routes free of F8 module
+// loading when the feature flag is off.
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -67,10 +72,15 @@ export async function POST(
   // Wire F8 cycle-completion callback when the renewals feature is on.
   // Without this, an admin marking a renewal invoice paid via this F4
   // route leaves the F8 RenewalCycle stuck in `awaiting_payment`. The
-  // F8-specific mark-paid-offline route (`mark-paid-offline.ts`) wires
-  // its own callback; this is the catch-all for the legacy F4 path.
+  // F8-specific mark-paid-offline route wires its own callback; this
+  // is the catch-all for the legacy F4 path.
+  //
+  // Round 6 — dynamic import the renewals barrel ONLY when the feature
+  // is on. Vercel Fluid Compute caches the import after first hit, so
+  // F8-enabled tenants pay the load cost once per process, while
+  // F4-only deploys never load the barrel at all.
   const f8Callbacks = env.features.f8Renewals
-    ? f8OnPaidCallbacks(tenantCtx.slug)
+    ? (await import('@/modules/renewals')).f8OnPaidCallbacks(tenantCtx.slug)
     : undefined;
   const result = await recordPayment(
     makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks),
