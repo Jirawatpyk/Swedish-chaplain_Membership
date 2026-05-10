@@ -1915,6 +1915,12 @@
         "lookupFailedPlan": "Vi kunde inte läsa in den kopplade planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
         "noActivityTitle": "Ingen aktivitet än",
         "noActivityDescription": "Skickade påminnelsemail och uppföljningsärenden visas här när förnyelsepåminnelserna börjar för denna cykel.",
+        "reminders": {
+          "heading": "Påminnelsehistorik"
+        },
+        "escalations": {
+          "heading": "Eskaleringsärenden"
+        },
         "fields": {
           "cycleId": "Cykel-ID",
           "memberId": "Medlems-ID",

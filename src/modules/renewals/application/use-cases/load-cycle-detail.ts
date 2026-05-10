@@ -7,10 +7,12 @@
  *   - `reminderHistory` is hydrated via `reminderEventsRepo.listForCycle`
  *     (per-cycle history, ordered `dispatched_at DESC`, NULLs last so
  *     still-pending rows surface above sent ones).
- *   - `escalationTasks` is hydrated via `escalationTaskRepo.list` with
- *     a per-cycle filter — escalation queue UI is owned by the
- *     `/admin/renewals/tasks` page; this surface returns the rows linked
- *     to the cycle so the cycle-detail page can show context inline.
+ *   - `escalationTasks` is hydrated via the dedicated
+ *     `escalationTaskRepo.listForCycle(tenantId, cycleId)` port method
+ *     (added in PR #24 review-fix) — escalation queue UI is owned by
+ *     the `/admin/renewals/tasks` page; this surface returns the rows
+ *     linked to the cycle so the cycle-detail page can show context
+ *     inline.
  *   - `linkedInvoice` is hydrated via F4 barrel `getInvoice` if
  *     `cycle.linkedInvoiceId` is non-null.
  *
@@ -30,6 +32,8 @@ import {
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
+import type { ReminderEvent } from '../ports/renewal-reminder-event-repo';
+import type { RenewalEscalationTask } from '../../domain/renewal-escalation-task';
 import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
 
 export const loadCycleDetailInputSchema = z.object({
@@ -45,8 +49,11 @@ export type LoadCycleDetailInput = z.infer<typeof loadCycleDetailInputSchema>;
 
 export interface LoadCycleDetailOutput {
   readonly cycle: RenewalCycle;
-  readonly reminderHistory: ReadonlyArray<unknown>;
-  readonly escalationTasks: ReadonlyArray<unknown>;
+  // PR #24 review-fix Round 2 — narrow from `ReadonlyArray<unknown>`
+  // to typed reads now that load-cycle-detail hydrates them. The page
+  // (`/admin/renewals/[cycleId]`) renders both arrays inline.
+  readonly reminderHistory: ReadonlyArray<ReminderEvent>;
+  readonly escalationTasks: ReadonlyArray<RenewalEscalationTask>;
   readonly linkedInvoice: {
     readonly invoiceId: string;
     readonly invoiceNumber: string | null;
@@ -175,7 +182,7 @@ export async function loadCycleDetail(
   // the entire cycle-detail page; the failing list returns `[]` and
   // the UI falls back to a "history unavailable" caption while the
   // cycle + invoice card still render.
-  let reminderHistory: ReadonlyArray<unknown> = [];
+  let reminderHistory: ReadonlyArray<ReminderEvent> = [];
   try {
     reminderHistory = await deps.reminderEventRepo.listForCycle(
       input.tenantId,
@@ -192,7 +199,7 @@ export async function loadCycleDetail(
     );
   }
 
-  let escalationTasks: ReadonlyArray<unknown> = [];
+  let escalationTasks: ReadonlyArray<RenewalEscalationTask> = [];
   try {
     escalationTasks = await deps.escalationTaskRepo.listForCycle(
       input.tenantId,

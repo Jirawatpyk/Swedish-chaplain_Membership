@@ -1915,6 +1915,12 @@
         "lookupFailedPlan": "We couldn't load the linked plan record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
         "noActivityTitle": "No activity yet",
         "noActivityDescription": "Sent reminder emails and follow-up tasks will appear here once the renewal reminders begin for this cycle.",
+        "reminders": {
+          "heading": "Reminder history"
+        },
+        "escalations": {
+          "heading": "Escalation tasks"
+        },
         "fields": {
           "cycleId": "Cycle ID",
           "memberId": "Member ID",

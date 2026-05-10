@@ -643,12 +643,13 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
         </CardContent>
       </Card>
 
-      {/* Phase 5+ TODO: split into Reminders sub-section + Escalations
-          sub-section once `loadCycleDetail` hydrates `reminderHistory`
-          + `escalationTasks` (currently `ReadonlyArray<unknown>` and
-          always `[]`). Follow the Member+Plan pattern:
-            <section aria-labelledby> + <Separator> + <section aria-labelledby>
-          inside the same Card. */}
+      {/* PR #24 review-fix Round 2 — render hydrated reminderHistory +
+          escalationTasks. `loadCycleDetail` populates both arrays via
+          existing port reads (reminderEventRepo.listForCycle +
+          escalationTaskRepo.listForCycle); the previous unconditional
+          EmptyState was wasting two DB reads per page load. Both
+          surfaces are bounded scope (≤5 rows each per cycle) so flat
+          lists are appropriate; no pagination needed. */}
       <Card>
         <CardContent>
           <section aria-labelledby="cycle-detail-activity-heading">
@@ -658,11 +659,82 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
             >
               {t('sectionActivity')}
             </h2>
-            <EmptyState
-              icon={BellOff}
-              title={t('noActivityTitle')}
-              description={t('noActivityDescription')}
-            />
+            {v.reminderHistory.length === 0 &&
+            v.escalationTasks.length === 0 ? (
+              <EmptyState
+                icon={BellOff}
+                title={t('noActivityTitle')}
+                description={t('noActivityDescription')}
+              />
+            ) : (
+              <div className="space-y-4">
+                {v.reminderHistory.length > 0 && (
+                  <section aria-labelledby="cycle-detail-reminders-heading">
+                    <h3
+                      id="cycle-detail-reminders-heading"
+                      className="mb-2 text-sm font-semibold text-muted-foreground"
+                    >
+                      {t('reminders.heading')}
+                    </h3>
+                    <ul className="space-y-1.5 text-sm">
+                      {v.reminderHistory.map((r) => (
+                        <li
+                          key={r.reminderEventId}
+                          className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                        >
+                          <span className="font-medium">{r.stepId}</span>
+                          <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                            {r.status}
+                          </span>
+                          {r.dispatchedAt !== null && (
+                            <span className="text-muted-foreground">
+                              {fmtDate(r.dispatchedAt)}
+                            </span>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {r.channel}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {v.escalationTasks.length > 0 && (
+                  <>
+                    {v.reminderHistory.length > 0 && <Separator />}
+                    <section aria-labelledby="cycle-detail-escalations-heading">
+                      <h3
+                        id="cycle-detail-escalations-heading"
+                        className="mb-2 text-sm font-semibold text-muted-foreground"
+                      >
+                        {t('escalations.heading')}
+                      </h3>
+                      <ul className="space-y-1.5 text-sm">
+                        {v.escalationTasks.map((task) => (
+                          <li
+                            key={task.taskId}
+                            className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                          >
+                            <span className="font-medium">{task.taskType}</span>
+                            <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                              {task.status}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {fmtDate(task.dueAt)}
+                            </span>
+                            {task.assignedToUserId !== null && (
+                              <span className="text-xs text-muted-foreground">
+                                {task.assignedToRole}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  </>
+                )}
+              </div>
+            )}
           </section>
         </CardContent>
       </Card>

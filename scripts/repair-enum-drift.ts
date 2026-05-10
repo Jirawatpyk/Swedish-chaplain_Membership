@@ -23,8 +23,16 @@
  * Usage:
  *   pnpm tsx scripts/repair-enum-drift.ts
  *
- * Idempotent: every ALTER TYPE in this codebase uses `IF NOT EXISTS`,
- * so re-running this script after a successful run is a no-op.
+ * Idempotent: re-running this script after a successful run is a
+ * no-op. Idempotency is guaranteed by TWO mechanisms:
+ *   1. Newer migrations declare `ALTER TYPE … ADD VALUE IF NOT EXISTS`
+ *      directly — Postgres skips the value when already present.
+ *   2. Older migrations wrap the bare `ALTER TYPE … ADD VALUE` in a
+ *      `DO $$ BEGIN IF NOT EXISTS (SELECT … FROM pg_enum) THEN …` block.
+ *      The regex below extracts the inner bare statement (without the
+ *      DO-block guard) — re-applying it raises Postgres `42710
+ *      duplicate_object`, which the catch block treats as expected.
+ * Either way, replay is safe.
  *
  * This script intentionally does NOT touch the drizzle journal — it only
  * applies the missing enum values. The journal stays consistent with
