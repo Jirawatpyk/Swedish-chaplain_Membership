@@ -805,6 +805,19 @@
   - **Verify-fix perf gain**: T264 evaluateTierUpgrade 44× speedup (98s → 2.21s @ 1k local; 11.4s @ 5k strict PASS); T262 dispatch infrastructure ready for follow-up commit (4-phase outer-loop refactor pseudocode in retrospective § S1)
   - **F8 PR ready** to open with `FEATURE_F8_RENEWALS=false` in production env (ships dark per A12 v3); 5 pre-flag-flip operator gates documented in `retrospective.md` § "Pre-flag-flip operator checklist"
 
+### Phase 9 retrofit (PR #25, post-merge gap-fix)
+
+- [X] T293 **`prune-consumed-tokens` weekly cron retrofit** (closed 2026-05-11) — closes Phase 9 doc-vs-code drift discovered post-merge during runbook audit. `docs/runbooks/cron-jobs.md` § F8 token-prune (table row line 42 + section header "(NEW — F8 Phase 9)") documented the cron but the route + use-case were never implemented. Pattern mirrors `reconcile-pending-applications` (single-route weekly housekeeping, no fan-out, MVP single-tenant). Surface:
+  - `src/modules/renewals/application/ports/consumed-link-tokens-repo.ts` — new `pruneOlderThan(cutoff: Date): Promise<{ pruned: number }>` method on `ConsumedLinkTokensRepo` port.
+  - `src/modules/renewals/infrastructure/drizzle/drizzle-consumed-link-tokens-repo.ts` — DELETE under `runInTenant` + `lt(consumedAt, cutoff)` filter; RLS+FORCE scopes deletion to current tenant; idempotent re-run.
+  - `src/modules/renewals/application/use-cases/prune-consumed-tokens.ts` — `pruneConsumedTokens(deps, input)` with 60-day cutoff math (PRUNE_RETENTION_DAYS constant per data-model.md § 2.8); zod input validation; Result<T,E> with `invalid_input` + `server_error` error kinds.
+  - `src/app/api/cron/renewals/prune-consumed-tokens/route.ts` — POST handler with `verifyCronBearer` + kill-switch (200+skipped on dark-launch) + per-(tenant) advisory lock `renewals:prune:` (namespace disjoint from F4/F5/F7/F8 other coordinators per P2 Innovation pattern); summary response `{ pruned, cutoff_iso, duration_ms }`.
+  - `src/modules/renewals/index.ts` — barrel export `pruneConsumedTokens` + types + `PRUNE_RETENTION_DAYS`.
+  - `tests/unit/renewals/application/use-cases/prune-consumed-tokens.test.ts` — 8 unit tests (happy path + cutoff math + zero-rows idempotency + adapter throw → server_error + 3 invalid_input validation cases + cutoff-exclusive guard).
+  - Test counts: 65 files / 836 tests GREEN (+1 file / +8 tests vs Phase 10 close); typecheck + eslint + check:layout clean.
+  - **Operational impact**: at SweCham scale ~131 members × 12 reminder emails/year ≈ 1,572 rows/year; cron prunes weekly Sat 04:00 ICT (cron-job.org entry creation rolls into T277b — now **6 → 7 coordinator entries**).
+  - **No new audit event type required**: housekeeping operations log via pino `cron.renewals.prune_consumed_tokens.complete` + emit no audit row (consistent with `reconcile-pending-applications` pattern — only the `tier_upgrade_pending_orphan_detected` per-orphan-row event is recorded; the cron summary itself is operational signal not state-change audit).
+
 ---
 
 ## Dependencies & User Story Order

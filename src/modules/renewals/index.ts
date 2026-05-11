@@ -703,6 +703,20 @@ export {
   type RenewalsCascadeReason,
 } from './application/use-cases/cancel-in-flight-cycles-for-member';
 
+// --- Phase 9 retrofit (PR #25) — prune-consumed-tokens weekly cron --------
+// Closes the doc-vs-code drift discovered post-merge between
+// `docs/runbooks/cron-jobs.md` (which documented the F8 token-prune
+// row + section as "NEW — F8 Phase 9") and the absence of a route
+// handler. Mirrors `reconcile-pending-applications` pattern (single-
+// route housekeeping, no fan-out, weekly Sat 04:00 Asia/Bangkok).
+export {
+  pruneConsumedTokens,
+  PRUNE_RETENTION_DAYS,
+  type PruneConsumedTokensInput,
+  type PruneConsumedTokensOutput,
+  type PruneConsumedTokensError,
+} from './application/use-cases/prune-consumed-tokens';
+
 // --- Composition root (Wave G T054 + H1 expansions) ------------------------
 export { makeRenewalsDeps, f8OnPaidCallbacks } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

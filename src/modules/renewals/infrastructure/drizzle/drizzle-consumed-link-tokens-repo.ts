@@ -20,7 +20,7 @@
  * rows can coexist with the same token_sha256 across tenants. This is
  * by design — tokens are per-tenant by construction.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { consumedLinkTokens } from '../schema-consumed-link-tokens';
@@ -75,6 +75,31 @@ export function makeDrizzleConsumedLinkTokensRepo(
 
         const firstConsumedAt = existing[0]?.consumedAt ?? new Date();
         return { status: 'replay', firstConsumedAt };
+      });
+    },
+
+    async pruneOlderThan(cutoff): Promise<{ readonly pruned: number }> {
+      // Phase 9 retrofit — weekly housekeeping. DELETE scoped to the
+      // current tenant by RLS+FORCE (no explicit `WHERE tenant_id`
+      // predicate; the policy is the canonical scope per Round 6
+      // S-R5-6 convention used across renewals adapters). Returns
+      // count of affected rows for the cron-job.org dashboard summary.
+      //
+      // Idempotency note: re-running with the same `cutoff` returns 0
+      // pruned (rows already deleted on the prior pass). Cron retry-
+      // storms are safe.
+      return runInTenant(tenant, async (tx) => {
+        const result = await tx
+          .delete(consumedLinkTokens)
+          .where(lt(consumedLinkTokens.consumedAt, cutoff));
+        // Drizzle postgres-js driver exposes rowCount via the raw
+        // result. The shape is driver-specific; cast through unknown
+        // to access. Falls back to 0 when the driver does not surface
+        // the field (defensive — tests that mock the adapter need not
+        // pass a rowCount).
+        const rowCount =
+          (result as unknown as { rowCount?: number }).rowCount ?? 0;
+        return { pruned: rowCount };
       });
     },
   };

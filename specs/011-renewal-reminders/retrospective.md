@@ -300,10 +300,27 @@ T277b text only listed reconcile-pending-reactivations):
 
 All five take `Authorization: Bearer <CRON_SECRET>` and **must have
 "failure retry" disabled** per the F7+F8 retry-policy contract
-(`docs/runbooks/cron-jobs.md` § "Retry policy contract"). Two
-housekeeping jobs (prune consumed link tokens + reconcile pending
-tier-upgrades, lines 43-44 of the runbook) also need entries; they are
-weekly cadence and lower-impact if missed.
+(`docs/runbooks/cron-jobs.md` § "Retry policy contract").
+
+**Two housekeeping jobs** also need entries (weekly cadence, lower-
+impact if missed):
+
+6. `POST /api/cron/renewals/reconcile-pending-applications` — Sat
+   05:00 Asia/Bangkok. Without it: orphaned `accepted_pending_apply`
+   tier-upgrade suggestions on terminal cycles accumulate
+   indefinitely. (Phase 7 / T191.)
+7. `POST /api/cron/renewals/prune-consumed-tokens` — Sat 04:00
+   Asia/Bangkok. Without it: `consumed_link_tokens` table grows
+   unbounded (~1,572 rows/year at SweCham scale; storage-hygiene
+   only — verifier still rejects expired tokens via `expires_at`
+   payload check). **Implemented post-merge via T293 (PR #25)**
+   closing the Phase 9 doc-vs-code drift discovered during runbook
+   audit 2026-05-11.
+
+**Total cron-job.org entries to create at T277b**: **7** (5 daily
+coordinators + 2 weekly housekeeping). T277b text in tasks.md +
+runbook § "Pre-flag-flip operator checklist" needs to reflect 7-not-5
+when the operator runs through it.
 
 ### 7. Staging /speckit.qa.run (T282)
 
