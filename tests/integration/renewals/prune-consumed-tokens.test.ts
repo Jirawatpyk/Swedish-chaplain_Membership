@@ -30,12 +30,15 @@
  * helper to include this table).
  *
  * **Sequential test contract**: tests within this `describe.sequential`
- * block share state across executions — test 1 prunes tenant A, test
- * 2 verifies tenant B was untouched by the prior prune, etc. Vitest's
- * default within-describe ordering is sequential, but we use
- * `describe.sequential` explicitly to defend against a future
- * concurrent-by-default config flip or someone wrapping these tests
- * in `it.concurrent`.
+ * block share state across executions. Example dependency: test 6
+ * (defence-in-depth misroute) assumes tenant A's old row was already
+ * deleted by test 1, so the misrouted call can assert "no rows
+ * change" on tenant B without test 1's prune side-effect confounding
+ * the assertion. Vitest's default within-describe ordering is
+ * sequential, but `describe.sequential` is used explicitly to defend
+ * against a future `sequence.concurrent: true` root config flip
+ * (`describe.sequential` does NOT prevent a child `it.concurrent`
+ * opt-in from running concurrently — Vitest semantics).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
@@ -253,14 +256,33 @@ describe.sequential('pruneConsumedTokens — integration (Phase 9 retrofit)', ()
     // tenant data loss. This test pins the GUC-not-input scoping
     // contract.
     const tenantBSlug = tenantB.ctx.slug;
+    const tenantASlug = tenantA.ctx.slug;
+    const tenantACountBefore = await countTokensForTenant(tenantASlug);
     const tenantBCountBefore = await countTokensForTenant(tenantBSlug);
-    const depsForA = makeRenewalsDeps(tenantA.ctx.slug);
-    await pruneConsumedTokens(depsForA, {
+    const depsForA = makeRenewalsDeps(tenantASlug);
+    // R3 review-fix M3 — capture + assert `result.ok` so the
+    // assertion below tests the named invariant (adapter ignores
+    // input.tenantId for DB scope) rather than passing for an
+    // unrelated reason like "use-case input validation rejected the
+    // misroute" or "adapter silently threw". Also assert
+    // `result.value.pruned === 0` because tenant A's old row was
+    // already deleted by test 1; the misroute should be a true no-op.
+    const result = await pruneConsumedTokens(depsForA, {
       tenantId: tenantBSlug, // intentional misroute — adapter ignores it
       correlationId: 'integration-test-prune-defence-in-depth',
       now: NOW,
     });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pruned).toBe(0);
+    }
+    // Symmetric no-side-effect contract — both tenants' counts must
+    // be unchanged. Without the tenant A check, a future regression
+    // where the adapter deletes from BOTH tenants (e.g. due to BYPASS
+    // RLS fallback) would still pass the tenant-B-only assertion.
+    const tenantACountAfter = await countTokensForTenant(tenantASlug);
     const tenantBCountAfter = await countTokensForTenant(tenantBSlug);
+    expect(tenantACountAfter).toBe(tenantACountBefore);
     expect(tenantBCountAfter).toBe(tenantBCountBefore);
   });
 });

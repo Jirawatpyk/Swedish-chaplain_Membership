@@ -763,6 +763,18 @@ function safeMetric(fn: () => void): void {
     // the Turbopack browser bundle. Last-resort signal-loss swallow;
     // the structured-logger upgrade can come from observability rules
     // that scrape browser/Node consoles uniformly.
+    //
+    // TODO (post-F8, tracked PR #25 R3 review-fix M2): this catch
+    // swallows ALL errors including programmer bugs (TypeError /
+    // ReferenceError from a future label-set or instrument-cache
+    // regression). The intent is OTel-pipeline-transient resilience,
+    // but the broad catch hides regressions that would otherwise fail
+    // CI. A future iteration should narrow the catch to known OTel
+    // error names (e.g. inspect `e.name`/`e.message` for OTel
+    // signatures) and re-throw TypeError/ReferenceError so genuine
+    // programmer regressions surface. Out-of-scope for PR #25 (pre-
+    // existing pattern across all F1/F4/F5/F7/F8 metric helpers —
+    // ~50+ call sites; refactor warrants its own PR).
     console.warn('metrics_emit_failed_swallowed', {
       err: (e as Error).message,
     });
@@ -1698,7 +1710,7 @@ export const renewalsMetrics = {
    * incremented exactly once per cron pass with `outcome ∈
    * {success, failure}`.
    *
-   * Pairs with `pruneConsumedTokensRowsPruned` (row-count gauge); the
+   * Pairs with `pruneConsumedTokensRowsPruned` (row-count counter); the
    * pair was split from a previous combined counter that conflated
    * "rows deleted" with "passes completed" semantics — Round 2
    * /review issue A.
@@ -1713,7 +1725,8 @@ export const renewalsMetrics = {
    *      The pino `cron.renewals.prune_consumed_tokens.failed` /
    *      `.unexpected_error` log lines carry the diagnostic context.
    *
-   * Cardinality bound: 2 outcomes × low-cardinality tenant_id label.
+   * Cardinality bound: 2 dimensions — outcome (2 values: success,
+   * failure) × tenant_id (low cardinality, bounded by tenant count).
    */
   pruneConsumedTokensRunCompleted(
     tenantId: string,
@@ -1744,7 +1757,9 @@ export const renewalsMetrics = {
    * `increase(...rows_deleted_total[30d])` for capacity planning;
    * a non-zero rate confirms the prune is finding eligible rows.
    *
-   * Cardinality bound: 1 dimension (tenant_id) — low cardinality.
+   * Cardinality bound: 1 dimension — tenant_id (low cardinality,
+   * bounded by tenant count; no `outcome` label by design since this
+   * counter is success-only emission).
    */
   pruneConsumedTokensRowsPruned(
     tenantId: string,

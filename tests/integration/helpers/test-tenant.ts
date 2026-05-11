@@ -162,11 +162,8 @@ export async function createTestTenant(
     await db
       .delete(tenantRenewalSettings)
       .where(eq(tenantRenewalSettings.tenantId, slug));
-    // F8 Phase 9 retrofit (PR #25 review-fix Round 2) — clean up
-    // consumed_link_tokens rows seeded by the prune-consumed-tokens
-    // integration test (or any future test that exercises token
-    // replay-protection on a per-test tenant). RLS+FORCE policy
-    // scopes by tenant_id; helper bypasses RLS via owner role.
+    // F8 Phase 9 retrofit (PR #25 R2) — consumed_link_tokens cleanup;
+    // owner role bypasses RLS+FORCE policy on the table.
     await db
       .delete(consumedLinkTokens)
       .where(eq(consumedLinkTokens.tenantId, slug));
