@@ -34,6 +34,7 @@ import {
   tenantRenewalSettings,
   tenantRenewalSchedulePolicies,
 } from '@/modules/renewals/infrastructure/schema-tenant-renewal-config';
+import { consumedLinkTokens } from '@/modules/renewals/infrastructure/schema-consumed-link-tokens';
 import {
   auditLog,
   emailChangeTokens,
@@ -161,6 +162,14 @@ export async function createTestTenant(
     await db
       .delete(tenantRenewalSettings)
       .where(eq(tenantRenewalSettings.tenantId, slug));
+    // F8 Phase 9 retrofit (PR #25 review-fix Round 2) — clean up
+    // consumed_link_tokens rows seeded by the prune-consumed-tokens
+    // integration test (or any future test that exercises token
+    // replay-protection on a per-test tenant). RLS+FORCE policy
+    // scopes by tenant_id; helper bypasses RLS via owner role.
+    await db
+      .delete(consumedLinkTokens)
+      .where(eq(consumedLinkTokens.tenantId, slug));
     // R9 — tenant_fee_config DROPPED (migration 0029). Fiscal config
     // lives in tenant_invoice_settings which is cleaned above.
     // audit_log has an append-only trigger that BLOCKS DELETE — so we

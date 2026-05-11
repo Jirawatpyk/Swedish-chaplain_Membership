@@ -25,9 +25,17 @@
  * Setup: two test tenants created via `createTwoTestTenants` helper.
  * Each receives 3 token rows with controlled `consumed_at` timestamps
  * (one old past cutoff, one new before cutoff, one borderline at the
- * cutoff itself). Helper auto-cleans `consumed_link_tokens` rows via
- * inline DELETE in afterAll (the shared `test-tenant.ts` cleanup
- * helper does not cover this table).
+ * cutoff itself). The shared `test-tenant.ts` helper handles
+ * `consumed_link_tokens` cleanup (Round 2 review-fix B extended the
+ * helper to include this table).
+ *
+ * **Sequential test contract**: tests within this `describe.sequential`
+ * block share state across executions — test 1 prunes tenant A, test
+ * 2 verifies tenant B was untouched by the prior prune, etc. Vitest's
+ * default within-describe ordering is sequential, but we use
+ * `describe.sequential` explicitly to defend against a future
+ * concurrent-by-default config flip or someone wrapping these tests
+ * in `it.concurrent`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
@@ -121,7 +129,7 @@ async function rowExists(
   return rows.length > 0;
 }
 
-describe('pruneConsumedTokens — integration (Phase 9 retrofit)', () => {
+describe.sequential('pruneConsumedTokens — integration (Phase 9 retrofit)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
   let seededA: SeededRows;
@@ -135,16 +143,9 @@ describe('pruneConsumedTokens — integration (Phase 9 retrofit)', () => {
   });
 
   afterAll(async () => {
-    // Clean up consumed_link_tokens rows for both tenants — the shared
-    // `test-tenant.ts` cleanup helper does not cover this table (F8
-    // Phase 9 retrofit; helper extension is a follow-up). Inline DELETE
-    // runs as `neondb_owner` (BYPASS RLS) so it sees all rows.
-    await db
-      .delete(consumedLinkTokens)
-      .where(eq(consumedLinkTokens.tenantId, tenantA.ctx.slug));
-    await db
-      .delete(consumedLinkTokens)
-      .where(eq(consumedLinkTokens.tenantId, tenantB.ctx.slug));
+    // `test-tenant.ts` cleanup helper now covers `consumed_link_tokens`
+    // (Round 2 review-fix B). Calling tenant.cleanup() is sufficient —
+    // no inline DELETE needed.
     await tenantA.cleanup();
     await tenantB.cleanup();
   });
@@ -226,28 +227,37 @@ describe('pruneConsumedTokens — integration (Phase 9 retrofit)', () => {
     expect(await rowExists(tenantB.ctx.slug, seededB.newSha)).toBe(true);
   });
 
-  it('runInTenant adapter wrap — DELETE goes through RLS GUC binding', async () => {
-    // Defence-in-depth assertion: even if we manually bind a WRONG
-    // tenant context and try to use the adapter, the RLS policy
-    // prevents tenant A's DELETE from touching tenant B's rows.
-    // `runInTenant(B)` then calling the use-case for tenant A would
-    // be a programmer error caught by the use-case input validation
-    // (the use-case forwards `input.tenantId` to logs only; the
-    // actual DB scope comes from the adapter's `runInTenant(tenant)`
-    // which binds `tenant.slug`).
-    // Here we verify the adapter's runInTenant uses the constructor-
-    // bound tenant, not any caller-supplied override.
+  it('defence-in-depth — adapter-bound tenant overrides input.tenantId for DB scope', async () => {
+    // **Intent**: This is NOT testing a bug — it is a DEMONSTRATION
+    // that the system is robust against a specific class of
+    // programmer error.
+    //
+    // Scenario being defended against: a caller misroutes the
+    // use-case by constructing `deps` for tenant A but passing
+    // `input.tenantId = tenantB`. This is a contract-violating
+    // mistake (the route handler always derives both from
+    // `env.tenant.slug`, so they should match), but if it ever
+    // happened in code, what would the blast radius be?
+    //
+    // **The invariant**: the adapter's `runInTenant(tenant, …)` wrap
+    // binds the **constructor-bound** tenant — `input.tenantId` is
+    // only used for logging/audit context, NEVER for DB scope. So
+    // even with a misrouted input, DELETE scopes to tenant A's rows
+    // only. Tenant B is safe.
+    //
+    // **Why this matters**: tenant A's rows were already pruned in
+    // test 1. The misrouted call should be a no-op. If a future
+    // refactor accidentally passes `input.tenantId` into a `WHERE
+    // tenant_id = $1` predicate at the adapter layer (overriding
+    // the GUC), tenant B's rows would be deleted — silent cross-
+    // tenant data loss. This test pins the GUC-not-input scoping
+    // contract.
     const tenantBSlug = tenantB.ctx.slug;
     const tenantBCountBefore = await countTokensForTenant(tenantBSlug);
     const depsForA = makeRenewalsDeps(tenantA.ctx.slug);
-    // Even though we pass tenantBSlug in the use-case input, the
-    // adapter is constructed with tenant A's slug → the runInTenant
-    // wrap inside the adapter binds tenant A → DELETE scopes to
-    // tenant A's rows only (which are already pruned from the first
-    // test). Tenant B's remaining row count MUST be unchanged.
     await pruneConsumedTokens(depsForA, {
-      tenantId: tenantBSlug, // ignored by adapter — adapter binds tenant A
-      correlationId: 'integration-test-prune-4-misrouted-input',
+      tenantId: tenantBSlug, // intentional misroute — adapter ignores it
+      correlationId: 'integration-test-prune-defence-in-depth',
       now: NOW,
     });
     const tenantBCountAfter = await countTokensForTenant(tenantBSlug);

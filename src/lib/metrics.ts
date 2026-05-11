@@ -1693,34 +1693,68 @@ export const renewalsMetrics = {
   },
 
   /**
-   * `renewals_prune_consumed_tokens_pruned_total{outcome}` — Phase 9
-   * retrofit (PR #25 review-fix Round 1). Counter incremented once per
-   * cron pass with `outcome ∈ {success, failure}`, plus the `pruned`
-   * row-count delta added under the `success` label. Powers two ops
-   * signals:
-   *   1. Steady-state visibility — operators see a weekly tick in the
-   *      `success`-labelled counter; absence = cron-job.org dashboard
-   *      entry missing or broken.
-   *   2. Failure alert — any non-zero `failure` rate is a stop-the-
-   *      line indicator (advisory-lock contention, DB outage, RLS
-   *      misconfiguration). The pino `cron.renewals.prune_consumed_tokens.failed`
-   *      log line carries the diagnostic context.
+   * `renewals_prune_consumed_tokens_runs_total{tenant_id, outcome}` —
+   * Phase 9 retrofit (PR #25 review-fix Round 2). Run-count counter
+   * incremented exactly once per cron pass with `outcome ∈
+   * {success, failure}`.
+   *
+   * Pairs with `pruneConsumedTokensRowsPruned` (row-count gauge); the
+   * pair was split from a previous combined counter that conflated
+   * "rows deleted" with "passes completed" semantics — Round 2
+   * /review issue A.
+   *
+   * Ops signals:
+   *   1. **Steady-state visibility** — operators see a weekly tick on
+   *      the `success`-labelled counter; absence = cron-job.org
+   *      dashboard entry missing or broken.
+   *   2. **Failure alert** — any non-zero `failure` rate is a stop-
+   *      the-line indicator (transient Neon connection-pool
+   *      exhaustion, Vercel function timeout, RLS policy regression).
+   *      The pino `cron.renewals.prune_consumed_tokens.failed` /
+   *      `.unexpected_error` log lines carry the diagnostic context.
    *
    * Cardinality bound: 2 outcomes × low-cardinality tenant_id label.
    */
-  pruneConsumedTokensCompleted(
+  pruneConsumedTokensRunCompleted(
     tenantId: string,
     outcome: 'success' | 'failure',
-    prunedRowCount: number,
   ): void {
     safeMetric(() => {
       counter(
-        'renewals_prune_consumed_tokens_pruned_total',
-        'F8 prune-consumed-tokens cron pass result + row-count delta',
-      ).add(prunedRowCount > 0 ? prunedRowCount : 1, {
+        'renewals_prune_consumed_tokens_runs_total',
+        'F8 prune-consumed-tokens cron pass result (1 per invocation)',
+      ).add(1, {
         tenant_id: tenantId,
         outcome,
       });
+    });
+  },
+
+  /**
+   * `renewals_prune_consumed_tokens_rows_deleted_total{tenant_id}` —
+   * Phase 9 retrofit (PR #25 review-fix Round 2). Row-count counter
+   * incremented by the number of `consumed_link_tokens` rows the
+   * weekly prune actually deleted. Emitted ONLY on the success path
+   * (the failure path emits nothing here; the run-count counter
+   * carries the failure signal).
+   *
+   * A 0-row pass is normal at SweCham scale (steady-state weekly
+   * deletes are rare — most tokens expire via the 30-day payload TTL
+   * before the 60-day prune cutoff). Operators query
+   * `increase(...rows_deleted_total[30d])` for capacity planning;
+   * a non-zero rate confirms the prune is finding eligible rows.
+   *
+   * Cardinality bound: 1 dimension (tenant_id) — low cardinality.
+   */
+  pruneConsumedTokensRowsPruned(
+    tenantId: string,
+    rowCount: number,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_consumed_tokens_rows_deleted_total',
+        'F8 prune-consumed-tokens cron — rows actually deleted from consumed_link_tokens',
+      ).add(rowCount, { tenant_id: tenantId });
     });
   },
 

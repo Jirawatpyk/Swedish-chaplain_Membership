@@ -106,7 +106,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         'cron.renewals.prune_consumed_tokens.failed',
       );
-      renewalsMetrics.pruneConsumedTokensCompleted(tenantId, 'failure', 0);
+      // PR #25 review-fix Round 2 — emit ONLY the run-count counter
+      // on failure (rows-deleted counter is success-only). Decouples
+      // "did the cron run" from "how many rows were pruned" so
+      // PromQL `rate(...rows_deleted_total)` produces a clean
+      // capacity-planning signal independent of failure rate.
+      renewalsMetrics.pruneConsumedTokensRunCompleted(tenantId, 'failure');
       return NextResponse.json(
         { error: { code: 'server_error' }, tenant_id: tenantId },
         { status: 500 },
@@ -124,9 +129,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { tenantId, correlationId, ...body },
       'cron.renewals.prune_consumed_tokens.complete',
     );
-    renewalsMetrics.pruneConsumedTokensCompleted(
+    // PR #25 review-fix Round 2 — emit both run-count (success) +
+    // row-count counters. A 0-row pass still increments the run
+    // counter so absence-of-tick alarms work even during steady-state
+    // weeks where nothing was old enough to prune.
+    renewalsMetrics.pruneConsumedTokensRunCompleted(tenantId, 'success');
+    renewalsMetrics.pruneConsumedTokensRowsPruned(
       tenantId,
-      'success',
       result.value.pruned,
     );
     return NextResponse.json(body);
@@ -139,7 +148,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'cron.renewals.prune_consumed_tokens.unexpected_error',
     );
-    renewalsMetrics.pruneConsumedTokensCompleted(tenantId, 'failure', 0);
+    renewalsMetrics.pruneConsumedTokensRunCompleted(tenantId, 'failure');
     return NextResponse.json(
       { error: { code: 'server_error' }, tenant_id: tenantId },
       { status: 500 },
