@@ -65,8 +65,13 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  if (!UUID_RE.test(memberId)) return { title: 'Members · SweCham' };
-  return { title: `Member · SweCham` };
+  const t = await getTranslations('admin.members');
+  // `admin.members.detail.title` is `{companyName}` interpolated;
+  // resolving it would require a DB lookup that the page itself
+  // already does. Use the list-page title for both branches —
+  // browser tab shows "Members · SweCham Membership" regardless.
+  if (!UUID_RE.test(memberId)) return { title: t('title') };
+  return { title: t('title') };
 }
 
 function Field({

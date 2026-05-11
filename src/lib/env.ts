@@ -94,6 +94,18 @@ const schema = z.object({
   // Operational flags
   READ_ONLY_MODE: booleanFromString.default(false),
 
+  // K14-9 (R13-S6): off-Vercel deployments must opt-in to acknowledge
+  // they have wired a trusted reverse proxy that strips and rewrites
+  // `x-forwarded-for`. When unset (default false), the boot-time
+  // `assertVercelDeploymentForTrustedXff()` in `src/lib/client-ip.ts`
+  // emits a console.warn in production if `VERCEL` env var is also
+  // absent — to alert operators that per-IP rate-limit buckets may be
+  // spoofable. Routing the read through this zod-validated accessor
+  // (rather than raw `process.env.TRUSTED_REVERSE_PROXY === 'true'`)
+  // makes the value robust to capitalisation variations (`True`, `1`,
+  // `TRUE` all coerce correctly via `booleanFromString`).
+  TRUSTED_REVERSE_PROXY: booleanFromString.default(false),
+
   // Bootstrap (used only by scripts/seed-bootstrap-admin.ts)
   BOOTSTRAP_ADMIN_EMAIL: z.string().email().optional(),
 
@@ -356,6 +368,48 @@ const schema = z.object({
   // remain visible to admins for completion/rejection per FR-002 +
   // Spec § Edge Cases L341.
   FEATURE_F7_BROADCASTS: booleanFromString.default(false),
+
+  // --- F8 Renewal Tracking + Smart Reminders --------------------------------
+  // Kill-switch for F8 Renewal Tracking + Smart Reminders. When FALSE
+  // every `/api/cron/renewals/**`, `/api/admin/renewals/**`, and the
+  // member portal renewal page return 503/404 `feature_disabled` via
+  // the kill-switch helper. Default FALSE — F8 ships dark; flip to
+  // TRUE at MVP-wide chamber go-live (Option C per Assumption A12 v3
+  // — when entire MVP F1-F9 + Phase 5B polish complete). 6 cron jobs +
+  // renewal pipeline + at-risk widget + tier-upgrade queue + escalation
+  // tasks all gated by this single flag.
+  FEATURE_F8_RENEWALS: booleanFromString.default(false),
+
+  // Granular kill-switch for F8 at-risk widget + at-risk recompute cron.
+  // When TRUE, ONLY the at-risk surfaces are short-circuited (widget
+  // returns "Feature temporarily unavailable" placeholder; recompute cron
+  // returns `{skipped:true,reason:'at_risk_disabled'}`; score-column
+  // reads return null). Pipeline + reminders + tier-upgrade + escalation
+  // tasks + member self-service remain fully operational. Designed for
+  // incident response when at-risk formula calibration ships bad
+  // signals — restored via env-var revert + redeploy in <5 minutes.
+  // Default FALSE — at-risk widget enabled when F8 is live.
+  FEATURE_F8_AT_RISK_DISABLED: booleanFromString.default(false),
+
+  // HMAC primary signing key for renewal-link tokens (per FR-026 + R1).
+  // Tokens are HMAC-SHA256 over a JSON payload {v,tid,mid,cid,iat,exp}.
+  // ≥32 bytes of entropy. MUST be distinct from AUTH_COOKIE_SIGNING_SECRET
+  // (F1) and UNSUBSCRIBE_TOKEN_SECRET (F7) so independent rotation does
+  // not invalidate user sessions or marketing tokens.
+  // Generate with: openssl rand -base64 48
+  // SECRET — redacted in logs.
+  RENEWAL_LINK_TOKEN_SECRET_PRIMARY: z.string().min(32).describe('SECRET — do not log'),
+
+  // HMAC fallback signing key during dual-key rotation window per R16.
+  // OPTIONAL — set ONLY during a 30-day rotation window:
+  //   1. Generate new secret with `openssl rand -base64 48`.
+  //   2. Set RENEWAL_LINK_TOKEN_SECRET_FALLBACK = <current PRIMARY value>.
+  //   3. Set RENEWAL_LINK_TOKEN_SECRET_PRIMARY = <new value>.
+  //   4. Redeploy. New tokens use PRIMARY; old in-flight tokens (TTL ≤30d)
+  //      verify against FALLBACK.
+  //   5. After 30 days, remove FALLBACK.
+  // Steady state = only PRIMARY set. SECRET — redacted in logs.
+  RENEWAL_LINK_TOKEN_SECRET_FALLBACK: z.string().min(32).optional().describe('SECRET — do not log'),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -482,6 +536,8 @@ export const env = {
 
   flags: {
     readOnlyMode: raw.READ_ONLY_MODE,
+    // K14-9 (R13-S6): see schema docstring above.
+    trustedReverseProxy: raw.TRUSTED_REVERSE_PROXY,
   },
 
   bootstrap: {
@@ -506,7 +562,7 @@ export const env = {
     xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
-  // F3 + F4 + F5 + F7 feature flags
+  // F3 + F4 + F5 + F7 + F8 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
@@ -514,6 +570,8 @@ export const env = {
     f5OnlinePayment: raw.FEATURE_F5_ONLINE_PAYMENT,
     f5AsyncReceiptPdf: raw.FEATURE_F5_ASYNC_RECEIPT_PDF,
     f7Broadcasts: raw.FEATURE_F7_BROADCASTS,
+    f8Renewals: raw.FEATURE_F8_RENEWALS,
+    f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
   },
 
   // F4 Invoicing
@@ -547,6 +605,18 @@ export const env = {
     // F7 UX-5/UX-6 — optional tenant URLs (gracefully omitted when unset).
     privacyPolicyUrl: raw.TENANT_PRIVACY_POLICY_URL,
     websiteUrl: raw.TENANT_WEBSITE_URL,
+  },
+
+  // F8 Renewal Tracking + Smart Reminders. F8 reuses F1+F4 transactional
+  // Resend (`env.resend.*`) for renewal reminder emails — NOT F7's
+  // Broadcasts API surface (renewal reminders are TRANSACTIONAL per
+  // FR-019, not marketing). Only F8-specific secrets live here:
+  // renewal-link HMAC keys for member self-service token verification
+  // (per R1 + R16 dual-key rotation). `linkTokenSecretFallback` is null
+  // outside the rotation window (steady state = only PRIMARY set).
+  renewals: {
+    linkTokenSecretPrimary: raw.RENEWAL_LINK_TOKEN_SECRET_PRIMARY,
+    linkTokenSecretFallback: raw.RENEWAL_LINK_TOKEN_SECRET_FALLBACK ?? null,
   },
 } as const;
 

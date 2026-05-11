@@ -1,0 +1,22 @@
+-- ---------------------------------------------------------------------------
+-- F8 Phase 4 Wave I2d — extend audit_event_type pgEnum with the
+-- `member_email_unverified_threshold_crossed` event.
+--
+-- Per the H1 audit-emitter convention "co-ship enum + emit site",
+-- this enum value lands alongside the first concrete emit site:
+--
+--   * `member_email_unverified_threshold_crossed` — emitted by the
+--     `detectBounceThreshold` use-case (T090) when the F1 webhook
+--     (T101 in Wave I4) reports a bounce that pushes the member
+--     past one of three FR-012a thresholds (1 hard / 3 soft-in-cycle
+--     / 5 soft-rolling-30d). Payload carries
+--     `{member_id, trigger, bounce_count, soft_in_cycle, soft_30d,
+--     hard_bounces, escalation_task_id}` for downstream audit-viewer
+--     queries.
+--
+-- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
+-- transaction with other DDL — this single statement ships in its own
+-- migration file (sequential after 0103 dispatch enum).
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'member_email_unverified_threshold_crossed';--> statement-breakpoint

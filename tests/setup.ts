@@ -36,6 +36,14 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   BLOB_READ_WRITE_TOKEN: 'vercel_blob_rw_test_placeholder_token',
   CRON_SECRET: 'cron-secret-test-placeholder-16+',
   FEATURE_F4_INVOICING: 'true',
+  // F8 Renewals — match canonical post-flag-flip production state so
+  // the test environment exercises the same wiring as prod (notably
+  // `onPaidCallbacks` injection in F5 webhook + confirm-payment deps).
+  // Without this, CI without `.env.local` would default to false and
+  // diverge from the local-dev/prod-with-flag-on shape.
+  FEATURE_F8_RENEWALS: 'true',
+  RENEWAL_LINK_TOKEN_SECRET_PRIMARY:
+    'test-renewal-link-token-secret-32-chars-min-padding',
 };
 
 for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {
@@ -51,6 +59,12 @@ for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {
 process.env['STRIPE_API_VERSION'] = '2024-06-20';
 
 import { beforeAll, afterEach, afterAll, vi } from 'vitest';
+// Staff-Review-2026-05-09 R2-S6: extend Vitest's expect with
+// @testing-library/jest-dom matchers (`.toBeInTheDocument`,
+// `.toHaveAccessibleName`, etc.) — DOM-aware assertions are the
+// Testing Library convention and replace the looser `.toBeTruthy`
+// pattern that passes for any non-null DOM reference.
+import '@testing-library/jest-dom/vitest';
 
 // Fixed clock for deterministic TTL tests. Individual tests can override
 // by calling `vi.setSystemTime(...)` themselves.

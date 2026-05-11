@@ -202,4 +202,111 @@ describe('logger redaction (T158, T-14)', () => {
     expect(line).not.toContain(`${SENTINEL}-nested2@member.test`);
     expect(line).toContain('[REDACTED]');
   });
+
+  // K2 / FR-049 — F8 renewals secrets + tokens + member contact PII.
+  // The spec explicitly enumerates 7 forbidden-in-logs paths; each must
+  // be redacted at top-level + nested form.
+  describe('FR-049 — F8 renewals forbidden-in-logs paths', () => {
+    it('redacts renewal_token + nested + camelCase variants', () => {
+      const { logger, output } = makeCapturingLogger();
+      logger.info(
+        {
+          renewal_token: `${SENTINEL}-tok`,
+          renewalToken: `${SENTINEL}-camel`,
+          ctx: { renewal_token: `${SENTINEL}-nested` },
+          audit: { payload: { renewal_token: `${SENTINEL}-deep` } },
+        },
+        'renewal token',
+      );
+      const line = output.join('');
+      expect(line).not.toContain(`${SENTINEL}-tok`);
+      expect(line).not.toContain(`${SENTINEL}-camel`);
+      expect(line).not.toContain(`${SENTINEL}-nested`);
+      expect(line).not.toContain(`${SENTINEL}-deep`);
+    });
+
+    it('redacts renewal_link + camelCase + nested', () => {
+      const { logger, output } = makeCapturingLogger();
+      logger.info(
+        {
+          renewal_link: `${SENTINEL}-link`,
+          renewalLink: `${SENTINEL}-camelLink`,
+          email: { renewal_link: `${SENTINEL}-emailLink` },
+        },
+        'renewal link',
+      );
+      const line = output.join('');
+      expect(line).not.toContain(`${SENTINEL}-link`);
+      expect(line).not.toContain(`${SENTINEL}-camelLink`);
+      expect(line).not.toContain(`${SENTINEL}-emailLink`);
+    });
+
+    it('redacts RENEWAL_LINK_TOKEN_SECRET + lowercase + camelCase', () => {
+      const { logger, output } = makeCapturingLogger();
+      logger.info(
+        {
+          RENEWAL_LINK_TOKEN_SECRET: `${SENTINEL}-env`,
+          renewal_link_token_secret: `${SENTINEL}-lower`,
+          renewalLinkTokenSecret: `${SENTINEL}-camel`,
+          env: { renewal_link_token_secret: `${SENTINEL}-nested` },
+        },
+        'env',
+      );
+      const line = output.join('');
+      expect(line).not.toContain(`${SENTINEL}-env`);
+      expect(line).not.toContain(`${SENTINEL}-lower`);
+      expect(line).not.toContain(`${SENTINEL}-camel`);
+      expect(line).not.toContain(`${SENTINEL}-nested`);
+    });
+
+    it('redacts payment_method + camelCase + nested (Stripe defence)', () => {
+      const { logger, output } = makeCapturingLogger();
+      logger.info(
+        {
+          payment_method: `${SENTINEL}-pm`,
+          paymentMethod: `${SENTINEL}-camelPm`,
+          ctx: { payment_method: `${SENTINEL}-nested` },
+          audit: { payload: { payment_method: `${SENTINEL}-deep` } },
+        },
+        'payment method',
+      );
+      const line = output.join('');
+      expect(line).not.toContain(`${SENTINEL}-pm`);
+      expect(line).not.toContain(`${SENTINEL}-camelPm`);
+      expect(line).not.toContain(`${SENTINEL}-nested`);
+      expect(line).not.toContain(`${SENTINEL}-deep`);
+    });
+
+    it('redacts primary_contact_email + camelCase + nested', () => {
+      const { logger, output } = makeCapturingLogger();
+      logger.info(
+        {
+          primary_contact_email: `${SENTINEL}-pce@x.test`,
+          primaryContactEmail: `${SENTINEL}-camelPce@x.test`,
+          member: { primary_contact_email: `${SENTINEL}-nested@x.test` },
+          audit: { payload: { primary_contact_email: `${SENTINEL}-deep@x.test` } },
+        },
+        'primary contact',
+      );
+      const line = output.join('');
+      expect(line).not.toContain(`${SENTINEL}-pce@x.test`);
+      expect(line).not.toContain(`${SENTINEL}-camelPce@x.test`);
+      expect(line).not.toContain(`${SENTINEL}-nested@x.test`);
+      expect(line).not.toContain(`${SENTINEL}-deep@x.test`);
+    });
+
+    it('redacts member.email shape (FR-049 explicit nested form)', () => {
+      const { logger, output } = makeCapturingLogger();
+      logger.info(
+        {
+          // The `*.email` wildcard already covers `{member: {email}}`;
+          // this test pins the FR-049-mandated path explicitly.
+          member: { email: `${SENTINEL}-memEmail@x.test` },
+        },
+        'member email',
+      );
+      const line = output.join('');
+      expect(line).not.toContain(`${SENTINEL}-memEmail@x.test`);
+    });
+  });
 });

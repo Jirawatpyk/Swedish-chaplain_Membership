@@ -793,3 +793,51 @@ global `@media (prefers-reduced-motion: reduce)` rule in
 `src/app/globals.css` that neutralises `.animate-spin/pulse/bounce/ping`
 for every caller. Do **not** add per-component `motion-reduce:animate-none`
 modifiers — the global rule covers them.
+
+## 20. Use-case input parsing — `parseInput` helper convention
+
+**Source**: `src/modules/renewals/application/use-cases/_lib/parse-input.ts`
+(introduced in F8 commit `d4afa438`; canonical for new use-cases as of
+Round 2 K18).
+
+Every Application-layer use-case that takes a zod-validated input
+schema MUST use the `parseInput(schema, raw)` helper instead of an
+inline `safeParse` block. The helper produces the canonical
+`InvalidInputError` shape (`{ kind: 'invalid_input'; message: string }`)
+that all F8 use-case error unions extend. Inline `safeParse` is
+discouraged for new code because it (a) drifts the fallback string
+(`'invalid input'` vs `'invalid request'` etc.) across callsites and
+(b) duplicates the `kind: 'invalid_input'` field-shape contract that
+should be grep-able from one source of truth.
+
+```ts
+// ✅ canonical pattern
+import { parseInput } from './_lib/parse-input';
+const inputResult = parseInput(myInputSchema, rawInput);
+if (!inputResult.ok) return err(inputResult.error);
+const input = inputResult.value;
+
+// ❌ inline pattern — only acceptable for legacy F1–F4 use-cases
+// that pre-date the helper and haven't been touched since.
+const parsed = mySchema.safeParse(rawInput);
+if (!parsed.success) {
+  return err({
+    kind: 'invalid_input',
+    message: parsed.error.issues[0]?.message ?? 'invalid input',
+  });
+}
+```
+
+**Migration policy**: existing use-cases migrate opportunistically as
+they're touched — no big-bang rewrite. New use-cases adopt
+immediately. The `mapZodFirstIssue(issues)` helper is exposed
+separately for use-cases that want to keep an inline `safeParse`
+(e.g. for non-input schemas like audit payload validation) but still
+adopt the canonical fallback string.
+
+The helper intentionally surfaces only the FIRST zod issue, not the
+full issues array. This matches the pre-extraction inline pattern and
+keeps the user-facing `message` field bounded. Use-cases that need
+the full issues array (rare — typically only a multi-field form
+that validates server-side) can still inline `safeParse` and assemble
+their own message.

@@ -313,6 +313,18 @@
   --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
 }
 
+/* Reserve the scrollbar gutter on the document root so a page that
+ * later grows tall enough to produce a scrollbar does NOT shift the
+ * centered content leftwards (CLS = scrollbar-width). Visible on
+ * short loading skeletons that flip to long real content (e.g.
+ * /admin/settings/renewals/schedules). `stable` keeps the gutter
+ * reserved for both browser scrollbars (overlay + classic) without
+ * inducing layout shift between the two states.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

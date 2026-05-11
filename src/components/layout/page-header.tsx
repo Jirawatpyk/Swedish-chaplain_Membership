@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react';
+'use client';
+
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -8,6 +10,16 @@ type PageHeaderProps = {
   actions?: ReactNode;
   badge?: ReactNode;
   className?: string;
+  /**
+   * Staff-Review-2026-05-09 Round-2 R2-W2 fix: auto-focus the H1 on
+   * mount via React-owned ref instead of the previous external
+   * `<AutoFocusH1>` component which mutated `tabIndex` directly on
+   * the DOM. Use on routes the user was server-redirected to (e.g.
+   * `/portal/renewal/[memberId]/success` after F5 returns from
+   * Stripe) so screen-reader + keyboard users land at the heading
+   * instead of the previous page's last-focused element (WCAG 2.4.3).
+   */
+  autoFocusTitle?: boolean;
 };
 
 /**
@@ -21,7 +33,17 @@ export function PageHeader({
   actions,
   badge,
   className,
+  autoFocusTitle = false,
 }: PageHeaderProps) {
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (!autoFocusTitle) return;
+    const h1 = titleRef.current;
+    if (h1) {
+      h1.focus({ preventScroll: true });
+    }
+  }, [autoFocusTitle]);
+
   return (
     <header
       data-slot="page-header"
@@ -44,7 +66,24 @@ export function PageHeader({
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h1 data-slot="page-header-title" className="text-h1 text-foreground">
+          {/*
+           * R4 + Round-5 review-finding H4: focus-only announcement
+           * pattern. R4-W10 had paired `tabIndex={-1}.focus()` with
+           * `aria-live="polite"` to "complement rather than compete",
+           * but the round-5 review found that NVDA + JAWS announce
+           * the focused heading AND re-announce the live-region
+           * update on the next tick — SR users hear the heading
+           * twice (WCAG 4.1.3 / WAI-ARIA APG anti-pattern). Drop
+           * the live region and rely on focus-only announcement,
+           * which NVDA + JAWS + VoiceOver all surface reliably for
+           * `tabIndex={-1}` headings.
+           */}
+          <h1
+            ref={titleRef}
+            data-slot="page-header-title"
+            className="text-h1 text-foreground focus-visible:outline-none"
+            tabIndex={autoFocusTitle ? -1 : undefined}
+          >
             {title}
           </h1>
           {badge}

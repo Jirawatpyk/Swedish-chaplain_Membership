@@ -9,6 +9,8 @@ import {
   ReceiptIcon,
   FileCog2Icon,
   MegaphoneIcon,
+  RefreshCwIcon,
+  CalendarClockIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -97,6 +99,18 @@ export const staffNavConfig: NavConfig = {
           href: '/admin/broadcasts',
           activePattern: '/admin/broadcasts',
         },
+        // F8 Renewals — top-level entry surfacing the renewal pipeline.
+        // Sub-routes (tier-upgrades, tasks) live under /admin/renewals/*
+        // and use the activePattern prefix-match to keep the parent
+        // highlighted; settings/schedules has been relocated to
+        // /admin/settings/renewals/schedules and lives in the Settings
+        // group below per the centralized-settings IA convention.
+        {
+          titleKey: 'nav.staff.renewals',
+          icon: RefreshCwIcon,
+          href: '/admin/renewals',
+          activePattern: '/admin/renewals',
+        },
         {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
@@ -108,9 +122,8 @@ export const staffNavConfig: NavConfig = {
     {
       // R7 consolidation — Fee Configuration removed. VAT + currency
       // + registration fee consolidated into Invoice Settings as the
-      // authoritative tenant-wide fiscal-config surface. `settingsFees`
-      // i18n key + the previous two-child NavGroup pattern are now
-      // orphaned (harmless; swept in R8 cleanup).
+      // authoritative tenant-wide fiscal-config surface. F8 Renewals
+      // re-added Renewal Schedules under the same Settings header.
       titleKey: 'nav.staff.sections.settings',
       items: [
         {
@@ -118,6 +131,12 @@ export const staffNavConfig: NavConfig = {
           icon: FileCog2Icon,
           href: '/admin/settings/invoicing',
           activePattern: '/admin/settings/invoicing',
+        },
+        {
+          titleKey: 'nav.staff.settingsRenewalSchedules',
+          icon: CalendarClockIcon,
+          href: '/admin/settings/renewals/schedules',
+          activePattern: '/admin/settings/renewals',
         },
       ],
     },

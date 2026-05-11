@@ -27,8 +27,8 @@ export {
   type Member,
   type MemberId,
   type MemberStatus,
-  type TenantId as MemberTenantId,
-  type PlanId as MemberPlanId,
+  type TenantId,
+  type PlanId,
 } from './domain/member';
 
 export {

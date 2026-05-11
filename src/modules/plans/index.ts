@@ -277,6 +277,49 @@ export {
   type PlanLookupError,
 } from './application/get-plan-for-member';
 
+// --- F8 cross-module use-cases (Wave B — Complexity Tracking #4) -----------
+// `scheduled_plan_changes` table ships in Wave C migration 0086
+// (data-model.md § 2.9). The Drizzle adapter implementing
+// `ScheduledPlanChangeRepo` lands when US5 wires the F4 renewal-
+// invoice-creation hook (Phase 5+); Wave B contract tests use an
+// in-memory mock.
+export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
+export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
+export type {
+  ScheduleNextRenewalPlanChangeDeps,
+} from './application/schedule-next-renewal-plan-change';
+export type {
+  GetEffectivePlanForRenewalDeps,
+  GetEffectivePlanForRenewalInput,
+} from './application/get-effective-plan-for-renewal';
+export type {
+  ScheduledPlanChangeRepo,
+  CurrentPlanResolverPort,
+} from './application/ports';
+// Round 6 W-008 — REVERTED inline barrel re-export of
+// `drizzleScheduledPlanChangeRepo`. Adding a concrete Drizzle adapter
+// to this barrel pulled `postgres` (postgres-js) into the client
+// bundle through transitive `@/modules/plans` imports, breaking the
+// Vercel/Webpack build with `Can't resolve 'fs'`. The cleaner fix
+// (sub-barrel like `@/modules/plans/server` for server-only adapters,
+// or moving the F2 Drizzle ports out of the public Domain barrel) is
+// deferred to a follow-up task — but the *port type itself* IS exported
+// from this barrel (above), so cross-module consumers (renewals)
+// import the type via `@/modules/plans` and inject the concrete adapter
+// at their own composition root, avoiding the client-bundle pollution.
+export {
+  SCHEDULED_PLAN_CHANGE_STATUSES,
+  isTerminalStatus,
+} from './domain/scheduled-plan-change';
+export type {
+  ScheduledPlanChange,
+  ScheduledPlanChangeStatus,
+  ScheduleNextRenewalPlanChangeInput,
+  ScheduleNextRenewalPlanChangeError,
+  EffectivePlanForRenewal,
+  GetEffectivePlanForRenewalError,
+} from './domain/scheduled-plan-change';
+
 // F7 bridge — concrete `PlanRepo` instance moved out of the public barrel
 // 2026-05-01: Public barrel re-exporting Infrastructure caused the client
 // bundler to pull postgres + pino into Client Components

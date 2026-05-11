@@ -866,11 +866,11 @@ async function dispatchOne(
 
         // S1 — audit emission parity with send-failure permanent path.
         // Emitted inside the tx so it commits atomically with the status
-        // flip. `auditLog.tenantId` is nullable (schema.ts:256) — for
-        // cross-tenant platform rows (F1 invitation flow with
-        // tenant_id=null) we still insert the audit row with tenantId
-        // null so compliance evidence lives in the append-only table
-        // rather than only in pino logs.
+        // flip. `auditLog.tenantId` is nullable (schema.ts:256). After
+        // Round-3 Option G the F1 invitation flow now stamps the
+        // outbox row with the inviter's tenant slug (migration 0098
+        // forced NOT NULL + FORCE RLS), so `row.tenantId` is always
+        // non-null here — the audit row inherits the same tenant.
         await tx.insert(auditLog).values({
           eventType: 'email_dispatch_failed',
           actorUserId: 'system:cron',
@@ -992,9 +992,9 @@ async function dispatchOne(
         'cron.outbox_dispatch.permanent_failure',
       );
 
-      // S1 — always insert audit inside tx (tenantId nullable in schema).
-      // Cross-tenant platform rows (F1 invitation, tenant_id=null) now
-      // land in auditLog for compliance parity with tenant-scoped rows.
+      // S1 — always insert audit inside tx (tenantId nullable in
+      // schema; row.tenantId now always non-null post-Round-3 Option G,
+      // so the audit row inherits the inviter's tenant slug).
       await tx.insert(auditLog).values({
         eventType: 'email_dispatch_failed',
         actorUserId: 'system:cron',

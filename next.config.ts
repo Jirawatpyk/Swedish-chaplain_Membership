@@ -49,6 +49,24 @@ const nextConfig: NextConfig = {
   // Security headers (HSTS, CSP, X-Frame-Options) are set in proxy.ts so
   // they apply uniformly to API routes and pages — single source of truth.
   // (Next.js 16 renamed the `middleware.ts` convention to `proxy.ts`.)
+  // 308 (permanent, method-preserving) redirects for relocated UI
+  // routes — preserves any admin bookmarks + external links pointing
+  // at the legacy location. Next.js 16's `permanent: true` emits 308
+  // (NOT 301) intentionally — 301 historically allowed method changes
+  // on retry which 308 does not. Behaviour for GET requests is
+  // identical between the two from a browser perspective.
+  async redirects() {
+    return [
+      {
+        // F8 schedule editor moved from feature-nested to centralized
+        // settings IA (sister of /admin/settings/invoicing). API routes
+        // at /api/admin/renewals/* intentionally stayed put.
+        source: '/admin/renewals/settings/schedules',
+        destination: '/admin/settings/renewals/schedules',
+        permanent: true,
+      },
+    ];
+  },
   experimental: {
     // Enterprise UX § 2.1 — skeleton shimmer relies on CSS animations.
     //

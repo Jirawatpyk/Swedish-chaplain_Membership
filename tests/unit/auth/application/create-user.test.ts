@@ -129,12 +129,15 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
   };
 }
 
+import { asTenantSlug } from '@/modules/tenants/domain/tenant-slug';
+
 const baseInput = {
   email: 'invitee@swecham.test',
   role: 'member' as const,
   actorUserId: asUserId('22222222-2222-4222-8222-222222222222'),
   sourceIp: '203.0.113.10',
   requestId: 'req-test-001',
+  tenantId: asTenantSlug('swecham'),
 };
 
 beforeEach(() => {
@@ -162,6 +165,7 @@ describe('createUser (Path C atomic flow)', () => {
       token: INVITATION_ID,
       role: 'member',
       locale: undefined,
+      tenantId: 'swecham',
     });
     expect(deps.audit.appendInTx).toHaveBeenCalledOnce();
     expect(authMetrics.invitationSent).toHaveBeenCalledWith('member');

@@ -132,6 +132,12 @@ export const invoicingBridge: InvoicingBridgePort = {
       ...(input.suppressReceiptEmail !== undefined
         ? { suppressReceiptEmail: input.suppressReceiptEmail }
         : {}),
+      // F8 hook: forward cross-module on-paid callbacks (e.g.
+      // `f8OnPaidCallbacks(tenantId)` for renewal cycle completion) so
+      // they fire inside F4's atomic tx alongside the invoice flip.
+      ...(input.onPaidCallbacks !== undefined
+        ? { onPaidCallbacks: input.onPaidCallbacks }
+        : {}),
     });
 
     if (!f4Result.ok) {

@@ -254,4 +254,73 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
     );
     expect(matched.length).toBe(0);
   }, 60_000);
+
+  // F8 Phase 2 Wave A · D1 (verify-run remediation): real-DB proof that a
+  // throwing `onPaidCallbacks` listener rolls back the issued→paid flip +
+  // the invoice_paid audit row. The unit-level contract test
+  // (`tests/contract/f4-on-paid-callbacks.contract.test.ts`) only proves
+  // the use-case re-throws callback errors out of `withTx`; this closes
+  // the gap by asserting the actual Postgres tx rollback semantics on
+  // live Neon — same pattern + same key assertions as the enqueue case
+  // above, but the throw point is now an F8-style cross-module callback.
+  it('onPaidCallback throws → recordPayment rejects + invoice stays issued + no invoice_paid audit committed (F8 hook)', async () => {
+    const { invoiceId } = await seedIssuedInvoice(tenant, user);
+
+    let thrown: unknown = null;
+    try {
+      await runInTenant(tenant.ctx, async () =>
+        recordPayment(
+          makeRecordPaymentDeps(tenant.ctx.slug, undefined, [
+            async () => {
+              throw new Error(
+                'D1 simulated F8 cross-module callback failure',
+              );
+            },
+          ]),
+          {
+            tenantId: tenant.ctx.slug,
+            actorUserId: user.userId,
+            invoiceId,
+            paymentMethod: 'other',
+            paymentDate: '2026-05-01',
+            requestId: 'wave-a-d1-callback-rollback',
+          },
+        ),
+      );
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).not.toBeNull();
+
+    // Same key assertion as R3-S1: the row MUST stay `issued` because
+    // the callback ran inside the open `withTx` and the throw rolled
+    // the entire transaction back. If the callback fired AFTER the tx
+    // commit, the row would already be `paid` here.
+    const [invRow] = await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.tenantId, tenant.ctx.slug),
+          eq(invoices.invoiceId, invoiceId),
+        ),
+      )
+      .limit(1);
+    expect(invRow?.status).toBe('issued');
+    expect(invRow?.paidAt).toBeNull();
+
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'invoice_paid'),
+        ),
+      );
+    const matched = auditRows.filter(
+      (r) => (r.payload as { invoice_id?: string }).invoice_id === invoiceId,
+    );
+    expect(matched.length).toBe(0);
+  }, 60_000);
 });

@@ -22,7 +22,13 @@ import { memberIdentityAdapter } from '../infrastructure/adapters/member-identit
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { f4AuditAdapter } from '../infrastructure/adapters/audit-adapter';
 import { overdueAuditAdapter } from '../infrastructure/adapters/overdue-audit-adapter';
-import { sharpImageReencodeAdapter } from '../infrastructure/adapters/sharp-image-reencode-adapter';
+// `sharp` is a Node-only native dep (libvips → detect-libc →
+// child_process). The only place it's needed is the upload-tenant-logo
+// route — its dep factory lives in `./make-upload-tenant-logo-deps.ts`,
+// imported only by that route. Keeping it OUT of `invoicing-deps.ts`
+// is what allows F8 client surfaces (e.g. `tier-filter-select.tsx`)
+// that touch the F8 barrel to compile cleanly under Turbopack 16
+// without dragging `sharp` into the client bundle.
 import { CURRENT_TEMPLATE_VERSION } from '../infrastructure/pdf/template-registry';
 
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
@@ -94,17 +100,9 @@ export function makeUpdateTenantInvoiceSettingsDeps(): {
   };
 }
 
-export function makeUploadTenantLogoDeps(): {
-  blob: typeof vercelBlobAdapter;
-  audit: typeof f4AuditAdapter;
-  imageReencode: typeof sharpImageReencodeAdapter;
-} {
-  return {
-    blob: vercelBlobAdapter,
-    audit: f4AuditAdapter,
-    imageReencode: sharpImageReencodeAdapter,
-  };
-}
+// `makeUploadTenantLogoDeps` lives in `./make-upload-tenant-logo-deps.ts`
+// — see header comment above for rationale. The F4 barrel re-exports it
+// directly from that path so route handlers see no API change.
 
 /**
  * R7 consolidation — F2 plan module calls this when it needs to
@@ -266,10 +264,33 @@ export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {
  *   tx instead of opening its own. Used by the F5 → F4 invoicing-bridge
  *   to keep the payment-row update and the invoice `issued → paid` flip
  *   in a SINGLE transaction (Reliability D-03, Group E2b).
+ * @param onPaidCallbacks - optional list of cross-module on-paid hooks.
+ *   F8 Phase 2 Wave A (T008) — fired inside the same withTx after
+ *   applyPayment + audit + outbox + registration-fee flip succeed,
+ *   before the tx commits. Any rejection rolls back the whole tx.
+ *   F8's composition root will register a `complete-cycle-on-paid`
+ *   callback here per research.md R12. Defaults to undefined (no
+ *   callbacks) so existing F4 admin manual mark-paid + F5 webhook
+ *   call sites are unchanged when callers don't pass the parameter.
+ *
+ *   I3 review-fix (Phase 5 backlog close): the second `tx` parameter
+ *   is the F4-internal Drizzle tx handle, threaded so listeners that
+ *   touch other tables (F8's mark-cycle-complete) can participate in
+ *   the SAME transaction instead of opening a separate `runInTenant`
+ *   that commits independently. The handle is typed `unknown` to keep
+ *   the cross-module contract framework-free (Constitution Principle
+ *   III); listeners cast back to their own internal `TenantTx` brand.
+ *   Listeners that don't need the tx may simply ignore the parameter.
  */
 export function makeRecordPaymentDeps(
   tenantId: string,
   externalTx?: unknown,
+  onPaidCallbacks?: ReadonlyArray<
+    (
+      evt: import('@/modules/invoicing/domain/f4-invoice-paid-event').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
+  >,
 ): RecordPaymentDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
@@ -284,6 +305,7 @@ export function makeRecordPaymentDeps(
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     receiptPdfRenderEnqueue: receiptPdfRenderEnqueueAdapter,
     asyncReceiptPdf: env.features.f5AsyncReceiptPdf,
+    ...(onPaidCallbacks !== undefined ? { onPaidCallbacks } : {}),
   };
 }
 

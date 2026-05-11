@@ -113,10 +113,83 @@ export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * cross-tenant flows that do NOT go through `runInTenant`). Structurally
  * identical to `TenantTx` — Drizzle's tx shape is the same either way.
  * Exported as a distinct alias for semantic clarity: callers who use
- * `DbTx` announce they intentionally operate outside a tenant context
- * (e.g. F1 invitation flow — tenant_id=null on the outbox row).
+ * `DbTx` announce they intentionally operate outside a tenant
+ * `runInTenant` chain because they need owner-role privileges on
+ * cross-tenant identity tables (e.g. F1 invitation flow — `users` and
+ * `invitations` have no INSERT grant for `chamber_app`). Post-Round-3
+ * Option G the rows written here still carry a tenant_id when their
+ * target table requires one (e.g. `notifications_outbox.tenant_id`
+ * is NOT NULL since migration 0098).
  */
 export type DbTx = TenantTx;
+
+/**
+ * Round 2 review-fix (I-2) / Round 3 review-fix (R3-S5): runtime
+ * **method-presence check** for a Drizzle tx handle.
+ *
+ * **Important — this is NOT a tenant-scope check.** The guard verifies
+ * only that the value exposes Drizzle's tx-callback method shape
+ * (`execute`, `select`, `insert`, `update`, `delete`, `transaction` as
+ * functions). It does NOT verify that:
+ *   - the tx has `SET LOCAL ROLE chamber_app` applied (Constitution
+ *     Principle I sub-clause 1+2)
+ *   - the tx has `SET LOCAL app.current_tenant = <slug>` applied
+ *   - the tx's tenant scope matches the caller's expected tenant
+ *
+ * Use this only for **defending against F4 contract drift** in the
+ * F4 → F8 onPaidCallback path: F4 opens its tx via its own `withTx →
+ * runInTenant` chain BEFORE invoking the callback, so by the time the
+ * callback runs the tx IS tenant-scoped. The guard catches the case
+ * where a future refactor wraps `tx` in instrumentation, forgets to
+ * thread it, or passes a non-tx value (event payload, sentinel) by
+ * accident — all of which would explode as `TypeError: tx.execute is
+ * not a function` deep in a query callsite without this check.
+ *
+ * **Future relocation note** (`/speckit.staff-review.run` Wave K23
+ * R006 — non-blocking suggestion): if F5 / F6 / F7 cross-module
+ * callbacks proliferate post-MVP and each adopts this duck-type
+ * pattern, consider relocating `isTenantTx` to `@/modules/tenants`
+ * (it is conceptually a tenant-isolation primitive, not a DB
+ * primitive). Current placement at `@/lib/db` is defensible because
+ * the only consumer today is F4 → F8 and the `TenantTx` type itself
+ * is owned by `@/lib/db`. F9 cross-cutting cleanup can revisit.
+ *
+ * For ANY new cross-module callback wiring, either:
+ *   (a) trust the upstream `runInTenant` chain (current F4 → F8 path)
+ *       and use this guard as belt-and-braces, OR
+ *   (b) call `assertTenantContextSet(tx, expectedCtx)` to verify the
+ *       runtime tenant scope AND the role.
+ *
+ * False-positives on the method-presence check require intentional
+ * spoofing (a foreign object that mimics all 6 method names as
+ * functions); none of F4's call paths can produce such a value.
+ *
+ * Usage:
+ *
+ *   const txMaybe: unknown = …;
+ *   if (!isTenantTx(txMaybe)) {
+ *     // Log + fall back to a fresh runInTenant — never silently cast.
+ *     return runInTenant(ctx, body);
+ *   }
+ *   return body(txMaybe);
+ */
+const TX_DUCK_METHODS = [
+  'execute',
+  'select',
+  'insert',
+  'update',
+  'delete',
+  'transaction',
+] as const;
+export function isTenantTx(value: unknown): value is TenantTx {
+  if (value === null || typeof value !== 'object') return false;
+  for (const method of TX_DUCK_METHODS) {
+    if (typeof (value as Record<string, unknown>)[method] !== 'function') {
+      return false;
+    }
+  }
+  return true;
+}
 
 /**
  * Run `fn` inside a Drizzle transaction that has been hardened against

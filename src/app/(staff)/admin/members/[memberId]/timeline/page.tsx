@@ -46,8 +46,12 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  if (!UUID_RE.test(memberId)) return { title: 'Timeline · SweCham' };
-  return { title: 'Timeline · SweCham' };
+  const t = await getTranslations('admin.members.timeline');
+  // Root layout template appends "· SweCham Membership". `pageTitle`
+  // interpolation needs companyName (DB lookup) — the page itself
+  // does the lookup downstream. Use the generic `title`.
+  if (!UUID_RE.test(memberId)) return { title: t('title') };
+  return { title: t('title') };
 }
 
 export default async function MemberTimelinePage({ params }: PageProps) {

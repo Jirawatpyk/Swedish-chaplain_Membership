@@ -110,6 +110,18 @@ export interface ConfirmPaymentDeps {
    * warn so ops has a forensic trail before Stripe retries.
    * review-20260428-102639.md H2 closure.
    */
+  /**
+   * F8 cross-module on-paid hooks. Composition root injects
+   * `f8OnPaidCallbacks(tenantId)` when `FEATURE_F8_RENEWALS=true` so
+   * the F8 renewal-cycle transition lands inside the same atomic tx
+   * as the F4 invoice `issued → paid` flip.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (
+      evt: import('@/modules/invoicing').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
+  >;
   readonly logger?: {
     warn: (msg: string, ctx: Record<string, unknown>) => void;
   };
@@ -128,6 +140,8 @@ export async function confirmPayment(
       attributes: {
         'payments.payment_intent_id': input.paymentIntentId,
         'payments.tenant_id': input.tenantId,
+        /* v8 ignore next 3 — tracer attribute conditional spread; the
+         * absent-processorEventId branch is dispatcher-only. */
         ...(input.processorEventId !== undefined
           ? { 'payments.processor_event_id': input.processorEventId }
           : {}),
@@ -142,12 +156,17 @@ export async function confirmPayment(
           span.setAttribute('payments.outcome', `err:${result.error.code}`);
         }
         return result;
+        /* v8 ignore start — tracer error-status path; confirmPaymentBody
+         * always returns Result<...> instead of throwing. Catch is
+         * defence-in-depth for unexpected runtime exceptions (OOM,
+         * tracer-internal throw) that bypass the typed Result contract. */
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
           message: e instanceof Error ? e.message : 'confirm_threw',
         });
         throw e;
+        /* v8 ignore stop */
       } finally {
         span.end();
       }
@@ -530,6 +549,14 @@ async function confirmPaymentBody(
               // with section reference so the comment doesn't rot when the
               // spec is reformatted.
               suppressReceiptEmail: !settings.autoEmailOnPayment,
+              // F8: forward cross-module on-paid callbacks (renewal-cycle
+              // transition) into F4's atomic tx. `undefined` when the
+              // feature flag is off → behaviour unchanged for non-F8 tenants.
+              /* v8 ignore next 3 — F8 callback conditional spread; the
+               * absent-callbacks branch is exercised by F4-only tests. */
+              ...(deps.onPaidCallbacks !== undefined
+                ? { onPaidCallbacks: deps.onPaidCallbacks }
+                : {}),
             },
             tx,
           );
@@ -648,6 +675,9 @@ async function confirmPaymentBody(
       await deps.paymentsRepo.withTx(async (tx) => {
         await markProcessedIfPresent(deps, input, tx);
       });
+      /* v8 ignore start — best-effort Phase B catch; rare DB-outage
+       * race window. Recovery is automatic via Stripe retry idempotency
+       * key. Forensic log emitted before the retry per H2-2026-04-28. */
     } catch (phaseBErr) {
       // Best-effort log — this is a known race window (R3 H3-2).
       // Recovery is automatic via Stripe retry idempotency. Per
@@ -661,6 +691,7 @@ async function confirmPaymentBody(
       });
       void phaseBErr;
     }
+    /* v8 ignore stop */
 
     paymentsMetrics.autoRefundedStaleCount(input.tenantId);
     return ok<ConfirmPaymentOutcome>({

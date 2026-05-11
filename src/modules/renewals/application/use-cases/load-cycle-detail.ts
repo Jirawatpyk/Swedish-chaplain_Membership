@@ -1,0 +1,225 @@
+/**
+ * `load-cycle-detail` use-case.
+ *
+ * Returns one renewal cycle's full detail view for `/admin/renewals/[cycleId]`.
+ *
+ * Current state (Phase 4 + PR #24 review-fix wires both lists):
+ *   - `reminderHistory` is hydrated via `reminderEventsRepo.listForCycle`
+ *     (per-cycle history, ordered `dispatched_at DESC`, NULLs last so
+ *     still-pending rows surface above sent ones).
+ *   - `escalationTasks` is hydrated via the dedicated
+ *     `escalationTaskRepo.listForCycle(tenantId, cycleId)` port method
+ *     (added in PR #24 review-fix) — escalation queue UI is owned by
+ *     the `/admin/renewals/tasks` page; this surface returns the rows
+ *     linked to the cycle so the cycle-detail page can show context
+ *     inline.
+ *   - `linkedInvoice` is hydrated via F4 barrel `getInvoice` if
+ *     `cycle.linkedInvoiceId` is non-null.
+ *
+ * Cross-tenant semantics: `cyclesRepo.findById` returns `null` for
+ * cross-tenant probes (RLS hides the row). The use-case emits a
+ * `renewal_cross_tenant_probe` audit on `null` regardless of cause —
+ * we cannot distinguish "truly missing" from "RLS-hidden" at the
+ * application layer; the audit is defensive (Constitution Principle I
+ * clause 4) + a no-op on legitimate not-found requests.
+ */
+import { z } from 'zod';
+import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import {
+  parseCycleId,
+  type CycleId,
+  type RenewalCycle,
+} from '../../domain/renewal-cycle';
+import type { ReminderEvent } from '../ports/renewal-reminder-event-repo';
+import type { RenewalEscalationTask } from '../../domain/renewal-escalation-task';
+import { getInvoice, makeGetInvoiceDeps } from '@/modules/invoicing';
+
+export const loadCycleDetailInputSchema = z.object({
+  tenantId: z.string().min(1),
+  cycleId: z.string().uuid(),
+  actorUserId: z.string().min(1),
+  actorRole: z.enum(['admin', 'manager']),
+  requestId: z.string().nullable().optional(),
+  correlationId: z.string().min(1),
+});
+
+export type LoadCycleDetailInput = z.infer<typeof loadCycleDetailInputSchema>;
+
+export interface LoadCycleDetailOutput {
+  readonly cycle: RenewalCycle;
+  // PR #24 review-fix Round 2 — narrow from `ReadonlyArray<unknown>`
+  // to typed reads now that load-cycle-detail hydrates them. The page
+  // (`/admin/renewals/[cycleId]`) renders both arrays inline.
+  readonly reminderHistory: ReadonlyArray<ReminderEvent>;
+  readonly escalationTasks: ReadonlyArray<RenewalEscalationTask>;
+  readonly linkedInvoice: {
+    readonly invoiceId: string;
+    readonly invoiceNumber: string | null;
+    readonly status: string;
+    readonly totalSatang: bigint;
+  } | null;
+}
+
+export type LoadCycleDetailError =
+  | { readonly kind: 'invalid_input'; readonly message: string }
+  | { readonly kind: 'cycle_not_found' };
+
+export async function loadCycleDetail(
+  deps: RenewalsDeps,
+  rawInput: LoadCycleDetailInput,
+): Promise<Result<LoadCycleDetailOutput, LoadCycleDetailError>> {
+  const parsed = loadCycleDetailInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    return err({
+      kind: 'invalid_input',
+      message: parsed.error.issues[0]?.message ?? 'invalid input',
+    });
+  }
+  const input = parsed.data;
+
+  const cycleIdResult = parseCycleId(input.cycleId);
+  if (!cycleIdResult.ok) {
+    return err({ kind: 'invalid_input', message: 'invalid cycle id' });
+  }
+  const cycleId: CycleId = cycleIdResult.value;
+
+  const cycle = await deps.cyclesRepo.findById(input.tenantId, cycleId);
+  if (!cycle) {
+    // Probe audit — emits on either cross-tenant attempt OR truly
+    // missing cycle. The latter is harmless noise; the former is the
+    // attack signal we want to surface. Defence-in-depth try/catch:
+    // probe audit MUST NOT block the 404 response (per EH4).
+    try {
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_cross_tenant_probe',
+          payload: {
+            attempted_cycle_id: cycleId,
+            route: 'load-cycle-detail',
+          },
+        },
+        {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          cycleId,
+          correlationId: input.correlationId,
+        },
+        'loadCycleDetail: probe audit emit failed (swallowed — never blocks 404)',
+      );
+    }
+    return err({ kind: 'cycle_not_found' });
+  }
+
+  // Hydrate linked invoice if present.
+  let linkedInvoice: LoadCycleDetailOutput['linkedInvoice'] = null;
+  if (cycle.linkedInvoiceId) {
+    const invoiceDeps = makeGetInvoiceDeps(input.tenantId);
+    const invoiceResult = await getInvoice(invoiceDeps, {
+      tenantId: input.tenantId,
+      invoiceId: cycle.linkedInvoiceId,
+      actor: {
+        userId: input.actorUserId,
+        role: input.actorRole,
+        requestId: input.requestId ?? null,
+      },
+    });
+    if (invoiceResult.ok) {
+      const inv = invoiceResult.value;
+      linkedInvoice = {
+        invoiceId: cycle.linkedInvoiceId,
+        invoiceNumber: inv.documentNumber as string | null,
+        status: inv.status,
+        totalSatang: inv.total?.satang ?? 0n,
+      };
+    } else {
+      // F4 reported error — log loudly so operators see RLS / outage /
+      // stale-link incidents. A cross-tenant-leaked linked-invoice-id
+      // would land here; the audit emitter inside getInvoice already
+      // emits `invoice_cross_tenant_probe` when actor context is set,
+      // but we add an F8-context warning so triage starts from this
+      // surface. Stub still returned so the UI doesn't crash; the
+      // route maps to a degraded card with the orphan invoice id.
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          cycleId,
+          linkedInvoiceId: cycle.linkedInvoiceId,
+          f4Error: invoiceResult.error.code,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId ?? null,
+        },
+        'load-cycle-detail: linked invoice fetch failed — degraded card returned',
+      );
+      linkedInvoice = {
+        invoiceId: cycle.linkedInvoiceId,
+        invoiceNumber: null,
+        status: 'unknown',
+        totalSatang: 0n,
+      };
+    }
+  }
+
+  // PR #24 review-fix — hydrate reminderHistory + escalationTasks
+  // from existing repo surfaces. Both reads are bounded scope:
+  //   - reminderHistory: typically ≤ 5 events per cycle (the
+  //     dispatcher emits at the cadence steps in the schedule policy).
+  //   - escalationTasks: typically ≤ 5 tasks per cycle across the
+  //     full lifecycle (bounce + retry-exhaustion + manual escalation).
+  //
+  // Defence-in-depth try/catch on each read so one degraded surface
+  // (e.g. transient DB blip on the reminder index) doesn't blank out
+  // the entire cycle-detail page; the failing list returns `[]` and
+  // the UI falls back to a "history unavailable" caption while the
+  // cycle + invoice card still render.
+  let reminderHistory: ReadonlyArray<ReminderEvent> = [];
+  try {
+    reminderHistory = await deps.reminderEventRepo.listForCycle(
+      input.tenantId,
+      cycleId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        cycleId,
+      },
+      'load-cycle-detail: reminder-history fetch failed — degraded card',
+    );
+  }
+
+  let escalationTasks: ReadonlyArray<RenewalEscalationTask> = [];
+  try {
+    escalationTasks = await deps.escalationTaskRepo.listForCycle(
+      input.tenantId,
+      cycleId,
+    );
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: input.tenantId,
+        cycleId,
+      },
+      'load-cycle-detail: escalation-tasks fetch failed — degraded card',
+    );
+  }
+
+  return ok({
+    cycle,
+    reminderHistory,
+    escalationTasks,
+    linkedInvoice,
+  });
+}

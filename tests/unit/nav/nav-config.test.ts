@@ -13,30 +13,38 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 6 items: Dashboard, Plans, Members, Invoices, Broadcasts, Users (F7 admin nav added Round 1 review)', () => {
+  it('first section has 7 items: Dashboard, Plans, Members, Invoices, Broadcasts, Renewals, Users (F8 Renewals nav entry added)', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(6);
+    expect(mainSection.items).toHaveLength(7);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
     expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
     expect(mainSection.items[3]!.titleKey).toBe('nav.staff.invoices');
     expect(mainSection.items[4]!.titleKey).toBe('nav.staff.broadcasts');
-    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.users');
+    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.renewals');
+    expect(mainSection.items[6]!.titleKey).toBe('nav.staff.users');
   });
 
-  it('second section is Settings with only InvoiceSettings (R7 consolidation)', () => {
+  it('second section is Settings with InvoiceSettings + RenewalSchedules (F8 Reminder schedules added)', () => {
     // R7 consolidation removed the Fee Configuration page. VAT +
     // currency + registration fee all live in Invoice Settings now
-    // (tenant_invoice_settings is the authoritative source). Only
-    // one item remains under Settings; the NavGroup's single-child-
-    // flatten path renders it as a flat link under the section
-    // header.
+    // (tenant_invoice_settings is the authoritative source). F8 then
+    // re-introduced a 2nd setting entry — Reminder schedules at
+    // /admin/settings/renewals/schedules — under the same Settings
+    // section header.
     const settingsSection = staffNavConfig.sections[1]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
-    expect(settingsSection.items).toHaveLength(1);
+    expect(settingsSection.items).toHaveLength(2);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
     const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
+    expect(settingsSection.items[1]!.titleKey).toBe(
+      'nav.staff.settingsRenewalSchedules',
+    );
+    const renewalSchedulesItem = settingsSection.items[1]! as NavItem;
+    expect(renewalSchedulesItem.href).toBe(
+      '/admin/settings/renewals/schedules',
+    );
   });
 
   it('every NavItem has required fields: titleKey, icon, href, activePattern', () => {

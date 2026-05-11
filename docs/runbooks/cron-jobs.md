@@ -35,6 +35,13 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
 | **F7 broadcasts gauges** (T172) | **`GET /api/internal/metrics/broadcasts-gauges`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | emits `broadcasts.queue_pending` + `broadcasts.stuck_sending_count` gauges per tenant |
+| **F8 renewal dispatch (coordinator)** | **`POST /api/cron/renewals/dispatch-coordinator`** | **`0 6 * * *`** (daily 06:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 dispatch) |
+| **F8 at-risk recompute (coordinator)** | **`POST /api/cron/renewals/at-risk-recompute-coordinator`** | **`0 2 * * 0`** (Sun 02:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 at-risk) |
+| **F8 tier-upgrade evaluate (coordinator)** | **`POST /api/cron/renewals/tier-upgrade-evaluate-coordinator`** | **`0 3 * * 0`** (Sun 03:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 tier-upgrade) |
+| **F8 reconcile-pending-reactivations (coordinator)** | **`POST /api/cron/renewals/reconcile-pending-reactivations-coordinator`** | **`0 7 * * *`** (daily 07:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-reactivations) |
+| **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
+| **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
+| **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
@@ -237,6 +244,247 @@ When SweCham upgrades to Vercel Pro the following changes ship:
 The route handlers are unchanged. The Bearer-auth pattern continues
 to work — Vercel Cron supplies the same `Authorization: Bearer
 ${CRON_SECRET}` header.
+
+## F8 — renewals/dispatch-coordinator (NEW — F8 Phase 4)
+
+Coordinator endpoint that fans out per-tenant renewal-reminder dispatch (per
+research.md R14). For each active tenant the coordinator parallel-fetches
+`/api/cron/renewals/dispatch/[tenantId]`; each per-tenant invocation runs in
+its own Vercel function 300s budget. Bearer-auth via shared `CRON_SECRET`
+(rotated atomically across F4/F5/F7/F8 per R17). Emits
+`cron_dispatch_orchestrated` audit; per-tenant fault isolation; SaaS-scale
+ready (50+ tenants).
+
+### Setup steps (one-time)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create new cron-job:
+   - **Title**: `Chamber-OS · F8 renewal-dispatch coordinator`
+   - **URL**: `https://swecham.zyncdata.app/api/cron/renewals/dispatch-coordinator`
+   - **Schedule**: `0 6 * * *` (daily 06:00 Asia/Bangkok = 23:00 UTC prior day)
+   - **Method**: POST
+   - **Headers**: `Authorization: Bearer <CRON_SECRET>` (copy from Vercel env)
+   - **Timeout**: 60 seconds
+3. Click **Run** to verify 200 OK with payload:
+   ```json
+   { "skipped": false, "tenants_enqueued": N, "tenants_succeeded": N, "tenants_failed": 0, "duration_ms": <small> }
+   ```
+
+## F8 — renewals/at-risk-recompute-coordinator (NEW — F8 Phase 6)
+
+Weekly batch-recompute of member at-risk scores (8-factor formula per FR-029
++ FR-029a F6-readiness fallback + FR-030 proportional bands). Per-tenant
+fan-out same as dispatch coordinator. Per-member `computeAtRiskScore` call
+inside per-tenant route emits `at_risk_score_recomputed` (one per recomputed
+member) + `at_risk_score_threshold_crossed` (when member's band crosses UP)
++ `at_risk_skipped_below_min_tenure` (members < min-tenure threshold per
+FR-035). Cron-pass-level `at_risk_compute_partial_failure` audit on aggregate
+non-zero member-failure count. Coordinator emits `cron_dispatch_orchestrated`
+(re-using the existing typed shape) summarising tenants enqueued / succeeded
+/ failed / skipped-by-kill-switch.
+
+Per-tenant advisory lock: `pg_advisory_xact_lock(hashtextextended(
+'renewals:at-risk:'||tenant_id, 0))`. Distinct namespace from
+`renewals:dispatch:` so daily dispatch and weekly at-risk recompute can run
+concurrently without contention.
+
+Granular kill-switch: `FEATURE_F8_AT_RISK_DISABLED=true` short-circuits ONLY
+this surface (returns 200 + `{skipped: true, reason: 'at_risk_disabled'}`)
+without disabling the rest of F8 (dispatch + tier-upgrade + escalation
+tasks unaffected). Designed for incident response when formula calibration
+ships bad signals; restored via env-var revert + redeploy in <5 minutes.
+The whole-F8 kill-switch `FEATURE_F8_RENEWALS=false` also short-circuits
+both coordinator + per-tenant routes.
+
+### Setup steps
+
+Same pattern as dispatch coordinator with these differences:
+- **Title**: `Chamber-OS · F8 at-risk recompute coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/at-risk-recompute-coordinator`
+- **Method**: `POST`
+- **Schedule**: `0 2 * * 0` (Sun 02:00 Asia/Bangkok)
+- **Timeout**: 60 seconds (per-tenant SLO ≤60s @ 5k members per FR-036 +
+  SC-005)
+- **Retry**: **OFF** per § Retry policy contract — re-runnable + idempotent
+  (score writes overwrite previous values; `risk_score_last_computed_at`
+  surfaces last-success timestamp). A failed cron pass simply means scores
+  stay at their previous values until the next Sunday — no data loss.
+- **Auth**: `Authorization: Bearer ${CRON_SECRET}` (rotated atomically with
+  F4/F5/F7/F8 per R17)
+
+### Expected response codes
+- `200 {skipped: false, ...summary}` — happy path with per-tenant counts
+- `200 {skipped: true, reason: 'feature_flag_disabled'}` — F8 kill-switch on
+- `200 {skipped: true, reason: 'at_risk_disabled'}` — granular kill-switch on
+- `401 {error: {code: 'unauthorized'}}` — Bearer rejected (audit emitted)
+- `429 {error: {code: 'rate_limited'}}` — sustained Bearer-rejection probe
+- `500` — unexpected coordinator-level error (per-tenant errors degrade to
+  `tenants_failed > 0` in the 200 response, not 500)
+
+## F8 — renewals/tier-upgrade-evaluate-coordinator (NEW — F8 Phase 7)
+
+Weekly evaluation of tier-upgrade eligibility per F2 plan thresholds
+(`min_turnover_minor_units`). Creates `tier_upgrade_suggestions` rows
+for objective candidates + emits `tier_upgrade_suggested` audit.
+Branches on `tenant_renewal_settings.auto_upgrade_enabled` (skip when
+false → `tier_upgrade_tenant_disabled`) and on plan-catalogue presence
+of any `min_turnover` (skip when none configured →
+`tier_upgrade_skipped_no_thresholds_configured`). Idempotent —
+re-running produces zero duplicates (member_open partial UNIQUE).
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 tier-upgrade evaluate coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/tier-upgrade-evaluate-coordinator`
+- **Method**: `POST`
+- **Schedule**: `0 3 * * 0` (Sun 03:00 Asia/Bangkok — 1h after at-risk)
+- **Timeout**: 30 seconds (per-tenant SLO ≤30s @ 5k members per FR-057)
+- **Retries**: OFF (the route emits `cron_dispatch_orchestrated` audit on every pass — retry-on-failure would double-fire the orchestration audit)
+- **Auth**: HTTP header `Authorization: Bearer ${CRON_SECRET}` (same secret as F7 + F8 dispatch + F8 at-risk-recompute)
+- **Notification**: enable email-on-failure (cron-job.org built-in)
+
+### Expected response codes
+
+| Code | Body shape | Meaning |
+|------|------------|---------|
+| 200 | `{ skipped: false, tenants_enqueued, tenants_succeeded, tenants_failed, ... }` | Normal pass |
+| 200 | `{ skipped: true, reason: 'feature_flag_disabled' }` | `FEATURE_F8_RENEWALS=false` (dark launch) |
+| 401 | `{ error: { code: 'unauthorized' } }` | Bearer mismatch (rotate secret + reconfigure) |
+| 500 | (per-tenant fan-out caught at coordinator) | Per-tenant failures aggregated; coordinator returns 500 only on infra failure |
+
+## F8 — renewals/reconcile-pending-applications (NEW — F8 Phase 7)
+
+Weekly housekeeping cron that detects orphaned tier-upgrade
+suggestions in `accepted_pending_apply` whose `target_apply_at_cycle_id`
+is `cancelled` or `lapsed` (the F4 invoice-paid hook would never
+fire). Transitions each orphan to `dismissed` with
+`reason='orphan_target_cycle_terminal'` + emits
+`tier_upgrade_pending_orphan_detected`. Idempotent (dismissed orphans
+excluded from next pass).
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 reconcile pending tier-upgrade applications`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/reconcile-pending-applications`
+- **Method**: `POST`
+- **Schedule**: `0 5 * * 6` (Sat 05:00 Asia/Bangkok — distinct day-of-week from evaluate-coordinator so weekly streams stay disjoint)
+- **Timeout**: 30 seconds (small dataset — only `accepted_pending_apply` rows)
+- **Retries**: OFF (no orchestration audit; idempotent at suggestion-row level)
+- **Auth**: HTTP header `Authorization: Bearer ${CRON_SECRET}` (same secret)
+- **Notification**: enable email-on-failure
+
+### Expected response codes
+
+| Code | Body shape | Meaning |
+|------|------------|---------|
+| 200 | `{ skipped: false, tenant_id, orphans_detected, orphans_dismissed, duration_ms }` | Normal pass |
+| 200 | `{ skipped: true, reason: 'feature_flag_disabled' }` | `FEATURE_F8_RENEWALS=false` |
+| 401 | `{ error: { code: 'unauthorized' } }` | Bearer mismatch |
+| 500 | `{ error: { code: 'server_error' } }` | Repo-level failure; review pino logs |
+
+## F8 — renewals/reconcile-pending-reactivations-coordinator (NEW — F8 Phase 5)
+
+Daily T-7/T-3/T-1 reminder ladder + 30d auto-timeout for cycles in
+`pending_admin_reactivation` state per FR-005c. Auto-cancels timed-out cycles
++ triggers F5 refund + F4 credit-note creation atomically. Emits
+`lapsed_member_admin_reactivation_reminder_t-7/-3/-1` and
+`lapsed_member_admin_reactivation_timed_out` audits.
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 reconcile-pending-reactivations coordinator`
+- **URL**: `.../api/cron/renewals/reconcile-pending-reactivations-coordinator`
+- **Schedule**: `0 7 * * *` (daily 07:00 Asia/Bangkok — 1h after dispatch)
+- **Timeout**: 30 seconds (small dataset; partial-index scan)
+
+## F8 — renewals/lapse-cycles-on-grace-expiry-coordinator (NEW — F8 Phase 5 Wave K24)
+
+Daily transitions cycles from `awaiting_payment` → `lapsed` once
+`now() > expires_at + tenant.grace_period_days` per FR-004. Decision
+branch picks the **specific** `closed_reason` discriminator per AS3:
+
+- `'grace_expired'` — zero F5 `payments` rows with `status='failed'`
+  for the cycle's linked invoice (member silently let it expire)
+- `'payment_failed'` — at least one F5 row with `status='failed'`
+  before grace window expired (payment friction, not apathy)
+
+Emits typed `renewal_lapsed` audit per cycle with the closed_reason
+discriminator + forensic `failed_payment_attempts` count.
+
+**Sequencing rationale**: scheduled at 06:30 — 30 minutes BEFORE the
+reconcile-pending-reactivations coordinator (07:00) and 30 minutes
+AFTER the F8 dispatch coordinator (06:00). A cycle that JUST crossed
+grace doesn't get a final reminder dispatch race because dispatcher
+finished at 06:00, lapse runs at 06:30, then reconcile-pending runs
+at 07:00 against the post-lapse state. T115a (closeout of the
+Phase-5-DEFERRED branch).
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 lapse-cycles-on-grace-expiry coordinator`
+- **URL**: `https://swecham.zyncdata.app/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`
+- **Schedule**: `30 6 * * *` (daily 06:30 Asia/Bangkok)
+- **Timeout**: 30 seconds (small dataset; partial-index scan via
+  `listCyclesEligibleForLapse`)
+- **Headers**: `Authorization: Bearer ${CRON_SECRET}` (constant-time
+  check; `verifyCronBearer`)
+- **Retry policy**: OFF (per F8/F4/F5/F7 convention — cron-job.org
+  retry would double-emit; the use-case's per-cycle fault isolation
+  + tomorrow's-pass already handles transient F5 / DB blips)
+
+### Pre-flight gates (operator checklist before flag-flip)
+
+1. `FEATURE_F8_RENEWALS=true` in Vercel production env
+2. Verify `tenant_renewal_settings` row exists for SweCham tenant
+   (defaults to `gracePeriodDays=14`; seeded by migration 0089)
+3. Confirm `pnpm check:multi-tenant` shows F5 `payments` table in the
+   24/24 SCOPED tables list (RLS+FORCE active — required for the F5
+   bridge tenant-scoped count)
+4. Confirm migration `0110_f8_wave_k24_renewal_lapsed_enum.sql`
+   applied to live Neon (`renewal_lapsed` value present in
+   `audit_event_type` pgEnum) — verify via:
+   `SELECT 1 FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'renewal_lapsed';`
+
+### Alert rules
+
+- `renewals_lapse_cycles_errors_total{tenant}` — non-zero rate
+  sustained for 15 min pages on-call (per-cycle failures masked
+  behind 200 OK; symptomatic of F5 bridge or DB connectivity issue)
+- Per-tenant route 5xx rate (Vercel logs) >0% over 15 min — operational
+  failure (use-case threw at outer level, fault-isolation contract broken)
+- `tenants_with_errors > 0` in coordinator response (Wave K25
+  K24-Errors-S1 fix) — surfaces "200-OK-but-everything-failed" pattern
+
+## F8 — renewals/prune-consumed-tokens (NEW — F8 Phase 9)
+
+Weekly housekeeping: deletes rows from `consumed_link_tokens` table where
+`consumed_at < now() - interval '60 days'`. Prevents unbounded growth
+(per /speckit.critique round 1 / E7). Trivial maintenance — single SQL
+DELETE statement.
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 prune consumed link tokens`
+- **URL**: `.../api/cron/renewals/prune-consumed-tokens`
+- **Schedule**: `0 4 * * 6` (Sat 04:00 Asia/Bangkok)
+- **Timeout**: 30 seconds
+
+## F8 — renewals/reconcile-pending-applications (NEW — F8 Phase 7)
+
+Weekly reconciliation: detects orphaned `tier_upgrade_suggestions` where
+`status='accepted_pending_apply'` and `target_apply_at_cycle_id` references
+a cycle that's already terminal (completed/lapsed/cancelled) without the
+suggestion having transitioned to `applied` or `superseded`. Emits
+`tier_upgrade_pending_orphan_detected` audit for admin investigation
+(does NOT auto-resolve — orphan implies missed F4 invoice-creation hook,
+genuine bug surfaces in audit).
+
+### Setup steps
+
+- **Title**: `Chamber-OS · F8 reconcile pending tier-upgrades`
+- **URL**: `.../api/cron/renewals/reconcile-pending-applications`
+- **Schedule**: `0 5 * * 6` (Sat 05:00 Asia/Bangkok — 1h after token prune)
+- **Timeout**: 5 seconds (small table + partial-index-driven scan)
 
 ## Owner
 

@@ -114,6 +114,7 @@ export async function inviteColleague(
     sourceIp: input.sourceIp,
     requestId: input.requestId,
     locale: input.locale ?? input.body.preferred_language,
+    tenantId: deps.tenant.slug,
   });
   if (!created.ok) {
     if (created.error.code === 'invalid-input') {

@@ -203,6 +203,48 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/broadcasts',
     requires: 'read',
   },
+  // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without
+  // these entries, ⌘K-driven jumps to the renewal pipeline +
+  // schedule editor are missing — every other major admin surface
+  // (plans, members, invoices, broadcasts) is reachable via the
+  // palette so omitting renewals would be an explicit smart-UX gap.
+  {
+    id: 'nav.renewals',
+    label: 'palette.navigate.renewalsList',
+    url: '/admin/renewals',
+    requires: 'read',
+  },
+  {
+    id: 'nav.renewalSchedules',
+    label: 'palette.navigate.renewalSchedules',
+    url: '/admin/settings/renewals/schedules',
+    // Manager role can READ the schedule editor (it renders read-only
+    // for them server-side per `requireRenewalAdminContext('read')`).
+    // Admin-only mutations are still gated at the route handler.
+    requires: 'read',
+  },
+  // Round 5 SF-1 close — F8 Phase 8 escalation task queue palette
+  // entries (smart-chamber-features § MVP #4). Admin + manager can
+  // read the queue; mutating actions on individual rows live inline
+  // (Done/Skip/Reassign per row), not in the palette.
+  {
+    id: 'nav.escalationTasks',
+    label: 'palette.navigate.escalationTasks',
+    url: '/admin/renewals/tasks',
+    requires: 'read',
+  },
+  {
+    id: 'nav.escalationTasksMine',
+    label: 'palette.navigate.escalationTasksMine',
+    url: '/admin/renewals/tasks?assignment=mine',
+    requires: 'read',
+  },
+  {
+    id: 'nav.escalationTasksOverdue',
+    label: 'palette.navigate.escalationTasksOverdue',
+    url: '/admin/renewals/tasks?overdue_only=true',
+    requires: 'read',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

@@ -17,7 +17,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { affectedMembersCount } from '@/modules/members';
-import type { MemberPlanId as PlanId } from '@/modules/members';
+import type { PlanId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
 const paramsSchema = z.object({

@@ -154,7 +154,7 @@ per `saas-architecture.md`. Every row has `tenant_id` defaulting to `'swecham'`.
 | F5 | **Online Payment** (Stripe + PromptPay, member self-service renewal) | F1, F4 | 🔒 PCI |
 | F6 | **🔄 EventCreate Integration** (was Event Management — rescoped: Zapier webhook → attendee import → benefit quota tracking) | F1, F3, F2 | ⚠ PII |
 | F7 | **🆕 Email Broadcast / E-Blast** (paid benefit delivery via Resend Broadcasts, quota tracking) | F1, F3, F2 | ⚠ PII |
-| F8 | **Renewal Tracking + Smart Reminders** (tier-aware, at-risk detection, auto-upgrade suggestions) | F1, F3, F4 | ⚠ PII |
+| F8 | **Renewal Tracking + Smart Reminders** ⏳ REVIEW-READY (Phase 10 closed 2026-05-10; PR pending) (tier-aware, at-risk detection, auto-upgrade suggestions) | F1, F3, F4 | ⚠ PII |
 | F9 | **Admin Dashboard + Directory + Timeline + Audit Viewer** (benefit usage, engagement score, smart insights, GDPR export) | F1, all | ⚠ All PII |
 
 ### SaaS layer (F10-F13)
@@ -240,7 +240,7 @@ renewals auto-track with smart reminders.
 |-------|---------|-------------|-----------|
 | 5     | **F5 — Online Payment (Stripe + PromptPay)** | `005-payment` | **≥2 (PCI + security checklist)** |
 | 6     | **F7 — Email Broadcast / E-Blast** 🆕 | `006-email-broadcast` | ≥2 (PII + email deliverability) |
-| 7     | **F8 — Renewal Tracking + Smart Reminders** | `007-renewal` | ≥2 (PII) |
+| 7     | **F8 — Renewal Tracking + Smart Reminders** ⏳ REVIEW-READY | `011-renewal-reminders` (PR pending) | ≥2 (PII) — solo-maintainer 5-stack substitute satisfied (20 review rounds) |
 | 8     | **F6 — EventCreate Integration** 🔄 (rescoped) | `008-event-integration` | ≥2 (PII + webhook security) |
 
 **Phase 2 ships when**: a member receives a renewal email, clicks a link, pays
@@ -468,3 +468,20 @@ full rationale. Leaving this table for traceability.
 | R4 | Self-service vs admin-only               | Both: `admin`, `manager`, `member` roles            | ✅ Closed |
 | R5 | Excel data migration strategy            | Not required day 1; re-enter as needed              | ✅ Closed |
 | R6 | Repo rename `chaplain` → `chamber`       | Approved; **manual action required from user**     | ⏳ Pending manual |
+
+---
+
+## Post-MVP Observability Backlog
+
+Items below surfaced during F8 Phase 7 (Auto Tier-Upgrade Suggestions) reviews
+where the metric counter is the **single signal** today and a Vercel alert
+rule + on-call runbook + admin replay tooling is desired but deferred to
+post-MVP. Reference these IDs from source-code JSDocs (`POST-MVP-OBS-N`)
+instead of vague "future work" prose.
+
+| ID | Surface | Counter / Signal | Deferred Deliverables | Priority |
+|----|---------|------------------|------------------------|----------|
+| POST-MVP-OBS-7 | F8 manual-plan-change listeners + post-paid tier-upgrade-apply audit | `manualPlanChangeListenerFailed{listener,tenant_id}` + `rescheduleAuditEmitFailed{audit_type}` (R4 IMP-8; no tenant label — emit is fire-and-forget per-event) + `tierUpgradeApplyPostPaidFailed{tenant}` (note: F8 counters use mixed `tenant` and `tenant_id` label keys; verify against `src/lib/metrics.ts` before authoring queries) + `level=fatal` log line w/ `errorId='F8.APPLY_TIER.POST_PAID_AUDIT_EMIT_FAILED'` | (a) Vercel alert rule on each counter (sustained `>0` for 5 min) + alert on `level=fatal` log lines; (b) on-call runbook entry under `docs/runbooks/` describing the diagnostic steps when these counters spike; (c) admin replay tooling (UI button on tier-upgrade detail page that re-runs the apply use-case manually for a given suggestion in `accepted_pending_apply` whose cycle terminated without firing the post-paid hook) | Medium — manual grep on Vercel dashboards is the interim mitigation; counters and structured logs DO fire today |
+
+Add new `POST-MVP-OBS-N` rows here as needed. Source comments should cite
+this table (e.g. `POST-MVP-OBS-7 in docs/phases-plan.md`).

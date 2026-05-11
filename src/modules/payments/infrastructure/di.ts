@@ -48,6 +48,25 @@ import { invoicingBridge } from './invoicing-bridge';
 export { stripeWebhookVerifier };
 import { f5AuditAdapter } from './audit/drizzle-payments-audit';
 import { paymentsLogger } from './logger/payments-logger';
+// F8 cross-module on-paid callbacks. Wired into the webhook + confirm
+// composition roots so Stripe-paid renewal invoices transition the F8
+// RenewalCycle inside F4's atomic tx. Gated by `FEATURE_F8_RENEWALS` so
+// non-F8 deployments stay unchanged.
+//
+// Round 6 — dynamic import the renewals barrel ONLY when the feature
+// is on. Previously a top-level static `import { f8OnPaidCallbacks }
+// from '@/modules/renewals'` paid the cold-start cost (~50-150ms +
+// bundle pollution from 32+ TS files in the renewals composition root)
+// on EVERY Stripe webhook + confirm-payment request, even when F8 was
+// dark. Vercel Fluid Compute caches the dynamic import after first
+// hit, so F8-enabled tenants amortise the load cost across the
+// process lifetime; F4/F5-only deploys never load the renewals
+// barrel at all.
+async function f8CallbacksFor(tenantId: string) {
+  if (!env.features.f8Renewals) return undefined;
+  const { f8OnPaidCallbacks } = await import('@/modules/renewals');
+  return f8OnPaidCallbacks(tenantId);
+}
 
 /**
  * Generate a fresh F5 Refund ID of the form `rfnd_<hex>` (mirrors
@@ -108,7 +127,12 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
 // pre-resolution window semantics documented in data-model.md § 5.4 —
 // this is independent of the tenantId we bind the other repos with.
 // ---------------------------------------------------------------------------
-export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEventDeps {
+export async function makeProcessWebhookEventDeps(
+  tenantId: string,
+): Promise<ProcessWebhookEventDeps> {
+  // Round 6 — async to await the dynamic F8 barrel import. Caller is
+  // already async (Stripe webhook route handler).
+  const f8Callbacks = await f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     // CR-3 (review 2026-04-27): wire real refunds-repo so the
@@ -125,13 +149,18 @@ export function makeProcessWebhookEventDeps(tenantId: string): ProcessWebhookEve
     // Audit 2026-04-25 finding #5: route Application-layer warn lines
     // through pino instead of console.warn.
     logger: paymentsLogger,
+    ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
   };
 }
 
 // ---------------------------------------------------------------------------
 // T063 — confirmPayment composition.
 // ---------------------------------------------------------------------------
-export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
+export async function makeConfirmPaymentDeps(
+  tenantId: string,
+): Promise<ConfirmPaymentDeps> {
+  // Round 6 — async to await the dynamic F8 barrel import.
+  const f8Callbacks = await f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
@@ -142,6 +171,7 @@ export function makeConfirmPaymentDeps(tenantId: string): ConfirmPaymentDeps {
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
+    ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
     // review-20260428-102639.md H2 closure — structured logger for
     // Phase B catch on stale-refund path.
     logger: {

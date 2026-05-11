@@ -611,6 +611,8 @@
           "notes": "Notes"
         },
         "riskPlaceholder": "—",
+        "riskNotComputed": "—",
+        "riskNotComputedAria": "Risk score not yet computed",
         "rowAriaLabel": "Open {company} details",
         "noPrimary": "No primary contact",
         "loadMore": "Load more",
@@ -947,6 +949,22 @@
       "label": "Email delivery issues detected",
       "permanentFailed": "{count, plural, one {# email permanently failed} other {# emails permanently failed}} in the last 24 h",
       "stuckPending": "{count, plural, one {# email stuck} other {# emails stuck}} in queue (cron may be down)"
+    },
+    "settings": {
+      "index": {
+        "title": "Settings",
+        "subtitle": "Configure tenant-wide invoicing and renewal-reminder behaviour.",
+        "categories": {
+          "invoicing": {
+            "title": "Invoice settings",
+            "description": "VAT, currency, registration fee, and document defaults for invoices, receipts, and credit notes."
+          },
+          "renewalSchedules": {
+            "title": "Reminder schedules",
+            "description": "Cadence and channel for renewal reminders, configurable per member tier."
+          }
+        }
+      }
     },
     "invoiceSettings": {
       "title": "Invoice settings",
@@ -1578,6 +1596,601 @@
         "ackHelp": "Clearing the halt is a deliberate admin action. Investigate the broadcast content + bounces before clearing."
       }
     },
+    "renewals": {
+      "title": "Renewal pipeline",
+      "subtitle": "Active members by renewal date and tier.",
+      "tierBadge": {
+        "thai_alumni": "Thai alumni",
+        "start_up": "Start-up",
+        "regular": "Regular",
+        "premium": "Premium",
+        "partnership": "Partnership"
+      },
+      "tierFilter": {
+        "aria_label": "Filter pipeline by tier",
+        "all": "All tiers"
+      },
+      "lapsedReason": {
+        "paid": "Paid",
+        "cancelled": "Cancelled",
+        "lapsed": "Grace expired",
+        "grace_expired": "Grace expired",
+        "payment_failed": "Payment failed",
+        "completed_offline": "Paid offline",
+        "admin_reactivated": "Reactivated",
+        "admin_rejected_with_refund": "Refunded",
+        "pending_reactivation_timed_out": "Reactivation timed out"
+      },
+      "urgencyPill": {
+        "t_90": "Due in 90d",
+        "t_60": "Due in 60d",
+        "t_30": "Due in 30d",
+        "t_14": "Due in 14d",
+        "t_7": "Due in 7d",
+        "t_0": "Due today",
+        "grace": "Grace period",
+        "lapsed": "Lapsed"
+      },
+      "urgencyBuckets": {
+        "aria_label": "Filter by renewal urgency",
+        "countSr": "{count, plural, one {# member} other {# members}}",
+        "t_90": "T-90",
+        "t_60": "T-60",
+        "t_30": "T-30",
+        "t_14": "T-14",
+        "t_7": "T-7",
+        "t_0": "T-0",
+        "grace": "Grace",
+        "lapsed": "Lapsed"
+      },
+      "table": {
+        "columns": {
+          "tier": "Tier",
+          "company": "Company",
+          "expires": "Expires",
+          "urgency": "Urgency",
+          "lastReminder": "Last reminder",
+          "status": "Status",
+          "invoice": "Invoice",
+          "actions": "Actions"
+        },
+        "status": {
+          "upcoming": "Upcoming",
+          "reminded": "Reminded",
+          "awaiting_payment": "Awaiting payment",
+          "completed": "Completed",
+          "lapsed": "Lapsed",
+          "cancelled": "Cancelled",
+          "pending_admin_reactivation": "Pending admin reactivation"
+        },
+        "viewInvoice": "View invoice",
+        "noRows": "No members in this bucket.",
+        "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
+        "unknownCompany": "(Unknown company)",
+        "emailUnverifiedHint": "Email unverified — recent bounces detected; system reminders are paused until the contact's email is updated and re-verified.",
+        "srResultCount": "{count, plural, one {Showing # member in {urgency}} other {Showing # members in {urgency}}}"
+      },
+      "actions": {
+        "open": "Open cycle",
+        "openAriaLabel": "Open cycle for {company}",
+        "sendReminder": "Send reminder",
+        "markContacted": "Mark contacted",
+        "markContactedComingSoon": "Coming in a future phase — admin can manually log contact attempts",
+        "rowMenu": "Actions for {company}"
+      },
+      "sendReminderNow": {
+        "toast": {
+          "sent": {
+            "title": "Reminder sent",
+            "description": "Email queued for delivery to {company}"
+          },
+          "skipped": {
+            "alreadySent": "Already sent {ago}",
+            "memberArchived": "Skipped — member is archived",
+            "memberOptedOut": "Skipped — member opted out",
+            "emailUnverified": "Skipped — email is unverified",
+            "outreachInProgress": "Skipped — recent outreach already logged",
+            "noPrimaryContact": "Skipped — no primary contact email on file",
+            "generic": "Skipped — {reason}"
+          },
+          "failedTransient": "Send failed temporarily — automatic retry within 24h",
+          "failedPermanent": "Send failed — admin review needed",
+          "error": {
+            "network": "Could not send — check connection and retry",
+            "unauthorized": "Not authorized to send",
+            "rateLimited": "Too many requests — try again in {seconds}s",
+            "generic": "Could not send reminder"
+          }
+        }
+      },
+      "lapsed": {
+        "banner": {
+          "title": "Lapsed members",
+          "description": "These members are past their grace period. Reactivate or archive them as you reconnect."
+        },
+        "columns": {
+          "reason": "Reason"
+        },
+        "viewDetail": "View detail",
+        "viewDetailFor": "View detail for {company}"
+      },
+      "empty": {
+        "title": "No renewals due in the next 90 days",
+        "description": "All active members are paid up. Check back when expiry dates approach.",
+        "cta": "View all members",
+        "settingsLink": "Review schedule settings"
+      },
+      "error": {
+        "featureDisabled": "The renewals workflow is not yet enabled for this chamber.",
+        "loadFailed": "Could not load the renewal pipeline.",
+        "retry": "Try again",
+        "retrying": "Retrying…",
+        "retryFailed": "Retry failed — the server returned another error",
+        "goBack": "Go back",
+        "referenceLabel": "Reference ID"
+      },
+      "settings": {
+        "schedules": {
+          "title": "Reminder schedules",
+          "subtitle": "Set how each member tier is contacted before and after their renewal date.",
+          "tabs": {
+            "thai_alumni": "Thai alumni",
+            "start_up": "Start-up",
+            "regular": "Regular",
+            "premium": "Premium",
+            "partnership": "Partnership"
+          },
+          "stepCard": {
+            "channelLabel": "Delivery channel",
+            "channel": {
+              "email": "Email",
+              "task": "Task"
+            },
+            "offsetDay": {
+              "before": "T-{days}",
+              "after": "T+{days}",
+              "exact": "T+0"
+            },
+            "stepIdLabel": "Step ID",
+            "offsetDaysLabel": "Offset days",
+            "templateIdLabel": "Email template",
+            "taskTypeLabel": "Task type",
+            "assigneeLabel": "Assignee role",
+            "assigneeRole": {
+              "admin": "Administrator",
+              "manager": "Manager",
+              "executive_director": "Executive Director"
+            }
+          },
+          "actions": {
+            "save": "Save schedule",
+            "saving": "Saving…",
+            "addStep": "Add step",
+            "removeStep": "Remove step",
+            "moveUp": "Move step earlier",
+            "moveDown": "Move step later",
+            "undo": "Undo",
+            "stepRemoved": "Step removed"
+          },
+          "saved": {
+            "toast": "Schedule for {tier} saved (+{added} -{removed} ={unchanged})"
+          },
+          "empty": {
+            "noPoliciesTitle": "No reminder steps yet",
+            "noPoliciesDescription": "Add the first step to start sending renewal reminders for this tier."
+          },
+          "error": {
+            "saveFailed": "Could not save schedule. Please retry.",
+            "offline": "Could not reach the server — check your connection and retry.",
+            "invalidSteps": "One or more steps are invalid. Fix highlighted fields.",
+            "noPolicies": "No schedule policies are configured for this chamber yet. Save any tier to create the first one."
+          },
+          "manager": {
+            "readOnlyNotice": "You have read-only access to renewal schedules. Ask an admin to make changes."
+          },
+          "lastSaved": "Last saved {date}",
+          "stepCount": "{count, plural, =0 {No steps} one {1 step} other {{count} steps}}"
+        }
+      },
+      "atRisk": {
+        "title": "At-risk members",
+        "summary": "{warning} warning · {atRisk} at-risk · {critical} critical",
+        "summaryLoading": "Loading at-risk member summary…",
+        "f6Inactive": "Event data not connected — scores reflect recent engagement signals only (max {max} points)",
+        "featureDisabled": "At-risk detection is temporarily unavailable. Contact support if this persists.",
+        "errorLoading": "Could not load at-risk members. Please refresh.",
+        "emptyState": "All members healthy this week",
+        "bandTabs": {
+          "label": "Filter by risk band",
+          "warning": "Warning",
+          "at_risk": "At risk",
+          "critical": "Critical"
+        },
+        "table": {
+          "company": "Company",
+          "score": "Risk score",
+          "lastComputed": "Last computed",
+          "actions": "Actions",
+          "unknownCompany": "(no company name)"
+        },
+        "actions": {
+          "contact": "Contact",
+          "contactAriaLabel": "Contact {company}",
+          "snooze": "Snooze",
+          "snoozeAriaLabel": "Snooze {company}",
+          "retry": "Retry",
+          "viewAllMembers": "View all members",
+          "reviewLapsed": "Review lapsed members"
+        },
+        "scoreBadge": {
+          "band": {
+            "healthy": "Healthy",
+            "warning": "Warning",
+            "at_risk": "At risk",
+            "critical": "Critical"
+          },
+          "srLabel": "Risk score {score} out of {max}, band {band}"
+        },
+        "snooze": {
+          "title": "Snooze at-risk member",
+          "description": "Hide {company} from the at-risk widget for the chosen duration. The score keeps updating in the background; the member reappears when the snooze expires.",
+          "descriptionFallback": "Hide this member from the at-risk widget for the chosen duration.",
+          "option": "{days} days",
+          "cancel": "Cancel",
+          "confirm": "Confirm snooze",
+          "confirming": "Snoozing…",
+          "toast": {
+            "success": "Snoozed for {days} days",
+            "failure": "Could not snooze member",
+            "error": {
+              "server_error": "Server error. Please retry.",
+              "invalid_input": "Invalid input.",
+              "member_not_found": "Member not found."
+            }
+          }
+        },
+        "outreach": {
+          "title": "Record outreach",
+          "description": "Log how you contacted {company}. We'll pause automated renewal reminders for this member for 7 days to avoid overlap with your personal outreach.",
+          "descriptionFallback": "Log how you contacted this member.",
+          "channel": {
+            "label": "Channel",
+            "option": {
+              "email": "Email",
+              "phone": "Phone call",
+              "meeting": "In-person meeting"
+            }
+          },
+          "template": {
+            "label": "Email template",
+            "option": {
+              "at_risk_outreach_event_drought": "Event drought re-engagement",
+              "at_risk_outreach_benefit_underuse": "Benefit underuse nudge",
+              "at_risk_outreach_payment_reminder": "Payment reminder"
+            }
+          },
+          "note": {
+            "label": "Outcome note (optional)",
+            "placeholder": "Brief note about how the call/meeting went…",
+            "counter": "{count} / {max} characters"
+          },
+          "cancel": "Cancel",
+          "confirm": "Record outreach",
+          "submitting": "Saving…",
+          "toast": {
+            "success": "Outreach recorded",
+            "failure": "Could not record outreach",
+            "error": {
+              "server_error": "Server error. Please retry.",
+              "invalid_input": "Invalid input."
+            }
+          }
+        }
+      },
+      "cycleDetail": {
+        "title": "Cycle detail",
+        "subtitle": "Renewal cycle {cycleId}",
+        "subtitleExpiry": "Expires {date}",
+        "subtitleClosed": "Closed {date}",
+        "subtitlePendingSince": "Pending review since {date}",
+        "notFoundTitle": "Cycle not found",
+        "notFoundDescription": "This renewal cycle doesn't exist or you don't have access.",
+        "errorTitle": "Could not load cycle",
+        "errorDescription": "Try again. If the problem persists, contact support.",
+        "loading": "Loading cycle detail…",
+        "backToPipeline": "Back to pipeline",
+        "sectionMemberPlan": "Member & plan",
+        "sectionInvoice": "Linked invoice",
+        "sectionPeriod": "Period & timeline",
+        "sectionActivity": "Activity",
+        "subsectionMember": "Member",
+        "subsectionPlan": "Plan",
+        "noLinkedInvoice": "No invoice linked to this cycle yet.",
+        "noInvoiceYetUpcoming": "An invoice will be created when the renewal reminder is sent.",
+        "pendingNoticeTitle": "Awaiting your decision",
+        "pendingNoticeBody": "This member's reactivation is pending review. To approve or reject, return to the renewal pipeline and use the row actions menu.",
+        "lookupFailedTitle": "Some related data couldn't be loaded",
+        "lookupFailedBoth": "We couldn't load the linked member or plan record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
+        "lookupFailedMember": "We couldn't load the linked member record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
+        "lookupFailedPlan": "We couldn't load the linked plan record. The cycle data shown is still accurate. Reference {requestId} when contacting support.",
+        "noActivityTitle": "No activity yet",
+        "noActivityDescription": "Sent reminder emails and follow-up tasks will appear here once the renewal reminders begin for this cycle.",
+        "reminders": {
+          "heading": "Reminder history"
+        },
+        "escalations": {
+          "heading": "Escalation tasks"
+        },
+        "fields": {
+          "cycleId": "Cycle ID",
+          "memberId": "Member ID",
+          "status": "Status",
+          "tier": "Tier",
+          "planId": "Plan ID",
+          "frozenPrice": "Frozen price",
+          "frozenTerm": "Term (months)",
+          "frozenCurrency": "Currency",
+          "periodFrom": "Period from",
+          "periodTo": "Period to",
+          "expiresAt": "Expires at",
+          "enteredPendingAt": "Entered pending at",
+          "closedAt": "Closed at",
+          "closedReason": "Closed reason",
+          "createdAt": "Created at",
+          "updatedAt": "Updated at",
+          "invoiceNumber": "Invoice #",
+          "invoiceStatus": "Invoice status",
+          "invoiceTotal": "Total",
+          "viewInvoice": "View invoice {number}",
+          "companyName": "Company",
+          "primaryContact": "Primary contact",
+          "primaryContactNone": "No primary contact set",
+          "planName": "Plan name",
+          "showTechnicalIds": "Show technical IDs",
+          "showAuditTimestamps": "Show audit timestamps",
+          "memberLookupFailed": "Couldn't load member details",
+          "planLookupFailed": "Couldn't load plan details"
+        },
+        "cycleStatus": {
+          "upcoming": "Upcoming",
+          "reminded": "Reminded",
+          "awaiting_payment": "Awaiting payment",
+          "completed": "Completed",
+          "lapsed": "Lapsed",
+          "cancelled": "Cancelled",
+          "pending_admin_reactivation": "Pending admin reactivation"
+        },
+        "statusSeverity": {
+          "lapsed": " — needs reactivation",
+          "pending_admin_reactivation": " — needs admin review"
+        }
+      },
+      "tier_upgrades": {
+        "title": "Tier upgrade queue",
+        "subtitle": "Members eligible for an upgrade based on declared turnover or paid invoice volume.",
+        "breadcrumbs": {
+          "renewals": "Renewals",
+          "tier_upgrades": "Tier upgrades"
+        },
+        "columns": {
+          "member": "Member",
+          "from_plan": "Current plan",
+          "to_plan": "Suggested plan",
+          "reason": "Reason",
+          "status": "Status",
+          "actions": "Actions"
+        },
+        "status": {
+          "open": "Open",
+          "accepted_pending_apply": "Pending apply",
+          "applied": "Applied",
+          "dismissed": "Dismissed",
+          "superseded": "Superseded",
+          "auto_resolved": "Auto-resolved"
+        },
+        "reason": {
+          "declared_turnover_above_threshold": "Turnover above threshold",
+          "paid_invoice_volume_above_threshold": "Invoice volume above threshold",
+          "multi_signal": "Multiple signals"
+        },
+        "empty_state": {
+          "title": "No upgrade candidates this week",
+          "subtitle": "The weekly evaluation cron found no members crossing an upgrade threshold.",
+          "cta": "Review tier eligibility settings"
+        },
+        "error_state": {
+          "title": "Could not load tier-upgrade queue",
+          "subtitle": "The database query failed. Please retry or contact support if the problem persists.",
+          "retry": "Retry",
+          "retrying": "Retrying…"
+        },
+        "dialog": {
+          "cancel": "Cancel"
+        },
+        "actions": {
+          "row_menu_aria": "Open row actions menu",
+          "accept": {
+            "label": "Accept",
+            "dialog_title": "Accept tier upgrade?",
+            "confirm": "The upgrade will apply at the member's next renewal. The member will be notified by email and a verification task will be scheduled if the renewal is more than 180 days away.",
+            "success": "Tier upgrade accepted",
+            "error": "Failed to accept tier upgrade"
+          },
+          "dismiss": {
+            "label": "Dismiss",
+            "dialog_title": "Dismiss tier upgrade suggestion?",
+            "confirm": "The suggestion will be closed and re-suggestion suppressed for 90 days. This action cannot be undone.",
+            "success": "Suggestion dismissed",
+            "error": "Failed to dismiss suggestion"
+          },
+          "escalate": {
+            "label": "Escalate",
+            "dialog_title": "Escalate to outreach?",
+            "confirm": "Draft an outreach email for this member?",
+            "success": "Outreach drafted",
+            "error": "Failed to draft outreach"
+          }
+        }
+      },
+      "tasks": {
+        "title": "Escalation tasks",
+        "subtitle": "Manual touchpoints surfaced by the renewal schedule — phone calls, in-person meetings, and admin review tasks.",
+        "loading": "Loading escalation tasks…",
+        "manager_read_only_notice": "You're viewing this queue as a manager — only admins can mark tasks done, skip, or reassign them.",
+        "view_timeline": "View timeline",
+        "view_timeline_for": "View timeline for {company}",
+        "table_caption": "Manual escalation tasks for the current tenant — sortable by status, assignment, and due date.",
+        "overdue_banner": "{count, plural, one {# overdue task} other {# overdue tasks}}",
+        "overdue_banner_cta": "Click to filter the queue to overdue tasks only",
+        "overdue_banner_clear": "Filter active — click to show all open tasks again",
+        "overdue_badge": "Overdue",
+        "status_tabs_aria": "Filter by task status",
+        "assignment_filter_aria": "Filter by assignment",
+        "task_type_filter_aria": "Filter by task type",
+        "task_type_filter_all": "All types",
+        "status_tab": {
+          "open": "Open",
+          "done": "Done",
+          "skipped": "Skipped"
+        },
+        "assignment_tab": {
+          "all": "All",
+          "mine": "Mine",
+          "unassigned": "Unassigned"
+        },
+        "columns": {
+          "member": "Member",
+          "tier": "Tier",
+          "expiresAt": "Expiry",
+          "taskType": "Task type",
+          "dueAt": "Due",
+          "assignedTo": "Assigned to",
+          "status": "Status",
+          "actions": "Actions"
+        },
+        "status": {
+          "open": "Open",
+          "done": "Done",
+          "skipped": "Skipped"
+        },
+        "assigneeRole": {
+          "admin": "Admin",
+          "manager": "Manager",
+          "executive_director": "Executive Director"
+        },
+        "tierBucket": {
+          "thai_alumni": "Thai Alumni",
+          "start_up": "Start-up",
+          "regular": "Regular",
+          "premium": "Premium",
+          "partnership": "Partnership"
+        },
+        "taskType": {
+          "quarterly_review_meeting": "Quarterly review meeting",
+          "benefit_fulfillment_report": "Benefit fulfillment report",
+          "phone_call": "Phone call",
+          "in_person_meeting": "In-person meeting",
+          "board_escalation": "Board escalation",
+          "verify_pending_tier_upgrade": "Verify pending tier upgrade",
+          "manual_outreach_required": "Manual outreach required",
+          "manual_admin_reactivation_review": "Manual reactivation review"
+        },
+        "yearInCycle": {
+          "pill": "Year {year} of {total}",
+          "aria_label": "Year {year} of {total} · {taskType} · {company}",
+          "aria_label_no_company": "Year {year} of {total} · {taskType}"
+        },
+        "empty_state": {
+          "title": "No pending tasks",
+          "subtitle": "Either no escalation steps fired today, or every task is closed. Adjust the status or assignment filter to view past tasks.",
+          "cta_history": "Show all-tasks history (Done + Skipped)"
+        },
+        "filter_active_state": {
+          "title": "No tasks match the current filter",
+          "subtitle": "Try a different status, assignment, or task-type filter, or clear the overdue toggle."
+        },
+        "error_state": {
+          "title": "Could not load escalation tasks",
+          "subtitle": "The database query failed. Please retry or contact support if the problem persists.",
+          "retry": "Retry",
+          "retrying": "Retrying…"
+        },
+        "actions": {
+          "menu_label": "Actions",
+          "errors": {
+            "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
+            "task_not_found": "This task no longer exists — refresh the list.",
+            "feature_disabled": "Renewals are temporarily disabled.",
+            "unauthenticated": "Your session expired — sign in again to continue.",
+            "invalid_input": "The submitted data is invalid. Please check the form and retry.",
+            "invalid_cursor": "Pagination state is stale — refresh the page.",
+            "server_error": "Something went wrong on our side. Please retry shortly.",
+            "unknown": "An unexpected error occurred. Please retry.",
+            "offline": "You appear to be offline — check your connection and retry."
+          },
+          "done": {
+            "label": "Done",
+            "success": "Task marked done",
+            "error": "Failed to mark task done",
+            "errors": {
+              "forbidden": "Only admins can mark tasks done."
+            }
+          },
+          "skip": {
+            "label": "Skip",
+            "success": "Task skipped",
+            "error": "Failed to skip task",
+            "errors": {
+              "forbidden": "Only admins can skip tasks."
+            }
+          },
+          "reassign": {
+            "label": "Reassign",
+            "success": "Task reassigned",
+            "error": "Failed to reassign task",
+            "errors": {
+              "forbidden": "Only admins can reassign tasks."
+            }
+          }
+        },
+        "done_dialog": {
+          "title": "Mark task done?",
+          "description": "Optionally capture a brief outcome note for the forensic chain. The task will transition to done and be removed from the open queue.",
+          "outcome_note_label": "Outcome note (optional)",
+          "outcome_note_placeholder": "What happened? Anything notable to capture?",
+          "chars_remaining": "{count} characters remaining",
+          "cancel": "Cancel",
+          "confirm": "Mark done",
+          "submitting": "Saving…"
+        },
+        "skip_dialog": {
+          "title": "Skip task?",
+          "description": "A reason is required so the audit trail captures why this touchpoint was skipped. The task will transition to skipped and be removed from the open queue.",
+          "reason_label": "Reason",
+          "reason_placeholder": "e.g. Member unreachable; will revisit at T-30",
+          "reason_required": "A reason is required before you can skip this task.",
+          "required_marker": "required",
+          "chars_remaining": "{count} characters remaining",
+          "cancel": "Cancel",
+          "confirm": "Skip task",
+          "submitting": "Saving…"
+        },
+        "reassign_dialog": {
+          "title": "Reassign task",
+          "description": "Choose another active staff member to take ownership. The previous assignee will lose visibility under their \"Mine\" filter.",
+          "assignee_label": "Assignee",
+          "placeholder": "Select a staff member",
+          "search_placeholder": "Search by name or email…",
+          "no_results": "No staff member matches your search.",
+          "load_error": "Could not load staff users. Please try again.",
+          "retry": "Retry",
+          "current_assignee_badge": "current",
+          "cancel": "Cancel",
+          "confirm": "Reassign",
+          "submitting": "Saving…"
+        }
+      }
+    },
     "refund": {
       "title": "Issue refund",
       "button": {
@@ -1712,7 +2325,12 @@
       "invoicesList": "Invoices list",
       "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
       "creditNotesList": "Credit notes list",
-      "broadcastsQueue": "E-Blast review queue"
+      "broadcastsQueue": "E-Blast review queue",
+      "renewalsList": "Renewal pipeline",
+      "renewalSchedules": "Renewal schedule policies",
+      "escalationTasks": "Escalation tasks queue",
+      "escalationTasksMine": "Escalation tasks: my tray",
+      "escalationTasksOverdue": "Escalation tasks: overdue only"
     }
   },
   "nav": {
@@ -1722,6 +2340,7 @@
       "users": "Users",
       "settings": "Settings",
       "settingsInvoices": "Invoice Settings",
+      "settingsRenewalSchedules": "Reminder schedules",
       "sections": {
         "main": "Main",
         "settings": "Settings"
@@ -1731,7 +2350,8 @@
       "ariaLabel": "Staff navigation",
       "members": "Members",
       "invoices": "Invoices",
-      "broadcasts": "Broadcasts"
+      "broadcasts": "Broadcasts",
+      "renewals": "Renewals"
     },
     "member": {
       "dashboard": "Dashboard",
@@ -1763,7 +2383,9 @@
     "credit-notes": "Credit Notes",
     "newCreditNote": "New Credit Note",
     "void": "Void",
-    "pay": "Record Payment"
+    "pay": "Record Payment",
+    "renewals": "Renewals",
+    "schedules": "Reminder schedules"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -2295,6 +2917,83 @@
         "emptyHint": "No issued invoices to pay",
         "allPaidHint": "No pending invoices — you're all paid up."
       }
+    },
+    "renewal": {
+      "page": {
+        "title": "Online renewal",
+        "subtitle": "Review your membership and confirm to receive an invoice.",
+        "membershipPlanHeading": "Membership plan"
+      },
+      "loading": {
+        "announce": "Loading your renewal details…"
+      },
+      "fields": {
+        "plan": "Plan",
+        "tier": "Tier",
+        "frozenPrice": "Locked-in price",
+        "term": "Term",
+        "termMonths": "{count} months",
+        "expiry": "Current expiry"
+      },
+      "benefits": {
+        "heading": "Benefit summary",
+        "unavailable": "Benefit summary unavailable.",
+        "unmeteredQuota": "Unlimited",
+        "usageRatio": "{used} of {quota}",
+        "usageUnmetered": "{used} used",
+        "percentUsed": "{percent}% used",
+        "ariaProgress": "{label}: {used} of {quota} used"
+      },
+      "confirm": {
+        "cta": "Confirm renewal",
+        "busy": "Confirming…",
+        "errorGeneric": "We couldn't process your renewal. Please try again or contact support.",
+        "errorCycleNotFound": "Your renewal link has expired. Please return to the portal and try again.",
+        "errorCycleNotPayable": "This renewal cycle has already been processed.",
+        "errorPlanUnavailable": "The selected plan is no longer available.",
+        "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
+        "errorNetwork": "Connection issue. Please check your internet and try again."
+      },
+      "planChange": {
+        "label": "Choose a plan",
+        "placeholder": "{defaultLabel}",
+        "currentSuffix": "current",
+        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice."
+      },
+      "onboarding": {
+        "heading": "Welcome to your first renewal",
+        "body": "Your renewal price is locked at the rate when your reminder was sent — even if the plan changes after this point. Confirm below and we'll issue an invoice you can pay online."
+      },
+      "success": {
+        "title": "Renewal complete",
+        "subtitle": "Thank you — your membership is active.",
+        "detailsHeading": "Renewal details",
+        "newExpiry": "New expiry",
+        "cycleStatus": "Cycle status",
+        "cycleStatusValue": {
+          "upcoming": "Upcoming",
+          "reminded": "Reminded",
+          "awaiting_payment": "Awaiting payment",
+          "completed": "Active",
+          "lapsed": "Lapsed",
+          "cancelled": "Cancelled",
+          "pending_admin_reactivation": "Pending review"
+        },
+        "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
+        "downloadReceipt": "Download receipt PDF",
+        "viewAllInvoices": "View all invoices",
+        "backToPortal": "Back to portal home"
+      }
+    },
+    "preferences": {
+      "renewals": {
+        "title": "Renewal reminders",
+        "subtitle": "Choose whether to receive renewal-reminder emails. Transactional emails (password resets, invoice receipts) continue regardless.",
+        "pauseLabel": "Pause renewal reminders",
+        "pauseDescription": "We'll still keep your renewal cycle on the admin pipeline so staff can reach out if needed.",
+        "saveErrorTitle": "Couldn't save your preference",
+        "saveErrorDescription": "Your previous setting has been restored. Please try again."
+      }
     }
   },
   "audit": {
@@ -2321,7 +3020,37 @@
       "email_verification_resent": "Verification email resent",
       "email_dispatch_failed": "Email dispatch failed",
       "invitation_bounced": "Invitation bounced",
-      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit"
+      "bulk_action_rate_limit_exceeded": "Bulk action rate limit hit",
+      "at_risk_score_recomputed": "Risk score recomputed",
+      "at_risk_score_threshold_crossed": "Risk band changed",
+      "at_risk_snoozed": "At-risk snoozed",
+      "at_risk_outreach_recorded": "Outreach recorded",
+      "at_risk_compute_partial_failure": "At-risk score partial failure",
+      "tier_upgrade_suggested": "Tier upgrade suggested",
+      "tier_upgrade_accepted": "Tier upgrade accepted",
+      "tier_upgrade_dismissed": "Tier upgrade dismissed",
+      "tier_upgrade_already_at_target": "Already at target tier",
+      "tier_upgrade_skipped_no_thresholds_configured": "Tier upgrade skipped — no thresholds",
+      "tier_upgrade_tenant_disabled": "Tier upgrade disabled for tenant",
+      "cron_bearer_auth_rejected": "Cron auth rejected",
+      "lapsed_member_action_blocked": "Action blocked — lapsed member",
+      "renewal_kill_switch_blocked": "Action blocked — kill switch active",
+      "invoice_draft_created": "Invoice draft created",
+      "invoice_draft_updated": "Invoice draft updated",
+      "invoice_draft_deleted": "Invoice draft deleted",
+      "invoice_issued": "Invoice issued",
+      "invoice_paid": "Invoice marked paid",
+      "invoice_voided": "Invoice voided",
+      "invoice_overdue_detected": "Invoice overdue",
+      "credit_note_issued": "Credit note issued",
+      "invoice_pdf_resent": "Invoice PDF resent",
+      "receipt_pdf_resent": "Receipt PDF resent",
+      "credit_note_pdf_resent": "Credit-note PDF resent",
+      "invoice_pdf_regenerated": "Invoice PDF regenerated",
+      "pdf_render_failed": "PDF render failed",
+      "pdf_render_permanently_failed": "PDF render permanently failed",
+      "auto_email_delivery_failed": "Auto email delivery failed",
+      "receipt_rendered": "Receipt rendered"
     }
   },
   "pagination": {

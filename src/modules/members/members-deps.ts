@@ -22,6 +22,7 @@ import { userEmailAdapter } from './infrastructure/adapters/user-email-adapter';
 import { emailChangeTokenAdapter } from './infrastructure/adapters/email-change-token-adapter';
 import { drizzleInvitationCascadePort } from './infrastructure/adapters/invitation-cascade-adapter';
 import { f7BroadcastsCascadeAdapter } from './infrastructure/adapters/broadcasts-cascade-adapter';
+import { f8RenewalsCascadeAdapter } from './infrastructure/adapters/renewals-cascade-adapter';
 import type { MemberRepo } from './application/ports/member-repo';
 import type { ContactRepo } from './application/ports/contact-repo';
 import type { AuditPort } from './application/ports/audit-port';
@@ -33,6 +34,7 @@ import type { UserEmailPort } from './application/ports/user-email-port';
 import type { EmailChangeTokenPort } from './application/ports/email-change-token-port';
 import type { InvitationCascadePort } from './application/ports/invitation-cascade-port';
 import type { BroadcastsCascadePort } from './application/ports/broadcasts-cascade-port';
+import type { RenewalsCascadePort } from './application/ports/renewals-cascade-port';
 import type { TimelinePort } from './application/ports/timeline-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
@@ -50,6 +52,15 @@ export type MembersDeps = {
   invitations: InvitationCascadePort;
   /** F7 in-flight broadcasts cascade (T178a / Coverage Gap C2). */
   broadcastsCascade: BroadcastsCascadePort;
+  /**
+   * F8 in-flight renewal-cycles cascade (Phase 9 / T238). Cancels the
+   * at-most-one active cycle owned by an archived/erased member;
+   * reuses `renewal_cycle_cancelled` audit with a system-actor +
+   * cascade-reason discriminator. Required in production deps; tests
+   * may inject `noopRenewalsCascadeAdapter` from the same adapter
+   * module.
+   */
+  renewalsCascade: RenewalsCascadePort;
   timeline: TimelinePort;
   clock: ClockPort;
   idFactory: {
@@ -98,6 +109,7 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     tokens: emailChangeTokenAdapter,
     invitations: drizzleInvitationCascadePort,
     broadcastsCascade: f7BroadcastsCascadeAdapter,
+    renewalsCascade: f8RenewalsCascadeAdapter,
     timeline: drizzleTimelineRepo,
     clock: systemClock,
     idFactory: systemIdFactory,

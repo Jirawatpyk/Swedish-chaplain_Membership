@@ -45,7 +45,39 @@ vi.mock('@/lib/env', () => ({
     flags: { readOnlyMode: false },
     bootstrap: { adminEmail: undefined },
     log: { level: 'silent' },
+    // J5-H4 — toggled per-test via direct mutation to exercise the
+    // F8 bounce-hook path. Defaults to false so existing tests don't
+    // accidentally enter the F8 callback.
+    features: { f8Renewals: false },
   },
+}));
+
+// J5-H4: mock the F8 surface so we can pin the silent-failure
+// contract — F8 throws MUST NOT propagate to the webhook response
+// (otherwise Resend retry-storms with 24h exponential backoff).
+//
+// The lookup mock's TS inference would otherwise narrow to
+// `Promise<null>` and reject `mockResolvedValueOnce({...})` overrides
+// at compile time — the explicit return-type widens it to
+// `Promise<MemberLookupResult | null>` to match the production import.
+type MemberLookupResultStub = {
+  tenantId: string;
+  memberId: string;
+  contactId: string;
+  isPrimary: boolean;
+};
+const lookupMemberByEmailMock = vi.hoisted(() =>
+  vi.fn<(email: string) => Promise<MemberLookupResultStub | null>>(
+    async () => null,
+  ),
+);
+const detectBounceThresholdMock = vi.hoisted(() =>
+  vi.fn(async () => ({ ok: true as const, value: { kind: 'no_threshold_crossed' as const, counts: { hardBounces: 0, softBouncesInCycle: 0, softBouncesIn30Days: 0 } } })),
+);
+vi.mock('@/modules/renewals', () => ({
+  lookupMemberByEmail: lookupMemberByEmailMock,
+  detectBounceThreshold: detectBounceThresholdMock,
+  makeRenewalsDeps: vi.fn(() => ({ tenant: { slug: 'test-tenant' } })),
 }));
 
 // Import the route AFTER vi.mock is set up (vitest hoists mocks so this
@@ -213,5 +245,79 @@ describe('POST /api/webhooks/resend', () => {
     expect(response.status).toBe(200);
     // No insert for unknown event types
     expect(insertValuesMock).not.toHaveBeenCalled();
+  });
+
+  it('J5-H11: 200 on schema-rejected body (Resend payload field renamed) — does NOT 400-storm Resend retries', async () => {
+    // Valid JSON but missing the required `type` field → zod schema
+    // rejection. Previously this would 400 → Resend retries with 24h
+    // exponential backoff. Now: 200 + `schema_drift: true` flag +
+    // logger.error + metric so the alert pipeline triggers without
+    // breaking delivery.
+    const body = JSON.stringify({
+      no_type_field: 'present',
+      data: { email_id: 're_x', to: ['a@b.c'] },
+    });
+    const svixId = 'msg_schema_drift';
+    const svixTimestamp = '1712664299';
+    const response = await POST(
+      makeRequest(body, {
+        'svix-id': svixId,
+        'svix-timestamp': svixTimestamp,
+        'svix-signature': sign(svixId, svixTimestamp, body),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.schema_drift).toBe(true);
+    // No DB insert — schema rejection skips the persist path entirely.
+    expect(insertValuesMock).not.toHaveBeenCalled();
+  });
+
+  it('J5-H4: 200 even when F8 detectBounceThreshold throws (no Resend retry storm on F8 internal error)', async () => {
+    // Toggle the F8 feature flag ON for this test only, then mock
+    // the F8 surface to simulate a downstream throw.
+    const env = (await import('@/lib/env')).env as {
+      features: { f8Renewals: boolean };
+    };
+    env.features.f8Renewals = true;
+    lookupMemberByEmailMock.mockResolvedValueOnce({
+      tenantId: 'test-tenant',
+      memberId: '00000000-0000-0000-0000-000000000aaa',
+      contactId: 'c1',
+      isPrimary: true,
+    });
+    detectBounceThresholdMock.mockRejectedValueOnce(
+      new Error('F8 use-case panic: cyclesRepo connection lost'),
+    );
+    try {
+      const body = JSON.stringify({
+        type: 'email.bounced',
+        data: {
+          email_id: 're_bounce_h4',
+          to: ['member@example.com'],
+          bounce: { type: 'permanent' },
+        },
+      });
+      const svixId = 'msg_h4';
+      const svixTimestamp = '1712664399';
+      const response = await POST(
+        makeRequest(body, {
+          'svix-id': svixId,
+          'svix-timestamp': svixTimestamp,
+          'svix-signature': sign(svixId, svixTimestamp, body),
+        }),
+      );
+      // Critical invariant: 200 even though F8 hook threw —
+      // returning 5xx would cause Resend to retry with 24h
+      // exponential backoff (silent-failure-hunter F8 finding #5).
+      expect(response.status).toBe(200);
+      // F8 hook was attempted (lookup + detect both invoked).
+      expect(lookupMemberByEmailMock).toHaveBeenCalledTimes(1);
+      expect(detectBounceThresholdMock).toHaveBeenCalledTimes(1);
+      // F1 webhook still wrote the email_delivery_events row.
+      expect(insertValuesMock).toHaveBeenCalledOnce();
+    } finally {
+      env.features.f8Renewals = false;
+    }
   });
 });

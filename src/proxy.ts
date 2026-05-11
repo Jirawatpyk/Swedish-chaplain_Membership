@@ -217,6 +217,21 @@ export function proxy(request: NextRequest): NextResponse {
 
   // 1. READ_ONLY_MODE — block all writes with 503 (used for rollback /
   //    scheduled maintenance per .env.local README).
+  //
+  //    F-stack cron handlers (`POST /api/cron/**`) are intentionally
+  //    INCLUDED in this gate. Rationale: an emergency write-freeze IS
+  //    intended to halt all state-mutating server work, including
+  //    scheduled jobs — otherwise a cron pass during the freeze could
+  //    corrupt state the operator is trying to stabilise. Cron-job.org
+  //    will log 503s but does not retry-storm because each cron entry
+  //    has retry-disabled per `docs/runbooks/cron-jobs.md` § "Retry
+  //    policy contract". F8 cron specifically: missed dispatch /
+  //    lapse-cycle / at-risk passes during a typical <24h freeze
+  //    window are acceptable — the next pass picks up where the
+  //    previous one left off (idempotent FR-011 + state-machine
+  //    convergence). If a future feature has time-critical cron that
+  //    MUST run during freeze (e.g., regulatory deadline), add an
+  //    explicit carve-out here with a paired Constitution amendment.
   if (env.flags.readOnlyMode && isStateChanging) {
     return build503(
       'read-only-mode',
@@ -229,9 +244,21 @@ export function proxy(request: NextRequest): NextResponse {
 
   // 1b. FEATURE_F3_MEMBERS kill-switch (T036). Applies to BOTH reads and
   //     writes on the F3 surfaces because the whole feature is disabled.
+  //
+  //     Deep-review fix — F8 portal API surfaces (`/api/portal/renewal/**`
+  //     + `/api/portal/preferences/renewals`) are nested under
+  //     `/api/portal` but DO NOT belong to F3. The earlier blanket match
+  //     would silently kill F8 portal endpoints with the wrong error
+  //     code (`read_only_mode` instead of `feature_disabled`) when an
+  //     operator disabled F3 for maintenance while F8 was live. We now
+  //     exclude the F8 portal sub-trees so each kill-switch returns its
+  //     own canonical error code.
+  const isF8PortalApiPath =
+    nextUrl.pathname.startsWith('/api/portal/renewal') ||
+    nextUrl.pathname.startsWith('/api/portal/preferences/renewals');
   const isF3Path =
     nextUrl.pathname.startsWith('/api/members') ||
-    nextUrl.pathname.startsWith('/api/portal');
+    (nextUrl.pathname.startsWith('/api/portal') && !isF8PortalApiPath);
   if (!env.features.f3Members && isF3Path) {
     return build503(
       'read_only_mode',
@@ -311,6 +338,58 @@ export function proxy(request: NextRequest): NextResponse {
     return build503(
       'feature_disabled',
       'Email broadcasts are temporarily unavailable.',
+      nextUrl.pathname,
+      requestId,
+      nonce,
+    );
+  }
+
+  // 1f. FEATURE_F8_RENEWALS kill-switch (Phase 5 Wave A T133b). Default
+  //     OFF (dark ship); flip ON in Vercel env after Phase 5+6+9 ship
+  //     gates. Distinct error code `feature_disabled` separates "not yet
+  //     activated" from F3/F4's `read_only_mode` maintenance semantics.
+  //
+  //     The proxy runs in Edge runtime — it CANNOT do DB lookups, so
+  //     this block is path-prefix-only. The lapsed-portal-scope check
+  //     (FR-005a / T133) lives in a route-handler/server-component
+  //     helper that DOES have DB access; this proxy block only handles
+  //     "feature globally disabled". The F8 paths covered:
+  //
+  //       - /api/cron/renewals/**        — daily dispatcher + reconcile-pending
+  //       - /api/admin/renewals/**       — admin send-reminder-now etc.
+  //       - /api/admin/members/*/(un)block-auto-reactivation — FR-005b admin override
+  //       - /api/portal/renewal/**       — confirm POST + token-verify entry
+  //       - /api/portal/preferences/renewals — FR-016 opt-out toggle
+  //       - /admin/renewals/**           — admin pipeline + cycle pages
+  //       - /portal/renewal/**           — public renewal page + success
+  //       - /portal/preferences/renewals — opt-out preferences page
+  //
+  //     Kill-switch audit (`renewal_kill_switch_blocked`) emits from the
+  //     individual route handlers / page components — proxy returns
+  //     generic 503 without touching DB so we don't introduce edge-
+  //     runtime Postgres dependencies. The audit row is the
+  //     forensic record; the 503 is the user-facing block.
+  const isF8Path =
+    nextUrl.pathname.startsWith('/api/cron/renewals') ||
+    nextUrl.pathname.startsWith('/api/admin/renewals') ||
+    /^\/api\/admin\/members\/[^/]+\/(?:un)?block-auto-reactivation(?:\/|$)/.test(
+      nextUrl.pathname,
+    ) ||
+    nextUrl.pathname.startsWith('/api/portal/renewal') ||
+    nextUrl.pathname.startsWith('/api/portal/preferences/renewals') ||
+    /^\/admin\/renewals(?:\/|$)/.test(nextUrl.pathname) ||
+    // Deep-review fix — `/admin/settings/renewals/**` (schedule editor)
+    // was previously NOT proxied; the page component had its own flag
+    // guard, but defence-in-depth wants the proxy as first gate so a
+    // disabled-F8 deploy doesn't render Next.js layouts + invoke
+    // server-component data fetches before short-circuiting.
+    /^\/admin\/settings\/renewals(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/portal\/renewal(?:\/|$)/.test(nextUrl.pathname) ||
+    /^\/portal\/preferences\/renewals(?:\/|$)/.test(nextUrl.pathname);
+  if (!env.features.f8Renewals && isF8Path) {
+    return build503(
+      'feature_disabled',
+      'Renewal reminders are temporarily unavailable.',
       nextUrl.pathname,
       requestId,
       nonce,

@@ -50,8 +50,13 @@ export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  if (!UUID_RE.test(memberId)) return { title: 'Edit · SweCham' };
-  return { title: `Edit · SweCham` };
+  const t = await getTranslations('admin.members.edit');
+  // Layout template appends "· SweCham Membership". Both branches
+  // use the generic `title` ("Edit member") rather than the
+  // `pageTitle` interpolation which requires companyName via a DB
+  // lookup — the page itself does the lookup downstream.
+  if (!UUID_RE.test(memberId)) return { title: t('title') };
+  return { title: t('title') };
 }
 
 export default async function EditMemberPage({ params }: PageProps) {

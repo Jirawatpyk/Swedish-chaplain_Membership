@@ -198,6 +198,13 @@ function SelectSeparator({
   )
 }
 
+// Base UI's `SelectScrollUpArrow` / `SelectScrollDownArrow` set
+// `data-visible` only when the popup is actually scrollable (list
+// taller than `--available-height`). Without an explicit
+// `hidden data-[visible]:flex` rule the chevrons render unconditionally,
+// producing the visible up/down "^" indicators on every dropdown
+// regardless of whether scrolling is possible — a UX regression on
+// short option lists like the F8 tier filter.
 function SelectScrollUpButton({
   className,
   ...props
@@ -206,13 +213,12 @@ function SelectScrollUpButton({
     <SelectPrimitive.ScrollUpArrow
       data-slot="select-scroll-up-button"
       className={cn(
-        "top-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "top-0 z-10 hidden w-full cursor-default items-center justify-center bg-popover py-1 data-[visible]:flex [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
-      <ChevronUpIcon
-      />
+      <ChevronUpIcon />
     </SelectPrimitive.ScrollUpArrow>
   )
 }
@@ -225,13 +231,12 @@ function SelectScrollDownButton({
     <SelectPrimitive.ScrollDownArrow
       data-slot="select-scroll-down-button"
       className={cn(
-        "bottom-0 z-10 flex w-full cursor-default items-center justify-center bg-popover py-1 [&_svg:not([class*='size-'])]:size-4",
+        "bottom-0 z-10 hidden w-full cursor-default items-center justify-center bg-popover py-1 data-[visible]:flex [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
     >
-      <ChevronDownIcon
-      />
+      <ChevronDownIcon />
     </SelectPrimitive.ScrollDownArrow>
   )
 }

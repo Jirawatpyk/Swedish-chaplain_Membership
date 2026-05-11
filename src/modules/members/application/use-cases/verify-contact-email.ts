@@ -20,6 +20,9 @@
  */
 
 import { runInTenant } from '@/lib/db';
+import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort } from '../ports/audit-port';
@@ -27,6 +30,15 @@ import type { EmailChangeTokenPort } from '../ports/email-change-token-port';
 import type { UserEmailPort } from '../ports/user-email-port';
 import type { ClockPort } from '../ports/clock-port';
 import { UseCaseAbort } from '../tx-abort';
+// F8 Phase 4 Wave I4 / T102 — F3 → F8 cross-module hook for clearing
+// email_unverified flag + closing manual_outreach_required tasks
+// after a successful email-change verification. Imports gated by
+// FEATURE_F8_RENEWALS at call site so the hook is dark-launched.
+import {
+  resetEmailUnverified,
+  makeRenewalsDeps,
+  lookupMemberByContactId,
+} from '@/modules/renewals';
 
 export type VerifyContactEmailDeps = {
   tenant: TenantContext;
@@ -137,6 +149,53 @@ export async function verifyContactEmail(
         revertTokensInvalidated: revertInvalidated.value.invalidatedCount,
       };
     });
+
+    // F8 Phase 4 Wave I4 / T102 — synchronous-call hook into F8's
+    // resetEmailUnverified after successful F3 verification. Gated
+    // by FEATURE_F8_RENEWALS; failures are wrapped in try/catch +
+    // WARN log so a F8-internal error NEVER breaks F3's
+    // verification result (the user has already proven they own the
+    // new email; F8 reset is a best-effort follow-up).
+    //
+    // Idempotent: T091 (resetEmailUnverified) is a no-op when the
+    // flag is already false, so a future cron pass or admin action
+    // can reconcile any failed hook without negative side effects.
+    if (env.features.f8Renewals) {
+      try {
+        const memberLookup = await lookupMemberByContactId(outcome.contactId);
+        if (memberLookup) {
+          await resetEmailUnverified(makeRenewalsDeps(memberLookup.tenantId), {
+            tenantId: memberLookup.tenantId,
+            memberId: memberLookup.memberId,
+            actorUserId: outcome.userId,
+            actorRole: 'member',
+            correlationId: input.requestId,
+          });
+        }
+      } catch (e) {
+        // J5-H2 (sibling): elevated to logger.error + metric. F3
+        // verification still succeeds (the user has proven they own
+        // the new email — that's a strong signal regardless of F8
+        // state); the silent risk was that `email_unverified=true`
+        // stayed pinned indefinitely, blocking renewal reminders
+        // for a member who already verified. Idempotency lets a
+        // future cron pass / admin click reconcile, but operators
+        // need observability to detect the desync before it grows.
+        logger.error(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            stack: e instanceof Error ? e.stack : undefined,
+            userId: outcome.userId,
+            contactId: outcome.contactId,
+            requestId: input.requestId,
+          },
+          'verifyContactEmail: f8_reset_email_unverified_hook_failed',
+        );
+        renewalsMetrics.resetHookFailed(null);
+        // intentionally do NOT propagate — F3 verification stays
+        // successful even if F8 hook fails.
+      }
+    }
 
     return ok(outcome);
   } catch (e) {

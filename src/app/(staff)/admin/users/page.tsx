@@ -36,7 +36,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Users · SweCham' };
+  const t = await getTranslations('admin.users');
+  return { title: t('title') };
 }
 
 const USERS_PAGE_SIZE = 50;

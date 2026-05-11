@@ -38,8 +38,11 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { year, planId } = await params;
   const yearNum = Number(year);
+  const tPlans = await getTranslations('admin.plans');
   if (!Number.isInteger(yearNum) || !/^[a-z0-9-]{1,63}$/.test(planId)) {
-    return { title: 'Plan · SweCham' };
+    // Invalid url params (uuid/year format mismatch) — page itself
+    // notFound()s; metadata just falls back to the list-page title.
+    return { title: tPlans('title') };
   }
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
@@ -49,7 +52,8 @@ export async function generateMetadata({
     asPlanYear(yearNum),
   );
   const displayName = plan?.plan_name.en ?? planId;
-  return { title: `${displayName} · Plans · SweCham` };
+  // Layout template appends "· SweCham Membership" automatically.
+  return { title: `${displayName} · ${tPlans('title')}` };
 }
 
 export default async function PlanDetailPage({

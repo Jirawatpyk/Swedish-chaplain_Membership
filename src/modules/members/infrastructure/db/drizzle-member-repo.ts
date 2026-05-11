@@ -536,6 +536,12 @@ export const drizzleMemberRepo: MemberRepo = {
         member: m,
         planDisplayName: r.planDisplayName,
         primaryContact: c === null ? null : rowToContact(c),
+        // F8 Phase 6 Wave H — surface risk_score + band from F3 members
+        // schema (populated by F8's batched recompute cron). Null when
+        // recompute hasn't run yet (FR-035 min-tenure skips fresh members).
+        riskScore: r.row.riskScore ?? null,
+        riskScoreBand:
+          (r.row.riskScoreBand as DirectoryRow['riskScoreBand']) ?? null,
       };
     });
 
@@ -657,6 +663,10 @@ export const drizzleMemberRepo: MemberRepo = {
           member: m,
           planDisplayName: r.planDisplayName,
           primaryContact: c === null ? null : rowToContact(c),
+          // F8 Phase 6 Wave H — see searchDirectory comment above.
+          riskScore: r.row.riskScore ?? null,
+          riskScoreBand:
+            (r.row.riskScoreBand as DirectoryRow['riskScoreBand']) ?? null,
         };
       });
 

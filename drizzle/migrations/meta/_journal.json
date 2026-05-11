@@ -603,6 +603,293 @@
       "when": 1788912000000,
       "tag": "0085_audit_log_f7_r6_staff_review",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0086_f8_create_scheduled_plan_changes_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1789086400000,
+      "tag": "0087_f8_create_renewal_cycles_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1789172800000,
+      "tag": "0088_f8_create_renewal_reminder_events_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789259200000,
+      "tag": "0089_f8_create_tenant_renewal_config_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1789345600000,
+      "tag": "0090_f8_create_at_risk_outreach_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1789432000000,
+      "tag": "0091_f8_create_tier_upgrade_suggestions_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1789518400000,
+      "tag": "0092_f8_create_renewal_escalation_tasks_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789604800000,
+      "tag": "0093_f8_create_consumed_link_tokens_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789691200000,
+      "tag": "0094_f8_extend_members_and_plans_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1789777600000,
+      "tag": "0095_f8_extend_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789864000000,
+      "tag": "0096_f8_membership_plans_renewal_tier_bucket_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789950400000,
+      "tag": "0097_f8_phase10_a_email_change_tokens_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1790036800000,
+      "tag": "0098_f8_phase10_a_notifications_outbox_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1790123200000,
+      "tag": "0099_f8_phase3_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790381824000,
+      "tag": "0100_f8_renewal_cycles_lapsed_tier_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1791532800000,
+      "tag": "0101_f8_phase4_audit_event_type_enum_schedule_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1791619200000,
+      "tag": "0102_f8_phase4_audit_event_type_enum_escalation_task_completed",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791705600000,
+      "tag": "0103_f8_phase4_audit_event_type_enum_dispatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1791792000000,
+      "tag": "0104_f8_phase4_audit_event_type_enum_bounce_threshold",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791878400000,
+      "tag": "0105_f8_phase4_renewal_reminder_events_retry_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791964800000,
+      "tag": "0106_f1_email_delivery_events_bounce_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1792051200000,
+      "tag": "0107_f8_phase4_audit_event_type_enum_cron_orchestrated",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1792137600000,
+      "tag": "0108_f8_renewal_cycles_closed_reason_grace_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1792224000000,
+      "tag": "0109_f8_phase5_us3_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1792224000001,
+      "tag": "0110_f8_wave_k24_renewal_lapsed_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1792224000002,
+      "tag": "0111_f8_phase6_us4_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1792224000003,
+      "tag": "0112_f8_phase6_review_cron_bearer_auth_rejected",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1792224000004,
+      "tag": "0113_f8_t149_fix_plan_id_at_cycle_start_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1792310400000,
+      "tag": "0114_f8_repair_renewal_tier_bucket_seed",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1792396800000,
+      "tag": "0115_f8_audit_log_member_plan_changed_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1792483200000,
+      "tag": "0116_f8_phase7_tier_upgrade_audit_event_type_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1792569600000,
+      "tag": "0117_f8_phase7_tier_upgrade_plan_id_text",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1792656000000,
+      "tag": "0118_f8_phase7_renewal_schedule_rescheduled_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1792742400000,
+      "tag": "0119_f8_phase7_silent_skip_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1792828800000,
+      "tag": "0120_f8_phase7_round2_silent_skip_audits",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1792915200000,
+      "tag": "0121_f8_phase8_escalation_lifecycle_audit_enum",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1793001600000,
+      "tag": "0122_f8_phase8_escalation_year_in_cycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1793088000000,
+      "tag": "0123_f8_round6_tier_upgrade_suppressed_member_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1793174400000,
+      "tag": "0124_pr24_trigger_search_path_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1793260800000,
+      "tag": "0125_pr24_scheduled_plan_changes_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "7",
+      "when": 1793347200000,
+      "tag": "0126_pr24_renewal_cycles_expires_check",
+      "breakpoints": true
     }
   ]
 }

@@ -26,13 +26,14 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastsMetrics, renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { archive, type Member, type MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsCascadePort } from '../ports/broadcasts-cascade-port';
+import type { RenewalsCascadePort } from '../ports/renewals-cascade-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { InvitationCascadePort } from '../ports/invitation-cascade-port';
@@ -71,6 +72,14 @@ export type ArchiveMemberDeps = {
    * invariant; making the dep required surfaces that bug at typecheck.
    */
   broadcastsCascade: BroadcastsCascadePort;
+  /**
+   * F8 in-flight renewal-cycles cascade (Phase 9 / T239). Cancels the
+   * at-most-one active cycle owned by the archived member; reuses
+   * `renewal_cycle_cancelled` audit with cascade-reason discriminator.
+   * REQUIRED in production. Tests inject `noopRenewalsCascadeAdapter`
+   * from `@/modules/members/infrastructure/adapters/renewals-cascade-adapter`.
+   */
+  renewalsCascade: RenewalsCascadePort;
   audit: AuditPort;
   clock: ClockPort;
 };
@@ -292,6 +301,100 @@ export async function archiveMember(
             cascade: 'f7_in_flight_broadcast_cancel',
           },
           'archive-member: broadcasts cascade threw — member archive succeeded',
+        );
+      }
+    }
+
+    // F8 in-flight renewal-cycles cascade (Phase 9 / T239). Mirrors
+    // the F7 broadcasts-cascade contract above — runs AFTER the F3
+    // archival tx commits, opens its own short tx per cycle, and is
+    // non-fatal for F3 archival (a transient F8 issue must not block
+    // the member archive). Reuses `renewal_cycle_cancelled` audit
+    // event with `payload.reason='originator_member_archived'` so
+    // forensic dashboards can distinguish system-initiated cascade
+    // from admin manual cancel.
+    {
+      try {
+        const cascadeResult =
+          await deps.renewalsCascade.cancelInFlightForMember(
+            deps.tenant,
+            memberId,
+            {
+              cancellationReason: 'originator_member_deleted',
+              initiatedByUserId: meta.actorUserId,
+              requestId: meta.requestId,
+            },
+          );
+        if (cascadeResult.outcome === 'cascade_failed') {
+          // Adapter already logged the underlying error. F3 archival
+          // remains successful; ops can re-run cleanup manually.
+          // Phase 9 verify-fix — emit cascadeOutcome metric so the
+          // audit-emit-loss runbook can alert on F8 cascade health
+          // (mirrors the F7 broadcastsMetrics.cascadeOutcome pattern).
+          renewalsMetrics.cascadeOutcome(
+            deps.tenant.slug,
+            'unexpected_error',
+          );
+          logger.error(
+            {
+              tenantId: deps.tenant.slug,
+              memberId,
+              requestId: meta.requestId,
+              cascade: 'f8_in_flight_cycle_cancel',
+            },
+            'archive-member: renewals cascade failed — cycle may remain in-flight',
+          );
+        } else if (cascadeResult.outcome === 'cascade_partial_failure') {
+          // Concurrent admin cancel won the race for the cycle — log
+          // partial outcome so ops can verify the cycle landed in
+          // `cancelled` (admin-initiated, not cascade-initiated).
+          // Phase 9 verify-fix — emit cascadeOutcome with concurrent_skip
+          // kind so the dashboard distinguishes race from real failure.
+          renewalsMetrics.cascadeOutcome(
+            deps.tenant.slug,
+            'concurrent_skip',
+          );
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              memberId,
+              requestId: meta.requestId,
+              cancelledCount: cascadeResult.cancelledCount,
+              skippedConcurrentCount: cascadeResult.skippedConcurrentCount,
+              cascade: 'f8_in_flight_cycle_cancel',
+            },
+            'archive-member: renewals cascade partial — concurrent admin cancel won race',
+          );
+        } else if (cascadeResult.outcome === 'ok') {
+          // Phase 9 verify-fix — emit cascadeOutcome on the happy
+          // path too so the dashboard tracks normal cascade volume,
+          // not just incidents.
+          renewalsMetrics.cascadeOutcome(deps.tenant.slug, 'cancelled');
+        }
+      } catch (cascadeErr) {
+        // Phase 9 verify-fix — emit cascadeOutcome on the outer-catch
+        // throw path. The adapter is supposed to translate use-case
+        // failures into typed `cascade_failed` outcomes; reaching this
+        // catch implies the adapter ITSELF blew up (composition root
+        // mis-wire), which is a stop-the-line incident class distinct
+        // from the typed cascade_failed path.
+        renewalsMetrics.cascadeOutcome(
+          deps.tenant.slug,
+          'unexpected_error',
+        );
+        logger.error(
+          {
+            err:
+              cascadeErr instanceof Error
+                ? cascadeErr.message
+                : String(cascadeErr),
+            errName:
+              cascadeErr instanceof Error ? cascadeErr.name : undefined,
+            memberId,
+            requestId: meta.requestId,
+            cascade: 'f8_in_flight_cycle_cancel',
+          },
+          'archive-member: renewals cascade threw — member archive succeeded',
         );
       }
     }

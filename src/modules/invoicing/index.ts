@@ -61,6 +61,17 @@ export { Sha256Hex } from './domain/value-objects/sha256-hex';
 // --- Audit event types (for F3 timeline integration US7) --------------------
 export type { F4AuditEventType, F4AuditEvent } from './application/ports/audit-port';
 
+// --- Cross-module callback events --------------------------------------------
+// `F4InvoicePaidEvent` is the canonical payload shape passed to listeners
+// registered on `RecordPaymentDeps.onPaidCallbacks` — fired atomically inside
+// the same DB transaction that flips the invoice `issued → paid`. Field
+// rationale + atomic semantics are documented at the type definition.
+export type {
+  F4InvoicePaidEvent,
+  F4InvoicePaidPaymentMethod,
+  F4InvoicePaidTrigger,
+} from './domain/f4-invoice-paid-event';
+
 /**
  * US7 — F4 audit event types surfaced in the F3 member timeline.
  * All events here carry `member_id` in their payload so the F3
@@ -315,10 +326,18 @@ export {
   makeGetCreditNotePdfSignedUrlDeps,
   makeUpdateInvoiceDraftDeps,
   makeUpdateTenantInvoiceSettingsDeps,
-  makeUploadTenantLogoDeps,
   makeGetTenantTaxPolicyDeps,
   makeResendPdfDeps,
   makeOverdueAuditPort,
   makeF4AuditPort,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';
+
+// `makeUploadTenantLogoDeps` is intentionally NOT re-exported from this
+// barrel. It pulls in the Node-only `sharp` native dep (libvips →
+// detect-libc → child_process); re-exporting it here causes Turbopack
+// 16 to walk the F4 barrel into client bundles and break F8's
+// renewals page (tier-filter-select.tsx → @/modules/renewals →
+// load-cycle-detail → @/modules/invoicing). The single
+// `/api/tenant-invoice-settings/logo` route handler deep-imports
+// directly from `./application/make-upload-tenant-logo-deps`.

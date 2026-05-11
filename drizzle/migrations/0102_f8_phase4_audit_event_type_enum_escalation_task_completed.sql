@@ -1,0 +1,24 @@
+-- ---------------------------------------------------------------------------
+-- F8 Phase 4 Wave I2b — extend audit_event_type pgEnum with the
+-- `escalation_task_completed` event.
+--
+-- Per the H1 audit-emitter convention "co-ship enum + emit site",
+-- this enum value lands alongside the first concrete emit site:
+--
+--   * `escalation_task_completed` — emitted by the
+--     `resetEmailUnverified` use-case (T091) when an open
+--     `manual_outreach_required` task is closed because the member's
+--     email has been re-verified by the F1 verification flow. Payload
+--     carries `{task_id, task_type, member_id, closed_by_actor_role}`
+--     per data-model.md § 4.
+--
+-- The same enum value will also be emitted by Wave I8+ admin task
+-- queue UI when an admin manually marks a task done. Single enum
+-- value, multiple emit sites — matches existing F8 audit conventions.
+--
+-- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
+-- transaction with other DDL — this single statement ships in its own
+-- migration file (sequential after 0101 schedule-policy enum).
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'escalation_task_completed';--> statement-breakpoint

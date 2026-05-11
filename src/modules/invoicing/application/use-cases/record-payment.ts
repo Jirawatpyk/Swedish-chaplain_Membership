@@ -37,6 +37,11 @@ import {
   type InvoiceId,
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
+import type {
+  F4InvoicePaidEvent,
+  F4InvoicePaidPaymentMethod,
+  F4InvoicePaidTrigger,
+} from '@/modules/invoicing/domain/f4-invoice-paid-event';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import type { FiscalYear } from '@/modules/invoicing/domain/value-objects/fiscal-year';
 import { logger } from '@/lib/logger';
@@ -83,6 +88,24 @@ export const recordPaymentSchema = z.object({
    * this flag — pure boolean toggle, audit-trail unaffected.
    */
   suppressReceiptEmail: z.boolean().optional(),
+  /**
+   * F8 Phase 2 Wave A — origin of the mark-paid action. Surfaces in
+   * `F4InvoicePaidEvent.triggeredBy` so cross-module listeners can
+   * branch on the trigger. Defaults to `'admin_manual'` to preserve
+   * backward-compat for existing F4 admin paths that don't set it.
+   */
+  triggeredBy: z
+    .enum(['webhook', 'admin_manual', 'admin_offline_mark'])
+    .optional(),
+  /**
+   * F8 Phase 2 Wave A — F5-rail override for the callback event. F4's
+   * persisted `paymentMethod` enum is narrower than F5's processor rail
+   * set (Stripe rails serialise as `'other'` on the invoice row); this
+   * field carries the original processor rail string so listeners
+   * receive `stripe_card` / `stripe_promptpay` instead of `'other'`.
+   * F4 admin paths leave it undefined → callback uses `paymentMethod`.
+   */
+  processorMethod: z.enum(['stripe_card', 'stripe_promptpay']).optional(),
 });
 
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
@@ -136,6 +159,30 @@ export interface RecordPaymentDeps {
    * Composition root reads `env.features.f5AsyncReceiptPdf`.
    */
   readonly asyncReceiptPdf?: boolean;
+  /**
+   * F8 Phase 2 Wave A (T008) — cross-module on-paid hooks. Fired in
+   * registration order INSIDE the same `withTx` after applyPayment +
+   * audit emit + outbox enqueue + registration-fee flip have all
+   * succeeded, but BEFORE the tx commits. Any rejection rolls back the
+   * entire transaction (invoice stays `issued`, audit + outbox + reg-
+   * fee flip are unwound). Atomic by construction — no separate
+   * compensating action needed on the listener side.
+   *
+   * Registered at composition time via `makeRecordPaymentDeps(..., onPaidCallbacks)`.
+   * F8 wires its `complete-cycle-on-paid` adapter here per research.md R12.
+   * Default `[]` keeps the existing F4 admin manual mark-paid + F5
+   * webhook code paths unchanged for callers that don't pass callbacks.
+   */
+  /**
+   * I3 review-fix: callbacks now receive the F4-internal tx so they
+   * can participate atomically (cf. F8 mark-cycle-complete avoiding a
+   * separate runInTenant). Tx is `unknown` to keep cross-module
+   * contract framework-free; listeners cast it back. Listeners that
+   * don't need the tx may simply ignore the parameter.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
+  >;
 }
 
 export async function recordPayment(
@@ -481,6 +528,57 @@ export async function recordPayment(
         input.tenantId,
         loaded.memberId,
       );
+    }
+
+    // F8 Phase 2 Wave A (T008) — fire registered on-paid callbacks
+    // INSIDE the still-open withTx, after every other side-effect
+    // (applyPayment, audit, outbox enqueue, registration-fee flip)
+    // has succeeded. A callback rejection propagates out of `withTx`
+    // and rolls back the entire transaction — F4 invoice goes back to
+    // `issued`, audit + outbox + reg-fee flip are unwound. Atomic
+    // coordination per Constitution Principle VIII (Reliability).
+    //
+    // Listeners receive the canonical event payload AND an opaque
+    // `unknown`-typed tx handle (`cb(evt, tx)` below). The `unknown`
+    // typing keeps the cross-module contract framework-free per
+    // Principle III — F4 does not export Drizzle types into F8 — while
+    // still letting listeners participate atomically in this same `tx`.
+    // Listeners that don't need the tx may ignore the second parameter;
+    // those that DO need it cast back to their own internal `TenantTx`
+    // brand at the consumer side (see F8 `f8OnPaidCallbacks` for the
+    // canonical pattern + runtime brand-check).
+    //
+    // The non-null assertions on `loaded.total` and `updated.paidAt`
+    // are guarded upstream: `no_snapshot_on_invoice` returns early when
+    // `loaded.total` is null (line ~204), and `applyPayment` always
+    // populates `paid_at` on a successful issued→paid UPDATE (RETURNING
+    // contract). A failed adapter would have thrown before this point.
+    const callbacks = deps.onPaidCallbacks;
+    if (callbacks && callbacks.length > 0) {
+      // `processorMethod` overrides `paymentMethod` in the event for F5
+      // rails — see field doc on the input schema. `triggeredBy` defaults
+      // to `'admin_manual'` for back-compat with existing F4 admin paths.
+      const eventPaymentMethod: F4InvoicePaidPaymentMethod =
+        input.processorMethod ?? input.paymentMethod;
+      const eventTrigger: F4InvoicePaidTrigger =
+        input.triggeredBy ?? 'admin_manual';
+      const evt: F4InvoicePaidEvent = {
+        tenantId: input.tenantId,
+        invoiceId,
+        memberId: loaded.memberId,
+        paidAt: updated.paidAt ?? deps.clock.nowIso(),
+        amountSatang: loaded.total!.satang,
+        vatSatang: loaded.vat!.satang,
+        currency: loaded.currency,
+        paymentMethod: eventPaymentMethod,
+        triggeredBy: eventTrigger,
+      };
+      for (const cb of callbacks) {
+        // I3 review-fix: thread the F4-internal tx so listeners can
+        // participate atomically. Listeners that don't need it ignore
+        // the second parameter — cross-module contract stays narrow.
+        await cb(evt, tx);
+      }
     }
 
     // `applyPayment` returns the refreshed row via RETURNING — no need

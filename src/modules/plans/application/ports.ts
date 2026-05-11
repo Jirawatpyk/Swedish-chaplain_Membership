@@ -254,3 +254,94 @@ export type PlansDeps = {
   readonly clock: ClockPort;
   readonly members: MemberAttachmentChecker;
 };
+
+// ---------------------------------------------------------------------------
+// ScheduledPlanChangeRepo + CurrentPlanResolverPort
+// (F8 Phase 2 Wave B — research.md R13 + data-model.md § 2.9)
+// ---------------------------------------------------------------------------
+
+import type {
+  ScheduledPlanChange,
+  ScheduledPlanChangeStatus,
+  ScheduleNextRenewalPlanChangeInput,
+} from '../domain/scheduled-plan-change';
+
+/**
+ * Result of an atomic supersede + insert call. Surfaces both rows so
+ * the use-case caller can wire downstream side-effects (audit emit,
+ * cross-module hooks) without a second DB round-trip.
+ */
+export interface SupersedeAndInsertResult {
+  readonly inserted: ScheduledPlanChange;
+  /** `null` when there was no prior pending row to supersede. */
+  readonly superseded: ScheduledPlanChange | null;
+}
+
+/**
+ * Repository over the `scheduled_plan_changes` table. The Drizzle
+ * adapter ships with US5 (Phase 5+); Wave B contract tests use an
+ * in-memory mock (`tests/contract/f2-scheduled-plan-change.contract.test.ts`).
+ *
+ * Tenant isolation is enforced compile-time — every method takes
+ * `TenantContext` explicitly (Constitution Principle I clause 1).
+ */
+export interface ScheduledPlanChangeRepo {
+  /**
+   * Atomically supersede any prior pending row for (member, cycle) and
+   * insert a fresh pending row in ONE database transaction. The Drizzle
+   * adapter (Phase 5+) wraps both writes in `withTx` so a failure on
+   * either statement rolls both back — the (tenant, member, cycle)
+   * never observes a "no pending row" intermediate state.
+   *
+   * Resolves Wave B verify-run finding F1 (Constitution Principle VIII —
+   * Reliability / atomic state mutations). The earlier two-call pattern
+   * (`transitionStatus` then `insertPending`) had a window where a
+   * crash between calls could lose the prior pending row WITHOUT a
+   * replacement landing.
+   */
+  supersedeAndInsertPendingAtomically(
+    tenant: TenantContext,
+    input: ScheduleNextRenewalPlanChangeInput,
+  ): Promise<SupersedeAndInsertResult>;
+
+  /** Find the single pending row for (member, cycle), if any. */
+  findPendingForCycle(
+    tenant: TenantContext,
+    memberId: string,
+    effectiveAtCycleId: string,
+  ): Promise<ScheduledPlanChange | null>;
+
+  /**
+   * Move a row out of `pending` (apply / cancel paths). Throws if the
+   * source row is already terminal — terminal-state immutability is a
+   * Domain invariant. Supersede transitions land via
+   * `supersedeAndInsertPendingAtomically` instead.
+   */
+  transitionStatus(
+    tenant: TenantContext,
+    scheduledChangeId: string,
+    nextStatus: Exclude<ScheduledPlanChangeStatus, 'pending'>,
+  ): Promise<ScheduledPlanChange>;
+
+  /**
+   * List every row (any status) for one member, ordered by
+   * `scheduled_at DESC`. Used by audit/admin views + tests.
+   */
+  listForMember(
+    tenant: TenantContext,
+    memberId: string,
+  ): Promise<readonly ScheduledPlanChange[]>;
+}
+
+/**
+ * Bridge port back to F3 to resolve a member's CURRENT plan_id when
+ * `getEffectivePlanForRenewal` falls through (no pending row for the
+ * cycle). F3 wires this to `getMember` at composition time — F2 stays
+ * uni-directional with respect to F3 dependency.
+ */
+export interface CurrentPlanResolverPort {
+  resolveCurrentPlanId(
+    tenant: TenantContext,
+    memberId: string,
+  ): Promise<string>;
+}

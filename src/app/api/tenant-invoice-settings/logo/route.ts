@@ -17,7 +17,15 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
-import { uploadTenantLogo, makeUploadTenantLogoDeps } from '@/modules/invoicing';
+import { uploadTenantLogo } from '@/modules/invoicing';
+// Module-root sub-barrel — re-exporting `makeUploadTenantLogoDeps`
+// from the main `@/modules/invoicing` barrel would drag the
+// `sharp` native dep into every F8 client bundle that touches
+// `@/modules/renewals` (Turbopack 16 walks barrel re-exports
+// eagerly). Living at the module root keeps the import outside the
+// `domain/`/`application/`/`infrastructure/` paths restricted by
+// Constitution III's no-restricted-imports ESLint rule.
+import { makeUploadTenantLogoDeps } from '@/modules/invoicing/upload-tenant-logo-deps';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import {

@@ -24,7 +24,10 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
     <thead
       data-slot="table-header"
       // Sticky so column labels stay visible during horizontal scroll on narrow viewports.
-      className={cn("sticky top-0 z-10 bg-background [&_tr]:border-b", className)}
+      // bg-card matches the surrounding <Card> token in both light + dark
+      // modes (--card vs --background differ in OKLCH lightness; bg-background
+      // made the sticky header float visually inside cards).
+      className={cn("sticky top-0 z-10 bg-card [&_tr]:border-b", className)}
       {...props}
     />
   )

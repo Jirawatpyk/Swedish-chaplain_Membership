@@ -15,6 +15,7 @@
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asOverrideReason,
@@ -59,11 +60,41 @@ export type ChangePlanError =
   | { type: 'startup_too_old'; foundedYear: number; maxAllowedYears: number }
   | { type: 'server_error'; message: string };
 
+// F8 listener event payload — emitted to `manualPlanChangeListeners`
+// after the `member_plan_manually_changed` audit row commits inside
+// the change-plan tx. F8's `f8OnManualPlanChangeCallbacks(tenantId)`
+// factory returns the listener array; the route handler wires it.
+//
+// Each listener runs inside the F3 tx (the `tx` param) so failures
+// roll the F3 plan-change back per Constitution Principle VIII.
+// Mirrors the F4 → F8 `f8OnPaidCallbacks` pattern.
+//
+// Phase 7 review-fix C-TYPE-1 — the event shape lives in F8's port to
+// eliminate the prior duplicate F3 + F8 definitions that only worked
+// via TS structural typing.
+import type {
+  ManualPlanChangeEvent,
+  ManualPlanChangeListener as ManualPlanChangeListenerCanonical,
+} from '@/modules/renewals';
+
+export type ManualPlanChangeListenerEvent = ManualPlanChangeEvent;
+export type ManualPlanChangeListener = ManualPlanChangeListenerCanonical;
+
 export type ChangePlanDeps = {
   tenant: TenantContext;
   memberRepo: MemberRepo;
   plans: PlanLookupPort;
   audit: AuditPort;
+  /**
+   * F8 Phase 7 T188 — listener array invoked atomically inside the
+   * change-plan tx after the `member_plan_manually_changed` audit
+   * commits. F8's `f8OnManualPlanChangeCallbacks(tenantId)` factory
+   * supplies the canonical pair (supersede pending tier-upgrade +
+   * reschedule renewal cadence). Optional — when undefined, change-
+   * plan still works (the reconcile cron T185 catches orphan-pending
+   * suggestions defensively).
+   */
+  manualPlanChangeListeners?: ReadonlyArray<ManualPlanChangeListener>;
 };
 
 export type ChangePlanCallMeta = {
@@ -209,6 +240,35 @@ export async function changePlan(
         throw new TxAbort({ type: 'audit_failed' });
       }
 
+      // T029b (F8 Phase 2 Wave C, migration 0095) — emit
+      // `member_plan_manually_changed` alongside the generic
+      // `member_plan_changed` so F8's supersede listener (Phase 5+
+      // T184) can distinguish admin manual overrides from auto-
+      // applied scheduled plan changes. Same tx as the plan flip +
+      // generic audit so the supersede observes either ALL three
+      // events or NONE (Constitution Principle VIII — atomic
+      // state+audit). The carry-over of Wave B T013.
+      const manualAudit = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'member_plan_manually_changed',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `member_plan_manually_changed ${memberId}`,
+        payload: {
+          member_id: memberId,
+          old_plan_id: current.planId,
+          old_plan_year: current.planYear,
+          new_plan_id: data.new_plan_id,
+          new_plan_year: data.new_plan_year,
+          ...(data.override_reason_code && {
+            override_reason_code: data.override_reason_code,
+            override_reason_note: data.override_reason_note ?? null,
+          }),
+        },
+      });
+      if (!manualAudit.ok) {
+        throw new TxAbort({ type: 'audit_failed' });
+      }
+
       if (bundleChanged) {
         const bundleAudit = await deps.audit.recordInTx(tx, deps.tenant, {
           type: 'plan_bundle_changed',
@@ -224,6 +284,53 @@ export async function changePlan(
         });
         if (!bundleAudit.ok) {
           throw new TxAbort({ type: 'audit_failed' });
+        }
+      }
+
+      // F8 Phase 7 T188 — invocation of registered F8 listeners
+      // (supersede pending tier-upgrade + reschedule renewal cadence)
+      // inside the F3 tx. Each listener runs in F3's tx context.
+      //
+      // **Failure semantics** (review-fix Round 2 IMP-10):
+      //
+      // F8's production listeners go through `wrapListener`
+      // (`src/modules/renewals/infrastructure/ports-adapters/
+      // f2-plan-change-bridge.ts`) which catches + logs + counts
+      // (`manualPlanChangeListenerFailed{listener,tenant_id}`) +
+      // swallows. F2 plan-flip is the source of truth; an F8
+      // bookkeeping hiccup must NOT roll the plan-flip back.
+      //
+      // The catch + rethrow below is therefore unreachable for
+      // production F8 listeners. It exists ONLY as a safety net for
+      // hypothetical custom listeners (tests, future modules) that
+      // bypass `wrapListener` and propagate errors. For F8's two
+      // production listeners the swallow contract holds and the
+      // counter is the alert signal.
+      const listeners = deps.manualPlanChangeListeners ?? [];
+      if (listeners.length > 0) {
+        const evt: ManualPlanChangeListenerEvent = {
+          tenantId: deps.tenant.slug,
+          memberId,
+          oldPlanId: current.planId,
+          newPlanId: data.new_plan_id,
+          actorUserId: meta.actorUserId,
+          correlationId: meta.requestId,
+          requestId: meta.requestId,
+        };
+        for (const listener of listeners) {
+          try {
+            await listener(evt, tx);
+          } catch (e) {
+            logger.error(
+              {
+                err: e instanceof Error ? e.message : String(e),
+                tenantId: deps.tenant.slug,
+                memberId,
+              },
+              '[change-plan] manualPlanChangeListener threw — F3 tx rolling back',
+            );
+            throw e;
+          }
         }
       }
 

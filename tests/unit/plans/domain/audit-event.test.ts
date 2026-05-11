@@ -7,8 +7,14 @@ import {
 } from '@/modules/plans/domain/audit-event';
 
 describe('F2 audit events', () => {
-  it('defines 10 event types', () => {
-    expect(F2_AUDIT_EVENT_TYPES.length).toBe(10);
+  // Round 7 fix — F8 Phase 2 Wave C T029c (migration 0095) added 4
+  // scheduled-plan-change lifecycle events to F2's audit catalogue
+  // (plan_change_scheduled / superseded / cancelled / applied) per the
+  // F8↔F2 cross-module integration in plan.md Complexity Tracking #4.
+  // The test previously asserted `length === 10` (original F2 set) and
+  // was missed in the F8 cross-module-update sweep.
+  it('defines 14 event types (10 F2 + 4 F8-cross-module scheduled-plan-change)', () => {
+    expect(F2_AUDIT_EVENT_TYPES.length).toBe(14);
   });
 
   it('every event type has a severity assigned', () => {

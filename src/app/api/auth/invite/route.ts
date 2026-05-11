@@ -56,6 +56,7 @@ const createUserPort: CreateUserPort = async (input) => {
     sourceIp: input.sourceIp,
     requestId: input.requestId,
     locale: input.locale,
+    tenantId: input.tenantId,
   });
   if (result.ok) {
     return { ok: true, value: { user: { id: result.value.user.id } } };
@@ -184,6 +185,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // --- Branch B: existing F1 flow (no memberId, or non-member role) ---
+  const tenantForBranchB = resolveTenantFromRequest(request);
   const result = await createUser({
     email: parsed.data.email,
     role: parsed.data.role,
@@ -192,6 +194,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     sourceIp: ctx.sourceIp,
     requestId: ctx.requestId,
     locale: parsed.data.locale,
+    tenantId: tenantForBranchB.slug,
   });
 
   if (result.ok) {

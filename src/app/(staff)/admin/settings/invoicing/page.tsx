@@ -24,7 +24,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { InvoiceSettingsForm } from '@/components/invoices/invoice-settings-form';
@@ -37,7 +36,8 @@ import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/inv
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Invoice settings · SweCham' };
+  const t = await getTranslations('admin.invoiceSettings');
+  return { title: t('title') };
 }
 
 const DEFAULTS: InvoiceSettingsFormInitialValues = {
@@ -97,11 +97,12 @@ export default async function InvoiceSettingsPage() {
 
   return (
     <FormContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={<Badge variant="secondary">{currentUser.role}</Badge>}
-      />
+      {/* Header role-Badge dropped — the user-menu (top-right) already
+          renders a translated role badge, and the form's `disabled`
+          prop signals read-only state for managers. The header chip
+          showed the raw English role string ("admin"/"manager") which
+          duplicated info + bypassed translation. */}
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       <Card>
         <CardHeader>

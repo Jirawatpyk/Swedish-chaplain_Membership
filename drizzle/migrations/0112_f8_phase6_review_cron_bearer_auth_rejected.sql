@@ -1,0 +1,26 @@
+-- ---------------------------------------------------------------------------
+-- F8 Phase 6 review-round close — extend audit_event_type pgEnum with
+-- `cron_bearer_auth_rejected` to close /speckit.review finding C2.
+--
+-- Surfaced by silent-failure agent on full-Phase-6 review: the type
+-- `cron_bearer_auth_rejected` (`spec.md` taxonomy line 365 +
+-- `renewal-audit-emitter.ts:128`) is emitted from 4 cron routes
+-- (dispatch coordinator + dispatch per-tenant + at-risk coordinator +
+-- at-risk per-tenant) but NEVER existed as a DB enum value. Production
+-- attempt to emit was previously falling through to `pinoFallback`,
+-- silently dropping the security audit.
+--
+-- Adding to F8_ENUM_SHIPPED is the matching code-side fix in
+-- `drizzle-renewal-audit-emitter.ts`; see commit body.
+--
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
+-- transaction. Drizzle's migration runner uses the
+-- "statement-breakpoint" separator so each ALTER lands as its own
+-- statement (idempotent via IF NOT EXISTS, safe to re-run on
+-- partial-rollback or migration replay).
+--
+-- Source of truth: `spec.md` audit taxonomy line 365 + agent finding
+-- C2 (full-Phase-6 review).
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'cron_bearer_auth_rejected';--> statement-breakpoint

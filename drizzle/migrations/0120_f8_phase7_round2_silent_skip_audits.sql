@@ -1,0 +1,35 @@
+-- ---------------------------------------------------------------------------
+-- F8 Phase 7 review-fix Round 2 — extend audit_event_type pgEnum with 2 new
+-- silent-failure-closure audit events surfaced by /speckit.review Round 2
+-- (silent-failure hunter + type-design + enterprise-ux agents).
+--
+-- New event types added by THIS migration:
+--
+--   1. `tier_upgrade_catalogue_row_dropped` (Round 2 IMP-6 fix) —
+--      emitted when the Drizzle plan-catalog adapter drops a row whose
+--      `renewal_tier_bucket` value fails Domain `parseTierBucket`.
+--      Without this, a DB drift (raw SQL insert outside the typed path)
+--      silently shrinks the cron decision tree. Forensic chain explicit.
+--
+--   2. `tier_upgrade_apply_post_invoice_paid_failed` (Round 2 SUG-6 fix) —
+--      emitted from the F4 onPaidCallback INVALID_TX fallback path when
+--      `applyPendingTierUpgradeInTx` throws AFTER F4 has committed the
+--      paid invoice. The F4 invoice = paid, F8 suggestion stays in
+--      `accepted_pending_apply` against a still-active paid cycle; the
+--      reconcile cron will NOT recover this case (cycle isn't terminal).
+--      Explicit forensic-chain entry closes the observability gap.
+--
+-- Note: Round 2 IMP-9 (`tier_upgrade_already_at_target`) is wired
+-- emit-site only in `evaluate-tier-upgrade.ts`; that pgEnum value
+-- was already added by migration 0116 and is NOT part of this file.
+--
+-- All 2 events are 5-year retention (no F4 tax-document overlap).
+-- F8 audit-event tuple count moves 62 → 64; see TypeScript test
+-- suite for compile-time + runtime assertions.
+--
+-- Postgres requirement: ALTER TYPE ADD VALUE cannot run inside a
+-- transaction. Idempotent via IF NOT EXISTS.
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'tier_upgrade_catalogue_row_dropped';--> statement-breakpoint
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'tier_upgrade_apply_post_invoice_paid_failed';

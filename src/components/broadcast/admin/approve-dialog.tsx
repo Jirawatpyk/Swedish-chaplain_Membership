@@ -202,7 +202,12 @@ export function ApproveDialog({
               {scheduledFor !== '' ? (
                 <p className="text-xs font-medium text-foreground">
                   {t('schedulePreviewLabel')}{' '}
-                  <span suppressHydrationWarning>
+                  {/* The preview only renders when `scheduledFor !== ''`,
+                      which is initialised to '' by useState — so this
+                      branch is unreachable during SSR. The previous
+                      `suppressHydrationWarning` was dead defensive code
+                      and has been removed. */}
+                  <span>
                     {(() => {
                       try {
                         // Parse as Bangkok wall-time then render in

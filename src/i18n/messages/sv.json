@@ -611,6 +611,8 @@
           "notes": "Anteckningar"
         },
         "riskPlaceholder": "—",
+        "riskNotComputed": "—",
+        "riskNotComputedAria": "Riskpoäng inte beräknad ännu",
         "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
         "loadMore": "Ladda fler",
@@ -947,6 +949,22 @@
       "label": "Problem med e-postleverans hittades",
       "permanentFailed": "{count, plural, one {# e-post misslyckades permanent} other {# e-postmeddelanden misslyckades permanent}} de senaste 24 h",
       "stuckPending": "{count, plural, one {# e-post fastnad} other {# e-postmeddelanden fastnade}} i kön (cron kanske är nere)"
+    },
+    "settings": {
+      "index": {
+        "title": "Inställningar",
+        "subtitle": "Konfigurera fakturering och förnyelsepåminnelser för hela kammaren.",
+        "categories": {
+          "invoicing": {
+            "title": "Fakturainställningar",
+            "description": "Moms, valuta, registreringsavgift och standardvärden för fakturor, kvitton och kreditnotor."
+          },
+          "renewalSchedules": {
+            "title": "Påminnelseschema",
+            "description": "Frekvens och kanal för förnyelsepåminnelser, konfigurerbart per medlemsnivå."
+          }
+        }
+      }
     },
     "invoiceSettings": {
       "title": "Fakturainställningar",
@@ -1578,6 +1596,601 @@
         "ackHelp": "Att häva spärren är en avsiktlig administratörsåtgärd. Granska utskickets innehåll och studsar innan du häver."
       }
     },
+    "renewals": {
+      "title": "Förnyelsepipeline",
+      "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "tierBadge": {
+        "thai_alumni": "Thai-alumner",
+        "start_up": "Start-up",
+        "regular": "Standard",
+        "premium": "Premium",
+        "partnership": "Partnerskap"
+      },
+      "tierFilter": {
+        "aria_label": "Filtrera pipeline efter nivå",
+        "all": "Alla nivåer"
+      },
+      "lapsedReason": {
+        "paid": "Betald",
+        "cancelled": "Avbruten",
+        "lapsed": "Respit utgången",
+        "grace_expired": "Respit utgången",
+        "payment_failed": "Betalning misslyckades",
+        "completed_offline": "Betald offline",
+        "admin_reactivated": "Återaktiverad",
+        "admin_rejected_with_refund": "Återbetald",
+        "pending_reactivation_timed_out": "Återaktivering tog slut"
+      },
+      "urgencyPill": {
+        "t_90": "Förfaller om 90 d",
+        "t_60": "Förfaller om 60 d",
+        "t_30": "Förfaller om 30 d",
+        "t_14": "Förfaller om 14 d",
+        "t_7": "Förfaller om 7 d",
+        "t_0": "Förfaller idag",
+        "grace": "Respitperiod",
+        "lapsed": "Förfallen"
+      },
+      "urgencyBuckets": {
+        "aria_label": "Filtrera efter förnyelsebrådska",
+        "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
+        "t_90": "T-90",
+        "t_60": "T-60",
+        "t_30": "T-30",
+        "t_14": "T-14",
+        "t_7": "T-7",
+        "t_0": "T-0",
+        "grace": "Respit",
+        "lapsed": "Förfallen"
+      },
+      "table": {
+        "columns": {
+          "tier": "Nivå",
+          "company": "Företag",
+          "expires": "Går ut",
+          "urgency": "Brådska",
+          "lastReminder": "Senaste påminnelse",
+          "status": "Status",
+          "invoice": "Faktura",
+          "actions": "Åtgärder"
+        },
+        "status": {
+          "upcoming": "Kommande",
+          "reminded": "Påmind",
+          "awaiting_payment": "Inväntar betalning",
+          "completed": "Slutförd",
+          "lapsed": "Förfallen",
+          "cancelled": "Avbruten",
+          "pending_admin_reactivation": "Väntar på återaktivering"
+        },
+        "viewInvoice": "Visa faktura",
+        "noRows": "Inga medlemmar i detta intervall.",
+        "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
+        "unknownCompany": "(Okänt företag)",
+        "emailUnverifiedHint": "E-postadressen är overifierad — nyligen upptäckta studsar; systempåminnelser är pausade tills kontaktens e-post uppdateras och verifieras på nytt.",
+        "srResultCount": "{count, plural, one {Visar # medlem i {urgency}} other {Visar # medlemmar i {urgency}}}"
+      },
+      "actions": {
+        "open": "Öppna cykel",
+        "openAriaLabel": "Öppna cykel för {company}",
+        "sendReminder": "Skicka påminnelse",
+        "markContacted": "Markera kontaktad",
+        "markContactedComingSoon": "Kommer i en framtida fas — administratörer kommer att kunna registrera kontaktförsök",
+        "rowMenu": "Åtgärder för {company}"
+      },
+      "sendReminderNow": {
+        "toast": {
+          "sent": {
+            "title": "Påminnelse skickad",
+            "description": "E-post i kö för leverans till {company}"
+          },
+          "skipped": {
+            "alreadySent": "Redan skickad {ago}",
+            "memberArchived": "Hoppade över — medlemmen är arkiverad",
+            "memberOptedOut": "Hoppade över — medlemmen har avregistrerat sig",
+            "emailUnverified": "Hoppade över — e-postadressen är inte verifierad",
+            "outreachInProgress": "Hoppade över — kontakt har redan loggats nyligen",
+            "noPrimaryContact": "Hoppade över — ingen e-post till primärkontakt",
+            "generic": "Hoppade över — {reason}"
+          },
+          "failedTransient": "Sändning misslyckades tillfälligt — automatiskt försök igen inom 24 h",
+          "failedPermanent": "Sändning misslyckades — administratör behöver granska",
+          "error": {
+            "network": "Kunde inte skicka — kontrollera anslutningen och försök igen",
+            "unauthorized": "Saknar behörighet att skicka",
+            "rateLimited": "För många förfrågningar — försök igen om {seconds} s",
+            "generic": "Kunde inte skicka påminnelsen"
+          }
+        }
+      },
+      "lapsed": {
+        "banner": {
+          "title": "Förfallna medlemmar",
+          "description": "Dessa medlemmar har passerat respitperioden. Återaktivera eller arkivera när du återupprättar kontakten."
+        },
+        "columns": {
+          "reason": "Orsak"
+        },
+        "viewDetail": "Visa detaljer",
+        "viewDetailFor": "Visa detaljer för {company}"
+      },
+      "empty": {
+        "title": "Inga förnyelser förfaller under de kommande 90 dagarna",
+        "description": "Alla aktiva medlemmar är betalade. Kom tillbaka när utgångsdatum närmar sig.",
+        "cta": "Visa alla medlemmar",
+        "settingsLink": "Granska schemainställningar"
+      },
+      "error": {
+        "featureDisabled": "Förnyelseflödet är ännu inte aktiverat för denna kammare.",
+        "loadFailed": "Kunde inte ladda förnyelsepipelinen.",
+        "retry": "Försök igen",
+        "retrying": "Försöker igen…",
+        "retryFailed": "Försöket misslyckades — servern returnerade ett nytt fel",
+        "goBack": "Gå tillbaka",
+        "referenceLabel": "Referens-ID"
+      },
+      "settings": {
+        "schedules": {
+          "title": "Påminnelseschema",
+          "subtitle": "Bestäm hur medlemmar i varje nivå kontaktas före och efter sitt förnyelsedatum.",
+          "tabs": {
+            "thai_alumni": "Thai-alumner",
+            "start_up": "Start-up",
+            "regular": "Standard",
+            "premium": "Premium",
+            "partnership": "Partnerskap"
+          },
+          "stepCard": {
+            "channelLabel": "Leveranskanal",
+            "channel": {
+              "email": "E-post",
+              "task": "Uppgift"
+            },
+            "offsetDay": {
+              "before": "T-{days}",
+              "after": "T+{days}",
+              "exact": "T+0"
+            },
+            "stepIdLabel": "Steg-ID",
+            "offsetDaysLabel": "Dagar (− = före, + = efter)",
+            "templateIdLabel": "E-postmall",
+            "taskTypeLabel": "Uppgiftstyp",
+            "assigneeLabel": "Tilldelad roll",
+            "assigneeRole": {
+              "admin": "Administratör",
+              "manager": "Chef",
+              "executive_director": "Verkställande direktör"
+            }
+          },
+          "actions": {
+            "save": "Spara schema",
+            "saving": "Sparar…",
+            "addStep": "Lägg till steg",
+            "removeStep": "Ta bort steg",
+            "moveUp": "Flytta tidigare",
+            "moveDown": "Flytta senare",
+            "undo": "Ångra",
+            "stepRemoved": "Steg borttaget"
+          },
+          "saved": {
+            "toast": "Schemat för {tier} sparat (+{added} -{removed} ={unchanged})"
+          },
+          "empty": {
+            "noPoliciesTitle": "Inga påminnelsesteg ännu",
+            "noPoliciesDescription": "Lägg till det första steget för att börja skicka förnyelsepåminnelser för denna nivå."
+          },
+          "error": {
+            "saveFailed": "Kunde inte spara schemat. Försök igen.",
+            "offline": "Kunde inte nå servern — kontrollera din anslutning och försök igen.",
+            "invalidSteps": "Ett eller flera steg är ogiltiga. Åtgärda markerade fält.",
+            "noPolicies": "Inga scheman är konfigurerade för denna kammare ännu. Spara valfri nivå för att skapa det första."
+          },
+          "manager": {
+            "readOnlyNotice": "Du har endast läsbehörighet till förnyelseschemat. Be en administratör att göra ändringar."
+          },
+          "lastSaved": "Senast sparad {date}",
+          "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
+        }
+      },
+      "atRisk": {
+        "title": "Medlemmar i riskzon",
+        "summary": "{warning} varning · {atRisk} i riskzon · {critical} kritisk",
+        "summaryLoading": "Läser in sammanfattning av medlemmar i riskzon…",
+        "f6Inactive": "Eventdata är inte ansluten — poäng speglar endast senaste engagemangssignaler (max {max} poäng)",
+        "featureDisabled": "Riskzon-detektion är tillfälligt otillgänglig. Kontakta supporten om problemet kvarstår.",
+        "errorLoading": "Kunde inte läsa in medlemmar i riskzon. Uppdatera sidan.",
+        "emptyState": "Inga medlemmar i riskzon denna vecka",
+        "bandTabs": {
+          "label": "Filtrera efter riskband",
+          "warning": "Varning",
+          "at_risk": "Riskzon",
+          "critical": "Kritisk"
+        },
+        "table": {
+          "company": "Företag",
+          "score": "Riskpoäng",
+          "lastComputed": "Senast beräknat",
+          "actions": "Åtgärder",
+          "unknownCompany": "(inget företagsnamn)"
+        },
+        "actions": {
+          "contact": "Kontakta",
+          "contactAriaLabel": "Kontakta {company}",
+          "snooze": "Pausa",
+          "snoozeAriaLabel": "Pausa {company}",
+          "retry": "Försök igen",
+          "viewAllMembers": "Visa alla medlemmar",
+          "reviewLapsed": "Granska förfallna medlemmar"
+        },
+        "scoreBadge": {
+          "band": {
+            "healthy": "God status",
+            "warning": "Varning",
+            "at_risk": "Riskzon",
+            "critical": "Kritisk"
+          },
+          "srLabel": "Riskpoäng {score} av {max}, band {band}"
+        },
+        "snooze": {
+          "title": "Pausa medlem i riskzon",
+          "description": "Dölj {company} från riskzon-widgeten under den valda perioden. Poängen fortsätter att uppdateras i bakgrunden; medlemmen återkommer när pausen löper ut.",
+          "descriptionFallback": "Dölj denna medlem från riskzon-widgeten under den valda perioden.",
+          "option": "{days} dagar",
+          "cancel": "Avbryt",
+          "confirm": "Bekräfta paus",
+          "confirming": "Pausar…",
+          "toast": {
+            "success": "Pausad i {days} dagar",
+            "failure": "Kunde inte pausa medlemmen",
+            "error": {
+              "server_error": "Serverfel. Försök igen.",
+              "invalid_input": "Ogiltiga indata.",
+              "member_not_found": "Medlemmen hittades inte."
+            }
+          }
+        },
+        "outreach": {
+          "title": "Registrera kontakt",
+          "description": "Logga hur du har kontaktat {company}. Systemet pausar automatiskt e-postpåminnelser för denna medlem under de kommande 7 dagarna för att undvika kollision med din kontakt.",
+          "descriptionFallback": "Logga hur du har kontaktat denna medlem.",
+          "channel": {
+            "label": "Kanal",
+            "option": {
+              "email": "E-post",
+              "phone": "Telefonsamtal",
+              "meeting": "Personligt möte"
+            }
+          },
+          "template": {
+            "label": "E-postmall",
+            "option": {
+              "at_risk_outreach_event_drought": "Återengagemang efter eventuppehåll",
+              "at_risk_outreach_benefit_underuse": "Påminnelse om underutnyttjade förmåner",
+              "at_risk_outreach_payment_reminder": "Betalningspåminnelse"
+            }
+          },
+          "note": {
+            "label": "Anteckning om utfall (frivilligt)",
+            "placeholder": "Kort anteckning om hur samtalet/mötet gick…",
+            "counter": "{count} / {max} tecken"
+          },
+          "cancel": "Avbryt",
+          "confirm": "Registrera kontakt",
+          "submitting": "Sparar…",
+          "toast": {
+            "success": "Kontakt registrerad",
+            "failure": "Kunde inte registrera kontakt",
+            "error": {
+              "server_error": "Serverfel. Försök igen.",
+              "invalid_input": "Ogiltiga indata."
+            }
+          }
+        }
+      },
+      "cycleDetail": {
+        "title": "Cykelinformation",
+        "subtitle": "Förnyelsecykel {cycleId}",
+        "subtitleExpiry": "Löper ut {date}",
+        "subtitleClosed": "Avslutad {date}",
+        "subtitlePendingSince": "Väntar på granskning sedan {date}",
+        "notFoundTitle": "Cykel hittades inte",
+        "notFoundDescription": "Cykeln finns inte eller du har inte åtkomst.",
+        "errorTitle": "Kunde inte ladda cykel",
+        "errorDescription": "Försök igen. Kontakta support om problemet kvarstår.",
+        "loading": "Laddar cykelinformation…",
+        "backToPipeline": "Tillbaka till pipeline",
+        "sectionMemberPlan": "Medlem & plan",
+        "sectionInvoice": "Länkad faktura",
+        "sectionPeriod": "Period & tidslinje",
+        "sectionActivity": "Aktivitet",
+        "subsectionMember": "Medlem",
+        "subsectionPlan": "Plan",
+        "noLinkedInvoice": "Ingen faktura är länkad till denna cykel än.",
+        "noInvoiceYetUpcoming": "En faktura skapas när förnyelsepåminnelsen skickas.",
+        "pendingNoticeTitle": "Väntar på ditt beslut",
+        "pendingNoticeBody": "Den här medlemmens återaktivering väntar på granskning. För att godkänna eller avslå, gå tillbaka till förnyelsepipelinen och använd rad-åtgärdsmenyn.",
+        "lookupFailedTitle": "Viss kopplad data kunde inte läsas in",
+        "lookupFailedBoth": "Vi kunde inte läsa in den kopplade medlems- eller planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "lookupFailedMember": "Vi kunde inte läsa in den kopplade medlemsuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "lookupFailedPlan": "Vi kunde inte läsa in den kopplade planuppgiften. Uppgifterna för cykeln som visas är fortfarande korrekta. Ange {requestId} när du kontaktar supporten.",
+        "noActivityTitle": "Ingen aktivitet än",
+        "noActivityDescription": "Skickade påminnelsemail och uppföljningsärenden visas här när förnyelsepåminnelserna börjar för denna cykel.",
+        "reminders": {
+          "heading": "Påminnelsehistorik"
+        },
+        "escalations": {
+          "heading": "Eskaleringsärenden"
+        },
+        "fields": {
+          "cycleId": "Cykel-ID",
+          "memberId": "Medlems-ID",
+          "status": "Status",
+          "tier": "Nivå",
+          "planId": "Plan-ID",
+          "frozenPrice": "Låst pris",
+          "frozenTerm": "Löptid (månader)",
+          "frozenCurrency": "Valuta",
+          "periodFrom": "Period från",
+          "periodTo": "Period till",
+          "expiresAt": "Förfaller",
+          "enteredPendingAt": "Avvaktar sedan",
+          "closedAt": "Avslutad",
+          "closedReason": "Avslutsorsak",
+          "createdAt": "Skapad",
+          "updatedAt": "Uppdaterad",
+          "invoiceNumber": "Fakturanr",
+          "invoiceStatus": "Fakturastatus",
+          "invoiceTotal": "Total",
+          "viewInvoice": "Visa faktura {number}",
+          "companyName": "Företag",
+          "primaryContact": "Primär kontakt",
+          "primaryContactNone": "Ingen primär kontakt angiven",
+          "planName": "Plannamn",
+          "showTechnicalIds": "Visa tekniska ID:n",
+          "showAuditTimestamps": "Visa systemtidsstämplar",
+          "memberLookupFailed": "Kunde inte ladda medlemsdetaljer",
+          "planLookupFailed": "Kunde inte ladda plandetaljer"
+        },
+        "cycleStatus": {
+          "upcoming": "Kommande",
+          "reminded": "Påmind",
+          "awaiting_payment": "Inväntar betalning",
+          "completed": "Slutförd",
+          "lapsed": "Förfallen",
+          "cancelled": "Avbruten",
+          "pending_admin_reactivation": "Väntar på återaktivering"
+        },
+        "statusSeverity": {
+          "lapsed": " — kräver återaktivering",
+          "pending_admin_reactivation": " — kräver administratörsgranskning"
+        }
+      },
+      "tier_upgrades": {
+        "title": "Kö för medlemsnivåhöjning",
+        "subtitle": "Medlemmar som kvalificerar för en uppgradering baserat på deklarerad omsättning eller betalda fakturor.",
+        "breadcrumbs": {
+          "renewals": "Förnyelser",
+          "tier_upgrades": "Nivåhöjningar"
+        },
+        "columns": {
+          "member": "Medlem",
+          "from_plan": "Nuvarande plan",
+          "to_plan": "Föreslagen plan",
+          "reason": "Anledning",
+          "status": "Status",
+          "actions": "Åtgärder"
+        },
+        "status": {
+          "open": "Öppen",
+          "accepted_pending_apply": "Väntar på tillämpning",
+          "applied": "Tillämpad",
+          "dismissed": "Avvisad",
+          "superseded": "Ersatt",
+          "auto_resolved": "Automatiskt åtgärdad"
+        },
+        "reason": {
+          "declared_turnover_above_threshold": "Omsättning över tröskelvärde",
+          "paid_invoice_volume_above_threshold": "Fakturavolym över tröskelvärde",
+          "multi_signal": "Flera signaler"
+        },
+        "empty_state": {
+          "title": "Inga uppgraderingskandidater denna vecka",
+          "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln.",
+          "cta": "Granska inställningar för nivåkvalifikation"
+        },
+        "error_state": {
+          "title": "Kunde inte ladda kön för nivåhöjningar",
+          "subtitle": "Databasfrågan misslyckades. Försök igen eller kontakta supporten om problemet kvarstår.",
+          "retry": "Försök igen",
+          "retrying": "Försöker igen…"
+        },
+        "dialog": {
+          "cancel": "Avbryt"
+        },
+        "actions": {
+          "row_menu_aria": "Öppna radåtgärder",
+          "accept": {
+            "label": "Acceptera",
+            "dialog_title": "Acceptera nivåhöjning?",
+            "confirm": "Uppgraderingen träder i kraft vid medlemmens nästa förnyelse. Medlemmen meddelas via e-post och en verifieringsuppgift schemaläggs om förnyelsen är mer än 180 dagar bort.",
+            "success": "Nivåhöjning accepterad",
+            "error": "Kunde inte acceptera nivåhöjning"
+          },
+          "dismiss": {
+            "label": "Avvisa",
+            "dialog_title": "Avvisa förslaget om nivåhöjning?",
+            "confirm": "Förslaget stängs och nya förslag undertrycks i 90 dagar. Denna åtgärd kan inte ångras.",
+            "success": "Förslag avvisat",
+            "error": "Kunde inte avvisa förslag"
+          },
+          "escalate": {
+            "label": "Eskalera",
+            "dialog_title": "Skapa kontaktutskick?",
+            "confirm": "Skapa ett utkast till uppsökande e-post för medlemmen?",
+            "success": "Utkast till uppsökande skapat",
+            "error": "Kunde inte skapa utkast"
+          }
+        }
+      },
+      "tasks": {
+        "title": "Uppföljningsuppgifter",
+        "subtitle": "Manuella kontaktpunkter som genereras av förnyelseschemat — telefonsamtal, fysiska möten och administrativa granskningar.",
+        "loading": "Laddar uppföljningsuppgifter…",
+        "manager_read_only_notice": "Du visar denna kö som chef — endast administratörer kan markera uppgifter som klara, hoppa över eller tilldela om dem.",
+        "view_timeline": "Visa tidslinje",
+        "view_timeline_for": "Visa tidslinje för {company}",
+        "table_caption": "Manuella uppföljningsuppgifter för aktuell organisation — sorterbara på status, tilldelning och förfallodatum.",
+        "overdue_banner": "{count, plural, one {# försenad uppgift} other {# försenade uppgifter}}",
+        "overdue_banner_cta": "Klicka för att filtrera kön till endast försenade uppgifter",
+        "overdue_banner_clear": "Filter aktivt — klicka för att visa alla öppna uppgifter igen",
+        "overdue_badge": "Försenad",
+        "status_tabs_aria": "Filtrera på uppgiftsstatus",
+        "assignment_filter_aria": "Filtrera på tilldelning",
+        "task_type_filter_aria": "Filtrera på uppgiftstyp",
+        "task_type_filter_all": "Alla typer",
+        "status_tab": {
+          "open": "Öppen",
+          "done": "Klar",
+          "skipped": "Hoppad"
+        },
+        "assignment_tab": {
+          "all": "Alla",
+          "mine": "Mina",
+          "unassigned": "Otilldelade"
+        },
+        "columns": {
+          "member": "Medlem",
+          "tier": "Nivå",
+          "expiresAt": "Förfallodatum",
+          "taskType": "Uppgiftstyp",
+          "dueAt": "Förfaller",
+          "assignedTo": "Tilldelad",
+          "status": "Status",
+          "actions": "Åtgärder"
+        },
+        "status": {
+          "open": "Öppen",
+          "done": "Klar",
+          "skipped": "Hoppad"
+        },
+        "assigneeRole": {
+          "admin": "Administratör",
+          "manager": "Chef",
+          "executive_director": "Verkställande direktör"
+        },
+        "tierBucket": {
+          "thai_alumni": "Thai Alumni",
+          "start_up": "Start-up",
+          "regular": "Standardmedlem",
+          "premium": "Premium",
+          "partnership": "Partnerskap"
+        },
+        "taskType": {
+          "quarterly_review_meeting": "Kvartalsvis avstämningsmöte",
+          "benefit_fulfillment_report": "Rapport om förmånsanvändning",
+          "phone_call": "Telefonsamtal",
+          "in_person_meeting": "Fysiskt möte",
+          "board_escalation": "Eskalering till styrelsen",
+          "verify_pending_tier_upgrade": "Verifiera väntande nivåuppgradering",
+          "manual_outreach_required": "Manuell kontakt krävs",
+          "manual_admin_reactivation_review": "Granska reaktivering"
+        },
+        "yearInCycle": {
+          "pill": "År {year} av {total}",
+          "aria_label": "År {year} av {total} · {taskType} · {company}",
+          "aria_label_no_company": "År {year} av {total} · {taskType}"
+        },
+        "empty_state": {
+          "title": "Inga väntande uppgifter",
+          "subtitle": "Inga uppföljningar har skapats idag, eller alla uppgifter är stängda. Justera filtret för att se historiska uppgifter.",
+          "cta_history": "Visa hela uppgiftshistoriken (Klar + Hoppad)"
+        },
+        "filter_active_state": {
+          "title": "Inga uppgifter matchar nuvarande filter",
+          "subtitle": "Prova ett annat status-, tilldelnings- eller uppgiftstypsfilter, eller rensa försenat-filtret."
+        },
+        "error_state": {
+          "title": "Kunde inte ladda uppföljningsuppgifter",
+          "subtitle": "Databasförfrågan misslyckades. Försök igen eller kontakta supporten om problemet kvarstår.",
+          "retry": "Försök igen",
+          "retrying": "Försöker igen…"
+        },
+        "actions": {
+          "menu_label": "Åtgärder",
+          "errors": {
+            "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
+            "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
+            "feature_disabled": "Förnyelser är tillfälligt avaktiverade.",
+            "unauthenticated": "Din session har upphört — logga in igen för att fortsätta.",
+            "invalid_input": "De skickade uppgifterna är ogiltiga. Kontrollera formuläret och försök igen.",
+            "invalid_cursor": "Pagineringen är inaktuell — uppdatera sidan.",
+            "server_error": "Något gick fel hos oss. Försök igen om en stund.",
+            "unknown": "Ett oväntat fel inträffade. Försök igen.",
+            "offline": "Du verkar vara offline — kontrollera anslutningen och försök igen."
+          },
+          "done": {
+            "label": "Klar",
+            "success": "Uppgift markerad som klar",
+            "error": "Kunde inte markera uppgift som klar",
+            "errors": {
+              "forbidden": "Endast administratörer kan markera uppgifter som klara."
+            }
+          },
+          "skip": {
+            "label": "Hoppa över",
+            "success": "Uppgiften hoppades över",
+            "error": "Kunde inte hoppa över uppgift",
+            "errors": {
+              "forbidden": "Endast administratörer kan hoppa över uppgifter."
+            }
+          },
+          "reassign": {
+            "label": "Tilldela om",
+            "success": "Uppgift omtilldelad",
+            "error": "Kunde inte tilldela om uppgiften",
+            "errors": {
+              "forbidden": "Endast administratörer kan tilldela om uppgifter."
+            }
+          }
+        },
+        "done_dialog": {
+          "title": "Markera uppgift som klar?",
+          "description": "Du kan valfritt lägga till en kort utfallsanteckning för spårbarheten. Uppgiften flyttas till Klar och tas bort från den öppna kön.",
+          "outcome_note_label": "Utfallsanteckning (valfri)",
+          "outcome_note_placeholder": "Vad hände? Något viktigt att notera?",
+          "chars_remaining": "{count} tecken kvar",
+          "cancel": "Avbryt",
+          "confirm": "Markera klar",
+          "submitting": "Sparar…"
+        },
+        "skip_dialog": {
+          "title": "Hoppa över uppgift?",
+          "description": "En orsak krävs så att granskningsspåret dokumenterar varför kontaktpunkten hoppades över. Uppgiften flyttas till Hoppad och tas bort från den öppna kön.",
+          "reason_label": "Orsak",
+          "reason_placeholder": "t.ex. Medlemmen kunde inte nås; återupptas vid T-30",
+          "reason_required": "En orsak krävs innan du kan hoppa över uppgiften.",
+          "required_marker": "obligatoriskt",
+          "chars_remaining": "{count} tecken kvar",
+          "cancel": "Avbryt",
+          "confirm": "Hoppa över uppgift",
+          "submitting": "Sparar…"
+        },
+        "reassign_dialog": {
+          "title": "Tilldela om uppgift",
+          "description": "Välj en annan aktiv medarbetare som ska ta över. Den tidigare tilldelade ser inte längre uppgiften under sitt \"Mina\"-filter.",
+          "assignee_label": "Tilldelad",
+          "placeholder": "Välj en medarbetare",
+          "search_placeholder": "Sök på namn eller e-post…",
+          "no_results": "Ingen medarbetare matchar din sökning.",
+          "load_error": "Kunde inte ladda medarbetarlistan. Försök igen.",
+          "retry": "Försök igen",
+          "current_assignee_badge": "nuvarande",
+          "cancel": "Avbryt",
+          "confirm": "Tilldela om",
+          "submitting": "Sparar…"
+        }
+      }
+    },
     "refund": {
       "title": "Utfärda återbetalning",
       "button": {
@@ -1712,7 +2325,12 @@
       "invoicesList": "Fakturalista",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
-      "broadcastsQueue": "Granskningskö för E-Blast"
+      "broadcastsQueue": "Granskningskö för E-Blast",
+      "renewalsList": "Förnyelsepipeline",
+      "renewalSchedules": "Förnyelseschemaprinciper",
+      "escalationTasks": "Uppföljningsuppgifter",
+      "escalationTasksMine": "Uppföljningsuppgifter: mina",
+      "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade"
     }
   },
   "nav": {
@@ -1722,6 +2340,7 @@
       "users": "Användare",
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
+      "settingsRenewalSchedules": "Påminnelseschema",
       "sections": {
         "main": "Allmänt",
         "settings": "Inställningar"
@@ -1731,7 +2350,8 @@
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
       "invoices": "Fakturor",
-      "broadcasts": "Utskick"
+      "broadcasts": "Utskick",
+      "renewals": "Förnyelser"
     },
     "member": {
       "dashboard": "Instrumentpanel",
@@ -1763,7 +2383,9 @@
     "credit-notes": "Kreditnotor",
     "newCreditNote": "Ny kreditnota",
     "void": "Annullera",
-    "pay": "Registrera betalning"
+    "pay": "Registrera betalning",
+    "renewals": "Förnyelser",
+    "schedules": "Påminnelseschema"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -2295,6 +2917,83 @@
         "emptyHint": "Inga fakturor att betala",
         "allPaidHint": "Inga obetalda fakturor — allt är betalt."
       }
+    },
+    "renewal": {
+      "loading": {
+        "announce": "Laddar dina förnyelseuppgifter…"
+      },
+      "page": {
+        "title": "Förnyelse online",
+        "subtitle": "Granska ditt medlemskap och bekräfta för att få en faktura.",
+        "membershipPlanHeading": "Medlemskapsplan"
+      },
+      "fields": {
+        "plan": "Plan",
+        "tier": "Nivå",
+        "frozenPrice": "Låst pris",
+        "term": "Period",
+        "termMonths": "{count} månader",
+        "expiry": "Nuvarande utgångsdatum"
+      },
+      "benefits": {
+        "heading": "Förmånsöversikt",
+        "unavailable": "Förmånsöversikten är inte tillgänglig.",
+        "unmeteredQuota": "Obegränsat",
+        "usageRatio": "{used} av {quota}",
+        "usageUnmetered": "{used} använt",
+        "percentUsed": "{percent}% använt",
+        "ariaProgress": "{label}: {used} av {quota} använt"
+      },
+      "confirm": {
+        "cta": "Bekräfta förnyelse",
+        "busy": "Bekräftar…",
+        "errorGeneric": "Vi kunde inte behandla din förnyelse. Försök igen eller kontakta support.",
+        "errorCycleNotFound": "Din förnyelselänk har gått ut. Återgå till portalen och försök igen.",
+        "errorCycleNotPayable": "Den här förnyelsecykeln har redan behandlats.",
+        "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
+        "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
+        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen."
+      },
+      "planChange": {
+        "label": "Välj en plan",
+        "placeholder": "{defaultLabel}",
+        "currentSuffix": "nuvarande",
+        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura."
+      },
+      "onboarding": {
+        "heading": "Välkommen till din första förnyelse",
+        "body": "Ditt förnyelsepris är låst till den taxa som gällde när din påminnelse skickades — även om planen ändras därefter. Bekräfta nedan så utfärdar vi en faktura som du kan betala online."
+      },
+      "success": {
+        "title": "Förnyelsen är klar",
+        "subtitle": "Tack — ditt medlemskap är aktivt.",
+        "detailsHeading": "Förnyelsedetaljer",
+        "newExpiry": "Nytt utgångsdatum",
+        "cycleStatus": "Förnyelsestatus",
+        "cycleStatusValue": {
+          "upcoming": "Kommande",
+          "reminded": "Påminnelse skickad",
+          "awaiting_payment": "Väntar på betalning",
+          "completed": "Aktivt",
+          "lapsed": "Utgånget",
+          "cancelled": "Avbruten",
+          "pending_admin_reactivation": "Väntar på granskning"
+        },
+        "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
+        "downloadReceipt": "Ladda ner kvitto (PDF)",
+        "viewAllInvoices": "Visa alla fakturor",
+        "backToPortal": "Tillbaka till portalens startsida"
+      }
+    },
+    "preferences": {
+      "renewals": {
+        "title": "Förnyelsepåminnelser",
+        "subtitle": "Välj om du vill ta emot e-post om förnyelsepåminnelser. Transaktionsmejl (lösenordsåterställning, fakturakvitton) skickas oavsett.",
+        "pauseLabel": "Pausa förnyelsepåminnelser",
+        "pauseDescription": "Vi behåller din förnyelsecykel i administratörsöversikten så att personalen kan höra av sig vid behov.",
+        "saveErrorTitle": "Kunde inte spara din inställning",
+        "saveErrorDescription": "Din tidigare inställning har återställts. Försök igen."
+      }
     }
   },
   "audit": {
@@ -2321,7 +3020,37 @@
       "email_verification_resent": "Verifieringsmejl skickat på nytt",
       "email_dispatch_failed": "E-postutskick misslyckades",
       "invitation_bounced": "Inbjudan studsade",
-      "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd"
+      "bulk_action_rate_limit_exceeded": "Gräns för massåtgärd nådd",
+      "at_risk_score_recomputed": "Riskpoäng omräknad",
+      "at_risk_score_threshold_crossed": "Riskbandet ändrades",
+      "at_risk_snoozed": "Riskvarning pausad",
+      "at_risk_outreach_recorded": "Kontakt registrerad",
+      "at_risk_compute_partial_failure": "Riskpoängsberäkning delvis misslyckad",
+      "tier_upgrade_suggested": "Nivåuppgradering föreslagen",
+      "tier_upgrade_accepted": "Nivåuppgradering godkänd",
+      "tier_upgrade_dismissed": "Nivåuppgradering avvisad",
+      "tier_upgrade_already_at_target": "Redan på målnivå",
+      "tier_upgrade_skipped_no_thresholds_configured": "Nivåuppgradering hoppades över — inga tröskelvärden",
+      "tier_upgrade_tenant_disabled": "Nivåuppgradering inaktiverad för denna kammare",
+      "cron_bearer_auth_rejected": "Cron-autentisering nekad",
+      "lapsed_member_action_blocked": "Åtgärd blockerad — förfallen medlem",
+      "renewal_kill_switch_blocked": "Åtgärd blockerad — kill switch aktiv",
+      "invoice_draft_created": "Fakturautkast skapat",
+      "invoice_draft_updated": "Fakturautkast uppdaterat",
+      "invoice_draft_deleted": "Fakturautkast borttaget",
+      "invoice_issued": "Faktura utfärdad",
+      "invoice_paid": "Faktura markerad som betald",
+      "invoice_voided": "Faktura makulerad",
+      "invoice_overdue_detected": "Faktura förfallen",
+      "credit_note_issued": "Kreditnota utfärdad",
+      "invoice_pdf_resent": "Faktura-PDF skickad igen",
+      "receipt_pdf_resent": "Kvitto-PDF skickat igen",
+      "credit_note_pdf_resent": "Kreditnota-PDF skickad igen",
+      "invoice_pdf_regenerated": "Faktura-PDF återskapad",
+      "pdf_render_failed": "PDF-rendering misslyckades",
+      "pdf_render_permanently_failed": "PDF-rendering misslyckades permanent",
+      "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
+      "receipt_rendered": "Kvitto renderat"
     }
   },
   "pagination": {

@@ -133,6 +133,15 @@ export const membershipPlans = pgTable(
     // Benefits — typed JSONB, Domain validator enforces shape before insert
     benefitMatrix: jsonb('benefit_matrix').$type<BenefitMatrix>().notNull(),
 
+    // F8 Phase 2 Wave C T025 — bucket attribute used by F8's reminder
+    // dispatcher cron + at-risk widget to look up the per-tenant
+    // schedule policy. NOT NULL after backfill in migration 0094;
+    // 5 allowed values via DB CHECK. Default 'regular' matches the
+    // migration's CASE-ELSE backfill default so existing F2 inserts
+    // (tests + production seed) keep compiling without re-passing
+    // the field at every call site.
+    renewalTierBucket: text('renewal_tier_bucket').notNull().default('regular'),
+
     // State
     isActive: boolean('is_active').notNull().default(true),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),

@@ -57,6 +57,26 @@ const observableGauges = new Map<string, ObservableGauge>();
 // at scrape time. Writers call `observeGauge(...)` to update.
 const gaugeValues = new Map<string, Map<string, number>>();
 
+/**
+ * Phase 9 verify-fix C1 — test-only accessor exposing the gauge-values
+ * accumulator so unit tests can pin the multi-tenant accumulation
+ * invariant directly (vs the prior `not.toThrow()`-only assertions
+ * which would have missed a `bucket.entries()` → `bucket.values()`
+ * regression).
+ *
+ * Returns the inner Map for the requested gauge name, or `undefined`
+ * if no observation has landed yet. Callers MUST treat the return
+ * value as read-only — mutations would silently corrupt production
+ * gauge state in the same process. Documented as test-only by the
+ * `__test__` prefix; production code paths use the observable-gauge
+ * callback registered inside `observeCycleStateGauge` instead.
+ */
+export function __test__readGaugeValues(
+  gaugeName: string,
+): ReadonlyMap<string, number> | undefined {
+  return gaugeValues.get(gaugeName);
+}
+
 function counter(name: string, description: string, unit?: string): Counter {
   let instr = counters.get(name);
   if (!instr) {
@@ -1310,6 +1330,960 @@ export const broadcastsMetrics = {
         'broadcasts_cascade_outcome_total',
         'F3 archival/erasure cascade outcome per broadcast',
       ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// F8 Renewals (J5 — observability hardening per /speckit-review Round 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Failure-kind enum for the cron coordinator's per-tenant fan-out. Bounded
+ * cardinality so dashboards can graph failure mix without label explosion.
+ *   - `http_5xx`         — per-tenant route returned 5xx (server fault)
+ *   - `http_4xx`         — per-tenant route returned 4xx (e.g. 401 auth, 400 unknown_tenant)
+ *   - `rejected`         — fetch rejected (network error, timeout)
+ *   - `json_parse_failed` — 200 returned but body wasn't parseable JSON
+ *                          (malformed gateway response — Vercel edge HTML
+ *                          error page would land here)
+ */
+export type RenewalsCoordinatorFailureKind =
+  | 'http_5xx'
+  | 'http_4xx'
+  | 'rejected'
+  | 'json_parse_failed';
+
+export const renewalsMetrics = {
+  /**
+   * `renewals_bounce_hook_errors_total{tenant}` — H2: F1 Resend webhook →
+   * F8 detectBounceThreshold throw. Previously a `logger.warn` whose
+   * absence in alerting silently broke FR-012a (a hard-bouncing
+   * member's `email_unverified` flag would never flip → dispatcher
+   * keeps mailing the bouncing address → Resend reputation pool
+   * degrades). Any non-zero rate sustained for 5 minutes pages on-call.
+   */
+  bounceHookFailed(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'renewals_bounce_hook_errors_total',
+        'F1 Resend webhook → F8 detectBounceThreshold callback failed (FR-012a alert trigger)',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `renewals_reset_hook_errors_total{tenant}` — H2 sibling: F1 verify-
+   * contact-email → F8 resetEmailUnverified throw. Less critical than
+   * the bounce hook (the F1 verification still succeeded; the F8 flag
+   * stays TRUE until a future cron pass / admin action reconciles)
+   * but observability-equal — silent failures hide F1↔F8 desync.
+   */
+  resetHookFailed(tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reset_hook_errors_total',
+        'F1 verify-contact-email → F8 resetEmailUnverified callback failed',
+      ).add(1, { tenant: tenantId ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `renewals_coordinator_tenant_failures_total{tenant, kind}` — H1:
+   * cron coordinator per-tenant fan-out failures. Previously the
+   * coordinator emitted a single `cron_dispatch_orchestrated` audit
+   * with `tenants_failed` count but no per-tenant alert; F8 SaaS
+   * needs to know WHICH tenant failed to triage. Pages on-call when
+   * the same tenant fails 3 successive coordinator runs.
+   */
+  coordinatorTenantFailed(
+    tenantId: string,
+    kind: RenewalsCoordinatorFailureKind,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coordinator_tenant_failures_total',
+        'F8 cron coordinator per-tenant fan-out failure',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
+   * `renewals_coordinator_audit_emit_failed_total{cron_kind}` — H9:
+   * the orchestrated audit is the ONLY operational record of what
+   * each F8 cron coordinator did. Losing it silently breaks
+   * Principle VIII compliance trail. Mirrors `broadcastsMetrics.
+   * auditEmitFailed` semantics — any non-zero rate is stop-the-line.
+   *
+   * Round-4 review-finding H3: previously unlabeled, so on-call
+   * could not tell which compliance trail was lost across the 4
+   * F8 coordinators (`dispatch`, `at_risk_recompute`, `lapse`,
+   * `reconcile`). Adding `cron_kind` lets SRE attach distinct alert
+   * rules per stream + diagnose triage in seconds, not minutes.
+   */
+  /**
+   * F8 Phase 7 review-fix C-ERR-1 — listener swallow observability.
+   *
+   * Counts failures from the F2 → F8 plan-change bridge listeners
+   * (`f2-plan-change-bridge.ts:f8OnManualPlanChangeCallbacks`). Each
+   * listener logs + swallows by design (the F2 plan-flip already
+   * committed; throwing would be after-the-fact). Vercel alert rules
+   * attach to OTel counters not log strings, so on-call detection
+   * needs this pair. Any non-zero rate sustained >5 min indicates
+   * the F8 supersede / reschedule audit chain is being silently lost.
+   */
+  manualPlanChangeListenerFailed(
+    listener: 'supersede' | 'reschedule',
+    tenantId: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_manual_plan_change_listener_failed_total',
+        'F8 listener attached to F2 member_plan_manually_changed event failed (audit chain silently lost)',
+      ).add(1, { listener, tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix C-ERR-2 — apply-pending callback INVALID_TX
+   * fallback observability. Sister metric to `onPaidInvalidTx` for
+   * the cycle-completion callback. Any non-zero rate sustained >5 min
+   * indicates F4 contract drift on the apply-pending path — atomic-
+   * single-tx invariant lost; F4 commit + F8 commit eventual-
+   * consistency window re-opened.
+   *
+   * Phase 7 review-fix Round 2 IMP-1: label key re-aligned to `tenant`
+   * so dashboard joins against `onPaidInvalidTx` (which uses bare
+   * `tenant`) work correctly. Round 1 had `tenant_id` which dropped
+   * the alert-pair join.
+   */
+  applyPendingInvalidTx: {
+    add(count: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_apply_pending_invalid_tx_total',
+          'F8 apply-pending-tier-upgrade callback received non-TenantTx from F4 — atomic-single-tx invariant lost',
+        ).add(count, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 2 CRIT-2 — audit-emit failure counter.
+   * Fires when `auditEmitter.emit()` itself throws (production
+   * pgEnum drift triggers `pinoFallback` which throws). Distinct
+   * from `tierUpgradeNotifyFailed` so on-call can differentiate
+   * "email succeeded but audit row missing" (this counter) from
+   * "email send failed" (the other counter). Mirrors F7 broadcasts
+   * audit-emit-failed precedent.
+   */
+  tierUpgradeAuditEmitFailed(
+    auditType:
+      | 'tier_upgrade_pending_member_notified'
+      | 'tier_upgrade_pending_member_notify_skipped'
+      | 'tier_upgrade_pending_member_notify_failed'
+      // Staff-R004 (2026-05-10): aggregate `tier_upgrade_already_at_target`
+      // audit emit at end of evaluateTierUpgrade cron pass. The catch
+      // arm previously had `logger.warn` only; adding this enum literal
+      // wires the alertable counter so SRE can detect silent dropped
+      // audits per Constitution Principle VIII visibility.
+      | 'tier_upgrade_already_at_target',
+    tenantId?: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_audit_emit_failed_total',
+        'F8 tier-upgrade audit emit failed (forensic chain may have a gap)',
+      ).add(1, {
+        audit_type: auditType,
+        ...(tenantId !== undefined ? { tenant_id: tenantId } : {}),
+      });
+    });
+  },
+
+  /**
+   * R5-S1 close (Phase 10 R5 verify-fix) — at-risk-score audit emit
+   * failure counter. Companion to `tierUpgradeAuditEmitFailed` +
+   * `escalationTaskAuditEmitFailed`. Bumped from
+   * `compute-at-risk-score.ts` skip-audit catch arm (the audit row
+   * never lands but the cron rolls forward — without this counter
+   * the silent dropped audit is invisible to SRE). Vercel alert rule:
+   * any non-zero rate over 5 min indicates Constitution Principle VIII
+   * forensic chain gap.
+   *
+   * R6-types-IMP2 narrow: the union below originally included 3
+   * audit types but only `at_risk_skipped_below_min_tenure` is
+   * actually emitted from a swallow-able catch arm. The other two
+   * (`at_risk_score_recomputed` + `at_risk_score_threshold_crossed`)
+   * are emitted INSIDE `runInTenant(tx, ...)` blocks where any throw
+   * rolls back state atomically — there's no catch arm that swallows
+   * + bumps a counter. Narrowing the union to the actual call site
+   * makes the type honest + future drift surfaces at compile time
+   * if a new swallow-able audit emission lands.
+   */
+  atRiskAuditEmitFailed(
+    auditType: 'at_risk_skipped_below_min_tenure',
+    tenantId: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_at_risk_audit_emit_failed_total',
+        'F8 at-risk audit emit failed (forensic chain may have a gap)',
+      ).add(1, { audit_type: auditType, tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 2 IMP-6 — TierBucket parse-failure
+   * counter for the Drizzle plan-catalog adapter. Bumped per row
+   * dropped due to unparseable `renewal_tier_bucket`. Companion to
+   * the new audit `tier_upgrade_catalogue_row_dropped`. Vercel alert
+   * rule: any non-zero rate over 5 min indicates DB drift before it
+   * silently zeros eligibility decisions.
+   */
+  planCatalogueUnparseableBucket(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_plan_catalogue_unparseable_bucket_total',
+        'F8 plan-catalog adapter dropped a row whose renewal_tier_bucket failed parseTierBucket — DB drift signal',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 2 SUG-6 — apply-pending post-paid
+   * failure counter. Bumped from the F4 onPaidCallback INVALID_TX
+   * fallback when `applyPendingTierUpgradeInTx` throws after F4 has
+   * committed the paid invoice. Companion to the new audit
+   * `tier_upgrade_apply_post_invoice_paid_failed`.
+   */
+  tierUpgradeApplyPostPaidFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_apply_post_paid_failed_total',
+        'F8 apply-pending threw after F4 committed paid invoice — suggestion stuck in accepted_pending_apply against a paid cycle',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix I-ERR-2 — tier-upgrade member-notify failure
+   * counter. Fires when `RenewalGateway.sendTierUpgradeApprovalEmail`
+   * returns err after retry-budget exhaustion OR when the post-tx
+   * notification path catches an exception. Companion to the new
+   * audit `tier_upgrade_pending_member_notify_failed`.
+   */
+  tierUpgradeNotifyFailed(
+    failureKind:
+      | 'gateway_4xx'
+      | 'gateway_5xx'
+      | 'recipient_unsubscribed'
+      | 'recipient_email_unverified'
+      | 'template_variables_missing'
+      | 'no_primary_contact'
+      | 'render_failed'
+      | 'unknown',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_notify_failed_total',
+        'F8 tier-upgrade approval email failed (member never told their upgrade was approved)',
+      ).add(1, { failure_kind: failureKind });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix S-2-errors — reschedule listener bucket-
+   * resolution failure counter. Fires when `loadPlanFrozenFields` for
+   * the old or new plan returns `not_found`, leaving the `renewal_
+   * schedule_rescheduled` audit unemitted. Companion to the new audit
+   * `renewal_schedule_reschedule_skipped`.
+   */
+  rescheduleBucketResolutionFailed(
+    side: 'old' | 'new' | 'both',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reschedule_bucket_resolution_failed_total',
+        'F8 reschedule listener could not resolve a tier-bucket for the F2 plan-change event',
+      ).add(1, { side });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix Round 4 IMP-8 + Round 5 IMP-6 — dedicated
+   * audit-emit failure counter for the reschedule listener. Mirrors
+   * `tierUpgradeAuditEmitFailed` and `coordinatorAuditEmitFailed`
+   * precedents.
+   *
+   * Why a separate counter (not `manualPlanChangeListenerFailed`):
+   * after Round 3 CRIT-1 the reschedule emits use `emit()` (own tx).
+   * Two failure subclasses with different observability paths:
+   *
+   *   1. **Pre-flight pgEnum-drift** — emitter calls `pinoFallback`
+   *      OUTSIDE its inner try/catch (drizzle-renewal-audit-emitter.ts
+   *      lines 374-381) which DOES throw in production. The throw
+   *      escapes `emit()` and gets caught by the per-emit try/catch
+   *      in reschedule-on-plan-change.ts → THIS counter bumps.
+   *   2. **Runtime DB faults** (RLS misconfig, NOT-NULL, infra outage)
+   *      — caught INSIDE the emitter (lines 386-409) with
+   *      `logger.error`, then swallowed (fire-and-forget contract).
+   *      Does NOT escape, so the per-emit try/catch never fires AND
+   *      this counter does NOT bump. The audit-row loss is signalled
+   *      ONLY by the pino log line at the emitter's catch site.
+   *
+   * Practical effect: this counter is the alert signal for the
+   * pgEnum-drift class; runtime DB-fault audit-row loss is signalled
+   * by a Sentry/Vercel pino-log scrape on `[F8 audit emit] ... DB
+   * insert failed` — the on-call runbook (POST-MVP-OBS-7 in
+   * docs/phases-plan.md) MUST cover both signals.
+   *
+   * Round 4 SUG-4 + Round 5 IMP-13 design note: counter signature
+   * uses a hand-mirrored audit-event literal-union by intention
+   * (Constitution Principle III — `src/lib/metrics.ts` is cross-
+   * cutting and must not import bounded-context types). Drift cost
+   * is bounded — 2-element set; an audit event-name rename would
+   * CI-fail at the audit emit site BEFORE reaching this counter.
+   */
+  rescheduleAuditEmitFailed(
+    auditType:
+      | 'renewal_schedule_reschedule_skipped'
+      | 'renewal_schedule_rescheduled',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reschedule_audit_emit_failed_total',
+        'F8 reschedule listener audit emit failed (pgEnum-drift class only — runtime DB-fault losses signalled via pino log scrape)',
+      ).add(1, { audit_type: auditType });
+    });
+  },
+
+  /**
+   * F8 Phase 7 review-fix S-3-errors — per-orphan reconcile failure
+   * counter. Counts individual `tier_upgrade_pending_orphan_detected`
+   * dismiss-+-emit failures inside the weekly reconcile cron.
+   * `dismissed++` only on success, so this counter surfaces the
+   * difference for per-tenant alert routing.
+   */
+  tierUpgradeReconcileErrors(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_tier_upgrade_reconcile_errors_total',
+        'F8 reconcile-pending-applications failed to dismiss an orphan suggestion (continues with next)',
+      ).add(1, { tenant_id: tenantId });
+    });
+  },
+
+  coordinatorAuditEmitFailed(
+    cronKind:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'lapse'
+      | 'reconcile'
+      | 'tier_upgrade_evaluate'
+      | 'tier_upgrade_reconcile',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coordinator_audit_emit_failed_total',
+        'F8 cron coordinator failed to emit orchestrated audit (compliance trail loss)',
+      ).add(1, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals_webhook_schema_rejected_total{event_type}` — H11: Resend
+   * webhook payload failed our zod schema (Resend renamed/removed a
+   * field, e.g. the `bounce.type` addition that landed in 2024). The
+   * route returns HTTP 200 to prevent Resend retry storm; this counter
+   * is the alert-pipeline trigger for schema drift. Any non-zero rate
+   * means our webhook handler may be silently dropping events.
+   */
+  webhookSchemaRejected(eventType: string | null): void {
+    safeMetric(() => {
+      counter(
+        'renewals_webhook_schema_rejected_total',
+        'Resend webhook body rejected our zod schema (schema-drift alert trigger)',
+      ).add(1, { event_type: eventType ?? 'unknown' });
+    });
+  },
+
+  /**
+   * `renewals_unknown_resend_error_name_total{error_name}` — K12-4
+   * (REL-K-2): Resend SDK returned an error with a name not in the
+   * `PERMANENT_RESEND_ERROR_PATTERNS` allowlist. The classifier
+   * defaults to transient (`gateway_5xx`) → 24h retry budget burns
+   * before giving up. Without this counter the team only sees a
+   * `logger.warn` line that requires log-grep to discover. Alert rule:
+   * any non-zero rate over a 5-min window pages on-call so the team
+   * can extend the allowlist before the retry storm escalates.
+   *
+   * `error_name` is the Resend-supplied `error.name` (bounded
+   * cardinality in steady state — Resend's error taxonomy is small;
+   * a sustained high-cardinality spike here is itself the alert
+   * signal that something is wrong upstream).
+   */
+  unknownResendErrorName(errorName: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_unknown_resend_error_name_total',
+        'Resend SDK returned an error.name outside the PERMANENT allowlist (alert trigger)',
+      ).add(1, { error_name: errorName });
+    });
+  },
+
+  /**
+   * `renewals_redis_fallback_total` — K14-5 (R13-S2): Upstash outage on
+   * the cron-401 rate-limit path. K13-1 fail-open semantics route the
+   * request through to audit-emit + 401 (correct), but Vercel alert
+   * rules attach to OTel counters not log strings — without this
+   * metric the warn-log alone would not page on-call. Mirrors
+   * `authMetrics.redisFallback` + `outboxMetrics.stuckRows` patterns.
+   * Alert rule: any non-zero rate sustained for 5 min.
+   */
+  redisFallback(): void {
+    safeMetric(() => {
+      counter(
+        'renewals_redis_fallback_total',
+        'Count of Upstash fail-open events on F8 cron rate-limit paths (alert any non-zero rate)',
+      ).add(1);
+    });
+  },
+
+  /**
+   * `renewals_admin_reject_total{tenant, outcome}` — I9 review-fix
+   * (Phase 5 / US3 backlog close): F8 admin-reject of a
+   * `pending_admin_reactivation` cycle. `outcome` discriminates:
+   *
+   *   - `refunded` — F5 refund succeeded; F4 credit-note cascaded;
+   *     post-refund escalation task inserted for finance reconciliation.
+   *   - `no_payment` — cycle had no linkedInvoiceId (rare manual-block
+   *     pre-payment path); cycle cancelled without refund.
+   *   - `failed` — cycle never transitioned (refund_failed or
+   *     transition lost race).
+   *
+   * Alert rule: a sustained `failed` rate >0 for 15 min pages on-call —
+   * indicates F5 refund pipeline is degraded and admins are getting
+   * stuck cycles. Steady-state `refunded` is informational only.
+   */
+  adminRejectCompleted(
+    tenantId: string,
+    outcome: 'refunded' | 'no_payment' | 'failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_admin_reject_total',
+        'F8 admin-reject of pending_admin_reactivation cycles, partitioned by refund outcome',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_reminder_audit_query_failures_total{tenant}` — Round 2
+   * review-fix (I-1): the `reconcilePendingReactivations` cron's
+   * audit-existence query failed (DB connection hiccup, RLS misconfig,
+   * etc.) and the cron fell back to fire-all-crossed-rungs. Trade-off
+   * accepted per Constitution Principle V (Reliability) — the
+   * dispatcher cron's send-side dedupe (Resend idempotency) bounds the
+   * blast radius — but a sustained non-zero rate signals
+   * (a) audit_log connection pool exhaustion, or (b) RLS/role drift
+   * that is silently degrading the cron's catch-up correctness.
+   * Alert rule: any non-zero rate sustained for 10 min pages on-call.
+   */
+  reminderAuditQueryFailures: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_reminder_audit_query_failures_total',
+          'F8 reconcile-pending-reactivations audit-existence query failed; cron fell back to fire-all-crossed-rungs',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * `renewals_reminder_audit_emit_failures_total{tenant, type}` —
+   * Round 2 review-fix (I-6): a reminder-rung audit emit threw inside
+   * `reconcilePendingReactivations`. Previously swallowed by a
+   * `logger.warn` with no metric → a misconfigured RLS / connection
+   * pool exhaustion / unique-constraint regression could silently
+   * drop every reminder for weeks before a member-support ticket
+   * surfaced the problem. The cron's success counters
+   * (`remindersT7/T3/T1`) only bump on emit-success now (parity with
+   * `timeoutRefundFailures`), and this counter tracks the failures.
+   * Alert rule: any non-zero rate sustained for 10 min pages on-call.
+   */
+  reminderAuditEmitFailures: {
+    add(
+      value: number,
+      attrs: { tenant_id: string; type: string },
+    ): void {
+      safeMetric(() => {
+        counter(
+          'renewals_reminder_audit_emit_failures_total',
+          'F8 reconcile-pending-reactivations failed to emit a reminder-rung audit row (forensic-trail loss)',
+        ).add(value, {
+          tenant: attrs.tenant_id,
+          type: attrs.type,
+        });
+      });
+    },
+  },
+
+  /**
+   * `renewals_onpaid_invalid_tx_total{tenant}` — Round 3 review-fix
+   * (R3-I8): F4 → F8 onPaidCallback received a non-`TenantTx` value
+   * for the optional `tx` parameter, so F8 fell back from the I3
+   * atomic-single-tx path to the legacy two-tx eventual-consistency
+   * path (`runInTenant` opens a fresh tx). Indicates F4 contract drift
+   * — a refactor wrapped tx in instrumentation, a future cross-module
+   * wiring forgot to thread the tx, or a polyfill stripped the
+   * Drizzle method shape. Pattern precedent: `bounceHookFailed` /
+   * `redisFallback` — log alone is not enough because Vercel alert
+   * rules attach to OTel counters not log strings.
+   * Alert rule: any non-zero rate sustained for 5 min pages on-call.
+   */
+  onPaidInvalidTx: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_onpaid_invalid_tx_total',
+          'F4 → F8 onPaidCallback received a non-TenantTx value; F8 fell back to runInTenant (degraded mode — atomic single-tx invariant lost)',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * `renewals_lapse_cycles_errors_total{tenant}` — T115a Phase 5
+   * wave K24: per-cycle errors during the daily
+   * `lapseCyclesOnGraceExpiry` cron (F5 bridge query failure / DB
+   * transition throw / audit emit failure). Per-cycle fault isolation
+   * means one bad cycle doesn't abort the run; this counter tracks
+   * the aggregate so SREs can alert on a cron-wide degradation.
+   * Alert rule: any non-zero rate sustained for 15 min pages on-call.
+   */
+  lapseCyclesErrors: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_lapse_cycles_errors_total',
+          'F8 lapseCyclesOnGraceExpiry per-cycle error count (decision-branch query failures + DB transition throws + audit emit failures); cron continues per-member fault-isolated',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  /**
+   * `renewals_onpaid_unknown_outcome_kind_total{tenant}` — Round 4
+   * review-fix (R4-S1): F8 dispatch site received a
+   * `MarkCycleCompleteOutcome` whose `kind` is not one of the 4 known
+   * variants enumerated by the exhaustive switch at
+   * `renewals-deps.ts`. The TS `_exhaustive: never` pin guarantees
+   * compile-time exhaustiveness in steady state; this counter pages
+   * on the deploy-skew window when (a) the use-case ships a 5th
+   * variant before the dispatch site rebuilds, OR (b) a runtime
+   * polyfill / hot-fix bundles only the use-case bundle. Without
+   * this counter the unknown variant would silently swallow the
+   * cycle-flip (F4 commits, F8 audit/state untouched). Pattern matches
+   * `onPaidInvalidTx` precedent.
+   * Alert rule: any non-zero rate pages on-call (deploy-skew is
+   * always a real incident — there is no benign occurrence).
+   */
+  onPaidUnknownOutcomeKind: {
+    add(value: number, attrs: { tenant_id: string }): void {
+      safeMetric(() => {
+        counter(
+          'renewals_onpaid_unknown_outcome_kind_total',
+          'F8 dispatch received a MarkCycleCompleteOutcome with an unknown kind — deploy-skew between use-case and renewals-deps suspected',
+        ).add(value, { tenant: attrs.tenant_id });
+      });
+    },
+  },
+
+  // ==========================================================================
+  // F8 Phase 9 / T231 — business-volume counters per spec FR-054 + § 23.1
+  //
+  // Distinct from the operational counters above (bounce-hook-failed,
+  // audit-emit-failed, redis-fallback) which page on incident; these
+  // counters power the ops dashboard view of "what F8 actually did
+  // today" and feed the SLO panels per docs/observability.md § 23.2.
+  //
+  // Cardinality discipline: every label is a bounded enum or small-
+  // cardinality string. NEVER use member id / email / IP as a label —
+  // those belong in traces + logs, not metrics.
+  // ==========================================================================
+
+  /**
+   * `renewals_reminders_sent_total{tier_bucket, offset_day}` — total
+   * count of reminder emails successfully dispatched. Pivot table for
+   * dispatcher health; correlates with Resend deliverability metrics.
+   * `tier_bucket` ∈ 5-value enum (regular | premium | partner_silver |
+   * partner_gold | partner_diamond). `offset_day` ∈ ~6-value bounded
+   * set (90 / 60 / 30 / 14 / 7 / 0).
+   */
+  remindersSent(tier_bucket: string, offset_day: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminders_sent_total',
+        'F8 reminder emails successfully dispatched (FR-010)',
+      ).add(1, { tier_bucket, offset_day: String(offset_day) });
+    });
+  },
+
+  /**
+   * `renewals_reminders_skipped_total{reason}` — count of reminders
+   * the dispatcher chose NOT to send, by skip reason (FR-012). Pairs
+   * with `dispatch-one-cycle.ts:emitSkipAudit` skip-reason matrix.
+   * Dashboard view: stack-bar across reasons over time. Sustained
+   * spike in `bounce_threshold` or `member_opted_out` rates may
+   * signal a drop in chamber-side data hygiene.
+   */
+  remindersSkipped(reason: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminders_skipped_total',
+        'F8 reminder skipped at dispatch (FR-012 skip-reason taxonomy)',
+      ).add(1, { reason });
+    });
+  },
+
+  /**
+   * `renewals_reminders_failed_total{reason}` — count of reminders
+   * that failed at the gateway boundary (FR-010a retry-budget path).
+   * `reason` is a Resend-error kind (`network` | `provider_5xx` |
+   * `auth` | `unknown`). Sustained non-zero is an alert signal.
+   */
+  remindersFailed(reason: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminders_failed_total',
+        'F8 reminder dispatch failed at gateway boundary (FR-010a)',
+      ).add(1, { reason });
+    });
+  },
+
+  /**
+   * `renewals_self_service_completed_total{tenant}` — successful
+   * member-confirm events on `/portal/renewal/[memberId]/confirm`
+   * (US3). Per-tenant cardinality is bounded (single-digit tenants in
+   * MVP). Powers the conversion-funnel dashboard alongside the
+   * `self_service_failed_total` denominator.
+   */
+  selfServiceCompleted(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_self_service_completed_total',
+        'F8 member self-service renewal confirm succeeded (US3)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * `renewals_self_service_failed_total{tenant, reason}` — confirm
+   * failures by reason (`f4_invoice_create_failed` |
+   * `payment_failed` | `cycle_terminal` | `token_invalid`). The F4
+   * + F5 integration boundaries surface here; sustained
+   * `f4_invoice_create_failed` is a stop-the-line for the
+   * F4 onPaid bridge.
+   */
+  selfServiceFailed(tenant: string, reason: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_self_service_failed_total',
+        'F8 member self-service renewal confirm failed (US3)',
+      ).add(1, { tenant, reason });
+    });
+  },
+
+  /**
+   * `at_risk_scores_recomputed_total{tenant}` — total score writes
+   * per recompute pass. Pairs with the per-tenant `recompute_duration_ms`
+   * histogram already in the operational block above. Sustained
+   * step-function drop = active-member churn signal.
+   */
+  atRiskScoresRecomputed(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'at_risk_scores_recomputed_total',
+        'F8 at-risk score recomputed per member per pass (FR-029)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * `at_risk_threshold_crossings_total{tenant, from_band, to_band}` —
+   * count of members whose risk band moved between bands (low /
+   * medium / high / critical) on a recompute pass. Both directions
+   * (improving + degrading) so dashboards can plot net flow.
+   * Bounded label cardinality: 4 × 4 = 16 combinations max per
+   * tenant. Crossings into `high`/`critical` are the value-add
+   * signal that powers the at-risk widget badge.
+   */
+  atRiskThresholdCrossing(
+    tenant: string,
+    from_band: string,
+    to_band: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'at_risk_threshold_crossings_total',
+        'F8 at-risk band crossing per member per recompute pass (FR-029)',
+      ).add(1, { tenant, from_band, to_band });
+    });
+  },
+
+  /**
+   * `tier_upgrade_suggestions_created_total{tenant, target_tier}` —
+   * cron creates a new `open` suggestion. `target_tier` is the same
+   * 5-bucket enum as `remindersSent`. Pivot view: cross-tenant
+   * funnel of suggestions vs accepts vs dismisses (FR-037 → FR-039).
+   */
+  tierUpgradeSuggestionsCreated(
+    tenant: string,
+    target_tier: string,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'tier_upgrade_suggestions_created_total',
+        'F8 cron created a tier-upgrade suggestion (FR-037)',
+      ).add(1, { tenant, target_tier });
+    });
+  },
+
+  /**
+   * `tier_upgrade_suggestions_accepted_total{tenant}` — admin Accept
+   * action on the tier-upgrade queue (FR-039). Dashboard ratio with
+   * `created_total` measures admin engagement; sustained zero
+   * suggests UI-discoverability or copy issues.
+   */
+  tierUpgradeSuggestionsAccepted(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'tier_upgrade_suggestions_accepted_total',
+        'F8 admin accepted a tier-upgrade suggestion (FR-039)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * Observable gauges for renewal_cycles state. Coordinator routes
+   * call `observeCycleStateGauge(tenant, 'active' | 'in_grace' |
+   * 'lapsed_total', count)` after each cron pass; the OTel async
+   * observer reads from `gaugeValues` at scrape time.
+   *
+   * Cardinality bound: small-tenant-count × 3-state-enum. Lazy-
+   * registers the observable on first call per state.
+   *
+   * **Per-process accumulator semantics** (Phase 9 verify-fix C1):
+   * The `gaugeValues` map is a process-level singleton. Each call to
+   * `observeCycleStateGauge(tenantA, state, value)` writes to
+   * `gaugeValues[renewals_cycles_${state}][tenantA]`; subsequent
+   * scrapes read ALL tenants accumulated in the inner Map. This is
+   * INTENTIONAL multi-tenant accumulation — Vercel function instances
+   * may serve multiple tenants over their lifetime, and the gauge
+   * MUST report the most-recent observed value per tenant (not just
+   * the last writer's tenant). The OTel callback iterates the inner
+   * Map's `.entries()` so every tenant slug appears as a distinct
+   * label series at scrape time.
+   *
+   * Smoke-tested by `tests/unit/lib/metrics-cycle-state-gauge.test.ts`
+   * (Phase 9 verify-fix C1). The unit test asserts the public API
+   * shape (no-throw on every documented call signature, including
+   * multi-tenant accumulation, overwrite-on-re-observe, state
+   * isolation, zero values, and 5000-member SLO ceiling). The
+   * end-to-end OTel callback path (gauge.addCallback iterating
+   * `bucket.entries()` at scrape time) is exercised in production
+   * through the `@vercel/otel` exporter wired by `instrumentation.ts`
+   * — vitest's no-exporter environment cannot invoke the callback,
+   * so `bucket.entries()`-vs-`bucket.values()` regressions would
+   * surface at deploy time via the OTel scrape, not at unit-test
+   * time. Document this gap explicitly so a future maintainer
+   * knows the invariant is end-to-end-tested via OTel staging,
+   * not unit-tested.
+   *
+   * Test-isolation note: vitest `beforeEach` does NOT reset
+   * `gaugeValues` automatically (it's a module-level closure cache).
+   * Tests that need a clean slate should call
+   * `gaugeValues.delete('renewals_cycles_<state>')` directly OR
+   * use unique tenant slugs per test (the recommended pattern —
+   * mirrors `createTestTenant`'s UUID-suffix isolation strategy).
+   */
+  observeCycleStateGauge(
+    tenant: string,
+    state: 'active' | 'in_grace' | 'lapsed_total',
+    value: number,
+  ): void {
+    safeMetric(() => {
+      const gaugeName = `renewals_cycles_${state}`;
+      const stateBucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+      stateBucket.set(tenant, value);
+      gaugeValues.set(gaugeName, stateBucket);
+
+      if (!observableGauges.has(gaugeName)) {
+        const descriptions: Record<typeof state, string> = {
+          active: 'F8 active renewal cycles per tenant (FR-046)',
+          in_grace: 'F8 cycles within grace-period window per tenant (FR-004)',
+          lapsed_total: 'F8 lapsed cycles per tenant (FR-007a denominator)',
+        };
+        const gauge = meter().createObservableGauge(gaugeName, {
+          description: descriptions[state],
+        });
+        observableGauges.set(gaugeName, gauge);
+        gauge.addCallback((result) => {
+          const bucket = gaugeValues.get(gaugeName);
+          if (!bucket) return;
+          for (const [tenantLabel, count] of bucket.entries()) {
+            result.observe(count, { tenant: tenantLabel });
+          }
+        });
+      }
+    });
+  },
+
+  /**
+   * Phase 9 verify-fix close-on-review — F8 cascade outcome counter.
+   *
+   * Mirrors `broadcastsMetrics.cascadeOutcome` so the F3 ↔ F8 cascade
+   * (cancelInFlightCyclesForMember from archive-member) emits a
+   * dashboardable signal on every outcome. Without this, the F8
+   * cascade was log-only — `audit-emit-loss.md` runbook could not
+   * alert on F8 cascade health the way it can for F7. Constitution
+   * Principle VII (perf+observability) close.
+   *
+   * `kind` enum is bounded:
+   *   - `'cancelled'`         — cascade transitioned a cycle to cancelled
+   *   - `'concurrent_skip'`   — concurrent admin cancel won the race
+   *   - `'audit_emit_failed'` — audit-emit failure inside cascade tx
+   *                             (Principle VIII rollback path)
+   *   - `'unexpected_error'`  — outer-catch fallback / use-case throw
+   */
+  cascadeOutcome(
+    tenantId: string,
+    kind:
+      | 'cancelled'
+      | 'concurrent_skip'
+      | 'audit_emit_failed'
+      | 'unexpected_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_cascade_outcome_total',
+        'F8 F3-archival cascade outcome per member-archive event',
+      ).add(1, { tenant: tenantId, kind });
+    });
+  },
+
+  /**
+   * Phase 9 verify-fix close-on-review — coordinator READ_ONLY_MODE
+   * skip counter. The 4 coordinator routes return 200 + skipped on
+   * `env.flags.readOnlyMode === true` to avoid cron-job.org retry-
+   * storm; without a metric, operators cannot dashboard "how many
+   * cron passes were swallowed during the maintenance window". A
+   * flag-flap leaving READ_ONLY_MODE=true past the maintenance
+   * window would otherwise look identical to a normal cron response
+   * from outside.
+   */
+  coordinatorSkippedReadOnly(
+    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_coordinator_skipped_read_only_total',
+        'F8 coordinator pass short-circuited by READ_ONLY_MODE flag',
+      ).add(1, { cron_kind });
+    });
+  },
+
+  // ============================================================
+  // F8 Phase 8 — Escalation task queue (R10 W9 + T277g close)
+  // ============================================================
+  // Wires the 4 metrics documented at `docs/observability.md` § 23
+  // Phase 8 R10 W9 forward block. F8-SLO-Esc-1 + F8-A8 reference.
+  // ============================================================
+
+  /**
+   * `renewals_escalation_task_queue_load_duration_ms` — `tasks/page.tsx`
+   * server component records the wall-clock for the bundled `repo.list`
+   * + `repo.countMatching` calls. Powers F8-SLO-Esc-1 (p95 < 500 ms
+   * @ 200 open tasks per tenant). Labels kept low-cardinality:
+   * `tenant_id`, `assignment_filter ∈ {all,mine,unassigned,specific}`,
+   * `status_filter ∈ {open,done,skipped}`.
+   */
+  escalationTaskQueueLoadDurationMs(
+    ms: number,
+    labels: {
+      tenant: string;
+      assignment_filter: 'all' | 'mine' | 'unassigned' | 'specific';
+      status_filter: 'open' | 'done' | 'skipped';
+    },
+  ): void {
+    safeMetric(() => {
+      histogram(
+        'renewals_escalation_task_queue_load_duration_ms',
+        'F8 escalation task queue page-load latency, p95 target 500ms (F8-SLO-Esc-1)',
+        'ms',
+      ).record(ms, labels);
+    });
+  },
+
+  /**
+   * `renewals_escalation_task_action_total` — done/skip/reassign POST
+   * outcomes. `outcome` discriminator covers the Result.error union +
+   * happy path. Powers F8-A8 alarm on `outcome="server_error" ≥ 3 / 5min`.
+   */
+  escalationTaskAction(
+    tenant: string,
+    action: 'done' | 'skip' | 'reassign',
+    outcome:
+      | 'success'
+      | 'task_not_found'
+      | 'task_not_open'
+      | 'invalid_input'
+      | 'server_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_escalation_task_action_total',
+        'F8 escalation task admin action outcomes (done/skip/reassign × success/4xx/5xx)',
+      ).add(1, { tenant, action, outcome });
+    });
+  },
+
+  /**
+   * `renewals_escalation_task_overdue_count` — async observable gauge.
+   * `tasks/page.tsx` calls this after each page-load with the
+   * `countMatching({overdueOnly:true,overdueThresholdDays:3})` value.
+   * Powers FR-045 banner-count panel.
+   */
+  observeEscalationTaskOverdueCount(tenant: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'renewals_escalation_task_overdue_count',
+        'F8 open escalation tasks more than 3 days past due, per tenant (FR-045)',
+        { tenant },
+        count,
+      );
+    });
+  },
+
+  /**
+   * `renewals_escalation_task_audit_emit_failed_total` — incremented in
+   * the catch arm of the 3 mutating use-cases (complete/skip/reassign)
+   * when `auditEmitter.emitInTx` fails inside the tx. The use-case
+   * still propagates the throw to roll the state change back per
+   * Constitution VIII; this counter feeds F8-A2 (rolls into the existing
+   * audit-emit alarm on the coordinator namespace).
+   */
+  escalationTaskAuditEmitFailed(
+    tenant: string,
+    event_type: 'completed' | 'skipped' | 'reassigned',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_escalation_task_audit_emit_failed_total',
+        'F8 escalation task audit emit failed inside use-case tx (rolls back per Constitution VIII)',
+      ).add(1, { tenant, event_type });
     });
   },
 } as const;

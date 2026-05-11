@@ -1,0 +1,449 @@
+/**
+ * F8 Phase 5 Wave A.5 · T120 — `verifyRenewalLinkToken` use-case.
+ *
+ * Implements steps 1-8 of research.md R1 v2 token verification (step 9
+ * — sign-in member to a session — is presentation-layer; the route
+ * handler at `src/app/(member)/portal/renewal/[memberId]/page.tsx`
+ * does that).
+ *
+ * Verification ordering matches FR-027 step-by-step so a failure
+ * audit's `reason` field maps 1:1 to the step that rejected:
+ *
+ *   1. (caller) Resolve `tenantFromRequest` via F1's
+ *      `resolveTenantFromRequest()` and pass it as `expectedTenantId`.
+ *   2. Token format check         → reason: 'malformed_token'
+ *   3. HMAC verify (R16 dual-key) → reason: 'mac_mismatch'
+ *   4. Expiry check               → reason: 'expired'
+ *   5. Cross-tenant check         → reason: 'cross_tenant'
+ *   6. Replay check               → reason: 'replayed'
+ *   7. Member-tenant ownership    → reason: 'member_not_found_in_tenant'
+ *      (collapsed via cycle lookup: cycle exists in tenant ∧ cycle.memberId
+ *      === payload.mid, by transitive RLS).
+ *   8. Mark token consumed (atomic — race-safe via PK conflict).
+ *
+ * Edge case (CHK033 / spec.md § Edge Cases): if the cycle is already
+ * `completed` when the token verifies (T-30 fired after T-90 link
+ * completed the cycle), DO NOT mark the token consumed — return
+ * `'cycle_already_completed'` so the caller renders an idempotent
+ * "already complete" page. The fresh token can be re-used by repeated
+ * clicks within TTL without consuming any DB slot. Audit
+ * `renewal_token_clicked_on_completed_cycle` for forensics.
+ *
+ * Audit invariants (Constitution Principle VIII):
+ *   - Every reject path emits `renewal_token_invalid` once with the
+ *     mapped reason. Pre-tenant-bind audits (malformed, mac_mismatch,
+ *     expired) emit under the request-resolved tenant context.
+ *   - Successful verify emits `renewal_self_service_initiated` (NOT
+ *     in the same path as the completed-cycle audit — the two paths
+ *     are mutually exclusive).
+ */
+import { z } from 'zod';
+import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import type { ConsumedLinkTokensRepo } from '../ports/consumed-link-tokens-repo';
+import { parseCycleId } from '../../domain/renewal-cycle';
+
+export const verifyRenewalLinkTokenInputSchema = z.object({
+  /** Raw `v1.<payload>.<mac>` token from the URL query param. */
+  rawToken: z.string().min(1).max(2048),
+  /**
+   * Tenant resolved from the inbound request via F1's
+   * `resolveTenantFromRequest()`. Compared against the token's `tid`
+   * for the cross-tenant check (research.md R1 v2 step 5).
+   */
+  expectedTenantId: z.string().min(1),
+  /** Injectable clock for deterministic tests. */
+  now: z.date(),
+  requestId: z.string().nullable().optional(),
+  correlationId: z.string().min(1),
+});
+
+export type VerifyRenewalLinkTokenInput = z.infer<
+  typeof verifyRenewalLinkTokenInputSchema
+>;
+
+/**
+ * PR #24 Round 9 — pre-consume gate.
+ *
+ * Optional callback invoked AFTER structural verification (HMAC +
+ * payload + cycle lookup) but BEFORE the atomic markConsumed step.
+ * Lets the caller perform additional eligibility checks against the
+ * resolved (memberId, cycleId) — e.g. "is the linked user account
+ * sign-in-eligible?" — and abort token consumption when the check
+ * fails. Critical for the redeem-link route: without this gate, a
+ * disabled-user click would consume the one-time token before the
+ * route discovered the user could not sign in, leaving the user
+ * stranded with a burned link.
+ *
+ * Return:
+ *   - 'allow' — verify proceeds with markConsumed (default behaviour
+ *      when no gate is supplied).
+ *   - 'block' — verify aborts WITHOUT consuming the token. The token
+ *      remains valid for re-issue or retry. The use-case returns
+ *      `kind: 'invalid_token'` with reason `'member_not_found_in_tenant'`
+ *      (generic no-oracle response per FR-027); the caller is
+ *      responsible for its own forensic logging.
+ */
+export type PreConsumeGate = (args: {
+  readonly memberId: string;
+  readonly cycleId: string;
+}) => Promise<'allow' | 'block'>;
+
+export type VerifyRenewalLinkTokenSuccess =
+  | {
+      readonly kind: 'success';
+      readonly memberId: string;
+      readonly cycleId: string;
+      readonly verifiedWith: 'primary' | 'fallback';
+    }
+  | {
+      readonly kind: 'cycle_already_completed';
+      readonly memberId: string;
+      readonly cycleId: string;
+      readonly verifiedWith: 'primary' | 'fallback';
+    };
+
+/**
+ * Discriminated union — splits programmer-error path (`invalid_input`,
+ * Zod schema rejection BEFORE token verification) from genuine
+ * security-rejection paths (HMAC mismatch, expiry, replay, cross-tenant,
+ * member-cycle mismatch). PR #24 deep-review fix — the previous shape
+ * folded both into `kind: 'invalid_token'` so a caller switching on
+ * `kind` could not distinguish "I should return HTTP 400 (programmer
+ * forgot to validate the URL)" from "I should return HTTP 404 generic
+ * (no-oracle policy per FR-027)". The `kind: 'invalid_input'` arm is
+ * NEVER user-facing; it surfaces only when a use-case wrapper passes a
+ * malformed shape. The route handler in `redeem-link/route.ts` treats
+ * BOTH kinds as the same generic-failure UX path, but the kind split
+ * lets the route distinguish in logs/metrics.
+ */
+export type VerifyRenewalLinkTokenError =
+  | {
+      readonly kind: 'invalid_token';
+      /**
+       * Mirrors `renewal_token_invalid.payload.reason` per audit-port.
+       * The caller MUST NOT propagate this reason to the user —
+       * FR-027 mandates a generic "expired or invalid" page across
+       * all failure modes (no oracle).
+       */
+      readonly reason:
+        | 'malformed_token'
+        | 'mac_mismatch'
+        | 'expired'
+        | 'replayed'
+        | 'cross_tenant'
+        | 'member_not_found_in_tenant';
+    }
+  | {
+      readonly kind: 'invalid_input';
+      /** Zod issue summary for ops triage — never user-facing. */
+      readonly message: string;
+    };
+
+/**
+ * Subset of `RenewalsDeps` actually used by this use-case. Lets unit
+ * tests pass a minimal stub instead of the full deps bag.
+ */
+export interface VerifyRenewalLinkTokenDeps
+  extends Pick<
+    RenewalsDeps,
+    'tokenVerifier' | 'cyclesRepo' | 'auditEmitter' | 'tenant'
+  > {
+  readonly consumedLinkTokensRepo: ConsumedLinkTokensRepo;
+}
+
+export async function verifyRenewalLinkToken(
+  deps: VerifyRenewalLinkTokenDeps,
+  rawInput: VerifyRenewalLinkTokenInput,
+  /**
+   * PR #24 Round 9 — optional pre-consume gate. See `PreConsumeGate`
+   * docstring above. Pass when the caller needs to abort token
+   * consumption based on resolved (memberId, cycleId) — typically a
+   * user-status eligibility check.
+   */
+  preConsumeGate?: PreConsumeGate,
+): Promise<
+  Result<VerifyRenewalLinkTokenSuccess, VerifyRenewalLinkTokenError>
+> {
+  const parsed = verifyRenewalLinkTokenInputSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    // Pre-condition input failure — emit nothing (no token to forensically
+    // record). Caller surface returns 400 (programmer error path).
+    // PR #24 deep-review fix: distinct `kind: 'invalid_input'` arm so
+    // callers can fork on programmer-error vs security-rejection.
+    return err({
+      kind: 'invalid_input',
+      // /* v8 ignore next */ — `issues[0]?.message ?? fallback`: Zod
+      // always populates `issues[0].message` for any rejected schema,
+      // so the fallback branch is unreachable in practice. Pragma here
+      // keeps branch coverage at 100% for this security-critical path.
+      message: /* v8 ignore next */ parsed.error.issues[0]?.message ?? 'invalid input shape',
+    });
+  }
+  const input = parsed.data;
+  const tenantId = input.expectedTenantId;
+
+  // ---- Steps 2-5: HMAC verifier handles format / signature / version /
+  // expiry / cross-tenant in a single call (research.md R1 v2 ordering).
+  const verifyResult = deps.tokenVerifier.verify(input.rawToken, {
+    expectedTenantId: tenantId,
+    now: input.now,
+  });
+  if (!verifyResult.ok) {
+    const reason = mapVerifyErrorToReason(verifyResult.error.kind);
+    // Pre-HMAC paths (malformed_token / mac_mismatch) have no
+    // tokenSha256 — verifier returns it only on success. Pass null;
+    // emit helper threads it through optionally.
+    await emitTokenInvalid(deps, tenantId, input, reason, null);
+    return err({ kind: 'invalid_token', reason });
+  }
+  const { payload, tokenSha256, verifiedWith } = verifyResult.value;
+
+  // ---- Step 7 (collapsed): cycle existence in tenant proves member
+  // existence in tenant, since cycle.member_id is FK to members under
+  // the same RLS-enforced tenant. The cycle lookup also gives us the
+  // status needed for the "already complete" idempotent path.
+  const cycleIdParsed = parseCycleId(payload.cid);
+  if (!cycleIdParsed.ok) {
+    await emitTokenInvalid(
+      deps,
+      tenantId,
+      input,
+      'member_not_found_in_tenant',
+      tokenSha256,
+    );
+    return err({
+      kind: 'invalid_token',
+      reason: 'member_not_found_in_tenant',
+    });
+  }
+  const cycle = await deps.cyclesRepo.findById(tenantId, cycleIdParsed.value);
+  if (!cycle || cycle.memberId !== payload.mid) {
+    await emitTokenInvalid(
+      deps,
+      tenantId,
+      input,
+      'member_not_found_in_tenant',
+      tokenSha256,
+    );
+    return err({
+      kind: 'invalid_token',
+      reason: 'member_not_found_in_tenant',
+    });
+  }
+
+  // ---- PR #24 Round 10 — pre-consume gate runs BEFORE the cycle-status
+  // check so EVERY verify-success path (both `success` and
+  // `cycle_already_completed`) passes through the gate. Round 9 placed
+  // the gate AFTER the CHK033 early-return, which silently broke the
+  // idempotent UX: a click on an already-completed cycle bypassed the
+  // gate, the route's `resolvedUserId` capture never ran, and the
+  // post-verify defensive null-check redirected the member to the
+  // sign-in page instead of the "already complete" page. Moving the
+  // gate up here lets the route resolve userId for both outcomes; the
+  // CHK033 invariant ("do NOT consume the token on already-completed
+  // path") is preserved because the gate does not call markConsumed —
+  // only the explicit step further below does.
+  //
+  // Caller-supplied predicate runs AFTER structural verification but
+  // BEFORE markConsumed so the token stays valid if the gate denies
+  // (e.g. linked user is disabled). We emit the same generic
+  // 'member_not_found_in_tenant' reason the route would have surfaced
+  // anyway — caller logs the real reason privately. Token is NOT
+  // consumed; admin can re-issue or member can retry after the
+  // underlying issue is fixed.
+  if (preConsumeGate !== undefined) {
+    const gateResult = await preConsumeGate({
+      memberId: payload.mid,
+      cycleId: payload.cid,
+    });
+    if (gateResult === 'block') {
+      await emitTokenInvalid(
+        deps,
+        tenantId,
+        input,
+        'member_not_found_in_tenant',
+        tokenSha256,
+      );
+      return err({
+        kind: 'invalid_token',
+        reason: 'member_not_found_in_tenant',
+      });
+    }
+  }
+
+  // ---- CHK033 race window: token verified but cycle already completed
+  // (T-30 fired after T-90 closed the cycle). Idempotent no-op response;
+  // do NOT consume the token (let repeated clicks within TTL keep
+  // landing on the same "already complete" page).
+  if (cycle.status === 'completed') {
+    try {
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_token_clicked_on_completed_cycle' as const,
+          payload: {
+            cycle_id: cycle.cycleId,
+            member_id: payload.mid,
+            verified_with: verifiedWith,
+          },
+        },
+        {
+          tenantId,
+          actorUserId: null,
+          actorRole: 'member',
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+    } catch (e) {
+      // Audit-emit is fire-and-forget per Wave I2 contract; never block
+      // the user's idempotent success response on a logging failure.
+      // Defensive logging on the unreachable audit-throw path; the
+      // `e instanceof Error : String(e)` ternary has a branch that only
+      // fires for non-Error throws which audit emitters never produce.
+      logger.warn(
+        /* v8 ignore next */
+        { err: e instanceof Error ? e.message : String(e) },
+        '[verify-renewal-link-token] cycle-completed audit emit failed',
+      );
+    }
+    return ok({
+      kind: 'cycle_already_completed',
+      memberId: payload.mid,
+      cycleId: payload.cid,
+      verifiedWith,
+    });
+  }
+
+  // ---- Step 6 + 8: atomic mark consumed (replay detection via PK).
+  const markResult = await deps.consumedLinkTokensRepo.markConsumed({
+    tenantId,
+    tokenSha256,
+    consumedByMemberId: payload.mid,
+    cycleId: payload.cid,
+  });
+  if (markResult.status === 'replay') {
+    await emitTokenInvalid(deps, tenantId, input, 'replayed', tokenSha256);
+    return err({ kind: 'invalid_token', reason: 'replayed' });
+  }
+
+  // ---- Success: emit `renewal_self_service_initiated` and return.
+  try {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_self_service_initiated' as const,
+        payload: {
+          cycle_id: cycle.cycleId,
+          member_id: payload.mid,
+          verified_with: verifiedWith,
+        },
+      },
+      {
+        tenantId,
+        actorUserId: null,
+        actorRole: 'member',
+        correlationId: input.correlationId,
+        requestId: input.requestId ?? null,
+      },
+    );
+  } catch (e) {
+    // Defensive logging; same rationale as the cycle-completed catch
+    // above. Tests cover the throw-Error path; the String(e) fallback
+    // branch is unreachable in practice.
+    logger.warn(
+      /* v8 ignore next */
+      { err: e instanceof Error ? e.message : String(e) },
+      '[verify-renewal-link-token] self-service-initiated audit emit failed',
+    );
+  }
+  return ok({
+    kind: 'success',
+    memberId: payload.mid,
+    cycleId: payload.cid,
+    verifiedWith,
+  });
+}
+
+function mapVerifyErrorToReason(
+  kind:
+    | 'malformed_token'
+    | 'signature_mismatch'
+    | 'wrong_version'
+    | 'tenant_mismatch'
+    | 'expired',
+): Extract<VerifyRenewalLinkTokenError, { kind: 'invalid_token' }>['reason'] {
+  switch (kind) {
+    case 'malformed_token':
+    case 'wrong_version':
+      return 'malformed_token';
+    case 'signature_mismatch':
+      return 'mac_mismatch';
+    case 'expired':
+      return 'expired';
+    case 'tenant_mismatch':
+      return 'cross_tenant';
+    // Round 8 review-fix — exhaustiveness guard. If the verifier adds
+    // a new error `kind` and someone forgets to update this map,
+    // `_exhaustive: never` errors at typecheck. If by chance it slips
+    // past typecheck (e.g. via `as never` cast), we throw loudly
+    // instead of returning `undefined` and silently suppressing the
+    // at-risk audit emission. Unreachable in practice — the verifier's
+    // `kind` union is exhaustive at compile time.
+    /* v8 ignore start */
+    default: {
+      const _exhaustive: never = kind;
+      throw new Error(
+        `mapVerifyErrorToReason: unhandled verifier kind ${String(_exhaustive)}`,
+      );
+    }
+    /* v8 ignore stop */
+  }
+}
+
+async function emitTokenInvalid(
+  deps: VerifyRenewalLinkTokenDeps,
+  tenantId: string,
+  input: VerifyRenewalLinkTokenInput,
+  reason: Extract<VerifyRenewalLinkTokenError, { kind: 'invalid_token' }>['reason'],
+  tokenSha256: Uint8Array | null,
+): Promise<void> {
+  const sha256Hex =
+    tokenSha256 === null
+      ? null
+      : Array.from(tokenSha256, (b) => b.toString(16).padStart(2, '0')).join('');
+  // Constitution Principle VIII: every reject emits an audit event for
+  // forensic visibility. `try/catch` because audit-emit is fire-and-
+  // forget and MUST NOT mask the verify-failure response.
+  //
+  // Deep-review fix — token fingerprint included on post-HMAC paths
+  // (replayed / cross_tenant / member_not_found_in_tenant) so SRE can
+  // correlate multiple rejection events back to the same emailed token
+  // (e.g. detect a replay-storm against one specific link). Pre-HMAC
+  // paths pass `null` (verifier hasn't produced a sha256 yet).
+  try {
+    await deps.auditEmitter.emit(
+      {
+        type: 'renewal_token_invalid' as const,
+        payload: {
+          reason,
+          ...(sha256Hex !== null ? { token_sha256: sha256Hex } : {}),
+        },
+      },
+      {
+        tenantId,
+        actorUserId: null,
+        actorRole: 'system',
+        correlationId: input.correlationId,
+        requestId: input.requestId ?? null,
+      },
+    );
+  } catch (e) {
+    // Defensive logging; same rationale.
+    logger.warn(
+      /* v8 ignore next */
+      { err: e instanceof Error ? e.message : String(e), reason },
+      '[verify-renewal-link-token] reject audit emit failed',
+    );
+  }
+}

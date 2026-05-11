@@ -53,7 +53,7 @@ describe('integration: outbox dispatcher no_template_handler backoff parity', ()
     const seededAt = new Date(Date.now() - 1000); // 1s ago so lte(nextRetryAt, now()) succeeds
     await db.insert(notificationsOutbox).values({
       id: outboxId,
-      tenantId: null,
+      tenantId: 'swecham',
       notificationType: 'member_invitation',
       toEmail: `no-template-${outboxId.slice(0, 8)}@swecham.test`,
       locale: 'en',
@@ -103,7 +103,7 @@ describe('integration: outbox dispatcher no_template_handler backoff parity', ()
     const seededAt = new Date(Date.now() - 1000);
     await db.insert(notificationsOutbox).values({
       id: outboxId,
-      tenantId: null,
+      tenantId: 'swecham',
       notificationType: 'member_invitation',
       toEmail: `no-template-perm-${outboxId.slice(0, 8)}@swecham.test`,
       locale: 'en',

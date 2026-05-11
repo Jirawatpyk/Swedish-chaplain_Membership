@@ -9,7 +9,7 @@
  * talks to an interface; F5 Infrastructure provides the wire-up to F4.
  */
 import type { Result } from '@/lib/result';
-import type { InvoiceStatus } from '@/modules/invoicing';
+import type { InvoiceStatus, F4InvoicePaidEvent } from '@/modules/invoicing';
 
 export interface InvoiceForPaymentDTO {
   readonly id: string;
@@ -44,6 +44,19 @@ export interface MarkPaidFromProcessorInput {
    * pure widening change — no F4-internal call site is affected.
    */
   readonly suppressReceiptEmail?: boolean;
+  /**
+   * F8 cross-module on-paid hooks forwarded verbatim to F4's
+   * `markPaidFromProcessor` → `recordPayment`. Each callback fires
+   * inside F4's atomic tx; rejection rolls back the entire webhook
+   * tx including the F4 invoice flip. Wired at the F5 webhook
+   * composition root (`makeProcessWebhookEventDeps`/`makeConfirmPaymentDeps`)
+   * via `f8OnPaidCallbacks(tenantId)` when `FEATURE_F8_RENEWALS=true`.
+   * Without this, Stripe-paid renewal invoices flip to `paid` while
+   * the F8 RenewalCycle stays stuck in `awaiting_payment`.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (evt: F4InvoicePaidEvent, tx?: unknown) => Promise<void>
+  >;
 }
 
 export interface InvoicingBridgePort {

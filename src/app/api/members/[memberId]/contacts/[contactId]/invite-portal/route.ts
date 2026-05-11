@@ -38,6 +38,7 @@ const createUserPort: CreateUserPort = async (input) => {
     sourceIp: input.sourceIp,
     requestId: input.requestId,
     locale: input.locale,
+    tenantId: input.tenantId,
   });
   if (result.ok) {
     return { ok: true, value: { user: { id: result.value.user.id } } };

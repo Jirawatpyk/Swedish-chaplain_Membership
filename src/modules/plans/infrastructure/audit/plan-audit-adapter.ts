@@ -71,6 +71,15 @@ function summariseEvent(event: F2AuditEvent): string {
       const fields = Object.keys(event.payload.diff).join(',');
       return `fee_config_updated fields=[${fields}]`;
     }
+    // F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle events.
+    case 'plan_change_scheduled':
+      return `plan_change_scheduled member=${event.payload.member_id} cycle=${event.payload.effective_at_cycle_id} ${event.payload.from_plan_id}→${event.payload.to_plan_id}`;
+    case 'plan_change_superseded':
+      return `plan_change_superseded member=${event.payload.member_id} cycle=${event.payload.effective_at_cycle_id} change=${event.payload.scheduled_change_id}`;
+    case 'plan_change_cancelled':
+      return `plan_change_cancelled member=${event.payload.member_id} cycle=${event.payload.effective_at_cycle_id} change=${event.payload.scheduled_change_id}`;
+    case 'plan_change_applied':
+      return `plan_change_applied member=${event.payload.member_id} cycle=${event.payload.effective_at_cycle_id} ${event.payload.from_plan_id}→${event.payload.to_plan_id}`;
   }
 }
 

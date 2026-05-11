@@ -26,7 +26,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { NewPlanClient } from './new-plan-client';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'New plan · SweCham' };
+  const t = await getTranslations('admin.plans.create');
+  return { title: t('title') };
 }
 
 export default async function NewPlanPage() {

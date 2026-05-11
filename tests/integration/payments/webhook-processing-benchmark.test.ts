@@ -269,7 +269,7 @@ describe('T149 webhook-processing latency benchmark (canceled branch)', () => {
       },
     };
     deps = {
-      ...makeProcessWebhookEventDeps(tenant.ctx.slug),
+      ...(await makeProcessWebhookEventDeps(tenant.ctx.slug)),
       tenantSettingsRepo: settingsRepoFixture,
     };
   }, 180_000);

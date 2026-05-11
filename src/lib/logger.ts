@@ -139,6 +139,26 @@ export const REDACT_PATHS = [
   '*.payment_reference',
   'paymentReference',
   '*.paymentReference',
+  // --- F8 escalation task free-text PII (Phase 8 R10 W5 close) ---
+  // Admin-entered outcome notes (≤1000 chars) and skip reasons
+  // (≤500 chars) can contain names, phone numbers, and operational
+  // PII captured during follow-up calls. These fields are
+  // intentionally persisted in `audit_log.payload` (forensic trail
+  // per Constitution Principle VIII + GDPR Art. 17(3)(b) legal
+  // obligation), but MUST NOT appear in pino logs at any level.
+  // Defence-in-depth: today the use-case catches log only
+  // `{ err.message, taskId }` (no free-text), but a future caller
+  // accidentally logging the input body or the Task row would leak
+  // PII. Redaction here is the final guard. Mirrors the F4
+  // payment_reference precedent above.
+  'outcomeNote',
+  '*.outcomeNote',
+  'outcome_note',
+  '*.outcome_note',
+  'skippedReason',
+  '*.skippedReason',
+  'skipped_reason',
+  '*.skipped_reason',
   // --- F5 payment PCI / Stripe secrets (T032, security.md § 6) ---
   // Under PCI DSS SAQ-A, cardholder data (PAN, CVV, track) MUST NEVER
   // touch the Chamber-OS server. If Stripe.js ever leaks these into a
@@ -273,6 +293,22 @@ export const REDACT_PATHS = [
   '*.error.reason',
   'result.error.reason',
   '*.result.error.reason',
+  // Round 6 W-R5-1 — F8 mark-paid-offline route logs F4 internal
+  // `reason` under the `f4Reason` key to disambiguate from the result
+  // envelope's own `reason`. Path-based redaction follows the field
+  // name verbatim, so bare `reason` paths above do NOT catch
+  // `f4Reason`. F4 internals (schema names, column names, row
+  // fragments) MUST never reach Sentry / Grafana.
+  'f4Reason',
+  '*.f4Reason',
+  // Round 7 W-R6-4 — `f4Stage` is a closed enum of F4 use-case
+  // identifiers (`'create_invoice_failed'` / `'issue_invoice_failed'`
+  // / `'record_payment_failed'`) that embed internal operation names.
+  // Lower sensitivity than `f4Reason` but still schema-leaking;
+  // belt-and-suspenders redaction so a future F4 stage rename that
+  // reveals an internal column or path name does not silently leak.
+  'f4Stage',
+  '*.f4Stage',
   // review-20260428-102639.md S1 closure — defense-in-depth: F4 + F5
   // worker / cron paths carry `memberIdentitySnapshot` (member name +
   // address + email PII) in scan rows. Never logged today, but path-
@@ -389,6 +425,66 @@ export const REDACT_PATHS = [
   // suppression-trigger ability for that recipient.
   'tokenPlaintext',
   '*.tokenPlaintext',
+  // --- F8 renewals secrets + tokens + member contact PII (K2 / FR-049)
+  // ---
+  // F8 spec FR-049 explicitly lists 7 forbidden-in-logs paths. Most are
+  // already covered above by F3/F4/F7 wildcards (email,
+  // memberLegalNameSnapshot, payment_reference) but the F8-specific
+  // tokens + the env-var name + the explicit nested member shape need
+  // dedicated entries so a future contributor can grep for FR-049 keys
+  // and find them in this file.
+  //
+  // `member.email` and `member.primary_contact_email` — pino path
+  // wildcards `*.email` already redact `{member: {email}}`, but the
+  // explicit nested-key form makes the spec-mandated path traceable.
+  // We list both forms (snake + camel) of `primary_contact_email`
+  // since members module uses camelCase + audit payloads use snake_case.
+  'primary_contact_email',
+  '*.primary_contact_email',
+  '*.*.primary_contact_email',
+  'primaryContactEmail',
+  '*.primaryContactEmail',
+  '*.*.primaryContactEmail',
+  // Renewal link tokens — the HMAC-signed self-service deep link token
+  // (research.md § 4 + renewal-link-token/hmac-signer.ts). Plaintext
+  // token MUST never reach logs; we log sha256(token) + the verified
+  // claims when forensic correlation is needed. Both raw + verified
+  // shapes appear in code paths today.
+  'renewal_token',
+  '*.renewal_token',
+  '*.*.renewal_token',
+  'renewalToken',
+  '*.renewalToken',
+  '*.*.renewalToken',
+  'renewal_link',
+  '*.renewal_link',
+  '*.*.renewal_link',
+  'renewalLink',
+  '*.renewalLink',
+  '*.*.renewalLink',
+  // F8 renewal-link HMAC secret env var (separate rotation cadence
+  // from F1 AUTH_COOKIE_SIGNING_SECRET + F7 UNSUBSCRIBE_TOKEN_SECRET).
+  // If this ever appears in a log object it's a programming bug; mask
+  // it before exfiltration.
+  'RENEWAL_LINK_TOKEN_SECRET',
+  'renewal_link_token_secret',
+  '*.renewal_link_token_secret',
+  'renewalLinkTokenSecret',
+  '*.renewalLinkTokenSecret',
+  // F8 mark-paid-offline + future Stripe-shaped payment method
+  // payloads. The bare F8 audit `payment_method` value is a closed enum
+  // ('bank_transfer' | 'cash' | 'cheque') which is non-sensitive — but
+  // FR-049 lists `payment_method` defensively because a future caller
+  // serialising a Stripe PaymentMethod object (with embedded card
+  // metadata: brand/last4/exp_month/exp_year) into a log under this key
+  // would silently leak PCI-adjacent data. Erring on over-redaction is
+  // correct for SAQ-A scope.
+  'payment_method',
+  '*.payment_method',
+  '*.*.payment_method',
+  'paymentMethod',
+  '*.paymentMethod',
+  '*.*.paymentMethod',
 ];
 
 /**

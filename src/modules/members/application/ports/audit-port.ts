@@ -24,6 +24,13 @@ export type F3AuditEventType =
   | 'member_created'
   | 'member_updated'
   | 'member_plan_changed'
+  // F8 Phase 2 Wave C T029b (migration 0095) — fires alongside
+  // `member_plan_changed` when an admin MANUALLY mutates a member's
+  // plan via the change-plan use-case. Auto-applied paths (F4
+  // renewal-invoice applying a scheduled plan change in Phase 5+)
+  // emit ONLY `member_plan_changed`, NOT this event. F8 supersede
+  // listener (Phase 5+ T184) consumes only this specific event.
+  | 'member_plan_manually_changed'
   | 'member_primary_contact_changed'
   | 'member_status_changed'
   | 'member_archived'

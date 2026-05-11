@@ -211,6 +211,7 @@ const eslintConfig = defineConfig([
       "src/modules/invoicing/**",
       "src/modules/payments/**",
       "src/modules/broadcasts/**",
+      "src/modules/renewals/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -225,6 +226,24 @@ const eslintConfig = defineConfig([
       "no-restricted-imports": [
         "error",
         {
+          // Phase 9 Round-3 close — block production callers of
+          // test-only `__test__readGaugeValues` accessor in
+          // `src/lib/metrics.ts`. Folded INTO the existing
+          // cross-module barrel block (vs. a separate config object)
+          // because ESLint flat-config does NOT merge `no-restricted-
+          // imports` rules across blocks — a separate block would
+          // SHADOW the patterns below for every file in `src/**`,
+          // silently disabling Constitution Principle III barrel
+          // enforcement. The named-import restriction works alongside
+          // pattern-based restrictions in the same rule entry.
+          paths: [
+            {
+              name: "@/lib/metrics",
+              importNames: ["__test__readGaugeValues"],
+              message:
+                "`__test__readGaugeValues` is a TEST-ONLY accessor exposing the per-process gauge-values accumulator. Production callers would leak gauge state across tenants. Use the OTel scrape pipeline instead.",
+            },
+          ],
           patterns: [
             {
               group: [
@@ -333,6 +352,23 @@ const eslintConfig = defineConfig([
               ],
               message:
                 "Cross-module import must go through the broadcasts public barrel (`@/modules/broadcasts`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F8 — renewals module public-barrel boundary (Phase 1 Setup T004).
+              group: [
+                "@/modules/renewals/domain/**",
+                "@/modules/renewals/application/**",
+                "@/modules/renewals/infrastructure/**",
+                "./modules/renewals/domain/**",
+                "./modules/renewals/application/**",
+                "./modules/renewals/infrastructure/**",
+                "../modules/renewals/domain/**",
+                "../modules/renewals/application/**",
+                "../modules/renewals/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the renewals public barrel (`@/modules/renewals`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],

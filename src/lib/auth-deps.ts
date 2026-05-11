@@ -85,6 +85,14 @@ import type { HeartbeatDeps } from '@/modules/auth/application/heartbeat';
 // is the Chamber-OS composition adapter layer (eslint allow-listed).
 export { rateLimiter };
 
+// F8 Phase 8 T222 — userRepo re-export for the staff-active list helper
+// (reassign-task combobox). Same composition-root rationale as
+// rateLimiter above: presentation layer MUST NOT deep-import
+// `@/modules/auth/infrastructure/db/user-repo` directly per Constitution
+// Principle III (eslint `no-restricted-imports`); routing through
+// `src/lib/auth-deps` keeps the boundary intact.
+export { userRepo };
+
 // Shared default clock — single source of truth for "now" across every
 // default deps object. Tests still override `now` via their own stubs;
 // production call sites all share this reference.
@@ -137,13 +145,29 @@ export const defaultChangePasswordDeps: ChangePasswordDeps = {
 
 /**
  * Default invitation-outbox enqueue — Path C atomic variant. Inserts
- * into `notifications_outbox` with `notification_type='member_invitation'`,
- * `tenant_id=null` (F1 invitation flow is cross-tenant) using the
- * caller's tx handle so user + invitation + outbox rows commit
- * together (or roll back together on any error). The dispatcher cron
+ * into `notifications_outbox` with `notification_type='member_invitation'`
+ * and `tenant_id` set to the inviter's chamber slug (NOT NULL since
+ * migration 0098 enabled FORCE RLS on this table). Uses the caller's
+ * tx handle so user + invitation + outbox rows commit together (or
+ * roll back together on any error). The dispatcher cron
  * (`/api/cron/outbox-dispatch`) renders + sends within its next ≤60s
  * tick. `cause` is sanitised to a string to prevent raw DB exception
  * leakage into upstream loggers.
+ *
+ * Why we don't switch to `runInTenant`:
+ *   - `users` + `invitations` INSERTs are cross-tenant (Constitution
+ *     Principle I — `users` is the global identity table) and
+ *     `chamber_app` deliberately has NO INSERT grant on those tables
+ *     (see migrations 0006/0016/0017). Switching this entire tx to
+ *     `runInTenant` would `SET LOCAL ROLE chamber_app` and break the
+ *     `users.createPendingInTx` + `tokens.createInvitationInTx` calls
+ *     with permission-denied.
+ *   - The `db.transaction(...)` path runs as the owner role which has
+ *     `BYPASSRLS=TRUE`, so the FORCE RLS WITH CHECK on
+ *     `notifications_outbox` is a no-op for owner inserts. We still
+ *     pass `req.tenantId` so the row carries the real tenant slug,
+ *     ensuring the per-tenant dispatcher path (chamber_app role) can
+ *     read it back via the matching RLS policy.
  */
 const enqueueInvitationInTx: EnqueueInvitationInTxFn = async (
   tx: DbTx,
@@ -153,7 +177,7 @@ const enqueueInvitationInTx: EnqueueInvitationInTxFn = async (
     const [row] = await tx
       .insert(notificationsOutbox)
       .values({
-        tenantId: null,
+        tenantId: req.tenantId,
         notificationType: 'member_invitation',
         toEmail: req.toEmail.toLowerCase(),
         locale: req.locale ?? 'en',

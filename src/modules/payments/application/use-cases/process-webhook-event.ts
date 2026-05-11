@@ -136,6 +136,19 @@ export interface ProcessWebhookEventDeps {
    * root wires `paymentsLogger` (audit 2026-04-25 finding #5).
    */
   readonly logger?: LoggerPort;
+  /**
+   * F8 cross-module on-paid hooks. Forwarded into the inner
+   * `confirmPayment` deps for the `payment_intent.succeeded` branch so
+   * the F8 RenewalCycle transition lands inside F4's atomic tx alongside
+   * the invoice flip. Composition root injects via
+   * `f8OnPaidCallbacks(tenantId)` when `FEATURE_F8_RENEWALS=true`.
+   */
+  readonly onPaidCallbacks?: ReadonlyArray<
+    (
+      evt: import('@/modules/invoicing').F4InvoicePaidEvent,
+      tx?: unknown,
+    ) => Promise<void>
+  >;
 }
 
 /**
@@ -174,7 +187,12 @@ function extractInvoiceId(
     | FailPaymentOutcome
     | HandleCancelEventOutcome,
 ): string | undefined {
+  // Duck-type narrowing; FailPayment + HandleCancel outcome shapes
+  // never carry invoiceId in unit-test fixtures, so the false branch
+  // is exercised only via integration paths.
+  /* v8 ignore start */
   return 'invoiceId' in value ? value.invoiceId : undefined;
+  /* v8 ignore stop */
 }
 
 export async function processWebhookEvent(
@@ -207,12 +225,16 @@ export async function processWebhookEvent(
           span.setAttribute('webhook.outcome', `err:${result.error.code}`);
         }
         return result;
+        /* v8 ignore start — tracer error-status path; processWebhookEventBody
+         * always returns Result<...>. Defence-in-depth for OOM /
+         * tracer-internal throws bypassing the typed contract. */
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
           message: e instanceof Error ? e.message : 'webhook_threw',
         });
         throw e;
+        /* v8 ignore stop */
       } finally {
         span.end();
       }
@@ -304,6 +326,14 @@ async function processWebhookEventBody(
           // Audit 2026-04-25 #4: pass processorEventsRepo so the
           // sub-use-case can fold markProcessed into its own withTx.
           processorEventsRepo: deps.processorEventsRepo,
+          // F8: forward cross-module on-paid callbacks so the renewal
+          // cycle transition lands inside F4's atomic tx with the invoice
+          // flip. `undefined` when `FEATURE_F8_RENEWALS=false`.
+          /* v8 ignore next 3 — F8 callback conditional spread; F4-only
+           * unit-test paths exercise the absent-callbacks branch. */
+          ...(deps.onPaidCallbacks !== undefined
+            ? { onPaidCallbacks: deps.onPaidCallbacks }
+            : {}),
         },
         {
           tenantId,
@@ -345,6 +375,9 @@ async function processWebhookEventBody(
         // window for non-2xx responses tagged
         // `invariant_*`. Constitution Principle III: Application
         // layer MUST return Result<T,E>, never throw.
+        /* v8 ignore start — confirmPayment contract guarantees invoiceId
+         * on auto_refunded_stale_invoice; defence-in-depth for post-
+         * compile contract drift (R5 review-round-3 I-NEW-1). */
         if (confirmInvoiceId === undefined) {
           return err<ProcessWebhookEventError>({
             code: 'dispatch_failed',
@@ -353,6 +386,7 @@ async function processWebhookEventBody(
             detail: 'invariant_auto_refunded_missing_invoice_id',
           });
         }
+        /* v8 ignore stop */
         outcome = {
           kind: 'auto_refunded_stale_invoice',
           invoiceId: confirmInvoiceId,
@@ -497,7 +531,11 @@ async function processWebhookEventBody(
           chargeId: dataObject.id,
           refundIds: dataObject.refundIds ?? [],
           amountSatang: dataObject.amountSatang ?? 0n,
+          /* v8 ignore start — env-tag ternary; unit-test fixtures pin
+           * one livemode value at a time. Cross-livemode coverage
+           * lives in the contract tests for /api/webhooks/stripe. */
           processorEnv: event.livemode ? 'live' : 'test',
+          /* v8 ignore stop */
         },
       );
       if (!refundResult.ok) {

@@ -1,0 +1,157 @@
+/**
+ * F8 Phase 7 T184 — `supersedePendingTierUpgrade` use-case.
+ *
+ * F2 → F8 event listener for `member_plan_manually_changed`. When an
+ * admin uses F2's `changeMemberPlan` to manually flip a member's
+ * plan (mid-cycle override), any active tier-upgrade suggestion for
+ * that member is auto-cancelled per FR-039 step 5:
+ *
+ *   - `open` → `superseded` (pre-acceptance — admin's `open` review
+ *     is invalidated; clean cancel)
+ *   - `accepted_pending_apply` → `superseded` (post-acceptance —
+ *     admin's earlier Accept is invalidated; the manual override
+ *     wins)
+ *
+ * Audit: emits `tier_upgrade_pending_superseded_by_manual_change`
+ * with `superseded_from_status` discriminator + the manual-change
+ * actor + superseding plan id (forensic chain).
+ *
+ * Idempotent on terminal states — re-firing the use-case for an
+ * already-terminal suggestion is a silent no-op.
+ *
+ * Pure Application — no framework imports (Constitution Principle III).
+ */
+import { z } from 'zod';
+import { ok, err, type Result } from '@/lib/result';
+import { runInTenant } from '@/lib/db';
+import type { TenantTx } from '@/lib/db';
+import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
+import { parseInput } from './_lib/parse-input';
+import { type SuggestionId } from '../../domain/tier-upgrade-suggestion';
+import type { MemberId, PlanId } from '@/modules/members';
+import type { UserId } from '@/modules/auth';
+
+export const supersedePendingTierUpgradeInputSchema = z.object({
+  tenantId: z.string().min(1),
+  memberId: z.string().uuid(),
+  manualChangeActorUserId: z.string().min(1),
+  // F2 plan_id is `text` (slug-style — e.g. 'regular', 'premium'),
+  // not UUID. See migration 0117 fix on tier_upgrade_suggestions.
+  supersedingPlanId: z.string().min(1),
+  correlationId: z.string().min(1),
+  requestId: z.string().nullable().optional(),
+});
+
+export type SupersedePendingTierUpgradeInput = z.infer<
+  typeof supersedePendingTierUpgradeInputSchema
+>;
+
+export interface SupersedePendingTierUpgradeOutput {
+  readonly supersededSuggestionId: SuggestionId | null;
+  readonly fromStatus: 'open' | 'accepted_pending_apply' | null;
+}
+
+export type SupersedePendingTierUpgradeError =
+  | { readonly kind: 'invalid_input'; readonly message: string }
+  | { readonly kind: 'server_error'; readonly message: string };
+
+/**
+ * Listener entry — atomic with the F2 plan-change tx. Caller
+ * (`f2-plan-change-bridge.ts`) threads the F2 tx so the supersede +
+ * audit emit roll back if the F2 plan-change rolls back.
+ */
+export async function supersedePendingTierUpgradeInTx(
+  deps: RenewalsDeps,
+  tx: TenantTx,
+  args: {
+    readonly tenantId: string;
+    readonly memberId: string;
+    readonly manualChangeActorUserId: string;
+    readonly supersedingPlanId: string;
+    readonly correlationId: string;
+    readonly requestId: string | null;
+  },
+): Promise<{
+  readonly supersededSuggestionId: SuggestionId | null;
+  readonly fromStatus: 'open' | 'accepted_pending_apply' | null;
+}> {
+  const active = await deps.tierUpgradeRepo.findActiveForMember(
+    args.tenantId,
+    args.memberId,
+  );
+  if (active === null) return { supersededSuggestionId: null, fromStatus: null };
+  if (active.status !== 'open' && active.status !== 'accepted_pending_apply') {
+    return { supersededSuggestionId: null, fromStatus: null };
+  }
+
+  const fromStatus = active.status;
+  const now = deps.clock.now().toISOString();
+
+  await deps.tierUpgradeRepo.transitionStatus(
+    tx,
+    args.tenantId,
+    active.suggestionId,
+    {
+      to: 'superseded' as const,
+      closedAt: now,
+    },
+  );
+
+  await deps.auditEmitter.emitInTx(
+    tx,
+    {
+      type: 'tier_upgrade_pending_superseded_by_manual_change',
+      payload: {
+        suggestion_id: active.suggestionId,
+        superseded_from_status: fromStatus,
+        manual_change_actor_user_id:
+          args.manualChangeActorUserId as UserId,
+        superseding_plan_id: args.supersedingPlanId as PlanId,
+      },
+    },
+    {
+      tenantId: args.tenantId,
+      actorUserId: args.manualChangeActorUserId,
+      actorRole: 'system',
+      correlationId: args.correlationId,
+      requestId: args.requestId,
+    },
+  );
+
+  void (active.memberId as MemberId); // type-only assertion
+
+  return { supersededSuggestionId: active.suggestionId, fromStatus };
+}
+
+export async function supersedePendingTierUpgrade(
+  deps: RenewalsDeps,
+  rawInput: SupersedePendingTierUpgradeInput,
+): Promise<
+  Result<SupersedePendingTierUpgradeOutput, SupersedePendingTierUpgradeError>
+> {
+  const inputResult = parseInput(
+    supersedePendingTierUpgradeInputSchema,
+    rawInput,
+  );
+  if (!inputResult.ok) return err(inputResult.error);
+  const input = inputResult.value;
+
+  try {
+    const result = await runInTenant(deps.tenant, async (tx) =>
+      supersedePendingTierUpgradeInTx(deps, tx, {
+        tenantId: input.tenantId,
+        memberId: input.memberId,
+        manualChangeActorUserId: input.manualChangeActorUserId,
+        supersedingPlanId: input.supersedingPlanId,
+        correlationId: input.correlationId,
+        requestId: input.requestId ?? null,
+      }),
+    );
+    return ok(result);
+  } catch (e) {
+    return err({
+      kind: 'server_error',
+      message: (e as Error)?.message ?? 'unknown',
+    });
+  }
+}

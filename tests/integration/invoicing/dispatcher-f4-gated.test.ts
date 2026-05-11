@@ -35,6 +35,9 @@ describe('R7-B4 — outbox dispatcher query filters invoice_auto_email when F4 o
     const past = new Date(Date.now() - 60_000);
 
     // One F1 (member_invitation) row — should always drain.
+    // Round-3 follow-up: tenant_id became NOT NULL via migration 0098;
+    // F1 invite production code now passes the inviter's tenant slug.
+    // Use 'swecham' here for parity.
     const f1 = await db
       .insert(notificationsOutbox)
       .values({
@@ -43,6 +46,7 @@ describe('R7-B4 — outbox dispatcher query filters invoice_auto_email when F4 o
         locale: 'en',
         contextData: { token: 'mock-token', role: 'member' },
         status: 'pending',
+        tenantId: 'swecham',
         nextRetryAt: past,
       })
       .returning({ id: notificationsOutbox.id });

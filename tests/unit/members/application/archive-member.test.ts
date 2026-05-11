@@ -14,8 +14,16 @@ import { ok, err } from '@/lib/result';
 // Round 2 review M-2/C1: assert the H1-fix invariant (cascade-failure
 // metric emit) — without this, a future refactor that drops the metric
 // would silently re-introduce the original signal-loss bug.
-const { cascadeOutcomeSpy } = vi.hoisted(() => ({
+//
+// Phase 9 verify-fix Round-2 close: also spy on `renewalsMetrics
+// .cascadeOutcome` so the F8 cascade tests below can pin the
+// per-branch label invariant ('cancelled' / 'concurrent_skip' /
+// 'unexpected_error'). Without this spy, a regression that drops
+// one of the F8 cascade emits at archive-member.ts:334/353/372/381
+// would silently pass the F8 cascade tests below.
+const { cascadeOutcomeSpy, renewalsCascadeOutcomeSpy } = vi.hoisted(() => ({
   cascadeOutcomeSpy: vi.fn(),
+  renewalsCascadeOutcomeSpy: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async () => {
   const actual =
@@ -25,6 +33,10 @@ vi.mock('@/lib/metrics', async () => {
     broadcastsMetrics: {
       ...actual.broadcastsMetrics,
       cascadeOutcome: cascadeOutcomeSpy,
+    },
+    renewalsMetrics: {
+      ...actual.renewalsMetrics,
+      cascadeOutcome: renewalsCascadeOutcomeSpy,
     },
   };
 });
@@ -188,6 +200,19 @@ function makeDeps(overrides: Partial<{
           }) as const,
       ),
     };
+  // Phase 9 / T239: renewalsCascade is REQUIRED on ArchiveMemberDeps.
+  // No-op stub mirrors the broadcastsCascade default; tests that assert
+  // cascade-failure paths can override.
+  const renewalsCascade: ArchiveMemberDeps['renewalsCascade'] = {
+    cancelInFlightForMember: vi.fn(
+      async () =>
+        ({
+          outcome: 'ok' as const,
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+        }) as const,
+    ),
+  };
   return {
     tenant,
     memberRepo,
@@ -197,6 +222,7 @@ function makeDeps(overrides: Partial<{
     audit,
     clock,
     broadcastsCascade,
+    renewalsCascade,
   } as unknown as StubbedArchiveDeps;
 }
 
@@ -485,6 +511,133 @@ describe('archiveMember use case (R009)', () => {
       // grep which member's archive ended in a partial cascade.
       expect(result.ok).toBe(true);
       expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── F8 renewals cascade failure-path tests (Phase 9 verify-fix C1) ──
+  // Mirrors the F7 broadcasts cascade pattern at lines 434-502 above.
+  // Without these tests, a future refactor that swaps the if/else order
+  // in archive-member.ts:328-388 OR drops the try/catch would not be
+  // caught — silently masking a member's in-flight renewal cycle staying
+  // live after archival. Spec § Edge Cases line 196 requires
+  // `renewal_cycle_cancelled` on archive.
+  describe('F8 renewals cascade failure paths (Phase 9 verify-fix C1)', () => {
+    it('renewals cascade outcome=cascade_failed: archive still succeeds + emits unexpected_error metric (Round-2 close)', async () => {
+      renewalsCascadeOutcomeSpy.mockClear();
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'cascade_failed' as const,
+      }));
+      const deps = makeDeps();
+      // Override after construction so we can use a richer stub than
+      // the makeDeps default no-op renewalsCascade.
+      (deps as { renewalsCascade: unknown }).renewalsCascade = {
+        cancelInFlightForMember,
+      };
+      const result = await archiveMember(
+        memberId,
+        { reason: 'F8 cascade failed' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // F3 archive must succeed — F8 cascade is best-effort.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      // Phase 9 verify-fix Round-2 close — assert the metric label.
+      // A regression that drops the `renewalsMetrics.cascadeOutcome`
+      // call at `archive-member.ts:334` would now fail this test
+      // (was previously a log-only assertion).
+      expect(renewalsCascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'unexpected_error',
+      );
+    });
+
+    it('renewals cascade throws: archive still succeeds + emits unexpected_error metric (Round-2 close)', async () => {
+      renewalsCascadeOutcomeSpy.mockClear();
+      const cancelInFlightForMember = vi.fn(async () => {
+        const e = new Error('renewals adapter mis-wired');
+        e.name = 'AdapterMisWireError';
+        throw e;
+      });
+      const deps = makeDeps();
+      (deps as { renewalsCascade: unknown }).renewalsCascade = {
+        cancelInFlightForMember,
+      };
+      const result = await archiveMember(
+        memberId,
+        { reason: 'F8 cascade throws' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // Adapter throw → archive-member.ts catch block → log + continue.
+      // F3 archive remains successful. The catch block logs `errName`
+      // for triage AND emits `cascadeOutcome('unexpected_error')` per
+      // Phase 9 verify-fix Round-2 close. Pin the metric emit so a
+      // regression that drops the catch-block emit at
+      // `archive-member.ts:381` would fail this test.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      expect(renewalsCascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'unexpected_error',
+      );
+    });
+
+    it('renewals cascade outcome=cascade_partial_failure: archive succeeds + emits concurrent_skip metric (Round-2 close)', async () => {
+      renewalsCascadeOutcomeSpy.mockClear();
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'cascade_partial_failure' as const,
+        cancelledCount: 0,
+        skippedConcurrentCount: 1,
+      }));
+      const deps = makeDeps();
+      (deps as { renewalsCascade: unknown }).renewalsCascade = {
+        cancelInFlightForMember,
+      };
+      const result = await archiveMember(
+        memberId,
+        { reason: 'F8 cascade partial' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      // F3 archive succeeds; the F8 partial-failure branch emits
+      // `cascadeOutcome('concurrent_skip')` per archive-member.ts:353.
+      // Note: audit-emit failures are mapped to 'audit_emit_failed' at
+      // the ADAPTER layer (`renewals-cascade-adapter.ts:113-127`)
+      // BEFORE collapsing to port-level `cascade_partial_failure`, so
+      // archive-member.ts only sees the concurrent-race variant here.
+      expect(result.ok).toBe(true);
+      expect(cancelInFlightForMember).toHaveBeenCalledTimes(1);
+      expect(renewalsCascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'concurrent_skip',
+      );
+    });
+
+    it('Round-2 close — happy-path cascade_ok emits cancelled metric (positive-path tracking)', async () => {
+      renewalsCascadeOutcomeSpy.mockClear();
+      const cancelInFlightForMember = vi.fn(async () => ({
+        outcome: 'ok' as const,
+        cancelledCount: 1,
+        skippedConcurrentCount: 0,
+      }));
+      const deps = makeDeps();
+      (deps as { renewalsCascade: unknown }).renewalsCascade = {
+        cancelInFlightForMember,
+      };
+      const result = await archiveMember(
+        memberId,
+        { reason: 'F8 cascade ok' },
+        { actorUserId: 'admin-7', requestId: 'req-7' },
+        deps,
+      );
+      expect(result.ok).toBe(true);
+      // Phase 9 verify-fix Round-2 close — positive-path metric emit.
+      // Dashboard tracks normal cascade volume, not just incidents.
+      expect(renewalsCascadeOutcomeSpy).toHaveBeenCalledWith(
+        'test-tenant',
+        'cancelled',
+      );
     });
   });
 });

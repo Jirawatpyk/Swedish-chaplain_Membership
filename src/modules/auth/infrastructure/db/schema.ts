@@ -171,6 +171,72 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     row exhausts its retry budget (5y retention, ops event).
   'receipt_rendered',
   'pdf_render_permanently_failed',
+  // --- F8 Phase 2 Wave C T029a (migration 0095) — Wave B carry-overs.
+  //     `member_plan_manually_changed` is F3's specific-vs-generic
+  //     event for the F8 supersede listener; the four `plan_change_*`
+  //     events drive the F2 scheduled-plan-change lifecycle audit
+  //     trail (Wave B G1 verify-run remediation). ---
+  'member_plan_manually_changed',
+  'plan_change_scheduled',
+  'plan_change_superseded',
+  'plan_change_cancelled',
+  'plan_change_applied',
+  // --- F8 Phase 5 Wave K24 (migration 0110) — `renewal_lapsed` finally
+  //     wired by `lapseCyclesOnGraceExpiry` use-case (T115a deferred-to-
+  //     Phase-5 branch). Catalogue entry existed at Phase 1 setup but
+  //     the pgEnum ADD VALUE was never shipped — K24 closes the gap. ---
+  'renewal_lapsed',
+  // --- F8 Phase 6 Wave F (migration 0111) — 6 at-risk events for
+  //     User Story 4 (At-Risk Member Detection). Emit sites: T154
+  //     compute-at-risk-score, T155 snooze-at-risk-member, T156
+  //     record-at-risk-outreach, T161 at-risk-recompute per-tenant
+  //     route. Spec FR-029 + FR-031 + FR-032 + FR-033 + FR-035. ---
+  'at_risk_score_recomputed',
+  'at_risk_score_threshold_crossed',
+  'at_risk_snoozed',
+  'at_risk_outreach_recorded',
+  'at_risk_skipped_below_min_tenure',
+  'at_risk_compute_partial_failure',
+  // --- F8 Phase 7 (migration 0116) — 11 tier-upgrade events for
+  //     User Story 5 (Auto Tier-Upgrade Suggestions). Emit sites:
+  //     T179 evaluate-tier-upgrade (cron) · T180 accept · T181 dismiss ·
+  //     T183 apply-pending (F4 invoice-paid hook) · T184 supersede
+  //     listener · T185 reconcile-pending-applications. Spec FR-037..
+  //     FR-042 + research.md R7 pending lifecycle. ---
+  'tier_upgrade_suggested',
+  'tier_upgrade_accepted',
+  'tier_upgrade_pending_member_notified',
+  'tier_upgrade_pending_admin_verification_due',
+  'tier_upgrade_applied_at_renewal',
+  'tier_upgrade_pending_superseded_by_manual_change',
+  'tier_upgrade_dismissed',
+  'tier_upgrade_already_at_target',
+  'tier_upgrade_tenant_disabled',
+  'tier_upgrade_skipped_no_thresholds_configured',
+  'tier_upgrade_pending_orphan_detected',
+  // --- F8 Phase 7 T188a (migration 0118) — renewal-schedule rescheduled
+  //     audit emitted by `rescheduleOnPlanChangeInTx` when an F2 manual
+  //     plan-change shifts the member's tier-bucket and the not-yet-
+  //     fired schedule steps change cadence. ---
+  'renewal_schedule_rescheduled',
+  // --- F8 Phase 7 review-fix Round 1 (migration 0119) — 3 new silent-
+  //     skip audit events that close observability gaps surfaced by the
+  //     /speckit.review pass. Forensic chain is now explicit when:
+  //     (a) member has no primary contact email at accept time
+  //         → tier_upgrade_pending_member_notify_skipped (I-ERR-1)
+  //     (b) Resend retry-budget exhausted on tier-upgrade approval email
+  //         → tier_upgrade_pending_member_notify_failed (I-ERR-2)
+  //     (c) reschedule listener could not resolve old/new tier-bucket
+  //         → renewal_schedule_reschedule_skipped (S-2-errors)
+  'tier_upgrade_pending_member_notify_skipped',
+  'tier_upgrade_pending_member_notify_failed',
+  'renewal_schedule_reschedule_skipped',
+  // --- F8 Phase 7 review-fix Round 2 (migration 0120) — 2 silent-failure
+  //     closure audits surfaced by Round 2 review:
+  //     IMP-6 catalogue-row-dropped (TierBucket parse failure at adapter)
+  //     SUG-6 apply-post-paid-failed (F4 committed; F8 apply threw)
+  'tier_upgrade_catalogue_row_dropped',
+  'tier_upgrade_apply_post_invoice_paid_failed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [
@@ -382,6 +448,11 @@ export const emailDeliveryEvents = pgTable(
     relatedUserId: uuid('related_user_id').references(() => users.id, {
       onDelete: 'set null',
     }),
+    // F8 Phase 4 Wave I4 (migration 0106) — Resend's bounce.type field
+    // ('permanent' | 'transient'). NULL on non-bounced events. F8's
+    // BounceEventQuery adapter (FR-012a threshold computation) reads
+    // this column. TEXT (not enum) for forward compatibility.
+    bounceType: text('bounce_type'),
   },
   (table) => [
     index('email_delivery_events_message_id_idx').on(table.messageId),
@@ -454,14 +525,18 @@ export const emailChangeTokens = pgTable(
  * is emitted. Admin can trigger a fresh token + new row via the
  * "Re-send verification" action (FR-012c).
  *
- * `tenantId` nullable: future auth flows (password-reset at sign-in)
- * do not have a tenant context yet. F3 enqueues MUST populate it.
+ * `tenantId` is NOT NULL since migration 0098 (F8 Phase 10A) — that
+ * migration deleted ~10 pre-launch orphan rows, set the column NOT
+ * NULL, and enabled FORCE RLS with a `tenant_id = current_setting(...)`
+ * policy. Every auth flow (F1 invitation, password-reset) now passes
+ * the inviter / requester chamber slug so the row is both visible to
+ * the per-tenant dispatcher and accountable to the inviter's tenant.
  */
 export const notificationsOutbox = pgTable(
   'notifications_outbox',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    tenantId: text('tenant_id'),
+    tenantId: text('tenant_id').notNull(),
     notificationType: notificationTypeEnum('notification_type').notNull(),
     toEmail: text('to_email').notNull(),
     locale: text('locale').notNull(),

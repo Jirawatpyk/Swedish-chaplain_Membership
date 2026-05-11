@@ -25,6 +25,7 @@ import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
+import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import type { ContactId } from '../../domain/contact';
 import type { ContactRepo } from '../ports/contact-repo';
 
@@ -42,6 +43,14 @@ export type CreateUserPort = (input: {
   readonly sourceIp: string;
   readonly requestId: string;
   readonly locale?: 'en' | 'th' | 'sv' | undefined;
+  /**
+   * Tenant slug carried to F1 `createUser` so the
+   * `notifications_outbox` row created inside the F1 tx satisfies the
+   * post-0098 NOT NULL + RLS constraints. The members layer always
+   * runs inside a known `TenantContext` (passed via deps.tenant), so
+   * the route handler / use-case threads `deps.tenant.slug` here.
+   */
+  readonly tenantId: TenantSlug;
 }) => Promise<
   | { readonly ok: true; readonly value: { readonly user: { readonly id: string } } }
   | { readonly ok: false; readonly error: { readonly code: 'invalid-input' | 'email-taken' | 'invitation-create-failed' } }
@@ -104,6 +113,7 @@ export async function invitePortal(
     requestId: input.requestId,
     // Fallback to contact's preferred_language when no explicit locale
     locale: input.locale ?? contact.preferredLanguage,
+    tenantId: deps.tenant.slug,
   });
   if (!created.ok) {
     if (created.error.code === 'invalid-input') {

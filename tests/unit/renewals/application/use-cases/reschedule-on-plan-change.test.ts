@@ -1,0 +1,311 @@
+/**
+ * F8 Phase 7 Round 4 IMP-4 — regression unit tests for
+ * `rescheduleOnPlanChangeInTx`.
+ *
+ * Locks the Round 3 + Round 4 CRIT-1 fix: both audit emit sites
+ * (skip-path + success-path) use `emit()` (own tx) NOT `emitInTx`,
+ * so a runtime DB fault inside the audit emit MUST be caught
+ * inside the per-emit try/catch (Round 4 IMP-8) — the listener
+ * MUST NOT re-throw, otherwise the F3-owned plan-change tx
+ * (members.change-plan caller) would silently rollback via
+ * Postgres tainted-tx semantics.
+ *
+ * Without these tests, a future "Principle VIII purist" PR could
+ * revert to `emitInTx` and the suite would stay GREEN — exactly
+ * the regression class Round 3 + Round 4 fixed.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { rescheduleOnPlanChangeInTx } from '@/modules/renewals/application/use-cases/reschedule-on-plan-change';
+import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
+import type { TenantTx } from '@/lib/db';
+
+const TENANT_ID = 'tenantA';
+const MEMBER_ID = '00000000-0000-0000-0000-000000000001';
+const FAKE_TX = {} as unknown as TenantTx;
+
+interface DepsBuilder {
+  readonly oldFound: boolean;
+  readonly newFound: boolean;
+  readonly emitImpl?: () => Promise<unknown>;
+}
+
+function fakeDeps({ oldFound, newFound, emitImpl }: DepsBuilder): {
+  deps: RenewalsDeps;
+  emitMock: ReturnType<typeof vi.fn>;
+  emitInTxMock: ReturnType<typeof vi.fn>;
+} {
+  const emitMock = vi.fn(emitImpl ?? (async () => undefined));
+  const emitInTxMock = vi.fn(async () => undefined);
+  const deps = {
+    tenant: { slug: TENANT_ID },
+    planLookupForRenewal: {
+      loadPlanFrozenFields: vi.fn(async (args: { planId: string }) => {
+        const found = args.planId === 'old' ? oldFound : newFound;
+        return found
+          ? { status: 'found' as const, plan: { tierBucket: 'regular' as const } }
+          : { status: 'not_found' as const };
+      }),
+    },
+    auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+    cyclesRepo: { findActiveForMember: vi.fn(async () => null) },
+    schedulePolicyRepo: { findByBucket: vi.fn(async () => null) },
+    clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+  } as unknown as RenewalsDeps;
+  return { deps, emitMock, emitInTxMock };
+}
+
+const baseArgs = {
+  tenantId: TENANT_ID,
+  memberId: MEMBER_ID,
+  oldPlanId: 'old',
+  newPlanId: 'new',
+  correlationId: 'corr-1',
+  requestId: null,
+};
+
+describe('rescheduleOnPlanChangeInTx (R4 regression)', () => {
+  it('R4-IMP-4 — old plan not_found path uses emit() (own tx), NOT emitInTx', async () => {
+    const { deps, emitMock, emitInTxMock } = fakeDeps({
+      oldFound: false,
+      newFound: true,
+    });
+    await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    const [event] = emitMock.mock.calls[0] ?? [];
+    expect((event as { type?: string })?.type).toBe(
+      'renewal_schedule_reschedule_skipped',
+    );
+  });
+
+  it('R4-IMP-4 — both not_found path uses emit() with reason="both_not_found"', async () => {
+    const { deps, emitMock } = fakeDeps({ oldFound: false, newFound: false });
+    await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+    const [event] = emitMock.mock.calls[0] ?? [];
+    const payload = (event as { payload?: { reason?: string } })?.payload;
+    expect(payload?.reason).toBe('both_not_found');
+  });
+
+  it('R4-CRIT-1 — audit emit failure on skip path is SWALLOWED (caller tx not tainted)', async () => {
+    // Round 4 regression lock: a future revert from `emit()` to
+    // `emitInTx()` would propagate this rejection up to the
+    // caller's tx → silent rollback. The catch + counter pattern
+    // we shipped in Round 4 IMP-8 catches it instead.
+    const { deps, emitMock } = fakeDeps({
+      oldFound: false,
+      newFound: true,
+      emitImpl: async () => {
+        throw new Error('synthetic_audit_emit_failure');
+      },
+    });
+    // The use-case MUST NOT throw — it MUST swallow + return.
+    await expect(
+      rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs),
+    ).resolves.toEqual({
+      cancelledStepIds: [],
+      newStepIds: [],
+      oldTierBucket: null,
+      newTierBucket: 'regular',
+    });
+    expect(emitMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('R4-IMP-4 — same-bucket no-op early returns without any emit', async () => {
+    const { deps, emitMock, emitInTxMock } = fakeDeps({
+      oldFound: true,
+      newFound: true,
+    });
+    await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+    expect(emitMock).not.toHaveBeenCalled();
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
+  it('R5-CRIT-3 — success-path emit() (NOT emitInTx) on actual rescheduled diff', async () => {
+    // Round 5 review-fix R5-CRIT-3 — locks the SUCCESS-path symmetric
+    // half of R4-CRIT-1. Without this test a future PR that reverts
+    // the success-path emit (line 277+ of the use-case) from emit() to
+    // emitInTx(_tx) would re-introduce the F3 plan-flip silent-rollback
+    // regression but pass green because all R4 tests fixture
+    // `cyclesRepo.findActiveForMember = null` (no active cycle = early
+    // return BEFORE the success-path emit fires).
+    //
+    // Here we wire DIFFERING buckets + active cycle + diverging
+    // policies so the use-case computes a non-empty cancelled[]/added[]
+    // step diff and reaches the success-path emit at line 277+.
+    const emitMock = vi.fn(async () => undefined);
+    const emitInTxMock = vi.fn(async () => undefined);
+    const deps = {
+      tenant: { slug: TENANT_ID },
+      planLookupForRenewal: {
+        loadPlanFrozenFields: vi.fn(
+          async (args: { planId: string }) => ({
+            status: 'found' as const,
+            plan: {
+              tierBucket: args.planId === 'old' ? 'regular' : 'premium',
+            },
+          }),
+        ),
+      },
+      auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+      cyclesRepo: {
+        findActiveForMember: vi.fn(async () => ({
+          cycleId: 'cyc-1',
+          expiresAt: '2026-10-01T00:00:00Z',
+        })),
+      },
+      schedulePolicyRepo: {
+        findByBucket: vi.fn(async (_t: string, bucket: string) =>
+          bucket === 'regular'
+            ? { steps: [{ stepId: 'r-30', offsetDays: 30 }] }
+            : { steps: [{ stepId: 'p-14', offsetDays: 14 }] },
+        ),
+      },
+      clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+    } as unknown as RenewalsDeps;
+
+    const result = await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+
+    expect(result.cancelledStepIds).toEqual(['r-30']);
+    expect(result.newStepIds).toEqual(['p-14']);
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock).not.toHaveBeenCalled();
+    const firstCall = emitMock.mock.calls[0] as unknown as
+      | readonly [unknown, unknown]
+      | undefined;
+    const event = firstCall?.[0];
+    expect((event as { type?: string } | undefined)?.type).toBe(
+      'renewal_schedule_rescheduled',
+    );
+  });
+
+  it('R5-CRIT-3 — success-path audit emit failure SWALLOWED (caller tx not tainted)', async () => {
+    // Round 5 review-fix R5-CRIT-3 (negative companion) — locks the
+    // success-path try/catch swallow contract. A revert from emit() to
+    // emitInTx() would propagate this rejection up to the F3 caller
+    // tx → silent rollback. The catch + counter pattern from R4 IMP-8
+    // catches it instead.
+    const emitMock = vi.fn(async () => {
+      throw new Error('synthetic_success_path_audit_emit_failure');
+    });
+    const emitInTxMock = vi.fn(async () => undefined);
+    const deps = {
+      tenant: { slug: TENANT_ID },
+      planLookupForRenewal: {
+        loadPlanFrozenFields: vi.fn(
+          async (args: { planId: string }) => ({
+            status: 'found' as const,
+            plan: {
+              tierBucket: args.planId === 'old' ? 'regular' : 'premium',
+            },
+          }),
+        ),
+      },
+      auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+      cyclesRepo: {
+        findActiveForMember: vi.fn(async () => ({
+          cycleId: 'cyc-1',
+          expiresAt: '2026-10-01T00:00:00Z',
+        })),
+      },
+      schedulePolicyRepo: {
+        findByBucket: vi.fn(async (_t: string, bucket: string) =>
+          bucket === 'regular'
+            ? { steps: [{ stepId: 'r-30', offsetDays: 30 }] }
+            : { steps: [{ stepId: 'p-14', offsetDays: 14 }] },
+        ),
+      },
+      clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+    } as unknown as RenewalsDeps;
+
+    // The use-case MUST NOT throw — caller's tx must not see the audit
+    // failure as a poison-tx signal.
+    await expect(
+      rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs),
+    ).resolves.toMatchObject({
+      cancelledStepIds: ['r-30'],
+      newStepIds: ['p-14'],
+    });
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitInTxMock).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // Round 6 W-014 — already-fired reminders are NOT recalled
+  //
+  // Spec edge case (line 184): "Already-sent reminders are NOT recalled."
+  // The use-case implements this implicitly via the `dispatchAt > now`
+  // time filter on `futureStepIdsFor`. This test pins the invariant —
+  // a step whose dispatch date is in the past must NOT appear in the
+  // `cancelledStepIds` even when the old policy contained it AND the
+  // new policy does not.
+  // ─────────────────────────────────────────────────────────────────
+  it('W-014 already-fired step (dispatchAt in past) is NOT in cancelledStepIds', async () => {
+    const emitMock = vi.fn(async () => undefined);
+    const emitInTxMock = vi.fn(async () => undefined);
+    const deps = {
+      tenant: { slug: TENANT_ID },
+      planLookupForRenewal: {
+        loadPlanFrozenFields: vi.fn(
+          async (args: { planId: string }) => ({
+            status: 'found' as const,
+            plan: {
+              tierBucket: args.planId === 'old' ? 'regular' : 'premium',
+            },
+          }),
+        ),
+      },
+      auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
+      cyclesRepo: {
+        // Cycle expires 2026-10-01; "now" is 2026-08-15.
+        // Days remaining: ~47.
+        // - Step T-90 (offsetDays=90) dispatchAt = 2026-07-03 → IN PAST.
+        //   This step has already been "fired" (ie dispatched).
+        // - Step T-30 (offsetDays=30) dispatchAt = 2026-09-01 → IN FUTURE.
+        //   This step is still pending dispatch.
+        findActiveForMember: vi.fn(async () => ({
+          cycleId: 'cyc-fired',
+          expiresAt: '2026-10-01T00:00:00Z',
+        })),
+      },
+      schedulePolicyRepo: {
+        // Old (regular) policy has BOTH a past T-90 step AND a future
+        // T-30 step. The new (premium) policy has only T-14 (also future).
+        findByBucket: vi.fn(async (_t: string, bucket: string) =>
+          bucket === 'regular'
+            ? {
+                steps: [
+                  { stepId: 'r-90-already-fired', offsetDays: 90 },
+                  { stepId: 'r-30', offsetDays: 30 },
+                ],
+              }
+            : { steps: [{ stepId: 'p-14', offsetDays: 14 }] },
+        ),
+      },
+      clock: { now: () => new Date('2026-08-15T00:00:00Z') },
+    } as unknown as RenewalsDeps;
+
+    const result = await rescheduleOnPlanChangeInTx(deps, FAKE_TX, baseArgs);
+
+    // Critical invariant: `r-90-already-fired` MUST NOT appear in the
+    // cancelled list even though it was in the OLD policy and is NOT
+    // in the NEW policy. The dispatch date is in the past so the
+    // corresponding email has already been sent — recalling it would
+    // be impossible (Resend already delivered it).
+    expect(result.cancelledStepIds).not.toContain('r-90-already-fired');
+    // The future step `r-30` from old policy IS cancelled (legitimately
+    // — it has not yet been dispatched).
+    expect(result.cancelledStepIds).toEqual(['r-30']);
+    // The new T-14 step is added (also in the future).
+    expect(result.newStepIds).toEqual(['p-14']);
+
+    // Audit emitted with the correct narrowed step set.
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    const firstCall = emitMock.mock.calls[0] as unknown as
+      | readonly [unknown, unknown]
+      | undefined;
+    const event = firstCall?.[0] as
+      | { payload?: { cancelled_step_ids?: ReadonlyArray<string> } }
+      | undefined;
+    expect(event?.payload?.cancelled_step_ids).toEqual(['r-30']);
+  });
+});

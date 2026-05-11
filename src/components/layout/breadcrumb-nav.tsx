@@ -22,11 +22,16 @@ import {
 import { useBreadcrumbLabelMap } from '@/components/layout/breadcrumb-provider';
 
 /**
- * Breadcrumbs render only when the route has 3+ segments. Top-level
- * pages (/admin, /admin/users, /admin/plans) rely on sidebar active
- * state + h1 instead — breadcrumbs would be redundant there.
+ * Breadcrumbs render only when the route has 2+ filtered segments
+ * (the leading `admin` / `portal` segment is dropped per the SaaS-
+ * convention filter in `parseBreadcrumbPath`). Top-level pages like
+ * `/admin/users`, `/admin/plans`, `/admin/members` produce a single
+ * filtered segment and rely on sidebar active state + page h1
+ * instead — breadcrumbs would be redundant there. The first
+ * surface that renders breadcrumbs is a 2-deep route, e.g.
+ * `/admin/settings/invoicing` → "Settings / Invoice settings".
  */
-const MIN_DEPTH = 3;
+const MIN_DEPTH = 2;
 
 export function BreadcrumbNav() {
   const pathname = usePathname() ?? '/';
@@ -100,7 +105,12 @@ function BreadcrumbFragment({
   return (
     <Fragment>
       <BreadcrumbItem>
-        {isLast ? (
+        {isLast || !segment.isLinkable ? (
+          // Last segment OR organisational non-routable segment
+          // (NON_ROUTE_BY_PARENT match — its href was rewritten to
+          // the parent's path so making it a link would create two
+          // adjacent trail items pointing at the same URL).
+          // `BreadcrumbPage` styles it as plain muted text.
           <BreadcrumbPage>{segment.label}</BreadcrumbPage>
         ) : (
           <BreadcrumbLink render={<Link href={segment.href} />}>
@@ -129,6 +139,12 @@ const STATIC_LABEL_KEYS = {
   'credit-notes': 'credit-notes',
   void: 'void',
   pay: 'pay',
+  // F8 — `/admin/settings/renewals/schedules` breadcrumb segments.
+  // Renewals + schedules need labels so the trail reads as
+  // "Admin / Settings / Renewals / Reminder schedules" not as raw URL
+  // slugs.
+  renewals: 'renewals',
+  schedules: 'schedules',
 } as const;
 
 // Verb segments resolve by parent resource. The outer key is the parent

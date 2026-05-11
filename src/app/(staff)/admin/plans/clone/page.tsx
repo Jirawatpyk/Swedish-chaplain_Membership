@@ -20,7 +20,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { CloneYearClient } from './clone-year-client';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: 'Clone year · SweCham' };
+  const t = await getTranslations('admin.plans.clone');
+  return { title: t('title') };
 }
 
 export default async function CloneYearPage() {
