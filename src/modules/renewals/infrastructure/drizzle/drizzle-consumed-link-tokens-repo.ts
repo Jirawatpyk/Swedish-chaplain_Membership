@@ -88,18 +88,23 @@ export function makeDrizzleConsumedLinkTokensRepo(
       // Idempotency note: re-running with the same `cutoff` returns 0
       // pruned (rows already deleted on the prior pass). Cron retry-
       // storms are safe.
+      //
+      // PR #25 review-fix Round 1 (2026-05-11): use `.returning()` to
+      // get the deleted-row count deterministically. Drizzle's
+      // postgres-js driver does NOT expose a usable `rowCount` field
+      // on bare `.delete().where(...)` calls (the field exists on the
+      // raw result but is shaped differently across driver versions —
+      // both integration tests asserting `pruned === 1` failed with
+      // pruned=0 before this fix). The codebase convention (e.g.,
+      // `session-repo.ts:95-97`) is to use `.returning({ id: ... })`
+      // and count the resulting array. tokenSha256 is projected as
+      // the cheapest unique key here.
       return runInTenant(tenant, async (tx) => {
-        const result = await tx
+        const deleted = await tx
           .delete(consumedLinkTokens)
-          .where(lt(consumedLinkTokens.consumedAt, cutoff));
-        // Drizzle postgres-js driver exposes rowCount via the raw
-        // result. The shape is driver-specific; cast through unknown
-        // to access. Falls back to 0 when the driver does not surface
-        // the field (defensive — tests that mock the adapter need not
-        // pass a rowCount).
-        const rowCount =
-          (result as unknown as { rowCount?: number }).rowCount ?? 0;
-        return { pruned: rowCount };
+          .where(lt(consumedLinkTokens.consumedAt, cutoff))
+          .returning({ tokenSha256: consumedLinkTokens.tokenSha256 });
+        return { pruned: deleted.length };
       });
     },
   };

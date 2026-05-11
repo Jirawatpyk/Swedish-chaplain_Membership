@@ -709,9 +709,13 @@ export {
 // row + section as "NEW — F8 Phase 9") and the absence of a route
 // handler. Mirrors `reconcile-pending-applications` pattern (single-
 // route housekeeping, no fan-out, weekly Sat 04:00 Asia/Bangkok).
+// PRUNE_RETENTION_DAYS deliberately NOT exported — only the colocated
+// unit test consumes the constant (asserts value = 60 per
+// data-model.md § 2.8) and tests can deep-import within the module per
+// established convention. Keeping it out of the barrel minimises the
+// public surface area.
 export {
   pruneConsumedTokens,
-  PRUNE_RETENTION_DAYS,
   type PruneConsumedTokensInput,
   type PruneConsumedTokensOutput,
   type PruneConsumedTokensError,

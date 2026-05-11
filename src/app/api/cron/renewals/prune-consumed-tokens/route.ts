@@ -13,43 +13,60 @@
  * MVP single-tenant: this route does both orchestrator + per-tenant
  * work (no fan-out needed at SweCham scale). When the project moves to
  * multi-tenant, fan out via internal HTTP per the
- * tier-upgrade-evaluate-coordinator pattern. Pattern mirrors
- * `reconcile-pending-applications` (closest existing single-route
- * weekly housekeeping cron).
+ * tier-upgrade-evaluate-coordinator pattern.
  *
- * Auth: Bearer via `CRON_SECRET`.
- * Kill-switch: `FEATURE_F8_RENEWALS=false` → 200 + skipped (no retry
- * storm; cron-job.org does NOT retry on 200).
+ * Auth: Bearer via `CRON_SECRET` (through `gateCronBearerOrRespond` —
+ * adds rate-limit + `cron_bearer_auth_rejected` audit on 401 path,
+ * matching the coordinator-route convention).
+ * Kill-switch: `FEATURE_F8_RENEWALS=false` → 200 + skipped (cron-job.org
+ * does NOT retry on 200).
+ * READ_ONLY_MODE: short-circuits to 200 + skipped + observability
+ * counter (mirrors dispatch-coordinator pattern).
+ *
+ * Concurrency: NO advisory lock. DELETE on `consumed_link_tokens` is
+ * idempotent — rows already pruned return 0 affected rows; concurrent
+ * fires on disjoint row subsets are serialised by Postgres row-level
+ * locks with zero correctness impact. cron-job.org retry-OFF per the
+ * F8 retry-policy contract eliminates the trigger-side double-fire
+ * source. The Phase 9-original code had an `pg_advisory_xact_lock`
+ * acquired in a separate `runInTenant` block from the use-case call,
+ * which auto-released at the lock-tx's COMMIT before the work ran —
+ * the lock did nothing. Removing it is correctness-preserving and
+ * complexity-reducing.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { uuidv7 } from '@/lib/request-id';
-import { asTenantContext } from '@/modules/tenants';
+import { renewalsMetrics } from '@/lib/metrics';
 import { pruneConsumedTokens, makeRenewalsDeps } from '@/modules/renewals';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (
-    !verifyCronBearer(request.headers.get('authorization'), env.cron.secret)
-  ) {
-    return NextResponse.json(
-      { error: { code: 'unauthorized' } },
-      { status: 401 },
-    );
+  // Shared Bearer-gate helper — constant-time compare, rate-limit on
+  // 401 with Upstash fail-open, `cron_bearer_auth_rejected` audit emit
+  // with route discriminator, 429 with Retry-After. Mirrors the
+  // coordinator-route adoption pattern (dispatch-coordinator, at-risk
+  // -recompute-coordinator, lapse-cycles-coordinator, reconcile-
+  // pending-reactivations-coordinator).
+  const gateResponse = await gateCronBearerOrRespond(request, {
+    route: '/api/cron/renewals/prune-consumed-tokens',
+    metricsCounter: () =>
+      renewalsMetrics.coordinatorAuditEmitFailed('prune_consumed_tokens'),
+    rateLimitFallbackCounter: () => renewalsMetrics.redisFallback(),
+  });
+  if (gateResponse) {
+    return gateResponse;
   }
 
   // Kill-switch — return 200 + skipped so cron-job.org does NOT retry-
-  // storm during dark-launch. Note: the F8 proxy gate
-  // (`src/proxy.ts:389`) also returns 503 for `/api/cron/renewals/**`
-  // when the flag is false — this in-route check is defence-in-depth
-  // and the canonical contract for ops dashboards once the proxy
-  // carve-out for `*-coordinator` and housekeeping routes lands.
+  // storm during dark-launch. The F8 proxy gate (`src/proxy.ts:389`)
+  // ALSO returns 503 for `/api/cron/renewals/**` when the flag is
+  // false; this in-route check is defence-in-depth and the canonical
+  // contract once the proxy carve-out for cron routes lands.
   if (!env.features.f8Renewals) {
     return NextResponse.json(
       { skipped: true, reason: 'feature_flag_disabled' },
@@ -57,37 +74,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // READ_ONLY_MODE short-circuit — mirrors dispatch-coordinator
+  // pattern. 200 + skipped (NOT 503) so cron-job.org does not retry-
+  // storm; the metric counter makes a flag-flap leaving READ_ONLY=
+  // true past the maintenance window dashboardable from outside.
+  if (env.flags.readOnlyMode) {
+    renewalsMetrics.coordinatorSkippedReadOnly('prune_consumed_tokens');
+    return NextResponse.json(
+      { skipped: true, reason: 'read_only_mode' },
+      { status: 200 },
+    );
+  }
+
   const correlationId = uuidv7();
   const tenantId = env.tenant.slug;
-  const tenantCtx = asTenantContext(tenantId);
   const deps = makeRenewalsDeps(tenantId);
   const startedAt = Date.now();
 
   try {
-    // Per-tenant advisory lock so a cron-job.org HTTP retry (timeout
-    // window) cannot double-fire DELETE and produce surprising row-
-    // count metrics. Lock namespace `renewals:prune:` is disjoint
-    // from `renewals:reconcile:`, `renewals:tierupgrade:`,
-    // `renewals:dispatch:`, `renewals:at-risk:` (other F8 cron
-    // coordinators) + F4 `invoicing:`, F5 `payments:`, F7
-    // `broadcasts:` namespaces (P2 Innovation pattern from
-    // retrospective.md). Auto-released at tx end. Concurrent
-    // invocations serialise — the second waits, then DELETE returns
-    // 0 rows (state is idempotent).
-    const lockHeld = await runInTenant(tenantCtx, async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended('renewals:prune:'||${tenantId}, 0))`,
-      );
-      return true;
-    });
-    if (!lockHeld) {
-      // Defensive — `runInTenant` would have thrown if the lock
-      // acquisition failed. Kept as a guard so a future refactor
-      // that splits the lock + use-case calls preserves the
-      // sequencing intent.
-      throw new Error('advisory lock not acquired');
-    }
-
     const result = await pruneConsumedTokens(deps, {
       tenantId,
       correlationId,
@@ -102,6 +106,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         'cron.renewals.prune_consumed_tokens.failed',
       );
+      renewalsMetrics.pruneConsumedTokensCompleted(tenantId, 'failure', 0);
       return NextResponse.json(
         { error: { code: 'server_error' }, tenant_id: tenantId },
         { status: 500 },
@@ -119,6 +124,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { tenantId, correlationId, ...body },
       'cron.renewals.prune_consumed_tokens.complete',
     );
+    renewalsMetrics.pruneConsumedTokensCompleted(
+      tenantId,
+      'success',
+      result.value.pruned,
+    );
     return NextResponse.json(body);
   } catch (e) {
     logger.error(
@@ -129,6 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       'cron.renewals.prune_consumed_tokens.unexpected_error',
     );
+    renewalsMetrics.pruneConsumedTokensCompleted(tenantId, 'failure', 0);
     return NextResponse.json(
       { error: { code: 'server_error' }, tenant_id: tenantId },
       { status: 500 },

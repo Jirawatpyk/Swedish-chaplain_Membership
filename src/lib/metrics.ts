@@ -1681,13 +1681,46 @@ export const renewalsMetrics = {
       | 'lapse'
       | 'reconcile'
       | 'tier_upgrade_evaluate'
-      | 'tier_upgrade_reconcile',
+      | 'tier_upgrade_reconcile'
+      | 'prune_consumed_tokens',
   ): void {
     safeMetric(() => {
       counter(
         'renewals_coordinator_audit_emit_failed_total',
         'F8 cron coordinator failed to emit orchestrated audit (compliance trail loss)',
       ).add(1, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals_prune_consumed_tokens_pruned_total{outcome}` — Phase 9
+   * retrofit (PR #25 review-fix Round 1). Counter incremented once per
+   * cron pass with `outcome ∈ {success, failure}`, plus the `pruned`
+   * row-count delta added under the `success` label. Powers two ops
+   * signals:
+   *   1. Steady-state visibility — operators see a weekly tick in the
+   *      `success`-labelled counter; absence = cron-job.org dashboard
+   *      entry missing or broken.
+   *   2. Failure alert — any non-zero `failure` rate is a stop-the-
+   *      line indicator (advisory-lock contention, DB outage, RLS
+   *      misconfiguration). The pino `cron.renewals.prune_consumed_tokens.failed`
+   *      log line carries the diagnostic context.
+   *
+   * Cardinality bound: 2 outcomes × low-cardinality tenant_id label.
+   */
+  pruneConsumedTokensCompleted(
+    tenantId: string,
+    outcome: 'success' | 'failure',
+    prunedRowCount: number,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_consumed_tokens_pruned_total',
+        'F8 prune-consumed-tokens cron pass result + row-count delta',
+      ).add(prunedRowCount > 0 ? prunedRowCount : 1, {
+        tenant_id: tenantId,
+        outcome,
+      });
     });
   },
 
@@ -2185,7 +2218,12 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile',
+    cron_kind:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'lapse'
+      | 'reconcile'
+      | 'prune_consumed_tokens',
   ): void {
     safeMetric(() => {
       counter(

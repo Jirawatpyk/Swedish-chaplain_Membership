@@ -6,6 +6,9 @@
  * validation (invalid_input on missing fields).
  */
 import { describe, expect, it, vi } from 'vitest';
+// PR #25 review-fix Round 1 — deep-import allowed within the module
+// per Constitution Principle III convention. `PRUNE_RETENTION_DAYS` is
+// not exported from the public barrel.
 import {
   pruneConsumedTokens,
   PRUNE_RETENTION_DAYS,
