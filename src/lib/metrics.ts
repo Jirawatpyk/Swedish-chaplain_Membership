@@ -763,6 +763,18 @@ function safeMetric(fn: () => void): void {
     // the Turbopack browser bundle. Last-resort signal-loss swallow;
     // the structured-logger upgrade can come from observability rules
     // that scrape browser/Node consoles uniformly.
+    //
+    // TODO (post-F8, tracked PR #25 R3 review-fix M2): this catch
+    // swallows ALL errors including programmer bugs (TypeError /
+    // ReferenceError from a future label-set or instrument-cache
+    // regression). The intent is OTel-pipeline-transient resilience,
+    // but the broad catch hides regressions that would otherwise fail
+    // CI. A future iteration should narrow the catch to known OTel
+    // error names (e.g. inspect `e.name`/`e.message` for OTel
+    // signatures) and re-throw TypeError/ReferenceError so genuine
+    // programmer regressions surface. Out-of-scope for PR #25 (pre-
+    // existing pattern across all F1/F4/F5/F7/F8 metric helpers —
+    // ~50+ call sites; refactor warrants its own PR).
     console.warn('metrics_emit_failed_swallowed', {
       err: (e as Error).message,
     });
@@ -1681,13 +1693,83 @@ export const renewalsMetrics = {
       | 'lapse'
       | 'reconcile'
       | 'tier_upgrade_evaluate'
-      | 'tier_upgrade_reconcile',
+      | 'tier_upgrade_reconcile'
+      | 'prune_consumed_tokens',
   ): void {
     safeMetric(() => {
       counter(
         'renewals_coordinator_audit_emit_failed_total',
         'F8 cron coordinator failed to emit orchestrated audit (compliance trail loss)',
       ).add(1, { cron_kind: cronKind });
+    });
+  },
+
+  /**
+   * `renewals_prune_consumed_tokens_runs_total{tenant_id, outcome}` —
+   * Phase 9 retrofit (PR #25 review-fix Round 2). Run-count counter
+   * incremented exactly once per cron pass with `outcome ∈
+   * {success, failure}`.
+   *
+   * Pairs with `pruneConsumedTokensRowsPruned` (row-count counter); the
+   * pair was split from a previous combined counter that conflated
+   * "rows deleted" with "passes completed" semantics — Round 2
+   * /review issue A.
+   *
+   * Ops signals:
+   *   1. **Steady-state visibility** — operators see a weekly tick on
+   *      the `success`-labelled counter; absence = cron-job.org
+   *      dashboard entry missing or broken.
+   *   2. **Failure alert** — any non-zero `failure` rate is a stop-
+   *      the-line indicator (transient Neon connection-pool
+   *      exhaustion, Vercel function timeout, RLS policy regression).
+   *      The pino `cron.renewals.prune_consumed_tokens.failed` /
+   *      `.unexpected_error` log lines carry the diagnostic context.
+   *
+   * Cardinality bound: 2 dimensions — outcome (2 values: success,
+   * failure) × tenant_id (low cardinality, bounded by tenant count).
+   */
+  pruneConsumedTokensRunCompleted(
+    tenantId: string,
+    outcome: 'success' | 'failure',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_consumed_tokens_runs_total',
+        'F8 prune-consumed-tokens cron pass result (1 per invocation)',
+      ).add(1, {
+        tenant_id: tenantId,
+        outcome,
+      });
+    });
+  },
+
+  /**
+   * `renewals_prune_consumed_tokens_rows_deleted_total{tenant_id}` —
+   * Phase 9 retrofit (PR #25 review-fix Round 2). Row-count counter
+   * incremented by the number of `consumed_link_tokens` rows the
+   * weekly prune actually deleted. Emitted ONLY on the success path
+   * (the failure path emits nothing here; the run-count counter
+   * carries the failure signal).
+   *
+   * A 0-row pass is normal at SweCham scale (steady-state weekly
+   * deletes are rare — most tokens expire via the 30-day payload TTL
+   * before the 60-day prune cutoff). Operators query
+   * `increase(...rows_deleted_total[30d])` for capacity planning;
+   * a non-zero rate confirms the prune is finding eligible rows.
+   *
+   * Cardinality bound: 1 dimension — tenant_id (low cardinality,
+   * bounded by tenant count; no `outcome` label by design since this
+   * counter is success-only emission).
+   */
+  pruneConsumedTokensRowsPruned(
+    tenantId: string,
+    rowCount: number,
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_consumed_tokens_rows_deleted_total',
+        'F8 prune-consumed-tokens cron — rows actually deleted from consumed_link_tokens',
+      ).add(rowCount, { tenant_id: tenantId });
     });
   },
 
@@ -2185,7 +2267,12 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'reconcile',
+    cron_kind:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'lapse'
+      | 'reconcile'
+      | 'prune_consumed_tokens',
   ): void {
     safeMetric(() => {
       counter(

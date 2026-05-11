@@ -46,4 +46,24 @@ export interface ConsumedLinkTokensRepo {
    * tenant context.
    */
   markConsumed(input: MarkConsumedInput): Promise<MarkConsumedResult>;
+
+  /**
+   * Phase 9 retrofit (PR #25) — weekly housekeeping. Deletes rows
+   * whose `consumed_at < cutoff`. Returns the number of rows pruned.
+   *
+   * Retention window is 60 days per `data-model.md § 2.8` and
+   * `migration 0093` header comment ("rows >60d old are deleted"). The
+   * caller passes a concrete cutoff `Date` so the use-case stays
+   * deterministic + testable under a frozen clock.
+   *
+   * Tenant isolation: caller MUST wrap in `runInTenant` so the
+   * RLS+FORCE policy on `consumed_link_tokens` scopes the DELETE to
+   * the current tenant's rows only (defence-in-depth — the SQL also
+   * goes through RLS).
+   *
+   * Idempotent: re-running the prune on the same cutoff returns 0
+   * (rows already deleted on the prior pass). Safe for cron-job.org
+   * timeout-window retry storms.
+   */
+  pruneOlderThan(cutoff: Date): Promise<{ readonly pruned: number }>;
 }

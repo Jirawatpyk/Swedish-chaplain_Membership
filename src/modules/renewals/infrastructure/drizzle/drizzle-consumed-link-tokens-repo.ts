@@ -20,7 +20,7 @@
  * rows can coexist with the same token_sha256 across tenants. This is
  * by design — tokens are per-tenant by construction.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { consumedLinkTokens } from '../schema-consumed-link-tokens';
@@ -75,6 +75,36 @@ export function makeDrizzleConsumedLinkTokensRepo(
 
         const firstConsumedAt = existing[0]?.consumedAt ?? new Date();
         return { status: 'replay', firstConsumedAt };
+      });
+    },
+
+    async pruneOlderThan(cutoff): Promise<{ readonly pruned: number }> {
+      // Phase 9 retrofit — weekly housekeeping. DELETE scoped to the
+      // current tenant by RLS+FORCE (no explicit `WHERE tenant_id`
+      // predicate; the policy is the canonical scope per Round 6
+      // S-R5-6 convention used across renewals adapters). Returns
+      // count of affected rows for the cron-job.org dashboard summary.
+      //
+      // Idempotency note: re-running with the same `cutoff` returns 0
+      // pruned (rows already deleted on the prior pass). Cron retry-
+      // storms are safe.
+      //
+      // PR #25 review-fix Round 1 (2026-05-11): use `.returning()` to
+      // get the deleted-row count deterministically. Drizzle's
+      // postgres-js driver does NOT expose a usable `rowCount` field
+      // on bare `.delete().where(...)` calls (the field exists on the
+      // raw result but is shaped differently across driver versions —
+      // both integration tests asserting `pruned === 1` failed with
+      // pruned=0 before this fix). The codebase convention (e.g.,
+      // `session-repo.ts:95-97`) is to use `.returning({ id: ... })`
+      // and count the resulting array. tokenSha256 is projected as
+      // the cheapest unique key here.
+      return runInTenant(tenant, async (tx) => {
+        const deleted = await tx
+          .delete(consumedLinkTokens)
+          .where(lt(consumedLinkTokens.consumedAt, cutoff))
+          .returning({ tokenSha256: consumedLinkTokens.tokenSha256 });
+        return { pruned: deleted.length };
       });
     },
   };
