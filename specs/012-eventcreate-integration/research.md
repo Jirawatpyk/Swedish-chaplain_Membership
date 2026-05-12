@@ -305,7 +305,7 @@ Salt-rotation policy: rotate on security-incident OR every 3 years. Salt rotatio
 
 ---
 
-## R10 — Observability surface: ~10 metrics + ~5 alerts + 3 runbooks
+## R10 — Observability surface: ~11 metrics + ~6 alerts + 3 runbooks
 
 **Decision**: F6 ships the observability baseline mandated by FR-036, conforming to `docs/observability.md` § 14. Concretely:
 
