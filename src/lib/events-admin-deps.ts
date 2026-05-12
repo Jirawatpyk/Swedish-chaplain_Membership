@@ -35,7 +35,7 @@
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantId, type TenantId } from '@/modules/members';
-// TY2 fix (verify-finding 2026-05-12): `asTenantContext` already
+// TY2 fix: `asTenantContext` already
 // validates slug format (throws `InvalidTenantSlugError` on malformed
 // input — see `src/modules/tenants/domain/tenant-context.ts`). So the
 // downstream `asTenantId(tenantSlug)` rubber-stamp is safe BECAUSE

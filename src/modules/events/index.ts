@@ -277,7 +277,7 @@ export {
   type ForceExpireGraceSecretDeps,
 } from './application/use-cases/force-expire-grace-secret';
 
-// --- 7. Phase 4 use-case exports (US2 admin events list+detail) -------------
+// --- 6. Phase 4 use-case exports (US2 admin events list+detail) -------------
 
 export {
   listEvents,
@@ -301,7 +301,7 @@ export {
   type EventDetailPagination,
 } from './application/use-cases/load-event-detail';
 
-// --- 6. Infrastructure composition factories (DI surface) -------------------
+// --- 7. Infrastructure composition factories (DI surface) -------------------
 
 export {
   makeIngestWebhookAttendeeDeps,

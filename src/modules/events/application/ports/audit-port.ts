@@ -398,7 +398,14 @@ export interface AuditPayloads {
   };
   role_violation_blocked: {
     readonly severity: Severity;
-    readonly actorUserId: UserId;
+    /**
+     * L-C round-3 (2026-05-12): nullable to avoid the sentinel
+     * all-zeros UUID confusion. When the actor cannot be identified
+     * (anonymous session decoded but no user-row resolved), emit
+     * `null` instead of `00000000-0000-0000-0000-000000000000` which
+     * could be confusable with a real all-zeros UUID in queries.
+     */
+    readonly actorUserId: UserId | null;
     readonly actorRole: 'manager' | 'member';
     readonly attemptedRoute: string;
     readonly attemptedAction: string;

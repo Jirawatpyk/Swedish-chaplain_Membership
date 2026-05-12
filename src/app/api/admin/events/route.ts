@@ -25,6 +25,7 @@ import { runListEvents } from '@/lib/events-admin-deps';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
 import { makeStandaloneAuditDeps } from '@/modules/events';
+import { clampPageSize, coerceBoolean } from './_lib/query-helpers';
 
 const ListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
@@ -44,34 +45,6 @@ const ListQuerySchema = z.object({
   categoryFilter: z.string().min(1).max(120).optional(),
 });
 
-// `pageSize` is clamped to [10, 100]. Behaviour:
-//   - non-numeric / null → default (25)
-//   - below `min` → clamp UP to `min` (UX: lower-than-min must not 400)
-//   - above `max` → clamp DOWN to `max`
-// Same convention as F4/F8 routes.
-function clampPageSize(raw: string | null, min: number, max: number, def: number): { value: number; clamped: boolean } {
-  if (raw === null) return { value: def, clamped: false };
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return { value: def, clamped: false };
-  if (n < min) return { value: min, clamped: true };
-  if (n > max) return { value: max, clamped: true };
-  return { value: n, clamped: false };
-}
-
-/**
- * H2 fix (verify-finding 2026-05-12): return `undefined` for any
- * unrecognised string so `z.preprocess(coerceBoolean, z.boolean())`
- * falls through to the schema default. Previously, an unrecognised
- * non-empty string (`?partnerBenefitOnly=xyzzy`) was passed through
- * unchanged; `z.boolean()` then ran `Boolean(s)` → `true` — silent
- * filter activation on garbage input.
- */
-function coerceBoolean(v: unknown): unknown {
-  if (typeof v !== 'string') return v;
-  if (v === '' || v === 'false' || v === '0') return false;
-  if (v === 'true' || v === '1') return true;
-  return undefined;
-}
 
 /**
  * FR-035 audit helper — emits `role_violation_blocked` on member-role
@@ -86,7 +59,7 @@ async function emitRoleViolation(
   actorRole: 'member' | 'manager',
   attemptedAction: string,
 ): Promise<void> {
-  // E5 fix (verify-finding 2026-05-12): hoist tenant resolution OUT of
+  // E5 fix: hoist tenant resolution OUT of
   // the audit-emit try so a host-header / tenant-validation failure
   // surfaces as `tenant_resolve_failed_during_role_violation_audit`
   // (a distinct ops-alert discriminator) instead of being mislabelled
@@ -116,7 +89,8 @@ async function emitRoleViolation(
       summary: `${actorRole} attempted GET /api/admin/events (${attemptedAction})`,
       payload: {
         severity: 'warn',
-        actorUserId: asUserId(actorUserId ?? '00000000-0000-0000-0000-000000000000'),
+        // L-C round-3 fix: nullable, no sentinel all-zeros UUID.
+        actorUserId: actorUserId ? asUserId(actorUserId) : null,
         actorRole,
         attemptedRoute: '/api/admin/events',
         attemptedAction,
@@ -144,12 +118,18 @@ export async function GET(request: NextRequest) {
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {
-    // Only `member` role reaches here — `requireSession('staff')`
-    // already redirects anonymous + non-staff invalid sessions.
+    // TS narrows `role` to `'member'` after the guard. We pass `role`
+    // directly (no `as 'member'` cast — HIGH-1 round-3 fix). If a
+    // future role (e.g. `'treasurer'`) is added to the `Role` union
+    // in `@/modules/auth/domain/role.ts`, the narrowing here widens
+    // to `'member' | 'treasurer'` and the call below fails to compile
+    // against `emitRoleViolation`'s `'member' | 'manager'` param —
+    // exactly the surfaceable signal we want, instead of silently
+    // mislabelling the new role's audit entries.
     await emitRoleViolation(
       request,
       session.user.id,
-      role as 'member',
+      role,
       'list_events',
     );
     return new NextResponse(null, { status: 404 });
@@ -181,7 +161,7 @@ export async function GET(request: NextRequest) {
   try {
     tenantCtx = resolveTenantFromRequest(request);
   } catch (e) {
-    // T7 fix (verify-finding 2026-05-12): tenant-resolve failure → 500.
+    // T7 fix: tenant-resolve failure → 500.
     logger.error(
       {
         event: 'admin_events_list_tenant_resolve_failed',
@@ -196,7 +176,7 @@ export async function GET(request: NextRequest) {
   }
   // H3 fix (verify-finding): trim categoryFilter; null on whitespace-only.
   const trimmedCategory = parsed.data.categoryFilter?.trim();
-  // E6 fix (verify-finding 2026-05-12): wrap runInTenant raw rejection
+  // E6 fix: wrap runInTenant raw rejection
   // path. Result.err returns flow normally; only DB-connection-lost
   // class throws should hit the catch.
   let result: Awaited<ReturnType<typeof runListEvents>>;
@@ -234,7 +214,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // E8 fix (verify-finding 2026-05-12): surface the clamping signal to
+  // E8 fix: surface the clamping signal to
   // API consumers via an explicit response header so a CLI/script
   // caller that asked for pageSize=5 and got 10 rows can detect the
   // discrepancy without parsing pagination metadata.

@@ -1,26 +1,18 @@
 /**
- * T1 (verify-finding 2026-05-12) — unit test for the match-rate
- * percent formatter shared by `listEvents` + `loadEventDetail`.
+ * Unit test for `computeMatchRatePct` — F6 Domain helper.
  *
- * Both use-cases compute `matchRatePct = round((matched/total)*1000)/10`
- * — a 1-decimal precision representation. Spec § US2 AS2 requires the
- * detail header to display `"Match rate: 90% (18 of 20)"`. This test
- * pins the rounding boundary cases that the wire-format depends on.
+ * Pins the rounding boundary cases that AS2 wire-format depends on
+ * (Match rate header `"NN.N% (M of N)"` per
+ * `specs/012-eventcreate-integration/spec.md` US2 AS2).
  *
- * Note: `computeMatchRatePct` is a local helper duplicated in both
- * use-case files; this test exercises the algorithm via the public
- * use-case return shape (the literal helper is not exported by
- * either module — we use the public Result to validate the math).
+ * H2 round-3 fix (2026-05-12): imports the REAL function from
+ * `@/modules/events` Domain instead of re-deriving it locally. Both
+ * `listEvents` + `loadEventDetail` use-cases consume the same helper.
+ * A divergence in rounding mode (e.g., swap to `Math.floor`) now
+ * breaks this test instead of silently rotting in the use-cases.
  */
 import { describe, it, expect } from 'vitest';
-
-// Re-derived from `list-events.ts` + `load-event-detail.ts` — kept
-// in sync via this golden test. If either copy drifts, this test
-// must be updated alongside.
-function computeMatchRatePct(matched: number, total: number): number {
-  if (total <= 0) return 0;
-  return Math.round((matched / total) * 1000) / 10;
-}
+import { computeMatchRatePct } from '@/modules/events/domain/match-rate';
 
 describe('computeMatchRatePct — boundary table', () => {
   it.each([

@@ -38,36 +38,55 @@ export async function generateMetadata({
 }
 
 interface SearchParams {
-  readonly page?: string;
-  readonly pageSize?: string;
-  readonly unmatchedOnly?: string;
-  readonly matchTypeFilter?: string;
-  readonly q?: string;
+  // M-A round-3 fix: Next.js delivers repeated query params as string[].
+  // See /admin/events/page.tsx for full rationale + firstParam helper.
+  readonly page?: string | string[];
+  readonly pageSize?: string | string[];
+  readonly unmatchedOnly?: string | string[];
+  readonly matchTypeFilter?: string | string[];
+  readonly q?: string | string[];
 }
 
 const PAGE_SIZE = 50;
 
-function isTruthy(v: string | undefined): boolean {
-  return v === '1' || v === 'true';
+function firstParam(v: string | string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  if (Array.isArray(v)) return v[0];
+  return v;
 }
 
-function clampPage(raw: string | undefined): number {
-  const n = Number.parseInt(raw ?? '1', 10);
+function isTruthy(v: string | string[] | undefined): boolean {
+  const s = firstParam(v);
+  return s === '1' || s === 'true';
+}
+
+function clampPage(raw: string | string[] | undefined): number {
+  const s = firstParam(raw);
+  const n = Number.parseInt(s ?? '1', 10);
   if (!Number.isFinite(n) || n < 1) return 1;
   return Math.min(n, 10_000);
 }
 
 /**
- * Returns the validated MatchType OR a sentinel `'INVALID'` when the
- * raw URL param is non-empty + not a known enum value. Empty / null /
- * undefined → `null` (no filter applied — valid happy-path).
- * E9-page fix (verify-finding 2026-05-12).
+ * Discriminated-union return for clear consumer-side `switch` (Type#3
+ * round-3 fix 2026-05-12 — previously `MatchType | null | 'INVALID'`
+ * which was a literal-typed sentinel that couldn't exhaustively switch).
+ *
+ * - `{ kind: 'filter', value }` — valid MatchType present, apply filter
+ * - `{ kind: 'none' }`          — no filter (absent / empty / null / undefined)
+ * - `{ kind: 'invalid' }`       — garbage param present; redirect to clean URL
  */
+type ParsedMatchType =
+  | { readonly kind: 'filter'; readonly value: MatchType }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'invalid' };
+
 function parseMatchTypeFilter(
-  raw: string | undefined,
-): MatchType | null | 'INVALID' {
-  if (raw === undefined || raw === '') return null;
-  return isMatchType(raw) ? raw : 'INVALID';
+  raw: string | string[] | undefined,
+): ParsedMatchType {
+  const s = firstParam(raw);
+  if (s === undefined || s === '') return { kind: 'none' };
+  return isMatchType(s) ? { kind: 'filter', value: s } : { kind: 'invalid' };
 }
 
 export default async function AdminEventDetailPage({
@@ -93,28 +112,38 @@ export default async function AdminEventDetailPage({
   const page = clampPage(query.page);
   const unmatchedOnly = isTruthy(query.unmatchedOnly);
   const parsedMatchType = parseMatchTypeFilter(query.matchTypeFilter);
-  // E9-page fix (verify-finding 2026-05-12): if matchTypeFilter is
-  // syntactically present in the URL but not a known MatchType, redirect
-  // to the clean URL stripping the bad param. Previously this was
-  // silently dropped — admin saw the full attendee list as if no
-  // filter applied, which is misleading.
-  if (parsedMatchType === 'INVALID') {
-    const cleaned = new URLSearchParams();
-    for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== '' && k !== 'matchTypeFilter') {
-        cleaned.set(k, v as string);
+  // E9-page + Type#3 round-3 discriminated union: when
+  // the URL carries garbage `matchTypeFilter`, redirect to the clean
+  // URL stripping the bad param. Exhaustive switch ensures any 4th
+  // future state surfaces as a compile error here.
+  let matchTypeFilter: MatchType | null;
+  switch (parsedMatchType.kind) {
+    case 'filter':
+      matchTypeFilter = parsedMatchType.value;
+      break;
+    case 'none':
+      matchTypeFilter = null;
+      break;
+    case 'invalid': {
+      const cleaned = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) {
+        if (k === 'matchTypeFilter') continue;
+        const first = firstParam(v);
+        if (first !== undefined && first !== '') {
+          cleaned.set(k, first);
+        }
       }
+      const qs = cleaned.toString();
+      redirect(`/admin/events/${eventId}${qs ? `?${qs}` : ''}`);
     }
-    const qs = cleaned.toString();
-    redirect(`/admin/events/${eventId}${qs ? `?${qs}` : ''}`);
   }
-  const matchTypeFilter = parsedMatchType; // narrowed: MatchType | null
-  const q = query.q && query.q.trim() !== '' ? query.q.trim() : null;
+  const qRaw = firstParam(query.q);
+  const q = qRaw && qRaw.trim() !== '' ? qRaw.trim() : null;
 
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);
 
-  // E1+E6 fix (verify-finding 2026-05-12): mirror list-page pattern —
+  // E1+E6 fix: mirror list-page pattern —
   // try/catch the use-case dispatch + log on either failure path so a
   // raw `runInTenant` rejection cannot bypass the bespoke error card.
   let result: Awaited<ReturnType<typeof runLoadEventDetail>> | null = null;

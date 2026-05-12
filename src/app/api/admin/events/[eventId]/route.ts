@@ -24,6 +24,7 @@ import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { MATCH_TYPES, makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
+import { clampPageSize, coerceBoolean } from '../_lib/query-helpers';
 
 const DetailQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
@@ -36,25 +37,6 @@ const DetailQuerySchema = z.object({
   q: z.string().min(1).max(200).optional(),
 });
 
-function clampPageSize(raw: string | null, min: number, max: number, def: number): { value: number; clamped: boolean } {
-  if (raw === null) return { value: def, clamped: false };
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return { value: def, clamped: false };
-  if (n < min) return { value: min, clamped: true };
-  if (n > max) return { value: max, clamped: true };
-  return { value: n, clamped: false };
-}
-
-/**
- * H2 fix (verify-finding 2026-05-12): see /api/admin/events/route.ts
- * — unrecognised strings return `undefined` so zod default fires.
- */
-function coerceBoolean(v: unknown): unknown {
-  if (typeof v !== 'string') return v;
-  if (v === '' || v === 'false' || v === '0') return false;
-  if (v === 'true' || v === '1') return true;
-  return undefined;
-}
 
 /**
  * FR-035 audit helper — see /api/admin/events/route.ts for the same
@@ -93,7 +75,8 @@ async function emitRoleViolation(
       summary: `${actorRole} attempted GET /api/admin/events/${eventId} (load_event_detail)`,
       payload: {
         severity: 'warn',
-        actorUserId: asUserId(actorUserId ?? '00000000-0000-0000-0000-000000000000'),
+        // L-C round-3 fix: nullable, no sentinel UUID.
+        actorUserId: actorUserId ? asUserId(actorUserId) : null,
         actorRole,
         attemptedRoute: `/api/admin/events/${eventId}`,
         attemptedAction: 'load_event_detail',
@@ -122,10 +105,13 @@ export async function GET(
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {
+    // HIGH-1 round-3 fix: pass narrowed `role` directly. Future role
+    // additions surface as compile errors instead of silent
+    // mislabelling. See /admin/events/route.ts for full rationale.
     await emitRoleViolation(
       request,
       session.user.id,
-      role as 'member',
+      role,
       eventId,
     );
     return new NextResponse(null, { status: 404 });
@@ -160,7 +146,7 @@ export async function GET(
   try {
     tenantCtx = resolveTenantFromRequest(request);
   } catch (e) {
-    // T7 fix (verify-finding 2026-05-12): host-header / tenant
+    // T7 fix: host-header / tenant
     // resolution failure surfaces as 500 rather than letting Next.js
     // render its default error page. Logged for ops triage.
     logger.error(
@@ -176,7 +162,7 @@ export async function GET(
       { status: 500 },
     );
   }
-  // H3 fix (verify-finding 2026-05-12): trim `q` and treat whitespace-only
+  // H3 fix: trim `q` and treat whitespace-only
   // as null so the repo doesn't hit ilike with an empty pattern.
   const trimmedQ = parsed.data.q?.trim();
   // E6 fix: wrap raw runInTenant rejection path.
@@ -207,7 +193,7 @@ export async function GET(
 
   if (!result.ok) {
     if (result.error.kind === 'not_found') {
-      // E2 fix (verify-finding 2026-05-12): emit a soft cross-tenant probe
+      // E2 fix: emit a soft cross-tenant probe
       // marker at the admin detail route on every 404. The RLS layer
       // cannot reliably distinguish "row missing" from "row exists in
       // another tenant" without a root-db probe (which itself is a
@@ -217,11 +203,19 @@ export async function GET(
       // `cross_tenant_probe` audit emit is reserved for the webhook
       // path where the cross-tenant signal is definitive (signed-by
       // A delivered to B).
+      // HIGH-2 round-3 fix: reuse the cached `tenantCtx.slug` from the
+      // earlier successful resolve (line ~170) instead of calling
+      // `resolveTenantFromRequest(request).slug` a second time. The
+      // second call was unguarded — a mid-request host-header anomaly
+      // would throw to the framework, hiding the 404 audit log AND
+      // returning a 500 error page instead of the surface-disclosure
+      // 404. Caching avoids both the double-resolve cost AND the
+      // failure-mode divergence.
       logger.warn(
         {
           event: 'admin_event_detail_not_found',
           actor_user_id: session.user.id,
-          tenant_slug: resolveTenantFromRequest(request).slug,
+          tenant_slug: tenantCtx.slug,
           event_id_hash: crypto
             .createHash('sha256')
             .update(eventId)
@@ -242,7 +236,7 @@ export async function GET(
     );
   }
 
-  // E8 fix (verify-finding 2026-05-12): see /api/admin/events/route.ts.
+  // E8 fix: see /api/admin/events/route.ts.
   const responseHeaders: Record<string, string> = {};
   if (pageSizeClamped) responseHeaders['X-PageSize-Clamped'] = 'true';
   return NextResponse.json(result.value, {

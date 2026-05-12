@@ -38,8 +38,7 @@ import {
   type MatchType,
   NON_QUOTA_MATCH_TYPES,
 } from '../domain/value-objects/match-type';
-import { sanitizeDbErrorMessage } from './sanitize-db-error';
-import { logger } from '@/lib/logger';
+import { wrapRepoError } from './sanitize-db-error';
 import type { PaymentStatus } from '../domain/value-objects/payment-status';
 import type { TenantId, MemberId, ContactId } from '@/modules/members';
 
@@ -182,17 +181,7 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
           isNewRegistration: row.isNewRegistration,
         });
       } catch (e) {
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 registrations repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('registrations', e));
       }
     },
 
@@ -214,17 +203,7 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         if (rows.length === 0) return ok(null);
         return ok(toAggregate(rows[0]!));
       } catch (e) {
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 registrations repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('registrations', e));
       }
     },
 
@@ -336,17 +315,7 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
           matchCounts,
         });
       } catch (e) {
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 registrations repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('registrations', e));
       }
     },
     async findByEmailLower() {

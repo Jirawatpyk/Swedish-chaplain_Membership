@@ -43,8 +43,7 @@ import type {
 } from '../domain/branded-types';
 import type { Source } from '../domain/value-objects/source';
 import { NON_QUOTA_MATCH_TYPES } from '../domain/value-objects/match-type';
-import { sanitizeDbErrorMessage } from './sanitize-db-error';
-import { logger } from '@/lib/logger';
+import { wrapRepoError } from './sanitize-db-error';
 import type { TenantId } from '@/modules/members';
 
 function toAggregate(row: EventRow): EventAggregate {
@@ -145,19 +144,7 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
           eventCreated: row.wasFresh,
         });
       } catch (e) {
-        // Preserve full root-cause server-side; outbound Result carries
-        // the sanitised message only (E3 verify-finding 2026-05-12).
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 events repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('events', e));
       }
     },
 
@@ -174,19 +161,7 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
         if (rows.length === 0) return ok(null);
         return ok(toAggregate(rows[0]!));
       } catch (e) {
-        // Preserve full root-cause server-side; outbound Result carries
-        // the sanitised message only (E3 verify-finding 2026-05-12).
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 events repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('events', e));
       }
     },
 
@@ -210,19 +185,7 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
         if (rows.length === 0) return ok(null);
         return ok(toAggregate(rows[0]!));
       } catch (e) {
-        // Preserve full root-cause server-side; outbound Result carries
-        // the sanitised message only (E3 verify-finding 2026-05-12).
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 events repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('events', e));
       }
     },
 
@@ -273,19 +236,7 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
           totalCount,
         });
       } catch (e) {
-        // Preserve full root-cause server-side; outbound Result carries
-        // the sanitised message only (E3 verify-finding 2026-05-12).
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 events repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('events', e));
       }
     },
 
@@ -336,19 +287,7 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
         }
         return ok(out);
       } catch (e) {
-        // Preserve full root-cause server-side; outbound Result carries
-        // the sanitised message only (E3 verify-finding 2026-05-12).
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 events repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('events', e));
       }
     },
 
@@ -388,19 +327,7 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
           totalArchived,
         });
       } catch (e) {
-        // Preserve full root-cause server-side; outbound Result carries
-        // the sanitised message only (E3 verify-finding 2026-05-12).
-        logger.error(
-          {
-            event: 'f6_repo_db_error',
-            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
-          },
-          '[F6 events repository] DB error',
-        );
-        return err({
-          kind: 'db_error',
-          message: sanitizeDbErrorMessage(e),
-        });
+        return err(wrapRepoError('events', e));
       }
     },
 

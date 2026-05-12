@@ -25,6 +25,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 
 type EventHeaderProps = {
   readonly event: {
@@ -39,20 +40,16 @@ type EventHeaderProps = {
     readonly isCulturalEvent: boolean;
     readonly archivedAt: string | null;
     readonly eventcreateUrl: string | null;
-    /** U5 (verify-finding 2026-05-12): last Zapier delivery timestamp. */
+    /** U5: last Zapier delivery timestamp. */
     readonly lastUpdatedAt: string;
   };
 };
 
 function formatDate(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  // M4 fix (verify-finding): Thai BE display via buddhist calendar.
-  const lo = locale === 'th' || locale === 'th-TH' ? 'th-TH-u-ca-buddhist' : locale;
-  return new Intl.DateTimeFormat(lo, {
+  return formatLocalisedDate(iso, locale, {
     dateStyle: 'long',
     timeStyle: 'short',
-  }).format(d);
+  });
 }
 
 export function EventDetailHeader({ event }: EventHeaderProps) {
@@ -75,7 +72,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           {/*
-           * U4 (verify-finding 2026-05-12): heading dedupe — the page-level
+           * U4: heading dedupe — the page-level
            * <PageHeader title={event.name}/> already emits <h1>. Repeating
            * the same string as <h2> here pollutes the SR heading tree.
            * Render the metadata block without an extra heading level.

@@ -153,6 +153,38 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     );
   });
 
+  test('H1 — invalid matchTypeFilter redirects to clean URL (E9-page round-2 fix)', async ({
+    page,
+  }) => {
+    await page.goto('/admin/events');
+    await page.waitForLoadState('domcontentloaded');
+    const firstRowLink = page.getByRole('table').getByRole('link').first();
+    if (!(await firstRowLink.isVisible().catch(() => false))) {
+      test.skip(
+        true,
+        'No seeded F6 events available — H1 redirect test needs at least one event',
+      );
+      return;
+    }
+    await firstRowLink.click();
+    await page.waitForURL(/\/admin\/events\/[^/]+$/);
+    const eventIdMatch = page.url().match(/\/admin\/events\/([^/?]+)/);
+    expect(eventIdMatch).toBeTruthy();
+    const eventId = eventIdMatch![1]!;
+    // Navigate to the detail page with a garbage matchTypeFilter; the
+    // server component must call redirect() to strip the bad param.
+    await page.goto(`/admin/events/${eventId}?matchTypeFilter=garbage`);
+    // After redirect, the URL must NOT contain `matchTypeFilter`.
+    await page.waitForURL(
+      (u) => !u.toString().includes('matchTypeFilter'),
+      { timeout: 10_000 },
+    );
+    expect(page.url()).not.toContain('matchTypeFilter=garbage');
+    expect(page.url()).not.toContain('matchTypeFilter=');
+    // The page should still render the event detail (not 404).
+    await expect(page.getByText(/match rate/i)).toBeVisible();
+  });
+
   test('AS5 variant (a) — no integration configured renders setup CTA', async ({
     page,
   }) => {

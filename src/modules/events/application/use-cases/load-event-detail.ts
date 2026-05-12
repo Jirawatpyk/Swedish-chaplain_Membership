@@ -39,16 +39,18 @@ import { tryEventId } from '../../domain/branded-types';
 import type { MatchType } from '../../domain/value-objects/match-type';
 import type { PaymentStatus } from '../../domain/value-objects/payment-status';
 import { isNonQuotaMatchType } from '../../domain/value-objects/match-type';
+import { computeMatchRatePct } from '../../domain/match-rate';
 
 /**
- * UUID v4 regex — Phase 2 schema declares `event_id` as Postgres uuid,
- * so any malformed format would surface as a `db_error` from the
- * Drizzle adapter (unhelpful for the admin who pasted a typo'd URL).
- * Validating at the use-case entry maps malformed IDs to a clean
- * `not_found` Result + 404 — same UX as "event genuinely missing"
- * and avoids polluting db_error rate.
+ * UUID v4 regex — Phase 2 schema declares `event_id` as Postgres uuid
+ * with `defaultRandom()` (which produces strict v4 UUIDs). Malformed
+ * input surfaces as `not_found` (clean 404) instead of a Postgres
+ * parse-error → `db_error` alert. Version digit is restricted to `4`
+ * to match the production source. L-B round-3: if F6
+ * ever migrates to UUID v7 for sortable IDs, change `4` to `7` here
+ * and update `tests/unit/modules/events/load-event-detail.test.ts`.
  */
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface LoadEventDetailInput {
   readonly tenantId: TenantId;
@@ -71,7 +73,7 @@ export interface EventDetailItem {
    * whole-event match-rate per US2 AS2 ("Match rate: 90% (18 of 20)").
    * Do NOT confuse with `EventDetailPagination.totalCount` below which
    * IS filtered (it's the row count for the current paginated query).
-   * M5 (verify-finding 2026-05-12).
+   * M5.
    */
   readonly totalRegistrations: number;
   readonly matchedRegistrations: number;
@@ -81,7 +83,7 @@ export interface EventDetailItem {
   readonly archivedAt: string | null;
   readonly eventcreateUrl: string | null;
   /**
-   * U5 (verify-finding 2026-05-12): admin trust signal — last Zapier
+   * U5: admin trust signal — last Zapier
    * delivery timestamp so the operator can troubleshoot "why hasn't a
    * new attendee shown up?" without leaving the detail page. Sourced
    * from `events.last_updated_at` (Drizzle schema).
@@ -96,14 +98,14 @@ export interface EventDetailPagination {
    * Filtered row count — reflects the current `matchTypeFilter` /
    * `unmatchedOnly` / `q` set. Distinct from
    * `EventDetailItem.totalRegistrations` which is always full-event.
-   * M5 (verify-finding 2026-05-12).
+   * M5.
    */
   readonly totalCount: number;
 }
 
 export interface EventDetailRegistration {
   readonly registrationId: RegistrationId;
-  // TY3-5 (verify-finding 2026-05-12): preserve AttendeeEmail brand
+  // TY3-5: preserve AttendeeEmail brand
   // through the wire DTO — compile-only, surfaces at component prop.
   readonly attendeeEmail: import('../../domain/branded-types').AttendeeEmail;
   readonly attendeeName: string;
@@ -136,16 +138,11 @@ export interface LoadEventDetailDeps {
   readonly registrationsRepo: RegistrationsRepository;
 }
 
-function computeMatchRatePct(matched: number, total: number): number {
-  if (total <= 0) return 0;
-  return Math.round((matched / total) * 1000) / 10;
-}
-
 export async function loadEventDetail(
   deps: LoadEventDetailDeps,
   input: LoadEventDetailInput,
 ): Promise<Result<LoadEventDetailOutput, LoadEventDetailError>> {
-  // TY1 fix (verify-finding 2026-05-12): validate `eventId` format BEFORE
+  // TY1 fix: validate `eventId` format BEFORE
   // hitting the DB. Postgres uuid type would otherwise throw on a
   // malformed input (e.g., `not-a-uuid`) and surface as a `db_error`
   // alert. Format check is the use-case boundary; tryEventId only

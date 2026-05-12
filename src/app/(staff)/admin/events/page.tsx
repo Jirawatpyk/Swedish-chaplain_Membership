@@ -43,22 +43,40 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface SearchParams {
-  readonly page?: string;
-  readonly pageSize?: string;
-  readonly includeArchived?: string;
-  readonly partnerBenefitOnly?: string;
-  readonly culturalEventOnly?: string;
-  readonly categoryFilter?: string;
+  // M-A round-3 fix: Next.js delivers repeated query
+  // params as `string[]` (e.g., `?q=a&q=b` → `q: ['a','b']`). Typing
+  // these as bare `string` was a lie that would have crashed on
+  // `.trim()`. We normalise to the first-occurrence string at read
+  // time via `firstParam()` below.
+  readonly page?: string | string[];
+  readonly pageSize?: string | string[];
+  readonly includeArchived?: string | string[];
+  readonly partnerBenefitOnly?: string | string[];
+  readonly culturalEventOnly?: string | string[];
+  readonly categoryFilter?: string | string[];
 }
 
 const PAGE_SIZE = 25;
 
-function isTruthy(v: string | undefined): boolean {
-  return v === '1' || v === 'true';
+/**
+ * Normalise a Next.js SearchParams value to the first-occurrence
+ * string, ignoring repeated keys (`?q=a&q=b` → `'a'`). Returns
+ * `undefined` for absent / empty / non-string entries.
+ */
+function firstParam(v: string | string[] | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  if (Array.isArray(v)) return v[0];
+  return v;
 }
 
-function clampPage(raw: string | undefined): number {
-  const n = Number.parseInt(raw ?? '1', 10);
+function isTruthy(v: string | string[] | undefined): boolean {
+  const s = firstParam(v);
+  return s === '1' || s === 'true';
+}
+
+function clampPage(raw: string | string[] | undefined): number {
+  const s = firstParam(raw);
+  const n = Number.parseInt(s ?? '1', 10);
   if (!Number.isFinite(n) || n < 1) return 1;
   return Math.min(n, 10_000);
 }
@@ -87,10 +105,9 @@ export default async function AdminEventsListPage({
   const includeArchived = isTruthy(query.includeArchived);
   const partnerBenefitOnly = isTruthy(query.partnerBenefitOnly);
   const culturalEventOnly = isTruthy(query.culturalEventOnly);
+  const categoryRaw = firstParam(query.categoryFilter);
   const categoryFilter =
-    query.categoryFilter && query.categoryFilter.trim() !== ''
-      ? query.categoryFilter.trim()
-      : null;
+    categoryRaw && categoryRaw.trim() !== '' ? categoryRaw.trim() : null;
   const hasFilters =
     includeArchived ||
     partnerBenefitOnly ||
@@ -100,7 +117,7 @@ export default async function AdminEventsListPage({
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);
 
-  // E1+E6 fix (verify-finding 2026-05-12): wrap the use-case dispatch
+  // E1+E6 fix: wrap the use-case dispatch
   // in try/catch — `runInTenant` rejections (DB outage, role-grant
   // failure, etc.) would otherwise bubble to the Next.js framework
   // error boundary, bypassing the bespoke error card. Wrapping here
@@ -145,7 +162,10 @@ export default async function AdminEventsListPage({
             <>
               <FilterChips
                 query={
-                  query as unknown as Record<string, string | undefined>
+                  query as unknown as Record<
+                    string,
+                    string | string[] | undefined
+                  >
                 }
                 hasFilters={hasFilters}
                 includeArchived={includeArchived}
@@ -195,21 +215,23 @@ export default async function AdminEventsListPage({
 // --- Subcomponents (server components — kept inline for clarity) ----------
 
 /**
- * H1 fix (verify-finding 2026-05-12): build chip hrefs from a fresh
+ * H1 fix: build chip hrefs from a fresh
  * URLSearchParams over the CURRENT query so toggling one filter does
  * not silently drop the others. Also strips `page=` so toggles reset
  * to page 1 (matches AttendeeTable's `toggleUnmatched` pattern at
  * `src/components/events/attendee-table.tsx:113-122`).
  */
 function buildChipHref(
-  query: Record<string, string | undefined>,
+  query: Record<string, string | string[] | undefined>,
   toggleKey: string,
   currentlyActive: boolean,
 ): string {
   const next = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) {
-    if (v !== undefined && v !== '' && k !== 'page' && k !== toggleKey) {
-      next.set(k, v);
+    if (k === 'page' || k === toggleKey) continue;
+    const first = firstParam(v);
+    if (first !== undefined && first !== '') {
+      next.set(k, first);
     }
   }
   if (!currentlyActive) {
@@ -226,7 +248,7 @@ async function FilterChips({
   partnerBenefitOnly,
   culturalEventOnly,
 }: {
-  query: Record<string, string | undefined>;
+  query: Record<string, string | string[] | undefined>;
   hasFilters: boolean;
   includeArchived: boolean;
   partnerBenefitOnly: boolean;
@@ -278,7 +300,7 @@ function FilterChipLink({
   href: string;
   children: React.ReactNode;
 }) {
-  // U2 (verify-finding 2026-05-12): `aria-pressed` is invalid on anchors —
+  // U2: `aria-pressed` is invalid on anchors —
   // WAI-ARIA 1.2 restricts it to role="button". `aria-current="true"` is
   // the canonical idiom for active nav/filter links on anchor elements.
   return (

@@ -39,6 +39,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type {
   MatchType,
   RegistrationId,
@@ -48,7 +49,7 @@ import { MatchStatusBadge } from './match-status-badge';
 import { QuotaEffectBadge } from './quota-effect-badge';
 
 export type AttendeeRow = {
-  // TY3-5 (verify-finding 2026-05-12): brand types propagated through the
+  // TY3-5: brand types propagated through the
   // Server→Client prop boundary. Compile-only — no runtime cost.
   readonly registrationId: RegistrationId;
   readonly attendeeEmail: AttendeeEmail;
@@ -71,14 +72,10 @@ type Props = {
 };
 
 function formatRegisteredAt(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  // M4 fix (verify-finding): Thai BE display via buddhist calendar.
-  const lo = locale === 'th' || locale === 'th-TH' ? 'th-TH-u-ca-buddhist' : locale;
-  return new Intl.DateTimeFormat(lo, {
+  return formatLocalisedDate(iso, locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
-  }).format(d);
+  });
 }
 
 function formatTicketPrice(thb: number | null, locale: string): string {
@@ -186,7 +183,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
         </Button>
       </div>
       {/*
-       * U3 (verify-finding 2026-05-12): result-count aria-live region —
+       * U3: result-count aria-live region —
        * announces row count to screen readers after filter/search changes.
        * `role="status"` + `aria-live="polite"` lets the SR queue the
        * update without interrupting; `aria-atomic` ensures the full

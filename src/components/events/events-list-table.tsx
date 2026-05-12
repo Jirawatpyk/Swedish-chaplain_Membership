@@ -37,10 +37,11 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { EventId } from '@/modules/events';
 
 export type EventsListTableRow = {
-  // TY3 (verify-finding 2026-05-12): brand is compile-only — cheap win;
+  // TY3: brand is compile-only — cheap win;
   // catches accidental ID-swap bugs at the Server→Client prop boundary.
   readonly eventId: EventId;
   readonly name: string;
@@ -58,24 +59,12 @@ type Props = {
   readonly rows: readonly EventsListTableRow[];
 };
 
+// Date formatter uses the shared `formatLocalisedDate` helper which
+// honours the Thai Buddhist Era calendar on `th`/`th-TH` per CLAUDE.md
+// § Conventions. Storage stays UTC Gregorian; display adds 543 years
+// for Thai user-facing surfaces only.
 function formatDate(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  // M4 fix (verify-finding 2026-05-12): Thai Buddhist Era (BE) display
-  // for `th` / `th-TH` per CLAUDE.md § Conventions. Storage stays UTC
-  // Gregorian; display adds 543 years for the Thai user-facing
-  // surface only.
-  if (locale === 'th' || locale === 'th-TH') {
-    // Intl.DateTimeFormat with a buddhist calendar variant gives the
-    // right BE year; we still render with the th formatter for month
-    // names + numerals consistent with the rest of the page.
-    return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
-      dateStyle: 'medium',
-    }).format(d);
-  }
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: 'medium',
-  }).format(d);
+  return formatLocalisedDate(iso, locale, { dateStyle: 'medium' });
 }
 
 function formatMatchRate(pct: number, total: number): string {
@@ -93,7 +82,7 @@ export function EventsListTable({ rows }: Props) {
       <TableHeader>
         <TableRow>
           {/*
-           * L2 (verify-finding 2026-05-12): no real column-sort wired
+           * L2: no real column-sort wired
            * (server pagination only with fixed start_date DESC order).
            * A hard-coded `aria-sort="descending"` would advertise a
            * sortable column that doesn't react to user input. Drop it

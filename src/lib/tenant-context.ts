@@ -38,7 +38,7 @@ import { env } from './env';
 const X_TENANT_HEADER = 'x-tenant';
 
 /**
- * M3 (verify-finding 2026-05-12) — Server-component convenience for
+ * M3 — Server-component convenience for
  * tenant resolution.
  *
  * Server components do not receive a `Request` object — only a
@@ -55,13 +55,23 @@ const X_TENANT_HEADER = 'x-tenant';
 export function resolveTenantFromHeaders(
   headers: ReadonlyHeaders,
 ): TenantContext {
-  // Flatten ReadonlyHeaders into a plain Record so `new Request` is
-  // happy without an `as never` cast. The resolver only reads
-  // `x-tenant`; we still forward all headers for completeness.
-  const flat: Record<string, string> = {};
-  headers.forEach((value, key) => {
-    flat[key] = value;
-  });
+  // Resolver reads `x-tenant` only; we still forward all headers for
+  // forward-compat (e.g., future signed-claim parsing). LOW-4 round-3
+  //: defence-in-depth try around the flatten. forEach()
+  // on Next.js's ReadonlyHeaders is not documented to throw, but a
+  // future Next.js refactor wrapping headers in a Proxy could surface
+  // a throw here; we'd rather fall through to env.tenant.slug than
+  // explode the server component.
+  let flat: Record<string, string>;
+  try {
+    flat = {};
+    headers.forEach((value, key) => {
+      flat[key] = value;
+    });
+  } catch {
+    // Empty headers → resolver defaults to env.tenant.slug — safe.
+    flat = {};
+  }
   const pseudoReq = new Request('http://localhost:3100', { headers: flat });
   return resolveTenantFromRequest(pseudoReq);
 }
@@ -79,11 +89,11 @@ interface ReadonlyHeaders {
 
 export function resolveTenantFromRequest(req?: Request): TenantContext {
   // T115t — test-only header override. Gate triple-locked:
-  //   1. Build-time: env.tenant.xHeaderEnabled is only TRUE when the
-  //      NODE_ENV != 'production' check at boot lets the flag through.
-  //   2. Runtime: the flag must be explicitly set in .env.local.
-  //   3. Request: the header must be present AND pass the same slug
-  //      validator the env path uses (`asTenantContext` re-validates).
+  // 1. Build-time: env.tenant.xHeaderEnabled is only TRUE when the
+  // NODE_ENV != 'production' check at boot lets the flag through.
+  // 2. Runtime: the flag must be explicitly set in .env.local.
+  // 3. Request: the header must be present AND pass the same slug
+  // validator the env path uses (`asTenantContext` re-validates).
   // Missing any of the 3 → fall through to env.tenant.slug.
   if (req && env.tenant.xHeaderEnabled) {
     const headerSlug = req.headers.get(X_TENANT_HEADER);

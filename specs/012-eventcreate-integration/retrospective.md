@@ -77,3 +77,15 @@ T068–T081 — generate-secret + rotate-secret + test-webhook + walkthrough + r
 ## Pre-flag-flip operator checklist (cumulative — will grow as each phase lands)
 
 The full list will live here as the final pre-flag-flip gate. Phase 4 contributes 8 items (P4-G1..G8 above). Phases 5–10 will add their own. Final checklist must be 100% green before any tenant gets `FEATURE_F6_EVENTCREATE=true`.
+
+### Phase 4 alerting + runbook contracts (MEDIUM-3 round-3 fix)
+
+The Phase 4 admin detail route emits a `logger.warn` with the event discriminator `admin_event_detail_not_found` on every 404 — this includes legitimate stale URLs (browser tabs, bookmarks to archived events) AND potential enumeration attempts. The hashed `event_id_hash` field (first 16 chars of SHA-256) is the correlation key.
+
+**Alerting requirement** — when the Grafana alert is wired in Phase 10 T124+:
+- DO NOT alert on **absolute count**. Staff fat-fingering URLs will create background noise.
+- DO alert on **rate per actor**: ≥10 distinct `event_id_hash` values in 5 minutes from a single `actor_user_id` (clear enumeration signal).
+- DO alert on **rate per tenant**: ≥50 events/min sustained (could indicate a script).
+- Tune thresholds during the first 30 days post-flag-flip based on real noise floor.
+
+Document this contract in `docs/runbooks/f6-admin-event-detail-not-found.md` (to be created in Phase 10).

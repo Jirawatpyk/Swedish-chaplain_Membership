@@ -65,16 +65,18 @@ const requireSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
 const emitStandaloneMock = vi.fn();
 
-// T12 fix (verify-finding 2026-05-12): explicit factory listing only
-// the SPECIFIC exports the route consumes from the barrel, instead of
-// `vi.importActual('@/modules/events')` which re-resolves the entire
+// T12 fix (2026-05-12): explicit factory listing only the specific
+// exports the route consumes from the barrel, instead of
+// `vi.importActual('@/modules/events')` which re-resolved the entire
 // barrel (~25 exports) per test and was the suspected cause of the
 // 7s isolated / 30s parallel-flake reported in verify-review.
 //
-// Route imports from `@/modules/events`:
+// Route imports from `@/modules/events` that need stubbing:
 //   • `MATCH_TYPES` (detail route enum-validation)
-//   • `isMatchType` (page parseMatchTypeFilter — but page is not under test here)
 //   • `makeStandaloneAuditDeps` (FR-035 audit emit)
+//
+// `isMatchType` is consumed only by the PAGE component, not the route —
+// listed in the comment for completeness but not stubbed here.
 //
 // `MATCH_TYPES` is a literal const — duplicated explicitly here so the
 // factory is pure data, no async resolution. `isMatchType` is a pure
@@ -86,6 +88,16 @@ const MATCH_TYPES = [
   'non_member',
   'unmatched',
 ] as const;
+
+// M-B round-3 fix (2026-05-12): compile-time anchor against the real
+// Domain const. Type-only import (erased at runtime — no perf cost).
+// If `src/modules/events/domain/value-objects/match-type.ts` adds a
+// 6th MatchType (e.g. `'duplicate_registration'`), the type-assertion
+// below FAILS TO COMPILE — surfacing the drift instead of silently
+// shipping a test fixture that lies about the Domain shape.
+import type { MATCH_TYPES as RealMatchTypes } from '@/modules/events';
+const _matchTypesDriftAnchor: typeof RealMatchTypes = MATCH_TYPES;
+void _matchTypesDriftAnchor;
 vi.mock('@/modules/events', () => ({
   MATCH_TYPES,
   isMatchType: (v: unknown): v is (typeof MATCH_TYPES)[number] =>
@@ -261,7 +273,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     const res = await GET(buildListRequest());
     expect(res.status).toBe(200);
     expect(listEventsMock).toHaveBeenCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({ page: 1, pageSize: 25 }),
     );
   });
@@ -291,7 +303,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
       }),
     );
     expect(listEventsMock).toHaveBeenCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({
         page: 3,
         pageSize: 50,
@@ -303,7 +315,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     );
   });
 
-  it('200 OK — clamps pageSize to bounds [10, 100]', async () => {
+  it('200 OK — clamps pageSize to bounds [10, 100] AND emits X-PageSize-Clamped header (M2 round-3 fix)', async () => {
     listEventsMock.mockResolvedValue({
       ok: true,
       value: {
@@ -318,17 +330,29 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     });
     const { GET } = await loadListRoute();
 
-    await GET(buildListRequest({ pageSize: '5' }));
+    // Below-min: clamped to 10, header SET
+    const resBelow = await GET(buildListRequest({ pageSize: '5' }));
     expect(listEventsMock).toHaveBeenLastCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({ pageSize: 10 }),
     );
+    expect(resBelow.headers.get('X-PageSize-Clamped')).toBe('true');
 
-    await GET(buildListRequest({ pageSize: '500' }));
+    // Above-max: clamped to 100, header SET
+    const resAbove = await GET(buildListRequest({ pageSize: '500' }));
     expect(listEventsMock).toHaveBeenLastCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({ pageSize: 100 }),
     );
+    expect(resAbove.headers.get('X-PageSize-Clamped')).toBe('true');
+
+    // In-range: header NOT emitted
+    const resInRange = await GET(buildListRequest({ pageSize: '50' }));
+    expect(listEventsMock).toHaveBeenLastCalledWith(
+      TENANT_SLUG,
+      expect.objectContaining({ pageSize: 50 }),
+    );
+    expect(resInRange.headers.get('X-PageSize-Clamped')).toBeNull();
   });
 
   it('200 OK — emptyStateContext variant (a): no integration configured', async () => {
@@ -648,7 +672,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       params: Promise.resolve({ eventId: 'evt-1' }),
     });
     expect(loadEventDetailMock).toHaveBeenCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({
         eventId: 'evt-1',
         page: 1,
@@ -657,7 +681,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     );
   });
 
-  it('200 OK — clamps detail pageSize to bounds [10, 200]', async () => {
+  it('200 OK — clamps detail pageSize to bounds [10, 200] AND emits X-PageSize-Clamped header (M2 round-3 fix)', async () => {
     loadEventDetailMock.mockResolvedValue({
       ok: true,
       value: {
@@ -668,21 +692,32 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     });
     const { GET } = await loadDetailRoute();
 
-    await GET(buildDetailRequest('evt-1', { pageSize: '5' }), {
+    const resBelow = await GET(buildDetailRequest('evt-1', { pageSize: '5' }), {
       params: Promise.resolve({ eventId: 'evt-1' }),
     });
     expect(loadEventDetailMock).toHaveBeenLastCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({ pageSize: 10 }),
     );
+    expect(resBelow.headers.get('X-PageSize-Clamped')).toBe('true');
 
-    await GET(buildDetailRequest('evt-1', { pageSize: '5000' }), {
+    const resAbove = await GET(buildDetailRequest('evt-1', { pageSize: '5000' }), {
       params: Promise.resolve({ eventId: 'evt-1' }),
     });
     expect(loadEventDetailMock).toHaveBeenLastCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({ pageSize: 200 }),
     );
+    expect(resAbove.headers.get('X-PageSize-Clamped')).toBe('true');
+
+    const resInRange = await GET(buildDetailRequest('evt-1', { pageSize: '75' }), {
+      params: Promise.resolve({ eventId: 'evt-1' }),
+    });
+    expect(loadEventDetailMock).toHaveBeenLastCalledWith(
+      TENANT_SLUG,
+      expect.objectContaining({ pageSize: 75 }),
+    );
+    expect(resInRange.headers.get('X-PageSize-Clamped')).toBeNull();
   });
 
   it('200 OK — honours matchTypeFilter + unmatchedOnly + q params', async () => {
@@ -704,7 +739,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       { params: Promise.resolve({ eventId: 'evt-1' }) },
     );
     expect(loadEventDetailMock).toHaveBeenCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({
         matchTypeFilter: 'member_fuzzy',
         unmatchedOnly: true,
@@ -713,20 +748,38 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     );
   });
 
-  it('404 Not Found — event does not exist for this tenant (cross-tenant probe)', async () => {
+  it('404 Not Found — event does not exist for this tenant (cross-tenant probe) + emits soft-probe warn log (L3 round-3)', async () => {
     loadEventDetailMock.mockResolvedValueOnce({
       ok: false,
       error: { kind: 'not_found' },
     });
+    // L3 round-3 (2026-05-12): assert the soft cross-tenant probe
+    // marker fires on every admin 404. Security forensics depends on
+    // this log line being durably emitted — a regression that drops
+    // it should fail the test.
+    const loggerWarnSpy = vi
+      .spyOn(logger, 'warn')
+      .mockImplementation(() => undefined as never);
     const { GET } = await loadDetailRoute();
-    const res = await GET(buildDetailRequest('evt-not-mine'), {
-      params: Promise.resolve({ eventId: 'evt-not-mine' }),
+    const eventId = 'a1b2c3d4-1234-4abc-89de-fedcba987654'; // valid UUID v4
+    const res = await GET(buildDetailRequest(eventId), {
+      params: Promise.resolve({ eventId }),
     });
     expect(res.status).toBe(404);
     // Surface-disclosure: response must not leak whether the row exists
     // in another tenant. A bare 404 is correct.
     const body = await res.text();
     expect(body).not.toMatch(/cross-tenant|other tenant/i);
+    expect(loggerWarnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'admin_event_detail_not_found',
+        actor_user_id: 'u-admin-1',
+        tenant_slug: TENANT_SLUG,
+        event_id_hash: expect.stringMatching(/^[0-9a-f]{16}$/),
+      }),
+      expect.any(String),
+    );
+    loggerWarnSpy.mockRestore();
   });
 
   it('404 Not Found — member role returns 404 on detail per FR-035', async () => {
@@ -830,7 +883,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       params: Promise.resolve({ eventId: 'evt-1' }),
     });
     expect(loadEventDetailMock).toHaveBeenCalledWith(
-      expect.anything(),
+      TENANT_SLUG,
       expect.objectContaining({ q: null }),
     );
   });
