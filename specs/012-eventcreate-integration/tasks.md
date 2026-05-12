@@ -22,11 +22,11 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 **Purpose**: Project initialisation, feature flag, module scaffolding, ESLint boundary rule.
 
-- [ ] T001 Add `FEATURE_F6_EVENTCREATE` (default `'false'`) + `EVENTCREATE_PII_PSEUDONYM_SALT` (≥32 bytes base64) zod entries to `src/lib/env.ts` with boot-time validation (refuse to start when flag true but salt missing).
-- [ ] T002 Extend pino redact-list in `src/lib/logger.ts` with F6 secret fields: `webhook_secret_active`, `webhook_secret_grace`, `X-Chamber-Signature` header value, `attendee_email` (when audit-replay-masking required), `EVENTCREATE_PII_PSEUDONYM_SALT`.
-- [ ] T003 [P] Create `src/modules/events/index.ts` public barrel with placeholder exports + ESLint `no-restricted-imports` rule scoped to `src/modules/events/domain/**` blocking deep imports from outside (mirrors F2/F3/F4/F5/F7/F8 pattern).
-- [ ] T004 [P] Create empty bounded-context directory tree per `plan.md § Project Structure` — `src/modules/events/{domain,application,infrastructure}/`, `src/modules/events/application/ports/`, `src/modules/events/domain/value-objects/`.
-- [ ] T005 [P] Add F6-specific i18n key namespace placeholders in `src/i18n/messages/en.json` + `th.json` + `sv.json` under top-level keys `admin.events.*` + `admin.integrations.eventcreate.*` + `audit.eventcreate.*` (~150 keys × 3 locales — populated incrementally per user-story phase).
+- [X] T001 Add `FEATURE_F6_EVENTCREATE` (default `'false'`) + `EVENTCREATE_PII_PSEUDONYM_SALT` (≥32 bytes base64) zod entries to `src/lib/env.ts` with boot-time validation (refuse to start when flag true but salt missing).
+- [X] T002 Extend pino redact-list in `src/lib/logger.ts` with F6 secret fields: `webhook_secret_active`, `webhook_secret_grace`, `X-Chamber-Signature` header value, `attendee_email` (when audit-replay-masking required), `EVENTCREATE_PII_PSEUDONYM_SALT`.
+- [X] T003 [P] Create `src/modules/events/index.ts` public barrel with placeholder exports + ESLint `no-restricted-imports` rule scoped to `src/modules/events/domain/**` blocking deep imports from outside (mirrors F2/F3/F4/F5/F7/F8 pattern).
+- [X] T004 [P] Create empty bounded-context directory tree per `plan.md § Project Structure` — `src/modules/events/{domain,application,infrastructure}/`, `src/modules/events/application/ports/`, `src/modules/events/domain/value-objects/`.
+- [X] T005 [P] Add F6-specific i18n key namespace placeholders in `src/i18n/messages/en.json` + `th.json` + `sv.json` under top-level keys `admin.events.*` + `admin.integrations.eventcreate.*` + `audit.eventcreate.*` (~150 keys × 3 locales — populated incrementally per user-story phase).
 
 ---
 

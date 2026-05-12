@@ -485,6 +485,73 @@ export const REDACT_PATHS = [
   'paymentMethod',
   '*.paymentMethod',
   '*.*.paymentMethod',
+  // --- F6 EventCreate Integration secrets + headers + PII (T002, plan.md
+  // § Observability + FR-002) ---
+  // Per-tenant webhook signing secrets stored in `tenant_webhook_configs`.
+  // The `active` secret is the current HMAC key Zapier uses to sign
+  // deliveries; the `grace` secret is the previous key still accepted for
+  // 24h after rotation per FR-008 / R7. Either is a complete capability
+  // to forge a valid signed payload — never logged at any level.
+  'webhook_secret_active',
+  '*.webhook_secret_active',
+  '*.*.webhook_secret_active',
+  'webhookSecretActive',
+  '*.webhookSecretActive',
+  '*.*.webhookSecretActive',
+  'webhook_secret_grace',
+  '*.webhook_secret_grace',
+  '*.*.webhook_secret_grace',
+  'webhookSecretGrace',
+  '*.webhookSecretGrace',
+  '*.*.webhookSecretGrace',
+  // Custom HMAC signature header on F6 webhook receiver — mirror of the
+  // Stripe-Signature / Svix-Signature precedent above. Logging it would
+  // let an attacker replay legitimate Zapier deliveries with a valid
+  // signature. Header casing variants: Node normalises incoming headers
+  // to lowercase, but a caller logging a custom Headers object or
+  // upper-casing during manipulation could hit either shape.
+  'X-Chamber-Signature',
+  '*.X-Chamber-Signature',
+  'x-chamber-signature',
+  '*.x-chamber-signature',
+  'X-CHAMBER-SIGNATURE',
+  '*.X-CHAMBER-SIGNATURE',
+  'XChamberSignature',
+  '*.XChamberSignature',
+  'xChamberSignature',
+  '*.xChamberSignature',
+  // Companion timestamp header used for 5-min skew enforcement (R2).
+  // Less sensitive than the signature value itself but still part of the
+  // verification envelope; redacting defence-in-depth.
+  'X-Chamber-Timestamp',
+  '*.X-Chamber-Timestamp',
+  'x-chamber-timestamp',
+  '*.x-chamber-timestamp',
+  // Attendee email — already covered by the generic `email` / `*.email`
+  // redaction above, but the explicit F6 audit-replay path emits payloads
+  // shaped `{attendee: {email}}` and `{attendee_email: ...}` that benefit
+  // from a verbatim entry so a future contributor grepping for
+  // `attendee_email` in the redact list can find it. Both snake-case
+  // (audit payload shape) + camelCase (Domain VO shape) variants. Depth-2
+  // covers `{audit: {payload: {attendee_email}}}` as a F7 precedent.
+  'attendee_email',
+  '*.attendee_email',
+  '*.*.attendee_email',
+  'attendeeEmail',
+  '*.attendeeEmail',
+  '*.*.attendeeEmail',
+  // F6 deterministic pseudonymisation salt — env var name + camelCase
+  // accessor shape on `env.eventcreate.piiPseudonymSalt`. A leak would
+  // let an attacker pre-compute pseudonyms for non-member registrations
+  // and de-anonymise the retention-purged history. SECRET — masked
+  // before any log line is emitted.
+  'EVENTCREATE_PII_PSEUDONYM_SALT',
+  'eventcreate_pii_pseudonym_salt',
+  '*.eventcreate_pii_pseudonym_salt',
+  'piiPseudonymSalt',
+  '*.piiPseudonymSalt',
+  'pii_pseudonym_salt',
+  '*.pii_pseudonym_salt',
 ];
 
 /**

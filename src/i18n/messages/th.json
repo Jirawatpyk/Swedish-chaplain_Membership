@@ -545,7 +545,11 @@
       "title": "ภาษาของอีเมลแจ้งเตือน",
       "description": "ตั้งค่าภาษาที่สมาชิกรายนี้จะได้รับอีเมลแจ้งเตือน (การอนุมัติบรอดแคสต์, ใบแจ้งหนี้ ฯลฯ) ปล่อยที่ \"ใช้ภาษาของหอการค้า\" เพื่อใช้ค่าเริ่มต้นของหอการค้า",
       "useTenantDefault": "ใช้ภาษาของหอการค้า",
-      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
       "save": "บันทึก",
       "savedToast": "อัปเดตภาษาของอีเมลแจ้งเตือนแล้ว",
       "errorToast": "ไม่สามารถบันทึกได้ กรุณาลองใหม่",
@@ -2292,6 +2296,14 @@
     },
     "paymentSettings": {
       "title": "ตั้งค่าการชำระเงิน"
+    },
+    "events": {
+      "_bootstrap": "อีเวนต์"
+    },
+    "integrations": {
+      "eventcreate": {
+        "_bootstrap": "การเชื่อมต่อ EventCreate"
+      }
     }
   },
   "palette": {
@@ -3051,6 +3063,9 @@
       "pdf_render_permanently_failed": "สร้าง PDF ล้มเหลวถาวร",
       "auto_email_delivery_failed": "ส่งอีเมลอัตโนมัติไม่สำเร็จ",
       "receipt_rendered": "สร้างใบเสร็จรับเงินแล้ว"
+    },
+    "eventcreate": {
+      "_bootstrap": "เหตุการณ์ตรวจสอบ EventCreate"
     }
   },
   "pagination": {

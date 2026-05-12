@@ -410,6 +410,45 @@ const schema = z.object({
   //   5. After 30 days, remove FALLBACK.
   // Steady state = only PRIMARY set. SECRET — redacted in logs.
   RENEWAL_LINK_TOKEN_SECRET_FALLBACK: z.string().min(32).optional().describe('SECRET — do not log'),
+
+  // --- F6 EventCreate Integration -------------------------------------------
+  // Kill-switch for F6 EventCreate Integration. When FALSE every
+  // `/api/webhooks/eventcreate/v1/**`, `/api/admin/events/**`,
+  // `/api/admin/integrations/eventcreate/**`, and the two F6 retention crons
+  // return 503/404 `feature_disabled` via the kill-switch helper. Default
+  // FALSE — F6 ships dark per `plan.md § Production gate`; flip to TRUE per
+  // tenant after (a) Zapier setup wizard complete, (b) test-webhook
+  // round-trip green, (c) maintainer co-signed security checklist.
+  //
+  // When TRUE at boot, `EVENTCREATE_PII_PSEUDONYM_SALT` MUST also be set
+  // (≥32 bytes base64). The cross-field validator below refuses to start
+  // when the flag is true but the salt is missing — this prevents the
+  // FR-032 retention sweep from running with a default/empty salt and
+  // accidentally producing non-deterministic / collidable pseudonyms.
+  FEATURE_F6_EVENTCREATE: booleanFromString.default(false),
+
+  // Deterministic per-tenant pseudonymisation salt for the F6 non-member
+  // PII retention sweep (FR-032 / SC-011). The cron emits sha256(salt ||
+  // tenant_id || external_attendee_id) as the pseudonym, replacing the
+  // raw attendee name + email + company in `event_registrations` rows
+  // older than 2 years for non-member match types. Same salt MUST be
+  // used for the lifetime of the deployment — rotating it would break
+  // forensic linkage between historical pseudonyms and any subsequent
+  // re-imports.
+  //
+  // ≥32 bytes raw entropy, base64-encoded. Generate with:
+  //   openssl rand -base64 32
+  //
+  // OPTIONAL at the schema layer so dev/staging deployments without F6
+  // enabled boot cleanly. The cross-field validator below ENFORCES that
+  // the salt is set whenever `FEATURE_F6_EVENTCREATE=true`. SECRET —
+  // redacted in logs (pino redact list extended for this exact env-var
+  // name in `src/lib/logger.ts` T002).
+  EVENTCREATE_PII_PSEUDONYM_SALT: z
+    .string()
+    .min(32)
+    .optional()
+    .describe('SECRET — do not log'),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -484,6 +523,21 @@ if (raw.NODE_ENV === 'production' && raw.DEBUG_RLS_STATE) {
         'Dev/staging deployments must use sk_test_ keys to prevent accidental live charges.',
     );
   }
+}
+
+// F6: when FEATURE_F6_EVENTCREATE=true the deterministic pseudonymisation
+// salt MUST also be set so the FR-032 retention sweep produces stable,
+// non-collidable pseudonyms. The optional() at the schema layer keeps
+// dev/staging deployments boot-clean when F6 is dark; this cross-field
+// gate fails loud the moment a tenant flag-flips F6 on without providing
+// the salt — surfaces the misconfiguration at boot, not silently at the
+// first 03:00 cron pass that would write null-salt pseudonyms.
+if (raw.FEATURE_F6_EVENTCREATE && !raw.EVENTCREATE_PII_PSEUDONYM_SALT) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - EVENTCREATE_PII_PSEUDONYM_SALT must be set (≥32 bytes base64) ' +
+      'when FEATURE_F6_EVENTCREATE=true. Generate with: openssl rand -base64 32.',
+  );
 }
 
 // T115t — E2E_X_TENANT_HEADER_ENABLED must NEVER be set in production.
@@ -572,6 +626,7 @@ export const env = {
     f7Broadcasts: raw.FEATURE_F7_BROADCASTS,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
+    f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
   },
 
   // F4 Invoicing
@@ -617,6 +672,16 @@ export const env = {
   renewals: {
     linkTokenSecretPrimary: raw.RENEWAL_LINK_TOKEN_SECRET_PRIMARY,
     linkTokenSecretFallback: raw.RENEWAL_LINK_TOKEN_SECRET_FALLBACK ?? null,
+  },
+
+  // F6 EventCreate Integration. The salt is `null` when the F6 flag is
+  // false (allowed at boot per the cross-field validator above) and a
+  // non-empty string when the flag is true. Consumers in the retention
+  // sweep cron (`pseudonymise-stale-non-member-pii.ts`) MUST narrow
+  // before using — a runtime null-check is intentional defence-in-depth
+  // against a future contributor enabling F6 without redeploying.
+  eventcreate: {
+    piiPseudonymSalt: raw.EVENTCREATE_PII_PSEUDONYM_SALT ?? null,
   },
 } as const;
 

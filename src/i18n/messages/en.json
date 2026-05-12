@@ -545,7 +545,11 @@
       "title": "Notification language",
       "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
       "useTenantDefault": "Use chamber default",
-      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
@@ -2292,6 +2296,14 @@
     },
     "paymentSettings": {
       "title": "Payment settings"
+    },
+    "events": {
+      "_bootstrap": "Events"
+    },
+    "integrations": {
+      "eventcreate": {
+        "_bootstrap": "EventCreate Integration"
+      }
     }
   },
   "palette": {
@@ -3051,6 +3063,9 @@
       "pdf_render_permanently_failed": "PDF render permanently failed",
       "auto_email_delivery_failed": "Auto email delivery failed",
       "receipt_rendered": "Receipt rendered"
+    },
+    "eventcreate": {
+      "_bootstrap": "EventCreate audit events"
     }
   },
   "pagination": {

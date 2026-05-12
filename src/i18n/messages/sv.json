@@ -545,7 +545,11 @@
       "title": "Språk för aviseringar",
       "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
       "save": "Spara",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
@@ -2292,6 +2296,14 @@
     },
     "paymentSettings": {
       "title": "Betalningsinställningar"
+    },
+    "events": {
+      "_bootstrap": "Evenemang"
+    },
+    "integrations": {
+      "eventcreate": {
+        "_bootstrap": "EventCreate-integration"
+      }
     }
   },
   "palette": {
@@ -3051,6 +3063,9 @@
       "pdf_render_permanently_failed": "PDF-rendering misslyckades permanent",
       "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
       "receipt_rendered": "Kvitto renderat"
+    },
+    "eventcreate": {
+      "_bootstrap": "EventCreate granskningshändelser"
     }
   },
   "pagination": {

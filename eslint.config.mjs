@@ -212,6 +212,7 @@ const eslintConfig = defineConfig([
       "src/modules/payments/**",
       "src/modules/broadcasts/**",
       "src/modules/renewals/**",
+      "src/modules/events/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -369,6 +370,23 @@ const eslintConfig = defineConfig([
               ],
               message:
                 "Cross-module import must go through the renewals public barrel (`@/modules/renewals`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F6 — events module public-barrel boundary (Phase 1 Setup T003).
+              group: [
+                "@/modules/events/domain/**",
+                "@/modules/events/application/**",
+                "@/modules/events/infrastructure/**",
+                "./modules/events/domain/**",
+                "./modules/events/application/**",
+                "./modules/events/infrastructure/**",
+                "../modules/events/domain/**",
+                "../modules/events/application/**",
+                "../modules/events/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the events public barrel (`@/modules/events`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],
