@@ -11,6 +11,7 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeft } from 'lucide-react';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
@@ -90,20 +91,41 @@ export default async function AdminEventDetailPage({
   const pseudoReq = new Request('http://localhost:3100', { headers: reqHeaders });
   const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
 
-  const result = await runLoadEventDetail(tenantCtx.slug, {
-    eventId,
-    page,
-    pageSize: PAGE_SIZE,
-    unmatchedOnly,
-    matchTypeFilter,
-    q,
-  });
+  // E1+E6 fix (verify-finding 2026-05-12): mirror list-page pattern —
+  // try/catch the use-case dispatch + log on either failure path so a
+  // raw `runInTenant` rejection cannot bypass the bespoke error card.
+  let result: Awaited<ReturnType<typeof runLoadEventDetail>> | null = null;
+  try {
+    result = await runLoadEventDetail(tenantCtx.slug, {
+      eventId,
+      page,
+      pageSize: PAGE_SIZE,
+      unmatchedOnly,
+      matchTypeFilter,
+      q,
+    });
+    if (!result.ok && result.error.kind !== 'not_found') {
+      logger.error(
+        { event: 'admin_event_detail_page_render_error', error: result.error, eventId },
+        '[F6] /admin/events/[eventId] detail page — use-case returned err',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'admin_event_detail_page_render_throw',
+        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+        eventId,
+      },
+      '[F6] /admin/events/[eventId] detail page — runLoadEventDetail threw',
+    );
+  }
 
-  if (!result.ok && result.error.kind === 'not_found') {
+  if (result && !result.ok && result.error.kind === 'not_found') {
     notFound();
   }
 
-  if (!result.ok) {
+  if (!result || !result.ok) {
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('errorSubtitle')} />
@@ -141,7 +163,7 @@ export default async function AdminEventDetailPage({
         <AttendeeTable
           rows={
             registrations.map((r) => ({
-              registrationId: r.registrationId as string,
+              registrationId: r.registrationId,
               attendeeEmail: r.attendeeEmail,
               attendeeName: r.attendeeName,
               attendeeCompany: r.attendeeCompany,

@@ -2321,7 +2321,9 @@
           "culturalEventOnly": "Cultural events only",
           "showArchived": "Show archived events",
           "hideArchived": "Hide archived events",
-          "clearAll": "Clear filters"
+          "clearAll": "Clear filters",
+          "partnerBenefitOnlyActive": "Partner-benefit only (active)",
+          "culturalEventOnlyActive": "Cultural events only (active)"
         },
         "emptyState": {
           "filteredEmpty": "No events match your filters.",
@@ -2358,7 +2360,8 @@
           "partnerBenefit": "Partner benefit",
           "culturalEvent": "Cultural event",
           "viewOnEventCreate": "View on EventCreate",
-          "opensInNewTab": "(opens in a new tab)"
+          "opensInNewTab": "(opens in a new tab)",
+          "lastUpdatedAt": "Last updated"
         },
         "attendees": {
           "heading": "Attendees",
@@ -2375,7 +2378,8 @@
             "ticket": "Ticket",
             "quota": "Quota",
             "registered": "Registered"
-          }
+          },
+          "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}"
         }
       },
       "matchType": {

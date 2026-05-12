@@ -34,21 +34,25 @@ interface VariantConfig {
   readonly badgeClass: string;
 }
 
+/**
+ * Tokens picked for WCAG 2.1 SC 1.4.11 (≥3:1) — see match-status-badge.tsx
+ * for the same dark-mode adjustment rationale (U1 verify-finding 2026-05-12).
+ */
 const VARIANT_MAP: Readonly<Record<QuotaEffectKind, VariantConfig>> = {
   partnership: {
     Icon: Award,
     badgeClass:
-      'border-sky-300 text-sky-900 dark:border-sky-700 dark:text-sky-200',
+      'border-sky-500 text-sky-900 dark:border-sky-500 dark:text-sky-100',
   },
   cultural: {
     Icon: Sparkles,
     badgeClass:
-      'border-violet-300 text-violet-900 dark:border-violet-700 dark:text-violet-200',
+      'border-violet-500 text-violet-900 dark:border-violet-500 dark:text-violet-100',
   },
   over_quota: {
     Icon: AlertOctagon,
     badgeClass:
-      'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 border-amber-300 dark:border-amber-700',
+      'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-100 border-amber-500 dark:border-amber-500',
   },
 };
 

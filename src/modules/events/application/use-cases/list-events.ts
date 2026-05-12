@@ -51,6 +51,11 @@ export interface ListEventsItem {
   readonly isPartnerBenefit: boolean;
   readonly isCulturalEvent: boolean;
   readonly archivedAt: string | null;
+  // M1 fix (verify-finding 2026-05-12): `eventcreateUrl` retained
+  // because `contracts/admin-events-api.md` example envelope includes
+  // it; future smart-feature work may surface it as an inline icon
+  // link on the list row. Currently consumed only by the detail
+  // header — kept for contract-stability.
   readonly eventcreateUrl: string | null;
 }
 
@@ -119,6 +124,14 @@ export async function listEvents(
 
   // Skip the match-counts roundtrip when the page has no rows — saves
   // an unnecessary index scan on the empty-state path.
+  //
+  // E7 (verify-finding 2026-05-12): when getMatchCountsByEventIds fails
+  // the use-case currently propagates `err` → API 500 → page renders
+  // generic error. The display layer DOES support `total = 0 → 0` /
+  // "—" rendering. Choice is intentional — FR-020 implies match-rate
+  // is a required column, so partial render is semantically wrong
+  // (admin would see "—" and think "no attendees" when in fact the
+  // count query failed). Loud-over-silent on this surface.
   let matchCountsMap: ReadonlyMap<
     EventId,
     { totalRegistrations: number; matchedRegistrations: number }

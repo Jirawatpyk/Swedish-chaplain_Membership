@@ -40,21 +40,28 @@ interface VariantConfig {
   readonly badgeClass: string;
 }
 
+/**
+ * Tailwind tokens picked for **WCAG 2.1 SC 1.4.11** non-text contrast (≥3:1)
+ * against both light card background (oklch 1.000 ≈ #fff) and dark card
+ * background (oklch 0.145 ≈ #262626). Verify-finding U1 (2026-05-12) raised
+ * that `-700` dark borders measured 2.13–2.76:1 — bumped to `-500` shades
+ * which clear 3:1 in both themes.
+ */
 const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
   member_contact: {
     Icon: CheckCircle2,
     badgeClass:
-      'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800',
+      'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-100 border-emerald-500 dark:border-emerald-500',
   },
   member_domain: {
     Icon: Check,
     badgeClass:
-      'border-emerald-300 text-emerald-900 dark:border-emerald-700 dark:text-emerald-200',
+      'border-emerald-500 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100',
   },
   member_fuzzy: {
     Icon: CircleEqual,
     badgeClass:
-      'border-amber-300 text-amber-900 dark:border-amber-700 dark:text-amber-200',
+      'border-amber-500 text-amber-900 dark:border-amber-500 dark:text-amber-100',
   },
   non_member: {
     Icon: Circle,
@@ -64,7 +71,7 @@ const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
   unmatched: {
     Icon: AlertTriangle,
     badgeClass:
-      'bg-destructive/10 text-destructive border-destructive/30',
+      'bg-destructive/10 text-destructive border-destructive',
   },
 };
 

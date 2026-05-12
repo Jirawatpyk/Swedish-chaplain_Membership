@@ -14,6 +14,7 @@
  * set.
  */
 import { type NextRequest, NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -44,11 +45,15 @@ function clampPageSize(raw: string | null, min: number, max: number, def: number
   return n;
 }
 
+/**
+ * H2 fix (verify-finding 2026-05-12): see /api/admin/events/route.ts
+ * — unrecognised strings return `undefined` so zod default fires.
+ */
 function coerceBoolean(v: unknown): unknown {
   if (typeof v !== 'string') return v;
-  if (v === '' || v === 'true' || v === '1') return v === '' ? false : true;
-  if (v === 'false' || v === '0') return false;
-  return v;
+  if (v === '' || v === 'false' || v === '0') return false;
+  if (v === 'true' || v === '1') return true;
+  return undefined;
 }
 
 /**
@@ -63,12 +68,25 @@ async function emitRoleViolation(
   actorRole: 'member' | 'manager',
   eventId: string,
 ): Promise<void> {
+  let tenantSlug: string;
   try {
-    const tenantCtx = resolveTenantFromRequest(request);
+    tenantSlug = resolveTenantFromRequest(request).slug;
+  } catch (e) {
+    logger.error(
+      {
+        event: 'tenant_resolve_failed_during_role_violation_audit',
+        err: e instanceof Error ? e.message : String(e),
+        eventId,
+      },
+      '[F6] tenant resolution failed during role_violation_blocked emit — 404 still served',
+    );
+    return;
+  }
+  try {
     const deps = makeStandaloneAuditDeps();
     await deps.emitStandalone({
       eventType: 'role_violation_blocked',
-      tenantId: asTenantId(tenantCtx.slug),
+      tenantId: asTenantId(tenantSlug),
       actorType: actorRole,
       actorUserId: actorUserId ? asUserId(actorUserId) : null,
       occurredAt: new Date(),
@@ -133,18 +151,80 @@ export async function GET(
     );
   }
 
-  const tenantCtx = resolveTenantFromRequest(request);
-  const result = await runLoadEventDetail(tenantCtx.slug, {
-    eventId,
-    page: parsed.data.page,
-    pageSize: parsed.data.pageSize,
-    matchTypeFilter: parsed.data.matchTypeFilter ?? null,
-    unmatchedOnly: parsed.data.unmatchedOnly,
-    q: parsed.data.q ?? null,
-  });
+  let tenantCtx: ReturnType<typeof resolveTenantFromRequest>;
+  try {
+    tenantCtx = resolveTenantFromRequest(request);
+  } catch (e) {
+    // T7 fix (verify-finding 2026-05-12): host-header / tenant
+    // resolution failure surfaces as 500 rather than letting Next.js
+    // render its default error page. Logged for ops triage.
+    logger.error(
+      {
+        event: 'admin_event_detail_tenant_resolve_failed',
+        err: e instanceof Error ? e.message : String(e),
+        eventId,
+      },
+      '[F6] resolveTenantFromRequest threw on detail route',
+    );
+    return NextResponse.json(
+      { title: 'Internal Server Error' },
+      { status: 500 },
+    );
+  }
+  // H3 fix (verify-finding 2026-05-12): trim `q` and treat whitespace-only
+  // as null so the repo doesn't hit ilike with an empty pattern.
+  const trimmedQ = parsed.data.q?.trim();
+  // E6 fix: wrap raw runInTenant rejection path.
+  let result: Awaited<ReturnType<typeof runLoadEventDetail>>;
+  try {
+    result = await runLoadEventDetail(tenantCtx.slug, {
+      eventId,
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+      matchTypeFilter: parsed.data.matchTypeFilter ?? null,
+      unmatchedOnly: parsed.data.unmatchedOnly,
+      q: trimmedQ && trimmedQ.length > 0 ? trimmedQ : null,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        event: 'admin_event_detail_route_throw',
+        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+        eventId,
+      },
+      '[F6] /api/admin/events/[eventId] — runLoadEventDetail threw',
+    );
+    return NextResponse.json(
+      { title: 'Internal Server Error' },
+      { status: 500 },
+    );
+  }
 
   if (!result.ok) {
     if (result.error.kind === 'not_found') {
+      // E2 fix (verify-finding 2026-05-12): emit a soft cross-tenant probe
+      // marker at the admin detail route on every 404. The RLS layer
+      // cannot reliably distinguish "row missing" from "row exists in
+      // another tenant" without a root-db probe (which itself is a
+      // potential information-leak surface). Instead, we log every
+      // admin 404 with a hashed eventId so security review can
+      // correlate enumeration patterns post-hoc. The full
+      // `cross_tenant_probe` audit emit is reserved for the webhook
+      // path where the cross-tenant signal is definitive (signed-by
+      // A delivered to B).
+      logger.warn(
+        {
+          event: 'admin_event_detail_not_found',
+          actor_user_id: session.user.id,
+          tenant_slug: resolveTenantFromRequest(request).slug,
+          event_id_hash: crypto
+            .createHash('sha256')
+            .update(eventId)
+            .digest('hex')
+            .slice(0, 16),
+        },
+        '[F6] admin event-detail 404 — soft cross-tenant-probe marker',
+      );
       return new NextResponse(null, { status: 404 });
     }
     logger.error(

@@ -22,10 +22,10 @@
  */
 'use client';
 
-import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTransition, useState, useCallback, useEffect } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { Loader2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -39,13 +39,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { MatchType } from '@/modules/events';
+import type {
+  MatchType,
+  RegistrationId,
+  AttendeeEmail,
+} from '@/modules/events';
 import { MatchStatusBadge } from './match-status-badge';
 import { QuotaEffectBadge } from './quota-effect-badge';
 
 export type AttendeeRow = {
-  readonly registrationId: string;
-  readonly attendeeEmail: string;
+  // TY3-5 (verify-finding 2026-05-12): brand types propagated through the
+  // Server→Client prop boundary. Compile-only — no runtime cost.
+  readonly registrationId: RegistrationId;
+  readonly attendeeEmail: AttendeeEmail;
   readonly attendeeName: string;
   readonly attendeeCompany: string | null;
   readonly matchType: MatchType;
@@ -67,7 +73,9 @@ type Props = {
 function formatRegisteredAt(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return new Intl.DateTimeFormat(locale, {
+  // M4 fix (verify-finding): Thai BE display via buddhist calendar.
+  const lo = locale === 'th' || locale === 'th-TH' ? 'th-TH-u-ca-buddhist' : locale;
+  return new Intl.DateTimeFormat(lo, {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(d);
@@ -138,7 +146,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" aria-busy={isPending}>
       <div className="flex flex-wrap items-center gap-2">
         <form onSubmit={submitSearch} className="flex flex-1 gap-2">
           <Input
@@ -150,6 +158,12 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
             className="max-w-md"
           />
           <Button type="submit" variant="outline" disabled={isPending}>
+            {isPending && (
+              <Loader2
+                aria-hidden="true"
+                className="size-4 animate-spin motion-reduce:animate-none"
+              />
+            )}
             {t('searchSubmit')}
           </Button>
         </form>
@@ -160,10 +174,31 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
           aria-pressed={unmatchedOnly}
           disabled={isPending}
         >
+          {isPending && (
+            <Loader2
+              aria-hidden="true"
+              className="size-4 animate-spin motion-reduce:animate-none"
+            />
+          )}
           {unmatchedOnly
             ? t('showUnmatchedOnlyActive')
             : t('showUnmatchedOnly')}
         </Button>
+      </div>
+      {/*
+       * U3 (verify-finding 2026-05-12): result-count aria-live region —
+       * announces row count to screen readers after filter/search changes.
+       * `role="status"` + `aria-live="polite"` lets the SR queue the
+       * update without interrupting; `aria-atomic` ensures the full
+       * sentence is re-announced on every change.
+       */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {t('resultCount', { count: rows.length })}
       </div>
 
       {rows.length === 0 ? (
@@ -171,7 +206,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
           <p className="text-muted-foreground">{t('empty')}</p>
         </div>
       ) : (
-        <Table>
+        <Table className="min-w-[580px]">
           <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
@@ -188,12 +223,15 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                 <TableCell>
                   <div className="flex flex-col gap-0.5">
                     <span className="font-medium">{r.attendeeName}</span>
-                    <Link
+                    {/* L3 (verify-finding): plain <a> for non-route URLs —
+                        next/link emits prefetch hints that are wasted on
+                        mailto: schemes. */}
+                    <a
                       href={`mailto:${r.attendeeEmail}`}
                       className="text-xs text-muted-foreground underline-offset-2 hover:underline"
                     >
                       {r.attendeeEmail}
-                    </Link>
+                    </a>
                     {r.attendeeCompany && (
                       <span className="text-xs text-muted-foreground">
                         {r.attendeeCompany}

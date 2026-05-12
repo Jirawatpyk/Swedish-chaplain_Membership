@@ -37,9 +37,12 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import type { EventId } from '@/modules/events';
 
 export type EventsListTableRow = {
-  readonly eventId: string;
+  // TY3 (verify-finding 2026-05-12): brand is compile-only — cheap win;
+  // catches accidental ID-swap bugs at the Server→Client prop boundary.
+  readonly eventId: EventId;
   readonly name: string;
   readonly startDate: string;
   readonly category: string | null;
@@ -58,12 +61,21 @@ type Props = {
 function formatDate(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  // BE-display only for `th-TH` per CLAUDE.md timestamp convention.
-  // For en + sv use the locale's default Gregorian formatter.
-  const formatter = new Intl.DateTimeFormat(locale, {
+  // M4 fix (verify-finding 2026-05-12): Thai Buddhist Era (BE) display
+  // for `th` / `th-TH` per CLAUDE.md § Conventions. Storage stays UTC
+  // Gregorian; display adds 543 years for the Thai user-facing
+  // surface only.
+  if (locale === 'th' || locale === 'th-TH') {
+    // Intl.DateTimeFormat with a buddhist calendar variant gives the
+    // right BE year; we still render with the th formatter for month
+    // names + numerals consistent with the rest of the page.
+    return new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
+      dateStyle: 'medium',
+    }).format(d);
+  }
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
-  });
-  return formatter.format(d);
+  }).format(d);
 }
 
 function formatMatchRate(pct: number, total: number): string {
@@ -76,11 +88,18 @@ export function EventsListTable({ rows }: Props) {
   const locale = useLocale();
 
   return (
-    <Table>
+    <Table className="min-w-[640px]">
       <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
       <TableHeader>
         <TableRow>
-          <TableHead aria-sort="descending">{t('columns.date')}</TableHead>
+          {/*
+           * L2 (verify-finding 2026-05-12): no real column-sort wired
+           * (server pagination only with fixed start_date DESC order).
+           * A hard-coded `aria-sort="descending"` would advertise a
+           * sortable column that doesn't react to user input. Drop it
+           * until sort UI lands (Phase 10 or smart-feature follow-up).
+           */}
+          <TableHead>{t('columns.date')}</TableHead>
           <TableHead>{t('columns.name')}</TableHead>
           <TableHead>{t('columns.category')}</TableHead>
           <TableHead className="text-right">
@@ -127,7 +146,7 @@ export function EventsListTable({ rows }: Props) {
                   {row.isPartnerBenefit && (
                     <Badge
                       variant="outline"
-                      className="border-sky-300 text-sky-900 dark:border-sky-700 dark:text-sky-200"
+                      className="border-sky-500 text-sky-900 dark:border-sky-500 dark:text-sky-100"
                       aria-label={t('badges.partnerBenefit')}
                     >
                       <Award aria-hidden="true" data-icon="inline-start" />
@@ -137,7 +156,7 @@ export function EventsListTable({ rows }: Props) {
                   {row.isCulturalEvent && (
                     <Badge
                       variant="outline"
-                      className="border-violet-300 text-violet-900 dark:border-violet-700 dark:text-violet-200"
+                      className="border-violet-500 text-violet-900 dark:border-violet-500 dark:text-violet-100"
                       aria-label={t('badges.culturalEvent')}
                     >
                       <Sparkles aria-hidden="true" data-icon="inline-start" />

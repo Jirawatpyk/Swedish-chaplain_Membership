@@ -2321,7 +2321,9 @@
           "culturalEventOnly": "Endast kulturevenemang",
           "showArchived": "Visa arkiverade evenemang",
           "hideArchived": "Dölj arkiverade evenemang",
-          "clearAll": "Rensa filter"
+          "clearAll": "Rensa filter",
+          "partnerBenefitOnlyActive": "Endast partnerförmånsevenemang (aktivt)",
+          "culturalEventOnlyActive": "Endast kulturevenemang (aktivt)"
         },
         "emptyState": {
           "filteredEmpty": "Inga evenemang matchar dina filter.",
@@ -2353,12 +2355,13 @@
         "header": {
           "matchRate": "Matchningsgrad",
           "matchRateValue": "{pct}% ({matched} av {total})",
-          "totalRegistrations": "Totalt antal registreringar",
+          "totalRegistrations": "Registreringar totalt",
           "archived": "Arkiverad",
           "partnerBenefit": "Partnerförmån",
           "culturalEvent": "Kulturevenemang",
           "viewOnEventCreate": "Visa på EventCreate",
-          "opensInNewTab": "(öppnas i en ny flik)"
+          "opensInNewTab": "(öppnas i en ny flik)",
+          "lastUpdatedAt": "Senast uppdaterad"
         },
         "attendees": {
           "heading": "Deltagare",
@@ -2375,7 +2378,8 @@
             "ticket": "Biljett",
             "quota": "Kvot",
             "registered": "Registrerad"
-          }
+          },
+          "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}"
         }
       },
       "matchType": {

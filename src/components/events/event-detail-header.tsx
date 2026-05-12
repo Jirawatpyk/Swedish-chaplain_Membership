@@ -39,13 +39,17 @@ type EventHeaderProps = {
     readonly isCulturalEvent: boolean;
     readonly archivedAt: string | null;
     readonly eventcreateUrl: string | null;
+    /** U5 (verify-finding 2026-05-12): last Zapier delivery timestamp. */
+    readonly lastUpdatedAt: string;
   };
 };
 
 function formatDate(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return new Intl.DateTimeFormat(locale, {
+  // M4 fix (verify-finding): Thai BE display via buddhist calendar.
+  const lo = locale === 'th' || locale === 'th-TH' ? 'th-TH-u-ca-buddhist' : locale;
+  return new Intl.DateTimeFormat(lo, {
     dateStyle: 'long',
     timeStyle: 'short',
   }).format(d);
@@ -70,8 +74,13 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
     <Card>
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
+          {/*
+           * U4 (verify-finding 2026-05-12): heading dedupe — the page-level
+           * <PageHeader title={event.name}/> already emits <h1>. Repeating
+           * the same string as <h2> here pollutes the SR heading tree.
+           * Render the metadata block without an extra heading level.
+           */}
           <div className="flex flex-col gap-2">
-            <h2 className="text-h2 font-semibold">{event.name}</h2>
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <time dateTime={event.startDate}>
                 {formatDate(event.startDate, locale)}
@@ -92,7 +101,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
               {event.isPartnerBenefit && (
                 <Badge
                   variant="outline"
-                  className="border-sky-300 text-sky-900 dark:border-sky-700 dark:text-sky-200"
+                  className="border-sky-500 text-sky-900 dark:border-sky-500 dark:text-sky-100"
                   aria-label={t('header.partnerBenefit')}
                 >
                   <Award aria-hidden="true" data-icon="inline-start" />
@@ -102,7 +111,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
               {event.isCulturalEvent && (
                 <Badge
                   variant="outline"
-                  className="border-violet-300 text-violet-900 dark:border-violet-700 dark:text-violet-200"
+                  className="border-violet-500 text-violet-900 dark:border-violet-500 dark:text-violet-100"
                   aria-label={t('header.culturalEvent')}
                 >
                   <Sparkles aria-hidden="true" data-icon="inline-start" />
@@ -134,11 +143,22 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
             <dd className="font-semibold tabular-nums">{matchRateLabel}</dd>
           </div>
           <div className="flex items-baseline gap-2">
-            <dt className="text-muted-foreground">
+            <dt className="whitespace-nowrap text-muted-foreground">
               {t('header.totalRegistrations')}
             </dt>
             <dd className="font-semibold tabular-nums">
               {total.toLocaleString(locale)}
+            </dd>
+          </div>
+          {/* U5: trust signal — last Zapier delivery timestamp */}
+          <div className="flex items-baseline gap-2">
+            <dt className="whitespace-nowrap text-muted-foreground">
+              {t('header.lastUpdatedAt')}
+            </dt>
+            <dd>
+              <time dateTime={event.lastUpdatedAt}>
+                {formatDate(event.lastUpdatedAt, locale)}
+              </time>
             </dd>
           </div>
         </dl>

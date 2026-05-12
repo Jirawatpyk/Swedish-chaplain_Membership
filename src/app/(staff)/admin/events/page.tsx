@@ -23,6 +23,7 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
@@ -100,27 +101,53 @@ export default async function AdminEventsListPage({
   const pseudoReq = new Request('http://localhost:3100', { headers: reqHeaders });
   const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
 
-  const result = await runListEvents(tenantCtx.slug, {
-    page,
-    pageSize: PAGE_SIZE,
-    includeArchived,
-    partnerBenefitOnly,
-    culturalEventOnly,
-    categoryFilter,
-  });
+  // E1+E6 fix (verify-finding 2026-05-12): wrap the use-case dispatch
+  // in try/catch — `runInTenant` rejections (DB outage, role-grant
+  // failure, etc.) would otherwise bubble to the Next.js framework
+  // error boundary, bypassing the bespoke error card. Wrapping here
+  // gives consistent UX whether the failure is a use-case `db_error`
+  // Result OR a raw rejection.
+  let result: Awaited<ReturnType<typeof runListEvents>> | null = null;
+  try {
+    result = await runListEvents(tenantCtx.slug, {
+      page,
+      pageSize: PAGE_SIZE,
+      includeArchived,
+      partnerBenefitOnly,
+      culturalEventOnly,
+      categoryFilter,
+    });
+    if (!result.ok) {
+      logger.error(
+        { event: 'admin_events_page_render_error', error: result.error },
+        '[F6] /admin/events list page — use-case returned err',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'admin_events_page_render_throw',
+        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+      },
+      '[F6] /admin/events list page — runListEvents threw',
+    );
+  }
 
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          {!result.ok ? (
+          {!result || !result.ok ? (
             <div className="py-12 text-center">
               <p className="text-muted-foreground">{t('errorState')}</p>
             </div>
           ) : (
             <>
               <FilterChips
+                query={
+                  query as unknown as Record<string, string | undefined>
+                }
                 hasFilters={hasFilters}
                 includeArchived={includeArchived}
                 partnerBenefitOnly={partnerBenefitOnly}
@@ -136,7 +163,7 @@ export default async function AdminEventsListPage({
                   <EventsListTable
                     rows={
                       result.value.items.map((it) => ({
-                        eventId: it.eventId as string,
+                        eventId: it.eventId,
                         name: it.name,
                         startDate: it.startDate,
                         category: it.category,
@@ -168,12 +195,39 @@ export default async function AdminEventsListPage({
 
 // --- Subcomponents (server components — kept inline for clarity) ----------
 
+/**
+ * H1 fix (verify-finding 2026-05-12): build chip hrefs from a fresh
+ * URLSearchParams over the CURRENT query so toggling one filter does
+ * not silently drop the others. Also strips `page=` so toggles reset
+ * to page 1 (matches AttendeeTable's `toggleUnmatched` pattern at
+ * `src/components/events/attendee-table.tsx:113-122`).
+ */
+function buildChipHref(
+  query: Record<string, string | undefined>,
+  toggleKey: string,
+  currentlyActive: boolean,
+): string {
+  const next = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) {
+    if (v !== undefined && v !== '' && k !== 'page' && k !== toggleKey) {
+      next.set(k, v);
+    }
+  }
+  if (!currentlyActive) {
+    next.set(toggleKey, '1');
+  }
+  const qs = next.toString();
+  return qs ? `/admin/events?${qs}` : '/admin/events';
+}
+
 async function FilterChips({
+  query,
   hasFilters,
   includeArchived,
   partnerBenefitOnly,
   culturalEventOnly,
 }: {
+  query: Record<string, string | undefined>;
   hasFilters: boolean;
   includeArchived: boolean;
   partnerBenefitOnly: boolean;
@@ -184,29 +238,25 @@ async function FilterChips({
     <div className="flex flex-wrap items-center gap-2">
       <FilterChipLink
         active={partnerBenefitOnly}
-        href={
-          partnerBenefitOnly ? '/admin/events' : '/admin/events?partnerBenefitOnly=1'
-        }
+        href={buildChipHref(query, 'partnerBenefitOnly', partnerBenefitOnly)}
       >
-        {t('partnerBenefitOnly')}
+        {partnerBenefitOnly
+          ? t('partnerBenefitOnlyActive')
+          : t('partnerBenefitOnly')}
       </FilterChipLink>
       <FilterChipLink
         active={culturalEventOnly}
-        href={
-          culturalEventOnly ? '/admin/events' : '/admin/events?culturalEventOnly=1'
-        }
+        href={buildChipHref(query, 'culturalEventOnly', culturalEventOnly)}
       >
-        {t('culturalEventOnly')}
+        {culturalEventOnly
+          ? t('culturalEventOnlyActive')
+          : t('culturalEventOnly')}
       </FilterChipLink>
       <FilterChipLink
         active={includeArchived}
-        href={
-          includeArchived ? '/admin/events' : '/admin/events?includeArchived=1'
-        }
+        href={buildChipHref(query, 'includeArchived', includeArchived)}
       >
-        {includeArchived
-          ? t('hideArchived')
-          : t('showArchived')}
+        {includeArchived ? t('hideArchived') : t('showArchived')}
       </FilterChipLink>
       {hasFilters && (
         <Link
@@ -229,6 +279,9 @@ function FilterChipLink({
   href: string;
   children: React.ReactNode;
 }) {
+  // U2 (verify-finding 2026-05-12): `aria-pressed` is invalid on anchors —
+  // WAI-ARIA 1.2 restricts it to role="button". `aria-current="true"` is
+  // the canonical idiom for active nav/filter links on anchor elements.
   return (
     <Link
       href={href}
@@ -236,7 +289,7 @@ function FilterChipLink({
         variant: active ? 'default' : 'outline',
         size: 'sm',
       })}
-      aria-pressed={active}
+      {...(active ? { 'aria-current': 'true' as const } : {})}
     >
       {children}
     </Link>

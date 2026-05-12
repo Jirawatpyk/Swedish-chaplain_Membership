@@ -44,10 +44,11 @@ const ListQuerySchema = z.object({
   categoryFilter: z.string().min(1).max(120).optional(),
 });
 
-// `pageSize` is clamped to [10, 100] at the schema layer. Out-of-bounds
-// values get the schema default — same convention as F4/F8 routes.
-// `?pageSize=5` (below min) is invalid; treat as default by clamping in
-// the GET handler (lower-than-min should not 400 per UX convention).
+// `pageSize` is clamped to [10, 100]. Behaviour:
+//   - non-numeric / null → default (25)
+//   - below `min` → clamp UP to `min` (UX: lower-than-min must not 400)
+//   - above `max` → clamp DOWN to `max`
+// Same convention as F4/F8 routes.
 function clampPageSize(raw: string | null, min: number, max: number, def: number): number {
   if (raw === null) return def;
   const n = Number.parseInt(raw, 10);
@@ -57,11 +58,19 @@ function clampPageSize(raw: string | null, min: number, max: number, def: number
   return n;
 }
 
+/**
+ * H2 fix (verify-finding 2026-05-12): return `undefined` for any
+ * unrecognised string so `z.preprocess(coerceBoolean, z.boolean())`
+ * falls through to the schema default. Previously, an unrecognised
+ * non-empty string (`?partnerBenefitOnly=xyzzy`) was passed through
+ * unchanged; `z.boolean()` then ran `Boolean(s)` → `true` — silent
+ * filter activation on garbage input.
+ */
 function coerceBoolean(v: unknown): unknown {
   if (typeof v !== 'string') return v;
-  if (v === '' || v === 'true' || v === '1') return v === '' ? false : true;
-  if (v === 'false' || v === '0') return false;
-  return v;
+  if (v === '' || v === 'false' || v === '0') return false;
+  if (v === 'true' || v === '1') return true;
+  return undefined;
 }
 
 /**
@@ -77,12 +86,30 @@ async function emitRoleViolation(
   actorRole: 'member' | 'manager',
   attemptedAction: string,
 ): Promise<void> {
+  // E5 fix (verify-finding 2026-05-12): hoist tenant resolution OUT of
+  // the audit-emit try so a host-header / tenant-validation failure
+  // surfaces as `tenant_resolve_failed_during_role_violation_audit`
+  // (a distinct ops-alert discriminator) instead of being mislabelled
+  // as `f6_audit_emit_failed`. Audit-emit retains its own try/catch.
+  let tenantSlug: string;
   try {
-    const tenantCtx = resolveTenantFromRequest(request);
+    tenantSlug = resolveTenantFromRequest(request).slug;
+  } catch (e) {
+    logger.error(
+      {
+        event: 'tenant_resolve_failed_during_role_violation_audit',
+        err: e instanceof Error ? e.message : String(e),
+        attemptedAction,
+      },
+      '[F6] tenant resolution failed during role_violation_blocked emit — 404 still served',
+    );
+    return;
+  }
+  try {
     const deps = makeStandaloneAuditDeps();
     await deps.emitStandalone({
       eventType: 'role_violation_blocked',
-      tenantId: asTenantId(tenantCtx.slug),
+      tenantId: asTenantId(tenantSlug),
       actorType: actorRole,
       actorUserId: actorUserId ? asUserId(actorUserId) : null,
       occurredAt: new Date(),
@@ -150,15 +177,51 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const tenantCtx = resolveTenantFromRequest(request);
-  const result = await runListEvents(tenantCtx.slug, {
-    page: parsed.data.page,
-    pageSize: parsed.data.pageSize,
-    includeArchived: parsed.data.includeArchived,
-    partnerBenefitOnly: parsed.data.partnerBenefitOnly,
-    culturalEventOnly: parsed.data.culturalEventOnly,
-    categoryFilter: parsed.data.categoryFilter ?? null,
-  });
+  let tenantCtx: ReturnType<typeof resolveTenantFromRequest>;
+  try {
+    tenantCtx = resolveTenantFromRequest(request);
+  } catch (e) {
+    // T7 fix (verify-finding 2026-05-12): tenant-resolve failure → 500.
+    logger.error(
+      {
+        event: 'admin_events_list_tenant_resolve_failed',
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6] resolveTenantFromRequest threw on list route',
+    );
+    return NextResponse.json(
+      { title: 'Internal Server Error' },
+      { status: 500 },
+    );
+  }
+  // H3 fix (verify-finding): trim categoryFilter; null on whitespace-only.
+  const trimmedCategory = parsed.data.categoryFilter?.trim();
+  // E6 fix (verify-finding 2026-05-12): wrap runInTenant raw rejection
+  // path. Result.err returns flow normally; only DB-connection-lost
+  // class throws should hit the catch.
+  let result: Awaited<ReturnType<typeof runListEvents>>;
+  try {
+    result = await runListEvents(tenantCtx.slug, {
+      page: parsed.data.page,
+      pageSize: parsed.data.pageSize,
+      includeArchived: parsed.data.includeArchived,
+      partnerBenefitOnly: parsed.data.partnerBenefitOnly,
+      culturalEventOnly: parsed.data.culturalEventOnly,
+      categoryFilter: trimmedCategory && trimmedCategory.length > 0 ? trimmedCategory : null,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        event: 'admin_events_list_route_throw',
+        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+      },
+      '[F6] /api/admin/events list — runListEvents threw',
+    );
+    return NextResponse.json(
+      { title: 'Internal Server Error' },
+      { status: 500 },
+    );
+  }
 
   if (!result.ok) {
     logger.error(

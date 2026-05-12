@@ -49,6 +49,12 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
       page.getByRole('heading', { name: /events/i, level: 1 }),
     ).toBeVisible();
 
+    // T1 (verify-finding 2026-05-12): AS2 contract requires the
+    // header's match-rate label to follow `NN% (M of N)` or
+    // `NN.N% (M of N)`. Tested here against the detail page in AS2
+    // below — list-table renders the same metric but the AS2 spec
+    // pins the detail-header phrasing.
+
     // Table columns per AS1: Date, Name, Category, Registrations,
     // Partner Benefit, Match Rate
     const table = page.getByRole('table');
@@ -88,8 +94,15 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
 
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
     // Match-rate indicator surfaces in detail header — uses the
-    // pattern "Match rate: NN%" or "NN of MM" per AS2.
+    // pattern "Match rate: NN% (M of N)" per AS2.
     await expect(page.getByText(/match rate/i)).toBeVisible();
+    // T1 (verify-finding 2026-05-12): pin the exact AS2 format
+    // `NN(.N)?% (M of N)` so regressions in the formatter are caught
+    // at E2E. The English locale renders "%" + the parenthetical
+    // raw fraction.
+    await expect(
+      page.getByText(/\d+(?:\.\d+)?%\s*\(\d+\s+of\s+\d+\)/),
+    ).toBeVisible();
 
     // Attendee table is the second table on the page (first is the
     // detail-header summary or there's only one — fall back to role).

@@ -6,10 +6,11 @@
  * implements via Drizzle.
  *
  * Read methods:
- *   - `findByExternalId`  — lookup pre-upsert (FR-010 webhook upsert)
- *   - `findById`          — admin events list / detail (Phase 4)
- *   - `listByTenant`      — admin events list (Phase 4)
- *   - `getEmptyContext`   — 3-variant empty-state per US2 AS5 / CHK028
+ *   - `findByExternalId`         — lookup pre-upsert (FR-010 webhook upsert)
+ *   - `findById`                 — admin events list / detail (Phase 4)
+ *   - `list`                     — admin events list paginated (Phase 4)
+ *   - `getEmptyContext`          — 3-variant empty-state per US2 AS5 / CHK028
+ *   - `getMatchCountsByEventIds` — batched per-event match aggregate (Phase 4)
  *
  * Write methods:
  *   - `upsert`            — webhook ingest path (FR-010 last-write-wins)

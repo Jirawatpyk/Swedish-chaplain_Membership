@@ -1,6 +1,7 @@
 /**
- * F4 fix (verify-finding 2026-05-12) — placeholder for the Phase 5
- * tenant onboarding wizard (US3, T080).
+ * F6 verify-fix F4 (2026-05-12) — placeholder for the Phase 5
+ * tenant onboarding wizard (US3, T080). Note: "F4" here refers to
+ * the verify-review finding ID, NOT the F4 invoicing feature.
  *
  * Phase 4's /admin/events empty-state variant (a) links here when no
  * tenant_webhook_config row exists ("Set up EventCreate integration"

@@ -1,13 +1,19 @@
 /**
  * T049 — Drizzle event_registrations repository (F6 Infrastructure).
  *
- * Implements `RegistrationsRepository` port. Phase 3 GREEN scope covers
- * `insertOnConflictDoNothing` (FR-011 second idempotency layer) +
- * `findById`. Other methods land in later phases.
+ * Implements `RegistrationsRepository` port. Shipped scope:
+ *   - Phase 3 (T049): `insertOnConflictDoNothing` (FR-011 second
+ *     idempotency layer; ON CONFLICT path returns
+ *     `isNewRegistration = false` so the use-case can still surface
+ *     the matching aggregate for the 200 OK response) + `findById`
+ *   - Phase 4 (T059b): `findByEventId` (paginated attendee table +
+ *     full-event matchCounts aggregate, with unmatchedOnly +
+ *     matchTypeFilter + ilike substring filters)
  *
- * The ON CONFLICT path returns `isNewRegistration = false` so the
- * use-case can still surface the matching aggregate (read the
- * existing row) for the 200 OK response.
+ * Remaining methods (`findByEmailLower`, `countConsumedByMember`,
+ * `updateMatchAndQuota`, `listPseudonymiseEligible`, `pseudonymiseRow`,
+ * `hardDelete`) throw `not_implemented` until Phase 6 (T086), Phase 9
+ * (T104), and Phase 10 (T110+T113) land them.
  */
 import { and, asc, desc, eq, inArray, or, sql, ilike, type SQL } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
@@ -32,6 +38,8 @@ import {
   type MatchType,
   NON_QUOTA_MATCH_TYPES,
 } from '../domain/value-objects/match-type';
+import { sanitizeDbErrorMessage } from './sanitize-db-error';
+import { logger } from '@/lib/logger';
 import type { PaymentStatus } from '../domain/value-objects/payment-status';
 import type { TenantId, MemberId, ContactId } from '@/modules/members';
 
@@ -110,10 +118,8 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             countedAgainstCulturalQuota: input.quotaEffect.countedAgainstCulturalQuota,
             metadata: input.metadata,
             registeredAt: input.registeredAt,
-            // `attendee_email_lower` is a STORED generated column —
-            // Drizzle schema declares it nullable so `$inferInsert`
-            // doesn't require it. The insert below is fully
-            // type-safe (no unsafe cast).
+            // attendee_email_lower omitted — STORED generated column
+            // (see readAttendeeEmailLower helper above for the full WHY).
           })
           .onConflictDoUpdate({
             // Single-statement ON CONFLICT DO UPDATE with identity
@@ -176,9 +182,16 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
           isNewRegistration: row.isNewRegistration,
         });
       } catch (e) {
+        logger.error(
+          {
+            event: 'f6_repo_db_error',
+            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+          },
+          '[F6 registrations repository] DB error',
+        );
         return err({
           kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
+          message: sanitizeDbErrorMessage(e),
         });
       }
     },
@@ -201,9 +214,16 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         if (rows.length === 0) return ok(null);
         return ok(toAggregate(rows[0]!));
       } catch (e) {
+        logger.error(
+          {
+            event: 'f6_repo_db_error',
+            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+          },
+          '[F6 registrations repository] DB error',
+        );
         return err({
           kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
+          message: sanitizeDbErrorMessage(e),
         });
       }
     },
@@ -316,9 +336,16 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
           matchCounts,
         });
       } catch (e) {
+        logger.error(
+          {
+            event: 'f6_repo_db_error',
+            err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+          },
+          '[F6 registrations repository] DB error',
+        );
         return err({
           kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
+          message: sanitizeDbErrorMessage(e),
         });
       }
     },
@@ -342,6 +369,3 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     },
   };
 }
-
-// Sentinel used by `findById` when the suppression reference matters.
-void sql;

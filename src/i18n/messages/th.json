@@ -2321,7 +2321,9 @@
           "culturalEventOnly": "แสดงเฉพาะอีเวนต์วัฒนธรรม",
           "showArchived": "แสดงอีเวนต์ที่เก็บถาวร",
           "hideArchived": "ซ่อนอีเวนต์ที่เก็บถาวร",
-          "clearAll": "ล้างตัวกรอง"
+          "clearAll": "ล้างตัวกรอง",
+          "partnerBenefitOnlyActive": "แสดงเฉพาะอีเวนต์สิทธิ์พาร์ทเนอร์ (เปิดอยู่)",
+          "culturalEventOnlyActive": "แสดงเฉพาะอีเวนต์วัฒนธรรม (เปิดอยู่)"
         },
         "emptyState": {
           "filteredEmpty": "ไม่พบอีเวนต์ที่ตรงกับตัวกรอง",
@@ -2358,7 +2360,8 @@
           "partnerBenefit": "สิทธิ์พาร์ทเนอร์",
           "culturalEvent": "อีเวนต์วัฒนธรรม",
           "viewOnEventCreate": "ดูบน EventCreate",
-          "opensInNewTab": "(เปิดในแท็บใหม่)"
+          "opensInNewTab": "(เปิดในแท็บใหม่)",
+          "lastUpdatedAt": "อัปเดตล่าสุด"
         },
         "attendees": {
           "heading": "ผู้เข้าร่วม",
@@ -2375,7 +2378,8 @@
             "ticket": "บัตร",
             "quota": "โควต้า",
             "registered": "เวลาลงทะเบียน"
-          }
+          },
+          "resultCount": "{count, plural, =0 {ไม่พบผู้เข้าร่วม} other {ผู้เข้าร่วม # คน}}"
         }
       },
       "matchType": {

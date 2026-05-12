@@ -39,6 +39,7 @@ import type {
   AuditEmitError,
 } from '../application/ports/audit-port';
 import type { AuditEventId } from '@/modules/auth';
+import { sanitizeDbErrorMessage } from './sanitize-db-error';
 
 /**
  * F6 default retention — 5 years. No tax-document overlap (F4's 10y
@@ -56,21 +57,6 @@ export const F6_DEFAULT_RETENTION_YEARS = 5 as const;
  * (with stack) is logged via `logger.error` at the catch site BEFORE
  * sanitisation so SREs can debug root causes server-side.
  */
-const DB_ERROR_MESSAGE_CAP = 200;
-
-function sanitizeDbErrorMessage(e: unknown): string {
-  const raw = e instanceof Error ? e.message : String(e);
-  // Single-pass regex (avoids two-pass ordering fragility): strip both
-  // quoted-identifier and bare-identifier forms after Postgres marker
-  // words.
-  const stripped = raw.replace(
-    /(table|column|constraint|relation|function|index|sequence|schema)\s+("[^"]+"|[a-z_][a-z0-9_]*)/gi,
-    (_m, kind, ident) =>
-      `${kind} ${ident.startsWith('"') ? '"[redacted]"' : '[redacted]'}`,
-  );
-  return stripped.slice(0, DB_ERROR_MESSAGE_CAP);
-}
-
 /**
  * Preserve full error info (name + message + stack) in a structured log
  * line BEFORE the sanitised Result is returned to Application. Pairs

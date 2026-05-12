@@ -10,24 +10,25 @@
  *   • response envelope shape (items / pagination / emptyStateContext)
  *   • 3-variant emptyStateContext payload always returned
  *   • paginated registrations + match-rate aggregate on detail
- *   • FR-035 surface-disclosure: member role → 404 (not 403)
+ *   • FR-035 surface-disclosure: member role → 404 (not 403) + audit emit
  *   • 404 for missing event id OR cross-tenant id (use-case returns null
  *     ⇒ route maps to 404 with no event-id echo)
+ *   • Audit-failure tolerance (E4 verify-fix): 404 still fires when
+ *     audit emit throws + the failure is logged via `logger.error`.
  *
  * Pattern mirrors tests/contract/events/webhook-eventcreate-v1.test.ts —
  * module-boundary mocks for `@/modules/events` use-cases so no DB, no
  * tenant resolution, no auth infrastructure is hit. Each test stubs the
  * use-case return value.
  *
- * RED reason: route handlers (T060), use-cases (T057+T058) and the
- * admin-deps composition adapter (`@/lib/events-admin-deps`) do not exist
- * yet. The dynamic `import()` throws MODULE_NOT_FOUND making every test
- * FAIL with a clear marker.
- *
- * Turns GREEN: T057 list-events + T058 load-event-detail + T060 routes.
+ * History: authored RED in T053 (commit cf44b978); turned GREEN by
+ * T057+T058+T060 (commits 15355361 + fbc73e40). Audit-emit assertions
+ * added in F1+F2 verify-fix (commit 9491f714). E4 logger.error spy
+ * added in this verify-review fix sweep.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { logger } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Mock seams — replace heavy dependencies at module boundary.
@@ -418,9 +419,20 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
       },
     });
     emitStandaloneMock.mockRejectedValueOnce(new Error('DB unavailable'));
+    // E4 fix (verify-finding 2026-05-12): assert the failure was LOGGED
+    // — the whole point of "observability is not an availability
+    // dependency" is that the failure IS observable. A future refactor
+    // that drops the catch-block log line would otherwise still pass
+    // this test.
+    const loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
     const { GET } = await loadListRoute();
     const res = await GET(buildListRequest());
     expect(res.status).toBe(404);
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'f6_audit_emit_failed' }),
+      expect.any(String),
+    );
+    loggerErrorSpy.mockRestore();
   });
 
   it('500 — use-case error propagates as 500', async () => {
@@ -431,6 +443,90 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     const { GET } = await loadListRoute();
     const res = await GET(buildListRequest());
     expect(res.status).toBe(500);
+  });
+
+  // ---- T2 (verify-finding 2026-05-12) — requireSession throw -------------
+  it('T2 — requireSession throw → 404 (NOT 500), no audit emit', async () => {
+    requireSessionMock.mockRejectedValueOnce(new Error('session decode failed'));
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest());
+    expect(res.status).toBe(404);
+    expect(emitStandaloneMock).not.toHaveBeenCalled();
+  });
+
+  // ---- T4 — invalid pagination params trigger 400 ------------------------
+  it('T4 — page=0 → 400', async () => {
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest({ page: '0' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('T4 — page=banana → 400 (zod NaN fails min(1))', async () => {
+    // No mockResolvedValueOnce — schema validation fails before
+    // listEventsMock is ever invoked. (Earlier draft queued one
+    // here which leaked to the next test under the project's
+    // vi.clearAllMocks convention; queued resolved values are
+    // FIFO and not reset by clearAllMocks.)
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest({ page: 'banana' }));
+    expect(res.status).toBe(400);
+  });
+
+  // ---- T10 — emptyStateContext always emitted even on populated list ----
+  it('T10 — populated list still emits emptyStateContext', async () => {
+    listEventsMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        items: [
+          {
+            eventId: 'evt-x',
+            name: 'foo',
+            startDate: '2026-01-01T00:00:00Z',
+            category: null,
+            totalRegistrations: 1,
+            matchedRegistrations: 1,
+            matchRatePct: 100,
+            isPartnerBenefit: false,
+            isCulturalEvent: false,
+            archivedAt: null,
+            eventcreateUrl: null,
+          },
+        ],
+        pagination: { page: 1, pageSize: 25, totalCount: 1 },
+        emptyStateContext: {
+          integrationConfigured: true,
+          everReceivedDelivery: true,
+          totalArchived: 0,
+        },
+      },
+    });
+    const { GET } = await loadListRoute();
+    const body = await (await GET(buildListRequest())).json();
+    expect(body.emptyStateContext).toBeDefined();
+    expect(body.emptyStateContext.integrationConfigured).toBe(true);
+  });
+
+  // ---- T8 — variant ambiguity: items=0 + delivered + zero archived -------
+  it('T8 — items=0 + everReceivedDelivery=true + totalArchived=0 still returns full envelope', async () => {
+    listEventsMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        items: [],
+        pagination: { page: 1, pageSize: 25, totalCount: 0 },
+        emptyStateContext: {
+          integrationConfigured: true,
+          everReceivedDelivery: true,
+          totalArchived: 0,
+        },
+      },
+    });
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest());
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items).toEqual([]);
+    expect(body.emptyStateContext.everReceivedDelivery).toBe(true);
+    expect(body.emptyStateContext.totalArchived).toBe(0);
   });
 });
 
@@ -452,6 +548,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       isCulturalEvent: false,
       archivedAt: null,
       eventcreateUrl: 'https://events.swecham.com/midsummer-2026',
+      lastUpdatedAt: '2026-06-01T10:23:15Z',
     };
   }
 
@@ -664,5 +761,140 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       params: Promise.resolve({ eventId: 'evt-1' }),
     });
     expect(res.status).toBe(500);
+  });
+
+  // ---- T5 (verify-finding 2026-05-12) — invalid matchTypeFilter ---------
+  it('T5 — matchTypeFilter=garbage → 400', async () => {
+    const { GET } = await loadDetailRoute();
+    const res = await GET(
+      buildDetailRequest('evt-1', { matchTypeFilter: 'garbage' }),
+      { params: Promise.resolve({ eventId: 'evt-1' }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  // ---- T6 — empty-string vs whitespace q normalisation ------------------
+  it('T6 — q="   " (whitespace) is normalised to null at route boundary', async () => {
+    loadEventDetailMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        event: eventFixture(),
+        registrations: [],
+        pagination: { page: 1, pageSize: 50, totalCount: 0 },
+      },
+    });
+    const { GET } = await loadDetailRoute();
+    await GET(buildDetailRequest('evt-1', { q: '   ' }), {
+      params: Promise.resolve({ eventId: 'evt-1' }),
+    });
+    expect(loadEventDetailMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ q: null }),
+    );
+  });
+
+  // ---- T7 — tenant-resolution failure surfaces as 500 -------------------
+  it('T7 — resolveTenantFromRequest throw → 500 (logged + caught)', async () => {
+    resolveTenantFromRequestMock.mockImplementationOnce(() => {
+      throw new Error('unknown host');
+    });
+    const { GET } = await loadDetailRoute();
+    const res = await GET(buildDetailRequest('evt-1'), {
+      params: Promise.resolve({ eventId: 'evt-1' }),
+    });
+    expect(res.status).toBe(500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T3 — Kill-switch FEATURE_F6_EVENTCREATE=false
+//
+// Uses vi.resetModules() + vi.doMock to re-load the env module with
+// f6EventCreate=false for these two tests only. The mock is reverted
+// in afterEach via vi.doUnmock + vi.resetModules.
+// ---------------------------------------------------------------------------
+
+describe('T3 (verify-finding 2026-05-12) — kill-switch off → 404 + no audit', () => {
+  afterEach(() => {
+    vi.doUnmock('@/lib/env');
+    vi.resetModules();
+  });
+
+  it('list route 404 when env.features.f6EventCreate=false', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/env', async () => {
+      // Preserve all other env fields (logger needs LOG_LEVEL, db needs
+      // DATABASE_URL, etc.) — only override the F6 feature flag.
+      const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
+      return {
+        ...actual,
+        env: {
+          ...actual.env,
+          features: { ...actual.env.features, f6EventCreate: false },
+        },
+      };
+    });
+    // Re-register dependency mocks under the new module graph so the
+    // route's imports (auth-session, tenant-context, events-admin-deps,
+    // @/modules/events) still resolve to the test doubles.
+    vi.doMock('@/lib/auth-session', () => ({
+      requireSession: (...args: unknown[]) => requireSessionMock(...args),
+    }));
+    vi.doMock('@/lib/tenant-context', () => ({
+      resolveTenantFromRequest: (...args: unknown[]) =>
+        resolveTenantFromRequestMock(...args),
+    }));
+    vi.doMock('@/lib/events-admin-deps', () => ({
+      runListEvents: (s: string, i: unknown) => listEventsMock(s, i),
+      runLoadEventDetail: (s: string, i: unknown) => loadEventDetailMock(s, i),
+    }));
+    const { GET } = (await import('@/app/api/admin/events/route')) as {
+      GET: (req: NextRequest) => Promise<Response>;
+    };
+    const url = new URL('https://app.test/api/admin/events');
+    const res = await GET(new NextRequest(url.toString(), { method: 'GET' }));
+    expect(res.status).toBe(404);
+    expect(emitStandaloneMock).not.toHaveBeenCalled();
+  });
+
+  it('detail route 404 when env.features.f6EventCreate=false', async () => {
+    vi.resetModules();
+    vi.doMock('@/lib/env', async () => {
+      // Preserve all other env fields (logger needs LOG_LEVEL, db needs
+      // DATABASE_URL, etc.) — only override the F6 feature flag.
+      const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
+      return {
+        ...actual,
+        env: {
+          ...actual.env,
+          features: { ...actual.env.features, f6EventCreate: false },
+        },
+      };
+    });
+    vi.doMock('@/lib/auth-session', () => ({
+      requireSession: (...args: unknown[]) => requireSessionMock(...args),
+    }));
+    vi.doMock('@/lib/tenant-context', () => ({
+      resolveTenantFromRequest: (...args: unknown[]) =>
+        resolveTenantFromRequestMock(...args),
+    }));
+    vi.doMock('@/lib/events-admin-deps', () => ({
+      runListEvents: (s: string, i: unknown) => listEventsMock(s, i),
+      runLoadEventDetail: (s: string, i: unknown) => loadEventDetailMock(s, i),
+    }));
+    const { GET } = (await import(
+      '@/app/api/admin/events/[eventId]/route'
+    )) as {
+      GET: (
+        req: NextRequest,
+        ctx: { params: Promise<{ eventId: string }> },
+      ) => Promise<Response>;
+    };
+    const url = new URL('https://app.test/api/admin/events/evt-1');
+    const res = await GET(new NextRequest(url.toString(), { method: 'GET' }), {
+      params: Promise.resolve({ eventId: 'evt-1' }),
+    });
+    expect(res.status).toBe(404);
+    expect(emitStandaloneMock).not.toHaveBeenCalled();
   });
 });
