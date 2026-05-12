@@ -18,7 +18,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { MATCH_TYPES } from '@/modules/events';
@@ -47,7 +47,21 @@ export async function GET(
 
   const { eventId } = await ctx.params;
 
-  const session = await requireSession('staff').catch(() => null);
+  // R002 (staff-review fix 2026-05-13): validate eventId shape BEFORE
+  // the role gate so an oversized eventId from a member actor cannot
+  // bloat the audit log. The role-violation emit echoes `eventId`
+  // into both the human-readable summary and the audit payload;
+  // capping `.length` here is the audit-DoS defence. Empty-string
+  // guard preserved for the same reason — emitting a 0-length probe
+  // marker into 35 enum-tagged audit rows adds no signal.
+  if (!eventId || eventId.length > 200) {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  // R003 (staff-review fix 2026-05-13): see /api/admin/events/route.ts
+  // for the rationale on switching from `requireSession('staff').catch`
+  // to `getCurrentSession()` (avoids swallowing infrastructure errors).
+  const session = await getCurrentSession();
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {
@@ -60,10 +74,6 @@ export async function GET(
       attemptedAction: 'load_event_detail',
       eventId,
     });
-    return new NextResponse(null, { status: 404 });
-  }
-
-  if (!eventId || eventId.length > 200) {
     return new NextResponse(null, { status: 404 });
   }
 

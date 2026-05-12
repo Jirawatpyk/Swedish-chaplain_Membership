@@ -49,6 +49,17 @@ interface SearchParams {
 
 const PAGE_SIZE = 50;
 
+/**
+ * UUID v4 regex — mirrors the canonical pattern in
+ * `src/modules/events/application/use-cases/load-event-detail.ts`.
+ * Duplicated (not imported) because the use-case is in the Application
+ * layer and re-exporting a regex through the module barrel would widen
+ * the public surface for a single Presentation-layer guard. Keep both
+ * patterns byte-identical; a future UUID v7 migration must touch both.
+ */
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function firstParam(v: string | string[] | undefined): string | undefined {
   if (v === undefined) return undefined;
   if (Array.isArray(v)) return v[0];
@@ -138,6 +149,16 @@ export default async function AdminEventDetailPage({
         }
       }
       const qs = cleaned.toString();
+      // R007 (staff-review fix 2026-05-13): validate `eventId`
+      // path-param shape BEFORE composing the redirect URL. The
+      // use-case downstream already rejects malformed eventIds via
+      // its own UUID_V4 guard, but a malformed eventId surviving the
+      // round-trip would still be reflected in a 302 Location header
+      // — wasteful (extra round-trip to a 404) and a minor surface
+      // for redirect-class probes. Bail to `notFound()` instead.
+      if (!UUID_V4.test(eventId)) {
+        notFound();
+      }
       redirect(`/admin/events/${eventId}${qs ? `?${qs}` : ''}`);
     }
   }

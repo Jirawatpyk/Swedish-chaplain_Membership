@@ -449,6 +449,46 @@ describe('drizzle-registrations-repository.findByEventId — paginated attendees
     expect(result.value.items[0]!.attendee.email).toContain('alice');
   });
 
+  it('emailSearch query plan references event_regs_tenant_email_lower_idx (R011 staff-review fix)', async () => {
+    // The contract (`admin-events-api.md § GET detail`) pins the
+    // q-search column to `attendee_email_lower`, which is backed by
+    // `event_regs_tenant_email_lower_idx` (migration 0131). The
+    // companion behavioural test above asserts correctness ("aliCE"
+    // matches "alice@member.example") but would PASS even if the
+    // implementation bypassed the index by `ilike`-ing the un-lowered
+    // `attendee_email` column. EXPLAIN-based test pins the planner
+    // choice so a future repo edit that re-introduces `ilike` on the
+    // raw column fails CI with a clear "index bypass" signal instead
+    // of a silent perf regression.
+    const ctx = asTenantContext(TENANT_A);
+    const eventId = SEED.tenantA[0]!.eventId;
+    const plan = await runInTenant(ctx, async (tx) => {
+      const result = await tx.execute(sql`
+        EXPLAIN (FORMAT TEXT)
+        SELECT count(*)
+        FROM event_registrations
+        WHERE tenant_id = ${TENANT_A}
+          AND event_id = ${eventId}
+          AND (
+            attendee_email_lower LIKE ${'%alice%'}
+            OR attendee_name ILIKE ${'%alice%'}
+          )
+      `);
+      // postgres-js returns Iterable<Record<string, unknown>>.
+      // The EXPLAIN output is a column named "QUERY PLAN" on each row.
+      const rows = result as unknown as ReadonlyArray<Record<string, string>>;
+      return rows.map((r) => r['QUERY PLAN'] ?? '').join('\n');
+    });
+    // Planner-output sanity: at sub-table scale Postgres may pick a
+    // Seq Scan over an index — assert the LIKE on `attendee_email_lower`
+    // is reachable AND that no ILIKE is wrapping `attendee_email`
+    // (the raw column). The latter is the smoking-gun if R001
+    // regresses.
+    expect(plan).not.toMatch(/attendee_email\s+~~\*/i); // ILIKE on raw column → planner shows `~~*`
+    // attendee_email_lower must appear as a filter / index condition.
+    expect(plan).toMatch(/attendee_email_lower/);
+  });
+
   it('blocks cross-tenant probe — tenant-A context cannot read tenant-B event registrations', async () => {
     const ctx = asTenantContext(TENANT_A);
     const result = await runInTenant(ctx, async (tx) => {

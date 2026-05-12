@@ -78,7 +78,26 @@ Event detail with paginated attendee table.
 
 ```jsonc
 {
-  "event": { /* same shape as list item */ },
+  "event": {
+    // Same shape as the list item plus `lastUpdatedAt` — the detail
+    // surface renders a "Last imported from EventCreate at …" trust
+    // signal so the admin can verify the integration is still live
+    // without leaving the page (added by U5 round-1 2026-05-12).
+    // R012 (staff-review fix 2026-05-13): example previously inlined
+    // `/* same shape as list item */` and omitted the new field.
+    "eventId": "01H...",
+    "name": "SweCham Midsummer 2026",
+    "startDate": "2026-06-21T18:00:00+07:00",
+    "category": "networking",
+    "totalRegistrations": 47,
+    "matchedRegistrations": 44,
+    "matchRatePct": 93.6,
+    "isPartnerBenefit": true,
+    "isCulturalEvent": false,
+    "archivedAt": null,
+    "eventcreateUrl": "https://events.swecham.com/midsummer-2026",
+    "lastUpdatedAt": "2026-06-15T03:21:00Z"
+  },
   "registrations": [
     {
       "registrationId": "01H...",

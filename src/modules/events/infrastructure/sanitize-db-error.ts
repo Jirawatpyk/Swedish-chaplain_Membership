@@ -87,11 +87,22 @@ const STACK_CAP = 4_000;
 
 function redactStack(stack: string | undefined): string | undefined {
   if (stack === undefined) return undefined;
-  return stack
-    // Strip absolute Linux/Vercel container paths (`/var/task/...`,
-    // `/var/runtime/...`, etc.) and absolute Windows dev paths.
-    .replace(/(?:[a-z]:)?[\\\/](?:var|usr|home|opt|tmp|root|users)[\\\/][\w.\-\\\/]+/gi, '[redacted-path]')
-    // Strip remaining `file://` URLs.
-    .replace(/file:\/\/[^\s)]+/g, '[redacted-file-url]')
-    .slice(0, STACK_CAP);
+  return (
+    stack
+      // Strip absolute Linux/Vercel container paths (`/var/task/...`,
+      // `/var/runtime/...`, etc.), absolute Windows dev paths, and
+      // R008 (staff-review fix 2026-05-13): also strip `/private/`
+      // (macOS dev `/private/var` etc.) and any `node_modules`
+      // prefix (leaks installed-package paths + workspace layout).
+      .replace(
+        /(?:[a-z]:)?[\\\/](?:var|usr|home|opt|tmp|root|users|private|node_modules)[\\\/][\w.\-\\\/]+/gi,
+        '[redacted-path]',
+      )
+      // R008: Strip Next.js `webpack-internal:///` URLs which leak the
+      // dev-bundler internal module graph; redact aggressively.
+      .replace(/webpack-internal:\/\/[^\s)]+/g, '[redacted-webpack-internal]')
+      // Strip remaining `file://` URLs.
+      .replace(/file:\/\/[^\s)]+/g, '[redacted-file-url]')
+      .slice(0, STACK_CAP)
+  );
 }

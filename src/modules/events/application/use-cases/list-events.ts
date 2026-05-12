@@ -90,26 +90,30 @@ export async function listEvents(
 ): Promise<Result<ListEventsOutput, ListEventsError>> {
   const offset = (input.page - 1) * input.pageSize;
 
-  const listResult = await deps.eventsRepo.list({
-    tenantId: input.tenantId,
-    includeArchived: input.includeArchived,
-    partnerBenefitOnly: input.partnerBenefitOnly,
-    culturalEventOnly: input.culturalEventOnly,
-    categoryFilter: input.categoryFilter,
-    offset,
-    pageSize: input.pageSize,
-  });
+  // R005 (staff-review fix 2026-05-13): `list` and `getEmptyContext`
+  // are independent port calls — issue them in parallel to halve the
+  // serial DB round-trip cost on the admin events list surface. Each
+  // call wraps its own queries (`getEmptyContext` already parallelises
+  // its 2 sub-reads internally at the repo layer).
+  const [listResult, emptyContextResult] = await Promise.all([
+    deps.eventsRepo.list({
+      tenantId: input.tenantId,
+      includeArchived: input.includeArchived,
+      partnerBenefitOnly: input.partnerBenefitOnly,
+      culturalEventOnly: input.culturalEventOnly,
+      categoryFilter: input.categoryFilter,
+      offset,
+      pageSize: input.pageSize,
+    }),
+    // Empty-state context is always returned (the contract requires
+    // it even when items.length > 0 so paginated views landing on
+    // empty pages can render context-aware empty UI).
+    deps.eventsRepo.getEmptyContext(input.tenantId),
+  ]);
   if (!listResult.ok) return err(listResult.error);
+  if (!emptyContextResult.ok) return err(emptyContextResult.error);
 
   const { items: events, totalCount } = listResult.value;
-
-  // Empty-state context is always returned (the contract requires it
-  // even when items.length > 0 so paginated views landing on empty
-  // pages can render context-aware empty UI).
-  const emptyContextResult = await deps.eventsRepo.getEmptyContext(
-    input.tenantId,
-  );
-  if (!emptyContextResult.ok) return err(emptyContextResult.error);
   const emptyStateContext = emptyContextResult.value;
 
   // Skip the match-counts roundtrip when the page has no rows — saves

@@ -61,6 +61,16 @@ const conId = (s: string) => s as ContactId;
 // breaks tests at compile time, not at runtime.
 const listEventsMock = vi.fn<typeof runListEvents>();
 const loadEventDetailMock = vi.fn<typeof runLoadEventDetail>();
+// R003 (staff-review fix 2026-05-13): routes now call `getCurrentSession`
+// (returns null on no-session, throws on infra failure) instead of
+// `requireSession(...).catch(() => null)` (swallowed all errors as null).
+// The shared mock fn drives BOTH exports because both spellings are
+// referenced by route handlers across F6 surfaces — list+detail routes
+// use getCurrentSession; the page server component still uses
+// requireSession. Tests that previously asserted "auth throw → 404"
+// (the swallowed-error behaviour) are updated below to assert the
+// distinct null-vs-throw paths separately.
+const getCurrentSessionMock = vi.fn();
 const requireSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
 const emitStandaloneMock = vi.fn();
@@ -124,6 +134,7 @@ vi.mock('@/lib/events-admin-deps', () => ({
 }));
 
 vi.mock('@/lib/auth-session', () => ({
+  getCurrentSession: () => getCurrentSessionMock(),
   requireSession: (...args: unknown[]) => requireSessionMock(...args),
 }));
 
@@ -135,14 +146,19 @@ vi.mock('@/lib/tenant-context', () => ({
 const TENANT_SLUG = 'test-swecham';
 
 beforeEach(() => {
-  // Default: admin signed in, tenant resolves.
-  requireSessionMock.mockResolvedValue({
+  // Default: admin signed in, tenant resolves. Both mocks resolve to
+  // the same session object so per-test overrides of either function
+  // remain ergonomic — tests typically only need to override the spec-
+  // relevant one (e.g. R003 uses getCurrentSessionMock for the routes).
+  const defaultSession = {
     user: {
       id: 'u-admin-1',
       email: 'admin@example.com',
       role: 'admin',
     },
-  });
+  };
+  getCurrentSessionMock.mockResolvedValue(defaultSession);
+  requireSessionMock.mockResolvedValue(defaultSession);
   resolveTenantFromRequestMock.mockReturnValue({
     slug: TENANT_SLUG,
     tenantId: TENANT_SLUG,
@@ -411,7 +427,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
   });
 
   it('200 OK — manager role can read the list (FR-035 manager-read allowed)', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: { id: 'u-mgr', email: 'mgr@example.com', role: 'manager' },
     });
     listEventsMock.mockResolvedValueOnce({
@@ -432,7 +448,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
   });
 
   it('404 Not Found — member role returns 404 per FR-035 surface disclosure', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr',
         email: 'member@example.com',
@@ -449,7 +465,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
   });
 
   it('404 Not Found — member role emits role_violation_blocked audit ', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr-audit',
         email: 'member@example.com',
@@ -477,7 +493,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
   });
 
   it('404 — audit emit failure does NOT block the 404 response (F1 fix observability-not-availability)', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr-audit-fail',
         email: 'member@example.com',
@@ -511,12 +527,31 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     expect(res.status).toBe(500);
   });
 
-  // ---- T2 — requireSession throw -------------
-  it('T2 — requireSession throw → 404 (NOT 500), no audit emit', async () => {
-    requireSessionMock.mockRejectedValueOnce(new Error('session decode failed'));
+  // R003 staff-review fix (2026-05-13): route handlers switched from
+  // `requireSession().catch(() => null)` to `getCurrentSession()` so
+  // infra errors propagate as 500 instead of being silently masked as
+  // 404. The original single T2 case asserted the OLD (swallow-all)
+  // behaviour and is split into 2 cases below.
+  // ---- T2a — getCurrentSession returns null (no session) → 404, no audit
+  it('T2a — getCurrentSession null → 404, no audit emit', async () => {
+    getCurrentSessionMock.mockResolvedValueOnce(null);
     const { GET } = await loadListRoute();
     const res = await GET(buildListRequest());
     expect(res.status).toBe(404);
+    expect(emitStandaloneMock).not.toHaveBeenCalled();
+  });
+
+  // ---- T2b — getCurrentSession throw (infra failure) → propagates
+  it('T2b — getCurrentSession infra throw propagates (NOT silently 404)', async () => {
+    getCurrentSessionMock.mockRejectedValueOnce(
+      new Error('session_repo: connection refused'),
+    );
+    const { GET } = await loadListRoute();
+    // R003 intent: infra errors must reach the framework's error
+    // boundary (Next.js renders 500) rather than be coerced to 404.
+    await expect(GET(buildListRequest())).rejects.toThrow(
+      /connection refused/,
+    );
     expect(emitStandaloneMock).not.toHaveBeenCalled();
   });
 
@@ -783,7 +818,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
   });
 
   it('404 Not Found — member role returns 404 on detail per FR-035', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr',
         email: 'member@example.com',
@@ -798,7 +833,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
   });
 
   it('404 — detail member-role emits role_violation_blocked audit ', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr-audit',
         email: 'member@example.com',
@@ -828,7 +863,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
   });
 
   it('200 OK — manager role can read detail (FR-035 manager-read allowed)', async () => {
-    requireSessionMock.mockResolvedValueOnce({
+    getCurrentSessionMock.mockResolvedValueOnce({
       user: { id: 'u-mgr', email: 'mgr@example.com', role: 'manager' },
     });
     loadEventDetailMock.mockResolvedValueOnce({
@@ -933,6 +968,7 @@ describe('T3 — kill-switch off → 404 + no audit', () => {
     // route's imports (auth-session, tenant-context, events-admin-deps,
     // @/modules/events) still resolve to the test doubles.
     vi.doMock('@/lib/auth-session', () => ({
+      getCurrentSession: () => getCurrentSessionMock(),
       requireSession: (...args: unknown[]) => requireSessionMock(...args),
     }));
     vi.doMock('@/lib/tenant-context', () => ({
@@ -969,6 +1005,7 @@ describe('T3 — kill-switch off → 404 + no audit', () => {
       };
     });
     vi.doMock('@/lib/auth-session', () => ({
+      getCurrentSession: () => getCurrentSessionMock(),
       requireSession: (...args: unknown[]) => requireSessionMock(...args),
     }));
     vi.doMock('@/lib/tenant-context', () => ({

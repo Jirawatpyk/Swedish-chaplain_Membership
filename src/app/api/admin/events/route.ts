@@ -19,7 +19,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { clampPageSize, coerceBoolean } from './_lib/query-helpers';
@@ -50,10 +50,17 @@ export async function GET(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // auth + RBAC. Member role returns 404 (NOT 403) so the
-  // existence of the admin surface is not leaked to non-staff actors.
+  // auth + RBAC. Member role returns 404 (NOT 403) so the existence
+  // of the admin surface is not leaked to non-staff actors.
+  // R003 (staff-review fix 2026-05-13): use `getCurrentSession`
+  // instead of `requireSession(...).catch(() => null)`. The previous
+  // pattern swallowed every error class — including DB-connection-
+  // lost / cookie-parse infrastructure failures — and falsely
+  // surfaced them as 404s. `getCurrentSession` distinguishes
+  // "no session" (returns null) from infrastructure failure (throws),
+  // letting the framework's error boundary turn the latter into 500.
   // Audit emission per FR-035 mandate.
-  const session = await requireSession('staff').catch(() => null);
+  const session = await getCurrentSession();
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {

@@ -49,6 +49,23 @@ These 8 gates parallel the F8 T269/T270/T277/T277b/T282 pattern — code is comp
 - **F7 (LOW)**: `MATCH_TYPES` tree-shake hack → removed (URL `matchTypeFilter` is parsed via `isMatchType` guard which keeps the union live)
 - **F8 (LOW)**: informational only — confirmed WCAG SC 1.4.1 non-colour-alone compliance on badges
 
+### Staff-review (round-5) findings closed (2026-05-13)
+
+12 findings raised by `/speckit.staff-review.run` after the 4 `/speckit.review` rounds, all closed in follow-up commit. Full report at `reviews/review-20260512-234816.md`.
+
+- **R001 (BLOCKER)**: `drizzle-registrations-repository.findByEventId` ilike'd the raw `attendee_email` column, bypassing both the contract pin (`attendee_email_lower`) and the supporting btree index `event_regs_tenant_email_lower_idx` (migration 0131). Swapped to `like(attendeeEmailLower, lowerPattern)` + companion R011 EXPLAIN test.
+- **R002 (WARNING)**: `[eventId]/route.ts` ordered `eventId.length > 200 → 404` AFTER the role-violation audit emit, letting an oversized eventId from a member actor bloat the audit payload. Moved the length guard above the role gate so the cap is enforced before any audit row is composed.
+- **R003 (WARNING)**: Both routes used `requireSession('staff').catch(() => null)` which swallowed every error class — including DB/cookie-parse infrastructure failures — and falsely surfaced them as 404. Replaced with `getCurrentSession()` so no-session paths return null (→ 404) and infra throws propagate (→ 500). Contract-test T2 split into T2a (null→404) + T2b (throw→propagates).
+- **R004 (WARNING)**: `findByEventId` issued matchCounts + totalCount + items SELECTs serially. Parallelised via Promise.all (3 reads × ~1 round-trip saved on the admin detail surface).
+- **R005 (WARNING)**: `drizzle-events-repository.list` (count+items) and `listEvents` use-case (list+getEmptyContext) ran serially. Parallelised both — same pattern as R004.
+- **R006 (WARNING)**: `role-violation-audit` ternary had byte-identical arms — the documented "append eventId on detail-route variant" intent was a dead-code lie. Actually appended `eventId` in the detail branch; safe because R002 caps `eventId.length` upstream.
+- **R007 (SUGGESTION)**: `[eventId]/page.tsx` redirect on invalid `matchTypeFilter` did not validate the eventId UUID shape before composing the Location URL — sent a 302 to a path the use-case would immediately 404. Added UUID_V4 guard → `notFound()` before redirect.
+- **R008 (SUGGESTION)**: `sanitize-db-error.redactStack` regex covered `var|usr|home|opt|tmp|root|users` but leaked `/private/*` (macOS), `node_modules/*`, and `webpack-internal:///` URLs (Next.js dev). Extended prefix list + added explicit webpack-internal scrub.
+- **R009 (SUGGESTION)**: `pino-audit-port.actorSentinel` used bare strings (`system`, `zapier_webhook`, `csv_import`, `cron:f6`) that risked colliding with real user_id values. Namespaced under `system:f6-*` matching the F5/F8 precedent (`system:bootstrap`, `system:cron`, `system:stripe-webhook`). No tests assert on sentinel values, so the rename is code-only.
+- **R010 (SUGGESTION)**: `load-event-detail.ts` ran `tryEventId(input.eventId)` AND `UUID_V4.test(input.eventId)` — the regex already enforces non-empty AND well-formed, so the `tryEventId` non-empty check was strictly redundant. Dropped `tryEventId`; brand with `asEventId` after the regex passes.
+- **R011 (SUGGESTION)**: Behavioural test for `emailSearch` was passing even when the implementation bypassed the email-lower index. Added EXPLAIN-based integration assertion that the query plan references `attendee_email_lower` and does NOT show `ilike` on the raw column.
+- **R012 (SUGGESTION)**: `contracts/admin-events-api.md § GET detail` example used `/* same shape as list item */` placeholder, omitting the `lastUpdatedAt` field added by U5 round-1. Inlined the full detail-event shape with `lastUpdatedAt`.
+
 ### Constitution alignment (Phase 4)
 - I — Tenant isolation: `runListEvents` / `runLoadEventDetail` wrap `runInTenant(ctx, fn)`; tenant_id derived from session never URL
 - II — TDD: 3 commits in RED → GREEN → GREEN cadence

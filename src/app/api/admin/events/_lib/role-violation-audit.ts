@@ -60,9 +60,16 @@ export async function emitEventsRoleViolation(
     );
     return;
   }
+  // R006 (staff-review fix 2026-05-13): differentiate the detail-route
+  // branch by appending the eventId — the previous ternary's two arms
+  // were byte-identical, which was the original interface lie that
+  // the doc-comment + `eventId` parameter implied this helper would
+  // surface in the summary. The detail-route eventId is now guaranteed
+  // length-capped (≤200 chars) by the R002 fix in [eventId]/route.ts,
+  // so appending cannot bloat the audit row.
   const summary =
     input.eventId !== null
-      ? `${input.actorRole} attempted GET ${input.attemptedRoute} (${input.attemptedAction})`
+      ? `${input.actorRole} attempted GET ${input.attemptedRoute} (${input.attemptedAction}) for event ${input.eventId}`
       : `${input.actorRole} attempted GET ${input.attemptedRoute} (${input.attemptedAction})`;
   try {
     const deps = makeStandaloneAuditDeps();

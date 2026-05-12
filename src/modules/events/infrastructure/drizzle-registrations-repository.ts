@@ -15,7 +15,7 @@
  * `hardDelete`) throw `not_implemented` until Phase 6 (T086), Phase 9
  * (T104), and Phase 10 (T110+T113) land them.
  */
-import { and, asc, desc, eq, inArray, or, sql, ilike, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql, ilike, like, type SQL } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { eventRegistrations, type EventRegistrationRow } from './schema';
@@ -233,10 +233,18 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
 
         let searchFilter: SQL | undefined;
         if (input.emailSearch !== null && input.emailSearch !== '') {
+          // attendee_email_lower is a STORED generated column backed by
+          // `event_regs_tenant_email_lower_idx` (migration 0131). Use
+          // `like` (not `ilike`) so the btree text_pattern_ops planner
+          // can pick the index — Postgres `ILIKE` cannot use a regular
+          // btree text index. Lowercase the pattern at the application
+          // boundary so the comparison stays case-insensitive.
+          // `attendee_name` has no lowered column → keep `ilike` there
+          // (the trigram GIN on attendee_name still serves substring).
+          const lowerPattern = `%${input.emailSearch.toLowerCase()}%`;
           const pattern = `%${input.emailSearch}%`;
-          // Substring search on lowercased email + name (case-insensitive).
           searchFilter = or(
-            ilike(eventRegistrations.attendeeEmail, pattern),
+            like(eventRegistrations.attendeeEmailLower, lowerPattern),
             ilike(eventRegistrations.attendeeName, pattern),
           );
         }
@@ -245,16 +253,44 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         if (matchFilter) itemFilters.push(matchFilter);
         if (searchFilter) itemFilters.push(searchFilter);
 
-        // matchCounts query — UNFILTERED by unmatchedOnly/matchTypeFilter/
-        // emailSearch (reflects full event total per spec).
-        const matchCountRows = await executor
-          .select({
-            matchType: eventRegistrations.matchType,
-            count: sql<number>`COUNT(*)::int`,
-          })
-          .from(eventRegistrations)
-          .where(and(...baseFilters))
-          .groupBy(eventRegistrations.matchType);
+        // When unmatchedOnly is true, sort `unmatched` first (admin
+        // reviews ambiguous matches before non-members) per AS4 / P4.
+        const orderClauses = input.unmatchedOnly
+          ? [
+              sql`CASE WHEN ${eventRegistrations.matchType} = 'unmatched' THEN 0 ELSE 1 END`,
+              desc(eventRegistrations.registeredAt),
+            ]
+          : [
+              desc(eventRegistrations.registeredAt),
+              asc(eventRegistrations.registrationId),
+            ];
+
+        // Three independent reads — issue in parallel. Cuts admin
+        // detail-route p95 latency by ~2× at SweCham scale (<5k regs
+        // per event). matchCounts uses baseFilters only (full-event
+        // total); the other two share itemFilters (paginated subset).
+        const [matchCountRows, countRowResult, rows] = await Promise.all([
+          executor
+            .select({
+              matchType: eventRegistrations.matchType,
+              count: sql<number>`COUNT(*)::int`,
+            })
+            .from(eventRegistrations)
+            .where(and(...baseFilters))
+            .groupBy(eventRegistrations.matchType),
+          executor
+            .select({ count: sql<number>`COUNT(*)::int` })
+            .from(eventRegistrations)
+            .where(and(...itemFilters)),
+          executor
+            .select()
+            .from(eventRegistrations)
+            .where(and(...itemFilters))
+            .orderBy(...orderClauses)
+            .limit(input.pageSize)
+            .offset(input.offset),
+        ]);
+
         const matchCounts = {
           memberContact: 0,
           memberDomain: 0,
@@ -283,31 +319,8 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
           }
         }
 
-        const [countRow] = await executor
-          .select({ count: sql<number>`COUNT(*)::int` })
-          .from(eventRegistrations)
-          .where(and(...itemFilters));
+        const [countRow] = countRowResult;
         const totalCount = Number(countRow?.count ?? 0);
-
-        // When unmatchedOnly is true, sort `unmatched` first (admin
-        // reviews ambiguous matches before non-members) per AS4 / P4.
-        const orderClauses = input.unmatchedOnly
-          ? [
-              sql`CASE WHEN ${eventRegistrations.matchType} = 'unmatched' THEN 0 ELSE 1 END`,
-              desc(eventRegistrations.registeredAt),
-            ]
-          : [
-              desc(eventRegistrations.registeredAt),
-              asc(eventRegistrations.registrationId),
-            ];
-
-        const rows = await executor
-          .select()
-          .from(eventRegistrations)
-          .where(and(...itemFilters))
-          .orderBy(...orderClauses)
-          .limit(input.pageSize)
-          .offset(input.offset);
 
         return ok({
           items: rows.map(toAggregate),

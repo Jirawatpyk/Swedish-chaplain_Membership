@@ -35,7 +35,7 @@ import type {
   RegistrationsRepositoryError,
 } from '../ports/registrations-repository';
 import type { EventId, RegistrationId } from '../../domain/branded-types';
-import { tryEventId } from '../../domain/branded-types';
+import { asEventId } from '../../domain/branded-types';
 import type { MatchType } from '../../domain/value-objects/match-type';
 import type { PaymentStatus } from '../../domain/value-objects/payment-status';
 import { isNonQuotaMatchType } from '../../domain/value-objects/match-type';
@@ -142,15 +142,18 @@ export async function loadEventDetail(
   deps: LoadEventDetailDeps,
   input: LoadEventDetailInput,
 ): Promise<Result<LoadEventDetailOutput, LoadEventDetailError>> {
-  // validate `eventId` format BEFORE
-  // hitting the DB. Postgres uuid type would otherwise throw on a
-  // malformed input (e.g., `not-a-uuid`) and surface as a `db_error`
-  // alert. Format check is the use-case boundary; tryEventId only
-  // enforces non-empty so we add the v4 regex inline.
-  const branded = tryEventId(input.eventId);
-  if (branded === null || !UUID_V4.test(input.eventId)) {
+  // R010 (staff-review fix 2026-05-13): validate eventId format
+  // BEFORE hitting the DB. The UUID_V4 regex requires a non-empty
+  // 36-char hex+dash pattern, so the prior `tryEventId(...) === null`
+  // (non-empty) check was strictly redundant — anything passing the
+  // regex is necessarily non-empty and well-formed. Drop tryEventId
+  // here; brand only AFTER the regex passes via the safe
+  // `asEventId` helper (Postgres uuid type would otherwise throw on
+  // malformed input and surface as a `db_error` alert).
+  if (!UUID_V4.test(input.eventId)) {
     return err({ kind: 'not_found' });
   }
+  const branded = asEventId(input.eventId);
   // Cross-tenant probe boundary — findById returns null when the row
   // does not exist (or exists in another tenant blocked by RLS).
   const eventResult = await deps.eventsRepo.findById(

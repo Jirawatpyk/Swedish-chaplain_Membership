@@ -217,19 +217,27 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
         // separate from the items SELECT to keep the row-projection
         // index-friendly. At SweCham scale (<200 events/year) this
         // is sub-10ms; F4 invoice-list precedent for the same pattern.
-        const [countRow] = await executor
-          .select({ count: sql<number>`COUNT(*)::int` })
-          .from(events)
-          .where(whereClause);
+        // R005 (staff-review fix 2026-05-13): issue the two SELECTs
+        // in parallel. RLS GUC + chamber_app role are already SET in
+        // the surrounding `runInTenant` tx — concurrent queries on
+        // the same pooled connection are safe because Drizzle serial-
+        // ises them at the connection layer, and the parallel send
+        // saves one round-trip of network latency.
+        const [countRowResult, rows] = await Promise.all([
+          executor
+            .select({ count: sql<number>`COUNT(*)::int` })
+            .from(events)
+            .where(whereClause),
+          executor
+            .select()
+            .from(events)
+            .where(whereClause)
+            .orderBy(desc(events.startDate), asc(events.eventId))
+            .limit(input.pageSize)
+            .offset(input.offset),
+        ]);
+        const [countRow] = countRowResult;
         const totalCount = Number(countRow?.count ?? 0);
-
-        const rows = await executor
-          .select()
-          .from(events)
-          .where(whereClause)
-          .orderBy(desc(events.startDate), asc(events.eventId))
-          .limit(input.pageSize)
-          .offset(input.offset);
 
         return ok({
           items: rows.map(toAggregate),

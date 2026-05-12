@@ -120,19 +120,34 @@ async function insertAuditRow(
  * for non-human contexts (zapier_webhook / csv_import / cron / system)
  * maps to a stable string. The audit_log table requires NOT NULL on
  * `actor_user_id`, so we always emit a value.
+ *
+ * R009 (staff-review fix 2026-05-13): namespace all F6 sentinels with
+ * a `system:f6-*` prefix, matching the precedent already established
+ * across the codebase (`system:bootstrap`, `system:cron`,
+ * `system:test`, `system:stripe-webhook`). The previous bare values
+ * (`'system'` / `'zapier_webhook'` / `'csv_import'`) risked colliding
+ * with real user_id strings stored as text in `audit_log.actor_user_id`
+ * by other features, making SRE dashboards filter on a single
+ * `actor_user_id LIKE 'system:%'` predicate ambiguous. `cron:f6` is
+ * upgraded to `system:f6-cron` for the same consistency reason.
+ *
+ * Forward-compat note: any dashboard or audit-query that filtered on
+ * the OLD bare strings must be updated. No tests assert on these
+ * exact values (audited in the same review pass), so the change is
+ * code-only.
  */
 function actorSentinel(entry: F6AuditEntry): string {
   switch (entry.actorType) {
     case 'system':
-      return 'system';
+      return 'system:f6';
     case 'zapier_webhook':
-      return 'zapier_webhook';
+      return 'system:f6-zapier-webhook';
     case 'csv_import':
-      return 'csv_import';
+      return 'system:f6-csv-import';
     case 'cron':
-      return 'cron:f6';
+      return 'system:f6-cron';
     default:
-      return 'system';
+      return 'system:f6';
   }
 }
 
