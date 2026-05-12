@@ -25,7 +25,7 @@ import { PlusIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -98,8 +98,7 @@ export default async function AdminEventsListPage({
     categoryFilter !== null;
 
   const reqHeaders = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: reqHeaders });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(reqHeaders);
 
   // E1+E6 fix (verify-finding 2026-05-12): wrap the use-case dispatch
   // in try/catch — `runInTenant` rejections (DB outage, role-grant

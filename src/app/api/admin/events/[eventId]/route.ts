@@ -36,13 +36,13 @@ const DetailQuerySchema = z.object({
   q: z.string().min(1).max(200).optional(),
 });
 
-function clampPageSize(raw: string | null, min: number, max: number, def: number): number {
-  if (raw === null) return def;
+function clampPageSize(raw: string | null, min: number, max: number, def: number): { value: number; clamped: boolean } {
+  if (raw === null) return { value: def, clamped: false };
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return def;
-  if (n < min) return min;
-  if (n > max) return max;
-  return n;
+  if (!Number.isFinite(n)) return { value: def, clamped: false };
+  if (n < min) return { value: min, clamped: true };
+  if (n > max) return { value: max, clamped: true };
+  return { value: n, clamped: false };
 }
 
 /**
@@ -136,7 +136,12 @@ export async function GET(
   }
 
   const { searchParams } = new URL(request.url);
-  const pageSize = clampPageSize(searchParams.get('pageSize'), 10, 200, 50);
+  const { value: pageSize, clamped: pageSizeClamped } = clampPageSize(
+    searchParams.get('pageSize'),
+    10,
+    200,
+    50,
+  );
   const parsed = DetailQuerySchema.safeParse({
     page: searchParams.get('page') ?? undefined,
     pageSize,
@@ -237,5 +242,11 @@ export async function GET(
     );
   }
 
-  return NextResponse.json(result.value, { status: 200 });
+  // E8 fix (verify-finding 2026-05-12): see /api/admin/events/route.ts.
+  const responseHeaders: Record<string, string> = {};
+  if (pageSizeClamped) responseHeaders['X-PageSize-Clamped'] = 'true';
+  return NextResponse.json(result.value, {
+    status: 200,
+    headers: responseHeaders,
+  });
 }

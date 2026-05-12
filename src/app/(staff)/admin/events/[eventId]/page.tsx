@@ -6,14 +6,14 @@
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeft } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
-import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { isMatchType } from '@/modules/events';
 import type { MatchType } from '@/modules/events';
@@ -57,9 +57,17 @@ function clampPage(raw: string | undefined): number {
   return Math.min(n, 10_000);
 }
 
-function parseMatchTypeFilter(raw: string | undefined): MatchType | null {
+/**
+ * Returns the validated MatchType OR a sentinel `'INVALID'` when the
+ * raw URL param is non-empty + not a known enum value. Empty / null /
+ * undefined → `null` (no filter applied — valid happy-path).
+ * E9-page fix (verify-finding 2026-05-12).
+ */
+function parseMatchTypeFilter(
+  raw: string | undefined,
+): MatchType | null | 'INVALID' {
   if (raw === undefined || raw === '') return null;
-  return isMatchType(raw) ? raw : null;
+  return isMatchType(raw) ? raw : 'INVALID';
 }
 
 export default async function AdminEventDetailPage({
@@ -84,12 +92,27 @@ export default async function AdminEventDetailPage({
 
   const page = clampPage(query.page);
   const unmatchedOnly = isTruthy(query.unmatchedOnly);
-  const matchTypeFilter = parseMatchTypeFilter(query.matchTypeFilter);
+  const parsedMatchType = parseMatchTypeFilter(query.matchTypeFilter);
+  // E9-page fix (verify-finding 2026-05-12): if matchTypeFilter is
+  // syntactically present in the URL but not a known MatchType, redirect
+  // to the clean URL stripping the bad param. Previously this was
+  // silently dropped — admin saw the full attendee list as if no
+  // filter applied, which is misleading.
+  if (parsedMatchType === 'INVALID') {
+    const cleaned = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) {
+      if (v !== undefined && v !== '' && k !== 'matchTypeFilter') {
+        cleaned.set(k, v as string);
+      }
+    }
+    const qs = cleaned.toString();
+    redirect(`/admin/events/${eventId}${qs ? `?${qs}` : ''}`);
+  }
+  const matchTypeFilter = parsedMatchType; // narrowed: MatchType | null
   const q = query.q && query.q.trim() !== '' ? query.q.trim() : null;
 
   const reqHeaders = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: reqHeaders });
-  const tenantCtx = resolveTenantFromRequest(pseudoReq as never);
+  const tenantCtx = resolveTenantFromHeaders(reqHeaders);
 
   // E1+E6 fix (verify-finding 2026-05-12): mirror list-page pattern —
   // try/catch the use-case dispatch + log on either failure path so a

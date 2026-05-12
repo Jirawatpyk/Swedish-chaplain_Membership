@@ -37,6 +37,46 @@ import { env } from './env';
 
 const X_TENANT_HEADER = 'x-tenant';
 
+/**
+ * M3 (verify-finding 2026-05-12) — Server-component convenience for
+ * tenant resolution.
+ *
+ * Server components do not receive a `Request` object — only a
+ * `ReadonlyHeaders` from `headers()`. Prior code wrapped this in a
+ * synthetic `new Request('http://localhost:3100', { headers })`
+ * + cast it `as never` to satisfy `resolveTenantFromRequest`. The
+ * cast pattern was spreading across F4/F6 page surfaces; this helper
+ * centralises it so future tweaks (e.g. switching to a proper
+ * `IncomingHeaders` overload on the resolver) happen in one file.
+ *
+ * @param headers — Result of `await headers()` from a server component.
+ * @returns The resolved `TenantContext` brand.
+ */
+export function resolveTenantFromHeaders(
+  headers: ReadonlyHeaders,
+): TenantContext {
+  // Flatten ReadonlyHeaders into a plain Record so `new Request` is
+  // happy without an `as never` cast. The resolver only reads
+  // `x-tenant`; we still forward all headers for completeness.
+  const flat: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    flat[key] = value;
+  });
+  const pseudoReq = new Request('http://localhost:3100', { headers: flat });
+  return resolveTenantFromRequest(pseudoReq);
+}
+
+/**
+ * Minimal structural shape we need from Next.js's `ReadonlyHeaders`
+ * (the type emitted by `await headers()` in server components). Kept
+ * inline so this lib file doesn't depend on `next/server` types.
+ */
+interface ReadonlyHeaders {
+  get(name: string): string | null;
+  has(name: string): boolean;
+  forEach(cb: (value: string, key: string) => void): void;
+}
+
 export function resolveTenantFromRequest(req?: Request): TenantContext {
   // T115t — test-only header override. Gate triple-locked:
   //   1. Build-time: env.tenant.xHeaderEnabled is only TRUE when the

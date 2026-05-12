@@ -29,32 +29,74 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
+// T9 fix (verify-finding 2026-05-12): type-only imports to constrain the
+// mock factories against the REAL adapter signatures. A future refactor
+// that adds a third arg to runListEvents/runLoadEventDetail breaks the
+// test at compile time before it can ship as a silent prod regression.
+import type {
+  runListEvents,
+  runLoadEventDetail,
+} from '@/lib/events-admin-deps';
+import type {
+  EventId,
+  RegistrationId,
+  AttendeeEmail,
+} from '@/modules/events';
+import type { MemberId, ContactId } from '@/modules/members';
+
+// Helpers — fixture casts so the wire-format brand narrowing satisfies
+// the typed mock signatures without manual `as` clutter at each site.
+const evtId = (s: string) => s as EventId;
+const regId = (s: string) => s as RegistrationId;
+const attEmail = (s: string) => s as AttendeeEmail;
+const memId = (s: string) => s as MemberId;
+const conId = (s: string) => s as ContactId;
 
 // ---------------------------------------------------------------------------
 // Mock seams — replace heavy dependencies at module boundary.
 // ---------------------------------------------------------------------------
 
-const listEventsMock = vi.fn();
-const loadEventDetailMock = vi.fn();
+// T9 fix (verify-finding 2026-05-12): mocks typed against the real
+// exported signatures so a future refactor that changes the arg list
+// breaks tests at compile time, not at runtime.
+const listEventsMock = vi.fn<typeof runListEvents>();
+const loadEventDetailMock = vi.fn<typeof runLoadEventDetail>();
 const requireSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
 const emitStandaloneMock = vi.fn();
 
-vi.mock('@/modules/events', async () => {
-  const actual = await vi.importActual<typeof import('@/modules/events')>(
-    '@/modules/events',
-  );
-  return {
-    ...actual,
-    listEvents: (...args: unknown[]) => listEventsMock(...args),
-    loadEventDetail: (...args: unknown[]) => loadEventDetailMock(...args),
-    // F1 fix: stub makeStandaloneAuditDeps so the route's audit emit
-    // path is observable (FR-035 mandate) without hitting a real DB.
-    makeStandaloneAuditDeps: () => ({
-      emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
-    }),
-  };
-});
+// T12 fix (verify-finding 2026-05-12): explicit factory listing only
+// the SPECIFIC exports the route consumes from the barrel, instead of
+// `vi.importActual('@/modules/events')` which re-resolves the entire
+// barrel (~25 exports) per test and was the suspected cause of the
+// 7s isolated / 30s parallel-flake reported in verify-review.
+//
+// Route imports from `@/modules/events`:
+//   • `MATCH_TYPES` (detail route enum-validation)
+//   • `isMatchType` (page parseMatchTypeFilter — but page is not under test here)
+//   • `makeStandaloneAuditDeps` (FR-035 audit emit)
+//
+// `MATCH_TYPES` is a literal const — duplicated explicitly here so the
+// factory is pure data, no async resolution. `isMatchType` is a pure
+// predicate over that const.
+const MATCH_TYPES = [
+  'member_contact',
+  'member_domain',
+  'member_fuzzy',
+  'non_member',
+  'unmatched',
+] as const;
+vi.mock('@/modules/events', () => ({
+  MATCH_TYPES,
+  isMatchType: (v: unknown): v is (typeof MATCH_TYPES)[number] =>
+    typeof v === 'string' &&
+    (MATCH_TYPES as readonly string[]).includes(v),
+  // F1 fix: stub makeStandaloneAuditDeps so the route's audit emit
+  // path is observable (FR-035 mandate) without hitting a real DB.
+  makeStandaloneAuditDeps: () => ({
+    emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
+  }),
+}));
 
 // Mock the composition adapter (route handler's only DB seam) so no
 // Drizzle pool / Neon connection is required. The `run*` wrappers stub
@@ -63,10 +105,10 @@ vi.mock('@/modules/events', async () => {
 // `listEventsMock` / `loadEventDetailMock` factories so we can also
 // observe the input arguments (the route's parsed params).
 vi.mock('@/lib/events-admin-deps', () => ({
-  runListEvents: (_tenantSlug: string, input: unknown) =>
-    listEventsMock(_tenantSlug, input),
-  runLoadEventDetail: (_tenantSlug: string, input: unknown) =>
-    loadEventDetailMock(_tenantSlug, input),
+  runListEvents: (...args: Parameters<typeof runListEvents>) =>
+    listEventsMock(...args),
+  runLoadEventDetail: (...args: Parameters<typeof runLoadEventDetail>) =>
+    loadEventDetailMock(...args),
 }));
 
 vi.mock('@/lib/auth-session', () => ({
@@ -156,7 +198,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
       value: {
         items: [
           {
-            eventId: 'evt-1',
+            eventId: evtId('evt-1'),
             name: 'SweCham Midsummer 2026',
             startDate: '2026-06-21T18:00:00+07:00',
             category: 'networking',
@@ -479,7 +521,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
       value: {
         items: [
           {
-            eventId: 'evt-x',
+            eventId: evtId('evt-x'),
             name: 'foo',
             startDate: '2026-01-01T00:00:00Z',
             category: null,
@@ -537,7 +579,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
 describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
   function eventFixture() {
     return {
-      eventId: 'evt-1',
+      eventId: evtId('evt-1'),
       name: 'SweCham Midsummer 2026',
       startDate: '2026-06-21T18:00:00+07:00',
       category: 'networking',
@@ -554,16 +596,16 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
 
   function registrationFixture() {
     return {
-      registrationId: 'reg-1',
-      attendeeEmail: 'jane@fogmaker.com',
+      registrationId: regId('reg-1'),
+      attendeeEmail: attEmail('jane@fogmaker.com'),
       attendeeName: 'Jane Andersson',
       attendeeCompany: 'Fogmaker International AB',
-      matchType: 'member_contact',
-      matchedMemberId: 'mem-1',
-      matchedContactId: 'ct-1',
+      matchType: 'member_contact' as const,
+      matchedMemberId: memId('mem-1'),
+      matchedContactId: conId('ct-1'),
       ticketType: 'Member — Free',
       ticketPriceThb: 0,
-      paymentStatus: 'paid',
+      paymentStatus: 'paid' as const,
       countedAgainstPartnership: false,
       countedAgainstCulturalQuota: true,
       isOverQuota: false,
@@ -845,8 +887,10 @@ describe('T3 (verify-finding 2026-05-12) — kill-switch off → 404 + no audit'
         resolveTenantFromRequestMock(...args),
     }));
     vi.doMock('@/lib/events-admin-deps', () => ({
-      runListEvents: (s: string, i: unknown) => listEventsMock(s, i),
-      runLoadEventDetail: (s: string, i: unknown) => loadEventDetailMock(s, i),
+      runListEvents: (...args: Parameters<typeof runListEvents>) =>
+        listEventsMock(...args),
+      runLoadEventDetail: (...args: Parameters<typeof runLoadEventDetail>) =>
+        loadEventDetailMock(...args),
     }));
     const { GET } = (await import('@/app/api/admin/events/route')) as {
       GET: (req: NextRequest) => Promise<Response>;
@@ -879,8 +923,10 @@ describe('T3 (verify-finding 2026-05-12) — kill-switch off → 404 + no audit'
         resolveTenantFromRequestMock(...args),
     }));
     vi.doMock('@/lib/events-admin-deps', () => ({
-      runListEvents: (s: string, i: unknown) => listEventsMock(s, i),
-      runLoadEventDetail: (s: string, i: unknown) => loadEventDetailMock(s, i),
+      runListEvents: (...args: Parameters<typeof runListEvents>) =>
+        listEventsMock(...args),
+      runLoadEventDetail: (...args: Parameters<typeof runLoadEventDetail>) =>
+        loadEventDetailMock(...args),
     }));
     const { GET } = (await import(
       '@/app/api/admin/events/[eventId]/route'

@@ -98,32 +98,30 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
         },
       ]);
       await signInAsAdmin(page);
-      await page.goto('/admin/events');
+      // T11 fix (verify-finding 2026-05-12): force the empty-state path
+      // by navigating to a known-impossible filter combination
+      // (categoryFilter that no seed event will ever match) so the
+      // empty-state assertion fires regardless of seeded data shape.
+      // Previously this test had a conditional-skip when table rows
+      // were present, which meant the assertion never ran in
+      // populated staging environments.
+      await page.goto(
+        '/admin/events?categoryFilter=__no_match_anywhere_2026__',
+      );
       await page.waitForLoadState('networkidle');
-      // For TH + SV, fall through to "no integration configured" or
-      // "waiting for first event" depending on tenant state. The copy
-      // MUST NOT be the EN bootstrap string. Each locale has a known
-      // characteristic prefix:
-      //   - TH: Thai script (฀-๿ at least once)
-      //   - SV: ASCII but distinct from EN (e.g. "Inga", "Konfigurera")
-      //   - EN: baseline (skip script assertion)
       const bodyText = await page.evaluate(() => document.body.innerText);
       if (locale === 'th') {
-        // Allow the test to pass if the table has rows AND no empty
-        // state is shown. Otherwise assert at least one Thai grapheme
-        // appears in the visible content.
-        const tableHasRows = await page
-          .getByRole('table')
-          .getByRole('row')
-          .nth(1)
-          .isVisible()
-          .catch(() => false);
-        if (!tableHasRows) {
-          expect(bodyText).toMatch(/[฀-๿]/);
-        }
+        // Thai script must appear at least once on the rendered page.
+        expect(bodyText).toMatch(/[฀-๿]/);
+      } else if (locale === 'sv') {
+        // Swedish-specific empty-state keyword presence; "evenemang"
+        // appears in either filteredEmpty or genericEmpty Swedish copy.
+        expect(bodyText.toLowerCase()).toContain('evenemang');
+      } else {
+        // English baseline — "events" must appear (filteredEmpty or
+        // genericEmpty copy).
+        expect(bodyText.toLowerCase()).toContain('events');
       }
-      // SV + EN — leak patterns alone enforce "no English fallback in SV"
-      // via the `admin.events.*` key-prefix check above.
     });
   }
 });

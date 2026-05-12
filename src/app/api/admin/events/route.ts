@@ -49,13 +49,13 @@ const ListQuerySchema = z.object({
 //   - below `min` → clamp UP to `min` (UX: lower-than-min must not 400)
 //   - above `max` → clamp DOWN to `max`
 // Same convention as F4/F8 routes.
-function clampPageSize(raw: string | null, min: number, max: number, def: number): number {
-  if (raw === null) return def;
+function clampPageSize(raw: string | null, min: number, max: number, def: number): { value: number; clamped: boolean } {
+  if (raw === null) return { value: def, clamped: false };
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n)) return def;
-  if (n < min) return min;
-  if (n > max) return max;
-  return n;
+  if (!Number.isFinite(n)) return { value: def, clamped: false };
+  if (n < min) return { value: min, clamped: true };
+  if (n > max) return { value: max, clamped: true };
+  return { value: n, clamped: false };
 }
 
 /**
@@ -156,7 +156,7 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
-  const pageSize = clampPageSize(
+  const { value: pageSize, clamped: pageSizeClamped } = clampPageSize(
     searchParams.get('pageSize'),
     10,
     100,
@@ -234,5 +234,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.json(result.value, { status: 200 });
+  // E8 fix (verify-finding 2026-05-12): surface the clamping signal to
+  // API consumers via an explicit response header so a CLI/script
+  // caller that asked for pageSize=5 and got 10 rows can detect the
+  // discrepancy without parsing pagination metadata.
+  const responseHeaders: Record<string, string> = {};
+  if (pageSizeClamped) responseHeaders['X-PageSize-Clamped'] = 'true';
+  return NextResponse.json(result.value, {
+    status: 200,
+    headers: responseHeaders,
+  });
 }

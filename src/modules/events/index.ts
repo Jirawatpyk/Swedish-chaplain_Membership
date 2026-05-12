@@ -26,9 +26,30 @@
  *   - Phase 10: archiveEvent, eraseAttendeePii,
  *     pseudonymiseStaleNonMemberPii, getEventAttendeesByMember (F8 port impl)
  *
- * IMPORTANT — barrel guard: Infrastructure modules (schema.ts, Drizzle
- * adapters, crypto adapters) MUST NOT be re-exported from this barrel.
- * Infrastructure is the leaf layer; Application ports are the seam.
+ * IMPORTANT — barrel guard rules (L4 verify-finding 2026-05-12):
+ *
+ *   • RAW Infrastructure adapters (schema.ts Drizzle tables,
+ *     drizzle-*-repository factories, pino-audit-port, crypto signature
+ *     verifier instance) MUST NOT be re-exported. Routes and tests
+ *     consume them indirectly via the composition factories below.
+ *
+ *   • COMPOSITION FACTORIES (`makeStandaloneAuditDeps`,
+ *     `makeIngestWebhookAttendeeDeps`) ARE intentionally re-exported.
+ *     They are the documented Presentation→Application seam for F6
+ *     route handlers; consuming them does NOT leak Drizzle/crypto
+ *     internals because each factory returns Application-port-shaped
+ *     dependencies. F5's `stripe-webhook-deps.ts` follows the same
+ *     pattern at a different layer.
+ *
+ *   • `cryptoWebhookSignatureVerifier` is exported as an Application
+ *     port impl (the verifier itself is pure-function over the Domain
+ *     `WebhookSignatureVerifier` port — no Drizzle/Next/React import).
+ *     Acceptable seam.
+ *
+ * If a future Phase needs to consume an Infrastructure adapter
+ * directly, route the access through a NEW composition factory in
+ * `src/modules/events/infrastructure/di.ts` rather than widening this
+ * barrel. The factories are the contract; the adapters are details.
  */
 
 // --- 1. Domain value objects + branded types ---------------------------------
