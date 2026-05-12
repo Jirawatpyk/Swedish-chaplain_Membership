@@ -54,13 +54,23 @@ export interface ListEventsInput {
   readonly partnerBenefitOnly: boolean;
   readonly culturalEventOnly: boolean;
   readonly categoryFilter: string | null;
+  readonly offset: number;
   readonly pageSize: number;
-  readonly pageToken: string | null;
 }
 
 export interface ListEventsResult {
   readonly items: ReadonlyArray<EventAggregate>;
-  readonly nextPageToken: string | null;
+  readonly totalCount: number;
+}
+
+/**
+ * Per-event registration aggregates (Phase 4 — events list match-rate column).
+ * Returned by `getMatchCountsByEventIds` keyed by `EventId`. Computed once
+ * per list-page render via a single GROUP BY (no N+1 round trips).
+ */
+export interface EventMatchCounts {
+  readonly totalRegistrations: number;
+  readonly matchedRegistrations: number;
 }
 
 /**
@@ -126,6 +136,17 @@ export interface EventsRepository {
   list(
     input: ListEventsInput,
   ): Promise<Result<ListEventsResult, EventsRepositoryError>>;
+
+  /**
+   * Batched per-event registration aggregate (Phase 4). Returns a map keyed
+   * by EventId. Events not present in the map have zero registrations.
+   * Single GROUP BY on event_registrations(tenant_id, event_id) — uses
+   * the `event_regs_tenant_event_registered_idx` index from migration 0131.
+   */
+  getMatchCountsByEventIds(
+    tenantId: TenantId,
+    eventIds: ReadonlyArray<EventId>,
+  ): Promise<Result<ReadonlyMap<EventId, EventMatchCounts>, EventsRepositoryError>>;
 
   getEmptyContext(
     tenantId: TenantId,

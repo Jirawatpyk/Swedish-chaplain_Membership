@@ -32,6 +32,7 @@ import type {
 } from '../../domain/branded-types';
 import type { EventRegistrationAggregate, Attendee, Ticket } from '../../domain/event-registration';
 import type { MatchResolution, QuotaEffect } from '../../domain/event-registration';
+import type { MatchType } from '../../domain/value-objects/match-type';
 
 export interface InsertRegistrationInput {
   readonly tenantId: TenantId;
@@ -61,17 +62,26 @@ export interface ListRegistrationsByEventInput {
   readonly tenantId: TenantId;
   readonly eventId: EventId;
   readonly unmatchedOnly: boolean;
-  readonly emailSearch: string | null; // substring match on attendee_email_lower
+  /**
+   * Exact match-type filter (Phase 4 — attendee table column filter).
+   * `null` = no filter. Wired into the same admin attendee table that
+   * `unmatchedOnly` operates on; mutually compatible (a non-null
+   * `matchTypeFilter` overrides `unmatchedOnly`).
+   */
+  readonly matchTypeFilter: MatchType | null;
+  readonly emailSearch: string | null; // substring on attendee_email_lower + attendee_name
+  readonly offset: number;
   readonly pageSize: number;
-  readonly pageToken: string | null;
 }
 
 export interface ListRegistrationsByEventResult {
   readonly items: ReadonlyArray<EventRegistrationAggregate>;
-  readonly nextPageToken: string | null;
+  readonly totalCount: number;
   /**
-   * Aggregate match-rate counters for the events-list table render
-   * (FR-020). Computed once per page-load (NOT per-row).
+   * Aggregate match-rate counters for the event detail header (US2 AS2).
+   * Reflects the FULL attendee list — NOT filtered by `unmatchedOnly` /
+   * `matchTypeFilter` / `emailSearch`. Computed once per page-load (NOT
+   * per-row).
    */
   readonly matchCounts: {
     readonly memberContact: number;

@@ -18,12 +18,21 @@
  * repository accepts a `TenantTx` executor — never the root `db` — to
  * prevent accidental RLS-bypass.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
-import { events, type EventRow } from './schema';
+import {
+  events,
+  eventRegistrations,
+  tenantWebhookConfigs,
+  type EventRow,
+} from './schema';
 import type {
   EventsRepository,
+  EventMatchCounts,
+  EventsListEmptyContext,
+  ListEventsInput,
+  ListEventsResult,
   UpsertEventInput,
   UpsertEventResult,
   EventsRepositoryError,
@@ -34,6 +43,7 @@ import type {
   ExternalEventId,
 } from '../domain/branded-types';
 import type { Source } from '../domain/value-objects/source';
+import { NON_QUOTA_MATCH_TYPES } from '../domain/value-objects/match-type';
 import type { TenantId } from '@/modules/members';
 
 function toAggregate(row: EventRow): EventAggregate {
@@ -191,17 +201,157 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
       }
     },
 
-    // --- Phase 4 / Phase 6 / Phase 10 stubs ---------------------------------
-    // These methods exist on the port interface but are not yet wired.
-    // Stubs return `kind:'not_implemented'` — semantically distinct
-    // from `db_error` so dashboards/alerts can separate
-    // phase-not-yet-wired calls from real Postgres failures.
-    async list() {
-      return err({ kind: 'not_implemented', method: 'list', futureTask: 'Phase 4 T057' });
+    async list(
+      input: ListEventsInput,
+    ): Promise<Result<ListEventsResult, EventsRepositoryError>> {
+      try {
+        // Build the WHERE clause. tenant_id is set by RLS but we
+        // also include it explicitly so the query uses the
+        // tenant_id-prefixed indexes (events_tenant_start_active_idx
+        // etc. per migration 0130). Belt-and-braces — both layers
+        // of Principle I tenant isolation apply.
+        const conditions = [eq(events.tenantId, input.tenantId)];
+        if (!input.includeArchived) {
+          conditions.push(isNull(events.archivedAt));
+        }
+        if (input.partnerBenefitOnly) {
+          conditions.push(eq(events.isPartnerBenefit, true));
+        }
+        if (input.culturalEventOnly) {
+          conditions.push(eq(events.isCulturalEvent, true));
+        }
+        if (input.categoryFilter !== null) {
+          conditions.push(eq(events.category, input.categoryFilter));
+        }
+        const whereClause = and(...conditions);
+
+        // Total-count query — same WHERE, no LIMIT/OFFSET — kept
+        // separate from the items SELECT to keep the row-projection
+        // index-friendly. At SweCham scale (<200 events/year) this
+        // is sub-10ms; F4 invoice-list precedent for the same pattern.
+        const [countRow] = await executor
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(events)
+          .where(whereClause);
+        const totalCount = Number(countRow?.count ?? 0);
+
+        const rows = await executor
+          .select()
+          .from(events)
+          .where(whereClause)
+          .orderBy(desc(events.startDate), asc(events.eventId))
+          .limit(input.pageSize)
+          .offset(input.offset);
+
+        return ok({
+          items: rows.map(toAggregate),
+          totalCount,
+        });
+      } catch (e) {
+        return err({
+          kind: 'db_error',
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
     },
-    async getEmptyContext() {
-      return err({ kind: 'not_implemented', method: 'getEmptyContext', futureTask: 'Phase 4 T059' });
+
+    async getMatchCountsByEventIds(
+      tenantId: TenantId,
+      eventIds: ReadonlyArray<EventId>,
+    ): Promise<
+      Result<ReadonlyMap<EventId, EventMatchCounts>, EventsRepositoryError>
+    > {
+      if (eventIds.length === 0) return ok(new Map());
+      try {
+        // Single GROUP BY — emits one row per event_id × match_type
+        // bucket. Application folds buckets into total/matched
+        // counts (matched = NOT non_member AND NOT unmatched).
+        const rows = await executor
+          .select({
+            eventId: eventRegistrations.eventId,
+            matchType: eventRegistrations.matchType,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              inArray(eventRegistrations.eventId, eventIds as EventId[]),
+            ),
+          )
+          .groupBy(eventRegistrations.eventId, eventRegistrations.matchType);
+
+        const nonQuotaSet = new Set<string>(
+          NON_QUOTA_MATCH_TYPES as readonly string[],
+        );
+        const map = new Map<EventId, { total: number; matched: number }>();
+        for (const row of rows) {
+          const evId = row.eventId as EventId;
+          const entry = map.get(evId) ?? { total: 0, matched: 0 };
+          const n = Number(row.count);
+          entry.total += n;
+          if (!nonQuotaSet.has(row.matchType)) entry.matched += n;
+          map.set(evId, entry);
+        }
+        const out = new Map<EventId, EventMatchCounts>();
+        for (const [k, v] of map) {
+          out.set(k, {
+            totalRegistrations: v.total,
+            matchedRegistrations: v.matched,
+          });
+        }
+        return ok(out);
+      } catch (e) {
+        return err({
+          kind: 'db_error',
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
     },
+
+    async getEmptyContext(
+      tenantId: TenantId,
+    ): Promise<Result<EventsListEmptyContext, EventsRepositoryError>> {
+      try {
+        // Two compact lookups in parallel: webhook config existence
+        // + archived count. Each is index-backed and runs in <5ms
+        // at SweCham scale.
+        const [configRows, archivedCountRows] = await Promise.all([
+          executor
+            .select({
+              enabled: tenantWebhookConfigs.enabled,
+              lastReceivedAt: tenantWebhookConfigs.lastReceivedAt,
+            })
+            .from(tenantWebhookConfigs)
+            .where(eq(tenantWebhookConfigs.tenantId, tenantId))
+            .limit(1),
+          executor
+            .select({ count: sql<number>`COUNT(*)::int` })
+            .from(events)
+            .where(
+              and(
+                eq(events.tenantId, tenantId),
+                isNotNull(events.archivedAt),
+              ),
+            ),
+        ]);
+        const config = configRows[0];
+        const integrationConfigured = Boolean(config?.enabled);
+        const everReceivedDelivery = config?.lastReceivedAt != null;
+        const totalArchived = Number(archivedCountRows[0]?.count ?? 0);
+        return ok({
+          integrationConfigured,
+          everReceivedDelivery,
+          totalArchived,
+        });
+      } catch (e) {
+        return err({
+          kind: 'db_error',
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+
     async setArchived() {
       return err({ kind: 'not_implemented', method: 'setArchived', futureTask: 'Phase 10 T107' });
     },

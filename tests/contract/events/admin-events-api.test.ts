@@ -88,7 +88,15 @@ afterEach(() => {
 
 async function loadListRoute() {
   try {
-    return (await import('@/app/api/admin/events/route')) as {
+    return (await import(
+      // @ts-expect-error -- route handler created by T060 (Phase 4 GREEN).
+      // The `@ts-expect-error` is removed once T060 lands; until then, the
+      // import is resolved at runtime so the test framework reports the
+      // failure cleanly with a pointer to the missing module. Mirrors the
+      // Phase 3 webhook contract-test precedent at tests/contract/events/
+      // webhook-eventcreate-v1.test.ts:101.
+      '@/app/api/admin/events/route'
+    )) as {
       GET: (req: NextRequest) => Promise<Response>;
     };
   } catch (e) {
@@ -101,7 +109,10 @@ async function loadListRoute() {
 
 async function loadDetailRoute() {
   try {
-    return (await import('@/app/api/admin/events/[eventId]/route')) as {
+    return (await import(
+      // @ts-expect-error -- route handler created by T060 (Phase 4 GREEN).
+      '@/app/api/admin/events/[eventId]/route'
+    )) as {
       GET: (
         req: NextRequest,
         ctx: { params: Promise<{ eventId: string }> },

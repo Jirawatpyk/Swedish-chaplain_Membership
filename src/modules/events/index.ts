@@ -173,6 +173,7 @@ export type {
   ListEventsInput,
   ListEventsResult,
   EventsListEmptyContext,
+  EventMatchCounts,
   EventsRepositoryError,
 } from './application/ports/events-repository';
 
@@ -254,6 +255,30 @@ export {
   type ForceExpireGraceSecretError,
   type ForceExpireGraceSecretDeps,
 } from './application/use-cases/force-expire-grace-secret';
+
+// --- 7. Phase 4 use-case exports (US2 admin events list+detail) -------------
+
+export {
+  listEvents,
+  type ListEventsInput as ListEventsUseCaseInput,
+  type ListEventsOutput,
+  type ListEventsError,
+  type ListEventsItem,
+  type ListEventsPagination,
+  type ListEventsEmptyStateContext,
+  type ListEventsDeps,
+} from './application/use-cases/list-events';
+
+export {
+  loadEventDetail,
+  type LoadEventDetailInput,
+  type LoadEventDetailOutput,
+  type LoadEventDetailError,
+  type LoadEventDetailDeps,
+  type EventDetailItem,
+  type EventDetailRegistration,
+  type EventDetailPagination,
+} from './application/use-cases/load-event-detail';
 
 // --- 6. Infrastructure composition factories (DI surface) -------------------
 

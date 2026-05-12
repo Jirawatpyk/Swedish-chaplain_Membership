@@ -9,7 +9,7 @@
  * use-case can still surface the matching aggregate (read the
  * existing row) for the 200 OK response.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql, ilike, type SQL } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { eventRegistrations, type EventRegistrationRow } from './schema';
@@ -17,6 +17,8 @@ import type {
   RegistrationsRepository,
   InsertRegistrationInput,
   InsertRegistrationResult,
+  ListRegistrationsByEventInput,
+  ListRegistrationsByEventResult,
   RegistrationsRepositoryError,
 } from '../application/ports/registrations-repository';
 import type { EventRegistrationAggregate } from '../domain/event-registration';
@@ -26,7 +28,10 @@ import type {
   ExternalAttendeeId,
   AttendeeEmail,
 } from '../domain/branded-types';
-import type { MatchType } from '../domain/value-objects/match-type';
+import {
+  type MatchType,
+  NON_QUOTA_MATCH_TYPES,
+} from '../domain/value-objects/match-type';
 import type { PaymentStatus } from '../domain/value-objects/payment-status';
 import type { TenantId, MemberId, ContactId } from '@/modules/members';
 
@@ -203,11 +208,119 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
       }
     },
 
-    // --- Stubs for later phases ---------------------------------------------
-    // Distinct `not_implemented` kind so dashboards separate
-    // phase-not-yet-wired from genuine DB errors.
-    async findByEventId() {
-      return err({ kind: 'not_implemented', method: 'findByEventId', futureTask: 'Phase 4 T058' });
+    async findByEventId(
+      input: ListRegistrationsByEventInput,
+    ): Promise<
+      Result<ListRegistrationsByEventResult, RegistrationsRepositoryError>
+    > {
+      try {
+        const baseFilters = [
+          eq(eventRegistrations.tenantId, input.tenantId),
+          eq(eventRegistrations.eventId, input.eventId),
+        ];
+
+        // matchTypeFilter takes precedence over unmatchedOnly when both
+        // are specified (matchType is more specific). When matchTypeFilter
+        // is null and unmatchedOnly is true, broaden to the NON_QUOTA set.
+        const matchFilter: SQL | undefined =
+          input.matchTypeFilter !== null
+            ? eq(eventRegistrations.matchType, input.matchTypeFilter)
+            : input.unmatchedOnly
+              ? inArray(
+                  eventRegistrations.matchType,
+                  NON_QUOTA_MATCH_TYPES as unknown as readonly string[],
+                )
+              : undefined;
+
+        let searchFilter: SQL | undefined;
+        if (input.emailSearch !== null && input.emailSearch !== '') {
+          const pattern = `%${input.emailSearch}%`;
+          // Substring search on lowercased email + name (case-insensitive).
+          searchFilter = or(
+            ilike(eventRegistrations.attendeeEmail, pattern),
+            ilike(eventRegistrations.attendeeName, pattern),
+          );
+        }
+
+        const itemFilters: SQL[] = [...baseFilters];
+        if (matchFilter) itemFilters.push(matchFilter);
+        if (searchFilter) itemFilters.push(searchFilter);
+
+        // matchCounts query — UNFILTERED by unmatchedOnly/matchTypeFilter/
+        // emailSearch (reflects full event total per spec).
+        const matchCountRows = await executor
+          .select({
+            matchType: eventRegistrations.matchType,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(eventRegistrations)
+          .where(and(...baseFilters))
+          .groupBy(eventRegistrations.matchType);
+        const matchCounts = {
+          memberContact: 0,
+          memberDomain: 0,
+          memberFuzzy: 0,
+          nonMember: 0,
+          unmatched: 0,
+        };
+        for (const row of matchCountRows) {
+          const n = Number(row.count);
+          switch (row.matchType as MatchType) {
+            case 'member_contact':
+              matchCounts.memberContact += n;
+              break;
+            case 'member_domain':
+              matchCounts.memberDomain += n;
+              break;
+            case 'member_fuzzy':
+              matchCounts.memberFuzzy += n;
+              break;
+            case 'non_member':
+              matchCounts.nonMember += n;
+              break;
+            case 'unmatched':
+              matchCounts.unmatched += n;
+              break;
+          }
+        }
+
+        const [countRow] = await executor
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(eventRegistrations)
+          .where(and(...itemFilters));
+        const totalCount = Number(countRow?.count ?? 0);
+
+        // When unmatchedOnly is true, sort `unmatched` first (admin
+        // reviews ambiguous matches before non-members) per AS4 / P4.
+        const orderClauses = input.unmatchedOnly
+          ? [
+              sql`CASE WHEN ${eventRegistrations.matchType} = 'unmatched' THEN 0 ELSE 1 END`,
+              desc(eventRegistrations.registeredAt),
+            ]
+          : [
+              desc(eventRegistrations.registeredAt),
+              asc(eventRegistrations.registrationId),
+            ];
+
+        const rows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(and(...itemFilters))
+          .orderBy(...orderClauses)
+          .limit(input.pageSize)
+          .offset(input.offset);
+
+        return ok({
+          items: rows.map(toAggregate),
+          totalCount,
+          matchCounts,
+        });
+      } catch (e) {
+        return err({
+          kind: 'db_error',
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
     },
     async findByEmailLower() {
       return err({ kind: 'not_implemented', method: 'findByEmailLower', futureTask: 'Phase 10 T110' });

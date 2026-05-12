@@ -43,7 +43,6 @@ async function expectNoAxeViolations(
     (v) => v.impact === 'serious' || v.impact === 'critical',
   );
   if (seriousOrWorse.length > 0) {
-    // eslint-disable-next-line no-console -- diagnostic on a11y failure
     console.error(
       `[axe ${surface}] ${seriousOrWorse.length} serious/critical violations:`,
       JSON.stringify(seriousOrWorse, null, 2),
