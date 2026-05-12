@@ -2298,7 +2298,105 @@
       "title": "Betalningsinställningar"
     },
     "events": {
-      "_bootstrap": "Evenemang"
+      "list": {
+        "title": "Evenemang",
+        "subtitle": "Importerade evenemangsregistreringar från EventCreate.",
+        "tableCaption": "Importerade evenemang sorterade efter startdatum, nyast först.",
+        "errorState": "Det gick inte att läsa in evenemangen. Uppdatera sidan.",
+        "columns": {
+          "date": "Datum",
+          "name": "Namn",
+          "category": "Kategori",
+          "registrations": "Registreringar",
+          "partnerBenefit": "Partnerförmån",
+          "matchRate": "Matchningsgrad"
+        },
+        "badges": {
+          "archived": "Arkiverad",
+          "partnerBenefit": "Partnerförmån",
+          "culturalEvent": "Kulturevenemang"
+        },
+        "filters": {
+          "partnerBenefitOnly": "Endast partnerförmånsevenemang",
+          "culturalEventOnly": "Endast kulturevenemang",
+          "showArchived": "Visa arkiverade evenemang",
+          "hideArchived": "Dölj arkiverade evenemang",
+          "clearAll": "Rensa filter"
+        },
+        "emptyState": {
+          "filteredEmpty": "Inga evenemang matchar dina filter.",
+          "clearFilters": "Rensa filter",
+          "genericEmpty": "Inga evenemang att visa ännu.",
+          "noIntegration": {
+            "title": "Inga evenemang ännu",
+            "body": "Konfigurera din EventCreate-integration för att automatiskt importera deltagare.",
+            "cta": "Konfigurera EventCreate-integration"
+          },
+          "noDeliveries": {
+            "title": "Väntar på första evenemanget",
+            "body": "Din Zap ska leverera nya deltagardata inom cirka 15 minuter efter en EventCreate-registrering. Du kan också skicka en testwebhook för att bekräfta anslutningen.",
+            "cta": "Konfigurera EventCreate"
+          },
+          "allArchived": {
+            "title": "Alla evenemang är arkiverade",
+            "body": "{count, plural, one {# evenemang har arkiverats.} other {# evenemang har arkiverats.}}",
+            "cta": "Visa arkiverade evenemang"
+          }
+        }
+      },
+      "detail": {
+        "title": "Evenemangsdetaljer",
+        "subtitle": "Importerade deltagare, matchningsstatus och kvoteffekter.",
+        "errorSubtitle": "Det gick inte att läsa in evenemanget.",
+        "errorBody": "Uppdatera sidan. Om problemet kvarstår, kontakta supporten.",
+        "backToList": "Tillbaka till evenemang",
+        "header": {
+          "matchRate": "Matchningsgrad",
+          "matchRateValue": "{pct}% ({matched} av {total})",
+          "totalRegistrations": "Totalt antal registreringar",
+          "archived": "Arkiverad",
+          "partnerBenefit": "Partnerförmån",
+          "culturalEvent": "Kulturevenemang",
+          "viewOnEventCreate": "Visa på EventCreate",
+          "opensInNewTab": "(öppnas i en ny flik)"
+        },
+        "attendees": {
+          "heading": "Deltagare",
+          "tableCaption": "Deltagare med matchningsstatus, biljett, kvoteffekt och registreringstid.",
+          "searchPlaceholder": "Sök på e-post eller namn…",
+          "searchLabel": "Sök deltagare",
+          "searchSubmit": "Sök",
+          "showUnmatchedOnly": "Visa endast omatchade",
+          "showUnmatchedOnlyActive": "Visar endast omatchade",
+          "empty": "Inga deltagare matchar dina filter.",
+          "columns": {
+            "attendee": "Deltagare",
+            "match": "Matchning",
+            "ticket": "Biljett",
+            "quota": "Kvot",
+            "registered": "Registrerad"
+          }
+        }
+      },
+      "matchType": {
+        "member_contact": "Matchad (exakt e-post)",
+        "member_domain": "Matchad (företagsdomän)",
+        "member_fuzzy": "Matchad (ungefärlig)",
+        "non_member": "Icke-medlem",
+        "unmatched": "Omatchad"
+      },
+      "quotaEffect": {
+        "partnership": "Partnerförmån",
+        "cultural": "Kulturkvot",
+        "overQuota": "Över kvot",
+        "none": "Ej räknad"
+      },
+      "paymentStatus": {
+        "paid": "Betald",
+        "pending": "Väntar",
+        "refunded": "Återbetald",
+        "free": "Gratis"
+      }
     },
     "integrations": {
       "eventcreate": {

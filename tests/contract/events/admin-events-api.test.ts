@@ -37,8 +37,6 @@ const listEventsMock = vi.fn();
 const loadEventDetailMock = vi.fn();
 const requireSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
-const makeListEventsDepsMock = vi.fn(() => ({}));
-const makeLoadEventDetailDepsMock = vi.fn(() => ({}));
 
 vi.mock('@/modules/events', async () => {
   const actual = await vi.importActual<typeof import('@/modules/events')>(
@@ -51,9 +49,17 @@ vi.mock('@/modules/events', async () => {
   };
 });
 
+// Mock the composition adapter (route handler's only DB seam) so no
+// Drizzle pool / Neon connection is required. The `run*` wrappers stub
+// `runInTenant(...)` + use-case dispatch in one call — the test
+// controls the result by injecting fake Result objects via the
+// `listEventsMock` / `loadEventDetailMock` factories so we can also
+// observe the input arguments (the route's parsed params).
 vi.mock('@/lib/events-admin-deps', () => ({
-  makeListEventsDeps: () => makeListEventsDepsMock(),
-  makeLoadEventDetailDeps: () => makeLoadEventDetailDepsMock(),
+  runListEvents: (_tenantSlug: string, input: unknown) =>
+    listEventsMock(_tenantSlug, input),
+  runLoadEventDetail: (_tenantSlug: string, input: unknown) =>
+    loadEventDetailMock(_tenantSlug, input),
 }));
 
 vi.mock('@/lib/auth-session', () => ({
@@ -88,15 +94,8 @@ afterEach(() => {
 
 async function loadListRoute() {
   try {
-    return (await import(
-      // @ts-expect-error -- route handler created by T060 (Phase 4 GREEN).
-      // The `@ts-expect-error` is removed once T060 lands; until then, the
-      // import is resolved at runtime so the test framework reports the
-      // failure cleanly with a pointer to the missing module. Mirrors the
-      // Phase 3 webhook contract-test precedent at tests/contract/events/
-      // webhook-eventcreate-v1.test.ts:101.
-      '@/app/api/admin/events/route'
-    )) as {
+    // T060 routes now exist (Phase 4 GREEN 2b).
+    return (await import('@/app/api/admin/events/route')) as {
       GET: (req: NextRequest) => Promise<Response>;
     };
   } catch (e) {
@@ -109,10 +108,7 @@ async function loadListRoute() {
 
 async function loadDetailRoute() {
   try {
-    return (await import(
-      // @ts-expect-error -- route handler created by T060 (Phase 4 GREEN).
-      '@/app/api/admin/events/[eventId]/route'
-    )) as {
+    return (await import('@/app/api/admin/events/[eventId]/route')) as {
       GET: (
         req: NextRequest,
         ctx: { params: Promise<{ eventId: string }> },

@@ -2298,7 +2298,105 @@
       "title": "Payment settings"
     },
     "events": {
-      "_bootstrap": "Events"
+      "list": {
+        "title": "Events",
+        "subtitle": "Imported event registrations from EventCreate.",
+        "tableCaption": "Imported events sorted by start date, most recent first.",
+        "errorState": "We couldn't load events. Please refresh the page.",
+        "columns": {
+          "date": "Date",
+          "name": "Name",
+          "category": "Category",
+          "registrations": "Registrations",
+          "partnerBenefit": "Partner Benefit",
+          "matchRate": "Match Rate"
+        },
+        "badges": {
+          "archived": "Archived",
+          "partnerBenefit": "Partner benefit",
+          "culturalEvent": "Cultural event"
+        },
+        "filters": {
+          "partnerBenefitOnly": "Partner-benefit events only",
+          "culturalEventOnly": "Cultural events only",
+          "showArchived": "Show archived events",
+          "hideArchived": "Hide archived events",
+          "clearAll": "Clear filters"
+        },
+        "emptyState": {
+          "filteredEmpty": "No events match your filters.",
+          "clearFilters": "Clear filters",
+          "genericEmpty": "No events to display yet.",
+          "noIntegration": {
+            "title": "No events yet",
+            "body": "Set up your EventCreate integration to start importing attendees automatically.",
+            "cta": "Set up EventCreate integration"
+          },
+          "noDeliveries": {
+            "title": "Waiting for first event",
+            "body": "Your Zap should deliver new attendee data within about 15 minutes after their EventCreate registration. You can also send a test webhook to verify the connection.",
+            "cta": "Configure EventCreate"
+          },
+          "allArchived": {
+            "title": "All events are archived",
+            "body": "{count, plural, one {# event has been archived.} other {# events have been archived.}}",
+            "cta": "Show archived events"
+          }
+        }
+      },
+      "detail": {
+        "title": "Event detail",
+        "subtitle": "Imported attendees, match status, and quota effects.",
+        "errorSubtitle": "We couldn't load this event.",
+        "errorBody": "Please refresh the page. If the problem persists, contact support.",
+        "backToList": "Back to events",
+        "header": {
+          "matchRate": "Match rate",
+          "matchRateValue": "{pct}% ({matched} of {total})",
+          "totalRegistrations": "Total registrations",
+          "archived": "Archived",
+          "partnerBenefit": "Partner benefit",
+          "culturalEvent": "Cultural event",
+          "viewOnEventCreate": "View on EventCreate",
+          "opensInNewTab": "(opens in a new tab)"
+        },
+        "attendees": {
+          "heading": "Attendees",
+          "tableCaption": "Event attendees with match status, ticket, quota effect, and registration time.",
+          "searchPlaceholder": "Search by email or name…",
+          "searchLabel": "Search attendees",
+          "searchSubmit": "Search",
+          "showUnmatchedOnly": "Show unmatched only",
+          "showUnmatchedOnlyActive": "Showing unmatched only",
+          "empty": "No attendees match your filters.",
+          "columns": {
+            "attendee": "Attendee",
+            "match": "Match",
+            "ticket": "Ticket",
+            "quota": "Quota",
+            "registered": "Registered"
+          }
+        }
+      },
+      "matchType": {
+        "member_contact": "Matched (exact email)",
+        "member_domain": "Matched (company domain)",
+        "member_fuzzy": "Matched (fuzzy)",
+        "non_member": "Non-member",
+        "unmatched": "Unmatched"
+      },
+      "quotaEffect": {
+        "partnership": "Partner benefit",
+        "cultural": "Cultural quota",
+        "overQuota": "Over quota",
+        "none": "Not counted"
+      },
+      "paymentStatus": {
+        "paid": "Paid",
+        "pending": "Pending",
+        "refunded": "Refunded",
+        "free": "Free"
+      }
     },
     "integrations": {
       "eventcreate": {

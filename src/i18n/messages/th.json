@@ -2298,7 +2298,105 @@
       "title": "ตั้งค่าการชำระเงิน"
     },
     "events": {
-      "_bootstrap": "อีเวนต์"
+      "list": {
+        "title": "อีเวนต์",
+        "subtitle": "การลงทะเบียนอีเวนต์ที่นำเข้าจาก EventCreate",
+        "tableCaption": "อีเวนต์ที่นำเข้า เรียงตามวันที่เริ่มต้นจากใหม่ไปเก่า",
+        "errorState": "ไม่สามารถโหลดอีเวนต์ได้ กรุณารีเฟรชหน้าจอ",
+        "columns": {
+          "date": "วันที่",
+          "name": "ชื่อ",
+          "category": "หมวดหมู่",
+          "registrations": "จำนวนผู้ลงทะเบียน",
+          "partnerBenefit": "สิทธิ์พาร์ทเนอร์",
+          "matchRate": "อัตราการจับคู่"
+        },
+        "badges": {
+          "archived": "เก็บถาวร",
+          "partnerBenefit": "สิทธิ์พาร์ทเนอร์",
+          "culturalEvent": "อีเวนต์วัฒนธรรม"
+        },
+        "filters": {
+          "partnerBenefitOnly": "แสดงเฉพาะอีเวนต์สิทธิ์พาร์ทเนอร์",
+          "culturalEventOnly": "แสดงเฉพาะอีเวนต์วัฒนธรรม",
+          "showArchived": "แสดงอีเวนต์ที่เก็บถาวร",
+          "hideArchived": "ซ่อนอีเวนต์ที่เก็บถาวร",
+          "clearAll": "ล้างตัวกรอง"
+        },
+        "emptyState": {
+          "filteredEmpty": "ไม่พบอีเวนต์ที่ตรงกับตัวกรอง",
+          "clearFilters": "ล้างตัวกรอง",
+          "genericEmpty": "ยังไม่มีอีเวนต์ให้แสดง",
+          "noIntegration": {
+            "title": "ยังไม่มีอีเวนต์",
+            "body": "ตั้งค่าการเชื่อมต่อ EventCreate เพื่อเริ่มนำเข้าข้อมูลผู้เข้าร่วมโดยอัตโนมัติ",
+            "cta": "ตั้งค่าการเชื่อมต่อ EventCreate"
+          },
+          "noDeliveries": {
+            "title": "รอรับอีเวนต์แรก",
+            "body": "Zap ของคุณควรส่งข้อมูลผู้ลงทะเบียนใหม่ภายในประมาณ 15 นาทีหลังการลงทะเบียนบน EventCreate คุณยังสามารถส่ง webhook ทดสอบเพื่อยืนยันการเชื่อมต่อได้",
+            "cta": "ตั้งค่า EventCreate"
+          },
+          "allArchived": {
+            "title": "อีเวนต์ทั้งหมดถูกเก็บถาวร",
+            "body": "{count, plural, other {อีเวนต์ # รายการถูกเก็บถาวร}}",
+            "cta": "แสดงอีเวนต์ที่เก็บถาวร"
+          }
+        }
+      },
+      "detail": {
+        "title": "รายละเอียดอีเวนต์",
+        "subtitle": "รายชื่อผู้เข้าร่วมที่นำเข้า สถานะการจับคู่ และผลกระทบโควต้า",
+        "errorSubtitle": "ไม่สามารถโหลดอีเวนต์นี้ได้",
+        "errorBody": "กรุณารีเฟรชหน้าจอ หากปัญหายังคงอยู่ กรุณาติดต่อทีมสนับสนุน",
+        "backToList": "กลับไปยังรายการอีเวนต์",
+        "header": {
+          "matchRate": "อัตราการจับคู่",
+          "matchRateValue": "{pct}% ({matched} จาก {total})",
+          "totalRegistrations": "จำนวนผู้ลงทะเบียนทั้งหมด",
+          "archived": "เก็บถาวร",
+          "partnerBenefit": "สิทธิ์พาร์ทเนอร์",
+          "culturalEvent": "อีเวนต์วัฒนธรรม",
+          "viewOnEventCreate": "ดูบน EventCreate",
+          "opensInNewTab": "(เปิดในแท็บใหม่)"
+        },
+        "attendees": {
+          "heading": "ผู้เข้าร่วม",
+          "tableCaption": "รายชื่อผู้เข้าร่วมพร้อมสถานะการจับคู่ บัตร ผลกระทบโควต้า และเวลาลงทะเบียน",
+          "searchPlaceholder": "ค้นหาจากอีเมลหรือชื่อ…",
+          "searchLabel": "ค้นหาผู้เข้าร่วม",
+          "searchSubmit": "ค้นหา",
+          "showUnmatchedOnly": "แสดงเฉพาะที่ยังไม่จับคู่",
+          "showUnmatchedOnlyActive": "กำลังแสดงเฉพาะที่ยังไม่จับคู่",
+          "empty": "ไม่พบผู้เข้าร่วมที่ตรงกับตัวกรอง",
+          "columns": {
+            "attendee": "ผู้เข้าร่วม",
+            "match": "การจับคู่",
+            "ticket": "บัตร",
+            "quota": "โควต้า",
+            "registered": "เวลาลงทะเบียน"
+          }
+        }
+      },
+      "matchType": {
+        "member_contact": "จับคู่ (อีเมลตรง)",
+        "member_domain": "จับคู่ (โดเมนบริษัท)",
+        "member_fuzzy": "จับคู่ (ใกล้เคียง)",
+        "non_member": "ไม่ใช่สมาชิก",
+        "unmatched": "ยังไม่จับคู่"
+      },
+      "quotaEffect": {
+        "partnership": "สิทธิ์พาร์ทเนอร์",
+        "cultural": "โควต้าวัฒนธรรม",
+        "overQuota": "เกินโควต้า",
+        "none": "ไม่นับ"
+      },
+      "paymentStatus": {
+        "paid": "ชำระแล้ว",
+        "pending": "รอชำระ",
+        "refunded": "คืนเงินแล้ว",
+        "free": "ฟรี"
+      }
     },
     "integrations": {
       "eventcreate": {

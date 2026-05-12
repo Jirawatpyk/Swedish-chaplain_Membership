@@ -1,0 +1,266 @@
+/**
+ * T063 — Attendee table (F6 Phase 4 / US2 AS2-AS4).
+ *
+ * Renders the paginated attendee list for an event detail page +
+ * toolbar (search input + "Show unmatched only" toggle). Server-
+ * side pagination + filter — the toolbar pushes URL params and the
+ * server component re-renders.
+ *
+ * Columns:
+ *   - Attendee  (name + email + company stacked)
+ *   - Match     (MatchStatusBadge — 5 variants)
+ *   - Ticket    (type + price + payment status)
+ *   - Quota     (Partner / Cultural / Over-quota badges; can be
+ *                multiple)
+ *   - Registered (relative time, locale-formatted)
+ *
+ * a11y:
+ *   - Toolbar button has aria-pressed reflecting the URL state.
+ *   - sr-only caption + result-count announcement (aria-live).
+ *   - Empty rows path uses tabular role+aria semantics correctly
+ *     ("no matching rows").
+ */
+'use client';
+
+import Link from 'next/link';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useTransition, useState, useCallback, useEffect } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import type { MatchType } from '@/modules/events';
+import { MatchStatusBadge } from './match-status-badge';
+import { QuotaEffectBadge } from './quota-effect-badge';
+
+export type AttendeeRow = {
+  readonly registrationId: string;
+  readonly attendeeEmail: string;
+  readonly attendeeName: string;
+  readonly attendeeCompany: string | null;
+  readonly matchType: MatchType;
+  readonly ticketType: string | null;
+  readonly ticketPriceThb: number | null;
+  readonly paymentStatus: 'paid' | 'pending' | 'refunded' | 'free';
+  readonly countedAgainstPartnership: boolean;
+  readonly countedAgainstCulturalQuota: boolean;
+  readonly isOverQuota: boolean;
+  readonly registeredAt: string;
+};
+
+type Props = {
+  readonly rows: readonly AttendeeRow[];
+  readonly unmatchedOnly: boolean;
+  readonly initialSearch: string;
+};
+
+function formatRegisteredAt(iso: string, locale: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(d);
+}
+
+function formatTicketPrice(thb: number | null, locale: string): string {
+  if (thb === null) return '—';
+  if (thb === 0) return '฿0';
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    minimumFractionDigits: 0,
+  }).format(thb);
+}
+
+export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
+  const t = useTranslations('admin.events.detail.attendees');
+  const tMatchType = useTranslations('admin.events.matchType');
+  const tQuota = useTranslations('admin.events.quotaEffect');
+  const tPay = useTranslations('admin.events.paymentStatus');
+  const locale = useLocale();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+  const [searchInput, setSearchInput] = useState(initialSearch);
+
+  // Sync local state when URL changes externally (back/forward nav).
+  useEffect(() => {
+    setSearchInput(initialSearch);
+  }, [initialSearch]);
+
+  const pushUrl = useCallback(
+    (next: URLSearchParams) => {
+      const qs = next.toString();
+      startTransition(() => {
+        router.push(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+      });
+    },
+    [pathname, router],
+  );
+
+  const toggleUnmatched = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    if (unmatchedOnly) {
+      next.delete('unmatchedOnly');
+    } else {
+      next.set('unmatchedOnly', '1');
+    }
+    next.delete('page');
+    pushUrl(next);
+  }, [searchParams, unmatchedOnly, pushUrl]);
+
+  const submitSearch = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      const next = new URLSearchParams(searchParams.toString());
+      const v = searchInput.trim();
+      if (v) {
+        next.set('q', v);
+      } else {
+        next.delete('q');
+      }
+      next.delete('page');
+      pushUrl(next);
+    },
+    [searchInput, searchParams, pushUrl],
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <form onSubmit={submitSearch} className="flex flex-1 gap-2">
+          <Input
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder={t('searchPlaceholder')}
+            aria-label={t('searchLabel')}
+            className="max-w-md"
+          />
+          <Button type="submit" variant="outline" disabled={isPending}>
+            {t('searchSubmit')}
+          </Button>
+        </form>
+        <Button
+          type="button"
+          variant={unmatchedOnly ? 'default' : 'outline'}
+          onClick={toggleUnmatched}
+          aria-pressed={unmatchedOnly}
+          disabled={isPending}
+        >
+          {unmatchedOnly
+            ? t('showUnmatchedOnlyActive')
+            : t('showUnmatchedOnly')}
+        </Button>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="rounded-md border border-border bg-card py-12 text-center">
+          <p className="text-muted-foreground">{t('empty')}</p>
+        </div>
+      ) : (
+        <Table>
+          <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t('columns.attendee')}</TableHead>
+              <TableHead>{t('columns.match')}</TableHead>
+              <TableHead>{t('columns.ticket')}</TableHead>
+              <TableHead>{t('columns.quota')}</TableHead>
+              <TableHead>{t('columns.registered')}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.registrationId}>
+                <TableCell>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">{r.attendeeName}</span>
+                    <Link
+                      href={`mailto:${r.attendeeEmail}`}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    >
+                      {r.attendeeEmail}
+                    </Link>
+                    {r.attendeeCompany && (
+                      <span className="text-xs text-muted-foreground">
+                        {r.attendeeCompany}
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <MatchStatusBadge
+                    matchType={r.matchType}
+                    label={tMatchType(r.matchType)}
+                  />
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-0.5">
+                    <span>{r.ticketType ?? '—'}</span>
+                    <span
+                      className={cn(
+                        'text-xs',
+                        r.paymentStatus === 'refunded'
+                          ? 'text-destructive'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {formatTicketPrice(r.ticketPriceThb, locale)}
+                      <span aria-hidden="true"> · </span>
+                      {tPay(r.paymentStatus)}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {r.countedAgainstPartnership && (
+                      <QuotaEffectBadge
+                        kind="partnership"
+                        label={tQuota('partnership')}
+                      />
+                    )}
+                    {r.countedAgainstCulturalQuota && (
+                      <QuotaEffectBadge
+                        kind="cultural"
+                        label={tQuota('cultural')}
+                      />
+                    )}
+                    {r.isOverQuota && (
+                      <QuotaEffectBadge
+                        kind="over_quota"
+                        label={tQuota('overQuota')}
+                      />
+                    )}
+                    {!r.countedAgainstPartnership &&
+                      !r.countedAgainstCulturalQuota &&
+                      !r.isOverQuota && (
+                        <Badge variant="outline" className="text-muted-foreground">
+                          {tQuota('none')}
+                        </Badge>
+                      )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-muted-foreground">
+                  {formatRegisteredAt(r.registeredAt, locale)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </div>
+  );
+}
