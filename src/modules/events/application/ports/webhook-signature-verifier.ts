@@ -20,7 +20,6 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
-import type { Result } from '@/lib/result';
 import type {
   WebhookSecret,
 } from '../../domain/branded-types';
@@ -75,5 +74,5 @@ export interface VerifyFailure {
 export type VerifyOutcome = VerifySuccess | VerifyFailure;
 
 export interface WebhookSignatureVerifier {
-  verify(input: VerifyInput): Result<VerifyOutcome, never>;
+  verify(input: VerifyInput): VerifyOutcome;
 }

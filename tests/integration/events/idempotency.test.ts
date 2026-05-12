@@ -6,22 +6,17 @@
  *   - plan.md Testing § idempotency
  *   - data-model.md § 1.4
  *
- * Scenario (FR-004): same `X-Request-ID` delivered 5× to the webhook
- * receiver MUST produce:
+ * Scenario (FR-004): same `X-Request-ID` delivered 5× MUST produce:
  *   - 1 event row
  *   - 1 registration row
- *   - 1 `webhook_receipt_verified` audit event
- *   - 4 `webhook_duplicate_rejected` audit events
- *   - 1 idempotency receipt row
+ *   - 1 idempotency receipt
+ *   - 1 `webhook_receipt_verified` audit
+ *   - 4 `webhook_duplicate_rejected` audits
  *
- * The first call commits; subsequent calls short-circuit on the F6-owned
- * `eventcreate_idempotency_receipts` ON CONFLICT DO NOTHING semantics
- * inside the strict-transactional ACID unit (FR-037).
- *
- * RED reason: `ingestWebhookAttendee` use-case + adapters not yet
- * exported from `@/modules/events`. Module import fails → red.
- *
- * Turns GREEN: T047 + T048 + T049 + T050 + T051 land.
+ * Tests against live Neon Singapore via Wave 3.2 `makeIngestWebhookAttendeeDeps`
+ * factory — the use-case manages its own tx + tenant context via the
+ * deps `runInTenantTx` adapter (Constitution Principle III: Application
+ * never imports drizzle-orm; tx boundary owned by Infrastructure).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
@@ -33,24 +28,22 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { ingestWebhookAttendee } from '@/modules/events';
+import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { makeWebhookPayload } from './helpers/sign-webhook';
 
-// @ts-expect-error — ingestWebhookAttendee use-case not yet exported (T047).
-import { ingestWebhookAttendee, makeIngestWebhookAttendeeDeps } from '@/modules/events';
-
 describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplicate', () => {
   let tenant: TestTenant;
-  const REQUEST_ID = 'req-test-idempotency-001';
+  const REQUEST_ID = `req-test-idempotency-${Date.now()}-001`;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-swecham');
-    // Seed a webhook config so the use-case can resolve the active secret.
-    await runInTenant(tenant.ctx, async () => {
-      await db.insert(tenantWebhookConfigs).values({
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantWebhookConfigs).values({
         tenantId: tenant.ctx.slug,
         source: 'eventcreate',
-        webhookSecretActive: 'test-secret-43-chars-aaaaaaaaaaaaaaaaaa',
+        webhookSecretActive: 'test-secret-' + 'a'.repeat(43),
         enabled: true,
       });
     });
@@ -61,17 +54,21 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
   });
 
   it('5× delivery → 1 event + 1 registration + 1 fresh audit + 4 duplicate audits', async () => {
-    const payload = makeWebhookPayload();
+    const payload = makeWebhookPayload({
+      event: { externalId: `event_idempotency_${Date.now()}` },
+      attendee: { externalId: `att_idempotency_${Date.now()}` },
+    });
     const deps = makeIngestWebhookAttendeeDeps();
     const callIngest = async () =>
-      runInTenant(tenant.ctx, async () =>
-        ingestWebhookAttendee({
+      ingestWebhookAttendee(
+        {
           tenantId: tenant.ctx.slug,
           requestId: REQUEST_ID,
           source: 'eventcreate_webhook',
           rawPayload: payload,
           sourceIp: '127.0.0.1',
-        }, deps),
+        },
+        deps,
       );
 
     const results = await Promise.all([
@@ -82,29 +79,30 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
       callIngest(),
     ]);
 
-    // Exactly one fresh + four duplicates
-    const fresh = results.filter((r: { ok: boolean }) => r.ok).length;
+    const fresh = results.filter((r) => r.ok).length;
     const dups = results.filter(
-      (r: { ok: boolean; error?: { kind?: string } }) =>
-        r.ok === false && r.error?.kind === 'duplicate_request_id',
+      (r) => r.ok === false && r.error.kind === 'duplicate_request_id',
     ).length;
     expect(fresh + dups).toBe(5);
     expect(fresh).toBe(1);
     expect(dups).toBe(4);
 
-    // Persistence assertions
-    const eventRows = await runInTenant(tenant.ctx, async () =>
-      db.select().from(events).where(eq(events.tenantId, tenant.ctx.slug)),
+    // Persistence — exactly one event + one registration + one receipt
+    const eventRows = await runInTenant(tenant.ctx, async (tx) =>
+      tx.select().from(events).where(eq(events.tenantId, tenant.ctx.slug)),
     );
     expect(eventRows.length).toBe(1);
 
-    const regRows = await runInTenant(tenant.ctx, async () =>
-      db.select().from(eventRegistrations).where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
+    const regRows = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(eventRegistrations)
+        .where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
     );
     expect(regRows.length).toBe(1);
 
-    const receiptRows = await runInTenant(tenant.ctx, async () =>
-      db
+    const receiptRows = await runInTenant(tenant.ctx, async (tx) =>
+      tx
         .select()
         .from(eventcreateIdempotencyReceipts)
         .where(
@@ -116,16 +114,13 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
     );
     expect(receiptRows.length).toBe(1);
 
-    // Audit-trail assertions — 1 verified + 4 duplicate-rejected
+    // Audit-trail — exactly 1 verified + 4 duplicate-rejected
+    // Run with root db (audit_log RLS-permissive policy lets us read
+    // across tenants from the owner role).
     const auditRows = await db
       .select()
       .from(auditLog)
       .where(eq(auditLog.tenantId, tenant.ctx.slug));
-    // Cast eventType to string — Drizzle pgEnum declaration in F1's
-    // audit_log schema is static at compile time and doesn't reflect the
-    // 35 F6 enum extensions added by migration 0132. The runtime values
-    // are correct (the SQL enum carries them); only the TS-level type
-    // narrowing needs the escape hatch.
     const verifiedCount = auditRows.filter(
       (r) => (r.eventType as string) === 'webhook_receipt_verified',
     ).length;

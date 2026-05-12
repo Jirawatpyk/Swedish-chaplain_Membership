@@ -223,3 +223,25 @@ export type {
   SweepIdempotencyReceiptsResult,
   RetentionSweeperError,
 } from './application/ports/retention-sweeper';
+
+// --- 5. Phase 3 use-case exports --------------------------------------------
+
+export {
+  verifyWebhookSignature,
+  type VerifyWebhookSignatureInput,
+} from './application/verify-webhook-signature';
+
+export {
+  ingestWebhookAttendee,
+  type IngestWebhookAttendeeInput,
+  type IngestWebhookAttendeeDeps,
+  type IngestSuccess,
+  type IngestError,
+  type FailureStage,
+  type TxScopedPorts,
+} from './application/ingest-webhook-attendee';
+
+// --- 6. Infrastructure composition factories (DI surface) -------------------
+
+export { makeIngestWebhookAttendeeDeps } from './infrastructure/di';
+export { cryptoWebhookSignatureVerifier } from './infrastructure/crypto-webhook-signature-verifier';

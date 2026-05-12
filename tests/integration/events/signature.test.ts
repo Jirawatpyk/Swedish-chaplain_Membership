@@ -25,13 +25,10 @@
 import { describe, expect, it } from 'vitest';
 import { signWebhookBody, makeWebhookPayload } from './helpers/sign-webhook';
 
-// @ts-expect-error — verifyWebhookSignature use-case not yet exported (T043).
-import { verifyWebhookSignature } from '@/modules/events';
-// @ts-expect-error — adapter not yet exported (T044).
-import { cryptoWebhookSignatureVerifier } from '@/modules/events/infrastructure/crypto-webhook-signature-verifier';
+import { verifyWebhookSignature, cryptoWebhookSignatureVerifier, asWebhookSecret } from '@/modules/events';
 
-const ACTIVE_SECRET = 'a'.repeat(43); // ≥43 chars per branded-types guard
-const GRACE_SECRET = 'b'.repeat(43);
+const ACTIVE_SECRET = asWebhookSecret('a'.repeat(43)); // ≥43 chars per branded-types guard
+const GRACE_SECRET = asWebhookSecret('b'.repeat(43));
 const TENANT_PAYLOAD = makeWebhookPayload();
 
 describe('T038 — F6 webhook signature verification (8 paths)', () => {
@@ -48,9 +45,10 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.ok).toBe(true);
-    expect(result.value.verified).toBe(true);
-    expect(result.value.usedGraceSecret).toBe(false);
+    expect(result.verified).toBe(true);
+    if (result.verified) {
+      expect(result.usedGraceSecret).toBe(false);
+    }
   });
 
   it('2. grace secret within 24h → verified + grace flag set', () => {
@@ -68,8 +66,10 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.value.verified).toBe(true);
-    expect(result.value.usedGraceSecret).toBe(true);
+    expect(result.verified).toBe(true);
+    if (result.verified) {
+      expect(result.usedGraceSecret).toBe(true);
+    }
   });
 
   it('3. grace secret at 25h → rejected (window closed)', () => {
@@ -87,11 +87,12 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.value.verified).toBe(false);
+    expect(result.verified).toBe(false);
   });
 
   it('4. wrong secret → rejected', () => {
-    const signed = signWebhookBody({ body: TENANT_PAYLOAD, secret: 'wrong-secret-43-chars-aaaaaaaaaaaaa' });
+    const wrongSecret = asWebhookSecret('c'.repeat(43));
+    const signed = signWebhookBody({ body: TENANT_PAYLOAD, secret: wrongSecret });
     const result = verifyWebhookSignature({
       rawBody: signed.rawBody,
       signatureHeader: signed.signatureHeader,
@@ -103,8 +104,10 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.value.verified).toBe(false);
-    expect(result.value.kind).toBe('signature_mismatch');
+    expect(result.verified).toBe(false);
+    if (!result.verified) {
+      expect(result.kind).toBe('signature_mismatch');
+    }
   });
 
   it('5. tampered body → rejected', () => {
@@ -120,7 +123,7 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.value.verified).toBe(false);
+    expect(result.verified).toBe(false);
   });
 
   it('6. missing signature header → rejected', () => {
@@ -136,7 +139,10 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.value.kind).toBe('missing_signature_header');
+    expect(result.verified).toBe(false);
+    if (!result.verified) {
+      expect(result.kind).toBe('missing_signature_header');
+    }
   });
 
   it('7. wrong-length signature (truncated) → rejected without throw (E8)', () => {
@@ -171,7 +177,10 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
       maxSkewSeconds: 300,
       verifier: cryptoWebhookSignatureVerifier,
     });
-    expect(result.value.kind).toBe('timestamp_skew_exceeded');
-    expect(result.value.skewSeconds).toBeGreaterThan(300);
+    expect(result.verified).toBe(false);
+    if (!result.verified) {
+      expect(result.kind).toBe('timestamp_skew_exceeded');
+      expect(result.skewSeconds).toBeGreaterThan(300);
+    }
   });
 });

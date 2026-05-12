@@ -30,7 +30,7 @@
  * Turns FULLY GREEN: T052 route + cross-tenant probe audit emission.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant, db } from '@/lib/db';
 import {
@@ -139,14 +139,14 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
 
   describe('events table — RLS blocks cross-tenant CRUD', () => {
     it('SELECT in tenant A context returns 0 of tenant B rows', async () => {
-      const rows = await runInTenant(tenantA.ctx, async () =>
-        db.select().from(events).where(eq(events.eventId, bEventId)),
+      const rows = await runInTenant(tenantA.ctx, async (tx) =>
+        tx.select().from(events).where(eq(events.eventId, bEventId)),
       );
       expect(rows.length).toBe(0);
     });
     it('UPDATE in tenant A cannot mutate tenant B row', async () => {
-      const result = await runInTenant(tenantA.ctx, async () =>
-        db
+      const result = await runInTenant(tenantA.ctx, async (tx) =>
+        tx
           .update(events)
           .set({ name: 'HIJACKED' })
           .where(and(eq(events.tenantId, tenantB.ctx.slug), eq(events.eventId, bEventId)))
@@ -155,8 +155,8 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
       expect(result.length).toBe(0);
     });
     it('DELETE in tenant A cannot remove tenant B row', async () => {
-      const result = await runInTenant(tenantA.ctx, async () =>
-        db
+      const result = await runInTenant(tenantA.ctx, async (tx) =>
+        tx
           .delete(events)
           .where(and(eq(events.tenantId, tenantB.ctx.slug), eq(events.eventId, bEventId)))
           .returning({ id: events.eventId }),
@@ -167,8 +167,8 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
 
   describe('event_registrations table — RLS blocks cross-tenant CRUD', () => {
     it('SELECT in tenant B context returns 0 of tenant A registrations', async () => {
-      const rows = await runInTenant(tenantB.ctx, async () =>
-        db.select().from(eventRegistrations).where(eq(eventRegistrations.registrationId, aRegId)),
+      const rows = await runInTenant(tenantB.ctx, async (tx) =>
+        tx.select().from(eventRegistrations).where(eq(eventRegistrations.registrationId, aRegId)),
       );
       expect(rows.length).toBe(0);
     });
@@ -176,8 +176,8 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
 
   describe('tenant_webhook_configs table — RLS blocks cross-tenant SELECT (secret leak prevention)', () => {
     it('SELECT in tenant A context cannot read tenant B webhook secret', async () => {
-      const rows = await runInTenant(tenantA.ctx, async () =>
-        db
+      const rows = await runInTenant(tenantA.ctx, async (tx) =>
+        tx
           .select()
           .from(tenantWebhookConfigs)
           .where(eq(tenantWebhookConfigs.tenantId, tenantB.ctx.slug)),
@@ -188,8 +188,8 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
 
   describe('eventcreate_idempotency_receipts table — RLS blocks cross-tenant SELECT (request_id probing)', () => {
     it('SELECT in tenant A context cannot probe tenant B request_id existence', async () => {
-      const rows = await runInTenant(tenantA.ctx, async () =>
-        db
+      const rows = await runInTenant(tenantA.ctx, async (tx) =>
+        tx
           .select()
           .from(eventcreateIdempotencyReceipts)
           .where(
@@ -204,18 +204,85 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
   });
 
   describe('Round-trip cross-tenant probe via webhook URL (application-layer)', () => {
-    it('payload signed for tenant A POSTed to tenant B URL → reject + cross_tenant_probe audit', async () => {
-      // RED until T052 route handler ships. Placeholder assertion documents
-      // the contract: the route's tenantSlug resolution must cross-check
-      // against the tenant whose secret verifies the HMAC; mismatch → 401
-      // + audit event_type 'cross_tenant_probe' in tenant B's audit_log.
-      //
-      // Will be fleshed out with an actual fetch() against the route once
-      // T052 lands; for now we assert the cross-tenant probe is documented
-      // as expected behavior.
-      const _placeholder = sql`SELECT 1`;
-      void _placeholder;
-      expect.fail('T052 webhook route + cross-tenant probe audit not yet implemented — RED until Phase 3 GREEN');
+    it('payload signed for tenant A POSTed to tenant B URL → 401 + generic body (no oracle) + no rows created in tenant B', async () => {
+      // Seed each tenant with its OWN webhook secret so signing-vs-verify
+      // mismatch can be tested.
+      const secretA = 'secret-tenant-A-' + 'a'.repeat(32);
+      const secretB = 'secret-tenant-B-' + 'b'.repeat(32);
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx
+          .update(tenantWebhookConfigs)
+          .set({ webhookSecretActive: secretA })
+          .where(eq(tenantWebhookConfigs.tenantId, tenantA.ctx.slug));
+      });
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx
+          .update(tenantWebhookConfigs)
+          .set({ webhookSecretActive: secretB })
+          .where(eq(tenantWebhookConfigs.tenantId, tenantB.ctx.slug));
+      });
+
+      // Sign payload with tenant A's secret
+      const { signWebhookBody, makeWebhookPayload } = await import('./helpers/sign-webhook');
+      const payload = makeWebhookPayload({ tenantSlug: tenantA.ctx.slug });
+      const signed = signWebhookBody({ body: payload, secret: secretA });
+
+      // Build a NextRequest targeting tenant B's URL with tenant A's signature
+      const { NextRequest } = await import('next/server');
+      const crossTenantRequest = new NextRequest(
+        `https://app.test/api/webhooks/eventcreate/v1/${tenantB.ctx.slug}`,
+        {
+          method: 'POST',
+          body: signed.rawBody,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Chamber-Signature': signed.signatureHeader,
+            'X-Chamber-Timestamp': signed.timestamp,
+            'X-Request-ID': `req-cross-tenant-probe-${randomUUID()}`,
+          },
+        },
+      );
+
+      // Invoke the route directly (no live server needed — the route
+      // handler is a pure function over NextRequest)
+      const route = await import('@/app/api/webhooks/eventcreate/v1/[tenantSlug]/route');
+      const res = await route.POST(crossTenantRequest, {
+        params: Promise.resolve({ tenantSlug: tenantB.ctx.slug }),
+      });
+
+      // 401 generic body — no discriminator leak
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.title).toBe('Webhook authentication failed');
+      expect(JSON.stringify(body)).not.toMatch(
+        /signature_mismatch|skew|missing_header|cross_tenant/i,
+      );
+
+      // Tenant B's tables MUST NOT contain any event or registration
+      // from the cross-tenant probe attempt
+      const eventsB = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select()
+          .from(events)
+          .where(eq(events.tenantId, tenantB.ctx.slug)),
+      );
+      const payloadEvent = payload['event'] as Record<string, unknown> | undefined;
+      const payloadAttendee = payload['attendee'] as Record<string, unknown> | undefined;
+      const probeEvent = eventsB.find(
+        (e) => e.externalId === (payloadEvent?.['externalId'] as string | undefined),
+      );
+      expect(probeEvent).toBeUndefined();
+
+      const regsB = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.tenantId, tenantB.ctx.slug)),
+      );
+      const probeReg = regsB.find(
+        (r) => r.externalId === (payloadAttendee?.['externalId'] as string | undefined),
+      );
+      expect(probeReg).toBeUndefined();
     });
   });
 });

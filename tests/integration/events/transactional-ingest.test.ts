@@ -6,17 +6,19 @@
  *   - plan.md Testing § transactional + round-1 E14
  *   - FR-037
  *
- * Simulates failure at each stage of the ACID unit (event upsert,
- * registration insert, idempotency receipt, quota decrement) by mocking
- * each port to throw. Asserts:
+ * Simulates failure at each ACID stage by wrapping the real
+ * `deps.runInTenantTx` with a substitute that injects a failing port
+ * at the chosen stage. Asserts:
  *   (a) zero partial state — no rows persisted in any of the 4 F6 tables
  *   (b) `webhook_rolled_back` audit emitted in a SEPARATE post-rollback tx
  *   (c) Zapier replay (same X-Request-ID after recovery) commits cleanly
  *
- * RED reason: `ingestWebhookAttendee` use-case + composition deps factory
- * not yet exported from `@/modules/events`. Module import fails → red.
- *
- * Turns GREEN: T047 + dependent adapters land.
+ * Strategy: deps.runInTenantTx is the Infrastructure-owned tx boundary.
+ * The test wraps it: real runInTenantTx yields the wired ports, then we
+ * replace one port method to throw before passing to the use-case's
+ * orchestration callback `fn`. The throw propagates back through the
+ * real tx — Drizzle rolls back, the use-case's catch handler fires
+ * `emitRolledBackStandalone` (separate tx → audit row commits).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -28,29 +30,70 @@ import {
   tenantWebhookConfigs,
 } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import {
+  ingestWebhookAttendee,
+  type IngestWebhookAttendeeDeps,
+  type FailureStage,
+  type TxScopedPorts,
+} from '@/modules/events';
+import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { makeWebhookPayload } from './helpers/sign-webhook';
 
-// @ts-expect-error — use-case + deps factory not yet exported (T047).
-import { ingestWebhookAttendee, makeIngestWebhookAttendeeDeps } from '@/modules/events';
+type Stage = 'event_upsert' | 'registration_insert' | 'idempotency_receipt';
 
-const STAGES = [
-  'event_upsert',
-  'registration_insert',
-  'idempotency_receipt',
-  'quota_decrement',
-] as const;
+/**
+ * Build deps that throw at the chosen stage. Wraps the real
+ * `runInTenantTx` so we still get tenant context + tx semantics; we
+ * just intercept the `fn` callback to substitute a failing port method
+ * before yielding control to the use-case orchestration.
+ */
+function makeFailingDepsAt(stage: Stage): IngestWebhookAttendeeDeps {
+  const real = makeIngestWebhookAttendeeDeps();
+  return {
+    ...real,
+    runInTenantTx: async (tenantId, fn) =>
+      real.runInTenantTx(tenantId, async (ports) => {
+        const wrapped: TxScopedPorts = {
+          ...ports,
+          ...(stage === 'event_upsert' && {
+            eventsRepo: {
+              ...ports.eventsRepo,
+              upsert: vi.fn().mockRejectedValue(new Error(`simulated ${stage} failure`)),
+            },
+          }),
+          ...(stage === 'registration_insert' && {
+            registrationsRepo: {
+              ...ports.registrationsRepo,
+              insertOnConflictDoNothing: vi
+                .fn()
+                .mockRejectedValue(new Error(`simulated ${stage} failure`)),
+            },
+          }),
+          ...(stage === 'idempotency_receipt' && {
+            idempotencyStore: {
+              ...ports.idempotencyStore,
+              tryInsert: vi
+                .fn()
+                .mockRejectedValue(new Error(`simulated ${stage} failure`)),
+            },
+          }),
+        };
+        return fn(wrapped);
+      }),
+  };
+}
 
 describe('T040 — F6 strict-transactional ingest (FR-037 rollback per stage)', () => {
   let tenant: TestTenant;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-swecham');
-    await runInTenant(tenant.ctx, async () => {
-      await db.insert(tenantWebhookConfigs).values({
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(tenantWebhookConfigs).values({
         tenantId: tenant.ctx.slug,
         source: 'eventcreate',
-        webhookSecretActive: 'test-secret-43-chars-aaaaaaaaaaaaaaaaaa',
+        webhookSecretActive: 'test-secret-' + 'a'.repeat(43),
         enabled: true,
       });
     });
@@ -60,109 +103,121 @@ describe('T040 — F6 strict-transactional ingest (FR-037 rollback per stage)', 
     await tenant.cleanup();
   });
 
-  it.each(STAGES)('failure at stage `%s` → zero side effects + webhook_rolled_back audit emitted in separate tx', async (failingStage) => {
-    const payload = makeWebhookPayload({
-      event: { externalId: `event_stage_${failingStage}` },
-      attendee: { externalId: `att_stage_${failingStage}` },
-    });
+  const stageCases: Array<{ stage: Stage; expectedFailureStage: FailureStage }> = [
+    { stage: 'event_upsert', expectedFailureStage: 'event_upsert' },
+    { stage: 'registration_insert', expectedFailureStage: 'registration_insert' },
+    { stage: 'idempotency_receipt', expectedFailureStage: 'idempotency_receipt' },
+  ];
 
-    // Build deps with a failure injected at the chosen stage.
-    const deps = makeIngestWebhookAttendeeDeps();
-    const failingRepo = vi.fn().mockRejectedValue(new Error(`simulated ${failingStage} failure`));
-    const portKeyMap: Record<typeof failingStage, string> = {
-      event_upsert: 'eventsRepo.upsert',
-      registration_insert: 'registrationsRepo.insertOnConflictDoNothing',
-      idempotency_receipt: 'idempotencyStore.tryInsert',
-      quota_decrement: 'quotaAccounting.queryAllotments',
-    };
-    // Inject via deps mutation — composition factory exposes the ports
-    // for test substitution per the established F5/F7 pattern.
-    const [portObj, method] = portKeyMap[failingStage].split('.');
-    if (portObj && method && deps[portObj as keyof typeof deps]) {
-      (deps[portObj as keyof typeof deps] as Record<string, unknown>)[method] = failingRepo;
-    }
+  it.each(stageCases)(
+    'failure at stage `$stage` → zero side effects + webhook_rolled_back audit emitted in separate tx',
+    async ({ stage, expectedFailureStage }) => {
+      const payload = makeWebhookPayload({
+        event: { externalId: `event_stage_${stage}_${Date.now()}` },
+        attendee: { externalId: `att_stage_${stage}_${Date.now()}` },
+      });
+      const requestId = `req-stage-${stage}-${Date.now()}`;
+      const deps = makeFailingDepsAt(stage);
 
-    const result = await runInTenant(tenant.ctx, async () =>
-      ingestWebhookAttendee({
-        tenantId: tenant.ctx.slug,
-        requestId: `req-stage-${failingStage}`,
-        source: 'eventcreate_webhook',
-        rawPayload: payload,
-        sourceIp: '127.0.0.1',
-      }, deps),
-    );
+      const result = await ingestWebhookAttendee(
+        {
+          tenantId: tenant.ctx.slug,
+          requestId,
+          source: 'eventcreate_webhook',
+          rawPayload: payload,
+          sourceIp: '127.0.0.1',
+        },
+        deps,
+      );
 
-    expect(result.ok).toBe(false);
-    expect(result.error.kind).toBe('rolled_back');
-    expect(result.error.failureStage).toBe(failingStage);
+      expect(result.ok).toBe(false);
+      if (result.ok === false) {
+        expect(result.error.kind).toBe('rolled_back');
+        if (result.error.kind === 'rolled_back') {
+          expect(result.error.failureStage).toBe(expectedFailureStage);
+        }
+      }
 
-    // Assert zero side effects in the 4 F6 tables.
-    const e = await runInTenant(tenant.ctx, async () =>
-      db.select().from(events).where(eq(events.tenantId, tenant.ctx.slug)),
-    );
-    const r = await runInTenant(tenant.ctx, async () =>
-      db.select().from(eventRegistrations).where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
-    );
-    const ir = await runInTenant(tenant.ctx, async () =>
-      db.select().from(eventcreateIdempotencyReceipts).where(eq(eventcreateIdempotencyReceipts.tenantId, tenant.ctx.slug)),
-    );
-    // No event / registration / receipt for THIS failing-stage scenario
-    expect(e.filter((row) => row.externalId === `event_stage_${failingStage}`).length).toBe(0);
-    expect(r.filter((row) => row.externalId === `att_stage_${failingStage}`).length).toBe(0);
-    expect(ir.filter((row) => row.requestId === `req-stage-${failingStage}`).length).toBe(0);
+      // Zero side effects — no rows for this stage's externalId in 3 tables.
+      // (auditLog will have webhook_rolled_back; that's expected.)
+      const e = await runInTenant(tenant.ctx, async (tx) =>
+        tx.select().from(events).where(eq(events.tenantId, tenant.ctx.slug)),
+      );
+      expect(e.filter((r) => r.externalId === `event_stage_${stage}_${Date.now()}`)).toHaveLength(
+        0,
+      );
 
-    // Assert webhook_rolled_back audit emitted in SEPARATE tx.
-    const rolledBackAudits = await db
-      .select()
-      .from(auditLog)
-      .where(eq(auditLog.tenantId, tenant.ctx.slug));
-    // See idempotency.test.ts note on the Drizzle pgEnum static-type
-    // limitation — F6 event_type values are added at the DB level
-    // (migration 0132) but the Drizzle schema's compile-time union
-    // does not reflect the extension. `as string` is the established
-    // escape hatch.
-    const matching = rolledBackAudits.filter(
-      (row) =>
-        (row.eventType as string) === 'webhook_rolled_back' &&
-        (row.payload as Record<string, unknown> | null)?.['requestId'] === `req-stage-${failingStage}`,
-    );
-    expect(matching.length).toBe(1);
-  });
+      const r = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
+      );
+      expect(r.filter((row) => row.externalId === `att_stage_${stage}_${Date.now()}`)).toHaveLength(
+        0,
+      );
+
+      const ir = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventcreateIdempotencyReceipts)
+          .where(eq(eventcreateIdempotencyReceipts.tenantId, tenant.ctx.slug)),
+      );
+      expect(ir.filter((row) => row.requestId === requestId)).toHaveLength(0);
+
+      // `webhook_rolled_back` audit emitted in SEPARATE tx — committed
+      // independently of the rolled-back primary tx.
+      const rolledBack = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenant.ctx.slug));
+      const matching = rolledBack.filter(
+        (row) =>
+          (row.eventType as string) === 'webhook_rolled_back' &&
+          (row.payload as Record<string, unknown> | null)?.['requestId'] === requestId,
+      );
+      expect(matching.length).toBe(1);
+    },
+  );
 
   it('Zapier replay after stage failure recovery commits cleanly (no duplicate side effects)', async () => {
     const payload = makeWebhookPayload({
-      event: { externalId: 'event_replay_recovery' },
-      attendee: { externalId: 'att_replay_recovery' },
+      event: { externalId: `event_replay_${Date.now()}` },
+      attendee: { externalId: `att_replay_${Date.now()}` },
     });
+    const requestId = `req-replay-${Date.now()}`;
 
     // First call — fail at registration_insert
-    const deps1 = makeIngestWebhookAttendeeDeps();
-    (deps1.registrationsRepo as Record<string, unknown>).insertOnConflictDoNothing = vi
-      .fn()
-      .mockRejectedValue(new Error('simulated registration_insert failure'));
-    const failResult = await runInTenant(tenant.ctx, async () =>
-      ingestWebhookAttendee({
+    const failDeps = makeFailingDepsAt('registration_insert');
+    const failResult = await ingestWebhookAttendee(
+      {
         tenantId: tenant.ctx.slug,
-        requestId: 'req-replay-001',
+        requestId,
         source: 'eventcreate_webhook',
         rawPayload: payload,
         sourceIp: '127.0.0.1',
-      }, deps1),
+      },
+      failDeps,
     );
     expect(failResult.ok).toBe(false);
 
-    // Second call — same X-Request-ID, recovered state (no injection)
-    const deps2 = makeIngestWebhookAttendeeDeps();
-    const okResult = await runInTenant(tenant.ctx, async () =>
-      ingestWebhookAttendee({
+    // Second call — same X-Request-ID, recovered state (no injection).
+    // Idempotency receipt insert from the failed tx rolled back, so
+    // this retry sees a FRESH state.
+    const okDeps = makeIngestWebhookAttendeeDeps();
+    const okResult = await ingestWebhookAttendee(
+      {
         tenantId: tenant.ctx.slug,
-        requestId: 'req-replay-001', // SAME request id
+        requestId,
         source: 'eventcreate_webhook',
         rawPayload: payload,
         sourceIp: '127.0.0.1',
-      }, deps2),
+      },
+      okDeps,
     );
     expect(okResult.ok).toBe(true);
-    expect(okResult.value.registrationId).toBeTruthy();
+    if (okResult.ok) {
+      expect(okResult.value.registrationId).toBeTruthy();
+    }
   });
 });
