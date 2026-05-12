@@ -51,6 +51,8 @@ import {
   ingestWebhookAttendee,
   MATCH_TYPE_TO_PROCESSING_OUTCOME,
   type StandaloneAuditDeps,
+  type F6AuditEventType,
+  type F6AuditEntry,
 } from '@/modules/events';
 import {
   makeIngestWebhookAttendeeDeps,
@@ -65,10 +67,13 @@ const MAX_WEBHOOK_BODY_BYTES = 64 * 1024; // 64 KiB — matches F5 cap
 
 /**
  * Sentinel that replaces an empty / whitespace-only X-Request-ID
- * header. The `audit_log.request_id` column is NOT NULL; the previous
- * code path produced `''` for missing-header replays which then
- * silently violated the column constraint on round-trip read by any
- * forensic query.
+ * header. The `audit_log.request_id` column is forensically indexed
+ * and accepts empty strings (NOT NULL doesn't reject `''`), but
+ * empty values pollute correlation queries — they're semantically
+ * equivalent to missing data. This sentinel reduces audit-row noise
+ * to a single bounded-cardinality marker. Distinguishability from a
+ * genuine `X-Request-ID: no-request-id` header is a known accepted
+ * trade-off (vanishingly unlikely in production Zapier headers).
  */
 const NO_REQUEST_ID = 'no-request-id';
 
@@ -167,24 +172,43 @@ const VERIFY_KIND_TO_OUTCOME = {
 } as const satisfies Record<string, Parameters<typeof eventcreateMetrics.webhookReceiptsTotal>[1]>;
 
 // ---------------------------------------------------------------------------
-// Standalone-audit emit with try/catch + structured fail log (SS-1).
-// Used by step-5b (config-load) and step-7 (signature-reject). Audit
-// failure MUST NOT crash the HTTP response — log + suppress.
+// Standalone-audit emit helper — collapses two near-identical
+// try/catch+log blocks for step-5b (config-load) and step-7
+// (signature-reject). Audit failure MUST NOT crash the HTTP response,
+// so the catch logs + suppresses. See helper JSDoc below for WHY.
 // ---------------------------------------------------------------------------
 
 /**
- * Mark an OTel span as ERROR for genuine 500-class failures (F-3).
+ * Mark an OTel span as ERROR for genuine 500-class failures.
+ *
  * Client errors (rate-limit, malformed JSON, signature mismatch) stay
- * `UNSET` — they're not system failures. Use only on the paths where
- * the route returns 500 because something inside us is broken.
+ * `UNSET` per OTel HTTP semantic convention — they're not system
+ * failures. The last-resort `catch (e)` at the bottom of POST() sets
+ * ERROR directly (bypassing this helper) because the span may already
+ * be partially closed by the time uncaught throws bubble up there.
  */
 function markSpanError(span: Span, reason: string): void {
   span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
 }
 
-async function safeEmitStandalone(
+/**
+ * Emit a standalone-tx audit entry from the route layer, suppressing
+ * any audit emission failure with a structured log line.
+ *
+ * Used by the config-load-failed and signature-rejected branches —
+ * both are post-decision audit emits where the HTTP response code is
+ * already determined. Re-throwing on audit failure would only exchange
+ * one observability gap (no audit row) for a worse one (no response
+ * + audit row still missing). The composition-root LOUD-failure log
+ * lines from `di.ts loudFail` are preserved server-side regardless.
+ *
+ * Generic `T` preserves the per-event-type payload narrowing from
+ * `F6AuditPort.emitStandalone<T>` — a `{eventType, payload}` literal
+ * with mismatched payload shape still fails to compile here.
+ */
+async function safeEmitStandalone<T extends F6AuditEventType>(
   deps: StandaloneAuditDeps,
-  entry: Parameters<StandaloneAuditDeps['emitStandalone']>[0],
+  entry: F6AuditEntry<T>,
   failCtx: { tenantSlug: string; logEvent: string; logMsg: string },
 ): Promise<void> {
   try {
@@ -195,6 +219,8 @@ async function safeEmitStandalone(
         event: failCtx.logEvent,
         tenantSlug: failCtx.tenantSlug,
         errName: auditErr instanceof Error ? auditErr.name : 'unknown',
+        errMessage: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        errStack: auditErr instanceof Error ? auditErr.stack : null,
       },
       failCtx.logMsg,
     );
@@ -219,6 +245,8 @@ export async function POST(
       {
         event: 'f6_route_params_failed',
         errName: e instanceof Error ? e.name : 'unknown',
+        errMessage: e instanceof Error ? e.message : String(e),
+        errStack: e instanceof Error ? e.stack : null,
       },
       '[F6] webhook route params resolution failed — returning 500',
     );
@@ -507,7 +535,9 @@ export async function POST(
               tenantSlug,
               sourceIp,
               verifyKind: verifyOutcome.kind,
-              requestId: requestId || null,
+              // Distinguish genuine ID from `NO_REQUEST_ID` sentinel so
+              // forensic queries can filter on "header was absent".
+              requestId: rawRequestId.length > 0 ? rawRequestId : null,
             },
             '[F6] webhook signature verification failed',
           );
@@ -629,7 +659,7 @@ export async function POST(
               {
                 event: 'f6_webhook_ingest_rolled_back',
                 tenantSlug,
-                requestId: requestId || null,
+                requestId: rawRequestId.length > 0 ? rawRequestId : null,
                 failureStage: result.error.failureStage,
                 auditFallbackFailed: result.error.auditFallbackFailed,
               },
@@ -657,11 +687,16 @@ export async function POST(
             // (which Zapier would interpret as success and never
             // retry → silent data loss).
             const _exhaustive: never = result.error;
+            // Redact: `_exhaustive` carries the full IngestError object
+            // which may include errorMessage/errorStack. Log only the
+            // discriminant `kind` to keep the forensic surface bounded.
+            const unhandledKind = (_exhaustive as { kind?: string })?.kind ?? 'unknown';
             logger.fatal(
-              { unhandledErrorKind: _exhaustive, tenantSlug },
+              { unhandledErrorKind: unhandledKind, tenantSlug },
               '[F6] unhandled IngestError kind — code path missing in route switch',
             );
             span.setAttribute('f6.outcome', 'unhandled_error_kind');
+            markSpanError(span, `unhandled_error_kind:${unhandledKind}`);
             return internalErrorResponse();
           }
         }

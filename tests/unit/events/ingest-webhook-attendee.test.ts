@@ -1,14 +1,13 @@
 /**
- * Unit tests for `ingestWebhookAttendee` covering the round-2 hardening
- * branches that integration tests don't exercise:
+ * Unit tests for `ingestWebhookAttendee` covering hardening branches
+ * that integration tests don't exercise:
  *
- *   - CRITICAL-2: `kind: 'invariant_violation'` from either repo →
+ *   - `kind: 'invariant_violation'` from either repo →
  *     logger.fatal + TxStageError + rolled_back
- *   - gap-audit_emit-mid-tx: `audit.emit` returning err mid-tx →
- *     emitOrThrow throws → failureStage='audit_emit' on rolled_back
- *   - CRITICAL-1: `auditFallbackFailed: true` when
- *     `emitRolledBackStandalone` itself fails → double-failure metric +
- *     logger.fatal
+ *   - `audit.emit` returning err mid-tx → emitOrThrow throws →
+ *     failureStage='audit_emit' on rolled_back
+ *   - `auditFallbackFailed: true` when `emitRolledBackStandalone`
+ *     itself fails → double-failure metric + logger.fatal
  *
  * Strategy: mock `runInTenantTx` to invoke the use-case callback with
  * controllable port stubs. The use-case's `try/catch` orchestrator +
@@ -140,7 +139,6 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     vi.spyOn(logger, 'fatal').mockImplementation(() => {});
   });
 
-  // CRITICAL-2 — events repo invariant_violation
   it('events.upsert invariant_violation → logger.fatal + rolled_back at event_upsert', async () => {
     const ports = buildPorts();
     (ports.eventsRepo.upsert as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -161,7 +159,6 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     );
   });
 
-  // CRITICAL-2 — registrations repo invariant_violation
   it('registrations.insert invariant_violation → logger.fatal + rolled_back at registration_insert', async () => {
     const ports = buildPorts();
     (ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -182,7 +179,6 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     );
   });
 
-  // gap-audit_emit-mid-tx — emitOrThrow exercises audit_emit stage
   it('audit.emit returning err mid-tx → failureStage="audit_emit" on rolled_back', async () => {
     const ports = buildPorts();
     // Verified path emits `webhook_receipt_verified`; force that to fail.
@@ -203,7 +199,6 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     expect(result.error.failureStage).toBe('audit_emit');
   });
 
-  // CRITICAL-1 — auditFallbackFailed: true round-trip
   it('emitRolledBackStandalone failure → auditFallbackFailed=true + double-failure metric + logger.fatal', async () => {
     const counterSpy = vi.spyOn(eventcreateMetrics, 'auditFallbackDoubleFailure');
     const ports = buildPorts();

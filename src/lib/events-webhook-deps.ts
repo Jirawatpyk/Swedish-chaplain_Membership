@@ -143,6 +143,8 @@ export function resolveTenantFromSlug(slug: string): TenantContext | null {
         event: 'f6_tenant_context_build_failed',
         slug,
         errName: e instanceof Error ? e.name : 'unknown',
+        errMessage: e instanceof Error ? e.message : String(e),
+        errStack: e instanceof Error ? e.stack : null,
       },
       '[F6] asTenantContext threw on shape-valid slug',
     );

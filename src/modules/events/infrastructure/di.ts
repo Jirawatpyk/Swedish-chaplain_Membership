@@ -22,15 +22,17 @@
  *     contributors from mistakenly invoking `runInTenantTx` /
  *     `emitRolledBackStandalone` from a context where they shouldn't.
  *
- * Naming glossary:
- *   - Port methods on `F6AuditPort`: `emit` / `emitRolledBack` /
- *     `emitStandalone`.
- *   - Deps fields on `IngestWebhookAttendeeDeps`: `runInTenantTx` /
- *     `emitRolledBackStandalone` / `emitStandalone`. The deps wrappers
- *     call the port's standalone-tx methods (`emitRolledBack`,
- *     `emitStandalone`) via the dummy-executor pattern below.
- *     `emitStandalone` is intentionally the same name on both layers
- *     since the wrapper is a thin delegate to the port method.
+ * Naming glossary (Deps field → Port method delegation):
+ *   - `runInTenantTx`              → (composes runInTenant + makePinoAuditPort(tx))
+ *   - `emitRolledBackStandalone`   → `emitRolledBack`  (the `Standalone`
+ *                                      suffix marks the dummy-executor
+ *                                      wrap — port method writes via
+ *                                      root `db.transaction`)
+ *   - `emitStandalone`             → `emitStandalone`  (identity name —
+ *                                      port method is already
+ *                                      standalone-tx; deps wrapper is
+ *                                      a thin pass-through with the
+ *                                      same loud-dummy guard)
  */
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
@@ -147,25 +149,30 @@ function makeLoudDummyExecutorPort(caller: string) {
       `standalone ${caller}: dummy executor "${op}" on "${safeProp}" invoked unexpectedly — composition root bug`,
     );
   };
-  const loudDummy = new Proxy(
-    {},
-    {
-      get(_target, prop): unknown {
-        // Skip Symbol probing (Promise inspector, util.inspect, etc.) —
-        // reserve loud failure for genuine string-keyed accesses.
-        if (typeof prop === 'symbol') return undefined;
-        return loudFail('get', prop);
-      },
-      has(_target, prop): boolean {
-        return loudFail('has', prop);
-      },
-      set(_target, prop): boolean {
-        return loudFail('set', prop);
-      },
-      apply(_target, _thisArg, _argList): unknown {
-        return loudFail('apply', '<call>');
-      },
+  // Target MUST be a function for the `apply` + `construct` traps to
+  // actually fire (per ECMA-262 §10.5.13 [[Call]]: `IsCallable(target)`
+  // is checked BEFORE consulting the trap). With a `{}` target,
+  // `proxy(args)` would throw `TypeError: not a function` before
+  // reaching the trap — defeating the F-4 closure goal.
+  const loudExecutorTarget = function loudExecutorTarget(): never {
+    return loudFail('apply', '<call>');
+  } as unknown as object;
+  const loudDummy = new Proxy(loudExecutorTarget, {
+    get: (_t, prop) => {
+      // Skip Symbol probing (Promise inspector, util.inspect, etc.) —
+      // reserve loud failure for genuine string-keyed accesses.
+      if (typeof prop === 'symbol') return undefined;
+      return loudFail('get', prop);
     },
-  );
+    has: (_t, prop) => loudFail('has', prop),
+    set: (_t, prop) => loudFail('set', prop),
+    apply: () => loudFail('apply', '<call>'),
+    construct: () => loudFail('construct', '<new>'),
+    deleteProperty: (_t, prop) => loudFail('deleteProperty', prop),
+    defineProperty: (_t, prop) => loudFail('defineProperty', prop),
+    ownKeys: () => loudFail('ownKeys', '<keys>'),
+    getOwnPropertyDescriptor: (_t, prop) =>
+      loudFail('getOwnPropertyDescriptor', prop),
+  });
   return makePinoAuditPort(loudDummy as unknown as TenantTx);
 }

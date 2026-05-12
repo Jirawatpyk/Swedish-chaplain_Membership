@@ -1,6 +1,6 @@
 /**
  * Integration test for the `(xmax = 0)` upsert discriminator UPDATE
- * branch (gap-3 from /speckit-review).
+ * branch.
  *
  * The TOCTOU fix in `drizzle-events-repository.ts` swapped a two-step
  * INSERT+SELECT for a single-statement `INSERT ... ON CONFLICT DO
@@ -31,7 +31,7 @@ import { asExternalEventId } from '@/modules/events';
 import type { TenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
-describe('events upsert (xmax = 0) UPDATE branch — gap-3', () => {
+describe('events upsert (xmax = 0) UPDATE branch', () => {
   let tenant: TestTenant;
 
   beforeAll(async () => {

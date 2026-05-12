@@ -196,13 +196,14 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       // here also rolls back cleanly without affecting anything else.
       try {
         // Belt-and-suspenders runtime regex guard on the raw GUC
-        // interpolation below. The canonical `runInTenant` in
-        // `src/lib/db.ts` already enforces this slug shape, but this
-        // method bypasses runInTenant and goes directly through
-        // `db.transaction` (invoked via the `emitRolledBackStandalone`
-        // deps wrapper in `infrastructure/di.ts`). Without this guard,
-        // a future caller (cron replay, retention sweep, etc.) passing
-        // an unvalidated tenantId could trigger SQL injection via the
+        // interpolation below. This method is a standalone-tx path —
+        // it uses root `db.transaction` directly instead of the
+        // executor passed to `makePinoAuditPort`. Callers include the
+        // `emitRolledBackStandalone` deps wrapper in `infrastructure/
+        // di.ts` plus tests + future cron/replay paths. The canonical
+        // `runInTenant` in `src/lib/db.ts` already enforces this slug
+        // shape, but standalone callers bypass runInTenant — so an
+        // unvalidated tenantId here would risk SQL injection via the
         // `SET LOCAL app.current_tenant = '${entry.tenantId}'` line.
         if (!TENANT_SLUG_PATTERN.test(entry.tenantId as unknown as string)) {
           throw new Error(

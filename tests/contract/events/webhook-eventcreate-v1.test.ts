@@ -259,7 +259,7 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // gap-1 + I-2 — body-size DoS guard + slug-shape cardinality bomb
+  // Body-size DoS guard + slug-shape cardinality-bomb defence
   // ---------------------------------------------------------------------
 
   it('413 Payload Too Large — declared Content-Length > 64 KiB rejected pre-read + emits bodyOversizedTotal metric', async () => {
@@ -298,7 +298,7 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(ingestWebhookAttendeeMock).not.toHaveBeenCalled();
   });
 
-  it('413 Payload Too Large — negative Content-Length rejected (M-2)', async () => {
+  it('413 Payload Too Large — negative Content-Length rejected', async () => {
     const { POST } = await loadRoute();
     const req = new NextRequest(`https://app.test${ROUTE_PATH}`, {
       method: 'POST',
@@ -328,7 +328,7 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(res.status).toBe(413);
   });
 
-  it('404 Not Found — invalid slug shape returns 404 BEFORE any metric/audit (I-2 cardinality bomb)', async () => {
+  it('404 Not Found — invalid slug shape returns 404 BEFORE any metric/audit (cardinality-bomb defence)', async () => {
     const { POST } = await loadRoute();
     const badSlug = 'tenant_with_underscore'; // underscores violate [a-z0-9-]
     const req = new NextRequest(`https://app.test/api/webhooks/eventcreate/v1/${badSlug}`, {
@@ -344,8 +344,10 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(auditEmitStandaloneMock).not.toHaveBeenCalled();
   });
 
-  // CRITICAL-3 — route last-resort catch (OTel span ERROR + uncaught log)
-  it('5xx + last-resort catch — ingestWebhookAttendee thrown exception is captured', async () => {
+  // route last-resort catch — OTel span ERROR + uncaught log
+  it('5xx + last-resort catch — uncaught throw emits logger.fatal `f6_webhook_uncaught_exception`', async () => {
+    const { logger } = await import('@/lib/logger');
+    const fatalSpy = vi.spyOn(logger, 'fatal').mockImplementation(() => {});
     ingestWebhookAttendeeMock.mockImplementationOnce(() => {
       throw new Error('synth — synchronous throw past every defensive layer');
     });
@@ -355,6 +357,53 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.title).toMatch(/Internal error/i);
+    // The catch must emit the forensic log line so SREs see uncaught
+    // throws in pino, not just a Vercel 500.
+    expect(fatalSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'f6_webhook_uncaught_exception' }),
+      expect.any(String),
+    );
+    fatalSpy.mockRestore();
+  });
+
+  // F-2 — `await ctx.params` rejection short-circuits with logged 500
+  it('5xx + `f6_route_params_failed` log when params Promise rejects', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    const { POST } = await loadRoute();
+    const req = buildRequest(makeWebhookPayload());
+    const res = await POST(req, {
+      params: Promise.reject(new Error('synth — params decode failed')),
+    });
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'f6_route_params_failed' }),
+      expect.any(String),
+    );
+    errorSpy.mockRestore();
+  });
+
+  // H-3 — config-load failure exercises markSpanError + safeEmitStandalone
+  // second site + bodyOversizedTotal sibling + `f6_webhook_config_load_failed` log
+  it('500 — loadTenantWebhookConfig throw fires audit + metric + log + span ERROR', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    loadTenantWebhookConfigMock.mockRejectedValueOnce(new Error('synth — config load failed'));
+    const { POST } = await loadRoute();
+    const req = buildRequest(makeWebhookPayload());
+    const res = await POST(req, { params: Promise.resolve({ tenantSlug: TENANT_SLUG }) });
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'f6_webhook_config_load_failed' }),
+      expect.any(String),
+    );
+    expect(auditEmitStandaloneMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'webhook_rolled_back',
+        payload: expect.objectContaining({ failureStage: 'unknown' }),
+      }),
+    );
+    errorSpy.mockRestore();
   });
 
   it('404 Not Found — slug exceeding 63 chars short-circuits at step 0', async () => {
@@ -378,6 +427,7 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
         failureStage: 'registration_insert',
         errorMessage: 'simulated FK failure',
         auditFallbackFailed: false,
+        ingestLatencyMs: 42,
       },
     });
     const { POST } = await loadRoute();

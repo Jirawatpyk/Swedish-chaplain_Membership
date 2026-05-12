@@ -81,11 +81,11 @@ export async function forceExpireGraceSecret(
   }
 
   const rowsCleared = clearResult.value;
-  // Repository contract guarantees `rowsCleared ∈ {0, 1}` for F6-v1
-  // single-source-per-tenant. If the repo ever returns >1 (schema
-  // drift, multi-source leak), the output literal type would silently
-  // downcast to 1 — this assertion surfaces the violation as a loud
-  // failure with forensic context.
+  // Repository contract guarantees `rowsCleared ∈ {0, 1}` per
+  // `(tenant, source)` atomicity. If the repo ever returns >1 (schema
+  // drift, multi-row leak across sources), the output literal type
+  // would silently downcast to 1 — this assertion surfaces the
+  // violation as a loud failure with forensic context.
   if (rowsCleared !== 0 && rowsCleared !== 1) {
     logger.fatal(
       {

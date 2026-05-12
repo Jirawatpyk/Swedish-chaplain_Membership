@@ -1,6 +1,5 @@
 /**
- * Integration test for `pino-audit-port.emitStandalone` (gap-2 from
- * /speckit-review).
+ * Integration test for `pino-audit-port.emitStandalone`.
  *
  * Covers behaviours of the standalone-tx audit path that the route
  * handler uses for `webhook_signature_rejected` (and now also the
@@ -21,7 +20,7 @@ import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import type { TenantTx } from '@/lib/db';
 
-describe('pino-audit-port.emitStandalone — gap-2', () => {
+describe('pino-audit-port.emitStandalone', () => {
   let tenant: TestTenant;
 
   beforeAll(async () => {
