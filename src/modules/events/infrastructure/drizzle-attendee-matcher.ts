@@ -36,6 +36,7 @@ import type {
 import { isPersonalEmail } from '../domain/personal-email-deny-list';
 import { normaliseCompanyName } from '../domain/normalise-company-name';
 import { levenshtein } from '../domain/levenshtein';
+import { wrapRepoError } from './sanitize-db-error';
 import type { MemberId, ContactId } from '@/modules/members';
 
 const DEFAULT_FUZZY_THRESHOLD = 2;
@@ -204,10 +205,7 @@ export function makeDrizzleAttendeeMatcher(
           unmatchedCandidates: null,
         });
       } catch (e) {
-        return err({
-          kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
-        });
+        return err(wrapRepoError('matcher', e));
       }
     },
   };

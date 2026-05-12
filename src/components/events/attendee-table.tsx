@@ -1,5 +1,5 @@
 /**
- * T063 — Attendee table (F6 Phase 4 / US2 AS2-AS4).
+ * Attendee table (F6 Phase 4 / US2 AS2-AS4).
  *
  * Renders the paginated attendee list for an event detail page +
  * toolbar (search input + "Show unmatched only" toggle). Server-
@@ -7,18 +7,18 @@
  * server component re-renders.
  *
  * Columns:
- *   - Attendee  (name + email + company stacked)
- *   - Match     (MatchStatusBadge — 5 variants)
- *   - Ticket    (type + price + payment status)
- *   - Quota     (Partner / Cultural / Over-quota badges; can be
- *                multiple)
- *   - Registered (relative time, locale-formatted)
+ * - Attendee  (name + email + company stacked)
+ * - Match     (MatchStatusBadge — 5 variants)
+ * - Ticket    (type + price + payment status)
+ * - Quota     (Partner / Cultural / Over-quota badges; can be
+ * multiple)
+ * - Registered (relative time, locale-formatted)
  *
  * a11y:
- *   - Toolbar button has aria-pressed reflecting the URL state.
- *   - sr-only caption + result-count announcement (aria-live).
- *   - Empty rows path uses tabular role+aria semantics correctly
- *     ("no matching rows").
+ * - Toolbar button has aria-pressed reflecting the URL state.
+ * - sr-only caption + result-count announcement (aria-live).
+ * - Empty rows path uses tabular role+aria semantics correctly
+ * ("no matching rows").
  */
 'use client';
 
@@ -49,7 +49,7 @@ import { MatchStatusBadge } from './match-status-badge';
 import { QuotaEffectBadge } from './quota-effect-badge';
 
 export type AttendeeRow = {
-  // TY3-5: brand types propagated through the
+  // brand types propagated through the
   // Server→Client prop boundary. Compile-only — no runtime cost.
   readonly registrationId: RegistrationId;
   readonly attendeeEmail: AttendeeEmail;
@@ -183,7 +183,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
         </Button>
       </div>
       {/*
-       * U3: result-count aria-live region —
+       * result-count aria-live region —
        * announces row count to screen readers after filter/search changes.
        * `role="status"` + `aria-live="polite"` lets the SR queue the
        * update without interrupting; `aria-atomic` ensures the full

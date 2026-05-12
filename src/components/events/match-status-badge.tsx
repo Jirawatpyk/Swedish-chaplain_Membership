@@ -1,5 +1,5 @@
 /**
- * T064 — Match-status badge (F6 Phase 4).
+ * Match-status badge (F6 Phase 4).
  *
  * Visual indicator for the 5-state attendee match cascade
  * (FR-012). Combines shape (filled vs. outline), icon, AND text
@@ -7,11 +7,11 @@
  * communication.
  *
  * Variants:
- *   - member_contact  — filled green check (highest confidence)
- *   - member_domain   — outline green check (domain inference)
- *   - member_fuzzy    — outline amber tilde (fuzzy match, review-worthy)
- *   - non_member      — outline neutral dot (not a member)
- *   - unmatched       — filled red warning (ambiguous, review-required)
+ * - member_contact  — filled green check (highest confidence)
+ * - member_domain   — outline green check (domain inference)
+ * - member_fuzzy    — outline amber tilde (fuzzy match, review-worthy)
+ * - non_member      — outline neutral dot (not a member)
+ * - unmatched       — filled red warning (ambiguous, review-required)
  *
  * The label is localised by the caller via next-intl — the badge
  * receives the resolved string. Default `aria-label` falls back
@@ -43,7 +43,7 @@ interface VariantConfig {
 /**
  * Tailwind tokens picked for **WCAG 2.1 SC 1.4.11** non-text contrast (≥3:1)
  * against both light card background (oklch 1.000 ≈ #fff) and dark card
- * background (oklch 0.145 ≈ #262626). Verify-finding U1 (2026-05-12) raised
+ * background (oklch 0.145 ≈ #262626). Verify-finding U1 raised
  * that `-700` dark borders measured 2.13–2.76:1 — bumped to `-500` shades
  * which clear 3:1 in both themes.
  */
@@ -51,17 +51,17 @@ const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
   member_contact: {
     Icon: CheckCircle2,
     badgeClass:
-      'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-100 border-emerald-500 dark:border-emerald-500',
+      'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-100 border-emerald-600 dark:border-emerald-500',
   },
   member_domain: {
     Icon: Check,
     badgeClass:
-      'border-emerald-500 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100',
+      'border-emerald-600 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100',
   },
   member_fuzzy: {
     Icon: CircleEqual,
     badgeClass:
-      'border-amber-500 text-amber-900 dark:border-amber-500 dark:text-amber-100',
+      'border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100',
   },
   non_member: {
     Icon: Circle,

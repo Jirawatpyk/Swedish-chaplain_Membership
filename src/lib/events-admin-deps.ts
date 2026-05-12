@@ -9,8 +9,8 @@
  *
  * Exposes two factories:
  *
- *   - `makeListEventsDeps(tenantSlug)`
- *   - `makeLoadEventDetailDeps(tenantSlug)`
+ * - `makeListEventsDeps(tenantSlug)`
+ * - `makeLoadEventDetailDeps(tenantSlug)`
  *
  * Each composes a Drizzle-backed `EventsRepository` / `RegistrationsRepository`
  * bound to a `runInTenant`-managed transaction. The route handler invokes
@@ -19,14 +19,14 @@
  *
  * Public API design — route handler code:
  *
- *   const result = await runListEvents(tenant, input);
+ * const result = await runListEvents(tenant, input);
  *
  * not:
  *
- *   const deps = makeListEventsDeps(tenant);
- *   const result = await runInTenant(ctx, (tx) =>
- *     listEvents(deps.bindTx(tx), input)
- *   );
+ * const deps = makeListEventsDeps(tenant);
+ * const result = await runInTenant(ctx, (tx) =>
+ * listEvents(deps.bindTx(tx), input)
+ * );
  *
  * The thin `run*` wrappers below take care of `asTenantContext` +
  * `runInTenant` for the route, so the route remains a small parser-and-
@@ -35,7 +35,7 @@
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantId, type TenantId } from '@/modules/members';
-// TY2 fix: `asTenantContext` already
+// `asTenantContext` already
 // validates slug format (throws `InvalidTenantSlugError` on malformed
 // input — see `src/modules/tenants/domain/tenant-context.ts`). So the
 // downstream `asTenantId(tenantSlug)` rubber-stamp is safe BECAUSE

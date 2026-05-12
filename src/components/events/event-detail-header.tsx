@@ -1,5 +1,5 @@
 /**
- * T062 — Event detail header (F6 Phase 4 / US2 AS2-AS3).
+ * Event detail header (F6 Phase 4 / US2 AS2-AS3).
  *
  * Displays the event metadata + aggregate match-rate indicator
  * + "View on EventCreate" deep-link button + Archived badge.
@@ -10,11 +10,11 @@
  * + Intl.DateTimeFormat-ish locale helpers).
  *
  * a11y:
- *   - Match-rate is presented as `<dl>` so screen readers announce
- *     "Match rate: 90% (18 of 20)" in one phrase.
- *   - Deep-link is target="_blank" rel="noopener noreferrer"
- *     (security + a11y — also includes an sr-only "(opens in a
- *     new tab)" note).
+ * - Match-rate is presented as `<dl>` so screen readers announce
+ * "Match rate: 90% (18 of 20)" in one phrase.
+ * - Deep-link is target="_blank" rel="noopener noreferrer"
+ * (security + a11y — also includes an sr-only "(opens in a
+ * new tab)" note).
  */
 'use client';
 
@@ -40,7 +40,7 @@ type EventHeaderProps = {
     readonly isCulturalEvent: boolean;
     readonly archivedAt: string | null;
     readonly eventcreateUrl: string | null;
-    /** U5: last Zapier delivery timestamp. */
+    /** last Zapier delivery timestamp. */
     readonly lastUpdatedAt: string;
   };
 };
@@ -72,7 +72,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           {/*
-           * U4: heading dedupe — the page-level
+           * heading dedupe — the page-level
            * <PageHeader title={event.name}/> already emits <h1>. Repeating
            * the same string as <h2> here pollutes the SR heading tree.
            * Render the metadata block without an extra heading level.
@@ -98,7 +98,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
               {event.isPartnerBenefit && (
                 <Badge
                   variant="outline"
-                  className="border-sky-500 text-sky-900 dark:border-sky-500 dark:text-sky-100"
+                  className="border-sky-600 text-sky-900 dark:border-sky-500 dark:text-sky-100"
                   aria-label={t('header.partnerBenefit')}
                 >
                   <Award aria-hidden="true" data-icon="inline-start" />
@@ -108,7 +108,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
               {event.isCulturalEvent && (
                 <Badge
                   variant="outline"
-                  className="border-violet-500 text-violet-900 dark:border-violet-500 dark:text-violet-100"
+                  className="border-violet-600 text-violet-900 dark:border-violet-500 dark:text-violet-100"
                   aria-label={t('header.culturalEvent')}
                 >
                   <Sparkles aria-hidden="true" data-icon="inline-start" />
@@ -147,7 +147,7 @@ export function EventDetailHeader({ event }: EventHeaderProps) {
               {total.toLocaleString(locale)}
             </dd>
           </div>
-          {/* U5: trust signal — last Zapier delivery timestamp */}
+          {/* trust signal — last Zapier delivery timestamp */}
           <div className="flex items-baseline gap-2">
             <dt className="whitespace-nowrap text-muted-foreground">
               {t('header.lastUpdatedAt')}

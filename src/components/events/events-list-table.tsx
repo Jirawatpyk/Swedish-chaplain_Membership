@@ -1,5 +1,5 @@
 /**
- * T061 — Events list table (F6 Phase 4 / US2 AS1).
+ * Events list table (F6 Phase 4 / US2 AS1).
  *
  * TanStack Table v8 headless + shadcn Table visual primitives — same
  * pattern as src/components/members/members-table.tsx and
@@ -7,19 +7,19 @@
  * + filter; the table renders the current page only.
  *
  * Columns:
- *   - Date           (event.startDate, locale-formatted, BE-display
- *                     for th-TH; pure ISO for en/sv)
- *   - Name           (clickable link to /admin/events/[id])
- *   - Category       (raw string from EventCreate or — when null)
- *   - Registrations  (totalRegistrations integer)
- *   - Partner Benefit (badge: visible when isPartnerBenefit OR
- *                       isCulturalEvent; uses lucide Award icon)
- *   - Match Rate     ("NN.N%" with em-dash when total=0)
+ * - Date           (event.startDate, locale-formatted, BE-display
+ * for th-TH; pure ISO for en/sv)
+ * - Name           (clickable link to /admin/events/[id])
+ * - Category       (raw string from EventCreate or — when null)
+ * - Registrations  (totalRegistrations integer)
+ * - Partner Benefit (badge: visible when isPartnerBenefit OR
+ * isCulturalEvent; uses lucide Award icon)
+ * - Match Rate     ("NN.N%" with em-dash when total=0)
  *
  * Keyboard nav + a11y:
- *   - Native `<a>` row links — Tab + Enter
- *   - aria-sort hint on the Date column
- *   - sr-only "events table" caption
+ * - Native `<a>` row links — Tab + Enter
+ * - aria-sort hint on the Date column
+ * - sr-only "events table" caption
  */
 'use client';
 
@@ -41,7 +41,7 @@ import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { EventId } from '@/modules/events';
 
 export type EventsListTableRow = {
-  // TY3: brand is compile-only — cheap win;
+  // brand is compile-only — cheap win;
   // catches accidental ID-swap bugs at the Server→Client prop boundary.
   readonly eventId: EventId;
   readonly name: string;
@@ -82,7 +82,7 @@ export function EventsListTable({ rows }: Props) {
       <TableHeader>
         <TableRow>
           {/*
-           * L2: no real column-sort wired
+           * no real column-sort wired
            * (server pagination only with fixed start_date DESC order).
            * A hard-coded `aria-sort="descending"` would advertise a
            * sortable column that doesn't react to user input. Drop it
@@ -135,7 +135,7 @@ export function EventsListTable({ rows }: Props) {
                   {row.isPartnerBenefit && (
                     <Badge
                       variant="outline"
-                      className="border-sky-500 text-sky-900 dark:border-sky-500 dark:text-sky-100"
+                      className="border-sky-600 text-sky-900 dark:border-sky-500 dark:text-sky-100"
                       aria-label={t('badges.partnerBenefit')}
                     >
                       <Award aria-hidden="true" data-icon="inline-start" />
@@ -145,7 +145,7 @@ export function EventsListTable({ rows }: Props) {
                   {row.isCulturalEvent && (
                     <Badge
                       variant="outline"
-                      className="border-violet-500 text-violet-900 dark:border-violet-500 dark:text-violet-100"
+                      className="border-violet-600 text-violet-900 dark:border-violet-500 dark:text-violet-100"
                       aria-label={t('badges.culturalEvent')}
                     >
                       <Sparkles aria-hidden="true" data-icon="inline-start" />

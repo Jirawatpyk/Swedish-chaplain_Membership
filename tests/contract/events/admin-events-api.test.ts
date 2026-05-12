@@ -29,7 +29,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
-// T9 fix (verify-finding 2026-05-12): type-only imports to constrain the
+// T9 fix: type-only imports to constrain the
 // mock factories against the REAL adapter signatures. A future refactor
 // that adds a third arg to runListEvents/runLoadEventDetail breaks the
 // test at compile time before it can ship as a silent prod regression.
@@ -56,7 +56,7 @@ const conId = (s: string) => s as ContactId;
 // Mock seams — replace heavy dependencies at module boundary.
 // ---------------------------------------------------------------------------
 
-// T9 fix (verify-finding 2026-05-12): mocks typed against the real
+// T9 fix: mocks typed against the real
 // exported signatures so a future refactor that changes the arg list
 // breaks tests at compile time, not at runtime.
 const listEventsMock = vi.fn<typeof runListEvents>();
@@ -315,7 +315,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     );
   });
 
-  it('200 OK — clamps pageSize to bounds [10, 100] AND emits X-PageSize-Clamped header (M2 round-3 fix)', async () => {
+  it('200 OK — clamps pageSize to bounds [10, 100] AND emits X-PageSize-Clamped header ', async () => {
     listEventsMock.mockResolvedValue({
       ok: true,
       value: {
@@ -448,7 +448,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     expect(body.toLowerCase()).not.toMatch(/forbidden|role|admin/);
   });
 
-  it('404 Not Found — member role emits role_violation_blocked audit (FR-035, F1 fix)', async () => {
+  it('404 Not Found — member role emits role_violation_blocked audit ', async () => {
     requireSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr-audit',
@@ -485,7 +485,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
       },
     });
     emitStandaloneMock.mockRejectedValueOnce(new Error('DB unavailable'));
-    // E4 fix (verify-finding 2026-05-12): assert the failure was LOGGED
+    // E4 fix: assert the failure was LOGGED
     // — the whole point of "observability is not an availability
     // dependency" is that the failure IS observable. A future refactor
     // that drops the catch-block log line would otherwise still pass
@@ -511,7 +511,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     expect(res.status).toBe(500);
   });
 
-  // ---- T2 (verify-finding 2026-05-12) — requireSession throw -------------
+  // ---- T2 — requireSession throw -------------
   it('T2 — requireSession throw → 404 (NOT 500), no audit emit', async () => {
     requireSessionMock.mockRejectedValueOnce(new Error('session decode failed'));
     const { GET } = await loadListRoute();
@@ -681,7 +681,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     );
   });
 
-  it('200 OK — clamps detail pageSize to bounds [10, 200] AND emits X-PageSize-Clamped header (M2 round-3 fix)', async () => {
+  it('200 OK — clamps detail pageSize to bounds [10, 200] AND emits X-PageSize-Clamped header ', async () => {
     loadEventDetailMock.mockResolvedValue({
       ok: true,
       value: {
@@ -797,7 +797,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     expect(res.status).toBe(404);
   });
 
-  it('404 — detail member-role emits role_violation_blocked audit (FR-035, F1 fix)', async () => {
+  it('404 — detail member-role emits role_violation_blocked audit ', async () => {
     requireSessionMock.mockResolvedValueOnce({
       user: {
         id: 'u-mbr-audit',
@@ -858,7 +858,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     expect(res.status).toBe(500);
   });
 
-  // ---- T5 (verify-finding 2026-05-12) — invalid matchTypeFilter ---------
+  // ---- T5 — invalid matchTypeFilter ---------
   it('T5 — matchTypeFilter=garbage → 400', async () => {
     const { GET } = await loadDetailRoute();
     const res = await GET(
@@ -909,7 +909,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
 // in afterEach via vi.doUnmock + vi.resetModules.
 // ---------------------------------------------------------------------------
 
-describe('T3 (verify-finding 2026-05-12) — kill-switch off → 404 + no audit', () => {
+describe('T3 — kill-switch off → 404 + no audit', () => {
   afterEach(() => {
     vi.doUnmock('@/lib/env');
     vi.resetModules();

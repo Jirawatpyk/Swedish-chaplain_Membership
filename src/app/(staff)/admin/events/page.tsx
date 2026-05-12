@@ -1,20 +1,20 @@
 /**
- * T065 — /admin/events list page (F6 Phase 4 / US2 AS1 + AS5).
+ * /admin/events list page (F6 Phase 4 / US2 AS1 + AS5).
  *
  * Server component — fetches the events list + emptyStateContext via
  * the `runListEvents` composition adapter (which wraps `runInTenant`).
  * Server-side filter chips + pagination.
  *
  * Empty-state strategy (US2 AS5 + CHK028):
- *   (a) !integrationConfigured           → "Set up EventCreate integration" CTA
- *   (b) integrationConfigured && !everReceivedDelivery → "Waiting for first event…" hint
- *   (c) items.length===0 && totalArchived>0 → "All events archived" with toggle
- *   (d) hasFilters && items.length===0 → "No events match your filters" + clear
+ * (a) !integrationConfigured           → "Set up EventCreate integration" CTA
+ * (b) integrationConfigured && !everReceivedDelivery → "Waiting for first event…" hint
+ * (c) items.length===0 && totalArchived>0 → "All events archived" with toggle
+ * (d) hasFilters && items.length===0 → "No events match your filters" + clear
  *
  * Authz:
- *   - admin OR manager (read)
- *   - member → 404 (FR-035 surface disclosure)
- *   - kill-switch off → 404
+ * - admin OR manager (read)
+ * - member → 404 (FR-035 surface disclosure)
+ * - kill-switch off → 404
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -43,7 +43,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface SearchParams {
-  // M-A round-3 fix: Next.js delivers repeated query
+  // Next.js delivers repeated query
   // params as `string[]` (e.g., `?q=a&q=b` → `q: ['a','b']`). Typing
   // these as bare `string` was a lie that would have crashed on
   // `.trim()`. We normalise to the first-occurrence string at read
@@ -86,12 +86,12 @@ export default async function AdminEventsListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  // FR-035 — kill-switch: 404 (surface disclosure prevention).
+  // kill-switch: 404 (surface disclosure prevention).
   if (!env.features.f6EventCreate) {
     notFound();
   }
 
-  // FR-035 — auth + role gate. Member returns 404.
+  // auth + role gate. Member returns 404.
   const { user: currentUser } = await requireSession('staff');
   if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
     notFound();
@@ -117,7 +117,7 @@ export default async function AdminEventsListPage({
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);
 
-  // E1+E6 fix: wrap the use-case dispatch
+  // wrap the use-case dispatch
   // in try/catch — `runInTenant` rejections (DB outage, role-grant
   // failure, etc.) would otherwise bubble to the Next.js framework
   // error boundary, bypassing the bespoke error card. Wrapping here
@@ -215,7 +215,7 @@ export default async function AdminEventsListPage({
 // --- Subcomponents (server components — kept inline for clarity) ----------
 
 /**
- * H1 fix: build chip hrefs from a fresh
+ * build chip hrefs from a fresh
  * URLSearchParams over the CURRENT query so toggling one filter does
  * not silently drop the others. Also strips `page=` so toggles reset
  * to page 1 (matches AttendeeTable's `toggleUnmatched` pattern at
@@ -300,8 +300,8 @@ function FilterChipLink({
   href: string;
   children: React.ReactNode;
 }) {
-  // U2: `aria-pressed` is invalid on anchors —
-  // WAI-ARIA 1.2 restricts it to role="button". `aria-current="true"` is
+  // `aria-pressed` is invalid on anchors —
+  // ARIA 1.2 restricts it to role="button". `aria-current="true"` is
   // the canonical idiom for active nav/filter links on anchor elements.
   return (
     <Link

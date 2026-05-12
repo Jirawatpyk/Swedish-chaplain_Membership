@@ -19,6 +19,7 @@ import { and, eq } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { eventcreateIdempotencyReceipts } from './schema';
+import { wrapRepoError } from './sanitize-db-error';
 import type {
   IdempotencyStore,
   TryInsertReceiptInput,
@@ -75,10 +76,7 @@ export function makeDrizzleIdempotencyStore(executor: TenantTx): IdempotencyStor
           originalProcessedAt: existing.length > 0 ? new Date(existing[0]!.processedAt) : null,
         });
       } catch (e) {
-        return err({
-          kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
-        });
+        return err(wrapRepoError('idempotency', e));
       }
     },
   };

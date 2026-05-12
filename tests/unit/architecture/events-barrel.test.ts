@@ -38,8 +38,20 @@ const FORBIDDEN_EXPORTS = [
   'makeDrizzleIdempotencyStore',
   'makeDrizzleAttendeeMatcher',
   'makePinoAuditPort',
-  // Schema literal (helpers internal to Infrastructure)
+  // Schema-internal helpers
   'readAttendeeEmailLower',
+  // Singleton instance names (defence against future "convenience"
+  // exports). The composition factories produce port instances at
+  // call-time; never export a pre-built instance.
+  'auditEmitter',
+  'eventsRepo',
+  'registrationsRepo',
+  'idempotencyStore',
+  'attendeeMatcher',
+  'tenantWebhookConfigRepo',
+  // Sanitiser helpers — Infrastructure-internal
+  'wrapRepoError',
+  'sanitizeDbErrorMessage',
 ];
 
 const REQUIRED_EXPORTS = [
@@ -87,9 +99,12 @@ describe('events module barrel — architecture guard (L1 round-3)', () => {
 
   it('keeps the public surface bounded (no surprise exports)', () => {
     // Sanity check that the surface doesn't explode unintentionally.
-    // Current count tracks ~50 exports at Phase 4 end. The threshold
-    // is loose — adjust upward as Phase 5/6/7/9/10 use-cases land.
-    expect(exportedNames.length).toBeLessThan(80);
+    // Current count tracks ~50 exports at Phase 4 end. Threshold is
+    // bumped to <100 to accommodate Phase 5 (~5-7 wizard use-cases),
+    // Phase 6 (~3 admin actions), Phase 7 (~3 CSV import), Phase 9
+    // (~1 relink), Phase 10 (~3 retention/erasure). Bump again if it
+    // becomes load-bearing.
+    expect(exportedNames.length).toBeLessThan(100);
     expect(exportedNames.length).toBeGreaterThan(30);
   });
 });

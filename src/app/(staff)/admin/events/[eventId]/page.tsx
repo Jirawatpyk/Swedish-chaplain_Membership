@@ -1,5 +1,5 @@
 /**
- * T066 — /admin/events/[eventId] detail page (F6 Phase 4 / US2 AS2-AS4).
+ * /admin/events/[eventId] detail page (F6 Phase 4 / US2 AS2-AS4).
  *
  * Server component. Loads event metadata + paginated attendee table.
  * 404 when event missing or cross-tenant. Authz: admin OR manager.
@@ -38,7 +38,7 @@ export async function generateMetadata({
 }
 
 interface SearchParams {
-  // M-A round-3 fix: Next.js delivers repeated query params as string[].
+  // Next.js delivers repeated query params as string[].
   // See /admin/events/page.tsx for full rationale + firstParam helper.
   readonly page?: string | string[];
   readonly pageSize?: string | string[];
@@ -73,8 +73,8 @@ function clampPage(raw: string | string[] | undefined): number {
  * which was a literal-typed sentinel that couldn't exhaustively switch).
  *
  * - `{ kind: 'filter', value }` — valid MatchType present, apply filter
- * - `{ kind: 'none' }`          — no filter (absent / empty / null / undefined)
- * - `{ kind: 'invalid' }`       — garbage param present; redirect to clean URL
+ * - `{ kind: 'none' }` — no filter (absent / empty / null / undefined)
+ * - `{ kind: 'invalid' }` — garbage param present; redirect to clean URL
  */
 type ParsedMatchType =
   | { readonly kind: 'filter'; readonly value: MatchType }
@@ -112,7 +112,7 @@ export default async function AdminEventDetailPage({
   const page = clampPage(query.page);
   const unmatchedOnly = isTruthy(query.unmatchedOnly);
   const parsedMatchType = parseMatchTypeFilter(query.matchTypeFilter);
-  // E9-page + Type#3 round-3 discriminated union: when
+  // page + Type#3 round-3 discriminated union: when
   // the URL carries garbage `matchTypeFilter`, redirect to the clean
   // URL stripping the bad param. Exhaustive switch ensures any 4th
   // future state surfaces as a compile error here.
@@ -125,9 +125,13 @@ export default async function AdminEventDetailPage({
       matchTypeFilter = null;
       break;
     case 'invalid': {
+      // Strip both the bad `matchTypeFilter` AND the `page` param.
+      // Removing the filter usually narrows the result set, so the
+      // user's previous page index is likely empty — resetting to
+      // page 1 avoids "No attendees" on what was a valid cursor.
       const cleaned = new URLSearchParams();
       for (const [k, v] of Object.entries(query)) {
-        if (k === 'matchTypeFilter') continue;
+        if (k === 'matchTypeFilter' || k === 'page') continue;
         const first = firstParam(v);
         if (first !== undefined && first !== '') {
           cleaned.set(k, first);
@@ -143,7 +147,7 @@ export default async function AdminEventDetailPage({
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);
 
-  // E1+E6 fix: mirror list-page pattern —
+  // mirror list-page pattern —
   // try/catch the use-case dispatch + log on either failure path so a
   // raw `runInTenant` rejection cannot bypass the bespoke error card.
   let result: Awaited<ReturnType<typeof runLoadEventDetail>> | null = null;

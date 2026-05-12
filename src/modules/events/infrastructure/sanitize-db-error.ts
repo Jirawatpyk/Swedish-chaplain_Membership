@@ -7,9 +7,8 @@
  * layer Result types or audit-log payloads. This helper strips those
  * identifiers + caps the string length for safe propagation.
  *
- * E3 fix: Phase 3 audit-port.ts had this
- * helper inline; Phase 4 repo adapters forgot to apply the same
- * sanitisation. Extracted here for reuse.
+ * Centralised here so both audit-port emit-error path and Drizzle
+ * repo adapters share the same Postgres-identifier redaction regex.
  *
  * IMPORTANT: callers MUST log the FULL error (`e.message + e.stack`)
  * via `logger.error` at the catch site BEFORE passing the sanitised
@@ -37,33 +36,27 @@ export function sanitizeDbErrorMessage(e: unknown): string {
 }
 
 /**
- * Simp#1 round-3: collapse the identical 14-line
- * try/catch boilerplate previously duplicated across 9 sites in the
- * F6 repository adapters. Each site did:
+ * Single catch-block helper for the F6 repository adapters.
  *
- *   } catch (e) {
- *     logger.error({event:'f6_repo_db_error', err: {name,message,stack}}, ...);
- *     return err({kind:'db_error', message: sanitizeDbErrorMessage(e)});
- *   }
- *
- * Now collapsed to:
+ * Each adapter catch site collapses to:
  *
  *   } catch (e) {
  *     return err(wrapRepoError('events', e));
  *   }
  *
  * Preserves both server-side log fidelity (full error.name + message +
- * stack) AND outbound payload sanitisation (Postgres identifiers
- * stripped, message capped at 200 chars). The `repoLabel` parameter
- * narrows the log line to the specific repo (`'events'` or
- * `'registrations'`) so SREs can filter alerts by adapter origin.
+ * stack via `logger.error` with `event: 'f6_repo_db_error'`) AND
+ * outbound payload sanitisation (Postgres identifiers stripped,
+ * message capped at 200 chars). The `repoLabel` parameter narrows
+ * the log line to the specific repo so SREs can filter alerts by
+ * adapter origin.
  *
  * @param repoLabel — repo identifier ("events" / "registrations") for log filtering
  * @param e — unknown thrown value caught in a repo adapter
  * @returns the `db_error` Result variant (caller wraps in `err(...)`)
  */
 export function wrapRepoError(
-  repoLabel: 'events' | 'registrations',
+  repoLabel: 'events' | 'registrations' | 'idempotency' | 'matcher',
   e: unknown,
 ): { readonly kind: 'db_error'; readonly message: string } {
   logger.error(
@@ -72,10 +65,33 @@ export function wrapRepoError(
       repo: repoLabel,
       err:
         e instanceof Error
-          ? { name: e.name, message: e.message, stack: e.stack }
+          ? {
+              name: e.name,
+              message: e.message,
+              // Stack trace is bounded + filesystem-redacted before
+              // emission. On Vercel Fluid Compute raw stacks contain
+              // absolute container paths (`/var/task/...`) which would
+              // expose deployment filesystem layout to any log viewer
+              // with broader access than the SRE pool. Replace those
+              // prefixes with `[redacted]` and cap total length.
+              stack: redactStack(e.stack),
+            }
           : String(e),
     },
     `[F6 ${repoLabel} repository] DB error`,
   );
   return { kind: 'db_error', message: sanitizeDbErrorMessage(e) };
+}
+
+const STACK_CAP = 4_000;
+
+function redactStack(stack: string | undefined): string | undefined {
+  if (stack === undefined) return undefined;
+  return stack
+    // Strip absolute Linux/Vercel container paths (`/var/task/...`,
+    // `/var/runtime/...`, etc.) and absolute Windows dev paths.
+    .replace(/(?:[a-z]:)?[\\\/](?:var|usr|home|opt|tmp|root|users)[\\\/][\w.\-\\\/]+/gi, '[redacted-path]')
+    // Strip remaining `file://` URLs.
+    .replace(/file:\/\/[^\s)]+/g, '[redacted-file-url]')
+    .slice(0, STACK_CAP);
 }

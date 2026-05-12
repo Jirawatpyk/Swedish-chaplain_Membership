@@ -34,11 +34,12 @@
 
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { env } from './env';
+import { logger } from './logger';
 
 const X_TENANT_HEADER = 'x-tenant';
 
 /**
- * M3 — Server-component convenience for
+ * Server-component convenience for
  * tenant resolution.
  *
  * Server components do not receive a `Request` object — only a
@@ -55,21 +56,30 @@ const X_TENANT_HEADER = 'x-tenant';
 export function resolveTenantFromHeaders(
   headers: ReadonlyHeaders,
 ): TenantContext {
-  // Resolver reads `x-tenant` only; we still forward all headers for
-  // forward-compat (e.g., future signed-claim parsing). LOW-4 round-3
-  //: defence-in-depth try around the flatten. forEach()
-  // on Next.js's ReadonlyHeaders is not documented to throw, but a
-  // future Next.js refactor wrapping headers in a Proxy could surface
-  // a throw here; we'd rather fall through to env.tenant.slug than
-  // explode the server component.
+  // Resolver reads `x-tenant` only; all headers forwarded for
+  // forward-compat (future signed-claim parsing). Defence-in-depth
+  // try/catch around the flatten — forEach() on Next.js's
+  // ReadonlyHeaders is not documented to throw today, but a future
+  // Proxy wrapper could; we'd rather fall through to env.tenant.slug
+  // than explode the server component.
   let flat: Record<string, string>;
   try {
     flat = {};
     headers.forEach((value, key) => {
       flat[key] = value;
     });
-  } catch {
+  } catch (e) {
     // Empty headers → resolver defaults to env.tenant.slug — safe.
+    // Log loudly: a sustained pattern of `resolve_tenant_headers_flatten_throw`
+    // signals a Next.js refactor we need to track. Without this log
+    // the fallback would be invisible to ops.
+    logger.warn(
+      {
+        event: 'resolve_tenant_headers_flatten_throw',
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[tenant-context] headers.forEach threw — falling back to env.tenant.slug',
+    );
     flat = {};
   }
   const pseudoReq = new Request('http://localhost:3100', { headers: flat });

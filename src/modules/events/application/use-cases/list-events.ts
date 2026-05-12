@@ -1,12 +1,12 @@
 /**
- * T057 — `listEvents` use-case (F6 Application — Phase 4).
+ * `listEvents` use-case (F6 Application — Phase 4).
  *
  * Returns a paginated list of imported events for the admin events list
  * surface (FR-020 / US2 AS1). Composes three port calls:
  *
- *   1. `eventsRepo.list(...)`               — paginated rows + total count
- *   2. `eventsRepo.getMatchCountsByEventIds(...)` — batched match aggregates
- *   3. `eventsRepo.getEmptyContext(tenantId)` — 3-variant empty-state hints
+ * 1. `eventsRepo.list(...)`               — paginated rows + total count
+ * 2. `eventsRepo.getMatchCountsByEventIds(...)` — batched match aggregates
+ * 3. `eventsRepo.getEmptyContext(tenantId)` — 3-variant empty-state hints
  *
  * The repo is invoked OUTSIDE the use-case via `runInTenant(ctx, fn)` in
  * the composition root (`src/lib/events-admin-deps.ts`). The use-case
@@ -16,11 +16,11 @@
  * verbatim — UI consumers and the route handler share the same DTO.
  *
  * Spec authority:
- *   - FR-020 (events list + match-rate + sort + filters + 3-variant empty)
- *   - US2 AS1 (Date / Name / Category / Registrations / Partner Benefit / Match Rate)
- *   - US2 AS5 (3-variant empty state: integrationConfigured /
- *              everReceivedDelivery / totalArchived)
- *   - contracts/admin-events-api.md § GET /api/admin/events
+ * - FR-020 (events list + match-rate + sort + filters + 3-variant empty)
+ * - US2 AS1 (Date / Name / Category / Registrations / Partner Benefit / Match Rate)
+ * - US2 AS5 (3-variant empty state: integrationConfigured /
+ * everReceivedDelivery / totalArchived)
+ * - contracts/admin-events-api.md § GET /api/admin/events
  */
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantId } from '@/modules/members';
@@ -52,7 +52,7 @@ export interface ListEventsItem {
   readonly isPartnerBenefit: boolean;
   readonly isCulturalEvent: boolean;
   readonly archivedAt: string | null;
-  // M1 fix: `eventcreateUrl` retained
+  // `eventcreateUrl` retained
   // because `contracts/admin-events-api.md` example envelope includes
   // it; future smart-feature work may surface it as an inline icon
   // link on the list row. Currently consumed only by the detail
@@ -115,7 +115,7 @@ export async function listEvents(
   // Skip the match-counts roundtrip when the page has no rows — saves
   // an unnecessary index scan on the empty-state path.
   //
-  // E7: when getMatchCountsByEventIds fails
+  // when getMatchCountsByEventIds fails
   // the use-case currently propagates `err` → API 500 → page renders
   // generic error. The display layer DOES support `total = 0 → 0` /
   // "—" rendering. Choice is intentional — FR-020 implies match-rate

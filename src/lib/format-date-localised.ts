@@ -1,15 +1,12 @@
 /**
  * Locale-aware date formatting helpers.
  *
- * Simp#4 round-3 fix (2026-05-12): extracted from F6 components
- * (`events-list-table`, `event-detail-header`, `attendee-table`) where
- * the same Thai BE-display branch was duplicated three times. This
- * helper centralises the Thai locale → Buddhist-Era calendar mapping
- * per CLAUDE.md § Conventions ("BE display-only on th-TH surfaces;
- * storage stays UTC Gregorian").
- *
- * Future F7/F8 Thai-display surfaces should consume this helper to
- * keep the BE-vs-Gregorian invariant in a single place.
+ * Centralises the Thai locale → Buddhist-Era calendar mapping per
+ * CLAUDE.md § Conventions: "BE display-only on th-TH surfaces;
+ * storage stays UTC Gregorian". Any new Thai-display surface should
+ * consume `formatLocalisedDate` (or `getDateFormatLocale` for the
+ * lower-level locale string) instead of inlining the
+ * `'th-TH-u-ca-buddhist'` calendar variant.
  */
 
 /**

@@ -1,5 +1,5 @@
 /**
- * F6 — EventCreate Integration public barrel.
+ * EventCreate Integration public barrel.
  *
  * Module bootstrapped at `/speckit.implement` Phase 1 (T003) and
  * extended at Phase 2 (T035) with the full Domain + Application port
@@ -8,43 +8,43 @@
  * `no-restricted-imports` rule per Constitution Principle III).
  *
  * Surface organisation:
- *   1. Domain value objects + branded types
- *   2. Domain aggregates (Event / EventRegistration / TenantWebhookConfig)
- *   3. Domain pure helpers (normaliseCompanyName / levenshtein /
- *      personal-email-deny-list / payload zod schemas)
- *   4. Application port interfaces (10 ports)
+ * 1. Domain value objects + branded types
+ * 2. Domain aggregates (Event / EventRegistration / TenantWebhookConfig)
+ * 3. Domain pure helpers (normaliseCompanyName / levenshtein /
+ * personal-email-deny-list / payload zod schemas)
+ * 4. Application port interfaces (10 ports)
  *
  * Use-case exports are added per phase as they land:
- *   - Phase 3 (US1): ingestWebhookAttendee, verifyWebhookSignature,
- *     matchAttendeeToMember
- *   - Phase 4 (US2): listEvents, loadEventDetail
- *   - Phase 5 (US3): generateWebhookSecret, rotateWebhookSecret,
- *     runTestWebhook
- *   - Phase 6 (US4): applyQuotaEffect, toggleEventCategory
- *   - Phase 7 (US5): importCsv
- *   - Phase 9 (US6): relinkRegistration
- *   - Phase 10: archiveEvent, eraseAttendeePii,
- *     pseudonymiseStaleNonMemberPii, getEventAttendeesByMember (F8 port impl)
+ * - Phase 3 (US1): ingestWebhookAttendee, verifyWebhookSignature,
+ * matchAttendeeToMember
+ * - Phase 4 (US2): listEvents, loadEventDetail
+ * - Phase 5 (US3): generateWebhookSecret, rotateWebhookSecret,
+ * runTestWebhook
+ * - Phase 6 (US4): applyQuotaEffect, toggleEventCategory
+ * - Phase 7 (US5): importCsv
+ * - Phase 9 (US6): relinkRegistration
+ * - Phase 10: archiveEvent, eraseAttendeePii,
+ * pseudonymiseStaleNonMemberPii, getEventAttendeesByMember (F8 port impl)
  *
- * IMPORTANT — barrel guard rules (L4 verify-finding 2026-05-12):
+ * barrel guard rules (L4 ):
  *
- *   • RAW Infrastructure adapters (schema.ts Drizzle tables,
- *     drizzle-*-repository factories, pino-audit-port, crypto signature
- *     verifier instance) MUST NOT be re-exported. Routes and tests
- *     consume them indirectly via the composition factories below.
+ * • RAW Infrastructure adapters (schema.ts Drizzle tables,
+ * drizzle-*-repository factories, pino-audit-port, crypto signature
+ * verifier instance) MUST NOT be re-exported. Routes and tests
+ * consume them indirectly via the composition factories below.
  *
- *   • COMPOSITION FACTORIES (`makeStandaloneAuditDeps`,
- *     `makeIngestWebhookAttendeeDeps`) ARE intentionally re-exported.
- *     They are the documented Presentation→Application seam for F6
- *     route handlers; consuming them does NOT leak Drizzle/crypto
- *     internals because each factory returns Application-port-shaped
- *     dependencies. F5's `stripe-webhook-deps.ts` follows the same
- *     pattern at a different layer.
+ * • COMPOSITION FACTORIES (`makeStandaloneAuditDeps`,
+ * `makeIngestWebhookAttendeeDeps`) ARE intentionally re-exported.
+ * They are the documented Presentation→Application seam for F6
+ * route handlers; consuming them does NOT leak Drizzle/crypto
+ * internals because each factory returns Application-port-shaped
+ * dependencies. F5's `stripe-webhook-deps.ts` follows the same
+ * pattern at a different layer.
  *
- *   • `cryptoWebhookSignatureVerifier` is exported as an Application
- *     port impl (the verifier itself is pure-function over the Domain
- *     `WebhookSignatureVerifier` port — no Drizzle/Next/React import).
- *     Acceptable seam.
+ * • `cryptoWebhookSignatureVerifier` is exported as an Application
+ * port impl (the verifier itself is pure-function over the Domain
+ * `WebhookSignatureVerifier` port — no Drizzle/Next/React import).
+ * Acceptable seam.
  *
  * If a future Phase needs to consume an Infrastructure adapter
  * directly, route the access through a NEW composition factory in

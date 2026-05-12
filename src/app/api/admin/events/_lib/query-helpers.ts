@@ -4,7 +4,7 @@
  * consumers without polluting `src/lib/` (these are F6-events-API
  * specific). Mirrors F8 precedent at `src/lib/renewals-route-helpers.ts`.
  *
- * Simp#3 round-3 fix (2026-05-12): extracted from /api/admin/events/route.ts
+ * extracted from /api/admin/events/route.ts
  * and /api/admin/events/[eventId]/route.ts where the same 36 lines of
  * `clampPageSize` + `coerceBoolean` were copy-pasted.
  */
@@ -16,10 +16,10 @@
  * `X-PageSize-Clamped: true` response header per E8 verify-finding.
  *
  * Behaviour:
- *   • non-numeric / null → `{ value: def, clamped: false }`
- *   • below `min` → `{ value: min, clamped: true }`
- *   • above `max` → `{ value: max, clamped: true }`
- *   • in-range → `{ value: n, clamped: false }`
+ * • non-numeric / null → `{ value: def, clamped: false }`
+ * • below `min` → `{ value: min, clamped: true }`
+ * • above `max` → `{ value: max, clamped: true }`
+ * • in-range → `{ value: n, clamped: false }`
  */
 export function clampPageSize(
   raw: string | null,
@@ -38,11 +38,11 @@ export function clampPageSize(
 /**
  * Coerce a query-string boolean to a real boolean.
  *
- *   • `'true'` / `'1'` → `true`
- *   • `''` / `'false'` / `'0'` → `false`
- *   • anything else → `undefined` (so `z.preprocess(coerceBoolean, z.boolean())`
- *     falls through to the schema default; prevents `?flag=xyzzy` from
- *     being coerced to `true` via `Boolean(s)`).
+ * • `'true'` / `'1'` → `true`
+ * • `''` / `'false'` / `'0'` → `false`
+ * • anything else → `undefined` (so `z.preprocess(coerceBoolean, z.boolean())`
+ * falls through to the schema default; prevents `?flag=xyzzy` from
+ * being coerced to `true` via `Boolean(s)`).
  */
 export function coerceBoolean(v: unknown): unknown {
   if (typeof v !== 'string') return v;

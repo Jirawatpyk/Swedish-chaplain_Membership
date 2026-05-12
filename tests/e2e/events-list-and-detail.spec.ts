@@ -153,13 +153,22 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     );
   });
 
-  test('H1 — invalid matchTypeFilter redirects to clean URL (E9-page round-2 fix)', async ({
+  test('H1 — invalid matchTypeFilter redirects to clean URL', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
     const firstRowLink = page.getByRole('table').getByRole('link').first();
     if (!(await firstRowLink.isVisible().catch(() => false))) {
+      // T-MED-2: emit a CI-visible annotation so the silent-skip is
+      // surfaced in Playwright traces. Otherwise a staging-data drift
+      // (e.g., all events archived) would silently skip this test
+      // forever without anyone noticing.
+      testInfo.annotations.push({
+        type: 'data-gap',
+        description:
+          'H1 redirect test skipped — no seeded F6 events available on /admin/events',
+      });
       test.skip(
         true,
         'No seeded F6 events available — H1 redirect test needs at least one event',

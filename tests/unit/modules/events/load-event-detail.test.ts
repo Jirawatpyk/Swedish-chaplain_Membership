@@ -24,8 +24,13 @@ import { asEventId, asExternalEventId, asRegistrationId, asExternalAttendeeId, a
 const VALID_UUID = 'a1b2c3d4-1234-4abc-89de-fedcba987654';
 const TENANT_ID = asTenantId('test-tenant');
 
+// T-LOW-3: use a Record mapped over the EventsRepository keys so a
+// future port-method addition (e.g., Phase 6 `archiveById`) fails this
+// test at compile time instead of silently being missing from the mock.
+type MockRecord<T> = { [K in keyof T]: ReturnType<typeof vi.fn> };
+
 function makeMockEventsRepo(): EventsRepository {
-  return {
+  const mock: MockRecord<EventsRepository> = {
     findById: vi.fn(),
     findByExternalId: vi.fn(),
     upsert: vi.fn(),
@@ -35,11 +40,12 @@ function makeMockEventsRepo(): EventsRepository {
     setArchived: vi.fn(),
     setPartnerBenefit: vi.fn(),
     setCulturalEvent: vi.fn(),
-  } as unknown as EventsRepository;
+  };
+  return mock as unknown as EventsRepository;
 }
 
 function makeMockRegistrationsRepo(): RegistrationsRepository {
-  return {
+  const mock: MockRecord<RegistrationsRepository> = {
     insertOnConflictDoNothing: vi.fn(),
     findById: vi.fn(),
     findByEventId: vi.fn(),
@@ -49,7 +55,8 @@ function makeMockRegistrationsRepo(): RegistrationsRepository {
     listPseudonymiseEligible: vi.fn(),
     pseudonymiseRow: vi.fn(),
     hardDelete: vi.fn(),
-  } as unknown as RegistrationsRepository;
+  };
+  return mock as unknown as RegistrationsRepository;
 }
 
 describe('loadEventDetail — UUID v4 guard (M4 round-3)', () => {
@@ -129,7 +136,14 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
     };
   }
 
-  function makeReg(matchType: 'member_contact' | 'non_member' | 'unmatched') {
+  function makeReg(
+    matchType:
+      | 'member_contact'
+      | 'member_domain'
+      | 'member_fuzzy'
+      | 'non_member'
+      | 'unmatched',
+  ) {
     return {
       tenantId: TENANT_ID,
       registrationId: asRegistrationId(VALID_UUID),
@@ -170,13 +184,24 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
     [true, false, 'member_contact', false, 'partner-benefit + member_contact → NOT over quota'],
     [false, true, 'member_contact', false, 'cultural + member_contact → NOT over quota'],
     [false, false, 'member_contact', false, 'neither + member_contact → NOT over quota'],
+    // T-MED-1 round-4 — exercise the quota-eligible boundary on the
+    // two member-match types that the prior table missed.
+    [true, false, 'member_domain', false, 'partner-benefit + member_domain → NOT over quota (quota-eligible)'],
+    [false, true, 'member_fuzzy', false, 'cultural + member_fuzzy → NOT over quota (quota-eligible)'],
   ])(
     'isPartnerBenefit=%s isCulturalEvent=%s matchType=%s → isOverQuota=%s (%s)',
     async (isPartner, isCultural, matchType, expected) => {
       const eventsRepo = makeMockEventsRepo();
       const registrationsRepo = makeMockRegistrationsRepo();
       const event = makeEvent({ isPartnerBenefit: isPartner, isCulturalEvent: isCultural });
-      const reg = makeReg(matchType as 'member_contact' | 'non_member' | 'unmatched');
+      const reg = makeReg(
+        matchType as
+          | 'member_contact'
+          | 'member_domain'
+          | 'member_fuzzy'
+          | 'non_member'
+          | 'unmatched',
+      );
       vi.mocked(eventsRepo.findById).mockResolvedValueOnce(ok(event));
       vi.mocked(registrationsRepo.findByEventId).mockResolvedValueOnce(
         ok({
@@ -184,8 +209,8 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
           totalCount: 1,
           matchCounts: {
             memberContact: matchType === 'member_contact' ? 1 : 0,
-            memberDomain: 0,
-            memberFuzzy: 0,
+            memberDomain: matchType === 'member_domain' ? 1 : 0,
+            memberFuzzy: matchType === 'member_fuzzy' ? 1 : 0,
             nonMember: matchType === 'non_member' ? 1 : 0,
             unmatched: matchType === 'unmatched' ? 1 : 0,
           },

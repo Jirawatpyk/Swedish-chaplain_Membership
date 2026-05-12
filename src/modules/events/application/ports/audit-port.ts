@@ -1,5 +1,5 @@
 /**
- * T032 — `F6AuditPort` Application port (F6).
+ * `F6AuditPort` Application port (F6).
  *
  * Closed TypeScript union over the 35 F6 audit event types (canonical
  * taxonomy in data-model.md § 4 + contracts/audit-port.md). The discriminated
@@ -10,15 +10,15 @@
  * All F6 events default to **5-year retention**. F6 has no tax-document
  * overlap (F4's 10y retention does not apply). The Drizzle adapter
  * (Phase 3 T051) writes to the existing `audit_log` table:
- *   - `event_type`     ← `eventType` (enum extended by migration 0132)
- *   - `tenant_id`      ← `tenantId`
- *   - `actor_user_id`  ← real UUID for human roles; sentinel for
- *                         system/zapier_webhook/csv_import/cron
- *   - `timestamp`      ← `occurredAt`
- *   - `retention_years`← 5 (F6 default)
- *   - `summary`        ← `summary` (≤500 chars human-readable synopsis)
- *   - `payload jsonb`  ← `payload` (canonical structured carrier; severity
- *                         lives inside the payload object per contract § 0)
+ * - `event_type`     ← `eventType` (enum extended by migration 0132)
+ * - `tenant_id`      ← `tenantId`
+ * - `actor_user_id`  ← real UUID for human roles; sentinel for
+ * system/zapier_webhook/csv_import/cron
+ * - `timestamp`      ← `occurredAt`
+ * - `retention_years`← 5 (F6 default)
+ * - `summary`        ← `summary` (≤500 chars human-readable synopsis)
+ * - `payload jsonb`  ← `payload` (canonical structured carrier; severity
+ * lives inside the payload object per contract § 0)
  *
  * `emitRolledBack` is a separate-tx emit for FR-037 strict-transactional
  * compliance — invoked AFTER the primary ACID unit rolled back so the
@@ -384,7 +384,7 @@ export interface AuditPayloads {
     readonly rowsScanned: number;
     readonly rowsPseudonymised: number;
     readonly durationMs: number;
-    readonly passDate: string; // YYYY-MM-DD
+    readonly passDate: string; // DD
   };
 
   // --- Security (3) -----------------------------------------------------
@@ -399,11 +399,11 @@ export interface AuditPayloads {
   role_violation_blocked: {
     readonly severity: Severity;
     /**
-     * L-C round-3 (2026-05-12): nullable to avoid the sentinel
-     * all-zeros UUID confusion. When the actor cannot be identified
-     * (anonymous session decoded but no user-row resolved), emit
-     * `null` instead of `00000000-0000-0000-0000-000000000000` which
-     * could be confusable with a real all-zeros UUID in queries.
+     * Nullable to avoid the sentinel all-zeros UUID confusion. When
+     * the actor cannot be identified (anonymous session decoded but
+     * no user-row resolved), emit `null` instead of
+     * `00000000-0000-0000-0000-000000000000` which could be confusable
+     * with a real all-zeros UUID in queries.
      */
     readonly actorUserId: UserId | null;
     readonly actorRole: 'manager' | 'member';
