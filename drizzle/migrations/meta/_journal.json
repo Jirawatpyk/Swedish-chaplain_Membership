@@ -890,6 +890,62 @@
       "when": 1793347200000,
       "tag": "0126_pr24_renewal_cycles_expires_check",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1793433600000,
+      "tag": "0127_f6_events_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1793520000000,
+      "tag": "0128_f6_event_registrations_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1793606400000,
+      "tag": "0129_f6_tenant_webhook_configs_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "7",
+      "when": 1793692800000,
+      "tag": "0130_f6_events_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "7",
+      "when": 1793779200000,
+      "tag": "0131_f6_registrations_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1793865600000,
+      "tag": "0132_f6_audit_event_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "7",
+      "when": 1793952000000,
+      "tag": "0133_f6_rls_force_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "7",
+      "when": 1794038400000,
+      "tag": "0134_f6_eventcreate_idempotency_receipts",
+      "breakpoints": true
     }
   ]
 }
