@@ -64,7 +64,7 @@ export interface ListEventsResult {
 }
 
 /**
- * 3-variant empty-state context per US2 AS5 / CHK028 round-5 fix.
+ * 3-variant empty-state context per US2 AS5 / CHK028.
  * - `integrationConfigured` — tenant_webhook_configs row exists
  * - `everReceivedDelivery`  — last_received_at IS NOT NULL on the
  *                              tenant_webhook_configs row
@@ -82,15 +82,29 @@ export type EventsRepositoryError =
   | { readonly kind: 'db_error'; readonly message: string }
   | {
       /**
-       * Issue I6 (review 2026-05-12) — distinct from `db_error` so
-       * dashboards / alert rules can separate genuine Postgres
-       * failures (page someone immediately) from "phase X method
-       * not yet wired" stubs (informational only — caught at code
-       * review or compile time when the calling phase lands).
+       * Distinct from `db_error` so dashboards / alert rules can
+       * separate genuine Postgres failures (page someone immediately)
+       * from "phase X method not yet wired" stubs (informational
+       * only — caught at code review or compile time when the calling
+       * phase lands).
        */
       readonly kind: 'not_implemented';
       readonly method: string;
       readonly futureTask: string;
+    }
+  | {
+      /**
+       * `INSERT ... ON CONFLICT DO UPDATE ... RETURNING *` returned
+       * zero rows — Postgres guarantees this never happens for a
+       * well-formed upsert unless RLS hides the conflicting row from
+       * the calling role. This is functionally a code-bug or RLS
+       * misconfiguration, NOT a transient Postgres error: paging on
+       * `db_error` rate would falsely conflate them. Operators should
+       * alert on `invariant_violation` separately (Sentry severity =
+       * critical).
+       */
+      readonly kind: 'invariant_violation';
+      readonly invariant: string;
     };
 
 export interface EventsRepository {

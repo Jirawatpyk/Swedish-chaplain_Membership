@@ -47,8 +47,14 @@ export interface InsertRegistrationInput {
 
 export interface InsertRegistrationResult {
   readonly registration: EventRegistrationAggregate;
-  /** TRUE if a new row was created; FALSE if (tenant, event, external_id) already existed. */
-  readonly wasFresh: boolean;
+  /**
+   * TRUE if a new row was created; FALSE if `(tenant, event,
+   * external_id)` already existed (Zapier replay → second idempotency
+   * layer hit). Distinct field name from `UpsertEventResult.eventCreated`
+   * to prevent cross-port semantic conflation when both results are
+   * inspected side-by-side.
+   */
+  readonly isNewRegistration: boolean;
 }
 
 export interface ListRegistrationsByEventInput {
@@ -89,14 +95,24 @@ export type RegistrationsRepositoryError =
   | { readonly kind: 'pseudonymised_row_rejected'; readonly registrationId: RegistrationId }
   | {
       /**
-       * Issue I6 (review 2026-05-12) — see EventsRepositoryError for
-       * rationale. Distinct from `db_error` so stub-method invocations
-       * by future-phase code surface a clear "this phase not yet
-       * wired" signal instead of polluting the DB-error metric.
+       * See EventsRepositoryError for rationale. Distinct from
+       * `db_error` so stub-method invocations by future-phase code
+       * surface a clear "this phase not yet wired" signal instead of
+       * polluting the DB-error metric.
        */
       readonly kind: 'not_implemented';
       readonly method: string;
       readonly futureTask: string;
+    }
+  | {
+      /**
+       * `INSERT ... ON CONFLICT DO UPDATE ... RETURNING *` returned
+       * zero rows. See EventsRepositoryError for full rationale —
+       * symptomatic of RLS misconfiguration or schema drift, NOT a
+       * transient Postgres error.
+       */
+      readonly kind: 'invariant_violation';
+      readonly invariant: string;
     };
 
 export interface RegistrationsRepository {
@@ -128,7 +144,7 @@ export interface RegistrationsRepository {
    * Updates the registration's match + quota fields atomically (admin
    * relink action per FR-014). REJECTS rows where
    * `piiPseudonymisedAt IS NOT NULL` with `pseudonymised_row_rejected`
-   * error per round-2 R4.
+   * error.
    */
   updateMatchAndQuota(
     tenantId: TenantId,

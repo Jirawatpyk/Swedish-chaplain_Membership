@@ -2378,11 +2378,9 @@ export const renewalsMetrics = {
 // ---------------------------------------------------------------------------
 // F6 EventCreate Integration — FR-036 metrics (Phase 3 minimum subset)
 //
-// Issue C-FULL-3 (full-scope review 2026-05-12) — F6 Phase 3 shipped zero
-// metrics. The signature-rejection-burst alert (R10) requires the
-// `eventcreate_webhook_receipts_total` counter; the SC-003 p95 < 300ms
-// SLO requires `eventcreate_webhook_ingest_latency_ms`. Both are wired
-// here in Phase 3; remaining FR-036 metrics (#3 match_rate_gauge,
+// `eventcreate_webhook_receipts_total` powers the R10 signature-rejection-
+// burst alert; `eventcreate_webhook_ingest_latency_ms` powers the
+// SC-003 p95 < 300ms SLO. Remaining FR-036 metrics (#3 match_rate_gauge,
 // #4 csv_import_duration, #5–7 quota/refund, #8 secret_rotation,
 // #9 ingest_disabled_gauge, #10 pseudonymisation_sweep, #11
 // idempotency_sweep) land in their respective feature phases.
@@ -2450,15 +2448,45 @@ export const eventcreateMetrics = {
 
   /**
    * Body-size guard counter — surfaces DoS attempts that the body-size
-   * cap blocked (Issue C-FULL-1). Not formally in FR-036 list but
-   * operationally useful for alerting on unusual traffic patterns.
+   * cap blocked. Operationally useful for alerting on unusual traffic
+   * patterns.
    */
   bodyOversizedTotal(tenantId: string): void {
     safeMetric(() => {
       counter(
         'eventcreate_webhook_body_oversized_total',
-        'F6 webhook body exceeded the 64 KiB size cap (Issue C-FULL-1 DoS guard)',
+        'F6 webhook body exceeded the 64 KiB size cap (DoS guard)',
       ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F6-specific Upstash fail-open counter. Emitted from
+   * `events-webhook-deps.ts` when the auth rate-limiter falls back to
+   * in-memory bucket. Mirrors `auth_redis_fallback_total` but with a
+   * tenant label so dashboards can filter the F6 surface.
+   */
+  rateLimitFallback(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_rate_limit_fallback_total',
+        'F6 rate-limit fell back to in-memory bucket (Upstash unreachable)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Strict-tx FR-037 dual-write fallback double-failure counter.
+   * Primary tx rolled back AND `emitRolledBackStandalone` fallback also
+   * failed → only stderr forensic trail remains. Pages on first
+   * occurrence (catastrophic audit-integrity loss).
+   */
+  auditFallbackDoubleFailure(tenantId: string, primaryStage: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_audit_fallback_double_failure_total',
+        'F6 primary tx rolled back AND audit fallback also failed (FR-037 catastrophic)',
+      ).add(1, { tenant: tenantId, primary_stage: primaryStage });
     });
   },
 } as const;

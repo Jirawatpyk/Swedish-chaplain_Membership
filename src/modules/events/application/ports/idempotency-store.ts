@@ -10,7 +10,7 @@
  *   - CSV importer (Phase 7 T094): tries to insert a receipt per row
  *     with `source = 'eventcreate_csv'` + SHA-256 of the canonical row
  *     bytes. ON CONFLICT DO NOTHING — silent skip (no error log; the
- *     row is counted under `rowsAlreadyImported` per round-2 R3).
+ *     row is counted under `rowsAlreadyImported`).
  *
  * Why `tryInsert` returns a `wasFresh` flag rather than a separate
  * `exists()` probe: the project's idempotency pattern is single-roundtrip

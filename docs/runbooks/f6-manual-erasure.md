@@ -6,9 +6,9 @@
 
 ## Purpose
 
-GDPR Art. 17 + PDPA §30 grant data subjects a right to erasure with a **30-day
+GDPR Art. 17 + PDPA §33 grant data subjects a right to erasure with a **30-day
 response window** for European residents and "without undue delay" for Thai
-residents. F6's admin erasure tool (FR-032a) is scheduled for Phase 10 T110.
+residents. (§30 covers right to access; F6 erasure operates under §33.) F6's admin erasure tool (FR-032a) is scheduled for Phase 10 T110.
 Until that tool ships, this runbook covers the manual procedure for handling
 an erasure request against F6-managed PII (attendee_email, attendee_name,
 attendee_company stored in `event_registrations`).

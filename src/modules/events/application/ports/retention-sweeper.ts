@@ -6,7 +6,7 @@
  *      replaces attendee_email/name/company on non-member rows older
  *      than 2 years with deterministic salted SHA-256 hashes; preserves
  *      quota + match-link metadata for forensic forensics.
- *   2. Idempotency-receipt TTL sweep (Phase 10 T115 / round-3 Z5) —
+ *   2. Idempotency-receipt TTL sweep (Phase 10 T115) —
  *      deletes `eventcreate_idempotency_receipts` rows where
  *      `ttl_expires_at < NOW()` to keep the table bounded at ~200
  *      in-flight rows.

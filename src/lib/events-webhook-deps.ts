@@ -1,19 +1,17 @@
 /**
  * F6 webhook route composition adapter.
  *
- * **Issue I-FULL-1 (full-scope review 2026-05-12) — Principle III note**:
- * This file imports Drizzle's `tenantWebhookConfigs` schema table directly
- * from `@/modules/events/infrastructure/schema` to implement
- * `loadTenantWebhookConfig`. ESLint's barrel-enforcement rule blocks
- * cross-module deep imports, but `src/lib/**` is explicitly listed in
- * the rule's `ignores` array (`eslint.config.mjs:206-223`) because lib/
- * is the project's "composition adapter layer" that legitimately
- * bridges module internals into Next.js route handlers. F5 follows
- * the SAME pattern with `src/lib/stripe-webhook-deps.ts` importing
- * F5's schema directly. Constitution Principle III (Clean Architecture)
- * is preserved because Application use-cases never reach this file —
- * the route handler is the only caller, and it's already in
- * Presentation layer where Infrastructure types are allowed.
+ * **Principle III note**: this file imports Drizzle's
+ * `tenantWebhookConfigs` schema table directly from
+ * `@/modules/events/infrastructure/schema`. ESLint's
+ * barrel-enforcement rule blocks cross-module deep imports, but
+ * `src/lib/**` is in the rule's `ignores` allow-list because lib/
+ * is the project's composition adapter layer that bridges module
+ * internals into Next.js route handlers. F5 follows the same pattern
+ * with `src/lib/stripe-webhook-deps.ts`. Constitution Principle III
+ * (Clean Architecture) is preserved because Application use-cases
+ * never reach this file — the route handler is the only caller, and
+ * it's in Presentation where Infrastructure types are allowed.
  *
  * Wires the route handler `src/app/api/webhooks/eventcreate/v1/[tenantSlug]
  * /route.ts` (T052) to the cross-cutting infrastructure:
@@ -30,41 +28,37 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type { TenantWebhookConfigAggregate } from '@/modules/events';
 
-export { makeIngestWebhookAttendeeDeps } from '@/modules/events';
+export {
+  makeIngestWebhookAttendeeDeps,
+  makeStandaloneAuditDeps,
+} from '@/modules/events';
 
 /**
  * F6 webhook rate limit per FR-005: 60 req/min per tenant. Uses the
  * Upstash sliding-window key `f6-webhook:<tenant_slug>`.
  *
- * Issue I7 (review 2026-05-12) — inherited Upstash fail-open behavior:
- * the underlying `authRateLimiter` (src/modules/auth/infrastructure/
- * rate-limit/upstash-rate-limiter.ts) silently falls back to a
- * PROCESS-LOCAL in-memory bucket when Upstash is unreachable. This is
- * a deliberate Constitution Principle VIII trade-off (degraded service
- * vs total outage) but it has implications for F6:
+ * Inherited Upstash fail-open behavior: the underlying
+ * `authRateLimiter` silently falls back to a PROCESS-LOCAL in-memory
+ * bucket when Upstash is unreachable (Constitution Principle VIII
+ * degraded-vs-outage trade-off). When the fallback fires, we emit
+ * `eventcreate_rate_limit_fallback_total` with a tenant label so
+ * operators can alert on F6-surface fail-open events independently of
+ * the F1 auth surface.
  *
+ * Implications:
  *   - During an Upstash incident, the per-process in-memory bucket
  *     protects ONE Vercel Fluid Compute function instance only.
- *     Concurrent instances under load → effective rate limit is
- *     60/min × N instances, not 60/min/tenant.
- *   - Attackers could exploit a Upstash outage window to flood the
- *     F6 webhook with valid-signed Zapier replays before the cap kicks
- *     in across instances.
- *
- * Mitigations in place:
- *   - HMAC + per-tenant secret → attacker needs the secret to forge
- *     valid deliveries (the fail-open only weakens DoS, not auth).
- *   - Idempotency receipts in F6-owned table → duplicate-rejection
- *     still works during the outage window.
- *   - `auth_redis_fallback_total` metric — operators should alert on
- *     this metric filtered by `key prefix = f6-webhook:` to detect
- *     F6-surface fail-open events. See docs/observability.md § 14
- *     when wired (Phase 10 T131 will add this alert).
+ *     Effective rate limit is 60/min × N instances, not 60/min/tenant.
+ *   - HMAC + per-tenant secret still gates AUTH — fail-open only
+ *     weakens DoS, not signature verification.
+ *   - Idempotency receipts in F6-owned table still reject duplicates
+ *     during the outage window.
  */
 const F6_WEBHOOK_MAX_PER_MIN = 60;
 const F6_WEBHOOK_WINDOW_SECONDS = 60;
@@ -81,6 +75,9 @@ export async function ratelimitCheck(tenantSlug: string): Promise<RatelimitResul
     F6_WEBHOOK_MAX_PER_MIN,
     F6_WEBHOOK_WINDOW_SECONDS,
   );
+  if (result.fellBack) {
+    eventcreateMetrics.rateLimitFallback(tenantSlug);
+  }
   return { success: result.success, reset: result.reset };
 }
 

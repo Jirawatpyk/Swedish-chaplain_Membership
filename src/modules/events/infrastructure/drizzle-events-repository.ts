@@ -64,14 +64,13 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
       input: UpsertEventInput,
     ): Promise<Result<UpsertEventResult, EventsRepositoryError>> {
       try {
-        // Issue C-FULL-4 (review 2026-05-12) — single-statement upsert
-        // via Drizzle's onConflictDoUpdate with raw `xmax = 0`
-        // discriminator. Closes the previous two-step TOCTOU window
-        // (race between INSERT DO NOTHING + fallback UPDATE when a
-        // concurrent Phase 4 setArchived hit the row) AND eliminates
-        // the extra ~10-15ms RTT on the conflict path. Postgres `xmax`
-        // is the system column that's 0 on a fresh INSERT and non-zero
-        // on UPDATE — idiomatic upsert-discriminator pattern.
+        // Single-statement upsert via Drizzle's onConflictDoUpdate
+        // with raw `xmax = 0` discriminator. Closes the TOCTOU window
+        // that the two-step DO NOTHING + fallback UPDATE pattern had
+        // (race when a concurrent setArchived hit the same row) AND
+        // saves the extra ~10-15ms RTT on the conflict path. Postgres
+        // `xmax` is the system column that's 0 on a fresh INSERT and
+        // non-zero on UPDATE — idiomatic upsert-discriminator pattern.
         const result = await executor
           .insert(events)
           .values({
@@ -126,7 +125,11 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
           });
 
         if (result.length === 0) {
-          return err({ kind: 'db_error', message: 'upsert: ON CONFLICT DO UPDATE returned no row (invariant violation)' });
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'events upsert: ON CONFLICT DO UPDATE returned no row — likely RLS misconfiguration or schema drift',
+          });
         }
         const row = result[0]!;
         return ok({
@@ -190,9 +193,9 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
 
     // --- Phase 4 / Phase 6 / Phase 10 stubs ---------------------------------
     // These methods exist on the port interface but are not yet wired.
-    // Per Issue I6 (review 2026-05-12), stubs return `kind:'not_implemented'`
-    // — semantically distinct from `db_error` so dashboards/alerts can
-    // separate phase-not-yet-wired calls from real Postgres failures.
+    // Stubs return `kind:'not_implemented'` — semantically distinct
+    // from `db_error` so dashboards/alerts can separate
+    // phase-not-yet-wired calls from real Postgres failures.
     async list() {
       return err({ kind: 'not_implemented', method: 'list', futureTask: 'Phase 4 T057' });
     },

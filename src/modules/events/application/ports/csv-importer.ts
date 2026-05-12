@@ -3,7 +3,7 @@
  *
  * Streaming CSV parser. The Infrastructure adapter
  * (`streaming-csv-importer.ts`, Phase 7 T093) hand-rolls a parser over
- * Node `readline` per research.md R8 + round-1 E20:
+ * Node `readline` per research.md R8:
  *   - UTF-8 + BOM strip
  *   - LF or CRLF row terminator
  *   - Comma separator

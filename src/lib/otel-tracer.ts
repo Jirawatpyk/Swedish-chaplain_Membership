@@ -87,9 +87,9 @@ export function renewalsTracer(): Tracer {
 }
 
 /**
- * F6 Phase 10 — Issue C-FULL-3 (review 2026-05-12) OTel tracer for the
- * events bounded context (EventCreate Integration). Phase 3 ship-blocker:
- * SC-003 webhook ingest p95 < 300ms SLO is unobservable without spans.
+ * F6 — OTel tracer for the events bounded context (EventCreate
+ * Integration). SC-003 webhook ingest p95 < 300ms SLO is unobservable
+ * without these spans.
  *
  * Trace tree:
  * `webhook_ingest_eventcreate → idempotency_receipt →

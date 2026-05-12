@@ -423,9 +423,10 @@ of the chamber. Sub-processor chain:
 
 | Sub-processor | Role | Region | DPA / SCC Status |
 |---|---|---|---|
-| **Vercel Inc.** | Hosting + Fluid Compute | Singapore (`sin1`) | Existing DPA covers F1–F8; F6 ingest path same scope |
+| **Vercel Inc.** | Hosting + Fluid Compute + Vercel Observability (OTel ingestion for F6 spans + metrics) | Singapore (`sin1`) | Existing DPA covers F1–F8 hosting + observability; F6 ingest path same scope |
 | **Neon, Inc.** | Postgres database | Singapore (`ap-southeast-1`) | Existing DPA covers F1–F8 PII columns; F6 `event_registrations` is the new column set |
 | **Upstash, Inc.** | Redis rate-limiter | Singapore | Existing DPA — F6 only stores `f6-webhook:<tenant_slug>` rate-limit counters (no PII) |
+| **Sentry.io** | Error tracking — captures stack traces for the new F6 `f6_audit_emit_db_error` + `f6_audit_fallback_double_failure` events | Germany (`de.sentry.io`) | Existing DPA covers F1–F8 runtime errors; F6 error events scope-identical (pino `err` payloads redacted) |
 | **Zapier, Inc.** ⚠ NEW | Middleware between EventCreate + Chamber-OS webhook | United States | **PENDING DPA — chamber action required pre-flag-flip** |
 
 **Zapier DPA status — open action**:

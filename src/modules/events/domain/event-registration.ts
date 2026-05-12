@@ -10,8 +10,8 @@
  * Pseudonymisation marker: `piiPseudonymisedAt !== null` → `attendee.email`,
  * `attendee.name`, `attendee.company` are deterministic salted SHA-256
  * hashes (per-tenant salt from EVENTCREATE_PII_PSEUDONYM_SALT) and the
- * row is locked against admin relink (FR-014 round-2 R4 — relink dialog
- * returns "Cannot relink — attendee PII has been retention-purged").
+ * row is locked against admin relink — the relink dialog returns
+ * "Cannot relink — attendee PII has been retention-purged" (FR-014).
  *
  * Pure TypeScript — Constitution Principle III. Cross-module branded
  * types come from public barrels.
@@ -76,8 +76,8 @@ export interface EventRegistrationAggregate {
 
 /**
  * Pure predicate: a row whose PII has been retention-purged is locked
- * against admin relink (FR-014 round-2 R4). Used by `relink-registration.ts`
- * (Phase 9 T104) and the relink dialog UI.
+ * against admin relink (FR-014). Used by Phase 9 `relink-registration`
+ * use-case and the relink dialog UI.
  */
 export function isPseudonymised(
   reg: Pick<EventRegistrationAggregate, 'piiPseudonymisedAt'>,

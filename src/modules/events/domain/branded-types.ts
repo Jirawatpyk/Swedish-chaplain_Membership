@@ -122,12 +122,11 @@ export function tryAttendeeEmail(value: unknown): AttendeeEmail | null {
  * enforced at generation time in `generate-webhook-secret.ts` (Phase
  * 5 T070) via Node's `crypto.randomBytes`.
  *
- * Issue S4 (review 2026-05-12) — the original implementation accepted
- * `'a'.repeat(43)` (zero entropy, 43 chars) because length was the
- * only check. Adding the alphabet regex ensures the value at least
- * LOOKS like a base64url encoding (catches "all-same-char" + typo'd
- * secrets that happen to be ≥43 chars but contain `:` / `=` / spaces).
- * Cheap defence-in-depth alongside the crypto.randomBytes generator.
+ * A length-only check would accept `'a'.repeat(43)` (zero entropy).
+ * The alphabet regex ensures the value at least LOOKS like a
+ * base64url encoding — catches all-same-char + typo'd secrets that
+ * happen to be ≥43 chars but contain `:` / `=` / spaces. Cheap
+ * defence-in-depth alongside the crypto.randomBytes generator.
  */
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -152,11 +151,19 @@ export function tryWebhookSecret(value: unknown): WebhookSecret | null {
 }
 
 /**
- * X-Request-ID header value — non-empty string, ≤256 chars (defensive cap).
+ * X-Request-ID header value — non-empty printable-ASCII string, ≤256
+ * chars (defensive cap). Charset check matches `asWebhookSecret`
+ * defensive posture: an attacker passing 256 NUL bytes would otherwise
+ * pass the length-only check.
  */
+const REQUEST_ID_PATTERN = /^[\x21-\x7E]+$/;
+
 export function asRequestId(value: string): RequestId {
   if (!value || value.length === 0 || value.length > 256) {
     throw new Error('RequestId must be a non-empty string ≤256 chars');
+  }
+  if (!REQUEST_ID_PATTERN.test(value)) {
+    throw new Error('RequestId must contain only printable ASCII characters');
   }
   return value as RequestId;
 }
@@ -164,5 +171,6 @@ export function asRequestId(value: string): RequestId {
 export function tryRequestId(value: unknown): RequestId | null {
   if (typeof value !== 'string') return null;
   if (value.length === 0 || value.length > 256) return null;
+  if (!REQUEST_ID_PATTERN.test(value)) return null;
   return value as RequestId;
 }

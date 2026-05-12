@@ -72,6 +72,7 @@ export const F6_AUDIT_EVENT_TYPES = [
   'event_cultural_event_toggled',
   'webhook_secret_generated',
   'webhook_secret_rotated',
+  'webhook_secret_force_expired',
   'ingest_disabled_super_admin',
   'ingest_disabled_tenant_admin',
   'csv_import_completed',
@@ -308,6 +309,18 @@ export interface AuditPayloads {
     readonly newSecretLastFour: string;
     readonly graceActiveUntil: string; // ISO timestamp
   };
+  webhook_secret_force_expired: {
+    readonly severity: Severity;
+    /**
+     * Caller — either a human admin (Phase 5 UI) or `null` for manual
+     * ops-script invocations until the UI ships.
+     */
+    readonly actorUserId: UserId | null;
+    /** Number of grace rows cleared (0 if nothing to expire; 1 on success). */
+    readonly rowsCleared: number;
+    /** Reason captured from the admin UI (Phase 5) or runbook entry. */
+    readonly reason: string;
+  };
   ingest_disabled_super_admin: {
     readonly severity: Severity;
     readonly actorUserId: UserId | null;
@@ -461,12 +474,12 @@ export interface F6AuditPort {
   ): Promise<Result<AuditEventId, AuditEmitError>>;
 
   /**
-   * Issue C-FULL-2 (full-scope review 2026-05-12) — generic
-   * standalone-tx emit for audit events that are NOT part of a use-case
-   * transactional boundary. Currently the only documented caller is the
-   * route handler's `webhook_signature_rejected` emission (signature
-   * failure short-circuits BEFORE the strict-tx unit starts; we still
-   * want a durable forensic trail for the R10 credential-stuffing alert).
+   * Generic standalone-tx emit for audit events that are NOT part of
+   * a use-case transactional boundary. The route handler uses this
+   * for `webhook_signature_rejected` (signature failure short-circuits
+   * BEFORE the strict-tx unit starts; we still want a durable
+   * forensic trail for the R10 credential-stuffing alert) and for
+   * `webhook_rolled_back` from the config-load-failed branch.
    *
    * Implementation pattern: uses its own `db.transaction(...)` like
    * `emitRolledBack` but accepts ANY F6 event type (not narrowed to

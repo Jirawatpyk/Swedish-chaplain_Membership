@@ -35,6 +35,12 @@ export interface RateLimitResult {
   readonly remaining: number;
   /** When the bucket resets (unix-ms). */
   readonly reset: number;
+  /**
+   * True when the result came from the in-memory fallback bucket
+   * (Upstash unreachable). Callers can emit their own surface-specific
+   * fail-open metric when this is set.
+   */
+  readonly fellBack?: boolean;
 }
 
 export interface RateLimiter {
@@ -136,7 +142,8 @@ class UpstashRateLimiter implements RateLimiter {
         'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();
-      return fallbackCheck(key, max, windowSeconds);
+      const r = fallbackCheck(key, max, windowSeconds);
+      return { ...r, fellBack: true };
     }
   }
 }

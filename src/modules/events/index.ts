@@ -233,6 +233,7 @@ export {
 
 export {
   ingestWebhookAttendee,
+  MATCH_TYPE_TO_PROCESSING_OUTCOME,
   type IngestWebhookAttendeeInput,
   type IngestWebhookAttendeeDeps,
   type IngestSuccess,
@@ -250,10 +251,15 @@ export {
   forceExpireGraceSecret,
   type ForceExpireGraceSecretInput,
   type ForceExpireGraceSecretOutput,
+  type ForceExpireGraceSecretError,
   type ForceExpireGraceSecretDeps,
 } from './application/use-cases/force-expire-grace-secret';
 
 // --- 6. Infrastructure composition factories (DI surface) -------------------
 
-export { makeIngestWebhookAttendeeDeps } from './infrastructure/di';
+export {
+  makeIngestWebhookAttendeeDeps,
+  makeStandaloneAuditDeps,
+  type StandaloneAuditDeps,
+} from './infrastructure/di';
 export { cryptoWebhookSignatureVerifier } from './infrastructure/crypto-webhook-signature-verifier';

@@ -42,6 +42,8 @@
  * Constitution Principle II.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantId } from '@/modules/members';
 import {
   EventCreatePayloadV1,
@@ -108,6 +110,12 @@ export interface IngestSuccess {
   readonly eventCreated: boolean;
   readonly registrationId: RegistrationId;
   readonly quotaEffect: QuotaEffect;
+  /**
+   * Wall-clock latency from use-case start to result resolution.
+   * Route emits `eventcreateMetrics.ingestLatencyMs` from this value
+   * so the SC-003 p95<300ms SLO becomes observable.
+   */
+  readonly ingestLatencyMs: number;
 }
 
 export type IngestError =
@@ -121,6 +129,13 @@ export type IngestError =
       readonly kind: 'rolled_back';
       readonly failureStage: FailureStage;
       readonly errorMessage: string;
+      /**
+       * True when `emitRolledBackStandalone` ALSO failed (FR-037
+       * catastrophic double-failure). Route includes this in its 500
+       * log line so SREs know the audit-integrity surface is
+       * compromised and stderr fallback is the only forensic source.
+       */
+      readonly auditFallbackFailed: boolean;
     };
 
 /**
@@ -178,11 +193,11 @@ export interface IngestWebhookAttendeeDeps {
   ) => Promise<Result<AuditEventId, AuditEmitError>>;
 
   /**
-   * Issue C-FULL-2 (review 2026-05-12) — generic standalone-tx emit
-   * for audit events OUTSIDE the strict-tx unit. Currently invoked by
-   * the route handler for `webhook_signature_rejected` (signature fails
-   * BEFORE the ingest use-case starts; we still want a durable
-   * 5-year forensic trail). Wraps `F6AuditPort.emitStandalone`.
+   * Generic standalone-tx emit for audit events OUTSIDE the strict-tx
+   * unit. Invoked by the route handler for `webhook_signature_rejected`
+   * (signature fails BEFORE the ingest use-case starts; we still want
+   * a durable 5-year forensic trail) and for the config-load-failed
+   * branch. Wraps `F6AuditPort.emitStandalone`.
    */
   readonly emitStandalone: <T extends import('../ports/audit-port').F6AuditEventType>(
     entry: F6AuditEntry<T>,
@@ -202,18 +217,14 @@ class TxStageError extends Error {
 /**
  * Audit emit with Result check + throw on err.
  *
- * Background (Issue C1 from /speckit-review): the use-case originally
- * called `await audit.emit(...)` and discarded the returned Result —
- * if the audit INSERT failed (Postgres connection blip, enum drift,
- * jsonb serialisation error), the tx would COMMIT the event +
- * registration with NO audit row AND NO `webhook_rolled_back` fires
- * either. That's a hard silent-failure (state mutation + no audit
- * trail) violating FR-009 + FR-037.
- *
- * Fix: every `audit.emit` Result is checked; on err → throw
- * `TxStageError('audit_emit', ...)` so the outer catch fires the
+ * If the audit INSERT silently failed (Postgres connection blip, enum
+ * drift, jsonb serialisation error) the tx would COMMIT side effects
+ * with NO audit row AND NO `webhook_rolled_back` fallback — a hard
+ * silent-failure (state mutation + no audit trail) violating FR-009 +
+ * FR-037. Every `audit.emit` Result is therefore checked; on err →
+ * throw `TxStageError('audit_emit', ...)` so the outer catch fires the
  * dual-write fallback audit + rolls back the tx. Side effects + audit
- * row are now consistent.
+ * row stay consistent.
  */
 async function emitOrThrow(
   audit: F6AuditPort,
@@ -230,13 +241,31 @@ async function emitOrThrow(
   }
 }
 
-const MATCH_TYPE_TO_PROCESSING_OUTCOME: Readonly<Record<MatchType, ProcessingOutcome>> = {
+/**
+ * Single source of truth for the Domain MatchType → audit/metric
+ * ProcessingOutcome label mapping. Exported so the route handler can
+ * use it for metric emission without duplicating the lookup. Adding
+ * a new MatchType breaks compilation here AND at the route — never
+ * silently fall through.
+ */
+export const MATCH_TYPE_TO_PROCESSING_OUTCOME: Readonly<Record<MatchType, ProcessingOutcome>> = {
   member_contact: 'matched_member_contact',
   member_domain: 'matched_member_domain',
   member_fuzzy: 'matched_member_fuzzy',
   non_member: 'non_member',
   unmatched: 'unmatched',
 };
+
+/**
+ * `IdempotencySource` → audit-payload source label. Typed helper
+ * eliminates the duplicated inline ternary at the two emit sites
+ * (`webhook_receipt_verified` + `webhook_rolled_back`). Adding a
+ * third source variant breaks compilation here once, instead of
+ * silently falling through both call sites.
+ */
+function toAuditSource(s: IdempotencySource): 'eventcreate' | 'eventcreate_csv' {
+  return s === 'eventcreate_webhook' ? 'eventcreate' : 'eventcreate_csv';
+}
 
 async function emitMatchResolutionAudit(
   audit: F6AuditPort,
@@ -367,7 +396,8 @@ export async function ingestWebhookAttendee(
       if (!receipt.value.wasFresh) {
         // Duplicate — advance failureStage to audit_emit before the
         // emit so a duplicate-path audit failure is correctly labelled
-        // (Issue I4 sub-point: previously stuck at idempotency_receipt).
+        // (a duplicate-path audit failure would otherwise be
+        // mislabelled as `idempotency_receipt`).
         failureStage = 'audit_emit';
         await emitOrThrow(audit, {
           eventType: 'webhook_duplicate_rejected',
@@ -406,10 +436,32 @@ export async function ingestWebhookAttendee(
         metadata: extractMetadata(parsed.data.event, EVENT_CANONICAL_KEYS),
       });
       if (!eventUpsert.ok) {
-        const msg =
-          eventUpsert.error.kind === 'db_error'
-            ? eventUpsert.error.message
-            : `event upsert rejected: ${eventUpsert.error.kind}`;
+        const e = eventUpsert.error;
+        let msg: string;
+        if (e.kind === 'db_error') {
+          msg = e.message;
+        } else if (e.kind === 'invariant_violation') {
+          msg = `events.upsert invariant violated: ${e.invariant}`;
+          logger.fatal(
+            {
+              event: 'f6_events_repo_invariant_violation',
+              tenantId: input.tenantId,
+              invariant: e.invariant,
+            },
+            '[F6] events.upsert returned no row — likely RLS / schema drift',
+          );
+        } else {
+          msg = `event upsert rejected: ${e.kind}`;
+          logger.fatal(
+            {
+              event: 'f6_use_case_called_unimplemented_port',
+              tenantId: input.tenantId,
+              method: e.method,
+              futureTask: e.futureTask,
+            },
+            '[F6] events.upsert called an unimplemented port stub',
+          );
+        }
         throw new TxStageError('event_upsert', msg);
       }
 
@@ -456,10 +508,34 @@ export async function ingestWebhookAttendee(
         registeredAt: new Date(parsed.data.attendee.registeredAt),
       });
       if (!regInsert.ok) {
-        const msg =
-          regInsert.error.kind === 'db_error'
-            ? regInsert.error.message
-            : `registration insert rejected: ${regInsert.error.kind}`;
+        const e = regInsert.error;
+        let msg: string;
+        if (e.kind === 'db_error') {
+          msg = e.message;
+        } else if (e.kind === 'invariant_violation') {
+          msg = `event_registrations.upsert invariant violated: ${e.invariant}`;
+          logger.fatal(
+            {
+              event: 'f6_registrations_repo_invariant_violation',
+              tenantId: input.tenantId,
+              invariant: e.invariant,
+            },
+            '[F6] event_registrations.upsert returned no row — likely RLS / schema drift',
+          );
+        } else if (e.kind === 'pseudonymised_row_rejected') {
+          msg = `registration insert blocked: pseudonymised row ${e.registrationId}`;
+        } else {
+          msg = `registration insert rejected: ${e.kind}`;
+          logger.fatal(
+            {
+              event: 'f6_use_case_called_unimplemented_port',
+              tenantId: input.tenantId,
+              method: e.method,
+              futureTask: e.futureTask,
+            },
+            '[F6] event_registrations.insertOnConflictDoNothing called an unimplemented port stub',
+          );
+        }
         throw new TxStageError('registration_insert', msg);
       }
 
@@ -476,7 +552,7 @@ export async function ingestWebhookAttendee(
         payload: {
           severity: 'info',
           requestId: input.requestId,
-          source: input.source === 'eventcreate_webhook' ? 'eventcreate' : 'eventcreate_csv',
+          source: toAuditSource(input.source),
           eventExternalId: parsed.data.event.externalId,
           attendeeExternalId: parsed.data.attendee.externalId,
           processingOutcome:
@@ -505,17 +581,22 @@ export async function ingestWebhookAttendee(
         eventCreated: eventUpsert.value.eventCreated,
         registrationId: regInsert.value.registration.registrationId,
         quotaEffect,
+        ingestLatencyMs,
       });
     });
   } catch (e) {
     errorMessage = e instanceof Error ? e.message : String(e);
     const stage: FailureStage = e instanceof TxStageError ? e.stage : failureStage;
+    const errorStack = e instanceof Error && e.stack ? e.stack : null;
 
     // FR-037 dual-write fallback: emit `webhook_rolled_back` in a
     // SEPARATE tx so the audit row commits even though the primary tx
-    // rolled back. The audit emitter internally handles stderr
-    // fallback if the secondary tx ALSO fails.
-    await deps.emitRolledBackStandalone({
+    // rolled back. The audit emitter internally handles a pino.fatal
+    // fallback if the secondary tx ALSO fails — we additionally
+    // surface a logger.fatal here so SREs see "primary tx rolled back
+    // AND audit fallback also failed" as a distinct catastrophic
+    // signal.
+    const fallbackResult = await deps.emitRolledBackStandalone({
       eventType: 'webhook_rolled_back',
       tenantId: asTenantId(input.tenantId),
       actorType: 'zapier_webhook',
@@ -525,14 +606,35 @@ export async function ingestWebhookAttendee(
       payload: {
         severity: 'error',
         requestId: input.requestId,
-        source: input.source === 'eventcreate_webhook' ? 'eventcreate' : 'eventcreate_csv',
+        source: toAuditSource(input.source),
         failureStage: stage,
         errorMessage,
-        errorStack: null,
+        errorStack,
       },
     });
 
-    return err({ kind: 'rolled_back', failureStage: stage, errorMessage });
+    let auditFallbackFailed = false;
+    if (!fallbackResult.ok) {
+      auditFallbackFailed = true;
+      eventcreateMetrics.auditFallbackDoubleFailure(input.tenantId, stage);
+      logger.fatal(
+        {
+          event: 'f6_audit_fallback_double_failure',
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          primaryStage: stage,
+          fallbackErrorKind: fallbackResult.error.kind,
+        },
+        '[F6] CRITICAL: primary tx rolled back AND audit fallback also failed — only stderr trail remains (FR-037 catastrophic)',
+      );
+    }
+
+    return err({
+      kind: 'rolled_back',
+      failureStage: stage,
+      errorMessage,
+      auditFallbackFailed,
+    });
   }
 }
 

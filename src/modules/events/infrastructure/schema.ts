@@ -128,15 +128,14 @@ export const eventRegistrations = pgTable(
 
     attendeeEmail: text('attendee_email').notNull(),
     // STORED generated column per migration 0128 — Postgres derives the
-    // value from `attendee_email` on INSERT/UPDATE. Issue C-FULL-5
-    // (review 2026-05-12): originally declared `.notNull()` which made
-    // Drizzle's `$inferInsert` require callers to supply the value, but
-    // Postgres rejects any INSERT that supplies a value for a GENERATED
-    // ALWAYS column. The repo bypassed this with an `as unknown as` cast
-    // — works at runtime but hides a footgun. Declaring the column as
-    // nullable here means `$inferInsert` no longer requires it; SELECT
-    // queries still see the materialised value (never null because the
-    // DB invariant + generation expression guarantee it).
+    // value from `attendee_email` on INSERT/UPDATE. Declared nullable
+    // here (NOT `.notNull()`) because Postgres rejects any INSERT that
+    // supplies a value for a GENERATED ALWAYS column; nullable means
+    // `$inferInsert` doesn't require callers to supply it, no
+    // `as unknown as` cast needed. SELECT queries still see the
+    // materialised value — `readAttendeeEmailLower` in the repo folds
+    // the nullable type back into a guaranteed-non-null value at the
+    // Application boundary.
     attendeeEmailLower: text('attendee_email_lower'),
     attendeeName: text('attendee_name').notNull(),
     attendeeCompany: text('attendee_company'),

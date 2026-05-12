@@ -18,12 +18,11 @@
  *     audit row commits even when the main work failed.
  *
  * Dual-write fallback (research.md R6): on `emitRolledBack` DB-write
- * failure, the emitter ALSO writes a `pino.fatal(...)` line to stderr
- * with `audit_secondary_tx_failure: true`. Vercel Fluid Compute captures
- * stderr as runtime logs even when the DB is unreachable, so the
- * rollback is NEVER invisible at the observability layer. The pino
- * call is wrapped in try/catch — a stderr write failure does NOT crash
- * the handler.
+ * failure, the emitter ALSO writes a `pino.fatal(...)` line — Vercel
+ * Fluid Compute captures pino runtime logs (default destination
+ * stdout) even when the DB is unreachable, so the rollback is NEVER
+ * invisible at the observability layer. The pino call is wrapped in
+ * try/catch — a write failure does NOT crash the handler.
  *
  * Pino redaction: payload fields are sanitised by the pino redact list
  * configured in `src/lib/logger.ts` (T002 added F6 secret fields).
@@ -47,20 +46,54 @@ import type { AuditEventId } from '@/modules/auth';
 export const F6_DEFAULT_RETENTION_YEARS = 5 as const;
 
 /**
- * Issue I-FULL-7 (review 2026-05-12) — cap + sanitize DB error messages
- * before they reach pino.fatal stdout. Postgres errors include table
- * names, column names, constraint names that should not leak to runtime
- * logs. Defense-in-depth alongside pino REDACT_PATHS.
+ * Cap + sanitize DB error messages before they reach the audit Result
+ * payload. Postgres errors include table names, column names,
+ * constraint names that should not leak through the Application layer.
+ * Defense-in-depth alongside pino REDACT_PATHS.
+ *
+ * IMPORTANT: this strips for the OUTBOUND payload only. The full error
+ * (with stack) is logged via `logger.error` at the catch site BEFORE
+ * sanitisation so SREs can debug root causes server-side.
  */
 const DB_ERROR_MESSAGE_CAP = 200;
 
 function sanitizeDbErrorMessage(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e);
-  // Strip Postgres "context" lines that often include identifiers
-  const stripped = raw
-    .replace(/(table|column|constraint|relation|function|index|sequence|schema)\s+"[^"]+"/gi, '$1 "[redacted]"')
-    .replace(/(table|column|constraint|relation|function|index|sequence|schema)\s+[a-z_][a-z0-9_]*/gi, '$1 [redacted]');
+  // Single-pass regex (avoids two-pass ordering fragility): strip both
+  // quoted-identifier and bare-identifier forms after Postgres marker
+  // words.
+  const stripped = raw.replace(
+    /(table|column|constraint|relation|function|index|sequence|schema)\s+("[^"]+"|[a-z_][a-z0-9_]*)/gi,
+    (_m, kind, ident) =>
+      `${kind} ${ident.startsWith('"') ? '"[redacted]"' : '[redacted]'}`,
+  );
   return stripped.slice(0, DB_ERROR_MESSAGE_CAP);
+}
+
+/**
+ * Preserve full error info (name + message + stack) in a structured log
+ * line BEFORE the sanitised Result is returned to Application. Pairs
+ * with `sanitizeDbErrorMessage` — sanitisation protects the outbound
+ * payload (audit row stays clean of PG identifiers); this log keeps
+ * the root cause server-side for SRE debugging.
+ */
+function logFullError(
+  context: { caller: string; tenantId: string; eventType: string },
+  e: unknown,
+): void {
+  logger.error(
+    {
+      event: 'f6_audit_emit_db_error',
+      caller: context.caller,
+      tenantId: context.tenantId,
+      eventType: context.eventType,
+      err:
+        e instanceof Error
+          ? { name: e.name, message: e.message, stack: e.stack }
+          : { name: 'non_error', message: String(e), stack: null },
+    },
+    '[F6] audit row insert failed (full error preserved server-side; sanitised copy returned to caller)',
+  );
 }
 
 async function insertAuditRow(
@@ -143,6 +176,10 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         const id = await insertAuditRow(executor, entry);
         return ok(id as AuditEventId);
       } catch (e) {
+        logFullError(
+          { caller: 'emit', tenantId: entry.tenantId, eventType: entry.eventType },
+          e,
+        );
         return err({
           kind: 'db_error',
           message: sanitizeDbErrorMessage(e),
@@ -157,35 +194,36 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       // rolled-back) executor. Wrapped in its own transaction so a failure
       // here also rolls back cleanly without affecting anything else.
       try {
-        // Issue I1 (review 2026-05-12) — belt-and-suspenders runtime
-        // regex guard on the raw GUC interpolation below. The canonical
-        // `runInTenant` in src/lib/db.ts already enforces this slug
-        // shape, but `emitRolledBackStandalone` bypasses runInTenant
-        // and goes directly through `db.transaction`. Without this
-        // guard, a future caller (cron replay, retention sweep, etc.)
-        // passing an unvalidated tenantId could trigger SQL injection
-        // via the `SET LOCAL app.current_tenant = '${entry.tenantId}'`
-        // line. Same pattern as runInTenant db.ts:231.
+        // Belt-and-suspenders runtime regex guard on the raw GUC
+        // interpolation below. The canonical `runInTenant` in
+        // `src/lib/db.ts` already enforces this slug shape, but
+        // `emitRolledBackStandalone` bypasses runInTenant and goes
+        // directly through `db.transaction`. Without this guard, a
+        // future caller (cron replay, retention sweep, etc.) passing
+        // an unvalidated tenantId could trigger SQL injection via the
+        // `SET LOCAL app.current_tenant = '${entry.tenantId}'` line.
         if (!/^[a-z0-9-]{1,63}$/.test(entry.tenantId as unknown as string)) {
           throw new Error(
             `pino-audit-port emitRolledBack: tenantId slug invariant violated: ${entry.tenantId}`,
           );
         }
         const id = await db.transaction(async (tx) => {
-          // RLS context: webhook_rolled_back rows MUST carry tenant_id so
-          // tenant-scoped audit queries surface them; set the GUC for this
-          // tx so RLS+FORCE allows the INSERT.
           await tx.execute(sql`SET LOCAL ROLE chamber_app`);
           await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${entry.tenantId}'`));
           return await insertAuditRow(tx, entry);
         });
         return ok(id as AuditEventId);
       } catch (e) {
+        logFullError(
+          { caller: 'emitRolledBack', tenantId: entry.tenantId, eventType: entry.eventType },
+          e,
+        );
         // Dual-write fallback per research.md R6 — DB is unreachable or
-        // the row insert failed. Surface to stderr via pino.fatal so
-        // Vercel Fluid Compute captures the rollback marker even when
-        // the DB is fully down. Wrapped in try/catch so a stderr failure
-        // does NOT crash the handler.
+        // the row insert failed. Surface via pino.fatal so Vercel Fluid
+        // Compute captures the rollback marker even when the DB is
+        // fully down. Wrapped in try/catch + last-ditch raw stderr
+        // write so an outright pino crash still leaves a forensic
+        // breadcrumb.
         try {
           logger.fatal(
             {
@@ -195,11 +233,16 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               payload: entry.payload,
               dbErrorMessage: sanitizeDbErrorMessage(e),
             },
-            '[F6] webhook_rolled_back audit secondary-tx failure — payload preserved in stderr per FR-037 dual-write fallback',
+            '[F6] webhook_rolled_back audit secondary-tx failure — payload preserved per FR-037 dual-write fallback',
           );
         } catch {
-          // Stderr write failed too. Nothing more we can do; surface the
-          // original DB error to the caller.
+          try {
+            process.stderr.write(
+              `[F6 LAST-DITCH] webhook_rolled_back audit_double_failure tenant=${entry.tenantId}\n`,
+            );
+          } catch {
+            /* truly nothing left */
+          }
         }
         return err({
           kind: 'db_error',
@@ -211,11 +254,10 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
     async emitStandalone<T extends F6AuditEventType>(
       entry: F6AuditEntry<T>,
     ): Promise<Result<AuditEventId, AuditEmitError>> {
-      // Issue C-FULL-2 (review 2026-05-12) — generic standalone-tx emit
-      // for events NOT inside a use-case strict-tx (currently:
-      // `webhook_signature_rejected` from the route handler). Same
-      // dual-write fallback semantics as `emitRolledBack` but accepts
-      // any F6 event type.
+      // Generic standalone-tx emit for events NOT inside a use-case
+      // strict-tx (currently: `webhook_signature_rejected` from the
+      // route handler). Same dual-write fallback semantics as
+      // `emitRolledBack` but accepts any F6 event type.
       try {
         if (!/^[a-z0-9-]{1,63}$/.test(entry.tenantId as unknown as string)) {
           throw new Error(
@@ -229,6 +271,10 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         });
         return ok(id as AuditEventId);
       } catch (e) {
+        logFullError(
+          { caller: 'emitStandalone', tenantId: entry.tenantId, eventType: entry.eventType },
+          e,
+        );
         try {
           logger.fatal(
             {
@@ -238,10 +284,16 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               payload: entry.payload,
               dbErrorMessage: sanitizeDbErrorMessage(e),
             },
-            `[F6] ${entry.eventType} audit secondary-tx failure — payload preserved in stderr per FR-037 dual-write fallback`,
+            `[F6] ${entry.eventType} audit secondary-tx failure — payload preserved per FR-037 dual-write fallback`,
           );
         } catch {
-          // Stderr write failed too — degrade gracefully.
+          try {
+            process.stderr.write(
+              `[F6 LAST-DITCH] ${entry.eventType} audit_double_failure tenant=${entry.tenantId}\n`,
+            );
+          } catch {
+            /* truly nothing left */
+          }
         }
         return err({
           kind: 'db_error',

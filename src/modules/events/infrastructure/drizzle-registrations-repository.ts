@@ -30,6 +30,24 @@ import type { MatchType } from '../domain/value-objects/match-type';
 import type { PaymentStatus } from '../domain/value-objects/payment-status';
 import type { TenantId, MemberId, ContactId } from '@/modules/members';
 
+/**
+ * Drizzle declares `attendeeEmailLower` as nullable (because it's a
+ * STORED generated column — `$inferInsert` doesn't require it).
+ * Postgres enforces the invariant at write-time (the GENERATED
+ * expression cannot be NULL when `attendeeEmail` is non-NULL), but
+ * the Drizzle type-system can't see that. Read sites MUST go through
+ * this helper which folds the DB invariant back into a
+ * guaranteed-non-null value by recomputing the lowercase form from
+ * `attendeeEmail` when the generated column unexpectedly returns
+ * null. Wired into Phase 10 T110 `findByEmailLower` + retention
+ * sweep; the helper exists now so Application layer never depends
+ * on `row.attendeeEmailLower !== null` ambient typing.
+ */
+export function readAttendeeEmailLower(row: EventRegistrationRow): string {
+  if (row.attendeeEmailLower !== null) return row.attendeeEmailLower;
+  return row.attendeeEmail.toLowerCase();
+}
+
 function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
   return {
     tenantId: row.tenantId as TenantId,
@@ -87,24 +105,22 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             countedAgainstCulturalQuota: input.quotaEffect.countedAgainstCulturalQuota,
             metadata: input.metadata,
             registeredAt: input.registeredAt,
-            // Issue C-FULL-5 (review 2026-05-12): `attendee_email_lower`
-            // is a STORED generated column — Drizzle schema now declares
-            // it as nullable so `$inferInsert` no longer requires it.
-            // The `as unknown as` cast that previously bypassed the
-            // strict typing has been removed; the insert below is fully
-            // type-safe.
+            // `attendee_email_lower` is a STORED generated column —
+            // Drizzle schema declares it nullable so `$inferInsert`
+            // doesn't require it. The insert below is fully
+            // type-safe (no unsafe cast).
           })
           .onConflictDoUpdate({
-            // Issue I-FULL-2 (review 2026-05-12) — switch from
-            // DO NOTHING + fallback SELECT to DO UPDATE with an
-            // identity assignment. Closes the previous TOCTOU window
-            // (race against Phase 10 T110 hardDelete between INSERT and
-            // SELECT could return zero rows → false "race invariant"
-            // error). With DO UPDATE, the row is ALWAYS returned in a
-            // single statement: either the freshly-inserted row, or
-            // the existing conflicting row with externalId reassigned
-            // to itself (no-op). `xmax = 0` discriminator distinguishes
-            // fresh insert from conflict.
+            // Single-statement ON CONFLICT DO UPDATE with identity
+            // assignment. Closes the TOCTOU window that the previous
+            // DO NOTHING + fallback SELECT pattern had (race against
+            // Phase 10 hardDelete between INSERT and SELECT could
+            // return zero rows). With DO UPDATE the row is ALWAYS
+            // returned in a single statement: either the freshly-
+            // inserted row, or the existing conflicting row with
+            // externalId reassigned to itself (no-op).
+            // `xmax = 0` discriminator distinguishes fresh insert
+            // from conflict.
             target: [
               eventRegistrations.tenantId,
               eventRegistrations.eventId,
@@ -139,16 +155,20 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             registeredAt: eventRegistrations.registeredAt,
             importedAt: eventRegistrations.importedAt,
             piiPseudonymisedAt: eventRegistrations.piiPseudonymisedAt,
-            wasFresh: sql<boolean>`(xmax = 0)`,
+            isNewRegistration: sql<boolean>`(xmax = 0)`,
           });
 
         if (inserted.length === 0) {
-          return err({ kind: 'db_error', message: 'registration upsert: ON CONFLICT DO UPDATE returned no row (invariant violation)' });
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations upsert: ON CONFLICT DO UPDATE returned no row — likely RLS misconfiguration or schema drift',
+          });
         }
         const row = inserted[0]!;
         return ok({
           registration: toAggregate(row as unknown as EventRegistrationRow),
-          wasFresh: row.wasFresh,
+          isNewRegistration: row.isNewRegistration,
         });
       } catch (e) {
         return err({
@@ -184,8 +204,8 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     },
 
     // --- Stubs for later phases ---------------------------------------------
-    // Issue I6 (review 2026-05-12) — distinct `not_implemented` kind
-    // so dashboards separate phase-not-yet-wired from genuine DB errors.
+    // Distinct `not_implemented` kind so dashboards separate
+    // phase-not-yet-wired from genuine DB errors.
     async findByEventId() {
       return err({ kind: 'not_implemented', method: 'findByEventId', futureTask: 'Phase 4 T058' });
     },
