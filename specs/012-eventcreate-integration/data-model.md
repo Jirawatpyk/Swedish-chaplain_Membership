@@ -632,6 +632,8 @@ All migrations are reversible (down migrations included). All `CREATE INDEX CONC
 
 No F6 → other-module write paths exist; the data flow is one-way (F6 consumes F2 + F3 read-only; F8 consumes F6 via the port).
 
+> **Phase 4 port-shape note** (verify-finding F5, 2026-05-12): the Phase 4 admin events list + detail uses **offset+pageSize+totalCount** pagination on `EventsRepository.list()` + `RegistrationsRepository.findByEventId()` (mirrors F4 invoice-list + F8 pipeline precedent). The original port draft had a `pageToken` cursor; Phase 4 switched to offset to satisfy the wire-contract `contracts/admin-events-api.md` requirement that `pagination.totalCount` be returned on every page. Cursor-style pagination is preserved as a future affordance — at SweCham scale (<200 events/year, <500 attendees/event) offset is sub-50ms with the migration-0130 indexes; cursor switch would land if a tenant exceeds ~10k events.
+
 ---
 
 ## 9. Forward-compat surfaces (post-MVP affordances explicitly designed in)

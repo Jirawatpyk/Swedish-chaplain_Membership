@@ -2400,7 +2400,14 @@
     },
     "integrations": {
       "eventcreate": {
-        "_bootstrap": "การเชื่อมต่อ EventCreate"
+        "_bootstrap": "การเชื่อมต่อ EventCreate",
+        "placeholder": {
+          "title": "การเชื่อมต่อ EventCreate",
+          "subtitle": "ตั้งค่าระบบนำเข้าผู้เข้าร่วมผ่าน Zapier",
+          "heading": "เร็วๆ นี้",
+          "body": "ตัวช่วยตั้งค่าการเชื่อมต่อ EventCreate กำลังจะเปิดให้ใช้งานเร็วๆ นี้ ระหว่างนี้กรุณาติดต่อผู้ดูแลระบบเพื่อขอความช่วยเหลือในการตั้งค่า Zap",
+          "backToEvents": "กลับไปยังอีเวนต์"
+        }
       }
     }
   },

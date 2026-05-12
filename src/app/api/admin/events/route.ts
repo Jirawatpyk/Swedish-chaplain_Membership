@@ -6,13 +6,11 @@
  *
  * Authz: admin OR manager (read-only). Member role → 404 per FR-035
  * surface-disclosure prevention (route must not reveal whether the
- * endpoint exists to non-staff actors).
- *
- * Kill-switch: when `FEATURE_F6_EVENTCREATE=false` returns 404 — same
- * surface-disclosure pattern as F8's kill-switch + audit emit (audit
- * landing in Phase 10 cross-cutting; for Phase 4 the route returns
- * the 404 without emitting since no f6 audit event covers
- * "admin_list_blocked_by_flag" yet).
+ * endpoint exists to non-staff actors). Member-attempt + kill-switch
+ * paths emit `role_violation_blocked` audit (FR-035 mandate; F1 fix
+ * 2026-05-12). Audit emission is wrapped in try/catch — an audit
+ * failure must NEVER block the 404 response (mirrors F8 precedent in
+ * `src/app/api/admin/renewals/route.ts:62-87`).
  *
  * Tenant scope: every query path goes through `runListEvents` which
  * wraps `runInTenant(ctx, fn)` — Constitution Principle I.
@@ -24,6 +22,9 @@ import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
+import { asTenantId } from '@/modules/members';
+import { asUserId } from '@/modules/auth';
+import { makeStandaloneAuditDeps } from '@/modules/events';
 
 const ListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
@@ -63,6 +64,46 @@ function coerceBoolean(v: unknown): unknown {
   return v;
 }
 
+/**
+ * FR-035 audit helper — emits `role_violation_blocked` on member-role
+ * and kill-switch 404 paths. Wrapped in try/catch so audit-write
+ * failures never block the 404 response (F8 precedent — observability
+ * must not become an availability dependency). Pino fallback emits
+ * `audit_secondary_tx_failure: true` on DB failure inside the port.
+ */
+async function emitRoleViolation(
+  request: NextRequest,
+  actorUserId: string | null,
+  actorRole: 'member' | 'manager',
+  attemptedAction: string,
+): Promise<void> {
+  try {
+    const tenantCtx = resolveTenantFromRequest(request);
+    const deps = makeStandaloneAuditDeps();
+    await deps.emitStandalone({
+      eventType: 'role_violation_blocked',
+      tenantId: asTenantId(tenantCtx.slug),
+      actorType: actorRole,
+      actorUserId: actorUserId ? asUserId(actorUserId) : null,
+      occurredAt: new Date(),
+      summary: `${actorRole} attempted GET /api/admin/events (${attemptedAction})`,
+      payload: {
+        severity: 'warn',
+        actorUserId: asUserId(actorUserId ?? '00000000-0000-0000-0000-000000000000'),
+        actorRole,
+        attemptedRoute: '/api/admin/events',
+        attemptedAction,
+        blockedAt: 'app_layer',
+      },
+    });
+  } catch (e) {
+    logger.error(
+      { event: 'f6_audit_emit_failed', err: e instanceof Error ? e.message : String(e) },
+      '[F6] role_violation_blocked audit emit failed — 404 response still served',
+    );
+  }
+}
+
 export async function GET(request: NextRequest) {
   // FR-035 — kill-switch returns 404 (surface disclosure prevention).
   if (!env.features.f6EventCreate) {
@@ -71,10 +112,19 @@ export async function GET(request: NextRequest) {
 
   // FR-035 — auth + RBAC. Member role returns 404 (NOT 403) so the
   // existence of the admin surface is not leaked to non-staff actors.
+  // Audit emission per FR-035 mandate.
   const session = await requireSession('staff').catch(() => null);
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {
+    // Only `member` role reaches here — `requireSession('staff')`
+    // already redirects anonymous + non-staff invalid sessions.
+    await emitRoleViolation(
+      request,
+      session.user.id,
+      role as 'member',
+      'list_events',
+    );
     return new NextResponse(null, { status: 404 });
   }
 

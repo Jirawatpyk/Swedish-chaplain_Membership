@@ -37,6 +37,7 @@ const listEventsMock = vi.fn();
 const loadEventDetailMock = vi.fn();
 const requireSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
+const emitStandaloneMock = vi.fn();
 
 vi.mock('@/modules/events', async () => {
   const actual = await vi.importActual<typeof import('@/modules/events')>(
@@ -46,6 +47,11 @@ vi.mock('@/modules/events', async () => {
     ...actual,
     listEvents: (...args: unknown[]) => listEventsMock(...args),
     loadEventDetail: (...args: unknown[]) => loadEventDetailMock(...args),
+    // F1 fix: stub makeStandaloneAuditDeps so the route's audit emit
+    // path is observable (FR-035 mandate) without hitting a real DB.
+    makeStandaloneAuditDeps: () => ({
+      emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
+    }),
   };
 });
 
@@ -77,7 +83,7 @@ beforeEach(() => {
   // Default: admin signed in, tenant resolves.
   requireSessionMock.mockResolvedValue({
     user: {
-      userId: 'u-admin-1',
+      id: 'u-admin-1',
       email: 'admin@example.com',
       role: 'admin',
     },
@@ -86,6 +92,7 @@ beforeEach(() => {
     slug: TENANT_SLUG,
     tenantId: TENANT_SLUG,
   });
+  emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
 });
 
 afterEach(() => {
@@ -338,7 +345,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
 
   it('200 OK — manager role can read the list (FR-035 manager-read allowed)', async () => {
     requireSessionMock.mockResolvedValueOnce({
-      user: { userId: 'u-mgr', email: 'mgr@example.com', role: 'manager' },
+      user: { id: 'u-mgr', email: 'mgr@example.com', role: 'manager' },
     });
     listEventsMock.mockResolvedValueOnce({
       ok: true,
@@ -360,7 +367,7 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
   it('404 Not Found — member role returns 404 per FR-035 surface disclosure', async () => {
     requireSessionMock.mockResolvedValueOnce({
       user: {
-        userId: 'u-mbr',
+        id: 'u-mbr',
         email: 'member@example.com',
         role: 'member',
       },
@@ -372,6 +379,48 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     // role identifier — must look like any other 404.
     const body = await res.text();
     expect(body.toLowerCase()).not.toMatch(/forbidden|role|admin/);
+  });
+
+  it('404 Not Found — member role emits role_violation_blocked audit (FR-035, F1 fix)', async () => {
+    requireSessionMock.mockResolvedValueOnce({
+      user: {
+        id: 'u-mbr-audit',
+        email: 'member@example.com',
+        role: 'member',
+      },
+    });
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest());
+    expect(res.status).toBe(404);
+    expect(emitStandaloneMock).toHaveBeenCalledTimes(1);
+    expect(emitStandaloneMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'role_violation_blocked',
+        actorType: 'member',
+        tenantId: TENANT_SLUG,
+        payload: expect.objectContaining({
+          severity: 'warn',
+          actorRole: 'member',
+          attemptedRoute: '/api/admin/events',
+          attemptedAction: 'list_events',
+          blockedAt: 'app_layer',
+        }),
+      }),
+    );
+  });
+
+  it('404 — audit emit failure does NOT block the 404 response (F1 fix observability-not-availability)', async () => {
+    requireSessionMock.mockResolvedValueOnce({
+      user: {
+        id: 'u-mbr-audit-fail',
+        email: 'member@example.com',
+        role: 'member',
+      },
+    });
+    emitStandaloneMock.mockRejectedValueOnce(new Error('DB unavailable'));
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest());
+    expect(res.status).toBe(404);
   });
 
   it('500 — use-case error propagates as 500', async () => {
@@ -544,7 +593,7 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
   it('404 Not Found — member role returns 404 on detail per FR-035', async () => {
     requireSessionMock.mockResolvedValueOnce({
       user: {
-        userId: 'u-mbr',
+        id: 'u-mbr',
         email: 'member@example.com',
         role: 'member',
       },
@@ -556,9 +605,39 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
     expect(res.status).toBe(404);
   });
 
+  it('404 — detail member-role emits role_violation_blocked audit (FR-035, F1 fix)', async () => {
+    requireSessionMock.mockResolvedValueOnce({
+      user: {
+        id: 'u-mbr-audit',
+        email: 'member@example.com',
+        role: 'member',
+      },
+    });
+    const { GET } = await loadDetailRoute();
+    const res = await GET(buildDetailRequest('evt-42'), {
+      params: Promise.resolve({ eventId: 'evt-42' }),
+    });
+    expect(res.status).toBe(404);
+    expect(emitStandaloneMock).toHaveBeenCalledTimes(1);
+    expect(emitStandaloneMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'role_violation_blocked',
+        actorType: 'member',
+        tenantId: TENANT_SLUG,
+        payload: expect.objectContaining({
+          severity: 'warn',
+          actorRole: 'member',
+          attemptedRoute: '/api/admin/events/evt-42',
+          attemptedAction: 'load_event_detail',
+          blockedAt: 'app_layer',
+        }),
+      }),
+    );
+  });
+
   it('200 OK — manager role can read detail (FR-035 manager-read allowed)', async () => {
     requireSessionMock.mockResolvedValueOnce({
-      user: { userId: 'u-mgr', email: 'mgr@example.com', role: 'manager' },
+      user: { id: 'u-mgr', email: 'mgr@example.com', role: 'manager' },
     });
     loadEventDetailMock.mockResolvedValueOnce({
       ok: true,

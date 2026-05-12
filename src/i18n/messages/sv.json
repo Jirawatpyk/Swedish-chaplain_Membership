@@ -2400,7 +2400,14 @@
     },
     "integrations": {
       "eventcreate": {
-        "_bootstrap": "EventCreate-integration"
+        "_bootstrap": "EventCreate-integration",
+        "placeholder": {
+          "title": "EventCreate-integration",
+          "subtitle": "Konfigurera den Zapier-drivna importpipelinen för deltagare.",
+          "heading": "Kommer snart",
+          "body": "Konfigurationsguiden för EventCreate-integrationen lanseras inom kort. Kontakta tills vidare administratören för hjälp med att konfigurera din Zap.",
+          "backToEvents": "Tillbaka till evenemang"
+        }
       }
     }
   },

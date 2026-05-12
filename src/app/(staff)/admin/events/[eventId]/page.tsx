@@ -14,7 +14,7 @@ import { env } from '@/lib/env';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
-import { isMatchType, MATCH_TYPES } from '@/modules/events';
+import { isMatchType } from '@/modules/events';
 import type { MatchType } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -166,12 +166,6 @@ export default async function AdminEventDetailPage({
         />
       </section>
       <span className="sr-only">{tShared('loaded')}</span>
-      {/* Reserved for future US3 filter chips — keep MATCH_TYPES referenced
-          so tree-shaking does not drop the constant when this page is the
-          only consumer of the matchTypeFilter URL param. */}
-      <span aria-hidden="true" className="hidden">
-        {MATCH_TYPES.join(',')}
-      </span>
     </DetailContainer>
   );
 }

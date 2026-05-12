@@ -2400,7 +2400,14 @@
     },
     "integrations": {
       "eventcreate": {
-        "_bootstrap": "EventCreate Integration"
+        "_bootstrap": "EventCreate Integration",
+        "placeholder": {
+          "title": "EventCreate Integration",
+          "subtitle": "Set up the Zapier-powered attendee import pipeline.",
+          "heading": "Coming soon",
+          "body": "The EventCreate integration setup wizard is rolling out shortly. Until then, please contact your administrator for help configuring the Zap.",
+          "backToEvents": "Back to events"
+        }
       }
     }
   },
