@@ -45,11 +45,18 @@ CREATE TABLE "eventcreate_idempotency_receipts" (
     CHECK ("source" IN ('eventcreate_webhook','eventcreate_csv'))
 );--> statement-breakpoint
 
--- Partial index for the daily TTL sweep (Phase 10 T115). Selects only rows
--- about to expire so the cron's DELETE scan stays small.
+-- Full index for the daily TTL sweep (Phase 10 T115). The table is bounded
+-- at ~200 rows in flight after sweep (design envelope per data-model.md
+-- § 1.4) so a full index is tiny. A partial `WHERE ttl_expires_at < now() +
+-- INTERVAL '1 day'` predicate was the original spec design (data-model.md
+-- § 1.4) but Postgres rejects partial indexes whose predicate references
+-- `now()` — partial index predicates must be IMMUTABLE per
+-- https://www.postgresql.org/docs/current/sql-createindex.html (now() is
+-- STABLE, not IMMUTABLE). Falling back to a full index is the cleanest
+-- workaround since the table size is bounded; deviation documented here
+-- + retrospectively in data-model.md § 1.4 at next plan refresh.
 CREATE INDEX "eventcreate_idempotency_receipts_ttl_idx"
-  ON "eventcreate_idempotency_receipts" ("ttl_expires_at")
-  WHERE "ttl_expires_at" < now() + INTERVAL '1 day';--> statement-breakpoint
+  ON "eventcreate_idempotency_receipts" ("ttl_expires_at");--> statement-breakpoint
 
 -- --- RLS + FORCE + policy (Constitution Principle I clause 2) --------------
 ALTER TABLE "eventcreate_idempotency_receipts" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
