@@ -24,7 +24,7 @@ import type {
   WebhookSignatureVerifier,
   VerifyInput,
   VerifyOutcome,
-} from './ports/webhook-signature-verifier';
+} from '../ports/webhook-signature-verifier';
 
 export type VerifyWebhookSignatureInput = Omit<VerifyInput, never> & {
   /**

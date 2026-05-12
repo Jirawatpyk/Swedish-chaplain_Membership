@@ -34,6 +34,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
+import { asTenantId } from '@/modules/members';
 import {
   verifyWebhookSignature,
   cryptoWebhookSignatureVerifier,
@@ -46,6 +48,27 @@ import {
   resolveTenantFromSlug,
 } from '@/lib/events-webhook-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+
+/**
+ * Issue C-FULL-1 (full-scope review 2026-05-12) — body-size DoS guard.
+ * Matches F5 stripe + F7 resend-broadcasts pattern. An unauthenticated
+ * attacker POSTing a multi-MB body would exhaust Vercel Fluid Compute
+ * memory BEFORE rate-limit (step 3) fires. 64 KiB chosen to match the
+ * F5 cap; Zapier-style payloads are ~1 KB typical.
+ */
+const MAX_WEBHOOK_BODY_BYTES = 64 * 1024; // 64 KiB
+
+function bodyOversizedResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      type: 'https://chamber-os.app/errors/payload-too-large',
+      title: 'Payload too large',
+      status: 413,
+      detail: `Webhook body exceeds the ${MAX_WEBHOOK_BODY_BYTES} byte limit.`,
+    },
+    { status: 413 },
+  );
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -111,6 +134,7 @@ export async function POST(
   // --- Step 1: Content-Type check ----------------------------------------
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('application/json')) {
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'unsupported_media_type');
     return NextResponse.json(
       {
         type: 'https://chamber-os.app/errors/unsupported-media-type',
@@ -122,15 +146,46 @@ export async function POST(
     );
   }
 
+  // --- Step 1.5: Body-size pre-check (Issue C-FULL-1) -------------------
+  // Reject oversized bodies BEFORE reading the body to memory + BEFORE
+  // rate-limit (step 3). An attacker who can POST to the public URL
+  // could otherwise exhaust Vercel Fluid Compute memory; the rate-limit
+  // budget is per-tenant per-minute, so without this guard a single
+  // attacker can spend their full minute pushing one giant request.
+  const contentLengthHeader = request.headers.get('content-length');
+  if (contentLengthHeader !== null) {
+    const declared = parseInt(contentLengthHeader, 10);
+    if (Number.isFinite(declared) && declared > MAX_WEBHOOK_BODY_BYTES) {
+      eventcreateMetrics.bodyOversizedTotal(tenantSlug);
+      logger.warn(
+        { event: 'f6_webhook_body_oversized', tenantSlug, declared, sourceIp },
+        '[F6] webhook body Content-Length exceeds cap — rejected before read',
+      );
+      return bodyOversizedResponse();
+    }
+  }
+
   // --- Step 2: Read raw body BEFORE any parse ---------------------------
   const rawBody = await request.text();
+  // Post-read realised-size cap — catches attackers that omit
+  // Content-Length or send chunked encoding that races past the
+  // pre-check.
+  if (rawBody.length > MAX_WEBHOOK_BODY_BYTES) {
+    eventcreateMetrics.bodyOversizedTotal(tenantSlug);
+    logger.warn(
+      { event: 'f6_webhook_body_oversized', tenantSlug, realised: rawBody.length, sourceIp },
+      '[F6] webhook body realised-size exceeds cap — rejected post-read',
+    );
+    return bodyOversizedResponse();
+  }
 
   // --- Step 3: Rate limit (FR-005 60 req/min per tenant) ----------------
   const rl = await ratelimitCheck(tenantSlug);
   if (!rl.success) {
     const retryAfter = retryAfterSecondsFromRl(rl);
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'rate_limited');
     logger.warn(
-      { tenantSlug, retryAfter, sourceIp },
+      { event: 'f6_webhook_rate_limit_exceeded', tenantSlug, retryAfter, sourceIp },
       '[F6] webhook rate-limit exceeded',
     );
     return NextResponse.json(
@@ -150,7 +205,11 @@ export async function POST(
   // --- Step 4: Tenant slug → context ------------------------------------
   const tenantCtx = resolveTenantFromSlug(tenantSlug);
   if (!tenantCtx) {
-    logger.warn({ tenantSlug, sourceIp }, '[F6] invalid tenant slug shape');
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'tenant_not_found');
+    logger.warn(
+      { event: 'f6_webhook_invalid_tenant_slug', tenantSlug, sourceIp },
+      '[F6] invalid tenant slug shape',
+    );
     return notFoundResponse();
   }
 
@@ -160,7 +219,11 @@ export async function POST(
     webhookConfig = await loadTenantWebhookConfig(tenantCtx);
   } catch (e) {
     logger.error(
-      { tenantSlug, err: e instanceof Error ? e.message : String(e) },
+      {
+        event: 'f6_webhook_config_load_failed',
+        tenantSlug,
+        errName: e instanceof Error ? e.name : 'unknown',
+      },
       '[F6] webhook config load failed',
     );
     return NextResponse.json(
@@ -173,12 +236,17 @@ export async function POST(
     );
   }
   if (!webhookConfig) {
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'tenant_not_found');
     return notFoundResponse();
   }
 
   // --- Step 6: Enabled check (FR-033) -----------------------------------
   if (!webhookConfig.enabled) {
-    logger.warn({ tenantSlug }, '[F6] tenant ingest disabled');
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'ingest_disabled');
+    logger.warn(
+      { event: 'f6_webhook_ingest_disabled', tenantSlug },
+      '[F6] tenant ingest disabled',
+    );
     return ingestDisabledResponse();
   }
 
@@ -196,16 +264,60 @@ export async function POST(
   });
 
   if (!verifyOutcome.verified) {
-    // Discriminator captured in log only (audit emission via use-case
-    // happens on the success path; standalone rejection audits are
-    // a Wave 3.3+ optimisation — current path logs but does not emit
-    // a separate `webhook_signature_rejected` audit row).
+    // Per Issue C-FULL-2 + I5 (full-scope review 2026-05-12): emit
+    // `webhook_signature_rejected` audit row in a SEPARATE tx via the
+    // dedicated `emitStandalone` method so the correct event type is
+    // recorded (previous code mis-emitted as `webhook_rolled_back`).
+    // Durable 5-year forensic trail enables R10 credential-stuffing
+    // alert; standalone tx + try/catch so audit failure does NOT crash
+    // the 401 response.
+    const verifyKindToSignatureOutcome: Record<typeof verifyOutcome.kind, Parameters<typeof eventcreateMetrics.webhookReceiptsTotal>[1]> = {
+      missing_signature_header: 'rejected_missing_header',
+      missing_timestamp_header: 'rejected_missing_header',
+      malformed_timestamp: 'rejected_malformed_timestamp',
+      timestamp_skew_exceeded: 'rejected_timestamp_skew',
+      signature_mismatch: 'rejected_bad_sig',
+    };
+    eventcreateMetrics.webhookReceiptsTotal(
+      tenantSlug,
+      verifyKindToSignatureOutcome[verifyOutcome.kind],
+      'unauthorized',
+    );
+    try {
+      const auditDeps = makeIngestWebhookAttendeeDeps();
+      await auditDeps.emitStandalone({
+        eventType: 'webhook_signature_rejected',
+        tenantId: asTenantId(tenantSlug),
+        actorType: 'zapier_webhook',
+        actorUserId: null,
+        occurredAt: new Date(),
+        summary: `webhook signature verification failed — verifyKind=${verifyOutcome.kind}`,
+        payload: {
+          severity: 'warn',
+          requestId: requestId || null,
+          sourceIp,
+          signatureLastFour: request.headers.get('x-chamber-signature')?.slice(-4) ?? null,
+          timestampSkewSeconds: verifyOutcome.skewSeconds,
+          bodyLengthBytes: rawBody.length,
+        },
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          event: 'f6_webhook_sig_reject_audit_failed',
+          tenantSlug,
+          errName: auditErr instanceof Error ? auditErr.name : 'unknown',
+        },
+        '[F6] signature-reject audit emission failed (suppressed — 401 still returned)',
+      );
+    }
     logger.warn(
       {
+        event: 'f6_webhook_signature_verification_failed',
         tenantSlug,
         sourceIp,
         verifyKind: verifyOutcome.kind,
-        requestIdMasked: requestId.slice(0, 8) || null,
+        requestId: requestId || null,
       },
       '[F6] webhook signature verification failed',
     );
@@ -217,8 +329,17 @@ export async function POST(
   try {
     parsedPayload = JSON.parse(rawBody);
   } catch (e) {
+    // Issue S1 (review 2026-05-12): V8's JSON.parse error message
+    // includes a snippet of the malformed body which could carry PII.
+    // Log only the error NAME + byte length — not the message.
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'malformed');
     logger.warn(
-      { tenantSlug, err: e instanceof Error ? e.message : String(e) },
+      {
+        event: 'f6_webhook_invalid_json',
+        tenantSlug,
+        errName: e instanceof Error ? e.name : 'unknown',
+        bodyBytes: rawBody.length,
+      },
       '[F6] webhook body is not valid JSON',
     );
     return NextResponse.json(
@@ -248,6 +369,20 @@ export async function POST(
 
   // --- Step 10: Map Result → HTTP ---------------------------------------
   if (result.ok) {
+    // Map Domain MatchType → metric processing-outcome label. The
+    // metric's union mirrors the ProcessingOutcome value-object
+    // (`matched_member_*` prefix) for dashboard readability; MatchType
+    // omits the prefix on member match variants.
+    const processingOutcome = (
+      result.value.matched === 'member_contact'
+        ? 'matched_member_contact'
+        : result.value.matched === 'member_domain'
+          ? 'matched_member_domain'
+          : result.value.matched === 'member_fuzzy'
+            ? 'matched_member_fuzzy'
+            : result.value.matched
+    ) as Parameters<typeof eventcreateMetrics.webhookReceiptsTotal>[2];
+    eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', processingOutcome);
     return NextResponse.json({
       ok: true,
       matched: result.value.matched,
@@ -260,6 +395,7 @@ export async function POST(
 
   switch (result.error.kind) {
     case 'malformed_rejected':
+      eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'malformed');
       return NextResponse.json(
         {
           type: 'https://chamber-os.app/errors/malformed-webhook',
@@ -270,6 +406,7 @@ export async function POST(
         { status: 400 },
       );
     case 'duplicate_request_id':
+      eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'duplicate');
       return NextResponse.json(
         {
           type: 'https://chamber-os.app/errors/duplicate-webhook',
@@ -281,15 +418,18 @@ export async function POST(
         { status: 409 },
       );
     case 'tenant_ingest_disabled':
+      eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'ingest_disabled');
       return ingestDisabledResponse();
     case 'rolled_back':
       // Audit `webhook_rolled_back` already emitted via dual-write
       // fallback in the use-case. Return generic 500 — don't leak the
       // failure stage to the caller.
+      eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'rolled_back');
       logger.error(
         {
+          event: 'f6_webhook_ingest_rolled_back',
           tenantSlug,
-          requestIdMasked: requestId.slice(0, 8) || null,
+          requestId: requestId || null,
           failureStage: result.error.failureStage,
         },
         '[F6] webhook ingest rolled back',
@@ -303,5 +443,26 @@ export async function POST(
         },
         { status: 500 },
       );
+    default: {
+      // Issue C2 (review 2026-05-12): exhaustiveness assert. If a future
+      // phase adds a new `IngestError.kind`, this `never`-assignment
+      // forces a TS compile error — preventing the route from silently
+      // falling off the function and returning an empty 200 (which
+      // Zapier would interpret as success and never retry → silent data
+      // loss).
+      const _exhaustive: never = result.error;
+      logger.fatal(
+        { unhandledErrorKind: _exhaustive, tenantSlug },
+        '[F6] unhandled IngestError kind — code path missing in route switch',
+      );
+      return NextResponse.json(
+        {
+          type: 'https://chamber-os.app/errors/internal-error',
+          title: 'Internal error',
+          status: 500,
+        },
+        { status: 500 },
+      );
+    }
   }
 }

@@ -87,46 +87,68 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             countedAgainstCulturalQuota: input.quotaEffect.countedAgainstCulturalQuota,
             metadata: input.metadata,
             registeredAt: input.registeredAt,
-            // Drizzle's $inferInsert requires `attendeeEmailLower` because
-            // the schema marks it `.notNull()`, but Postgres materialises
-            // it via STORED generated column from `attendee_email`. The
-            // `as unknown as` cast bypasses the strict insert-shape check;
-            // the GENERATED column populates the value at INSERT time.
-          } as unknown as typeof eventRegistrations.$inferInsert)
-          .onConflictDoNothing({
+            // Issue C-FULL-5 (review 2026-05-12): `attendee_email_lower`
+            // is a STORED generated column — Drizzle schema now declares
+            // it as nullable so `$inferInsert` no longer requires it.
+            // The `as unknown as` cast that previously bypassed the
+            // strict typing has been removed; the insert below is fully
+            // type-safe.
+          })
+          .onConflictDoUpdate({
+            // Issue I-FULL-2 (review 2026-05-12) — switch from
+            // DO NOTHING + fallback SELECT to DO UPDATE with an
+            // identity assignment. Closes the previous TOCTOU window
+            // (race against Phase 10 T110 hardDelete between INSERT and
+            // SELECT could return zero rows → false "race invariant"
+            // error). With DO UPDATE, the row is ALWAYS returned in a
+            // single statement: either the freshly-inserted row, or
+            // the existing conflicting row with externalId reassigned
+            // to itself (no-op). `xmax = 0` discriminator distinguishes
+            // fresh insert from conflict.
             target: [
               eventRegistrations.tenantId,
               eventRegistrations.eventId,
               eventRegistrations.externalId,
             ],
+            set: {
+              // Identity update — sets externalId to itself. Drizzle
+              // requires at least one SET column to avoid invalid
+              // SQL. The column value is unchanged (DB stores the
+              // same string).
+              externalId: sql`EXCLUDED.external_id`,
+            },
           })
-          .returning();
-
-        if (inserted.length > 0) {
-          return ok({
-            registration: toAggregate(inserted[0]!),
-            wasFresh: true,
+          .returning({
+            tenantId: eventRegistrations.tenantId,
+            registrationId: eventRegistrations.registrationId,
+            eventId: eventRegistrations.eventId,
+            externalId: eventRegistrations.externalId,
+            attendeeEmail: eventRegistrations.attendeeEmail,
+            attendeeEmailLower: eventRegistrations.attendeeEmailLower,
+            attendeeName: eventRegistrations.attendeeName,
+            attendeeCompany: eventRegistrations.attendeeCompany,
+            matchType: eventRegistrations.matchType,
+            matchedMemberId: eventRegistrations.matchedMemberId,
+            matchedContactId: eventRegistrations.matchedContactId,
+            ticketType: eventRegistrations.ticketType,
+            ticketPriceThb: eventRegistrations.ticketPriceThb,
+            paymentStatus: eventRegistrations.paymentStatus,
+            countedAgainstPartnership: eventRegistrations.countedAgainstPartnership,
+            countedAgainstCulturalQuota: eventRegistrations.countedAgainstCulturalQuota,
+            metadata: eventRegistrations.metadata,
+            registeredAt: eventRegistrations.registeredAt,
+            importedAt: eventRegistrations.importedAt,
+            piiPseudonymisedAt: eventRegistrations.piiPseudonymisedAt,
+            wasFresh: sql<boolean>`(xmax = 0)`,
           });
-        }
 
-        // Conflict — fetch the existing row to return.
-        const existing = await executor
-          .select()
-          .from(eventRegistrations)
-          .where(
-            and(
-              eq(eventRegistrations.tenantId, input.tenantId),
-              eq(eventRegistrations.eventId, input.eventId),
-              eq(eventRegistrations.externalId, input.externalId),
-            ),
-          )
-          .limit(1);
-        if (existing.length === 0) {
-          return err({ kind: 'db_error', message: 'ON CONFLICT but no existing row found — race violated invariant' });
+        if (inserted.length === 0) {
+          return err({ kind: 'db_error', message: 'registration upsert: ON CONFLICT DO UPDATE returned no row (invariant violation)' });
         }
+        const row = inserted[0]!;
         return ok({
-          registration: toAggregate(existing[0]!),
-          wasFresh: false,
+          registration: toAggregate(row as unknown as EventRegistrationRow),
+          wasFresh: row.wasFresh,
         });
       } catch (e) {
         return err({
@@ -162,26 +184,28 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     },
 
     // --- Stubs for later phases ---------------------------------------------
+    // Issue I6 (review 2026-05-12) — distinct `not_implemented` kind
+    // so dashboards separate phase-not-yet-wired from genuine DB errors.
     async findByEventId() {
-      return err({ kind: 'db_error', message: 'findByEventId() not implemented until Phase 4 T058' });
+      return err({ kind: 'not_implemented', method: 'findByEventId', futureTask: 'Phase 4 T058' });
     },
     async findByEmailLower() {
-      return err({ kind: 'db_error', message: 'findByEmailLower() not implemented until Phase 10 T110' });
+      return err({ kind: 'not_implemented', method: 'findByEmailLower', futureTask: 'Phase 10 T110' });
     },
     async countConsumedByMember() {
-      return err({ kind: 'db_error', message: 'countConsumedByMember() not implemented until Phase 6 T086' });
+      return err({ kind: 'not_implemented', method: 'countConsumedByMember', futureTask: 'Phase 6 T086' });
     },
     async updateMatchAndQuota() {
-      return err({ kind: 'db_error', message: 'updateMatchAndQuota() not implemented until Phase 9 T104' });
+      return err({ kind: 'not_implemented', method: 'updateMatchAndQuota', futureTask: 'Phase 9 T104' });
     },
     async listPseudonymiseEligible() {
-      return err({ kind: 'db_error', message: 'listPseudonymiseEligible() not implemented until Phase 10 T113' });
+      return err({ kind: 'not_implemented', method: 'listPseudonymiseEligible', futureTask: 'Phase 10 T113' });
     },
     async pseudonymiseRow() {
-      return err({ kind: 'db_error', message: 'pseudonymiseRow() not implemented until Phase 10 T113' });
+      return err({ kind: 'not_implemented', method: 'pseudonymiseRow', futureTask: 'Phase 10 T113' });
     },
     async hardDelete() {
-      return err({ kind: 'db_error', message: 'hardDelete() not implemented until Phase 10 T110' });
+      return err({ kind: 'not_implemented', method: 'hardDelete', futureTask: 'Phase 10 T110' });
     },
   };
 }

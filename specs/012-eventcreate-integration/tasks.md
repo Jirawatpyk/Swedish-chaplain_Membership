@@ -87,7 +87,7 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 ### Tests First (TDD — RED phase)
 
 - [X] T036 [P] [US1] Write failing contract test `tests/contract/events/webhook-eventcreate-v1.test.ts` covering every HTTP outcome (200 / 401 sig / 401 replay / 409 dup / 400 malformed / 415 / 429 / 503 / 5xx) per contracts/webhook-eventcreate-api.md.
-- [X] T037 [P] [US1] Write failing acceptance E2E `tests/e2e/eventcreate-webhook-ingest.spec.ts` covering US1 AS1–AS5 (happy verify+match+200, non-member persistence, duplicate 409, bad signature 401, timestamp-skew 401); add `@workers=1` per project convention.
+- [X] T037 [P] [US1] [MANUAL-GATE] Write failing acceptance E2E `tests/e2e/eventcreate-webhook-ingest.spec.ts` covering US1 AS1–AS5 (happy verify+match+200, non-member persistence, duplicate 409, bad signature 401, timestamp-skew 401); add `@workers=1` per project convention. **M5 annotation 2026-05-12**: Playwright test is code-complete but is a MANUAL-GATE — requires (a) `pnpm dev` running on :3100, (b) test tenant seeded with `E2E_F6_TEST_WEBHOOK_SECRET` env var, (c) `pnpm test:e2e --grep "F6 webhook" --workers=1`. NOT part of automated `pnpm test:integration` CI — same pattern as F8 T270 cross-browser gate.
 - [X] T038 [P] [US1] Write failing integration test `tests/integration/events/signature.test.ts` per plan.md Testing § — valid signature + grace-key within 24h + grace-key at 25h + wrong secret + tampered body + missing header all return identical 401 generic body.
 - [X] T039 [P] [US1] Write failing integration test `tests/integration/events/idempotency.test.ts` per plan.md Testing § — same `X-Request-ID` delivered 5× asserts 1 event row + 1 registration + 1 `webhook_receipt_verified` audit + 4 `webhook_duplicate_rejected` audits.
 - [X] T040 [P] [US1] Write failing integration test `tests/integration/events/transactional-ingest.test.ts` per plan.md Testing § round-1 E14 — simulate failure at each ACID-unit stage; assert zero partial state + `webhook_rolled_back` audit emitted in separate tx + Zapier-replay-after-recovery commits cleanly.
@@ -96,11 +96,11 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### Implementation (GREEN phase — make tests pass)
 
-- [X] T043 [P] [US1] Implement `src/modules/events/application/verify-webhook-signature.ts` use-case per research.md R2 — HMAC-SHA256 + 5-min skew + active + grace-key verify + length-check + try/catch around `crypto.timingSafeEqual` (round-1 E8); generic 401 outcome on any failure.
+- [X] T043 [P] [US1] Implement `src/modules/events/application/use-cases/verify-webhook-signature.ts` use-case per research.md R2 — HMAC-SHA256 + 5-min skew + active + grace-key verify + length-check + try/catch around `crypto.timingSafeEqual` (round-1 E8); generic 401 outcome on any failure.
 - [X] T044 [P] [US1] Implement `src/modules/events/infrastructure/crypto-webhook-signature-verifier.ts` adapter using Node `crypto.timingSafeEqual` + standard library SHA-256.
-- [X] T045 [P] [US1] Implement `src/modules/events/application/match-attendee-to-member.ts` use-case per research.md R4 — 4-rule cascade (contact-email → domain → fuzzy → non-member); skip domain rule on personal-email deny list; ambiguous fuzzy → `unmatched`.
+- [X] T045 [P] [US1] Implement `src/modules/events/application/use-cases/match-attendee-to-member.ts` use-case per research.md R4 — 4-rule cascade (contact-email → domain → fuzzy → non-member); skip domain rule on personal-email deny list; ambiguous fuzzy → `unmatched`.
 - [X] T046 [P] [US1] Implement `src/modules/events/infrastructure/drizzle-attendee-matcher.ts` adapter — SQL queries against F3 contacts + members tables (read-only); uses Levenshtein from T025 on normalised company names.
-- [X] T047 [US1] Implement `src/modules/events/application/ingest-webhook-attendee.ts` use-case per research.md R6 — strict-transactional ACID unit (event upsert + registration insert + idempotency receipt + quota effect + audit emit all in one Drizzle tx); rollback on any error; separate-tx `webhook_rolled_back` audit + stderr pino.fatal fallback per research.md R6.
+- [X] T047 [US1] Implement `src/modules/events/application/use-cases/ingest-webhook-attendee.ts` use-case per research.md R6 — strict-transactional ACID unit (event upsert + registration insert + idempotency receipt + quota effect + audit emit all in one Drizzle tx); rollback on any error; separate-tx `webhook_rolled_back` audit + stderr pino.fatal fallback per research.md R6.
 - [X] T048 [P] [US1] Implement `src/modules/events/infrastructure/drizzle-events-repository.ts` adapter — `upsert(event)` with ON CONFLICT `(tenant_id, source, external_id) DO UPDATE` returning `event_id, archived_at`.
 - [X] T049 [P] [US1] Implement `src/modules/events/infrastructure/drizzle-registrations-repository.ts` adapter — `insert(registration)` with ON CONFLICT `(tenant_id, event_id, external_id) DO NOTHING` (FR-011 second idempotency layer).
 - [X] T050 [P] [US1] Implement `src/modules/events/infrastructure/drizzle-idempotency-store.ts` adapter — writes to F6-owned `eventcreate_idempotency_receipts` (round-2 M2); ON CONFLICT DO NOTHING; 7-day TTL via `ttl_expires_at` default.
@@ -124,8 +124,8 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### Implementation
 
-- [ ] T057 [P] [US2] Implement `src/modules/events/application/list-events.ts` use-case — paginated query with sort by `start_date DESC` + filter by `includeArchived` + `categoryFilter` + `partnerBenefitOnly` + `culturalEventOnly`; returns items + pagination + `emptyStateContext` per contracts/admin-events-api.md.
-- [ ] T058 [P] [US2] Implement `src/modules/events/application/load-event-detail.ts` use-case — single event fetch + paginated attendees + match-rate aggregate + `unmatchedOnly` filter + `q` substring search on attendee_email_lower + attendee_name.
+- [ ] T057 [P] [US2] Implement `src/modules/events/application/use-cases/list-events.ts` use-case — paginated query with sort by `start_date DESC` + filter by `includeArchived` + `categoryFilter` + `partnerBenefitOnly` + `culturalEventOnly`; returns items + pagination + `emptyStateContext` per contracts/admin-events-api.md.
+- [ ] T058 [P] [US2] Implement `src/modules/events/application/use-cases/load-event-detail.ts` use-case — single event fetch + paginated attendees + match-rate aggregate + `unmatchedOnly` filter + `q` substring search on attendee_email_lower + attendee_name.
 - [ ] T059 [P] [US2] Add `getEventsListEmptyContext(tenantId)` query helper in `drizzle-events-repository.ts` — returns `{integrationConfigured, everReceivedDelivery, totalArchived}` so the UI can render 3-variant empty-state per US2 AS5 / CHK028.
 - [ ] T060 [US2] Implement route handler `src/app/api/admin/events/route.ts` (GET list) + `src/app/api/admin/events/[eventId]/route.ts` (GET detail) — applies F1 session middleware + FR-035 RBAC matrix (admin + manager read-only; member → 404).
 - [ ] T061 [P] [US2] Implement `src/components/events/events-list-table.tsx` using TanStack Table v8 (mirrors F3 directory + F4 invoice-list pattern) with columns Date / Name / Category / Registrations / Partner Benefit badge / Match Rate %; keyboard nav + a11y landmarks.
@@ -151,9 +151,9 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### Implementation
 
-- [ ] T070 [P] [US3] Implement `src/modules/events/application/generate-webhook-secret.ts` use-case — generates 32-byte cryptographic random base64url secret; 409 Conflict if secret already exists; emits `webhook_secret_generated` audit per research.md R7.
-- [ ] T071 [P] [US3] Implement `src/modules/events/application/rotate-webhook-secret.ts` use-case — moves active to grace + sets `grace_rotated_at = NOW()` + generates new active + emits `webhook_secret_rotated` audit; rate-limited 3/hour per (tenant, actor).
-- [ ] T072 [P] [US3] Implement `src/modules/events/application/run-test-webhook.ts` use-case — generates synthetic payload with sentinel `event_external_id='__test_webhook__'` + `attendee_external_id='__test_webhook__-<ts>'`; signs with active secret; POSTs to own webhook URL; receiver short-circuits per contracts/admin-integration-eventcreate-api.md round-2 P8 (no event/registration row created); emits `webhook_test_invoked` audit.
+- [ ] T070 [P] [US3] Implement `src/modules/events/application/use-cases/generate-webhook-secret.ts` use-case — generates 32-byte cryptographic random base64url secret; 409 Conflict if secret already exists; emits `webhook_secret_generated` audit per research.md R7.
+- [ ] T071 [P] [US3] Implement `src/modules/events/application/use-cases/rotate-webhook-secret.ts` use-case — moves active to grace + sets `grace_rotated_at = NOW()` + generates new active + emits `webhook_secret_rotated` audit; rate-limited 3/hour per (tenant, actor).
+- [ ] T072 [P] [US3] Implement `src/modules/events/application/use-cases/run-test-webhook.ts` use-case — generates synthetic payload with sentinel `event_external_id='__test_webhook__'` + `attendee_external_id='__test_webhook__-<ts>'`; signs with active secret; POSTs to own webhook URL; receiver short-circuits per contracts/admin-integration-eventcreate-api.md round-2 P8 (no event/registration row created); emits `webhook_test_invoked` audit.
 - [ ] T073 [P] [US3] Implement `src/modules/events/infrastructure/drizzle-tenant-webhook-config-repository.ts` adapter — CRUD operations + grace-key expiry logic + RLS-scoped queries.
 - [ ] T074 [US3] Implement route handlers under `src/app/api/admin/integrations/eventcreate/` — `generate-secret/route.ts`, `rotate-secret/route.ts`, `test-webhook/route.ts`, `recent-deliveries/route.ts`; non-admin returns 404 per FR-035 (surface-disclosure prevention; round-2 E17). The `recent-deliveries/route.ts` handler queries `audit_log` directly (no separate Application-layer use-case — read-only audit query is simple enough to live inline; if complexity grows, extract to `list-recent-deliveries.ts` Application use-case later — per analyze finding C-1).
 - [ ] T075 [P] [US3] Implement `src/components/events/webhook-config-wizard.tsx` — 3-phase progressive disclosure: generate-secret → walkthrough acknowledged → test-webhook + recent-deliveries panel. Default-filter sentinel test rows per round-2 R5.
@@ -180,9 +180,9 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### Implementation
 
-- [ ] T085 [P] [US4] Implement `src/modules/events/application/apply-quota-effect.ts` use-case per research.md R5 round-3 Z1 — (a) acquire `pg_advisory_xact_lock(hashtextextended('eventcreate-quota:' || tenant_id || ':' || matched_member_id || ':' || event_id, 0))`; (b) call F2 barrel `getMemberPlanForBucket(memberId)`; (c) `SELECT count(*) FROM event_registrations` for consumed count; (d) write registration with `counted_against_* = (consumed < allotment)`; (e) emit `quota_partnership_decremented` / `quota_cultural_decremented` / `quota_over_quota_warning` audit. Canonical SQL order per round-2 R2: BEGIN → SET LOCAL → advisory_lock → ... → COMMIT.
+- [ ] T085 [P] [US4] Implement `src/modules/events/application/use-cases/apply-quota-effect.ts` use-case per research.md R5 round-3 Z1 — (a) acquire `pg_advisory_xact_lock(hashtextextended('eventcreate-quota:' || tenant_id || ':' || matched_member_id || ':' || event_id, 0))`; (b) call F2 barrel `getMemberPlanForBucket(memberId)`; (c) `SELECT count(*) FROM event_registrations` for consumed count; (d) write registration with `counted_against_* = (consumed < allotment)`; (e) emit `quota_partnership_decremented` / `quota_cultural_decremented` / `quota_over_quota_warning` audit. Canonical SQL order per round-2 R2: BEGIN → SET LOCAL → advisory_lock → ... → COMMIT.
 - [ ] T086 [P] [US4] Implement `src/modules/events/infrastructure/drizzle-quota-accounting-adapter.ts` adapter wrapping F2 + F3 read-only calls; bridges Domain `QuotaAccountingPort` to Drizzle.
-- [ ] T087 [P] [US4] Implement `src/modules/events/application/toggle-event-category.ts` use-case (FR-019) — toggles `is_partner_benefit` or `is_cultural_event`; re-evaluates all registrations' quota effects in one tx; emits `event_partner_benefit_toggled` or `event_cultural_event_toggled` + N × quota change events.
+- [ ] T087 [P] [US4] Implement `src/modules/events/application/use-cases/toggle-event-category.ts` use-case (FR-019) — toggles `is_partner_benefit` or `is_cultural_event`; re-evaluates all registrations' quota effects in one tx; emits `event_partner_benefit_toggled` or `event_cultural_event_toggled` + N × quota change events.
 - [ ] T088 [US4] Implement route handler `src/app/api/admin/events/[eventId]/toggle-partner-benefit/route.ts` + `toggle-cultural-event/route.ts` (admin-only; FR-035).
 - [ ] T089 [P] [US4] Add quota-related i18n keys (~15 keys × 3 = 45 entries) covering "over quota" warning + "X tickets remaining" + audit-event-type human-readable descriptions for `quota_*` events.
 
@@ -203,7 +203,7 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 ### Implementation
 
 - [ ] T093 [P] [US5] Implement `src/modules/events/infrastructure/streaming-csv-importer.ts` adapter — Node Readable + `readline` over the multipart buffer; hand-rolled parser supporting the strict format per research.md R8 round-1 E20 (UTF-8 + BOM strip + LF/CRLF + commas + double-quote escape with `""`; rejects embedded newlines, semicolon separators, trailing commas, mixed quoting); commit test fixtures under `tests/integration/events/csv-fixtures/` (happy-1000-rows, with-bom, crlf, quoted-comma, escaped-quote + 3 malformed).
-- [ ] T094 [P] [US5] Implement `src/modules/events/application/import-csv.ts` use-case — orchestrates streaming-parse + per-row zod-validate + idempotency receipt + match-attendee + apply-quota-effect + audit emission; batched 100 rows per tx; per-row failure isolation; tracks `rowsAlreadyImported` separately from `rowsProcessed` per round-2 R3.
+- [ ] T094 [P] [US5] Implement `src/modules/events/application/use-cases/import-csv.ts` use-case — orchestrates streaming-parse + per-row zod-validate + idempotency receipt + match-attendee + apply-quota-effect + audit emission; batched 100 rows per tx; per-row failure isolation; tracks `rowsAlreadyImported` separately from `rowsProcessed` per round-2 R3.
 - [ ] T095 [US5] Implement route handler `src/app/api/admin/events/import/route.ts` — `multipart/form-data` parser; max 5 MiB file size with 413 response; rate limit 5 imports/hour per (tenant, actor); admin-only RBAC; result summary per contracts/csv-import-api.md.
 - [ ] T096 [P] [US5] Implement `src/components/events/csv-mapping-form.tsx` — drag-drop file input + 10-row preview + auto-detected column mapping with admin remap option per Spec §FR-026.
 - [ ] T097 [P] [US5] Implement `src/components/events/csv-import-result.tsx` — result summary card with `rowsProcessed` + `rowsAlreadyImported` (distinguish from "0 actually delivered" per round-2 R3) + per-match-type counts + error-row list with row number + reason.
@@ -226,7 +226,7 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 (Most US7 implementation is covered by T070 (generate-webhook-secret) + T071 (rotate-webhook-secret) + T043 (verify-webhook-signature with grace-key support). This phase adds the grace-expiry cleanup + audit.)
 
-- [ ] T101 [US7] Extend `src/modules/events/application/verify-webhook-signature.ts` (from T043) with explicit grace-key fallback path — try active first; if mismatch AND `grace_rotated_at > NOW() - INTERVAL '24 hours'`, try grace via second `timingSafeEqual`; on grace-success emit `webhook_secret_grace_used` audit. Mirror unit test coverage per research.md R7.
+- [ ] T101 [US7] Extend `src/modules/events/application/use-cases/verify-webhook-signature.ts` (from T043) with explicit grace-key fallback path — try active first; if mismatch AND `grace_rotated_at > NOW() - INTERVAL '24 hours'`, try grace via second `timingSafeEqual`; on grace-success emit `webhook_secret_grace_used` audit. Mirror unit test coverage per research.md R7.
 - [ ] T102 [P] [US7] Add grace-key i18n keys covering rotation dialog + 24h-grace-info banner copy.
 
 ---
@@ -243,7 +243,7 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### Implementation
 
-- [ ] T104 [P] [US6] Implement `src/modules/events/application/relink-registration.ts` use-case per FR-014 — guards against `pii_pseudonymised_at IS NOT NULL` (returns Result.err with UX-message constant per round-2 R4); credit-back old member quota + re-evaluate new member quota (calls `apply-quota-effect` reuse); audit `registration_relinked` with previous/new member IDs + quota impact.
+- [ ] T104 [P] [US6] Implement `src/modules/events/application/use-cases/relink-registration.ts` use-case per FR-014 — guards against `pii_pseudonymised_at IS NOT NULL` (returns Result.err with UX-message constant per round-2 R4); credit-back old member quota + re-evaluate new member quota (calls `apply-quota-effect` reuse); audit `registration_relinked` with previous/new member IDs + quota impact.
 - [ ] T105 [US6] Implement route handler `src/app/api/admin/events/[eventId]/registrations/[registrationId]/relink/route.ts` (admin-only; FR-035).
 - [ ] T106 [P] [US6] Implement `src/components/events/relink-dialog.tsx` — searchable member picker (autocomplete from F3 members) + "Cannot relink — attendee PII has been retention-purged" UX message when target row is pseudonymised per FR-014 round-2 R4.
 
@@ -255,18 +255,18 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### Archive + Erasure (FR-019a + FR-032a)
 
-- [ ] T107 [P] Implement `src/modules/events/application/archive-event.ts` use-case (FR-019a) — admin-only; sets `archived_at = NOW()`; reverses all `counted_against_*` flags + credits back quotas + emits `event_archived` + N × `quota_credit_back_archive` audits.
+- [ ] T107 [P] Implement `src/modules/events/application/use-cases/archive-event.ts` use-case (FR-019a) — admin-only; sets `archived_at = NOW()`; reverses all `counted_against_*` flags + credits back quotas + emits `event_archived` + N × `quota_credit_back_archive` audits.
 - [ ] T108 Implement route handler `src/app/api/admin/events/[eventId]/archive/route.ts` (admin-only).
 - [ ] T109 [P] Implement `src/components/events/archive-event-dialog.tsx` + `src/app/(staff)/admin/events/archived/page.tsx` for archived-events filter view.
-- [ ] T110 [P] Implement `src/modules/events/application/erase-attendee-pii.ts` use-case (FR-032a) — admin-only; deletes registration row + reverses quota + emits `pii_erasure_requested` + `pii_erasure_completed` + `quota_credit_back_*`; idempotent on re-invocation.
+- [ ] T110 [P] Implement `src/modules/events/application/use-cases/erase-attendee-pii.ts` use-case (FR-032a) — admin-only; deletes registration row + reverses quota + emits `pii_erasure_requested` + `pii_erasure_completed` + `quota_credit_back_*`; idempotent on re-invocation.
 - [ ] T111 Implement route handler `src/app/api/admin/events/[eventId]/registrations/[registrationId]/erase/route.ts` (admin-only).
 - [ ] T112 [P] Implement `src/components/events/erase-pii-dialog.tsx` + `src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/page.tsx` for confirmation + reason form.
 
 ### Retention Sweeps (FR-032 + Z5)
 
-- [ ] T113 [P] Implement `src/modules/events/application/pseudonymise-stale-non-member-pii.ts` use-case per research.md R9 — multi-tenant iteration via super-admin enumeration → `runInTenant` per tenant per round-1 E18; deterministic salted hash; emit `pii_pseudonymised` audit per row + `pii_pseudonymisation_sweep_run` aggregate audit; metric `eventcreate_pseudonymisation_sweep_rows_total`.
+- [ ] T113 [P] Implement `src/modules/events/application/use-cases/pseudonymise-stale-non-member-pii.ts` use-case per research.md R9 — multi-tenant iteration via super-admin enumeration → `runInTenant` per tenant per round-1 E18; deterministic salted hash; emit `pii_pseudonymised` audit per row + `pii_pseudonymisation_sweep_run` aggregate audit; metric `eventcreate_pseudonymisation_sweep_rows_total`.
 - [ ] T114 Implement cron handler `src/app/api/internal/retention/pseudonymise-eventcreate/route.ts` (daily 03:00 Asia/Bangkok; Bearer-auth via `CRON_SECRET`).
-- [ ] T115 [P] Implement TTL sweep use-case `src/modules/events/application/sweep-stale-idempotency-receipts.ts` per round-3 Z5 — deletes rows where `ttl_expires_at < NOW()` per tenant; emits structured pino log with duration + tenants-scanned + per-tenant deletedCount; metric `eventcreate_idempotency_sweep_rows_total` per round-4 AA1.
+- [ ] T115 [P] Implement TTL sweep use-case `src/modules/events/application/use-cases/sweep-stale-idempotency-receipts.ts` per round-3 Z5 — deletes rows where `ttl_expires_at < NOW()` per tenant; emits structured pino log with duration + tenants-scanned + per-tenant deletedCount; metric `eventcreate_idempotency_sweep_rows_total` per round-4 AA1.
 - [ ] T116 Implement cron handler `src/app/api/internal/retention/sweep-eventcreate-idempotency/route.ts` (daily 04:00 Asia/Bangkok; Bearer-auth) per round-3 Z5.
 - [ ] T117 [P] Write failing integration test `tests/integration/events/retention-sweep.test.ts` per plan.md Testing § (seed 1k non-member registrations at varying ages, run cron, assert pseudonymisation correctness + member-linked rows untouched + audit emission + quota preserved).
 - [ ] T118 [P] Write failing integration test `tests/integration/events/idempotency-ttl-sweep.test.ts` per round-4 AA2 — seed mixed-expiry rows across two tenants, run cron, assert correct deletion + metric increment + cross-tenant isolation + stderr pino log emission for AA1 stalled-sweep alert.
@@ -274,7 +274,7 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 
 ### F8 Port Adapter Wiring (X3 + E16)
 
-- [ ] T120 [P] Implement `src/modules/events/application/get-event-attendees-by-member.ts` use-case — Application-layer wrapper enforcing `runInTenant` boundary + mapping Drizzle types to Domain VOs per research.md R11 round-2 E1.
+- [ ] T120 [P] Implement `src/modules/events/application/use-cases/get-event-attendees-by-member.ts` use-case — Application-layer wrapper enforcing `runInTenant` boundary + mapping Drizzle types to Domain VOs per research.md R11 round-2 E1.
 - [ ] T121 [P] Implement `src/modules/events/infrastructure/drizzle-event-attendees-by-member.ts` adapter — queries F6 `event_registrations` by `matched_member_id` with `payload jsonb` return shape suitable for F8's at-risk score consumption.
 - [ ] T122 Wire F6 adapter into F8's composition root — update `src/app/(staff)/admin/renewals/...` route loaders + `src/app/api/cron/renewals/...` cron handlers per quickstart.md § 2.2 to conditional-swap stub for F6 adapter when `FEATURE_F6_EVENTCREATE === 'true'`. **Critical seam — silent-failure risk: if forgotten, F8 stays on stub forever** (analyze finding U-1). Verification by T123 (F8-port-wiring integration test) at code level + T154a (human-gate verification at flag-flip time) at deploy level.
 - [ ] T123 [P] Write failing integration test `tests/integration/events/f8-port-wiring.test.ts` per plan.md Testing § round-1 X3 — flag on → F8 sees real attendance data; flag off → F8 falls back to stub.

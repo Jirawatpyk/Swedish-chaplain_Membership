@@ -79,7 +79,19 @@ export interface EventsListEmptyContext {
 }
 
 export type EventsRepositoryError =
-  | { readonly kind: 'db_error'; readonly message: string };
+  | { readonly kind: 'db_error'; readonly message: string }
+  | {
+      /**
+       * Issue I6 (review 2026-05-12) — distinct from `db_error` so
+       * dashboards / alert rules can separate genuine Postgres
+       * failures (page someone immediately) from "phase X method
+       * not yet wired" stubs (informational only — caught at code
+       * review or compile time when the calling phase lands).
+       */
+      readonly kind: 'not_implemented';
+      readonly method: string;
+      readonly futureTask: string;
+    };
 
 export interface EventsRepository {
   upsert(

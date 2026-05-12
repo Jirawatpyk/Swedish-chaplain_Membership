@@ -86,7 +86,18 @@ export interface CountConsumedByMemberInput {
 
 export type RegistrationsRepositoryError =
   | { readonly kind: 'db_error'; readonly message: string }
-  | { readonly kind: 'pseudonymised_row_rejected'; readonly registrationId: RegistrationId };
+  | { readonly kind: 'pseudonymised_row_rejected'; readonly registrationId: RegistrationId }
+  | {
+      /**
+       * Issue I6 (review 2026-05-12) — see EventsRepositoryError for
+       * rationale. Distinct from `db_error` so stub-method invocations
+       * by future-phase code surface a clear "this phase not yet
+       * wired" signal instead of polluting the DB-error metric.
+       */
+      readonly kind: 'not_implemented';
+      readonly method: string;
+      readonly futureTask: string;
+    };
 
 export interface RegistrationsRepository {
   insertOnConflictDoNothing(

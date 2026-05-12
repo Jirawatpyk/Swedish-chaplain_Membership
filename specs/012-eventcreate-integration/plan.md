@@ -207,8 +207,8 @@ src/
 │       │       ├── payment-status.ts          # 'paid' | 'pending' | 'refunded' | 'free'
 │       │       ├── source.ts                  # 'eventcreate' (extensible)
 │       │       └── webhook-outcome.ts         # 8 outcome states for audit
-│       ├── application/                       # Use-cases — orchestrate Domain via ports
-│       │   ├── ports/
+│       ├── application/                       # Orchestrates Domain via ports
+│       │   ├── ports/                         # Port interfaces (Application boundaries)
 │       │   │   ├── webhook-signature-verifier.ts
 │       │   │   ├── idempotency-store.ts
 │       │   │   ├── attendee-matcher.ts
@@ -219,27 +219,28 @@ src/
 │       │   │   ├── audit-port.ts              # ~35 F6 audit event types
 │       │   │   ├── csv-importer.ts
 │       │   │   └── retention-sweeper.ts
-│       │   ├── ingest-webhook-attendee.ts     # Strict-transactional (FR-037)
-│       │   ├── ingest-webhook-attendee.spec.ts
-│       │   ├── verify-webhook-signature.ts    # FR-002, FR-003, FR-008
-│       │   ├── verify-webhook-signature.spec.ts
-│       │   ├── match-attendee-to-member.ts    # FR-012
-│       │   ├── apply-quota-effect.ts          # FR-015, FR-016, FR-017, FR-018
-│       │   ├── relink-registration.ts         # FR-014
-│       │   ├── archive-event.ts               # FR-019a
-│       │   ├── toggle-event-category.ts       # FR-019 (is_partner_benefit / is_cultural_event)
-│       │   ├── erase-attendee-pii.ts          # FR-032a
-│       │   ├── pseudonymise-stale-non-member-pii.ts  # FR-032 retention sweep
-│       │   ├── import-csv.ts                  # FR-026, FR-027, FR-028, FR-029
-│       │   ├── rotate-webhook-secret.ts       # FR-008
-│       │   ├── generate-webhook-secret.ts     # one-time-reveal flow (FR-024)
-│       │   ├── run-test-webhook.ts            # FR-023
-│       │   ├── list-events.ts                 # FR-020
-│       │   ├── load-event-detail.ts           # FR-021
-│       │   ├── list-recent-deliveries.ts      # FR-022
-│       │   ├── enforce-rbac-on-f6-mutation.ts # FR-035
-│       │   ├── enforce-tenant-context-on-event.ts
-│       │   └── get-event-attendees-by-member.ts  # F8 EventAttendeesPort impl-side
+│       │   └── use-cases/                     # Use-case files (per F4/F7/F8 convention)
+│       │       ├── ingest-webhook-attendee.ts     # Strict-transactional (FR-037)
+│       │       ├── ingest-webhook-attendee.spec.ts
+│       │       ├── verify-webhook-signature.ts    # FR-002, FR-003, FR-008
+│       │       ├── verify-webhook-signature.spec.ts
+│       │       ├── match-attendee-to-member.ts    # FR-012
+│       │       ├── force-expire-grace-secret.ts   # FR-008 admin override (extra to T071)
+│       │       ├── apply-quota-effect.ts          # FR-015, FR-016, FR-017, FR-018
+│       │       ├── relink-registration.ts         # FR-014
+│       │       ├── archive-event.ts               # FR-019a
+│       │       ├── toggle-event-category.ts       # FR-019 (is_partner_benefit / is_cultural_event)
+│       │       ├── erase-attendee-pii.ts          # FR-032a
+│       │       ├── pseudonymise-stale-non-member-pii.ts  # FR-032 retention sweep
+│       │       ├── import-csv.ts                  # FR-026, FR-027, FR-028, FR-029
+│       │       ├── rotate-webhook-secret.ts       # FR-008
+│       │       ├── generate-webhook-secret.ts     # one-time-reveal flow (FR-024)
+│       │       ├── run-test-webhook.ts            # FR-023
+│       │       ├── list-events.ts                 # FR-020
+│       │       ├── load-event-detail.ts           # FR-021
+│       │       ├── enforce-rbac-on-f6-mutation.ts # FR-035
+│       │       ├── enforce-tenant-context-on-event.ts
+│       │       └── get-event-attendees-by-member.ts  # F8 EventAttendeesPort impl-side
 │       └── infrastructure/                    # Adapters — Drizzle, Resend, Upstash, crypto
 │           ├── schema.ts                      # Drizzle schema for 3 new tables
 │           ├── drizzle-events-repository.ts

@@ -48,36 +48,36 @@ import {
   EVENT_CANONICAL_KEYS,
   ATTENDEE_CANONICAL_KEYS,
   extractMetadata,
-} from '../domain/eventcreate-payload';
+} from '../../domain/eventcreate-payload';
 import {
   asExternalEventId,
   asExternalAttendeeId,
   asAttendeeEmail,
-} from '../domain/branded-types';
+} from '../../domain/branded-types';
 import type {
   RegistrationId,
-} from '../domain/branded-types';
-import type { QuotaEffect } from '../domain/event-registration';
-import type { MatchType } from '../domain/value-objects/match-type';
-import type { ProcessingOutcome } from '../domain/value-objects/webhook-outcome';
-import type { IdempotencySource } from '../domain/value-objects/source';
+} from '../../domain/branded-types';
+import type { QuotaEffect } from '../../domain/event-registration';
+import type { MatchType } from '../../domain/value-objects/match-type';
+import type { ProcessingOutcome } from '../../domain/value-objects/webhook-outcome';
+import type { IdempotencySource } from '../../domain/value-objects/source';
 import type {
   EventsRepository,
-} from './ports/events-repository';
+} from '../ports/events-repository';
 import type {
   RegistrationsRepository,
-} from './ports/registrations-repository';
+} from '../ports/registrations-repository';
 import type {
   IdempotencyStore,
-} from './ports/idempotency-store';
+} from '../ports/idempotency-store';
 import type {
   AttendeeMatcher,
-} from './ports/attendee-matcher';
+} from '../ports/attendee-matcher';
 import type {
   F6AuditPort,
   F6AuditEntry,
   AuditEmitError,
-} from './ports/audit-port';
+} from '../ports/audit-port';
 import type { AuditEventId } from '@/modules/auth';
 import type { MemberId } from '@/modules/members';
 
@@ -176,6 +176,17 @@ export interface IngestWebhookAttendeeDeps {
   readonly emitRolledBackStandalone: (
     entry: F6AuditEntry<'webhook_rolled_back'>,
   ) => Promise<Result<AuditEventId, AuditEmitError>>;
+
+  /**
+   * Issue C-FULL-2 (review 2026-05-12) — generic standalone-tx emit
+   * for audit events OUTSIDE the strict-tx unit. Currently invoked by
+   * the route handler for `webhook_signature_rejected` (signature fails
+   * BEFORE the ingest use-case starts; we still want a durable
+   * 5-year forensic trail). Wraps `F6AuditPort.emitStandalone`.
+   */
+  readonly emitStandalone: <T extends import('../ports/audit-port').F6AuditEventType>(
+    entry: F6AuditEntry<T>,
+  ) => Promise<Result<AuditEventId, AuditEmitError>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +196,37 @@ export interface IngestWebhookAttendeeDeps {
 class TxStageError extends Error {
   constructor(public readonly stage: FailureStage, message: string) {
     super(message);
+  }
+}
+
+/**
+ * Audit emit with Result check + throw on err.
+ *
+ * Background (Issue C1 from /speckit-review): the use-case originally
+ * called `await audit.emit(...)` and discarded the returned Result —
+ * if the audit INSERT failed (Postgres connection blip, enum drift,
+ * jsonb serialisation error), the tx would COMMIT the event +
+ * registration with NO audit row AND NO `webhook_rolled_back` fires
+ * either. That's a hard silent-failure (state mutation + no audit
+ * trail) violating FR-009 + FR-037.
+ *
+ * Fix: every `audit.emit` Result is checked; on err → throw
+ * `TxStageError('audit_emit', ...)` so the outer catch fires the
+ * dual-write fallback audit + rolls back the tx. Side effects + audit
+ * row are now consistent.
+ */
+async function emitOrThrow(
+  audit: F6AuditPort,
+  entry: F6AuditEntry,
+): Promise<void> {
+  const result = await audit.emit(entry);
+  if (!result.ok) {
+    throw new TxStageError(
+      'audit_emit',
+      `audit emit failed (kind=${result.error.kind}): ${
+        result.error.kind === 'db_error' ? result.error.message : result.error.eventType
+      }`,
+    );
   }
 }
 
@@ -213,7 +255,7 @@ async function emitMatchResolutionAudit(
   };
   switch (resolution.type) {
     case 'member_contact':
-      await audit.emit({
+      await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_matched_member_contact',
         summary: `attendee matched to member via contact email (${attendeeEmail})`,
@@ -227,7 +269,7 @@ async function emitMatchResolutionAudit(
       });
       return;
     case 'member_domain':
-      await audit.emit({
+      await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_matched_member_domain',
         summary: `attendee matched to member via email domain`,
@@ -240,7 +282,7 @@ async function emitMatchResolutionAudit(
       });
       return;
     case 'member_fuzzy':
-      await audit.emit({
+      await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_matched_member_fuzzy',
         summary: `attendee matched to member via fuzzy company-name match`,
@@ -255,7 +297,7 @@ async function emitMatchResolutionAudit(
       });
       return;
     case 'non_member':
-      await audit.emit({
+      await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_non_member',
         summary: `attendee is a non-member (FR-032 2y retention applies)`,
@@ -267,7 +309,7 @@ async function emitMatchResolutionAudit(
       });
       return;
     case 'unmatched':
-      await audit.emit({
+      await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_unmatched',
         summary: `attendee match ambiguous — admin relink required`,
@@ -323,8 +365,11 @@ export async function ingestWebhookAttendee(
         throw new TxStageError('idempotency_receipt', receipt.error.message);
       }
       if (!receipt.value.wasFresh) {
-        // Duplicate — emit audit + commit empty (just the duplicate row)
-        await audit.emit({
+        // Duplicate — advance failureStage to audit_emit before the
+        // emit so a duplicate-path audit failure is correctly labelled
+        // (Issue I4 sub-point: previously stuck at idempotency_receipt).
+        failureStage = 'audit_emit';
+        await emitOrThrow(audit, {
           eventType: 'webhook_duplicate_rejected',
           tenantId: asTenantId(input.tenantId),
           actorType: 'zapier_webhook',
@@ -361,7 +406,11 @@ export async function ingestWebhookAttendee(
         metadata: extractMetadata(parsed.data.event, EVENT_CANONICAL_KEYS),
       });
       if (!eventUpsert.ok) {
-        throw new TxStageError('event_upsert', eventUpsert.error.message);
+        const msg =
+          eventUpsert.error.kind === 'db_error'
+            ? eventUpsert.error.message
+            : `event upsert rejected: ${eventUpsert.error.kind}`;
+        throw new TxStageError('event_upsert', msg);
       }
 
       // 3. Attendee match (read-only against F3 — runs inside tx for
@@ -417,7 +466,7 @@ export async function ingestWebhookAttendee(
       // 6. Emit success audit + match-resolution audit
       failureStage = 'audit_emit';
       const ingestLatencyMs = Date.now() - startedAtMs;
-      await audit.emit({
+      await emitOrThrow(audit, {
         eventType: 'webhook_receipt_verified',
         tenantId: asTenantId(input.tenantId),
         actorType: 'zapier_webhook',

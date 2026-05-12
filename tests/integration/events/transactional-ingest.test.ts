@@ -40,7 +40,7 @@ import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { makeWebhookPayload } from './helpers/sign-webhook';
 
-type Stage = 'event_upsert' | 'registration_insert' | 'idempotency_receipt';
+type Stage = 'event_upsert' | 'registration_insert' | 'idempotency_receipt' | 'audit_emit';
 
 /**
  * Build deps that throw at the chosen stage. Wraps the real
@@ -78,6 +78,22 @@ function makeFailingDepsAt(stage: Stage): IngestWebhookAttendeeDeps {
                 .mockRejectedValue(new Error(`simulated ${stage} failure`)),
             },
           }),
+          ...(stage === 'audit_emit' && {
+            // Issue I4 (review 2026-05-12) — extend coverage to the
+            // `audit_emit` stage. `audit.emit` returns Result.err →
+            // use-case's `emitOrThrow` throws TxStageError('audit_emit')
+            // → outer catch fires `emitRolledBackStandalone` (uses its
+            // OWN db.transaction, unaffected by this stub) → rolled_back
+            // audit committed in separate tx → use-case returns
+            // Result.err{kind:'rolled_back', failureStage:'audit_emit'}.
+            audit: {
+              ...ports.audit,
+              emit: vi.fn().mockResolvedValue({
+                ok: false,
+                error: { kind: 'db_error', message: `simulated ${stage} failure` },
+              }),
+            },
+          }),
         };
         return fn(wrapped);
       }),
@@ -107,16 +123,26 @@ describe('T040 — F6 strict-transactional ingest (FR-037 rollback per stage)', 
     { stage: 'event_upsert', expectedFailureStage: 'event_upsert' },
     { stage: 'registration_insert', expectedFailureStage: 'registration_insert' },
     { stage: 'idempotency_receipt', expectedFailureStage: 'idempotency_receipt' },
+    { stage: 'audit_emit', expectedFailureStage: 'audit_emit' },
   ];
 
   it.each(stageCases)(
     'failure at stage `$stage` → zero side effects + webhook_rolled_back audit emitted in separate tx',
     async ({ stage, expectedFailureStage }) => {
+      // Issue I4 (review 2026-05-12) — capture externalIds + requestId
+      // into LOCAL consts BEFORE the test runs. The original test
+      // re-computed `Date.now()` at assertion time which raced with
+      // the seed-time `Date.now()`, making the filter always return
+      // 0 rows (test passed for the WRONG REASON — vacuous-pass bug).
+      const now = Date.now();
+      const eventExternalId = `event_stage_${stage}_${now}`;
+      const attendeeExternalId = `att_stage_${stage}_${now}`;
+      const requestId = `req-stage-${stage}-${now}`;
+
       const payload = makeWebhookPayload({
-        event: { externalId: `event_stage_${stage}_${Date.now()}` },
-        attendee: { externalId: `att_stage_${stage}_${Date.now()}` },
+        event: { externalId: eventExternalId },
+        attendee: { externalId: attendeeExternalId },
       });
-      const requestId = `req-stage-${stage}-${Date.now()}`;
       const deps = makeFailingDepsAt(stage);
 
       const result = await ingestWebhookAttendee(
@@ -143,9 +169,7 @@ describe('T040 — F6 strict-transactional ingest (FR-037 rollback per stage)', 
       const e = await runInTenant(tenant.ctx, async (tx) =>
         tx.select().from(events).where(eq(events.tenantId, tenant.ctx.slug)),
       );
-      expect(e.filter((r) => r.externalId === `event_stage_${stage}_${Date.now()}`)).toHaveLength(
-        0,
-      );
+      expect(e.filter((r) => r.externalId === eventExternalId)).toHaveLength(0);
 
       const r = await runInTenant(tenant.ctx, async (tx) =>
         tx
@@ -153,9 +177,7 @@ describe('T040 — F6 strict-transactional ingest (FR-037 rollback per stage)', 
           .from(eventRegistrations)
           .where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
       );
-      expect(r.filter((row) => row.externalId === `att_stage_${stage}_${Date.now()}`)).toHaveLength(
-        0,
-      );
+      expect(r.filter((row) => row.externalId === attendeeExternalId)).toHaveLength(0);
 
       const ir = await runInTenant(tenant.ctx, async (tx) =>
         tx

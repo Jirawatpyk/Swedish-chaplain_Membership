@@ -459,4 +459,22 @@ export interface F6AuditPort {
   emitRolledBack(
     entry: F6AuditEntry<'webhook_rolled_back'>,
   ): Promise<Result<AuditEventId, AuditEmitError>>;
+
+  /**
+   * Issue C-FULL-2 (full-scope review 2026-05-12) — generic
+   * standalone-tx emit for audit events that are NOT part of a use-case
+   * transactional boundary. Currently the only documented caller is the
+   * route handler's `webhook_signature_rejected` emission (signature
+   * failure short-circuits BEFORE the strict-tx unit starts; we still
+   * want a durable forensic trail for the R10 credential-stuffing alert).
+   *
+   * Implementation pattern: uses its own `db.transaction(...)` like
+   * `emitRolledBack` but accepts ANY F6 event type (not narrowed to
+   * `webhook_rolled_back`). Same dual-write fallback semantics: on DB
+   * failure, emits `pino.fatal(...)` to stdout with
+   * `audit_secondary_tx_failure: true` marker.
+   */
+  emitStandalone<T extends F6AuditEventType>(
+    entry: F6AuditEntry<T>,
+  ): Promise<Result<AuditEventId, AuditEmitError>>;
 }

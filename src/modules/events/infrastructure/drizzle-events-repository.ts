@@ -18,7 +18,7 @@
  * repository accepts a `TenantTx` executor — never the root `db` — to
  * prevent accidental RLS-bypass.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { events, type EventRow } from './schema';
@@ -64,13 +64,15 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
       input: UpsertEventInput,
     ): Promise<Result<UpsertEventResult, EventsRepositoryError>> {
       try {
-        // Two-step upsert: INSERT...ON CONFLICT DO NOTHING first. If a
-        // row was returned → fresh insert (eventCreated=true). Otherwise
-        // → conflict → run UPDATE separately + read the updated row.
-        // This avoids needing Postgres `xmax = 0` raw SQL inside a
-        // Drizzle returning() clause (which doesn't easily accept SQL
-        // alongside a full-table reference).
-        const inserted = await executor
+        // Issue C-FULL-4 (review 2026-05-12) — single-statement upsert
+        // via Drizzle's onConflictDoUpdate with raw `xmax = 0`
+        // discriminator. Closes the previous two-step TOCTOU window
+        // (race between INSERT DO NOTHING + fallback UPDATE when a
+        // concurrent Phase 4 setArchived hit the row) AND eliminates
+        // the extra ~10-15ms RTT on the conflict path. Postgres `xmax`
+        // is the system column that's 0 on a fresh INSERT and non-zero
+        // on UPDATE — idiomatic upsert-discriminator pattern.
+        const result = await executor
           .insert(events)
           .values({
             tenantId: input.tenantId,
@@ -85,48 +87,51 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
             eventcreateUrl: input.eventcreateUrl,
             metadata: input.metadata,
           })
-          .onConflictDoNothing({
+          .onConflictDoUpdate({
             target: [events.tenantId, events.source, events.externalId],
+            set: {
+              name: input.name,
+              description: input.description,
+              startDate: input.startDate,
+              endDate: input.endDate,
+              location: input.location,
+              category: input.category,
+              eventcreateUrl: input.eventcreateUrl,
+              metadata: input.metadata,
+              lastUpdatedAt: new Date(),
+            },
           })
-          .returning();
-
-        if (inserted.length > 0) {
-          return ok({
-            event: toAggregate(inserted[0]!),
-            eventCreated: true,
+          .returning({
+            tenantId: events.tenantId,
+            eventId: events.eventId,
+            source: events.source,
+            externalId: events.externalId,
+            name: events.name,
+            description: events.description,
+            startDate: events.startDate,
+            endDate: events.endDate,
+            location: events.location,
+            category: events.category,
+            eventcreateUrl: events.eventcreateUrl,
+            isPartnerBenefit: events.isPartnerBenefit,
+            isCulturalEvent: events.isCulturalEvent,
+            archivedAt: events.archivedAt,
+            metadata: events.metadata,
+            importedAt: events.importedAt,
+            lastUpdatedAt: events.lastUpdatedAt,
+            // xmax = 0 ⇔ row was freshly INSERTed (no prior version);
+            // xmax != 0 ⇔ row was UPDATEd by this command (had an
+            // older mvcc tuple). Cast to boolean for clean API surface.
+            wasFresh: sql<boolean>`(xmax = 0)`,
           });
-        }
 
-        // Conflict — perform the UPDATE (FR-010 last-write-wins) and
-        // read back.
-        const updated = await executor
-          .update(events)
-          .set({
-            name: input.name,
-            description: input.description,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            location: input.location,
-            category: input.category,
-            eventcreateUrl: input.eventcreateUrl,
-            metadata: input.metadata,
-            lastUpdatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(events.tenantId, input.tenantId),
-              eq(events.source, input.source),
-              eq(events.externalId, input.externalId),
-            ),
-          )
-          .returning();
-
-        if (updated.length === 0) {
-          return err({ kind: 'db_error', message: 'upsert: conflict but UPDATE returned no row' });
+        if (result.length === 0) {
+          return err({ kind: 'db_error', message: 'upsert: ON CONFLICT DO UPDATE returned no row (invariant violation)' });
         }
+        const row = result[0]!;
         return ok({
-          event: toAggregate(updated[0]!),
-          eventCreated: false,
+          event: toAggregate(row as unknown as EventRow),
+          eventCreated: row.wasFresh,
         });
       } catch (e) {
         return err({
@@ -185,23 +190,23 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
 
     // --- Phase 4 / Phase 6 / Phase 10 stubs ---------------------------------
     // These methods exist on the port interface but are not yet wired.
-    // Phase 3 ingest path doesn't call them; they return a sentinel error
-    // so a future caller surfaces the missing impl loudly rather than
-    // returning a silently-wrong empty result.
+    // Per Issue I6 (review 2026-05-12), stubs return `kind:'not_implemented'`
+    // — semantically distinct from `db_error` so dashboards/alerts can
+    // separate phase-not-yet-wired calls from real Postgres failures.
     async list() {
-      return err({ kind: 'db_error', message: 'list() not implemented until Phase 4 T057' });
+      return err({ kind: 'not_implemented', method: 'list', futureTask: 'Phase 4 T057' });
     },
     async getEmptyContext() {
-      return err({ kind: 'db_error', message: 'getEmptyContext() not implemented until Phase 4 T059' });
+      return err({ kind: 'not_implemented', method: 'getEmptyContext', futureTask: 'Phase 4 T059' });
     },
     async setArchived() {
-      return err({ kind: 'db_error', message: 'setArchived() not implemented until Phase 10 T107' });
+      return err({ kind: 'not_implemented', method: 'setArchived', futureTask: 'Phase 10 T107' });
     },
     async setPartnerBenefit() {
-      return err({ kind: 'db_error', message: 'setPartnerBenefit() not implemented until Phase 6 T087' });
+      return err({ kind: 'not_implemented', method: 'setPartnerBenefit', futureTask: 'Phase 6 T087' });
     },
     async setCulturalEvent() {
-      return err({ kind: 'db_error', message: 'setCulturalEvent() not implemented until Phase 6 T087' });
+      return err({ kind: 'not_implemented', method: 'setCulturalEvent', futureTask: 'Phase 6 T087' });
     },
   };
 }

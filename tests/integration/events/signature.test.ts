@@ -72,6 +72,45 @@ describe('T038 — F6 webhook signature verification (8 paths)', () => {
     }
   });
 
+  it('S2a. grace secret at EXACTLY 24h (inclusive boundary) → verified', () => {
+    const signed = signWebhookBody({ body: TENANT_PAYLOAD, secret: GRACE_SECRET });
+    const now = new Date();
+    const graceRotated = new Date(now.getTime() - 24 * 60 * 60 * 1000); // exactly 24h ago
+    const result = verifyWebhookSignature({
+      rawBody: signed.rawBody,
+      signatureHeader: signed.signatureHeader,
+      timestampHeader: signed.timestamp,
+      activeSecret: ACTIVE_SECRET,
+      graceSecret: GRACE_SECRET,
+      graceRotatedAt: graceRotated,
+      now,
+      maxSkewSeconds: 300,
+      verifier: cryptoWebhookSignatureVerifier,
+    });
+    expect(result.verified).toBe(true);
+    if (result.verified) {
+      expect(result.usedGraceSecret).toBe(true);
+    }
+  });
+
+  it('S2b. grace secret at 24h + 1ms (exclusive boundary) → rejected (window closed)', () => {
+    const signed = signWebhookBody({ body: TENANT_PAYLOAD, secret: GRACE_SECRET });
+    const now = new Date();
+    const graceRotated = new Date(now.getTime() - (24 * 60 * 60 * 1000 + 1));
+    const result = verifyWebhookSignature({
+      rawBody: signed.rawBody,
+      signatureHeader: signed.signatureHeader,
+      timestampHeader: signed.timestamp,
+      activeSecret: ACTIVE_SECRET,
+      graceSecret: GRACE_SECRET,
+      graceRotatedAt: graceRotated,
+      now,
+      maxSkewSeconds: 300,
+      verifier: cryptoWebhookSignatureVerifier,
+    });
+    expect(result.verified).toBe(false);
+  });
+
   it('3. grace secret at 25h → rejected (window closed)', () => {
     const signed = signWebhookBody({ body: TENANT_PAYLOAD, secret: GRACE_SECRET });
     const now = new Date();

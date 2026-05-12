@@ -2374,3 +2374,91 @@ export const renewalsMetrics = {
     });
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// F6 EventCreate Integration — FR-036 metrics (Phase 3 minimum subset)
+//
+// Issue C-FULL-3 (full-scope review 2026-05-12) — F6 Phase 3 shipped zero
+// metrics. The signature-rejection-burst alert (R10) requires the
+// `eventcreate_webhook_receipts_total` counter; the SC-003 p95 < 300ms
+// SLO requires `eventcreate_webhook_ingest_latency_ms`. Both are wired
+// here in Phase 3; remaining FR-036 metrics (#3 match_rate_gauge,
+// #4 csv_import_duration, #5–7 quota/refund, #8 secret_rotation,
+// #9 ingest_disabled_gauge, #10 pseudonymisation_sweep, #11
+// idempotency_sweep) land in their respective feature phases.
+// ---------------------------------------------------------------------------
+
+export const eventcreateMetrics = {
+  /**
+   * FR-036 #1 — `eventcreate_webhook_receipts_total`.
+   * Counter labelled by tenant + signature_outcome + processing_outcome.
+   * Signature-rejection-burst alert (R10) fires on rate of
+   * `signature_outcome != 'verified'` per tenant. Processing-outcome
+   * dashboards track match-cascade health.
+   */
+  webhookReceiptsTotal(
+    tenantId: string,
+    signatureOutcome:
+      | 'verified'
+      | 'rejected_bad_sig'
+      | 'rejected_timestamp_skew'
+      | 'rejected_missing_header'
+      | 'rejected_malformed_timestamp',
+    processingOutcome:
+      | 'matched_member_contact'
+      | 'matched_member_domain'
+      | 'matched_member_fuzzy'
+      | 'non_member'
+      | 'unmatched'
+      | 'duplicate'
+      | 'malformed'
+      | 'rolled_back'
+      | 'rate_limited'
+      | 'ingest_disabled'
+      | 'unauthorized'
+      | 'unsupported_media_type'
+      | 'tenant_not_found'
+      | 'n_a',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_receipts_total',
+        'F6 webhook delivery counter by signature + processing outcome (FR-036 #1)',
+      ).add(1, {
+        tenant: tenantId,
+        signature_outcome: signatureOutcome,
+        processing_outcome: processingOutcome,
+      });
+    });
+  },
+
+  /**
+   * FR-036 #2 — `eventcreate_webhook_ingest_latency_ms` histogram.
+   * SC-003 target: p95 < 300ms at design envelope. Captured by the
+   * use-case at line ~306 (`startedAtMs = Date.now()`) and emitted by
+   * the route after Result resolution (success or rolled_back).
+   */
+  ingestLatencyMs(tenantId: string, latencyMs: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_webhook_ingest_latency_ms',
+        'F6 webhook ingest end-to-end latency, SC-003 target p95 < 300ms (FR-036 #2)',
+        'ms',
+      ).record(latencyMs, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Body-size guard counter — surfaces DoS attempts that the body-size
+   * cap blocked (Issue C-FULL-1). Not formally in FR-036 list but
+   * operationally useful for alerting on unusual traffic patterns.
+   */
+  bodyOversizedTotal(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_body_oversized_total',
+        'F6 webhook body exceeded the 64 KiB size cap (Issue C-FULL-1 DoS guard)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+} as const;

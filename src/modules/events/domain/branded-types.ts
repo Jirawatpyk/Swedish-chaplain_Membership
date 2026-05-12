@@ -116,14 +116,30 @@ export function tryAttendeeEmail(value: unknown): AttendeeEmail | null {
 
 /**
  * Webhook secret constructor — enforces 32-byte base64url shape (≥43
- * chars). Defence-in-depth against accidentally rotating to a too-short
- * secret. The actual entropy bound is enforced at generation time in
- * `generate-webhook-secret.ts` (Phase 5 T070) via Node's `crypto.randomBytes`.
+ * chars + base64url alphabet only). Defence-in-depth against
+ * accidentally rotating to a too-short secret OR a string that doesn't
+ * round-trip through base64url decode. The actual entropy bound is
+ * enforced at generation time in `generate-webhook-secret.ts` (Phase
+ * 5 T070) via Node's `crypto.randomBytes`.
+ *
+ * Issue S4 (review 2026-05-12) — the original implementation accepted
+ * `'a'.repeat(43)` (zero entropy, 43 chars) because length was the
+ * only check. Adding the alphabet regex ensures the value at least
+ * LOOKS like a base64url encoding (catches "all-same-char" + typo'd
+ * secrets that happen to be ≥43 chars but contain `:` / `=` / spaces).
+ * Cheap defence-in-depth alongside the crypto.randomBytes generator.
  */
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 export function asWebhookSecret(value: string): WebhookSecret {
   if (value.length < 43) {
     throw new Error(
       'WebhookSecret must be at least 43 chars (32 bytes base64url-encoded)',
+    );
+  }
+  if (!BASE64URL_PATTERN.test(value)) {
+    throw new Error(
+      'WebhookSecret must use only base64url alphabet characters ([A-Za-z0-9_-])',
     );
   }
   return value as WebhookSecret;
@@ -131,6 +147,7 @@ export function asWebhookSecret(value: string): WebhookSecret {
 
 export function tryWebhookSecret(value: unknown): WebhookSecret | null {
   if (typeof value !== 'string' || value.length < 43) return null;
+  if (!BASE64URL_PATTERN.test(value)) return null;
   return value as WebhookSecret;
 }
 

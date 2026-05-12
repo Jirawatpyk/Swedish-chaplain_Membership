@@ -229,7 +229,7 @@ export type {
 export {
   verifyWebhookSignature,
   type VerifyWebhookSignatureInput,
-} from './application/verify-webhook-signature';
+} from './application/use-cases/verify-webhook-signature';
 
 export {
   ingestWebhookAttendee,
@@ -239,7 +239,19 @@ export {
   type IngestError,
   type FailureStage,
   type TxScopedPorts,
-} from './application/ingest-webhook-attendee';
+} from './application/use-cases/ingest-webhook-attendee';
+
+export {
+  matchAttendeeToMember,
+  type MatchAttendeeToMemberDeps,
+} from './application/use-cases/match-attendee-to-member';
+
+export {
+  forceExpireGraceSecret,
+  type ForceExpireGraceSecretInput,
+  type ForceExpireGraceSecretOutput,
+  type ForceExpireGraceSecretDeps,
+} from './application/use-cases/force-expire-grace-secret';
 
 // --- 6. Infrastructure composition factories (DI surface) -------------------
 

@@ -4,7 +4,7 @@
 
 This document defines the F6-owned database tables, columns, constraints, indexes, RLS policies, state machines, value objects, and audit-log taxonomy. It is the source of truth that Drizzle schema (`src/modules/events/infrastructure/schema.ts`) and migration SQL (`drizzle/migrations/0127–0134_*.sql`) MUST match exactly.
 
-All timestamps are `TIMESTAMPTZ` in UTC. RLS+FORCE policies are enabled on every F6 table per Constitution v1.4.0 Principle I clause 2. The application connects with the `swecham_app_rw` role (no `BYPASS RLS`) and `SET LOCAL app.current_tenant` per request via `runInTenant(ctx, fn)`.
+All timestamps are `TIMESTAMPTZ` in UTC. RLS+FORCE policies are enabled on every F6 table per Constitution v1.4.0 Principle I clause 2. The application connects with the `chamber_app` role (no `BYPASS RLS`) and `SET LOCAL app.current_tenant` per request via `runInTenant(ctx, fn)`. (M1 fix 2026-05-12 — was `swecham_app_rw` in earlier spec drafts; the migrations + `src/lib/db.ts` runInTenant use `chamber_app` consistently per F2/F3/F4/F5/F7/F8 precedent.)
 
 ---
 
@@ -68,7 +68,13 @@ CREATE INDEX events_tenant_cultural_event_idx
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE events FORCE  ROW LEVEL SECURITY;
 CREATE POLICY events_tenant_isolation ON events
-  USING (tenant_id = current_setting('app.current_tenant', TRUE));
+  FOR ALL TO chamber_app
+  USING      (tenant_id = current_setting('app.current_tenant', TRUE))
+  WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
+-- (M2 fix 2026-05-12 — previously the spec example omitted the
+--  `FOR ALL TO chamber_app` + `WITH CHECK` clauses; migration 0133
+--  has BOTH, which is stronger: WITH CHECK blocks INSERT/UPDATE that
+--  would create a row under a DIFFERENT tenant slug.)
 ```
 
 **Invariants**:
@@ -152,7 +158,10 @@ CREATE INDEX event_regs_pseudonymise_eligibility_idx
 ALTER TABLE event_registrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_registrations FORCE  ROW LEVEL SECURITY;
 CREATE POLICY event_regs_tenant_isolation ON event_registrations
-  USING (tenant_id = current_setting('app.current_tenant', TRUE));
+  FOR ALL TO chamber_app
+  USING      (tenant_id = current_setting('app.current_tenant', TRUE))
+  WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
+-- M2 fix 2026-05-12 — see events policy comment.
 ```
 
 **Invariants**:
@@ -194,7 +203,10 @@ CREATE INDEX tenant_webhook_configs_grace_idx
 ALTER TABLE tenant_webhook_configs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenant_webhook_configs FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_webhook_configs_tenant_isolation ON tenant_webhook_configs
-  USING (tenant_id = current_setting('app.current_tenant', TRUE));
+  FOR ALL TO chamber_app
+  USING      (tenant_id = current_setting('app.current_tenant', TRUE))
+  WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
+-- M2 fix 2026-05-12 — see events policy comment.
 ```
 
 **Invariants**:
@@ -234,7 +246,10 @@ ALTER TABLE eventcreate_idempotency_receipts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE eventcreate_idempotency_receipts FORCE  ROW LEVEL SECURITY;
 CREATE POLICY eventcreate_idempotency_receipts_tenant_isolation
   ON eventcreate_idempotency_receipts
-  USING (tenant_id = current_setting('app.current_tenant', TRUE));
+  FOR ALL TO chamber_app
+  USING      (tenant_id = current_setting('app.current_tenant', TRUE))
+  WITH CHECK (tenant_id = current_setting('app.current_tenant', TRUE));
+-- M2 fix 2026-05-12 — see events policy comment.
 ```
 
 **Invariants**:

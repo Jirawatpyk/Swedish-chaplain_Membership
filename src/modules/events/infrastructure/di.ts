@@ -14,10 +14,11 @@
  */
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import type {
   IngestWebhookAttendeeDeps,
   TxScopedPorts,
-} from '../application/ingest-webhook-attendee';
+} from '../application/use-cases/ingest-webhook-attendee';
 import { makeDrizzleEventsRepository } from './drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from './drizzle-registrations-repository';
 import { makeDrizzleIdempotencyStore } from './drizzle-idempotency-store';
@@ -60,14 +61,42 @@ export function makeIngestWebhookAttendeeDeps(): IngestWebhookAttendeeDeps {
       // that code path. We pass a dummy executor since we only invoke
       // `emitRolledBack` here. (If `emit` were invoked, the dummy
       // would crash — defensive: caller mistakes are LOUD.)
-      const port = makePinoAuditPort({
-        execute: () => {
-          throw new Error(
-            'standalone emitRolledBack: tx-bound `emit` invoked unexpectedly — composition root bug',
-          );
-        },
-      } as unknown as Parameters<typeof makePinoAuditPort>[0]);
+      const port = makeDummyExecutorPort('emitRolledBackStandalone');
       return port.emitRolledBack(entry);
     },
+
+    emitStandalone: async (entry) => {
+      // Issue C-FULL-2 (review 2026-05-12) — generic standalone-tx
+      // audit emitter. Same dummy-executor pattern as above:
+      // emitStandalone uses root `db.transaction` internally; the
+      // tx-bound `emit` is never reached on this code path.
+      const port = makeDummyExecutorPort('emitStandalone');
+      return port.emitStandalone(entry);
+    },
   };
+}
+
+/**
+ * Helper: build a pino-audit-port wired with a dummy `executor` that
+ * throws + logs.fatal if the tx-bound `emit` is ever reached. Used by
+ * the standalone composition-root paths (`emitRolledBackStandalone` +
+ * `emitStandalone`) where the tx argument is intentionally unused
+ * because the port's standalone methods use root `db.transaction`
+ * internally.
+ */
+function makeDummyExecutorPort(caller: string) {
+  return makePinoAuditPort({
+    execute: () => {
+      logger.fatal(
+        {
+          event: 'composition_root_bug',
+          context: `${caller} dummy executor invoked`,
+        },
+        `[F6] composition root invariant violated — \`emit\` called on ${caller} dummy executor; only standalone-tx methods should reach this path`,
+      );
+      throw new Error(
+        `standalone ${caller}: tx-bound \`emit\` invoked unexpectedly — composition root bug`,
+      );
+    },
+  } as unknown as Parameters<typeof makePinoAuditPort>[0]);
 }

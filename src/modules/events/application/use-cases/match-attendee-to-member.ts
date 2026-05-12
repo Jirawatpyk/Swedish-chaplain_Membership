@@ -20,7 +20,7 @@ import type {
   MatchAttendeeInput,
   MatchAttendeeOutput,
   AttendeeMatcherError,
-} from './ports/attendee-matcher';
+} from '../ports/attendee-matcher';
 
 export interface MatchAttendeeToMemberDeps {
   readonly matcher: AttendeeMatcher;

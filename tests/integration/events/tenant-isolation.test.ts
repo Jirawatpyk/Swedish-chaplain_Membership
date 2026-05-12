@@ -43,6 +43,7 @@ import {
   type NewTenantWebhookConfigRow,
   type NewEventcreateIdempotencyReceiptRow,
 } from '@/modules/events/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
 describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Principle I clause 3)', () => {
@@ -283,6 +284,30 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
         (r) => r.externalId === (payloadAttendee?.['externalId'] as string | undefined),
       );
       expect(probeReg).toBeUndefined();
+
+      // Issue I3 (review 2026-05-12): durable forensic audit trail.
+      // The route handler (post-Wave-3.3 fix-it) emits a standalone-tx
+      // `webhook_rolled_back` audit on signature failure with the
+      // verifyKind in the payload — so cross-tenant probes leave a
+      // permanent (5-year retention) record, not just ephemeral pino
+      // logs which rotate out within days. Assert tenant B's audit_log
+      // captured this probe attempt.
+      const tenantBAudits = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenantB.ctx.slug));
+      // Post Issue C-FULL-2 fix (review 2026-05-12): route now emits
+      // the CORRECT event_type `webhook_signature_rejected` via the
+      // new generic `emitStandalone` deps method (previously emitted
+      // as `webhook_rolled_back` via type-narrowing workaround).
+      const probeAudit = tenantBAudits.find(
+        (row) =>
+          (row.eventType as string) === 'webhook_signature_rejected' &&
+          (
+            (row.payload as Record<string, unknown> | null)?.['sourceIp'] as string | undefined
+          ) !== undefined,
+      );
+      expect(probeAudit).toBeDefined();
     });
   });
 });

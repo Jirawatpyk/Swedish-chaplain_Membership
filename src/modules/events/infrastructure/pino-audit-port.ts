@@ -46,6 +46,23 @@ import type { AuditEventId } from '@/modules/auth';
  */
 export const F6_DEFAULT_RETENTION_YEARS = 5 as const;
 
+/**
+ * Issue I-FULL-7 (review 2026-05-12) — cap + sanitize DB error messages
+ * before they reach pino.fatal stdout. Postgres errors include table
+ * names, column names, constraint names that should not leak to runtime
+ * logs. Defense-in-depth alongside pino REDACT_PATHS.
+ */
+const DB_ERROR_MESSAGE_CAP = 200;
+
+function sanitizeDbErrorMessage(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  // Strip Postgres "context" lines that often include identifiers
+  const stripped = raw
+    .replace(/(table|column|constraint|relation|function|index|sequence|schema)\s+"[^"]+"/gi, '$1 "[redacted]"')
+    .replace(/(table|column|constraint|relation|function|index|sequence|schema)\s+[a-z_][a-z0-9_]*/gi, '$1 [redacted]');
+  return stripped.slice(0, DB_ERROR_MESSAGE_CAP);
+}
+
 async function insertAuditRow(
   executor: TenantTx | typeof db,
   entry: F6AuditEntry,
@@ -128,7 +145,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       } catch (e) {
         return err({
           kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
+          message: sanitizeDbErrorMessage(e),
         });
       }
     },
@@ -140,6 +157,20 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       // rolled-back) executor. Wrapped in its own transaction so a failure
       // here also rolls back cleanly without affecting anything else.
       try {
+        // Issue I1 (review 2026-05-12) — belt-and-suspenders runtime
+        // regex guard on the raw GUC interpolation below. The canonical
+        // `runInTenant` in src/lib/db.ts already enforces this slug
+        // shape, but `emitRolledBackStandalone` bypasses runInTenant
+        // and goes directly through `db.transaction`. Without this
+        // guard, a future caller (cron replay, retention sweep, etc.)
+        // passing an unvalidated tenantId could trigger SQL injection
+        // via the `SET LOCAL app.current_tenant = '${entry.tenantId}'`
+        // line. Same pattern as runInTenant db.ts:231.
+        if (!/^[a-z0-9-]{1,63}$/.test(entry.tenantId as unknown as string)) {
+          throw new Error(
+            `pino-audit-port emitRolledBack: tenantId slug invariant violated: ${entry.tenantId}`,
+          );
+        }
         const id = await db.transaction(async (tx) => {
           // RLS context: webhook_rolled_back rows MUST carry tenant_id so
           // tenant-scoped audit queries surface them; set the GUC for this
@@ -162,7 +193,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               tenantId: entry.tenantId,
               audit_secondary_tx_failure: true,
               payload: entry.payload,
-              dbErrorMessage: e instanceof Error ? e.message : String(e),
+              dbErrorMessage: sanitizeDbErrorMessage(e),
             },
             '[F6] webhook_rolled_back audit secondary-tx failure — payload preserved in stderr per FR-037 dual-write fallback',
           );
@@ -172,7 +203,49 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         }
         return err({
           kind: 'db_error',
-          message: e instanceof Error ? e.message : String(e),
+          message: sanitizeDbErrorMessage(e),
+        });
+      }
+    },
+
+    async emitStandalone<T extends F6AuditEventType>(
+      entry: F6AuditEntry<T>,
+    ): Promise<Result<AuditEventId, AuditEmitError>> {
+      // Issue C-FULL-2 (review 2026-05-12) — generic standalone-tx emit
+      // for events NOT inside a use-case strict-tx (currently:
+      // `webhook_signature_rejected` from the route handler). Same
+      // dual-write fallback semantics as `emitRolledBack` but accepts
+      // any F6 event type.
+      try {
+        if (!/^[a-z0-9-]{1,63}$/.test(entry.tenantId as unknown as string)) {
+          throw new Error(
+            `pino-audit-port emitStandalone: tenantId slug invariant violated: ${entry.tenantId}`,
+          );
+        }
+        const id = await db.transaction(async (tx) => {
+          await tx.execute(sql`SET LOCAL ROLE chamber_app`);
+          await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${entry.tenantId}'`));
+          return await insertAuditRow(tx, entry);
+        });
+        return ok(id as AuditEventId);
+      } catch (e) {
+        try {
+          logger.fatal(
+            {
+              event: entry.eventType,
+              tenantId: entry.tenantId,
+              audit_secondary_tx_failure: true,
+              payload: entry.payload,
+              dbErrorMessage: sanitizeDbErrorMessage(e),
+            },
+            `[F6] ${entry.eventType} audit secondary-tx failure — payload preserved in stderr per FR-037 dual-write fallback`,
+          );
+        } catch {
+          // Stderr write failed too — degrade gracefully.
+        }
+        return err({
+          kind: 'db_error',
+          message: sanitizeDbErrorMessage(e),
         });
       }
     },

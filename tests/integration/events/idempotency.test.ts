@@ -130,4 +130,75 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
     expect(verifiedCount).toBe(1);
     expect(duplicateCount).toBe(4);
   });
+
+  it('S3 — FR-011 second idempotency layer: same attendee externalId + different request IDs → only one registration row', async () => {
+    // Issue S3 (review 2026-05-12) — FR-011 specifies registration
+    // `ON CONFLICT (tenant_id, event_id, external_id) DO NOTHING` as
+    // a defence-in-depth second idempotency layer. The first layer
+    // (X-Request-ID) is covered by the test above. This test exercises
+    // the SECOND layer: an attacker (or buggy upstream) sending TWO
+    // distinct `X-Request-ID`s for the same logical attendee
+    // (`tenant + event + attendee.externalId`) MUST produce only ONE
+    // registration row — the second call hits the unique index
+    // `event_regs_tenant_event_external_unique` (migration 0131) and
+    // returns `wasFresh=false`.
+    const eventExternalId = `event_fr011_${Date.now()}`;
+    const attendeeExternalId = `att_fr011_${Date.now()}`;
+    const payloadA = makeWebhookPayload({
+      event: { externalId: eventExternalId },
+      attendee: { externalId: attendeeExternalId },
+    });
+    const payloadB = makeWebhookPayload({
+      event: { externalId: eventExternalId },
+      attendee: { externalId: attendeeExternalId }, // SAME attendee
+    });
+    const deps = makeIngestWebhookAttendeeDeps();
+
+    const resA = await ingestWebhookAttendee(
+      {
+        tenantId: tenant.ctx.slug,
+        requestId: `req-fr011-a-${Date.now()}`,
+        source: 'eventcreate_webhook',
+        rawPayload: payloadA,
+        sourceIp: '127.0.0.1',
+      },
+      deps,
+    );
+    const resB = await ingestWebhookAttendee(
+      {
+        tenantId: tenant.ctx.slug,
+        requestId: `req-fr011-b-${Date.now()}`, // DIFFERENT request id
+        source: 'eventcreate_webhook',
+        rawPayload: payloadB,
+        sourceIp: '127.0.0.1',
+      },
+      deps,
+    );
+
+    // Both calls return ok (different X-Request-IDs → first layer
+    // doesn't reject), but the second registration insert hits ON
+    // CONFLICT → returns the original registration ID (idempotent).
+    expect(resA.ok).toBe(true);
+    expect(resB.ok).toBe(true);
+    if (resA.ok && resB.ok) {
+      // Same registration row returned to both callers.
+      expect(resB.value.registrationId).toBe(resA.value.registrationId);
+      // Second call reports the event as NOT freshly created.
+      expect(resB.value.eventCreated).toBe(false);
+    }
+
+    // DB invariant — exactly ONE registration row for this attendee.
+    const regs = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(eventRegistrations)
+        .where(
+          and(
+            eq(eventRegistrations.tenantId, tenant.ctx.slug),
+            eq(eventRegistrations.externalId, attendeeExternalId),
+          ),
+        ),
+    );
+    expect(regs.length).toBe(1);
+  });
 });
