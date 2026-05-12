@@ -5,9 +5,9 @@
  * The TOCTOU fix in `drizzle-events-repository.ts` swapped a two-step
  * INSERT+SELECT for a single-statement `INSERT ... ON CONFLICT DO
  * UPDATE ... RETURNING *, (xmax = 0)`. The S3 idempotency test
- * verifies that `wasFresh=false` returns on conflict, but does NOT
- * verify the UPDATE actually applied the new field values (FR-010
- * last-write-wins).
+ * verifies that `eventCreated=false` returns on conflict, but does
+ * NOT verify the UPDATE actually applied the new field values
+ * (FR-010 last-write-wins).
  *
  * This test asserts:
  *   1. First call → `eventCreated=true` + row reflects first payload
@@ -129,7 +129,7 @@ describe('events upsert (xmax = 0) UPDATE branch — gap-3', () => {
     expect(secondResult.value.event.category).toBe('updated-category');
     expect(secondResult.value.event.eventcreateUrl).toBe('https://eventcreate.test/x');
 
-    // Confirm DB read independently — wasFresh boolean is correct
+    // Confirm DB read independently — UPDATE branch values landed
     const rowsAfter = await runInTenant(tenant.ctx, async (tx) =>
       tx.select().from(events).where(eq(events.externalId, externalId)),
     );

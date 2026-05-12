@@ -25,6 +25,7 @@
  * via `runInTenant`-bound repo (Constitution Principle III).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type {
   TenantWebhookConfigRepository,
   TenantWebhookConfigRepositoryError,
@@ -49,10 +50,13 @@ export interface ForceExpireGraceSecretInput {
 /**
  * Discriminated outcome. `no_grace_active` means there was nothing to
  * clear (already expired by the 24h sweep, or never rotated).
- * `cleared` means the force-expire actually invalidated 1 row.
+ * `cleared` means the force-expire invalidated exactly 1 row.
  *
- * F6 v1 has one source per tenant (`'eventcreate'`) so `rowsCleared`
- * is always 0 or 1.
+ * `rowsCleared` is typed as the literal `1` because the repository
+ * contract guarantees per-call atomicity per `(tenant, source)` pair.
+ * The use-case asserts `result.value === 1` at the runtime boundary
+ * — if `clearExpiredGrace` ever returns >1 (schema drift, multi-row
+ * leak), the assertion throws rather than silently downcasting.
  */
 export type ForceExpireGraceSecretOutput =
   | { readonly kind: 'no_grace_active' }
@@ -77,6 +81,25 @@ export async function forceExpireGraceSecret(
   }
 
   const rowsCleared = clearResult.value;
+  // Repository contract guarantees `rowsCleared ∈ {0, 1}` for F6-v1
+  // single-source-per-tenant. If the repo ever returns >1 (schema
+  // drift, multi-source leak), the output literal type would silently
+  // downcast to 1 — this assertion surfaces the violation as a loud
+  // failure with forensic context.
+  if (rowsCleared !== 0 && rowsCleared !== 1) {
+    logger.fatal(
+      {
+        event: 'f6_force_expire_unexpected_row_count',
+        tenantId: input.tenantId,
+        rowsCleared,
+      },
+      '[F6] forceExpireGraceSecret: repo returned unexpected rowsCleared (expected 0 or 1)',
+    );
+    throw new Error(
+      `forceExpireGraceSecret invariant violated: rowsCleared=${rowsCleared} (expected 0 or 1)`,
+    );
+  }
+
   const auditResult = await deps.audit.emit({
     eventType: 'webhook_secret_force_expired',
     tenantId: input.tenantId,
@@ -92,6 +115,22 @@ export async function forceExpireGraceSecret(
     },
   });
   if (!auditResult.ok) {
+    // Side effect already happened (grace was cleared) but the audit
+    // is lost — Principle I sub-clause 5 gap. logger.fatal preserves
+    // the forensic trail in pino/stderr so operators can reconstruct
+    // post-incident. The use-case is idempotent: a retry returns
+    // `no_grace_active` with a fresh audit attempt.
+    logger.fatal(
+      {
+        event: 'f6_force_expire_audit_emit_failed',
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        rowsCleared,
+        reason: input.reason,
+        auditErrorKind: auditResult.error.kind,
+      },
+      '[F6] CRITICAL: force-expire grace secret SUCCEEDED but audit emit failed — forensic trail only in this log line',
+    );
     return err({ kind: 'audit_emit_failed', inner: auditResult.error });
   }
 

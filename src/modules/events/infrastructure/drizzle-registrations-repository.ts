@@ -5,9 +5,9 @@
  * `insertOnConflictDoNothing` (FR-011 second idempotency layer) +
  * `findById`. Other methods land in later phases.
  *
- * The ON CONFLICT path returns `wasFresh = false` so the use-case can
- * still surface the matching aggregate (read the existing row) for the
- * 200 OK response.
+ * The ON CONFLICT path returns `isNewRegistration = false` so the
+ * use-case can still surface the matching aggregate (read the
+ * existing row) for the 200 OK response.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';

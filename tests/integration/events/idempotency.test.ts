@@ -141,7 +141,7 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
     // (`tenant + event + attendee.externalId`) MUST produce only ONE
     // registration row — the second call hits the unique index
     // `event_regs_tenant_event_external_unique` (migration 0131) and
-    // returns `wasFresh=false`.
+    // returns `isNewRegistration=false`.
     const eventExternalId = `event_fr011_${Date.now()}`;
     const attendeeExternalId = `att_fr011_${Date.now()}`;
     const payloadA = makeWebhookPayload({

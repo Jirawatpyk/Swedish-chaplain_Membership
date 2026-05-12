@@ -52,7 +52,7 @@ const MAX_MEDIAN_RATIO = 2.0;
 // --- No-op limiter so rate-limiting doesn't clip the sample stream --
 const noOpLimiter: RateLimiter = {
   async check() {
-    return { success: true, remaining: 999, reset: Date.now() + 60_000 };
+    return { success: true, remaining: 999, reset: Date.now() + 60_000, fellBack: false };
   },
 };
 

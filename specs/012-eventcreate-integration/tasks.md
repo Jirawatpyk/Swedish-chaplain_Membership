@@ -1,10 +1,13 @@
 # Tasks: F6 — EventCreate Integration
 
-**Input**: Design documents from `/specs/012-eventcreate-integration/`
-**Prerequisites**: spec.md (40 FRs, 12 SCs, 7 user stories, 12 Q&A clarifications), plan.md, research.md (R1–R14), data-model.md (4 tables, 35 audit events), contracts/ (5 files), quickstart.md, 5 checklists (187 items)
-**Branch**: `012-eventcreate-integration`
+**Branch**: `012-eventcreate-integration` | **Date**: 2026-05-12 | **Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Research**: [research.md](./research.md) | **Data model**: [data-model.md](./data-model.md)
 **Constitution**: v1.4.0 — 4 NON-NEGOTIABLE principles + 6 Core; solo-maintainer substitute applies (per F1+F4+F5+F7+F8 precedent)
+**Total tasks**: 155 across 10 phases (T001–T154a)
+**Implementation status**: 52/155 complete (34%) — Phase 1 + Phase 2 + Phase 3 (US1 webhook ingest, all RED+GREEN tasks T036–T052) all done; next up Phase 4 (US2 events list+detail UI)
+**Production gate**: F6 ships dark behind `FEATURE_F6_EVENTCREATE=false`; per-tenant flag-flip after admin completes Zapier setup wizard + T154a F8 port live-wired verification
+**Prerequisites**: spec.md (40 FRs, 12 SCs, 7 user stories, 12 Q&A clarifications), plan.md, research.md (R1–R14), data-model.md (4 tables, 35 audit events), contracts/ (5 files), quickstart.md, 5 checklists (187 items)
 **Tests**: REQUIRED per Constitution Principle II (TDD NON-NEGOTIABLE). Each user story has failing acceptance tests authored BEFORE implementation tasks for that story.
+**Completion-note convention**: Forward-looking only (from T053+ / Phase 4 onwards). Each `[X]` mark should append `✓ YYYY-MM-DD (one-line metric: test count GREEN / files touched / notable deviation)` for audit-trail completeness per F8 precedent. T001–T052 (Phase 1+2+3) shipped before this convention was adopted and remain bare `[X]` markers; do not retro-populate.
 
 ## Format: `[ID] [P?] [Story] Description with file path`
 
@@ -106,6 +109,18 @@ Next.js App Router monorepo (single project) per plan.md § Project Structure. S
 - [X] T050 [P] [US1] Implement `src/modules/events/infrastructure/drizzle-idempotency-store.ts` adapter — writes to F6-owned `eventcreate_idempotency_receipts` (round-2 M2); ON CONFLICT DO NOTHING; 7-day TTL via `ttl_expires_at` default.
 - [X] T051 [P] [US1] Implement `src/modules/events/infrastructure/pino-audit-port.ts` adapter — emits to `audit_log` with `payload jsonb` carrier (round-2 M1 — NOT `summary` column); writes structured payload + short summary per contracts/audit-port.md; implements `emitRolledBack()` with dual-write stderr fallback per research.md R6.
 - [X] T052 [US1] Implement the public webhook receiver at `src/app/api/webhooks/eventcreate/v1/[tenantSlug]/route.ts` — Node runtime (NOT Edge) per plan.md; raw body via `await request.text()` BEFORE any parse; HMAC verify; tenant cross-check (URL vs signature) per FR-006; rate limit 10 req/min/tenant via Upstash (round-2 E13); dispatches to `ingest-webhook-attendee` use-case; returns 200/4xx/5xx per contracts/webhook-eventcreate-api.md.
+
+---
+
+> **TDD discipline reminder (Constitution Principle II — NON-NEGOTIABLE)**:
+>
+> Phase 4+ user-story work MUST follow strict RED → GREEN commit cadence per Constitution v1.4.0 Principle II:
+>
+> 1. **Failing test commit (RED)** — author the failing test for the use-case/component
+> 2. **Implementation commit (GREEN)** — minimum code to pass the failing test
+> 3. **Refactor commit if needed** — improve code without changing test outcomes
+>
+> Phase 3 (US1) shipped successfully through this cadence — T036–T042 RED tests landed before T043–T052 GREEN implementations. Phase 4 onwards continues the discipline. Collapsed commits are a **`/speckit.review` gate blocker** under the Constitution IX.5 solo-maintainer substitute (the staff-review agent verifies the RED-then-GREEN sequence as part of the 5-check substitute stack).
 
 ---
 

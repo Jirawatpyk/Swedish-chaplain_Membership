@@ -37,10 +37,11 @@ export interface RateLimitResult {
   readonly reset: number;
   /**
    * True when the result came from the in-memory fallback bucket
-   * (Upstash unreachable). Callers can emit their own surface-specific
-   * fail-open metric when this is set.
+   * (Upstash unreachable). Always set — happy path emits `false`,
+   * fallback path emits `true`. Callers emit surface-specific fail-open
+   * metrics when this is `true`.
    */
-  readonly fellBack?: boolean;
+  readonly fellBack: boolean;
 }
 
 export interface RateLimiter {
@@ -102,7 +103,7 @@ function fallbackCheck(
 
   if (!bucket || now - bucket.windowStart >= windowMs) {
     fallbackBuckets.set(key, { count: 1, windowStart: now });
-    return { success: true, remaining: max - 1, reset: now + windowMs };
+    return { success: true, remaining: max - 1, reset: now + windowMs, fellBack: true };
   }
 
   if (bucket.count >= max) {
@@ -110,6 +111,7 @@ function fallbackCheck(
       success: false,
       remaining: 0,
       reset: bucket.windowStart + windowMs,
+      fellBack: true,
     };
   }
 
@@ -118,6 +120,7 @@ function fallbackCheck(
     success: true,
     remaining: max - bucket.count,
     reset: bucket.windowStart + windowMs,
+    fellBack: true,
   };
 }
 
@@ -135,6 +138,7 @@ class UpstashRateLimiter implements RateLimiter {
         success: result.success,
         remaining: result.remaining,
         reset: result.reset,
+        fellBack: false,
       };
     } catch (error) {
       logger.warn(
@@ -142,8 +146,7 @@ class UpstashRateLimiter implements RateLimiter {
         'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();
-      const r = fallbackCheck(key, max, windowSeconds);
-      return { ...r, fellBack: true };
+      return fallbackCheck(key, max, windowSeconds);
     }
   }
 }

@@ -39,16 +39,18 @@
  *     attendee_email (pino redact list).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { eventsTracer } from '@/lib/otel-tracer';
 import { asTenantId } from '@/modules/members';
+import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import {
   verifyWebhookSignature,
   cryptoWebhookSignatureVerifier,
   ingestWebhookAttendee,
   MATCH_TYPE_TO_PROCESSING_OUTCOME,
+  type StandaloneAuditDeps,
 } from '@/modules/events';
 import {
   makeIngestWebhookAttendeeDeps,
@@ -62,12 +64,13 @@ import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 const MAX_WEBHOOK_BODY_BYTES = 64 * 1024; // 64 KiB — matches F5 cap
 
 /**
- * Tenant slug shape — must match `[a-z0-9-]{1,63}`. Validated at step 0
- * BEFORE any metric emit to prevent OTel cardinality bombs (an
- * attacker POSTing to `/v1/<random-string>` would otherwise spawn a
- * fresh `tenant` label per request).
+ * Sentinel that replaces an empty / whitespace-only X-Request-ID
+ * header. The `audit_log.request_id` column is NOT NULL; the previous
+ * code path produced `''` for missing-header replays which then
+ * silently violated the column constraint on round-trip read by any
+ * forensic query.
  */
-const TENANT_SLUG_PATTERN = /^[a-z0-9-]{1,63}$/;
+const NO_REQUEST_ID = 'no-request-id';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -164,6 +167,41 @@ const VERIFY_KIND_TO_OUTCOME = {
 } as const satisfies Record<string, Parameters<typeof eventcreateMetrics.webhookReceiptsTotal>[1]>;
 
 // ---------------------------------------------------------------------------
+// Standalone-audit emit with try/catch + structured fail log (SS-1).
+// Used by step-5b (config-load) and step-7 (signature-reject). Audit
+// failure MUST NOT crash the HTTP response — log + suppress.
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark an OTel span as ERROR for genuine 500-class failures (F-3).
+ * Client errors (rate-limit, malformed JSON, signature mismatch) stay
+ * `UNSET` — they're not system failures. Use only on the paths where
+ * the route returns 500 because something inside us is broken.
+ */
+function markSpanError(span: Span, reason: string): void {
+  span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
+}
+
+async function safeEmitStandalone(
+  deps: StandaloneAuditDeps,
+  entry: Parameters<StandaloneAuditDeps['emitStandalone']>[0],
+  failCtx: { tenantSlug: string; logEvent: string; logMsg: string },
+): Promise<void> {
+  try {
+    await deps.emitStandalone(entry);
+  } catch (auditErr) {
+    logger.error(
+      {
+        event: failCtx.logEvent,
+        tenantSlug: failCtx.tenantSlug,
+        errName: auditErr instanceof Error ? auditErr.name : 'unknown',
+      },
+      failCtx.logMsg,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Route handler
 // ---------------------------------------------------------------------------
 
@@ -171,9 +209,23 @@ export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ tenantSlug: string }> },
 ) {
-  const { tenantSlug } = await ctx.params;
+  // --- Step 0a: Resolve params (wrapped — Next.js can theoretically
+  //              reject if route-cache / dynamic-segment decode fails)
+  let tenantSlug: string;
+  try {
+    ({ tenantSlug } = await ctx.params);
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_route_params_failed',
+        errName: e instanceof Error ? e.name : 'unknown',
+      },
+      '[F6] webhook route params resolution failed — returning 500',
+    );
+    return internalErrorResponse();
+  }
 
-  // --- Step 0: Slug shape validation (BEFORE any metric emit) -----------
+  // --- Step 0b: Slug shape validation (BEFORE any metric emit) ----------
   // Prevents OTel cardinality bombs — an attacker POSTing to
   // `/v1/<arbitrary-string>` would otherwise mint a fresh `tenant`
   // metric label per request and explode the metric backend.
@@ -181,7 +233,8 @@ export async function POST(
     return notFoundResponse();
   }
 
-  const requestId = request.headers.get('x-request-id') ?? '';
+  const rawRequestId = request.headers.get('x-request-id')?.trim() ?? '';
+  const requestId = rawRequestId.length > 0 ? rawRequestId : NO_REQUEST_ID;
   const sourceIp =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
     request.headers.get('x-real-ip') ??
@@ -346,9 +399,9 @@ export async function POST(
             },
             '[F6] webhook config load failed',
           );
-          try {
-            const auditDeps = makeStandaloneAuditDeps();
-            await auditDeps.emitStandalone({
+          await safeEmitStandalone(
+            makeStandaloneAuditDeps(),
+            {
               eventType: 'webhook_rolled_back',
               tenantId: asTenantId(tenantSlug),
               actorType: 'system',
@@ -357,24 +410,21 @@ export async function POST(
               summary: `webhook config load failed: ${e instanceof Error ? e.name : 'unknown'}`,
               payload: {
                 severity: 'error',
-                requestId: requestId || 'no-request-id',
+                requestId,
                 source: 'eventcreate',
                 failureStage: 'unknown',
                 errorMessage: 'config load failed',
                 errorStack: null,
               },
-            });
-          } catch (auditErr) {
-            logger.error(
-              {
-                event: 'f6_webhook_config_load_audit_failed',
-                tenantSlug,
-                errName: auditErr instanceof Error ? auditErr.name : 'unknown',
-              },
-              '[F6] config-load audit emission failed (suppressed — 500 still returned)',
-            );
-          }
+            },
+            {
+              tenantSlug,
+              logEvent: 'f6_webhook_config_load_audit_failed',
+              logMsg: '[F6] config-load audit emission failed (suppressed — 500 still returned)',
+            },
+          );
           span.setAttribute('f6.outcome', 'config_load_failed');
+          markSpanError(span, 'config_load_failed');
           return internalErrorResponse();
         }
         if (!webhookConfig) {
@@ -426,9 +476,9 @@ export async function POST(
             VERIFY_KIND_TO_OUTCOME[verifyOutcome.kind],
             'unauthorized',
           );
-          try {
-            const auditDeps = makeStandaloneAuditDeps();
-            await auditDeps.emitStandalone({
+          await safeEmitStandalone(
+            makeStandaloneAuditDeps(),
+            {
               eventType: 'webhook_signature_rejected',
               tenantId: asTenantId(tenantSlug),
               actorType: 'zapier_webhook',
@@ -437,24 +487,20 @@ export async function POST(
               summary: `webhook signature verification failed — verifyKind=${verifyOutcome.kind}`,
               payload: {
                 severity: 'warn',
-                requestId: requestId || null,
+                requestId: rawRequestId.length > 0 ? rawRequestId : null,
                 sourceIp,
                 signatureLastFour:
                   request.headers.get('x-chamber-signature')?.slice(-4) ?? null,
                 timestampSkewSeconds: verifyOutcome.skewSeconds,
                 bodyLengthBytes: rawBody.length,
               },
-            });
-          } catch (auditErr) {
-            logger.error(
-              {
-                event: 'f6_webhook_sig_reject_audit_failed',
-                tenantSlug,
-                errName: auditErr instanceof Error ? auditErr.name : 'unknown',
-              },
-              '[F6] signature-reject audit emission failed (suppressed — 401 still returned)',
-            );
-          }
+            },
+            {
+              tenantSlug,
+              logEvent: 'f6_webhook_sig_reject_audit_failed',
+              logMsg: '[F6] signature-reject audit emission failed (suppressed — 401 still returned)',
+            },
+          );
           logger.warn(
             {
               event: 'f6_webhook_signature_verification_failed',
@@ -532,8 +578,16 @@ export async function POST(
         }
 
         // Emit latency for error paths too — even rolled-back deliveries
-        // count against the SC-003 SLO (we still spent processing time).
-        eventcreateMetrics.ingestLatencyMs(tenantSlug, Date.now() - startedAtMs);
+        // count against the SC-003 SLO. Use the use-case's internal
+        // `ingestLatencyMs` when available (rolled_back path) so the
+        // histogram compares apples-to-apples with the success path's
+        // use-case-internal measurement. Other error kinds fall back
+        // to route wall-clock latency.
+        const errorLatencyMs =
+          result.error.kind === 'rolled_back'
+            ? result.error.ingestLatencyMs
+            : Date.now() - startedAtMs;
+        eventcreateMetrics.ingestLatencyMs(tenantSlug, errorLatencyMs);
 
         switch (result.error.kind) {
           case 'malformed_rejected':
@@ -567,9 +621,9 @@ export async function POST(
             return ingestDisabledResponse();
           case 'rolled_back':
             // Audit `webhook_rolled_back` already emitted via dual-write
-            // fallback in the use-case (or pino.fatal stdout if the
-            // fallback also failed). Return generic 500 — don't leak the
-            // failure stage to the caller.
+            // fallback in the use-case (or pino.fatal + last-ditch
+            // stderr if the fallback also failed). Return generic
+            // 500 — don't leak the failure stage to the caller.
             eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'verified', 'rolled_back');
             logger.error(
               {
@@ -580,11 +634,12 @@ export async function POST(
                 auditFallbackFailed: result.error.auditFallbackFailed,
               },
               result.error.auditFallbackFailed
-                ? '[F6] webhook ingest rolled back AND audit fallback failed — stderr fallback only'
+                ? '[F6] webhook ingest rolled back AND audit fallback failed — see pino.fatal + last-ditch stderr lines'
                 : '[F6] webhook ingest rolled back',
             );
             span.setAttribute('f6.outcome', 'rolled_back');
             span.setAttribute('f6.failure_stage', result.error.failureStage);
+            markSpanError(span, `rolled_back:${result.error.failureStage}`);
             return NextResponse.json(
               {
                 type: 'https://chamber-os.app/errors/internal-error',

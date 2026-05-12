@@ -31,6 +31,7 @@ import { sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import type {
   F6AuditPort,
   F6AuditEntry,
@@ -196,13 +197,14 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       try {
         // Belt-and-suspenders runtime regex guard on the raw GUC
         // interpolation below. The canonical `runInTenant` in
-        // `src/lib/db.ts` already enforces this slug shape, but
-        // `emitRolledBackStandalone` bypasses runInTenant and goes
-        // directly through `db.transaction`. Without this guard, a
-        // future caller (cron replay, retention sweep, etc.) passing
+        // `src/lib/db.ts` already enforces this slug shape, but this
+        // method bypasses runInTenant and goes directly through
+        // `db.transaction` (invoked via the `emitRolledBackStandalone`
+        // deps wrapper in `infrastructure/di.ts`). Without this guard,
+        // a future caller (cron replay, retention sweep, etc.) passing
         // an unvalidated tenantId could trigger SQL injection via the
         // `SET LOCAL app.current_tenant = '${entry.tenantId}'` line.
-        if (!/^[a-z0-9-]{1,63}$/.test(entry.tenantId as unknown as string)) {
+        if (!TENANT_SLUG_PATTERN.test(entry.tenantId as unknown as string)) {
           throw new Error(
             `pino-audit-port emitRolledBack: tenantId slug invariant violated: ${entry.tenantId}`,
           );
@@ -237,8 +239,12 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
           );
         } catch {
           try {
+            // Sanitise tenantId — it may have failed the slug guard
+            // above and contain control chars / newlines that would
+            // split the forensic log line in downstream aggregators.
+            const safeTenant = String(entry.tenantId).replace(/[^a-z0-9-]/gi, '?').slice(0, 63);
             process.stderr.write(
-              `[F6 LAST-DITCH] webhook_rolled_back audit_double_failure tenant=${entry.tenantId}\n`,
+              `[F6 LAST-DITCH] webhook_rolled_back audit_double_failure tenant=${safeTenant}\n`,
             );
           } catch {
             /* truly nothing left */
@@ -259,7 +265,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       // route handler). Same dual-write fallback semantics as
       // `emitRolledBack` but accepts any F6 event type.
       try {
-        if (!/^[a-z0-9-]{1,63}$/.test(entry.tenantId as unknown as string)) {
+        if (!TENANT_SLUG_PATTERN.test(entry.tenantId as unknown as string)) {
           throw new Error(
             `pino-audit-port emitStandalone: tenantId slug invariant violated: ${entry.tenantId}`,
           );
@@ -288,8 +294,10 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
           );
         } catch {
           try {
+            const safeTenant = String(entry.tenantId).replace(/[^a-z0-9-]/gi, '?').slice(0, 63);
+            const safeEventType = String(entry.eventType).replace(/[^a-z0-9_]/gi, '?').slice(0, 64);
             process.stderr.write(
-              `[F6 LAST-DITCH] ${entry.eventType} audit_double_failure tenant=${entry.tenantId}\n`,
+              `[F6 LAST-DITCH] ${safeEventType} audit_double_failure tenant=${safeTenant}\n`,
             );
           } catch {
             /* truly nothing left */

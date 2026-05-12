@@ -11,9 +11,10 @@
  *      (SQL-injection defence-in-depth)
  *   3. Row carries the correct tenant_id (RLS context applied)
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
 import { asTenantId } from '@/modules/members';
@@ -77,7 +78,8 @@ describe('pino-audit-port.emitStandalone — gap-2', () => {
     expect(ours[0]!.tenantId).toBe(tenant.ctx.slug);
   });
 
-  it('slug-shape regex guard rejects malformed tenantId (SQL injection defence)', async () => {
+  it('slug-shape regex guard rejects malformed tenantId (SQL injection defence) + logFullError preserves stack', async () => {
+    const errorSpy = vi.spyOn(logger, 'error');
     const dummyExecutor = {
       execute: () => {
         throw new Error('not reached');
@@ -114,6 +116,19 @@ describe('pino-audit-port.emitStandalone — gap-2', () => {
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
     // The sanitised message must mention the slug-invariant
     expect(result.error.message).toMatch(/slug invariant violated/);
+    // logFullError preserves the unsanitised error name + stack server-side
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'f6_audit_emit_db_error',
+        caller: 'emitStandalone',
+        err: expect.objectContaining({
+          name: expect.any(String),
+          message: expect.stringContaining('slug invariant violated'),
+        }),
+      }),
+      expect.any(String),
+    );
+    errorSpy.mockRestore();
   });
 
   it('valid slug accepted (control case)', async () => {

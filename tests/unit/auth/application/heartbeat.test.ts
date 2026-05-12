@@ -27,6 +27,7 @@ describe('heartbeat use case', () => {
       limit: 60,
       remaining: opts.rateLimitOk ? 59 : 0,
       reset: opts.resetMs ?? Date.now() + 30_000,
+      fellBack: false,
     }));
     return {
       sessions: {

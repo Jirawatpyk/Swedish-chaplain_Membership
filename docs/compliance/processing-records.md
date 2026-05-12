@@ -426,8 +426,9 @@ of the chamber. Sub-processor chain:
 | **Vercel Inc.** | Hosting + Fluid Compute + Vercel Observability (OTel ingestion for F6 spans + metrics) | Singapore (`sin1`) | Existing DPA covers F1–F8 hosting + observability; F6 ingest path same scope |
 | **Neon, Inc.** | Postgres database | Singapore (`ap-southeast-1`) | Existing DPA covers F1–F8 PII columns; F6 `event_registrations` is the new column set |
 | **Upstash, Inc.** | Redis rate-limiter | Singapore | Existing DPA — F6 only stores `f6-webhook:<tenant_slug>` rate-limit counters (no PII) |
-| **Sentry.io** | Error tracking — captures stack traces for the new F6 `f6_audit_emit_db_error` + `f6_audit_fallback_double_failure` events | Germany (`de.sentry.io`) | Existing DPA covers F1–F8 runtime errors; F6 error events scope-identical (pino `err` payloads redacted) |
 | **Zapier, Inc.** ⚠ NEW | Middleware between EventCreate + Chamber-OS webhook | United States | **PENDING DPA — chamber action required pre-flag-flip** |
+
+> **Note on error-tracking processors**: Chamber-OS does NOT currently integrate Sentry or any third-party APM. F6 error events (`f6_audit_emit_db_error`, `f6_audit_fallback_double_failure`) flow through pino structured logs ingested by Vercel Observability only. If Sentry (or equivalent) is added in a later phase, this table MUST be updated and the chamber DPA reviewed before flag-flip.
 
 **Zapier DPA status — open action**:
 - Zapier offers a standard DPA template at zapier.com/help/account/data-management/zapier-eu-gdpr-data-processing-agreement

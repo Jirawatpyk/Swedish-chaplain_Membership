@@ -28,6 +28,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
@@ -126,11 +127,25 @@ export async function loadTenantWebhookConfig(
  * the slug shape is invalid (the slug pattern is `[a-z0-9-]{1,63}`;
  * malformed slugs trigger HTTP 404 from the route handler — no tenant
  * enumeration oracle).
+ *
+ * Any throw from `asTenantContext` is logged with the error name so
+ * SREs can distinguish "future validation rule" from "tenant-registry
+ * outage" even though the user-facing outcome is identical (404 no
+ * oracle). The route's step-0 already validates slug shape so most
+ * throws here mean an upstream `asTenantContext` rule changed.
  */
 export function resolveTenantFromSlug(slug: string): TenantContext | null {
   try {
     return asTenantContext(slug);
-  } catch {
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_tenant_context_build_failed',
+        slug,
+        errName: e instanceof Error ? e.name : 'unknown',
+      },
+      '[F6] asTenantContext threw on shape-valid slug',
+    );
     return null;
   }
 }

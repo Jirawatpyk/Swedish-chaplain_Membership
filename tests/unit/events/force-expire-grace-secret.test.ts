@@ -8,8 +8,9 @@
  *   - audit emit failure surfaces `audit_emit_failed`
  *   - `input.now` forwarded verbatim to both repo and audit
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ok, err } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { forceExpireGraceSecret } from '@/modules/events';
 import type {
   TenantWebhookConfigRepository,
@@ -47,7 +48,11 @@ const TENANT: TenantId = 'test-swecham' as TenantId;
 const ACTOR: UserId = 'usr_admin_001' as UserId;
 
 describe('forceExpireGraceSecret', () => {
-  it('cleared — rowsCleared=1 and audit emitted with admin actor + reason', async () => {
+  beforeEach(() => {
+    vi.spyOn(logger, 'fatal').mockImplementation(() => {});
+  });
+
+  it('cleared — rowsCleared=1 and audit emitted with admin actor + reason + occurredAt forwarded', async () => {
     const clearExpiredGrace = vi.fn().mockResolvedValue(ok(1));
     const auditEmit = vi.fn().mockResolvedValue(ok('audit-id' as AuditEventId));
     const repo = makeRepo({ clearExpiredGrace });
@@ -74,12 +79,54 @@ describe('forceExpireGraceSecret', () => {
     expect(entry.eventType).toBe('webhook_secret_force_expired');
     expect(entry.actorType).toBe('admin');
     expect(entry.actorUserId).toBe(ACTOR);
+    expect(entry.occurredAt).toBe(now); // input.now forwarded to audit
     expect(entry.payload).toMatchObject({
       severity: 'warn',
       actorUserId: ACTOR,
       rowsCleared: 1,
       reason: 'incident INC-42 — OLD secret suspected leaked',
     });
+  });
+
+  it('audit_emit_failed → logger.fatal preserves forensic trail', async () => {
+    const repo = makeRepo({
+      clearExpiredGrace: vi.fn().mockResolvedValue(ok(1)),
+    });
+    const audit = makeAudit({
+      emit: vi
+        .fn()
+        .mockResolvedValue(err({ kind: 'db_error', message: 'audit insert failed' })),
+    });
+
+    const result = await forceExpireGraceSecret(
+      { tenantId: TENANT, actorUserId: ACTOR, reason: 'incident', now: new Date() },
+      { repo, audit },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.kind).toBe('audit_emit_failed');
+    expect(logger.fatal).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'f6_force_expire_audit_emit_failed' }),
+      expect.stringContaining('audit emit failed'),
+    );
+  });
+
+  it('rowsCleared > 1 → invariant violation throws + logger.fatal', async () => {
+    const repo = makeRepo({
+      clearExpiredGrace: vi.fn().mockResolvedValue(ok(2)),
+    });
+
+    await expect(
+      forceExpireGraceSecret(
+        { tenantId: TENANT, actorUserId: ACTOR, reason: 'x', now: new Date() },
+        { repo, audit: makeAudit() },
+      ),
+    ).rejects.toThrow(/invariant violated.*rowsCleared=2/);
+    expect(logger.fatal).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'f6_force_expire_unexpected_row_count' }),
+      expect.any(String),
+    );
   });
 
   it('no_grace_active — rowsCleared=0 still emits audit (forensic completeness)', async () => {

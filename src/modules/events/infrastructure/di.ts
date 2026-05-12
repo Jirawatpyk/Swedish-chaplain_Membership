@@ -21,6 +21,16 @@
  *     adapter stack on the hot rejection path AND prevents future
  *     contributors from mistakenly invoking `runInTenantTx` /
  *     `emitRolledBackStandalone` from a context where they shouldn't.
+ *
+ * Naming glossary:
+ *   - Port methods on `F6AuditPort`: `emit` / `emitRolledBack` /
+ *     `emitStandalone`.
+ *   - Deps fields on `IngestWebhookAttendeeDeps`: `runInTenantTx` /
+ *     `emitRolledBackStandalone` / `emitStandalone`. The deps wrappers
+ *     call the port's standalone-tx methods (`emitRolledBack`,
+ *     `emitStandalone`) via the dummy-executor pattern below.
+ *     `emitStandalone` is intentionally the same name on both layers
+ *     since the wrapper is a thin delegate to the port method.
  */
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
@@ -108,37 +118,52 @@ export function makeIngestWebhookAttendeeDeps(): IngestWebhookAttendeeDeps {
 
 /**
  * Build a pino-audit-port wired with a Proxy `executor` that LOUDLY
- * fails on ANY property access. Used by the standalone composition-root
- * paths (`emitRolledBackStandalone` + `emitStandalone`) where the tx
- * argument is intentionally unused because the port's standalone
- * methods use root `db.transaction` internally.
+ * fails on ANY interaction (`get` / `has` / `set` / `apply`). Used by
+ * the standalone composition-root paths (`emitRolledBackStandalone` +
+ * `emitStandalone`) where the tx argument is intentionally unused
+ * because the port's standalone methods use root `db.transaction`
+ * internally.
  *
- * The Proxy is strictly tighter than a single `{ execute }` stub: if a
- * future patch to `pino-audit-port` adds a new method call on
- * `executor` (e.g., `executor.select(...)`) for some new feature, the
- * Proxy will log.fatal + throw on that access too — there's no silent
- * `undefined is not a function` path. All cast-bypass scenarios fail
- * loudly with a forensic log line.
+ * The Proxy is strictly tighter than a single `{ execute }` stub: any
+ * future patch to `pino-audit-port` that probes the executor for a
+ * new method (`'select' in executor`, `executor.foo = …`,
+ * `executor(args)`, …) gets the same fatal-log-plus-throw treatment
+ * — no silent `undefined`, no silent write-to-empty-object, no
+ * generic `TypeError`.
  */
 function makeLoudDummyExecutorPort(caller: string) {
+  const loudFail = (op: string, prop: string | symbol): never => {
+    const safeProp = typeof prop === 'symbol' ? prop.toString() : String(prop);
+    logger.fatal(
+      {
+        event: 'composition_root_bug',
+        caller,
+        operation: op,
+        accessedProperty: safeProp,
+      },
+      `[F6] composition root invariant violated — dummy executor "${op}" on "${safeProp}"; only standalone-tx methods should reach this path`,
+    );
+    throw new Error(
+      `standalone ${caller}: dummy executor "${op}" on "${safeProp}" invoked unexpectedly — composition root bug`,
+    );
+  };
   const loudDummy = new Proxy(
     {},
     {
-      get(_target, prop: string | symbol) {
-        // Skip well-known JS-runtime accesses (Symbol probing) so the
-        // throw is reserved for genuine method-call attempts.
+      get(_target, prop): unknown {
+        // Skip Symbol probing (Promise inspector, util.inspect, etc.) —
+        // reserve loud failure for genuine string-keyed accesses.
         if (typeof prop === 'symbol') return undefined;
-        logger.fatal(
-          {
-            event: 'composition_root_bug',
-            caller,
-            accessedProperty: String(prop),
-          },
-          `[F6] composition root invariant violated — dummy executor property "${String(prop)}" accessed; only standalone-tx methods should reach this path`,
-        );
-        throw new Error(
-          `standalone ${caller}: tx-bound property "${String(prop)}" invoked unexpectedly — composition root bug`,
-        );
+        return loudFail('get', prop);
+      },
+      has(_target, prop): boolean {
+        return loudFail('has', prop);
+      },
+      set(_target, prop): boolean {
+        return loudFail('set', prop);
+      },
+      apply(_target, _thisArg, _argList): unknown {
+        return loudFail('apply', '<call>');
       },
     },
   );

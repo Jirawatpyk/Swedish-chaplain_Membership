@@ -136,6 +136,14 @@ export type IngestError =
        * compromised and stderr fallback is the only forensic source.
        */
       readonly auditFallbackFailed: boolean;
+      /**
+       * Use-case-internal wall-clock latency from start to rollback.
+       * Distinct from route-end-to-end latency (which includes
+       * body-read + signature-verify time). Route emits this on the
+       * `ingestLatencyMs` histogram so dashboards can compare success
+       * vs rolled_back p95 on equivalent semantics.
+       */
+      readonly ingestLatencyMs: number;
     };
 
 /**
@@ -634,6 +642,7 @@ export async function ingestWebhookAttendee(
       failureStage: stage,
       errorMessage,
       auditFallbackFailed,
+      ingestLatencyMs: Date.now() - startedAtMs,
     });
   }
 }

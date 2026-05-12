@@ -18,6 +18,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { signWebhookBody, makeWebhookPayload } from '../../integration/events/helpers/sign-webhook';
 
 // ---------------------------------------------------------------------------
@@ -261,7 +262,8 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
   // gap-1 + I-2 — body-size DoS guard + slug-shape cardinality bomb
   // ---------------------------------------------------------------------
 
-  it('413 Payload Too Large — declared Content-Length > 64 KiB rejected pre-read', async () => {
+  it('413 Payload Too Large — declared Content-Length > 64 KiB rejected pre-read + emits bodyOversizedTotal metric', async () => {
+    const metricSpy = vi.spyOn(eventcreateMetrics, 'bodyOversizedTotal');
     const { POST } = await loadRoute();
     const req = new NextRequest(`https://app.test${ROUTE_PATH}`, {
       method: 'POST',
@@ -275,6 +277,7 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(res.status).toBe(413);
     const body = await res.json();
     expect(body.title).toBe('Payload too large');
+    expect(metricSpy).toHaveBeenCalledWith(TENANT_SLUG);
     // Ingest dispatch must NOT have happened
     expect(ingestWebhookAttendeeMock).not.toHaveBeenCalled();
   });
@@ -309,31 +312,20 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(res.status).toBe(413);
   });
 
-  it('200 OK — exactly-64-KiB body passes the size guard (boundary)', async () => {
-    ingestWebhookAttendeeMock.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        matched: 'non_member',
-        matchedMemberId: null,
-        eventCreated: false,
-        registrationId: 'reg-boundary',
-        quotaEffect: { countedAgainstPartnership: false, countedAgainstCulturalQuota: false },
-        ingestLatencyMs: 12,
+  it('413 Payload Too Large — strict over-by-one (65_537 bytes rejected)', async () => {
+    const { POST } = await loadRoute();
+    // Construct a body strictly 1 byte over the cap so the realised-
+    // size check (`>` comparison) catches it on the boundary.
+    const overOneByte = 'x'.repeat(64 * 1024 + 1);
+    const req = new NextRequest(`https://app.test${ROUTE_PATH}`, {
+      method: 'POST',
+      body: overOneByte,
+      headers: {
+        'Content-Type': 'application/json',
       },
     });
-    const { POST } = await loadRoute();
-    // Padding to land *at* 64 KiB total body size — must be valid JSON
-    // and signable.
-    const padded = makeWebhookPayload({
-      attendee: { fullName: 'A'.repeat(60_000) },
-    });
-    const req = buildRequest(padded);
     const res = await POST(req, { params: Promise.resolve({ tenantSlug: TENANT_SLUG }) });
-    // If padding overshoots 64 KiB the test should NOT silently rely on
-    // 413 — we either get 200 (boundary intent) or 413 (overshoot).
-    // Assert the body-size path didn't fail the route in an
-    // unexpected way.
-    expect([200, 413]).toContain(res.status);
+    expect(res.status).toBe(413);
   });
 
   it('404 Not Found — invalid slug shape returns 404 BEFORE any metric/audit (I-2 cardinality bomb)', async () => {
@@ -350,6 +342,19 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(ratelimitCheckMock).not.toHaveBeenCalled();
     expect(resolveTenantFromSlugMock).not.toHaveBeenCalled();
     expect(auditEmitStandaloneMock).not.toHaveBeenCalled();
+  });
+
+  // CRITICAL-3 — route last-resort catch (OTel span ERROR + uncaught log)
+  it('5xx + last-resort catch — ingestWebhookAttendee thrown exception is captured', async () => {
+    ingestWebhookAttendeeMock.mockImplementationOnce(() => {
+      throw new Error('synth — synchronous throw past every defensive layer');
+    });
+    const { POST } = await loadRoute();
+    const req = buildRequest(makeWebhookPayload());
+    const res = await POST(req, { params: Promise.resolve({ tenantSlug: TENANT_SLUG }) });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.title).toMatch(/Internal error/i);
   });
 
   it('404 Not Found — slug exceeding 63 chars short-circuits at step 0', async () => {
