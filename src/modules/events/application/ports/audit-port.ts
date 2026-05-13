@@ -96,6 +96,18 @@ export const F6_AUDIT_EVENT_TYPES = [
   // rollback bucket, polluting incident triage. Backed by migration
   // 0137 enum extension.
   'webhook_ingest_precondition_failed',
+  // Phase 5 review-fix W-05 reverted (2026-05-13) — reserved-but-
+  // unused enum value. Migration 0138 already added this name to the
+  // Postgres `audit_event_type` enum; Postgres enum values cannot be
+  // dropped without an offline rebuild, so the value remains in the
+  // type system + DB schema. The original PDPA §39 / GDPR Art. 30
+  // record-of-processing audit was deemed unnecessary in maintainer
+  // review (the privacy-notice template + DPIA + W-06 ZAPIER_DPA_
+  // EXECUTED boot guard already satisfy the legal record-keeping
+  // duty). If a future feature wants to record per-tenant template
+  // acknowledgements, the enum slot is available and the AuditPayloads
+  // entry below documents the originally-intended shape.
+  'wizard_privacy_notice_acknowledged',
 ] as const;
 
 export type F6AuditEventType = (typeof F6_AUDIT_EVENT_TYPES)[number];
@@ -202,6 +214,24 @@ export interface AuditPayloads {
      */
     readonly requestId: RequestId;
     readonly durationMs: number;
+    /**
+     * Phase 5 review-fix S-05 (2026-05-13) — originator attribution.
+     * The audit envelope's `actorType: 'system'` + `actorUserId:
+     * 'system:f6-test-webhook'` accurately describe the emitter
+     * (receiver-side system context); these two fields surface the
+     * tenant admin who dispatched the test. Plumbed via the synthetic
+     * payload's `chamberTestMetadata` block — the synthetic payload
+     * is HMAC-signed by the admin route only, so a forged
+     * `dispatchedByActorRole` would fail signature verification
+     * before reaching the short-circuit branch. Drift detection: an
+     * audit row with `dispatchedByActorRole !== 'admin'` flags a
+     * role-enforcement loosening at the admin route.
+     *
+     * Both fields default to `null` when the synthetic payload omits
+     * `chamberTestMetadata` (legacy payloads from clients pre-S-05).
+     */
+    readonly dispatchedByActorUserId: UserId | null;
+    readonly dispatchedByActorRole: 'admin' | null;
   };
 
   // --- Match resolution (5) ---------------------------------------------
@@ -462,6 +492,20 @@ export interface AuditPayloads {
      */
     readonly stage: 'config_load_failed';
     readonly errorName: string;
+  };
+
+  /**
+   * Phase 5 review-fix W-05 reverted (2026-05-13) — payload shape
+   * preserved for documentation + future revival. Audit event is
+   * defined in the enum but no emitter ships; consumers should
+   * ignore this entry today. See the enum entry above for the full
+   * revert rationale.
+   */
+  wizard_privacy_notice_acknowledged: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    readonly privacyNoticeVersion: string;
+    readonly acknowledgedAt: string;
   };
 }
 

@@ -1,0 +1,23 @@
+-- F6 Phase 5 review-fix W-05 (2026-05-13) — add audit event type
+-- `wizard_privacy_notice_acknowledged` so the tenant admin's
+-- onboarding-time assertion that they will surface the EventCreate
+-- privacy notice to attendees gets a permanent, audit-trail record.
+--
+-- Required record-of-processing artefact under PDPA §39 / GDPR
+-- Art. 30. The chamber controller's documented acknowledgement of
+-- their attendee-side notice obligation (lawful basis is
+-- `legitimate interest` per
+-- `docs/compliance/eventcreate-privacy-notice-template.md`).
+--
+-- Emitted by the wizard's Phase C acknowledgement checkbox (one row
+-- per tenant, idempotent re-acknowledge supported by future template
+-- version bumps via the payload's `privacyNoticeVersion` hash).
+-- Retention: 5 years (matches F6 default).
+--
+-- Idempotent DO-block — survives partial-replay (Postgres restriction:
+-- enum extensions cannot live in the same tx as their first use). Same
+-- pattern as the 35 F6 enum additions in migration 0132 +
+-- `webhook_secret_force_expired` (0135) +
+-- `webhook_ingest_precondition_failed` (0137).
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'wizard_privacy_notice_acknowledged'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

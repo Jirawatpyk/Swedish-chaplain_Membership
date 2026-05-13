@@ -33,7 +33,7 @@
  * rows) do not leak into Application — the `toAggregate` converter
  * boxes the row into the pure-TypeScript `TenantWebhookConfigAggregate`.
  */
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, lt, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import {
@@ -131,6 +131,26 @@ export function makeDrizzleTenantWebhookConfigRepository(
       input: RotateSecretInput,
     ): Promise<Result<TenantWebhookConfigAggregate, TenantWebhookConfigRepositoryError>> {
       try {
+        // Phase 5 review-fix S-08 (2026-05-13) — per-(tenant) advisory
+        // lock before the rotation UPDATE. The lock is held for the
+        // duration of the current transaction (auto-released on
+        // COMMIT/ROLLBACK) and serialises concurrent rotates from two
+        // admin tabs so the second one observes the FIRST rotation's
+        // grace before issuing its own. Without this, both UPDATEs
+        // race and the older grace value can be lost (the second
+        // rotation's column-list RHS picks up the new active, not
+        // the original).
+        //
+        // Namespace `eventcreate:rotate-secret:<tenant>:<source>` is
+        // disjoint from F4 `invoicing:`, F5 `payments:`, and F7
+        // `broadcasts:` keyspaces so no cross-feature contention.
+        // The rate-limit (3/hour) is the primary gate; this lock is
+        // belt-and-braces. `hashtextextended(_, 0)` produces a stable
+        // 64-bit signed integer suitable for pg_advisory_xact_lock.
+        await executor.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`eventcreate:rotate-secret:${input.tenantId}:${input.source}`}, 0))`,
+        );
+
         // Atomic active→grace + new active in ONE UPDATE so concurrent
         // webhook deliveries either see (old active + null grace) or
         // (new active + old as grace) — never (old active + old grace)

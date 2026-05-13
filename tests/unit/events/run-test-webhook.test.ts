@@ -239,4 +239,61 @@ describe('runTestWebhook', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('invalid_base_url');
   });
+
+  /**
+   * Phase 5 review-fix S-02 (2026-05-13) — security-critical branch
+   * coverage gap. `runTestWebhook` lines 208-214 wrap the `deps.signRequest`
+   * call in try/catch to map a throwing signer to `Result.err{kind:'sign_failed'}`
+   * — this guards against HMAC key-length / encoding errors that would
+   * otherwise escape as an unhandled exception. Production deps wire
+   * `signWebhookRequest` (always succeeds with a valid Node crypto
+   * environment), so this branch was previously untested even though
+   * the security-critical 100% branch coverage threshold (per plan.md)
+   * requires it.
+   *
+   * Test asserts:
+   *   - signRequest is called exactly once
+   *   - httpFetch is NEVER called (we bail before the network)
+   *   - Result.err with kind='sign_failed'
+   *   - error.message captures the original Error.message text
+   */
+  it('sign_failed — signRequest throws → Result.err{kind:sign_failed} without dispatching fetch', async () => {
+    const httpFetch = makeFetch(200, {
+      ok: true,
+      matched: 'short_circuited_test',
+    });
+    const signRequest = vi.fn().mockImplementation(() => {
+      throw new Error('HMAC key too short');
+    });
+
+    const result = await runTestWebhook(INPUT, { signRequest, httpFetch });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.kind).toBe('sign_failed');
+    if (result.error.kind !== 'sign_failed') throw new Error('unreachable');
+    expect(result.error.message).toContain('HMAC');
+    expect(signRequest).toHaveBeenCalledTimes(1);
+    expect(httpFetch).not.toHaveBeenCalled();
+  });
+
+  it('sign_failed — non-Error throw → message coerces via String()', async () => {
+    const httpFetch = makeFetch(200, {
+      ok: true,
+      matched: 'short_circuited_test',
+    });
+    const signRequest = vi.fn().mockImplementation(() => {
+      // Some legacy crypto libs throw strings; the wrapper coerces.
+      throw 'unsupported encoding';
+    });
+
+    const result = await runTestWebhook(INPUT, { signRequest, httpFetch });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.kind).toBe('sign_failed');
+    if (result.error.kind !== 'sign_failed') throw new Error('unreachable');
+    expect(result.error.message).toBe('unsupported encoding');
+    expect(httpFetch).not.toHaveBeenCalled();
+  });
 });

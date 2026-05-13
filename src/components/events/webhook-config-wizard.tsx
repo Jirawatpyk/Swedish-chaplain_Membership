@@ -204,7 +204,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
 
       {phase === 'a-generate' && !view.secretConfigured && (
         <Card>
-          <CardContent className="flex flex-col gap-4 py-6">
+          <CardContent className="flex flex-col gap-4">
             <p className="text-sm">{t('phaseAIntro')}</p>
             <Button
               type="button"
@@ -294,14 +294,28 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
               setGuideOpen((e.currentTarget as HTMLDetailsElement).open)
             }
           >
-            <summary className="min-h-6 cursor-pointer py-1 font-medium">
+            {/*
+              Phase 5 review-fix S-11 (2026-05-13) — explicit
+              `aria-expanded` on `<summary>` mirrors the native
+              `<details>` open state for assistive tech that doesn't
+              consume the `details` role natively. Belt-and-braces
+              against the controlled `guideOpen` state going briefly
+              stale (transition aborted, fast double-click); the
+              native attribute on the parent `<details>` and this
+              ARIA attribute always agree because both derive from
+              the same toggle event.
+            */}
+            <summary
+              className="min-h-6 cursor-pointer py-1 font-medium"
+              aria-expanded={guideOpen}
+            >
               {t('viewSetupGuide')}
             </summary>
             {guideOpen ? <div className="mt-3">{walkthrough}</div> : null}
           </details>
 
           <Card>
-            <CardContent className="flex flex-col gap-4 py-6">
+            <CardContent className="flex flex-col gap-4">
               <div
                 className="flex flex-col gap-1"
                 role="group"

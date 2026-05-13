@@ -50,6 +50,12 @@ export function RotateSecretDialog({
   const [rotationResult, setRotationResult] = useState<RotationResult | null>(
     null,
   );
+  // Phase 5 review-fix W-04 (2026-05-13) — mirror the embedded
+  // WebhookSecretReveal's saved-checkbox state up to this dialog so
+  // the Acknowledge button can gate on it. Eliminates the previous
+  // dual-completion path where AT users saw both the inner Continue
+  // button (disabled) AND the outer Done button (enabled).
+  const [secretAcknowledged, setSecretAcknowledged] = useState(false);
 
   async function handleConfirm() {
     try {
@@ -105,6 +111,10 @@ export function RotateSecretDialog({
         onRotationAcknowledged();
       }
       setRotationResult(null);
+      // Phase 5 review-fix W-04 — reset the saved gate so a follow-up
+      // open of the dialog starts fresh (without this the second
+      // rotation would see acknowledged=true from the prior cycle).
+      setSecretAcknowledged(false);
     }
     onOpenChange(next);
   }
@@ -125,25 +135,28 @@ export function RotateSecretDialog({
         })}
         confirmLabel={t('acknowledge')}
         cancelLabel={t('close')}
+        confirmDisabled={!secretAcknowledged}
         onConfirm={() => {
           onRotationAcknowledged();
           handleOpenChange(false, true);
         }}
       >
         <div className="py-2">
+          {/* Phase 5 review-fix W-04 (2026-05-13) — single completion
+              path: the embedded WebhookSecretReveal hides its internal
+              Continue button and lifts its saved-checkbox state to
+              this dialog, so the Acknowledge button below is the only
+              way to dismiss. Keyboard/AT order is now Cancel →
+              [reveal/copy/checkbox] → Acknowledge — no disabled-button
+              clutter mid-flow. */}
           <WebhookSecretReveal
             secret={rotationResult.secret}
             secretLastFour={rotationResult.secretLastFour}
+            hideInternalContinue
+            onSavedChange={setSecretAcknowledged}
             onContinue={() => {
-              /* Rotation dialog's primary action is the
-                 ConfirmationDialog's own "Acknowledge" button below;
-                 the embedded WebhookSecretReveal's Continue button is
-                 a redundant secondary path here — both buttons
-                 converge on the same `onRotationAcknowledged` +
-                 dialog-close call so the admin gets to either trigger
-                 from either click target. */
-              onRotationAcknowledged();
-              handleOpenChange(false, true);
+              /* Unreachable when hideInternalContinue=true; kept as a
+                 no-op so the prop contract stays satisfied. */
             }}
           />
         </div>

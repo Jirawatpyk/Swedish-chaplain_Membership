@@ -193,15 +193,32 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
       name: /(send test event|test webhook)/i,
     });
     await expect(testButton).toBeVisible();
-    await testButton.click();
 
-    // Within 30s, the recent-deliveries panel renders a new row with
-    // signature outcome "Verified" + processing outcome (test event).
-    // Toast also fires (success or failure) per the button contract.
+    // Phase 5 review-fix S-16 (2026-05-13) — wait for the actual HTTP
+    // round-trip BEFORE asserting on the UI badge. On a cold Vercel
+    // function + cold Neon connection + unwarmed Upstash, the
+    // test-webhook handler can take 10–20s for its first invocation;
+    // the prior plain `expect.toBeVisible({timeout: 30000})` was
+    // close to the wall and produced flakes on CI. Watching the
+    // response promise tightens the assertion to the actual
+    // server-side completion instead of the UI re-render delay.
+    const testWebhookResponse = page.waitForResponse(
+      (res) =>
+        res.url().includes('/api/admin/integrations/eventcreate/test-webhook')
+        && res.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
+    await testButton.click();
+    await testWebhookResponse;
+
+    // The recent-deliveries panel renders a new row with signature
+    // outcome "Verified" + processing outcome (test event). After the
+    // response arrives the UI re-render is sub-second; a short 10s
+    // ceiling distinguishes a render bug from a server-side flake.
     const outcomeIndicator = page
       .getByText(/short.?circuit|matched|verified|test event/i)
       .first();
-    await expect(outcomeIndicator).toBeVisible({ timeout: 30_000 });
+    await expect(outcomeIndicator).toBeVisible({ timeout: 10_000 });
   });
 
   test('AS3 + R5 — recent-deliveries panel includes Switch toggle for test deliveries', async ({

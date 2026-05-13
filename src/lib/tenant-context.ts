@@ -82,6 +82,14 @@ export function resolveTenantFromHeaders(
     );
     flat = {};
   }
+  // TODO(F10 multi-tenant): replace the synthetic `new Request(...)`
+  // construction below with a proper headers-only overload on
+  // `resolveTenantFromRequest`. The hardcoded `http://localhost:3100`
+  // URL is harmless today (the resolver only inspects `x-tenant` +
+  // host headers, never `pseudoReq.url`), but if a future signed-
+  // claim resolver introspects the URL the bridge needs to disappear.
+  // Phase 5 review-fix S-09 (2026-05-13) — marker for the MTA rollout
+  // PR to surface this site.
   const pseudoReq = new Request('http://localhost:3100', { headers: flat });
   return resolveTenantFromRequest(pseudoReq);
 }

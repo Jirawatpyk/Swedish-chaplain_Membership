@@ -2414,7 +2414,14 @@
         },
         "page": {
           "title": "EventCreate integration",
-          "subtitle": "Connect Zapier so EventCreate attendee registrations import automatically."
+          "subtitle": "Connect Zapier so EventCreate attendee registrations import automatically.",
+          "loading": "Loading EventCreate integration…",
+          "error": {
+            "title": "Could not load the integration",
+            "body": "Something went wrong while loading the EventCreate integration. Try reloading; if the issue persists, contact support with the digest below.",
+            "digest": "Reference: {digest}",
+            "retry": "Try again"
+          }
         },
         "wizard": {
           "stepsLabel": "EventCreate setup steps",
@@ -2529,6 +2536,13 @@
             "includeTestDeliveriesLabel": "Include test deliveries",
             "updating": "Updating recent deliveries…",
             "listSummary": "{count, plural, =0 {No recent deliveries} one {# delivery shown} other {# deliveries shown}}",
+            "table": {
+              "caption": "Recent webhook deliveries — most recent 10",
+              "received": "Received",
+              "requestId": "Request ID",
+              "signature": "Signature",
+              "processing": "Processing"
+            },
             "signature": {
               "verified": "Verified",
               "rejected": "Signature rejected",
@@ -2588,7 +2602,9 @@
       "renewalSchedules": "Renewal schedule policies",
       "escalationTasks": "Escalation tasks queue",
       "escalationTasksMine": "Escalation tasks: my tray",
-      "escalationTasksOverdue": "Escalation tasks: overdue only"
+      "escalationTasksOverdue": "Escalation tasks: overdue only",
+      "eventsList": "Events",
+      "eventcreateIntegration": "EventCreate integration"
     }
   },
   "nav": {

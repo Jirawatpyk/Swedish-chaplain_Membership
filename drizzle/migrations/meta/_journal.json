@@ -967,6 +967,13 @@
       "when": 1794297600000,
       "tag": "0137_f6_webhook_ingest_precondition_failed_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1794384000000,
+      "tag": "0138_f6_wizard_privacy_notice_acknowledged_audit",
+      "breakpoints": true
     }
   ]
 }

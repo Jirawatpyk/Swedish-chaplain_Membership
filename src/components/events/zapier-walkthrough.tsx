@@ -13,9 +13,38 @@
  * is self-explanatory.
  */
 import Image from 'next/image';
+import { existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent } from '@/components/ui/card';
-import { InfoIcon } from 'lucide-react';
+import { InfoIcon, ImageIcon } from 'lucide-react';
+
+/**
+ * Phase 5 review-fix (2026-05-13) — detect 75-byte placeholder stub
+ * PNGs at build time so the walkthrough doesn't render a broken-image
+ * icon + huge empty `<Image>` box when real screenshots have not yet
+ * landed (T080a stakeholder gate). Threshold ≤1024 B is safe: a real
+ * 1280×720 PNG is ≥40 KB, the stubs are exactly 75 B. The check is
+ * cheap server-side (fs.statSync) and runs once per render.
+ *
+ * TODO [T080a]: when real Zapier screenshots are committed to
+ * `public/walkthroughs/eventcreate-zapier/step-{1..8}.png`:
+ *   1. The stub-detection switch flips automatically (no code change).
+ *   2. Remove this helper + the dashed-placeholder branch below.
+ *   3. Delete `phaseB.imagePlaceholderNotice` from en/th/sv.json.
+ *   4. Drop the `node:fs` / `node:path` imports at the top of the
+ *      file.
+ * Grep for `T080a` to find every related stakeholder-asset gate.
+ */
+function isPlaceholderStub(absolutePath: string): boolean {
+  try {
+    if (!existsSync(absolutePath)) return true;
+    const size = statSync(absolutePath).size;
+    return size <= 1024;
+  } catch {
+    return true;
+  }
+}
 
 export interface ZapierWalkthroughProps {
   readonly webhookUrl: string;
@@ -32,8 +61,15 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
         {t('title')}
       </h2>
 
-      <Card className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
-        <CardContent className="flex items-start gap-3 py-3 text-sm">
+      {/*
+        Phase 5 review-fix (2026-05-13) — info banner uses
+        `<Card size="sm">` so the compact padding comes from the Card
+        root (12px py + 12px gap via the `data-[size=sm]:` rules) and
+        CardContent no longer needs the `py-3` override that
+        previously stacked on top of Card root's default 24px py.
+      */}
+      <Card size="sm" className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
+        <CardContent className="flex items-start gap-3 text-sm">
           <InfoIcon className="size-4 shrink-0 text-blue-600" aria-hidden />
           <p>{t('englishOnlyNotice')}</p>
         </CardContent>
@@ -46,7 +82,7 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
         {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map((step) => (
           <li key={step}>
             <Card>
-              <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start">
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
                   {step}
                 </div>
@@ -69,40 +105,66 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                         })
                       : t(`step${step}.body`)}
                   </p>
-                  <figure className="space-y-1">
-                    <Image
-                      src={`/walkthroughs/eventcreate-zapier/step-${step}.png`}
-                      alt={t(`step${step}.alt`)}
-                      width={1280}
-                      height={720}
-                      className="rounded-md border bg-muted"
-                      sizes="(max-width: 640px) 100vw, 600px"
-                    />
-                    {/*
-                      Round-6 verify-fix 2026-05-13 (UX1) — placeholder
-                      caption so the admin knows the .png is illustrative
-                      pending the real Zapier capture (stakeholder
-                      task T080a). The textual narration above carries
-                      the actionable instruction; image is reference
-                      only.
-
-                      Round 2 MED-06 fix (2026-05-13) — upgraded from
-                      `text-xs italic` to `text-sm not-italic` so
-                      contrast against `text-muted-foreground` clears
-                      WCAG 2.1 AA at small-text threshold (4.5:1 not
-                      3:1 large-text). Italic dropped to recover the
-                      ~0.3:1 perceived-contrast loss from oblique
-                      stroke widths.
-
-                      TODO [T080a]: remove `<figcaption>` and delete
-                      `phaseB.imagePlaceholderNotice` from en/th/sv.json
-                      when real captures land. Grep for `T080a` to
-                      find this and related stakeholder-asset gates.
-                    */}
-                    <figcaption className="text-sm text-muted-foreground">
-                      {t('imagePlaceholderNotice')}
-                    </figcaption>
-                  </figure>
+                  {/*
+                    Phase 5 review-fix (2026-05-13) — when the PNG is a
+                    stub (≤1024 B placeholder, the T080a stakeholder
+                    gate has not been completed), render a clean
+                    skeleton placeholder instead of `<Image>`. next/
+                    image with hardcoded 1280×720 would otherwise
+                    reserve a giant gray box and show the browser's
+                    broken-image icon at top-left (see
+                    `docs/Bug/image (11).png`). The skeleton uses
+                    `aspect-video` so the layout shape matches the
+                    eventual 16:9 screenshot — zero CLS when real
+                    PNGs land.
+                  */}
+                  {(() => {
+                    const imgPath = `/walkthroughs/eventcreate-zapier/step-${step}.png`;
+                    const absolutePath = join(
+                      process.cwd(),
+                      'public',
+                      'walkthroughs',
+                      'eventcreate-zapier',
+                      `step-${step}.png`,
+                    );
+                    const isStub = isPlaceholderStub(absolutePath);
+                    return (
+                      <figure className="space-y-1">
+                        {isStub ? (
+                          <div
+                            role="img"
+                            aria-label={t(`step${step}.alt`)}
+                            className="flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed bg-muted/40 p-6 text-muted-foreground"
+                          >
+                            <ImageIcon
+                              className="size-10 opacity-50"
+                              aria-hidden
+                            />
+                            <span className="text-sm font-medium">
+                              {t(`step${step}.alt`)}
+                            </span>
+                            <span className="text-xs">
+                              {t('imagePlaceholderNotice')}
+                            </span>
+                          </div>
+                        ) : (
+                          <>
+                            <Image
+                              src={imgPath}
+                              alt={t(`step${step}.alt`)}
+                              width={1280}
+                              height={720}
+                              className="rounded-md border bg-muted"
+                              sizes="(max-width: 640px) 100vw, 600px"
+                            />
+                            <figcaption className="text-sm text-muted-foreground">
+                              {t('imagePlaceholderNotice')}
+                            </figcaption>
+                          </>
+                        )}
+                      </figure>
+                    );
+                  })()}
                 </div>
               </CardContent>
             </Card>

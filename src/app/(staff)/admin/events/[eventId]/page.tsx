@@ -5,11 +5,9 @@
  * 404 when event missing or cross-tenant. Authz: admin OR manager.
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeft } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
@@ -20,7 +18,7 @@ import type { MatchType } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
-import { buttonVariants } from '@/components/ui/button';
+import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EventDetailHeader } from '@/components/events/event-detail-header';
 import {
   AttendeeTable,
@@ -217,17 +215,13 @@ export default async function AdminEventDetailPage({
 
   return (
     <DetailContainer>
-      <Link
-        href="/admin/events"
-        className={buttonVariants({
-          variant: 'ghost',
-          size: 'sm',
-          className: 'self-start',
-        })}
-      >
-        <ArrowLeft className="size-4" />
-        {t('backToList')}
-      </Link>
+      {/* Register the event name as the breadcrumb label for the
+          dynamic `[eventId]` segment so the trail reads
+          "Events / <Event Name>" instead of
+          "Events / a1b2c3d4-1234-...". Client component effect runs
+          AFTER hydration; intermediate render uses the raw UUID
+          briefly (typical <100ms). */}
+      <DynamicBreadcrumbLabel segment={event.eventId} label={event.name} />
       <PageHeader title={event.name} subtitle={t('subtitle')} />
       <EventDetailHeader event={event} />
       <section

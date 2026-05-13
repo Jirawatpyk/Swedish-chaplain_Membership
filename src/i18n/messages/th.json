@@ -2414,7 +2414,14 @@
         },
         "page": {
           "title": "การเชื่อมต่อ EventCreate",
-          "subtitle": "เชื่อมต่อ Zapier เพื่อให้การลงทะเบียนผู้เข้าร่วมจาก EventCreate เข้าระบบโดยอัตโนมัติ"
+          "subtitle": "เชื่อมต่อ Zapier เพื่อให้การลงทะเบียนผู้เข้าร่วมจาก EventCreate เข้าระบบโดยอัตโนมัติ",
+          "loading": "กำลังโหลดการเชื่อมต่อ EventCreate…",
+          "error": {
+            "title": "โหลดการเชื่อมต่อไม่สำเร็จ",
+            "body": "เกิดข้อผิดพลาดขณะโหลดการเชื่อมต่อ EventCreate กรุณาโหลดหน้าใหม่ หากยังคงเกิดปัญหา ติดต่อฝ่ายสนับสนุนพร้อมรหัสอ้างอิงด้านล่าง",
+            "digest": "รหัสอ้างอิง: {digest}",
+            "retry": "ลองอีกครั้ง"
+          }
         },
         "wizard": {
           "stepsLabel": "ขั้นตอนการตั้งค่า EventCreate",
@@ -2428,7 +2435,7 @@
           "generateAlreadyExists": "มี webhook secret อยู่แล้วสำหรับหอการค้านี้ กรุณาใช้การหมุนคีย์แทน",
           "postRefreshResyncFailed": "บันทึก webhook secret แล้ว แต่หน้านี้รีเฟรชไม่สมบูรณ์ กรุณาโหลดหน้าใหม่เพื่อดูคีย์แบบปกปิด",
           "back": "ย้อนกลับ",
-          "connectComplete": "ฉันตั้งค่า Zap แล้ว — ดำเนินการต่อ",
+          "connectComplete": "ตั้งค่า Zap เรียบร้อยแล้ว — ดำเนินการต่อ",
           "webhookUrlLabel": "URL ของ Webhook",
           "webhookUrlAriaLabel": "URL ของ webhook สำหรับคัดลอกไปยัง Zapier",
           "copyUrl": "คัดลอก URL ของ webhook",
@@ -2446,7 +2453,7 @@
           "copied": "คัดลอกไปคลิปบอร์ดแล้ว",
           "copyFailed": "คัดลอกไม่สำเร็จ — กรุณาเลือกและคัดลอกด้วยตนเอง",
           "warning": "บันทึกค่านี้ในโปรแกรมจัดการรหัสผ่านทันที จะไม่แสดงอีกครั้ง",
-          "savedInPasswordManager": "ฉันได้บันทึกคีย์นี้ในโปรแกรมจัดการรหัสผ่านแล้ว",
+          "savedInPasswordManager": "บันทึกคีย์นี้ในโปรแกรมจัดการรหัสผ่านเรียบร้อยแล้ว",
           "savedHint": "ยืนยัน 4 ตัวสุดท้าย: {lastFour}",
           "continueToSetup": "ไปขั้นตอนตั้งค่า Zapier"
         },
@@ -2510,15 +2517,15 @@
             "networkError": "ติดต่อปลายทาง webhook ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"
           },
           "rotate": {
-            "preTitle": "หมุน webhook secret หรือไม่?",
+            "preTitle": "หมุนคีย์ Webhook หรือไม่?",
             "preDescription": "ระบบจะสร้างคีย์ใหม่ คีย์ปัจจุบันยังตรวจสอบการส่งได้อีก 24 ชั่วโมง เพื่อให้คุณอัปเดต Zapier ได้โดยไม่หยุดบริการ",
-            "confirm": "หมุนเลย",
+            "confirm": "หมุนทันที",
             "cancel": "ยกเลิก",
             "postTitle": "หมุนคีย์เรียบร้อย",
             "postDescription": "คีย์เก่ายังตรวจสอบได้จนถึง {graceActiveUntil} กรุณาบันทึกคีย์ใหม่ทันทีและอัปเดต Zapier ภายใน 24 ชั่วโมง",
             "acknowledge": "เสร็จสิ้น",
             "close": "ปิด",
-            "success": "หมุน webhook secret แล้ว",
+            "success": "หมุนคีย์ Webhook แล้ว",
             "failed": "หมุนไม่สำเร็จ — กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
             "rateLimited": "ถึงขีดจำกัดการหมุน (3 ครั้ง/ชั่วโมง) กรุณารอแล้วลองใหม่",
             "rateLimitedWithRetry": "ถึงขีดจำกัดการหมุน ลองอีกครั้งใน {seconds} วินาที"
@@ -2526,9 +2533,16 @@
           "recentDeliveries": {
             "title": "การส่งล่าสุด",
             "empty": "ยังไม่มีการส่งล่าสุด เรียกใช้ Zap หรือกด \"ส่งอีเวนต์ทดสอบ\" เพื่อดูทราฟฟิก",
-            "includeTestDeliveriesLabel": "รวมการทดสอบ",
+            "includeTestDeliveriesLabel": "รวมการส่งทดสอบ",
             "updating": "กำลังอัปเดตรายการล่าสุด…",
             "listSummary": "{count, plural, =0 {ไม่มีรายการล่าสุด} other {แสดง # รายการ}}",
+            "table": {
+              "caption": "การส่ง Webhook ล่าสุด — 10 รายการล่าสุด",
+              "received": "เวลาที่รับ",
+              "requestId": "รหัสคำขอ",
+              "signature": "ลายเซ็น",
+              "processing": "การประมวลผล"
+            },
             "signature": {
               "verified": "ยืนยันแล้ว",
               "rejected": "ปฏิเสธลายเซ็น",
@@ -2588,7 +2602,9 @@
       "renewalSchedules": "นโยบายตารางการต่ออายุ",
       "escalationTasks": "งานติดตามด่วน",
       "escalationTasksMine": "งานติดตามด่วน: ของฉัน",
-      "escalationTasksOverdue": "งานติดตามด่วน: เฉพาะที่เกินกำหนด"
+      "escalationTasksOverdue": "งานติดตามด่วน: เฉพาะที่เกินกำหนด",
+      "eventsList": "อีเวนต์",
+      "eventcreateIntegration": "การเชื่อมต่อ EventCreate"
     }
   },
   "nav": {

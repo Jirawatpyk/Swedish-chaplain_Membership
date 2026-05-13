@@ -676,6 +676,38 @@ export async function POST(
           // in the admin route-handler logs). Use the F6 system sentinel
           // prefix per pino-audit-port convention.
           const SYSTEM_ACTOR = asUserId('system:f6-test-webhook');
+
+          // Phase 5 review-fix S-05 (2026-05-13) — extract the admin
+          // originator metadata that the admin route's run-test-webhook
+          // use-case embedded in the synthetic payload. The fields
+          // pass through `chamberTestMetadata` and are HMAC-signed (the
+          // signature is already verified at this point), so the values
+          // are tamper-resistant. Drift detection: if a future code
+          // path produces a sentinel payload without this metadata, the
+          // audit row records `null` and an SRE filter on
+          // `dispatchedByActorRole IS NULL` surfaces the gap.
+          const chamberTestMetadata =
+            typeof candidate === 'object' &&
+            candidate !== null &&
+            'chamberTestMetadata' in candidate &&
+            typeof candidate.chamberTestMetadata === 'object' &&
+            candidate.chamberTestMetadata !== null
+              ? candidate.chamberTestMetadata
+              : null;
+          const dispatchedByActorUserId =
+            chamberTestMetadata !== null &&
+            'dispatchedByActorUserId' in chamberTestMetadata &&
+            typeof chamberTestMetadata.dispatchedByActorUserId === 'string' &&
+            chamberTestMetadata.dispatchedByActorUserId.length > 0
+              ? asUserId(chamberTestMetadata.dispatchedByActorUserId)
+              : null;
+          const dispatchedByActorRole =
+            chamberTestMetadata !== null &&
+            'dispatchedByActorRole' in chamberTestMetadata &&
+            chamberTestMetadata.dispatchedByActorRole === 'admin'
+              ? ('admin' as const)
+              : null;
+
           await safeEmitStandalone(
             makeStandaloneAuditDeps(),
             {
@@ -706,6 +738,9 @@ export async function POST(
                 requestId:
                   tryRequestId(requestId) ?? asRequestId(NO_REQUEST_ID),
                 durationMs: shortCircuitLatencyMs,
+                // Phase 5 review-fix S-05 — originator attribution.
+                dispatchedByActorUserId,
+                dispatchedByActorRole,
               },
             },
             {

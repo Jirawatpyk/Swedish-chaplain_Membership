@@ -195,6 +195,19 @@ export async function runTestWebhook(
       paymentStatus: 'free' as const,
       registeredAt: input.now.toISOString(),
     },
+    // Phase 5 review-fix S-05 (2026-05-13) — internal metadata field
+    // recording the admin who clicked "Test webhook". Only present
+    // on sentinel-recognised synthetic payloads + HMAC-signed by the
+    // admin route, so the receiver can trust the claimed actor
+    // (any other source would fail signature verification before
+    // reaching the short-circuit branch). Receiver writes this into
+    // the `webhook_test_invoked` audit row so role-enforcement drift
+    // surfaces — if a non-admin path ever produces a test webhook,
+    // `dispatchedByActorRole !== 'admin'` flags it for triage.
+    chamberTestMetadata: {
+      dispatchedByActorUserId: input.actorUserId,
+      dispatchedByActorRole: 'admin' as const,
+    },
   };
 
   const rawBody = JSON.stringify(syntheticPayload);

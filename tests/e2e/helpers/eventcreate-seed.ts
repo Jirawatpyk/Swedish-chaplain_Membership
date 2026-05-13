@@ -142,12 +142,28 @@ const EXT_EVENT_PB = 'e2e-f6-event-partner-benefit';
 const EXT_EVENT_CULTURAL = 'e2e-f6-event-cultural';
 const EXT_EVENT_ARCHIVED = 'e2e-f6-event-archived';
 
-const EXT_REG_E1_NON_1 = 'e2e-f6-reg-e1-nonmember-1';
-const EXT_REG_E1_NON_2 = 'e2e-f6-reg-e1-nonmember-2';
-const EXT_REG_E1_UNMATCHED = 'e2e-f6-reg-e1-unmatched';
-const EXT_REG_E2_NON = 'e2e-f6-reg-e2-nonmember';
-const EXT_REG_E2_UNMATCHED_1 = 'e2e-f6-reg-e2-unmatched-1';
-const EXT_REG_E2_UNMATCHED_2 = 'e2e-f6-reg-e2-unmatched-2';
+// Sentinel external_ids — every fixture row is keyed off these so
+// re-running the seed converges on the same shape.
+//
+// Coverage matrix (all badge variants):
+//   MatchStatusBadge  — member_contact / member_domain / member_fuzzy /
+//                       non_member / unmatched (5 variants)
+//   QuotaEffectBadge  — Partnership benefit (counted_against_partnership=true)
+//                       / Cultural event (counted_against_cultural_quota=true)
+//                       / Over quota (isOverQuota auto-computed: non-quota
+//                       match-type + flagged event) / Not counted
+//                       (all 3 flags false; matched-but-over-allotment scenario)
+//   PaymentStatusBadge — paid / pending / refunded / free
+const EXT_REG_E1_MEMBER_CONTACT = 'e2e-f6-reg-e1-member-contact';   // → Partnership benefit
+const EXT_REG_E1_MEMBER_DOMAIN_COUNTED = 'e2e-f6-reg-e1-member-domain-counted'; // → Partnership benefit
+const EXT_REG_E1_MEMBER_DOMAIN_NOT_COUNTED = 'e2e-f6-reg-e1-member-domain-not-counted'; // → Not counted (matched + quota exhausted)
+const EXT_REG_E1_NON_1 = 'e2e-f6-reg-e1-nonmember-1';   // → Over quota
+const EXT_REG_E1_NON_2 = 'e2e-f6-reg-e1-nonmember-2';   // → Over quota (pending payment)
+const EXT_REG_E1_UNMATCHED = 'e2e-f6-reg-e1-unmatched'; // → Over quota (refunded — FR-018)
+const EXT_REG_E2_MEMBER_FUZZY = 'e2e-f6-reg-e2-member-fuzzy'; // → Cultural event
+const EXT_REG_E2_NON = 'e2e-f6-reg-e2-nonmember';       // → Over quota
+const EXT_REG_E2_UNMATCHED_1 = 'e2e-f6-reg-e2-unmatched-1'; // → Over quota
+const EXT_REG_E2_UNMATCHED_2 = 'e2e-f6-reg-e2-unmatched-2'; // → Over quota
 
 export interface SeedEventsResult {
   readonly tenantId: string;
@@ -237,16 +253,56 @@ export async function seedF6Events(
       throw new Error('[e2e seed F6] events upsert returned <3 rows');
     }
 
-    // 3. Registrations (6 rows total) — only NON-MEMBER variants so we
-    //    avoid the F3 members + contacts FK chain. AS4 "Show unmatched
-    //    only" still has filterable rows because each active event has
-    //    ≥1 `match_type='unmatched'` registration.
+    // 3a. Lookup the existing e2e-member's member_id + primary contact_id
+    //    so the matched registrations below can FK-reference a real F3
+    //    row. The e2e-member is provisioned by `scripts/seed-e2e-user.ts`
+    //    and resolved here via E2E_MEMBER_EMAIL — same pattern as
+    //    F8 renewals-seed.ts line 42-53.
+    //
+    //    If the lookup fails (env missing, member not seeded, RLS quirk),
+    //    fall back to non_member-only registrations so the seed still
+    //    succeeds — the test won't get a >0% match rate but the table
+    //    still renders.
+    const memberEmail = process.env.E2E_MEMBER_EMAIL;
+    let matchedMemberId: string | null = null;
+    let matchedContactId: string | null = null;
+    if (memberEmail) {
+      const memberRows = await client.sql<
+        Array<{ member_id: string; contact_id: string | null }>
+      >`
+        SELECT m.member_id::text AS member_id,
+               pc.contact_id::text AS contact_id
+        FROM users u
+        JOIN contacts c
+          ON c.linked_user_id = u.id AND c.tenant_id = ${tenantSlug}
+        JOIN members m
+          ON m.member_id = c.member_id AND m.tenant_id = ${tenantSlug}
+        LEFT JOIN contacts pc
+          ON pc.member_id = m.member_id
+         AND pc.tenant_id = ${tenantSlug}
+         AND pc.is_primary = TRUE
+         AND pc.removed_at IS NULL
+        WHERE u.email = ${memberEmail}
+        LIMIT 1
+      `;
+      if (memberRows[0]) {
+        matchedMemberId = memberRows[0].member_id;
+        matchedContactId = memberRows[0].contact_id;
+      }
+    }
+
+    // 3b. Non-member subset of registrations — 6 rows, all
+    //    `match_type IN ('non_member','unmatched')`. On a flagged
+    //    partner-benefit/cultural event the use-case derives
+    //    `isOverQuota=true` for these rows automatically → renders
+    //    "Over quota" badge. Payment-status spread covers the 4-value
+    //    union: paid / pending / refunded / free.
     //
     //    CHECK constraint `event_registrations_non_member_no_quota`
     //    (migration 0128 + tightened 0136) requires non_member/unmatched
     //    rows to have NULL matched_member_id + NULL matched_contact_id +
     //    counted_against_partnership=FALSE + counted_against_cultural_quota
-    //    =FALSE.
+    //    =FALSE. The UPDATE branch refreshes mutable fields on re-run.
     await client.sql`
       INSERT INTO event_registrations (
         tenant_id, event_id, external_id,
@@ -264,12 +320,12 @@ export async function seedF6Events(
         (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_NON_2},
          'bob@e2e-f6-outsider.example', 'Bob Outsider', 'Outsider Co. Ltd',
          'non_member', NULL, NULL,
-         'Non-member ticket', 50000, 'paid',
+         'Non-member ticket', 50000, 'pending',
          FALSE, FALSE, '{}'::jsonb, '2026-06-01T11:00:00Z'),
         (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_UNMATCHED},
          'carol@e2e-f6-ambiguous.example', 'Carol Ambiguous', 'Ambig Holdings',
          'unmatched', NULL, NULL,
-         NULL, NULL, 'paid',
+         'Non-member ticket', 50000, 'refunded',
          FALSE, FALSE, '{}'::jsonb, '2026-06-01T12:00:00Z'),
         (${tenantSlug}, ${culturalEventId}, ${EXT_REG_E2_NON},
          'dan@e2e-f6-outsider.example', 'Dan Outsider', 'Outsider Co. Ltd',
@@ -294,11 +350,107 @@ export async function seedF6Events(
             ticket_type = EXCLUDED.ticket_type,
             ticket_price_thb = EXCLUDED.ticket_price_thb,
             payment_status = EXCLUDED.payment_status,
+            counted_against_partnership = EXCLUDED.counted_against_partnership,
+            counted_against_cultural_quota = EXCLUDED.counted_against_cultural_quota,
             registered_at = EXCLUDED.registered_at
     `;
 
+    // 3c. Matched registrations — only when e2e-member resolved.
+    //    Three rows seed all 3 matched-type variants so the match-cascade
+    //    badge rendering is exercised across the AS2 attendee table.
+    //    `memberEmail` is guaranteed non-null inside the
+    //    `matchedMemberId` branch (matchedMemberId only assigns when
+    //    memberEmail is truthy at the lookup site), but TS does not
+    //    narrow across the closure boundary — local `const` rebinding
+    //    keeps the type-checker happy.
+    let matchedCount = 0;
+    if (matchedMemberId && memberEmail) {
+      const matchedMemberEmail = memberEmail;
+      // member_contact requires both member_id + contact_id; fall back
+      // to member_domain (which only needs member_id) when the e2e-member
+      // has no primary contact (rare but tolerated).
+      // E1 member_contact + counted_against_partnership=TRUE
+      //   → MatchStatusBadge "member_contact" + QuotaEffectBadge
+      //     "Partnership benefit" + PaymentStatusBadge "free".
+      //   Requires both member_id + contact_id (FK).
+      const e1ContactRow = matchedContactId
+        ? client.sql`
+            INSERT INTO event_registrations (
+              tenant_id, event_id, external_id,
+              attendee_email, attendee_name, attendee_company,
+              match_type, matched_member_id, matched_contact_id,
+              ticket_type, ticket_price_thb, payment_status,
+              counted_against_partnership, counted_against_cultural_quota,
+              metadata, registered_at
+            ) VALUES
+              (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_MEMBER_CONTACT},
+               ${matchedMemberEmail}, 'E2E Member', 'E2E Member Co.',
+               'member_contact', ${matchedMemberId}::uuid, ${matchedContactId}::uuid,
+               'Member ticket', 0, 'free',
+               TRUE, FALSE, '{}'::jsonb, '2026-06-01T09:00:00Z')
+            ON CONFLICT (tenant_id, event_id, external_id) DO UPDATE
+              SET match_type = EXCLUDED.match_type,
+                  matched_member_id = EXCLUDED.matched_member_id,
+                  matched_contact_id = EXCLUDED.matched_contact_id,
+                  payment_status = EXCLUDED.payment_status,
+                  counted_against_partnership = EXCLUDED.counted_against_partnership,
+                  counted_against_cultural_quota = EXCLUDED.counted_against_cultural_quota
+          `
+        : null;
+      if (e1ContactRow) {
+        await e1ContactRow;
+        matchedCount++;
+      }
+      // Remaining matched rows — splits into 3 distinct quota-effect
+      // states so all QuotaEffectBadge variants render at the same
+      // event-detail view:
+      //   E1 member_domain (counted=TRUE) → "Partnership benefit"
+      //   E1 member_domain (counted=FALSE) → "Not counted"
+      //      — matched member but quota exhausted / allotment unused;
+      //      this is the legitimate FR-017 "matched-but-not-counted"
+      //      state that's hardest to reason about, so seed it explicitly.
+      //   E2 member_fuzzy (cultural-quota counted) → "Cultural event"
+      await client.sql`
+        INSERT INTO event_registrations (
+          tenant_id, event_id, external_id,
+          attendee_email, attendee_name, attendee_company,
+          match_type, matched_member_id, matched_contact_id,
+          ticket_type, ticket_price_thb, payment_status,
+          counted_against_partnership, counted_against_cultural_quota,
+          metadata, registered_at
+        ) VALUES
+          (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_MEMBER_DOMAIN_COUNTED},
+           'colleague@e2e-member-domain.example', 'E2E Colleague', 'E2E Member Co.',
+           'member_domain', ${matchedMemberId}::uuid, NULL,
+           'Member ticket', 0, 'free',
+           TRUE, FALSE, '{}'::jsonb, '2026-06-01T08:30:00Z'),
+          (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_MEMBER_DOMAIN_NOT_COUNTED},
+           'alumna@e2e-member-domain.example', 'E2E Alumna', 'E2E Member Co.',
+           'member_domain', ${matchedMemberId}::uuid, NULL,
+           'Member ticket', 0, 'free',
+           FALSE, FALSE, '{}'::jsonb, '2026-06-01T08:45:00Z'),
+          (${tenantSlug}, ${culturalEventId}, ${EXT_REG_E2_MEMBER_FUZZY},
+           'fuzzy@e2e-member-fuzzy.example', 'E2E Fuzzy Match', 'E2E Membr Co.',
+           'member_fuzzy', ${matchedMemberId}::uuid, NULL,
+           'Member ticket', 0, 'free',
+           FALSE, TRUE, '{}'::jsonb, '2026-04-20T09:00:00Z')
+        ON CONFLICT (tenant_id, event_id, external_id) DO UPDATE
+          SET match_type = EXCLUDED.match_type,
+              matched_member_id = EXCLUDED.matched_member_id,
+              matched_contact_id = EXCLUDED.matched_contact_id,
+              payment_status = EXCLUDED.payment_status,
+              counted_against_partnership = EXCLUDED.counted_against_partnership,
+              counted_against_cultural_quota = EXCLUDED.counted_against_cultural_quota
+      `;
+      matchedCount += 3;
+    }
+
     console.log(
-      `[e2e seed F6] OK — tenant=${tenantSlug} events=3 registrations=6 (3 non_member + 3 unmatched)`,
+      `[e2e seed F6] OK — tenant=${tenantSlug} events=3 registrations=${6 + matchedCount} ` +
+        `(3 non_member + 3 unmatched + ${matchedCount} matched) ` +
+        `— badges covered: Partnership benefit + Cultural event + Over quota + Not counted ` +
+        `— payment statuses: paid + pending + refunded + free` +
+        `${matchedMemberId ? '' : ' — matched rows skipped: e2e-member not resolved'}`,
     );
 
     return {

@@ -449,6 +449,19 @@ const schema = z.object({
     .min(32)
     .optional()
     .describe('SECRET — do not log'),
+
+  // Phase 5 review-fix W-06 (2026-05-13) — Zapier DPA execution flag.
+  // F6 attendee PII transits Zapier (US) en route from EventCreate
+  // (US) to Vercel sin1. PDPA §28 / GDPR Art. 28 require an executed
+  // Data Processing Agreement with the third-party processor (Zapier)
+  // before live attendee data flows. The DPIA outstanding-items list
+  // (`docs/compliance/dpia-template.md`) tracks the legal task; this
+  // env var is the technical backstop that refuses to boot when
+  // `FEATURE_F6_EVENTCREATE=true` is set without ZAPIER_DPA_EXECUTED
+  // = true, mirroring the `EVENTCREATE_PII_PSEUDONYM_SALT` pattern.
+  // Default false — production deployments where F6 is dark are
+  // unaffected.
+  ZAPIER_DPA_EXECUTED: booleanFromString.default(false),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -537,6 +550,34 @@ if (raw.FEATURE_F6_EVENTCREATE && !raw.EVENTCREATE_PII_PSEUDONYM_SALT) {
     'Environment validation failed (src/lib/env.ts):\n' +
       '  - EVENTCREATE_PII_PSEUDONYM_SALT must be set (≥32 bytes base64) ' +
       'when FEATURE_F6_EVENTCREATE=true. Generate with: openssl rand -base64 32.',
+  );
+}
+
+// Phase 5 review-fix W-06 (2026-05-13) — Zapier DPA technical backstop.
+// F6 must NOT be flag-flipped to true in production until the Zapier
+// DPA has been executed (PDPA §28 / GDPR Art. 28 cross-border
+// safeguard for the US-resident processor). Once the legal team has
+// the signed agreement on file, the operator sets ZAPIER_DPA_EXECUTED
+// = true in Vercel env alongside the F6 flag flip. The boot refusal
+// fires loud rather than silently allowing un-DPA'd attendee PII to
+// transit Zapier — same posture as the pseudonym-salt guard above.
+//
+// Bypass in non-production (NODE_ENV ≠ production) is intentional so
+// local dev + staging environments can iterate on F6 without
+// requiring a DPA flag flip — but production refuses.
+if (
+  raw.NODE_ENV === 'production' &&
+  raw.FEATURE_F6_EVENTCREATE &&
+  !raw.ZAPIER_DPA_EXECUTED
+) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - ZAPIER_DPA_EXECUTED must be true in production when ' +
+      'FEATURE_F6_EVENTCREATE=true. F6 attendee PII transits Zapier; ' +
+      'PDPA §28 / GDPR Art. 28 require an executed Data Processing ' +
+      'Agreement before live data flows. See docs/compliance/dpia-template.md ' +
+      'outstanding-items list. Set ZAPIER_DPA_EXECUTED=true in Vercel env ' +
+      'after legal counsel confirms the DPA is signed and on file.',
   );
 }
 
@@ -682,6 +723,13 @@ export const env = {
   // against a future contributor enabling F6 without redeploying.
   eventcreate: {
     piiPseudonymSalt: raw.EVENTCREATE_PII_PSEUDONYM_SALT ?? null,
+    // Phase 5 review-fix W-06 — exposed for compliance audit + DPIA
+    // automation. Consumers should NOT branch on this at request time
+    // (the boot guard already refused to start when this is false in
+    // production with F6 on). Surfaced here so a dedicated
+    // `/api/admin/health` style endpoint or a CLI helper can read the
+    // executed-DPA status without reaching back into env.ts.
+    zapierDpaExecuted: raw.ZAPIER_DPA_EXECUTED,
   },
 } as const;
 

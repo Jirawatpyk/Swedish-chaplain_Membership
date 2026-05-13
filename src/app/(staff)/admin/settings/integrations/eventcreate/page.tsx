@@ -76,6 +76,13 @@ export default async function EventCreateIntegrationPage({
       webhookBaseUrl,
     });
   } catch (e) {
+    // Phase 5 review-fix S-01 (2026-05-13) — re-throw the loader error
+    // so Next.js renders the nearest `error.tsx` boundary instead of
+    // the prior `notFound()` collapse. A transient Neon outage was
+    // previously surfaced as a 404 ("page doesn't exist"), masking a
+    // 5xx and causing admins to think the integration was missing.
+    // Pino retains the forensic trail; `error.tsx` will display a
+    // localised retry surface with the correlation request ID.
     logger.error(
       {
         event: 'f6_load_integration_config_page_threw',
@@ -84,7 +91,7 @@ export default async function EventCreateIntegrationPage({
       },
       '[F6] integration config page render — runLoadIntegrationConfig threw',
     );
-    notFound();
+    throw e;
   }
 
   const t = await getTranslations('admin.integrations.eventcreate.page');

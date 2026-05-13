@@ -351,3 +351,15 @@ export {
   cryptoWebhookSignatureVerifier,
   signWebhookRequest,
 } from './infrastructure/crypto-webhook-signature-verifier';
+
+// Phase 5 review-fix S-06 (2026-05-13) — surface the Phase 5
+// composition factories through the barrel so
+// `src/lib/events-admin-integration-deps.ts` no longer reaches
+// directly into `@/modules/events/infrastructure/*` for them. The
+// `src/lib/**` ESLint exemption permitted those deep imports, but
+// barrel discipline keeps a single import surface (Principle III) +
+// makes future adapter swaps (e.g. an alternate Drizzle repo for
+// MTA tenant-per-DB) a one-line barrel re-wire instead of an N-line
+// grep through every adapter file.
+export { makeDrizzleTenantWebhookConfigRepository } from './infrastructure/drizzle-tenant-webhook-config-repository';
+export { makePinoAuditPort } from './infrastructure/pino-audit-port';

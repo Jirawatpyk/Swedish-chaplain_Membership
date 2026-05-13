@@ -7,8 +7,12 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { runGenerateWebhookSecret } from '@/lib/events-admin-integration-deps';
+import {
+  generateSecretRateLimitCheck,
+  runGenerateWebhookSecret,
+} from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
@@ -29,6 +33,25 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (guard.kind === 'deny') return guard.response;
 
   const tenantCtx = resolveTenantFromRequest(request);
+
+  // Phase 5 review-fix W-01 (2026-05-13) — rate limit before any DB
+  // touch. 3 generations/hour per (tenant, actor); matches the
+  // rotate-secret pattern.
+  const rl = await generateSecretRateLimitCheck(
+    tenantCtx.slug,
+    guard.actorUserId,
+  );
+  if (!rl.success) {
+    const retryAfter = retryAfterSecondsFromRl({ reset: rl.resetAtUnixMs });
+    return problemResponse(
+      429,
+      'rate-limited',
+      'Too many requests',
+      `Generate-secret rate limit exceeded. Retry after ${retryAfter}s.`,
+      { headers: { 'Retry-After': retryAfter.toString() } },
+    );
+  }
+
   // Round 3 H1 — surface a request ID in every 500 problem body.
   const requestId = crypto.randomUUID();
 

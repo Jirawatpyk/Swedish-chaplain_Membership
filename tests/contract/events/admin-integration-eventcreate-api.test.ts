@@ -46,6 +46,11 @@ const runRunTestWebhookMock = vi.fn();
 const runToggleIngestMock = vi.fn();
 const rotateSecretRateLimitCheckMock = vi.fn();
 const testWebhookRateLimitCheckMock = vi.fn();
+// Phase 5 review-fix W-01 (2026-05-13) — generate-secret now has a
+// 3/hour rate-limit gate mirroring rotate-secret. Stub here so the
+// existing 31 contract tests stay green; one new test covers the
+// 429 path below.
+const generateSecretRateLimitCheckMock = vi.fn();
 
 const getCurrentSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
@@ -59,6 +64,7 @@ vi.mock('@/lib/events-admin-integration-deps', () => ({
   runToggleIngest: (...args: unknown[]) => runToggleIngestMock(...args),
   rotateSecretRateLimitCheck: (...args: unknown[]) => rotateSecretRateLimitCheckMock(...args),
   testWebhookRateLimitCheck: (...args: unknown[]) => testWebhookRateLimitCheckMock(...args),
+  generateSecretRateLimitCheck: (...args: unknown[]) => generateSecretRateLimitCheckMock(...args),
   // Round 3 M-type-5 — route imports `asBoundedReason` to brand the
   // disable-route `reason`. Mock passes the raw string through so
   // existing call-argument assertions still match.
@@ -121,6 +127,7 @@ beforeEach(() => {
   getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
   rotateSecretRateLimitCheckMock.mockResolvedValue({ success: true, resetAtUnixMs: Date.now() + 3_600_000 });
   testWebhookRateLimitCheckMock.mockResolvedValue({ success: true, resetAtUnixMs: Date.now() + 3_600_000 });
+  generateSecretRateLimitCheckMock.mockResolvedValue({ success: true, resetAtUnixMs: Date.now() + 3_600_000 });
   emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
 });
 
@@ -382,6 +389,31 @@ describe('POST /api/admin/integrations/eventcreate/generate-secret', () => {
     const { POST } = await loadGenerateSecretRoute();
     const res = await POST(buildPost('generate-secret'));
     expect(res.status).toBe(404);
+  });
+
+  /**
+   * Phase 5 review-fix W-01 (2026-05-13) — generate-secret now has a
+   * 3/hour rate-limit gate matching rotate-secret. Once exhausted the
+   * route must return 429 + `Retry-After` header WITHOUT invoking the
+   * use-case (Upstash budget protection — short-circuit before any DB
+   * read). The 4xx path goes through the shared `problemResponse`
+   * helper so the body is RFC 7807-shaped.
+   */
+  it('429 + Retry-After header when rate-limit exhausted', async () => {
+    const resetAt = Date.now() + 1_800_000; // 30 min ahead
+    generateSecretRateLimitCheckMock.mockResolvedValueOnce({
+      success: false,
+      resetAtUnixMs: resetAt,
+    });
+    const { POST } = await loadGenerateSecretRoute();
+    const res = await POST(buildPost('generate-secret'));
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBeTruthy();
+    expect(runGenerateWebhookSecretMock).not.toHaveBeenCalled();
+    expect(generateSecretRateLimitCheckMock).toHaveBeenCalledWith(
+      TENANT_SLUG,
+      ADMIN_USER_ID,
+    );
   });
 });
 

@@ -41,12 +41,35 @@ export interface WebhookSecretRevealProps {
    * ticked (FR-024 gate preserved).
    */
   readonly onContinue: () => void;
+  /**
+   * Phase 5 review-fix W-04 (2026-05-13) — when rendered inside the
+   * `RotateSecretDialog` post-rotation view, the wrapper dialog
+   * supplies its own "Done/Acknowledge" button. Without this flag the
+   * embedded Continue button creates a dual-completion path: keyboard/
+   * AT users encounter Cancel → [reveal/copy buttons] → Continue
+   * (disabled) → Done, with no clear cue which terminates the flow.
+   * Setting `hideInternalContinue={true}` suppresses the embedded
+   * button so the dialog's Done is the single completion path. The
+   * "saved in password manager" checkbox + its aria-live announcement
+   * remain — the wrapping dialog's Done button is itself gated on the
+   * saved state via parent-side state lift.
+   */
+  readonly hideInternalContinue?: boolean;
+  /**
+   * Phase 5 review-fix W-04 (2026-05-13) — companion of
+   * `hideInternalContinue`. Fires whenever the saved-checkbox state
+   * changes so the parent dialog can mirror the gate on its own
+   * action button.
+   */
+  readonly onSavedChange?: (saved: boolean) => void;
 }
 
 export function WebhookSecretReveal({
   secret,
   secretLastFour,
   onContinue,
+  hideInternalContinue = false,
+  onSavedChange,
 }: WebhookSecretRevealProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseA');
   const [visible, setVisible] = useState(false);
@@ -88,13 +111,18 @@ export function WebhookSecretReveal({
 
   function handleSavedChange(value: boolean) {
     setSaved(value);
+    // Phase 5 review-fix W-04 (2026-05-13) — mirror the saved state
+    // up to the parent so a wrapping dialog (RotateSecretDialog) can
+    // gate its own Done button on the same condition without
+    // requiring two independent checkboxes.
+    onSavedChange?.(value);
     // No longer auto-advances. The "Continue" button below is enabled
     // when `saved === true` and explicitly invokes `onContinue`.
   }
 
   return (
     <Card>
-      <CardContent className="flex flex-col gap-4 py-6">
+      <CardContent className="flex flex-col gap-4">
         {/*
           Round 2 CRIT-02 fix (2026-05-13) — `<Label htmlFor="webhook-
           secret-input">` previously targeted a `<code>` element. HTML
@@ -184,16 +212,23 @@ export function WebhookSecretReveal({
 
         {/* Explicit Continue button (verify-fix 2026-05-13). Disabled
             until the saved-checkbox is ticked — preserves FR-024 gate
-            without the race-condition risk of auto-advance-on-tick. */}
-        <Button
-          type="button"
-          onClick={onContinue}
-          disabled={!saved}
-          aria-disabled={!saved}
-          className="min-h-11 self-end"
-        >
-          {t('continueToSetup')}
-        </Button>
+            without the race-condition risk of auto-advance-on-tick.
+
+            Phase 5 review-fix W-04 (2026-05-13) — suppressed when
+            rendered inside a wrapper dialog that supplies its own
+            completion button (`RotateSecretDialog` Done). Eliminates
+            the dual-completion-path confusion for keyboard/AT users. */}
+        {hideInternalContinue ? null : (
+          <Button
+            type="button"
+            onClick={onContinue}
+            disabled={!saved}
+            aria-disabled={!saved}
+            className="min-h-11 self-end"
+          >
+            {t('continueToSetup')}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

@@ -153,37 +153,96 @@ export function RecentDeliveriesPanel({
           {t('empty')}
         </p>
       ) : (
-        <ul
-          className="divide-y rounded-md border"
-          aria-busy={pending}
+        /*
+          Phase 5 review-fix W-03 (2026-05-13) — proper `<table>`
+          semantics replace the prior `<ul>/<li>` layout to satisfy
+          WCAG 1.3.1 Information and Relationships. Each row has 4
+          logical columns (received / request ID / signature / process)
+          and AT users now hear the column context when each badge is
+          announced.
+
+          The wrapper `<div tabIndex={0}` enables horizontal scroll
+          on narrow viewports (320–480px) without losing keyboard
+          accessibility — the focusable container is the recommended
+          accessible pattern for responsive tables per W3C's
+          "Tables Tutorial" + WCAG 2.4.7 (Focus Visible).
+          `role="region"` + `aria-labelledby` tie the scroller to
+          the section heading so screen readers announce context
+          when the user tabs into the scrollable region.
+        */
+        <div
+          tabIndex={0}
+          role="region"
+          aria-labelledby="recent-deliveries-heading"
+          className="overflow-x-auto rounded-md border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          {deliveries.map((row) => (
-            <li
-              key={`${row.receivedAt}-${row.requestId}`}
-              className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex flex-col gap-1">
-                <RelativeTime iso={row.receivedAt} className="text-xs text-muted-foreground" />
-                <code className="font-mono text-xs text-muted-foreground">
-                  {row.requestId.slice(0, 12)}
-                  {row.requestId.length > 12 ? '…' : ''}
-                </code>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={signatureBadgeVariant(row.signatureOutcome)}>
-                  {t(`signature.${row.signatureOutcome}`)}
-                </Badge>
-                {row.processingOutcome ? (
-                  <Badge variant={processingBadgeVariant(row.processingOutcome)}>
-                    {KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
-                      ? t(`processing.${row.processingOutcome}`)
-                      : row.processingOutcome}
-                  </Badge>
-                ) : null}
-              </div>
-            </li>
-          ))}
-        </ul>
+          <table
+            className="w-full min-w-[34rem] divide-y text-sm"
+            aria-busy={pending}
+          >
+            <caption className="sr-only">{t('table.caption')}</caption>
+            <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
+              <tr>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium"
+                >
+                  {t('table.received')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium"
+                >
+                  {t('table.requestId')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium"
+                >
+                  {t('table.signature')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium"
+                >
+                  {t('table.processing')}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {deliveries.map((row) => (
+                <tr key={`${row.receivedAt}-${row.requestId}`}>
+                  <td className="px-3 py-3 align-top">
+                    <RelativeTime
+                      iso={row.receivedAt}
+                      className="text-xs text-muted-foreground"
+                    />
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <code className="font-mono text-xs text-muted-foreground">
+                      {row.requestId.slice(0, 12)}
+                      {row.requestId.length > 12 ? '…' : ''}
+                    </code>
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <Badge variant={signatureBadgeVariant(row.signatureOutcome)}>
+                      {t(`signature.${row.signatureOutcome}`)}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    {row.processingOutcome ? (
+                      <Badge variant={processingBadgeVariant(row.processingOutcome)}>
+                        {KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
+                          ? t(`processing.${row.processingOutcome}`)
+                          : row.processingOutcome}
+                      </Badge>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

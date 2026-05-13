@@ -35,19 +35,19 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
+// Phase 5 review-fix S-06 (2026-05-13) — use-cases + their error
+// types now flow through the public barrel instead of deep-importing
+// from `application/use-cases/*`. Same runtime behaviour; cleaner
+// boundary for the rest of the project to follow.
 import {
   generateWebhookSecret,
-  type GenerateWebhookSecretError,
-} from '@/modules/events/application/use-cases/generate-webhook-secret';
-import {
   rotateWebhookSecret,
-  type RotateWebhookSecretError,
-} from '@/modules/events/application/use-cases/rotate-webhook-secret';
-import {
   runTestWebhook,
+  type GenerateWebhookSecretError,
+  type RotateWebhookSecretError,
   type RunTestWebhookError,
   type RunTestWebhookOutcome,
-} from '@/modules/events/application/use-cases/run-test-webhook';
+} from '@/modules/events';
 // Round 3 verify-fix 2026-05-13 — pull client-safe types + the
 // `KNOWN_RECENT_PROCESSING_OUTCOMES` Set from the dedicated pure
 // module. Eliminates the transitive Client Component leak that
@@ -71,14 +71,18 @@ export {
 };
 import {
   signWebhookRequest,
+  asSecretLastFour,
+  makeDrizzleTenantWebhookConfigRepository,
+  makePinoAuditPort,
   type WebhookSecret,
   type TenantWebhookConfigAggregate,
+  type SecretLastFour,
+  type TenantWebhookConfigRepositoryError,
 } from '@/modules/events';
-import { asSecretLastFour, type SecretLastFour } from '@/modules/events/domain/secret-last-four';
-import { makeDrizzleTenantWebhookConfigRepository } from '@/modules/events/infrastructure/drizzle-tenant-webhook-config-repository';
-import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
-import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
-import type { TenantWebhookConfigRepositoryError } from '@/modules/events/application/ports/tenant-webhook-config-repository';
+// Phase 5 review-fix S-07 (2026-05-13) — `tenantWebhookConfigs`
+// import dropped after the barrel re-export was removed; the file
+// no longer needs the raw schema reference. Tests now reach
+// `@/modules/events/infrastructure/schema` directly.
 
 // ---------------------------------------------------------------------------
 // Rate limits (FR-008, FR-023)
@@ -86,6 +90,13 @@ import type { TenantWebhookConfigRepositoryError } from '@/modules/events/applic
 
 const ROTATE_MAX_PER_HOUR = 3;
 const TEST_WEBHOOK_MAX_PER_HOUR = 10;
+// Phase 5 review-fix W-01 (2026-05-13) — generate-secret rate limit.
+// Fresh tenant onboarding is a one-shot action; 3/hour matches the
+// rotate-secret budget and prevents an attacker with a compromised
+// admin session from hammering the endpoint (each call costs an
+// Upstash check + a DB conflict probe even though the 409 idempotency
+// bound prevents repeated writes).
+const GENERATE_SECRET_MAX_PER_HOUR = 3;
 const WINDOW_SECONDS = 3600;
 
 /**
@@ -122,6 +133,29 @@ export async function testWebhookRateLimitCheck(
   const result = await authRateLimiter.check(
     `f6-test-webhook:${tenantSlug}:${actorUserId}`,
     TEST_WEBHOOK_MAX_PER_HOUR,
+    WINDOW_SECONDS,
+  );
+  return { success: result.success, resetAtUnixMs: result.reset };
+}
+
+/**
+ * Phase 5 review-fix W-01 (2026-05-13) — generate-secret rate limit
+ * gate. 3 generations/hour per (tenant, actor). Even though
+ * `generateWebhookSecret` returns 409 `secret_already_exists` after
+ * the first successful call (the `tenant_webhook_configs` row exists
+ * with the ON CONFLICT DO NOTHING in `insertConfig`), each additional
+ * call still consumes Upstash budget shared with other admin routes
+ * AND incurs a DB SELECT (conflict probe). Adding a 3/hour gate
+ * matches the rotate-secret pattern and bounds the Upstash side
+ * channel without affecting the legitimate one-shot onboarding flow.
+ */
+export async function generateSecretRateLimitCheck(
+  tenantSlug: string,
+  actorUserId: string,
+): Promise<RateLimitOutcome> {
+  const result = await authRateLimiter.check(
+    `f6-generate-secret:${tenantSlug}:${actorUserId}`,
+    GENERATE_SECRET_MAX_PER_HOUR,
     WINDOW_SECONDS,
   );
   return { success: result.success, resetAtUnixMs: result.reset };
@@ -473,13 +507,17 @@ export async function runRunTestWebhook(
       { event: 'f6_test_webhook_config_load_failed', tenantSlug, errKind: cfg.error.kind },
       '[F6] test-webhook config load failed',
     );
+    // Phase 5 review-fix W-07 — count failure outcomes too.
+    safeEmitTestInvokedMetric(tenantSlug, 'failure');
     return err({ kind: 'config_load_failed', errKind: cfg.error.kind });
   }
   if (cfg.value === null) {
+    // Phase 5 review-fix W-07 — count failure outcomes too.
+    safeEmitTestInvokedMetric(tenantSlug, 'failure');
     return err({ kind: 'config_missing' });
   }
 
-  return runTestWebhook(
+  const useCaseResult = await runTestWebhook(
     {
       tenantId: asTenantId(tenantSlug),
       tenantSlug,
@@ -491,8 +529,21 @@ export async function runRunTestWebhook(
     {
       signRequest: signWebhookRequest,
       httpFetch: async (url, init) => {
+        // Phase 5 review-fix W-02 (2026-05-13) — 10s AbortSignal
+        // timeout. Without this, a stuck receiver (advisory-lock
+        // contention, Neon connectivity glitch, cold function start
+        // targeting itself) blocks the admin route until Vercel
+        // platform timeout (~30s) before surfacing as a generic
+        // failure. 10s is conservative-but-actionable: the receiver's
+        // happy path is sub-100ms p95 (SC-003 budget <300ms), so 10s
+        // is 33× headroom for real outage detection without false
+        // positives under cold-start latency.
+        const TEST_WEBHOOK_TIMEOUT_MS = 10_000;
         try {
-          const res = await fetch(url, init);
+          const res = await fetch(url, {
+            ...init,
+            signal: AbortSignal.timeout(TEST_WEBHOOK_TIMEOUT_MS),
+          });
           return {
             status: res.status,
             json: () => res.json(),
@@ -538,6 +589,37 @@ export async function runRunTestWebhook(
       },
     },
   );
+
+  // Phase 5 review-fix W-07 (2026-05-13) — emit test-invoked metric
+  // on every completed round-trip. We classify by `result.ok` AND by
+  // the inner `RunTestWebhookOutcome.ok` (the use-case returns
+  // `Result.ok` even when the receiver returned 4xx/5xx — the outer
+  // Result only fails on signing errors / invalid_base_url, which are
+  // programming bugs not user-facing failures).
+  const outcome: 'success' | 'failure' =
+    useCaseResult.ok && useCaseResult.value.ok ? 'success' : 'failure';
+  safeEmitTestInvokedMetric(tenantSlug, outcome);
+  return useCaseResult;
+}
+
+/** Phase 5 review-fix W-07 — safe metric emit helper for test-webhook. */
+function safeEmitTestInvokedMetric(
+  tenantSlug: string,
+  outcome: 'success' | 'failure',
+): void {
+  try {
+    eventcreateMetrics.webhookTestInvoked(tenantSlug, outcome);
+  } catch (metricErr) {
+    logger.warn(
+      {
+        event: 'f6_metric_emit_failed',
+        metricName: 'webhookTestInvoked',
+        tenantSlug,
+        err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+      },
+      '[F6] metric emit failed (suppressed) — counter undercount possible',
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -708,5 +790,9 @@ export async function runToggleIngest(
 // strict-R1 freshness logic that this file used to host.
 // ---------------------------------------------------------------------------
 
-// Re-export needed schema for tests that want to probe directly.
-export { tenantWebhookConfigs };
+// Phase 5 review-fix S-07 (2026-05-13) — the `tenantWebhookConfigs`
+// raw-table re-export was removed. Tests that probe the table
+// directly import from `@/modules/events/infrastructure/schema` (the
+// canonical location); the public surface should NOT widen to
+// production callers via the barrel. The barrel's "no raw Drizzle
+// adapters" rule is now consistent across all F6 tables.

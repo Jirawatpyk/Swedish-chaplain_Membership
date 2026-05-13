@@ -37,6 +37,13 @@ export interface ConfirmationDialogProps {
   readonly onConfirm: () => void | Promise<void>;
   readonly destructive?: boolean;
   readonly children?: ReactNode;
+  /**
+   * Phase 5 review-fix W-04 (2026-05-13) — disable the confirm action
+   * while a parent-side gate is unfulfilled (e.g. the embedded
+   * WebhookSecretReveal's saved-checkbox in the post-rotation flow).
+   * Cancel always stays enabled so the user can back out.
+   */
+  readonly confirmDisabled?: boolean;
 }
 
 export function ConfirmationDialog({
@@ -49,6 +56,7 @@ export function ConfirmationDialog({
   onConfirm,
   destructive,
   children,
+  confirmDisabled = false,
 }: ConfirmationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -63,8 +71,11 @@ export function ConfirmationDialog({
         <AlertDialogFooter>
           <AlertDialogCancel ref={cancelRef}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
+            disabled={confirmDisabled}
+            aria-disabled={confirmDisabled || undefined}
             onClick={(event) => {
               event.preventDefault();
+              if (confirmDisabled) return;
               void Promise.resolve(onConfirm()).then(() => onOpenChange(false));
             }}
             className={destructive ? buttonVariants({ variant: 'destructive' }) : undefined}

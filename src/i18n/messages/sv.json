@@ -2414,7 +2414,14 @@
         },
         "page": {
           "title": "EventCreate-integration",
-          "subtitle": "Anslut Zapier så att deltagarregistreringar från EventCreate importeras automatiskt."
+          "subtitle": "Anslut Zapier så att deltagarregistreringar från EventCreate importeras automatiskt.",
+          "loading": "Laddar EventCreate-integration…",
+          "error": {
+            "title": "Kunde inte ladda integrationen",
+            "body": "Något gick fel när EventCreate-integrationen skulle laddas. Försök att ladda om sidan; om problemet kvarstår, kontakta support med referensen nedan.",
+            "digest": "Referens: {digest}",
+            "retry": "Försök igen"
+          }
         },
         "wizard": {
           "stepsLabel": "EventCreate-konfigurationssteg",
@@ -2425,7 +2432,7 @@
           "generateButton": "Generera webhook-nyckel",
           "generating": "Genererar…",
           "generateFailed": "Det gick inte att generera en webhook-nyckel. Försök igen eller kontakta support.",
-          "generateAlreadyExists": "En webhook-nyckel finns redan för den här kammaren. Använd rotera-nyckel i stället.",
+          "generateAlreadyExists": "En webhook-nyckel finns redan för den här kammaren. Använd åtgärden Rotera nyckel i stället.",
           "postRefreshResyncFailed": "Din webhook-nyckel sparades, men sidan uppdaterades inte korrekt. Ladda om för att se den maskerade nyckeln.",
           "back": "Tillbaka",
           "connectComplete": "Jag har konfigurerat Zap — fortsätt",
@@ -2527,8 +2534,15 @@
             "title": "Senaste leveranser",
             "empty": "Inga senaste leveranser ännu. Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
             "includeTestDeliveriesLabel": "Inkludera testleveranser",
-            "updating": "Uppdaterar leveranser…",
+            "updating": "Uppdaterar senaste leveranser…",
             "listSummary": "{count, plural, =0 {Inga leveranser} one {# leverans visas} other {# leveranser visas}}",
+            "table": {
+              "caption": "Senaste webhook-leveranser — de 10 senaste",
+              "received": "Mottagen",
+              "requestId": "Begäran-ID",
+              "signature": "Signatur",
+              "processing": "Bearbetning"
+            },
             "signature": {
               "verified": "Verifierad",
               "rejected": "Signatur avvisad",
@@ -2588,7 +2602,9 @@
       "renewalSchedules": "Förnyelseschemaprinciper",
       "escalationTasks": "Uppföljningsuppgifter",
       "escalationTasksMine": "Uppföljningsuppgifter: mina",
-      "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade"
+      "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade",
+      "eventsList": "Evenemang",
+      "eventcreateIntegration": "EventCreate-integration"
     }
   },
   "nav": {

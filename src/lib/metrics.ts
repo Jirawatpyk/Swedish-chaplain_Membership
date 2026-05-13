@@ -2585,4 +2585,26 @@ export const eventcreateMetrics = {
       enabled ? 0 : 1,
     );
   },
+
+  /**
+   * Phase 5 review-fix W-07 (2026-05-13) — test-webhook invocation
+   * counter. Increment every time the admin presses "Test webhook"
+   * regardless of outcome (per-tenant labelled, with `outcome` label
+   * for `success`/`failure`). Powers the "test-webhook usage" panel
+   * + correlates with `webhook_test_invoked` audit events so the
+   * dashboard ratio (`audit count / metric count`) surfaces audit-
+   * emit drift.
+   *
+   * Emitted by the `runRunTestWebhook` composition adapter on BOTH
+   * the success path AND the use-case failure paths (config_missing,
+   * config_load_failed, network_error, etc.).
+   */
+  webhookTestInvoked(tenantId: string, outcome: 'success' | 'failure'): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_test_invoked_total',
+        'F6 admin-initiated test-webhook invocations, per tenant + outcome (Phase 5 review-fix W-07)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
 } as const;
