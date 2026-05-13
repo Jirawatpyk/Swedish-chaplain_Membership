@@ -153,12 +153,35 @@ function actorSentinel(entry: F6AuditEntry): string {
 
 /**
  * Extract requestId from payload when present (webhook events carry it).
- * `audit_log.request_id` is NOT NULL.
+ * `audit_log.request_id` is NOT NULL — column requires a value, so a
+ * `'no-request-id'` sentinel is returned when no payload field maps.
+ *
+ * Field-name dispatch:
+ *   - Most webhook event types use `payload.requestId` (a deliberate
+ *     contract convention — see `webhook_receipt_verified`,
+ *     `webhook_signature_rejected`, `webhook_duplicate_rejected` etc.
+ *     in audit-port.ts §126-188).
+ *   - `webhook_test_invoked` is the OUTLIER — payload uses
+ *     `testRequestId` (audit-port.ts:192). Without this fallback the
+ *     test-webhook short-circuit audit row gets `request_id =
+ *     'no-request-id'` and the recent-deliveries panel renders the
+ *     sentinel as the visible request ID, which masks the real
+ *     `test-<ts>-<random>` correlation key. Round-3 verify-fix
+ *     (2026-05-13) wired this fallback after the issue was caught
+ *     during local manual smoke-test of the wizard.
+ *
+ * If/when future event types add yet another field-name variant,
+ * extend this dispatch — do NOT silently fall through to the sentinel.
  */
 function extractRequestId(entry: F6AuditEntry): string {
   const payload = entry.payload as Record<string, unknown> | null;
-  if (payload && typeof payload['requestId'] === 'string') {
+  if (!payload) return 'no-request-id';
+  if (typeof payload['requestId'] === 'string') {
     return payload['requestId'];
+  }
+  // `webhook_test_invoked` field-name variant.
+  if (typeof payload['testRequestId'] === 'string') {
+    return payload['testRequestId'];
   }
   return 'no-request-id';
 }

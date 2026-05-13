@@ -162,4 +162,66 @@ describe('pino-audit-port.emitStandalone', () => {
       await okTenant.cleanup();
     }
   });
+
+  /**
+   * Round-3 verify-fix (2026-05-13) — `webhook_test_invoked` payload uses
+   * `testRequestId` instead of `requestId`. Before the fix,
+   * `extractRequestId()` only checked `payload.requestId` and the
+   * test-webhook short-circuit's audit row landed with `request_id =
+   * 'no-request-id'` (sentinel), masking the real test correlation key
+   * in the admin recent-deliveries panel. This integration test asserts
+   * the post-fix mapping: `audit_log.request_id` now reflects
+   * `payload.testRequestId` verbatim.
+   */
+  it('webhook_test_invoked — payload.testRequestId populates audit_log.request_id', async () => {
+    const t = await createTestTenant('test-chamber');
+    try {
+      const dummyExecutor = {
+        execute: () => {
+          throw new Error('not reached');
+        },
+      } as unknown as TenantTx;
+      const port = makePinoAuditPort(dummyExecutor);
+
+      const testRequestId = `test-${Date.now()}-extract-mapping`;
+      const result = await port.emitStandalone({
+        eventType: 'webhook_test_invoked',
+        tenantId: asTenantId(t.ctx.slug),
+        actorType: 'system',
+        actorUserId: 'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Parameters<typeof port.emitStandalone>[0]['actorUserId'],
+        occurredAt: new Date(),
+        summary: 'extract-mapping integration test',
+        payload: {
+          severity: 'info',
+          actorUserId:
+            'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Extract<
+              Parameters<typeof port.emitStandalone>[0]['payload'],
+              { testRequestId: string }
+            >['actorUserId'],
+          testRequestId,
+          durationMs: 42,
+        },
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('emitStandalone should succeed');
+
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, t.ctx.slug));
+      const ours = rows.filter(
+        (r) =>
+          (r.eventType as string) === 'webhook_test_invoked' &&
+          (r.payload as Record<string, unknown> | null)?.['testRequestId'] ===
+            testRequestId,
+      );
+      expect(ours).toHaveLength(1);
+      // Critical assertion — `request_id` column must equal the
+      // `testRequestId` payload field, NOT the 'no-request-id' sentinel.
+      expect(ours[0]!.requestId).toBe(testRequestId);
+    } finally {
+      await t.cleanup();
+    }
+  });
 });
