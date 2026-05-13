@@ -79,6 +79,25 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > (Chamber-OS) has signed appropriate contractual safeguards (PDPA §28;
 > GDPR Standard Contractual Clauses) covering this transfer.
 >
+> **Data processors and transit**:
+>
+> Your registration data flows through the following processors before
+> reaching the Chamber's systems:
+>
+> - **EventCreate** (event registration platform — United States) — the
+>   event organiser, where you submit your registration.
+> - **Zapier** (automation service — United States) — transmits your
+>   registration record from EventCreate to Chamber-OS in near real-time
+>   (typically within 15 minutes of registration). Zapier is a temporary
+>   data conduit; no long-term retention occurs at the Zapier layer.
+> - **Chamber-OS** (Chamber's membership-management system — Singapore
+>   region) — persists your registration record under the retention
+>   policy stated above.
+>
+> The Chamber has signed contractual safeguards (PDPA §28 cross-border
+> consent; GDPR Standard Contractual Clauses + adequacy assessments)
+> for the EU-US and Thailand-US data flows via EventCreate and Zapier.
+>
 > For the full Chamber privacy policy, see **[Chamber privacy policy URL]**.
 
 ---
@@ -130,6 +149,26 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > ผู้ประมวลผลของหอการค้า (Chamber-OS) ได้ลงนามในข้อกำหนดสัญญาที่
 > เหมาะสม (PDPA §28; GDPR Standard Contractual Clauses) เพื่อ
 > ครอบคลุมการโอนข้อมูลนี้
+>
+> **ผู้ประมวลผลและการส่งผ่านข้อมูล**:
+>
+> ข้อมูลการลงทะเบียนของท่านจะผ่านผู้ประมวลผลต่อไปนี้ก่อนเข้าสู่ระบบ
+> ของหอการค้า:
+>
+> - **EventCreate** (แพลตฟอร์มลงทะเบียนงาน — ประเทศสหรัฐอเมริกา) —
+>   ผู้จัดงาน ซึ่งเป็นจุดที่ท่านส่งข้อมูลการลงทะเบียน
+> - **Zapier** (บริการอัตโนมัติ — ประเทศสหรัฐอเมริกา) — ส่งข้อมูล
+>   การลงทะเบียนของท่านจาก EventCreate ไปยัง Chamber-OS แบบ
+>   เกือบเรียลไทม์ (โดยปกติภายใน 15 นาทีหลังการลงทะเบียน) Zapier
+>   เป็นช่องทางส่งผ่านข้อมูลชั่วคราว ไม่มีการเก็บรักษาข้อมูลระยะยาว
+>   ที่ชั้น Zapier
+> - **Chamber-OS** (ระบบจัดการสมาชิกของหอการค้า — ภูมิภาคสิงคโปร์)
+>   — จัดเก็บข้อมูลการลงทะเบียนของท่านตามนโยบายการเก็บข้อมูลข้างต้น
+>
+> หอการค้าได้ลงนามในข้อกำหนดสัญญาเชิงป้องกันที่เหมาะสม (PDPA §28
+> ความยินยอมการส่งข้อมูลข้ามพรมแดน; GDPR Standard Contractual
+> Clauses + การประเมินความเพียงพอ) สำหรับการส่งข้อมูล EU-US และ
+> ไทย-US ผ่าน EventCreate และ Zapier
 >
 > สำหรับนโยบายความเป็นส่วนตัวฉบับเต็มของหอการค้า โปรดดู **[Chamber
 > privacy policy URL]**
@@ -183,6 +222,27 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > Handelskammarens databehandlare (Chamber-OS) har undertecknat
 > lämpliga avtalsmässiga skyddsåtgärder (PDPA §28; GDPR Standard
 > Contractual Clauses) som omfattar denna överföring.
+>
+> **Personuppgiftsbiträden och dataflöde**:
+>
+> Dina registreringsuppgifter passerar följande databehandlare innan
+> de når Handelskammarens system:
+>
+> - **EventCreate** (registreringsplattform — USA) — evenemangs-
+>   arrangören, där du skickar in din registrering.
+> - **Zapier** (automatiseringstjänst — USA) — överför din
+>   registreringspost från EventCreate till Chamber-OS nästan i
+>   realtid (vanligtvis inom 15 minuter efter registrering). Zapier
+>   är en tillfällig dataförmedlare; ingen långsiktig lagring sker
+>   på Zapier-nivå.
+> - **Chamber-OS** (Handelskammarens medlemshanteringssystem —
+>   Singapore-regionen) — bevarar din registreringspost enligt den
+>   bevarandepolicy som anges ovan.
+>
+> Handelskammaren har undertecknat avtalsmässiga skyddsåtgärder
+> (PDPA §28 samtycke till gränsöverskridande överföring; GDPR
+> Standard Contractual Clauses + adekvansbedömningar) för data-
+> flödena EU-USA och Thailand-USA via EventCreate och Zapier.
 >
 > Se Handelskammarens fullständiga integritetspolicy på
 > **[Chamber privacy policy URL]**.

@@ -166,7 +166,7 @@ CREATE POLICY event_regs_tenant_isolation ON event_registrations
 **Invariants**:
 
 - `(tenant_id, event_id, external_id)` is the registration idempotency key (FR-011).
-- `match_type = 'non_member' | 'unmatched'` → `matched_member_id IS NULL` AND `counted_against_* = FALSE` (FR-013).
+- `match_type = 'non_member' | 'unmatched'` → `matched_member_id IS NULL` AND `matched_contact_id IS NULL` AND `counted_against_* = FALSE` (FR-013). (Round-6 B8 staff-review fix 2026-05-13: contact-id arm enforced in migration 0136; original 0128 constraint enforced member-id only.)
 - `payment_status = 'refunded'` → on first refund delivery, any `counted_against_* = TRUE` flag MUST be flipped to FALSE in the same tx and the member's quota incremented (FR-018).
 - `pii_pseudonymised_at IS NOT NULL` → `attendee_email`, `attendee_name`, `attendee_company` are deterministic SHA-256 salted hashes (per-tenant salt); `attendee_email_lower` is implicitly the hash's lowercase (still works as a search key for tenant-internal hash-lookup but not as a re-identification vector).
 - `metadata` MUST exclude any key that collides with the canonical column set.
@@ -607,20 +607,23 @@ export type WebhookSecret      = string & { readonly __brand: 'WebhookSecret' };
 
 ---
 
-## 7. Migrations sequencing (drizzle/migrations/0127–0134)
+## 7. Migrations sequencing (drizzle/migrations/0127–0137)
 
 | # | File | Purpose | DDL type |
 |---|------|---------|----------|
-| 0127 | `0127_f6_events_table.sql` | `CREATE TABLE events` + PK + CHECKs | inside tx |
-| 0128 | `0128_f6_event_registrations_table.sql` | `CREATE TABLE event_registrations` + PK + FK + CHECKs | inside tx |
-| 0129 | `0129_f6_tenant_webhook_configs_table.sql` | `CREATE TABLE tenant_webhook_configs` + PK + CHECK | inside tx |
-| 0130 | `0130_f6_events_indexes.sql` | 4 indexes on `events` | **CONCURRENTLY**, outside tx |
-| 0131 | `0131_f6_registrations_indexes.sql` | 5 indexes on `event_registrations` | **CONCURRENTLY**, outside tx |
-| 0132 | `0132_f6_audit_event_types.sql` | Extend the `audit_event_type` **Postgres enum** with 35 new F6 event types via the F4 precedent pattern (`DO $$ BEGIN ALTER TYPE audit_event_type ADD VALUE 'X'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;` per event — idempotent, forward-only). Postgres requires each `ALTER TYPE … ADD VALUE` in its own statement (cannot run inside a multi-statement tx with other DDL), so the migration file contains 35 sequential DO-blocks. Forward-only: Postgres does not support `DROP VALUE` for an enum. Per F4 migration 0011 precedent (`specs/007-invoices-receipts/data-model.md:415`). | outside tx (per-DO-block) |
-| 0133 | `0133_f6_rls_force_policies.sql` | `ENABLE`/`FORCE` RLS + tenant-isolation policy on all 3 F6 tables | inside tx |
-| 0134 | `0134_f6_eventcreate_idempotency_receipts.sql` | Create `eventcreate_idempotency_receipts` table (F6-owned; see § 1.4) — composite PK `(tenant_id, source, request_id)` + CHECK on source + TTL `ttl_expires_at` column + partial index for sweep + RLS+FORCE + tenant-isolation policy. **F6-owned**, not a reuse of F5's `processor_events` (which is Stripe-specific). | inside tx |
+| 0127 | `0127_f6_events_table.sql` | `CREATE TABLE events` + PK + CHECKs + `events_set_last_updated_at_fn` trigger function (search-path-hardened at creation) | inside tx |
+| 0128 | `0128_f6_event_registrations_table.sql` | `CREATE TABLE event_registrations` + PK + FK + CHECKs + STORED generated `attendee_email_lower` column | inside tx |
+| 0129 | `0129_f6_tenant_webhook_configs_table.sql` | `CREATE TABLE tenant_webhook_configs` + PK + CHECK (grace-key biconditional) | inside tx |
+| 0130 | `0130_f6_events_indexes.sql` | 4 indexes on `events` | **non-CONCURRENTLY, inside tx** (round-6 W9 doc fix 2026-05-13: previous "CONCURRENTLY, outside tx" claim was factually wrong; F3/F8 precedent runs CREATE INDEX on empty tables inside the Drizzle migration tx — `AccessExclusiveLock` is sub-second at table creation time, no zero-downtime concern) |
+| 0131 | `0131_f6_registrations_indexes.sql` | 6 indexes on `event_registrations` incl. `event_regs_tenant_email_lower_idx` (powers Phase 4 admin q-search) | non-CONCURRENTLY, inside tx |
+| 0132 | `0132_f6_audit_event_types.sql` | Extend the `audit_event_type` **Postgres enum** with 35 new F6 event types via the F4 precedent pattern (`DO $$ BEGIN ALTER TYPE audit_event_type ADD VALUE 'X'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;` per event — idempotent, forward-only). Postgres requires each `ALTER TYPE … ADD VALUE` in its own statement (cannot run inside a multi-statement tx with other DDL), so the migration file contains 35 sequential DO-blocks. Forward-only: Postgres does not support `DROP VALUE` for an enum. Per F4 migration 0011 precedent. | outside tx (per-DO-block) |
+| 0133 | `0133_f6_rls_force_policies.sql` | `ENABLE`/`FORCE` RLS + tenant-isolation policy on `events` + `event_registrations` + `tenant_webhook_configs` (3 tables; `eventcreate_idempotency_receipts` gets its own RLS+FORCE inline in 0134) | inside tx |
+| 0134 | `0134_f6_eventcreate_idempotency_receipts.sql` | Create `eventcreate_idempotency_receipts` table (F6-owned; see § 1.4) — composite PK `(tenant_id, source, request_id)` + CHECK on source + TTL `ttl_expires_at` column + **full** index on `ttl_expires_at` for sweep (round-6 W9 doc fix 2026-05-13: previous "partial index `WHERE ttl_expires_at < NOW() + INTERVAL '1 day'`" claim was wrong; `now()` is STABLE not IMMUTABLE and Postgres rejects STABLE expressions in partial-index predicates per commit `785534f4`) + RLS+FORCE + tenant-isolation policy. **F6-owned**, not a reuse of F5's `processor_events` (Stripe-specific). | inside tx |
+| 0135 | `0135_f6_force_expire_grace_audit.sql` | Add `webhook_secret_force_expired` enum value (gap closed in follow-up — original 0132 missed the `forceExpireGraceSecret` use-case audit event). | outside tx (DO-block) |
+| 0136 | `0136_f6_event_registrations_non_member_no_contact_check.sql` | **Round-6 staff-review B8 fix (2026-05-13)** — tighten `event_registrations_non_member_no_quota` CHECK to also forbid `matched_contact_id` on non_member/unmatched rows. Closes data-integrity hole left by 0128's original constraint. | inside tx |
+| 0137 | `0137_f6_webhook_ingest_precondition_failed_audit.sql` | **Round-6 staff-review W5 fix (2026-05-13)** — add `webhook_ingest_precondition_failed` enum value so pre-tx config-load failures stop polluting the `webhook_rolled_back` taxonomy. | outside tx (DO-block) |
 
-All migrations are reversible (down migrations included). All `CREATE INDEX CONCURRENTLY` statements live in their own migration file outside any explicit transaction (Drizzle's `--no-transaction` flag in the migration header), per F4/F5/F7/F8 convention.
+All migrations are reversible (down migrations included) EXCEPT enum extensions (0132, 0135, 0137) which are forward-only per Postgres restriction. Indexes are created non-CONCURRENTLY because the tables are empty at creation time — `AccessExclusiveLock` is sub-second and zero-downtime is not a concern. The CONCURRENTLY pattern is reserved for index additions to populated tables in later phases.
 
 ---
 

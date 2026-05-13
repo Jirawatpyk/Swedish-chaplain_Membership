@@ -42,10 +42,14 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
+| **F6 idempotency sweep** | **`POST /api/cron/eventcreate/sweep-idempotency-receipts`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
+| **F6 PII pseudonymisation sweep** | **`POST /api/cron/eventcreate/pseudonymise-non-member-pii`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
-externals on Hobby.
+externals on Hobby. F6 sweep cron handlers themselves ship in Phase 10
+(T115/T116) — the entries above register the schedule + auth contract
+ahead of the handler landing so operators can pre-configure cron-job.org.
 
 ## Retry policy contract (READ BEFORE CONFIGURING ANY F7 JOB)
 
@@ -198,7 +202,7 @@ cron-driven endpoints. Rotation procedure (zero downtime):
 3. Redeploy production (the new env value loads at boot)
 4. Update **every** cron-job.org job's Bearer header in the headers UI
    — see the job catalogue table at the top of this file for the
-   complete list (currently 4 jobs: F5 stale-pending-count, F7
+   complete list (currently 15+ jobs across F5 stale-pending-count, F7
    dispatch-scheduled, F7 reconcile-stuck-sending, F7
    prune-expired-drafts). Verify the catalogue is up-to-date before
    rotation; missing one cron job mid-rotation causes ≤5min outage.
@@ -485,6 +489,46 @@ genuine bug surfaces in audit).
 - **URL**: `.../api/cron/renewals/reconcile-pending-applications`
 - **Schedule**: `0 5 * * 6` (Sat 05:00 Asia/Bangkok — 1h after token prune)
 - **Timeout**: 5 seconds (small table + partial-index-driven scan)
+
+## F6 — idempotency sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T116)
+
+Purges expired rows from `eventcreate_idempotency_receipts` (7-day
+TTL). Without the sweep, the table accumulates ~604,800 rows/year
+per tenant at sustained 60 req/min — operationally low but unbounded.
+
+- **Title**: `Chamber-OS · F6 eventcreate idempotency-receipts sweep`
+- **URL**: `${BASE}/api/cron/eventcreate/sweep-idempotency-receipts`
+- **Method**: POST
+- **Schedule**: `30 3 * * *` (daily 03:30 Asia/Bangkok)
+- **Auth**: `Authorization: Bearer ${CRON_SECRET}`
+- **Timeout**: 30 seconds (DELETE ... WHERE ttl_expires_at < NOW() per tenant; bounded at <10k rows/day)
+- **Retry on failure**: OFF (handler emits `eventcreate_idempotency_sweep_rows_total{outcome=swept|skipped}` per tenant; the next 24h tick is the natural retry. cron-job.org default retry storm is undesirable.)
+- **Expected response codes**:
+  - 200 + `swept` count in body → success
+  - 401 → `CRON_SECRET` mismatch (rotate + reconfigure)
+  - 503 → `FEATURE_F6_EVENTCREATE=false` (expected during dark-launch)
+  - 500 → bug or transient DB blip (investigate logs)
+- **On-call response**: SLO-F6-004 alerts if `rate(swept) == 0` for ≥2 consecutive days while `tenant_webhook_configs` has live rows. First sweep after flag-flip should report `outcome=swept` rows = (initial table size); steady-state is ~daily-traffic-volume.
+- **Handler module**: `src/app/api/cron/eventcreate/sweep-idempotency-receipts/route.ts` (Phase 10 T116)
+
+## F6 — non-member PII pseudonymisation sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T113)
+
+PDPA Section 37 / GDPR Art. 5(1)(c) data-minimisation: hash
+attendee_email + attendee_name on non-member registrations whose
+`registered_at` is older than 2 years (FR-032 retention threshold).
+Idempotent — re-runs on already-pseudonymised rows are no-ops (the
+partial index `event_regs_pseudonymise_eligibility_idx` excludes them).
+
+- **Title**: `Chamber-OS · F6 non-member PII pseudonymisation sweep`
+- **URL**: `${BASE}/api/cron/eventcreate/pseudonymise-non-member-pii`
+- **Method**: POST
+- **Schedule**: `0 4 * * *` (daily 04:00 Asia/Bangkok — 30 min after idempotency sweep)
+- **Auth**: `Authorization: Bearer ${CRON_SECRET}`
+- **Timeout**: 60 seconds (SC-011 target — full-pass <60s at SweCham scale)
+- **Retry on failure**: OFF (handler emits `eventcreate_pii_pseudonymisation_sweep_rows_total{outcome=pseudonymised|skipped}`; idempotent — natural daily retry suffices.)
+- **Expected response codes**: as above
+- **On-call response**: a sustained `outcome=pseudonymised` count of 0 for >30 days when registrations existed older than 2 years indicates a sweep regression. Cross-reference against retention audit (`pii_pseudonymisation_sweep_run` event in audit_log).
+- **Handler module**: `src/app/api/cron/eventcreate/pseudonymise-non-member-pii/route.ts` (Phase 10 T113)
 
 ## Owner
 

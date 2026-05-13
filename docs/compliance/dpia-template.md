@@ -257,6 +257,103 @@ no second human reviewer is available). Re-evaluation cadence:
 
 ---
 
+## F6 — EventCreate Integration (added round-6 staff-review 2026-05-13)
+
+### Triggers (GDPR Art. 35 / PDPA §39)
+
+F6 hits **three** high-risk triggers, mandating a DPIA before the
+production flag-flip:
+
+1. **New cross-border processor chain** — registration data now flows
+   through EventCreate (US) → Zapier (US) → Chamber-OS (Singapore region).
+   Two new processor relationships beyond the F1+F4 baseline; both US
+   processors carry adequacy-assessment + SCC obligations under GDPR
+   Chapter V and PDPA §28.
+2. **Automated decision-making with PII matching** — the 4-rule
+   attendee-match cascade (FR-012) automatically links attendees to
+   member records using email / domain / fuzzy company-name signals.
+   Fuzzy matches set `match_type = 'unmatched'` for admin relink;
+   purely-automated decisions are limited to quota counting and
+   admin-visible match-status labels — no automated decision has a
+   legal or similarly significant effect on the data subject.
+3. **Systematic processing of non-member personal data** — attendees
+   who are NOT chamber members still have email + name + company
+   stored for 2-year retention (per FR-032 minimisation). This is
+   "large-scale" under GDPR Art. 35(3)(b) at sustained Zapier load
+   (envelope ~50,000 registrations/yr/tenant).
+
+### Data flow
+
+```
+EventCreate (US)                  Zapier (US)                   Chamber-OS (SG)
+[attendee submits  ]   webhook    [signed HMAC POST  ]   ingest [strict-tx event   ]
+[ registration     ] ─────────►  [ X-Chamber-Sig    ] ─────────► [ + registration + ]
+[ on event page    ]   ≤15min    [ X-Chamber-Ts     ]   tx     [ idempotency rcpt ]
+                                                                 [ + audit row     ]
+                                                                       │
+                                                                       ▼
+                                                                 [ 5y audit │
+                                                                 [ retention│
+                                                                 [ 2y non-  │
+                                                                 [ member   │
+                                                                 [ PII      │
+                                                                 [ pseudo-  │
+                                                                 [ nymise   │
+                                                                 [ sweep    ]
+```
+
+### Lawful basis per processing operation
+
+| Operation | Lawful basis | Reference |
+|---|---|---|
+| Webhook ingest (event + registration write) | Legitimate interest (chamber's interest in accurate event records) | PDPA §24(5) / GDPR Art. 6(1)(f) |
+| Member matching | Legitimate interest (member benefit accounting) | Same |
+| Audit log entries (5y) | Legal obligation + legitimate interest | PDPA §24(4) / GDPR Art. 6(1)(c) |
+| Quota decrements on matched member | Contract (member's chamber-membership agreement) | PDPA §24(3) / GDPR Art. 6(1)(b) |
+| Non-member 2y retention | Legitimate interest, balanced; pseudonymised thereafter | PDPA §24(5) / GDPR Art. 6(1)(f) + Art. 5(1)(e) |
+
+### Recipients of personal data
+
+| Recipient | Role | Country | Safeguard |
+|---|---|---|---|
+| Chamber admin staff (admin role) | Read + relink + erase actions on attendee records | Bangkok (TH) — viewed via SG-hosted admin portal | RBAC + audit log |
+| Chamber manager staff (manager role) | Read-only on attendee records | TH | RBAC + audit log |
+| EventCreate (data exporter) | Source platform | US | DPA with EventCreate (TBD — see "Outstanding items") |
+| Zapier (data conduit) | Transit between EventCreate and Chamber-OS | US | DPA with Zapier (TBD — see "Outstanding items") |
+| Vercel | Compute (sin1) | SG | SCC (F1 deviation already covers) |
+| Neon | Database (ap-southeast-1) | SG | SCC (F1 deviation already covers) |
+| Upstash | Rate-limit cache | SG | SCC (F1 deviation already covers) |
+
+### Risk assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Cross-tenant data leak via misrouted webhook | Low | High | HMAC verify per tenant secret + URL/payload tenantSlug cross-check (R6-S8 staff-review item; tracked) + RLS+FORCE on all F6 tables + integration test T042 (Constitution Principle I Review-Gate blocker) |
+| Attendee enumeration via admin event-detail 404 | Medium | Medium | R6-B7 fix emits `cross_tenant_probe` audit on every 404; alert on rate ≥10/5min/actor (documented in observability.md § 24) |
+| Member impersonation via fuzzy company-name match | Low | Medium | Tied fuzzy → `unmatched` (FR-012) requires admin manual relink; quota decrement gated on definitive match types only (Phase 6 T085) |
+| PII over-retention | Low (sweep cron at 04:00 daily) | High | Phase 10 T113 PII-pseudonymisation cron + FR-032 2-year non-member retention enforced at DB level via partial index `event_regs_pseudonymise_eligibility_idx` |
+| Audit log integrity loss | Very low | High | FR-037 strict-tx + dual-write fallback + pino.fatal stderr backstop (verified by `tests/integration/events/db-unavailable-during-tx.test.ts`) |
+| Logged-PII leak via stack trace | Low | Medium | Round-6 W2 fix routes both `webhook_rolled_back` audit payload + `safeEmitStandalone` pino log lines through `redactStack` (verified showing `[redacted-path]` markers in chaos test output) |
+
+### Outstanding items before flag-flip
+
+- [ ] Chamber legal counsel: execute DPA with EventCreate (data exporter); record contract reference in `processing-records.md § F6.processors`. (Round-6 PDPA agent M-3.)
+- [ ] Chamber legal counsel: execute DPA with Zapier (data conduit). Same recording requirement.
+- [ ] DPO contact populated in privacy notice template (per-locale). Currently `[DPO email]` placeholder.
+- [ ] F6 privacy notice published on event-registration page of every chamber event (EventCreate side). Operational task — chamber to confirm Zapier-side configuration.
+
+### Conclusion
+
+DPIA mandatory + completable. With the listed mitigations and the
+outstanding DPA / DPO items closed, F6 EventCreate Integration meets
+the threshold for both PDPA and GDPR. The DPIA must be re-reviewed if:
+- A 4th cross-border processor is added.
+- Retention windows change from 5y audit / 2y non-member PII.
+- The automated-decision footprint expands (e.g., auto-rejecting
+  registrations or auto-blocking members based on attendance patterns).
+
+---
+
 ## Future feature DPIAs
 
 Feature owners MUST add a DPIA section here BEFORE `/speckit.review`

@@ -1256,3 +1256,122 @@ This is documented as a known limitation; consolidating to a single
 log shape would either pull pino into the client bundle (forbidden)
 or lose the structured-JSON property of pino logs. The dual-source
 scrape is the deliberate trade-off.
+
+---
+
+## 24. F6 EventCreate Integration — observability
+
+**Lineage**: spec.md § Functional Requirements FR-036; SC-003 webhook ingest p95; plan.md § VII Distributed tracing; round-6 staff-review (2026-05-13) closed agent-flagged BLOCKER (this section was missing — F7 § 22 + F8 § 23 set the parity bar).
+
+F6 ships dark behind `FEATURE_F6_EVENTCREATE=false` until SweCham completes the pre-flag-flip operator checklist (see `specs/012-eventcreate-integration/retrospective.md` § "Pre-flag-flip operator checklist"). All 11 metrics in this section MUST be wired before the production flag-flip; SLO alerts MUST be configured before any tenant onboards. Metrics declared but unwired (idempotency-sweep, pseudonymisation-sweep, secret-rotation) ship their handler in Phase 10 + Phase 8 respectively — the counter declarations exist now so dashboards can subscribe ahead of the handler landing.
+
+### 24.1 Metrics catalogue
+
+#### 24.1.1 Webhook ingest (Phase 3 — shipped)
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `eventcreate_webhook_receipts_total` | counter | `tenant`, `signature_outcome` (5-enum), `processing_outcome` (14-enum) | route.ts step 1-10 | FR-036 #1, SC-002 derived |
+| `eventcreate_webhook_ingest_latency_ms` | histogram (ms) | `tenant` | use-case end-to-end | FR-036 #2, SC-003 |
+| `eventcreate_webhook_body_oversized_total` | counter | `tenant` | route.ts step 2/3.5 | DoS guard |
+| `eventcreate_rate_limit_fallback_total` | counter | `tenant` | events-webhook-deps.ratelimitCheck | Upstash fail-open observability |
+| `eventcreate_audit_fallback_double_failure_total` | counter | `tenant`, `primary_stage` (4-enum) | ingest-webhook-attendee catch | FR-037 catastrophic |
+
+#### 24.1.2 Admin surface (Phase 4 — shipped)
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `admin_events_list_p95_ms` (derived from OTel span) | histogram | `tenant.id` | span `admin_events_list` | SLO-F6-002 |
+| `admin_events_detail_p95_ms` (derived from OTel span) | histogram | `tenant.id` | span `admin_events_detail` | SLO-F6-003 |
+
+Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.page_size`, `f6.unmatched_only`, `f6.has_search_query`. EventId is deliberately NOT a span attribute (potential PII / unbounded label).
+
+#### 24.1.3 Background sweep (declared in Group 2 R6-W4 — handler lands Phase 10 T116)
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `eventcreate_idempotency_sweep_rows_total` | counter | `tenant`, `outcome` (swept|skipped) | (Phase 10) sweep cron handler | FR-036 #11 |
+| `eventcreate_pii_pseudonymisation_sweep_rows_total` | counter | `tenant`, `outcome` (pseudonymised|skipped) | (Phase 10) retention cron | FR-036 #10, SC-011 |
+
+#### 24.1.4 Phase 6+ deferred (declaration ships with each phase)
+
+| Metric | Phase | Notes |
+|---|---|---|
+| `eventcreate_match_rate` | Phase 4+ | observable gauge per tenant; computed from `eventcreate_webhook_receipts_total{processing_outcome=matched_*}` ratio |
+| `eventcreate_quota_partnership_decremented_total` | Phase 6 | counter labelled tenant + plan tier |
+| `eventcreate_quota_cultural_decremented_total` | Phase 6 | counter labelled tenant + plan tier |
+| `eventcreate_quota_credit_back_total` | Phase 6 | counter labelled tenant + cause (refund|archive|relink) |
+| `eventcreate_csv_import_duration_ms` | Phase 7 | histogram per tenant |
+| `eventcreate_webhook_secret_rotation_total` | Phase 8 | counter per tenant |
+| `eventcreate_tenant_ingest_disabled_gauge` | Phase 8 | observable gauge — 1 when tenant disabled |
+
+### 24.2 SLOs
+
+| SLO ID | Target | Measurement source | Error budget |
+|---|---|---|---|
+| **SLO-F6-001** webhook ingest p95 | < 300 ms | `eventcreate_webhook_ingest_latency_ms` p95 over 5-min sliding window | 1% per 30d window |
+| **SLO-F6-002** admin list p95 | < 500 ms @ 100 events × 25/page | OTel span `admin_events_list` p95 | 1% per 30d |
+| **SLO-F6-003** admin detail p95 | < 800 ms @ 500 attendees × 50/page | OTel span `admin_events_detail` p95 | 1% per 30d |
+| **SLO-F6-004** idempotency-sweep liveness | rate(`*_sweep_rows_total{outcome=swept}`) > 0 over rolling 48h while table row count > 0 | counter + tenant_webhook_configs row count | 0% — paged on first failure |
+| **SLO-F6-005** match-rate availability | `eventcreate_match_rate` gauge ≥ 0.95 (SC-002) | gauge + alerting threshold | informational — soft target |
+| **SLO-F6-006** audit completeness | `eventcreate_audit_fallback_double_failure_total` == 0 over rolling 30d | counter | 0% — pages on first occurrence |
+
+### 24.3 Alerts
+
+| Alert | Condition | Severity | Runbook |
+|---|---|---|---|
+| `f6_webhook_signature_burst` | rate(`eventcreate_webhook_receipts_total{signature_outcome!='verified'}`) > 5/min per tenant for 10 min | P2 | `docs/runbooks/f6-webhook-signature-burst.md` (Phase 10) |
+| `f6_admin_event_detail_enumeration` | distinct `event_id_hash` from same `actor_user_id` ≥ 10 within 5 min | P2 | `docs/runbooks/f6-admin-event-detail-not-found.md` (Phase 10 T124+) |
+| `f6_cross_tenant_probe_burst` | `cross_tenant_probe` audit rate > 1/min per tenant for 5 min | P1 | (Phase 10 — covers webhook + admin surface) |
+| `f6_idempotency_sweep_stalled` | SLO-F6-004 violation | P2 | `docs/runbooks/f6-idempotency-sweep.md` (Phase 10) |
+| `f6_audit_fallback_double_failure` | counter increments by ≥1 in 5-min window | P1 page | `docs/runbooks/f6-audit-fallback-double-failure.md` (Phase 10) |
+| `f6_rate_limit_fallback_sustained` | rate(`eventcreate_rate_limit_fallback_total`) > 1/min for 10 min | P3 | Indicates Upstash incident — auth surface alert already covers root cause |
+
+### 24.4 Forbidden-log-field additions (F6-specific)
+
+`src/lib/logger.ts` REDACT_PATHS covers:
+- `webhook_secret_active` + `webhook_secret_grace` (+ nested `*.` `*.*.` depth)
+- `X-Chamber-Signature` header value (case variants)
+- `attendee_email` + `attendeeEmail` (+ depth-2)
+- `attendee_name` + `attendeeName` (+ depth-2) — round-6 S20 fix
+- `attendee_company` + `attendeeCompany` (+ depth-2) — round-6 S20 fix
+- `EVENTCREATE_PII_PSEUDONYM_SALT` + `pii_pseudonym_salt` (Phase 10)
+
+Stack traces: route-handler + use-case + audit-port catch blocks scrub container paths + `node_modules` + `webpack-internal:///` URLs via `@/lib/redact-stack` before pino log + audit_log JSONB persistence (round-6 W2 fix; full coverage verified by `tests/integration/events/db-unavailable-during-tx.test.ts` showing `[redacted-path]` / `[redacted-file-url]` markers in the fatal-log output).
+
+### 24.5 Dashboard
+
+Recommended Vercel Observability dashboard layout when wiring:
+- **Top row**: SLO-F6-001 webhook p95 line graph (30d) + error-budget burn gauge + webhook_receipts_total stacked-area by signature_outcome
+- **Second row**: SLO-F6-002 + SLO-F6-003 admin spans (light blue lines) overlaid with admin error-rate counter
+- **Third row**: idempotency-sweep cron last-run timestamp gauge + audit-fallback-double-failure counter (must be 0)
+- **Fourth row**: cross_tenant_probe rate per tenant (P1 alert visibility) + role_violation_blocked rate (FR-035 informational)
+
+Sample-rate note: histograms emit 100% (low volume — webhook is Zapier-driven at ≤60 req/min/tenant); span sampling follows `@vercel/otel` defaults (head-based, 100% in dev, configurable in prod).
+
+### 24.6 Trace tree
+
+```
+webhook_ingest_eventcreate (route span — wraps full pipeline)
+├── (rate-limit check — Upstash, auto-instrumented)
+├── (loadTenantWebhookConfig — Drizzle, auto-instrumented)
+├── (verifyWebhookSignature — pure, no span)
+└── (when verified)
+    └── ingest-use-case strict-tx
+        ├── (idempotency receipt insert — Drizzle)
+        ├── (event upsert — Drizzle)
+        ├── (attendee match cascade — 4 Drizzle queries)
+        ├── (registration insert — Drizzle)
+        └── (audit emit — Drizzle inside same tx)
+
+admin_events_list (route span)
+└── runListEvents
+    └── (Drizzle list + getEmptyContext + getMatchCountsByEventIds — parallelised)
+
+admin_events_detail (route span)
+└── runLoadEventDetail
+    └── (Drizzle findById + findByEventId 3-parallel — events repo + registrations repo)
+```
+
+Tracer name: `swecham.events` (matches the rest of the codebase pattern `swecham.<module>`).
+
