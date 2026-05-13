@@ -7,7 +7,22 @@
 
 All endpoints are admin-only. The **entire `/admin/integrations/eventcreate/**` route prefix returns 404 for both `manager` and `member`** (surface-disclosure prevention per FR-035 — the existence of secret-bearing surfaces is sensitive). `role_violation_blocked` audit is emitted on every blocked attempt regardless of the returned status code. All endpoints scope to current tenant via `runInTenant`.
 
-**Navigation visibility (R1)**: For tenants that don't use EventCreate at all (CSV-only ingest per Session 2026-05-12 round 3 Q1 — Eventbrite / Meetup / spreadsheet workflows), the `/admin/integrations/eventcreate` route still exists for admin discovery, but the admin sidebar / left-nav entry is **hidden by default** when (a) no `tenant_webhook_configs` row exists for this tenant AND (b) `last_received_at IS NULL` for the past 30 days. The admin can still reach the route via direct URL or a "Set up EventCreate integration" entry in the events list empty-state — but the persistent nav entry doesn't clutter the workspace of CSV-only tenants. The route renders normally when reached (FR-022 view); the visibility-toggle is purely a navigation-affordance decision.
+**Navigation visibility (R1, revised 2026-05-13 post-Phase-5-shakedown)**:
+
+The admin sidebar / left-nav entry for `/admin/integrations/eventcreate` is **shown by default whenever the F6 kill-switch (`FEATURE_F6_EVENTCREATE`) is enabled** for the deployment. The route layer (page server component + 5 API route handlers) gates surface disclosure via the same kill-switch + admin-only role check (FR-035), so showing the nav entry never leaks the surface to non-admin actors.
+
+**Why the revision** (original strict R1 → relaxed):
+- Original R1 (drafted Session 2026-05-12 round 2): hide the entry when `(a) no tenant_webhook_configs row exists AND (b) last_received_at IS NULL for 30 days`, to avoid cluttering the workspace of CSV-only tenants.
+- During Phase 5 implementation shakedown the strict R1 logic created a chicken-and-egg discoverability trap: a fresh tenant has no row → entry hidden → admin must reach the wizard via direct URL or the events-list empty-state CTA → but the events-list nav entry itself was a Phase 4 gap (never added). End-to-end the wizard was unreachable from the sidebar for any tenant on day 1.
+- This contract section explicitly classified the toggle as "purely a navigation-affordance decision" — the relaxation stays within that licence and is documented here for spec-drift traceability rather than relying solely on the tasks.md completion note.
+
+**Currently active behaviour**:
+- `FEATURE_F6_EVENTCREATE=false` → entry hidden, route 404, surface invisible.
+- `FEATURE_F6_EVENTCREATE=true` → entry visible to admin role. Manager + member still receive 404 + `role_violation_blocked` audit at the route layer (FR-035 unchanged).
+
+**Future per-tenant opt-out** (deferred): an `isEventcreateNavVisible(tenantSlug)` resolver remains exported from `src/lib/events-admin-integration-deps.ts` as a public helper; if a CSV-only tenant requests suppression, a per-tenant flag wired through `staffNavConfig.NavItem.visibilityFlag` can route to that resolver without re-deriving the freshness logic.
+
+**Phase 4 gap fix bundled in this Phase 5 ship**: a missing `/admin/events` nav entry (no Phase 4 task added it) was added under the same `staffNavConfig.sections[0]` group so admins can reach the events list — which carries the "Set up EventCreate integration" empty-state CTA (FR-020 / US2 AS5 variant a) — from the sidebar without typing the URL.
 
 ---
 

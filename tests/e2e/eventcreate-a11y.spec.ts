@@ -90,4 +90,25 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     await page.waitForLoadState('domcontentloaded');
     await expectNoAxeViolations(page, '/admin/events/[eventId]');
   });
+
+  /**
+   * D2 verify-fix (2026-05-13) — wizard page a11y scan covering Phase 5
+   * US3 surface. SC-010 requires WCAG 2.1 AA across all admin surfaces;
+   * the wizard introduces complex interactive primitives (one-time
+   * reveal panel + checkbox gate + Stepper + walkthrough list with
+   * Next/Image elements + confirmation AlertDialog for rotate +
+   * Switch toggle on recent deliveries) that were not covered by the
+   * Phase 4 list/detail scans above.
+   */
+  test('admin integration wizard (/admin/integrations/eventcreate)', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/integrations/eventcreate');
+    await page.waitForLoadState('domcontentloaded');
+    // Guard against scanning a 404 page — wait until the wizard's H1
+    // is visible before the axe scan kicks off.
+    await expect(
+      page.getByRole('heading', { level: 1 }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page, '/admin/integrations/eventcreate');
+  });
 });

@@ -2411,6 +2411,133 @@
           "heading": "Kommer snart",
           "body": "Konfigurationsguiden för EventCreate-integrationen lanseras inom kort. Kontakta tills vidare administratören för hjälp med att konfigurera din Zap.",
           "backToEvents": "Tillbaka till evenemang"
+        },
+        "page": {
+          "title": "EventCreate-integration",
+          "subtitle": "Anslut Zapier så att deltagarregistreringar från EventCreate importeras automatiskt."
+        },
+        "wizard": {
+          "stepsLabel": "EventCreate-konfigurationssteg",
+          "phaseAStep": "Generera nyckel",
+          "phaseBStep": "Anslut Zapier",
+          "phaseCStep": "Testa och hantera",
+          "phaseAIntro": "Generera en ny webhook-nyckel för den här kammaren. Värdet visas i klartext endast en gång — spara det i en lösenordshanterare innan du fortsätter.",
+          "generateButton": "Generera webhook-nyckel",
+          "generating": "Genererar…",
+          "generateFailed": "Det gick inte att generera en webhook-nyckel. Försök igen eller kontakta support.",
+          "generateAlreadyExists": "En webhook-nyckel finns redan för den här kammaren. Använd rotera-nyckel i stället.",
+          "back": "Tillbaka",
+          "connectComplete": "Jag har konfigurerat Zap — fortsätt",
+          "webhookUrlLabel": "Webhook-URL",
+          "copyUrl": "Kopiera webhook-URL till urklipp",
+          "secretLabel": "Aktuell nyckel",
+          "rotateButton": "Rotera nyckel",
+          "graceActiveUntil": "Gammal nyckel verifierar fortfarande till {timestamp}"
+        },
+        "phaseA": {
+          "secretLabel": "Webhook-nyckel (visas en gång)",
+          "revealSecret": "Visa nyckel",
+          "hideSecret": "Dölj nyckel",
+          "copySecret": "Kopiera nyckel till urklipp",
+          "copied": "Kopierat till urklipp",
+          "copyFailed": "Kopiering misslyckades — markera och kopiera manuellt",
+          "warning": "Spara värdet i en lösenordshanterare omedelbart. Det visas inte igen.",
+          "savedInPasswordManager": "Jag har sparat nyckeln i en lösenordshanterare",
+          "savedHint": "Bekräfta sista 4: {lastFour}"
+        },
+        "phaseB": {
+          "title": "Anslut EventCreate via Zapier",
+          "stepsLabel": "Zapier-konfigurationsguide",
+          "englishOnlyNotice": "Zapier-webbappen är endast tillgänglig på engelska. Beskrivningarna nedan är lokaliserade; skärmbilderna visar Zapiers engelska gränssnitt.",
+          "step1": {
+            "title": "Steg 1: Logga in på Zapier",
+            "body": "Öppna zapier.com och logga in på (eller skapa) det Zapier-konto som Zap:en ska köras från.",
+            "alt": "Inloggningsskärm för Zapier"
+          },
+          "step2": {
+            "title": "Steg 2: Skapa en ny Zap",
+            "body": "Klicka på den orange Create Zap-knappen i toppmenyn.",
+            "alt": "Zapiers startsida med Create Zap-knappen markerad"
+          },
+          "step3": {
+            "title": "Steg 3: Välj EventCreate som trigger",
+            "body": "Sök efter EventCreate, välj New Attendee Registration som händelse, och anslut ditt EventCreate-konto.",
+            "alt": "Trigger-konfiguration med EventCreate"
+          },
+          "step4": {
+            "title": "Steg 4: Lägg till en Webhooks by Zapier-åtgärd",
+            "body": "Lägg till ett nytt åtgärdssteg, välj Webhooks by Zapier → POST. Klistra in denna webhook-URL i URL-fältet: {webhookUrl}",
+            "alt": "Konfiguration av Webhooks by Zapier-åtgärd"
+          },
+          "step5": {
+            "title": "Steg 5: Mappa nyttolastens fält",
+            "body": "Mappa varje EventCreate-fält mot JSON-bodyns nycklar (event.externalId, attendee.email m.fl.). Använd referensen för fältmappning nedan vid behov.",
+            "alt": "Skärm för fältmappning"
+          },
+          "step6": {
+            "title": "Steg 6: Lägg till signaturheader",
+            "body": "Under Headers, lägg till en rad för X-Chamber-Signature med HMAC-SHA256 av bodyn med din webhook-nyckel. Zapiers Crypto-verktyg gör detta enkelt.",
+            "alt": "Headers-konfiguration med signaturrad"
+          },
+          "step7": {
+            "title": "Steg 7: Testa Zap:en",
+            "body": "Kör Zapiers inbyggda test — du ska se ett 200 OK-svar från Chamber-OS som bekräftar att den syntetiska deltagaren importerades.",
+            "alt": "Indikator för lyckat Zapier-test"
+          },
+          "step8": {
+            "title": "Steg 8: Publicera",
+            "body": "Sätt på Zap:en. Nya EventCreate-deltagarregistreringar flödar nu in i Chamber-OS inom ~15 minuter.",
+            "alt": "Zap-publiceringsknapp"
+          }
+        },
+        "phaseC": {
+          "test": {
+            "sendTest": "Skicka testhändelse",
+            "inProgress": "Skickar testhändelse…",
+            "success": "Testhändelse levererad",
+            "successWithOutcome": "Testhändelse levererad ({outcome}, {durationMs}ms)",
+            "failure": "Testhändelsen misslyckades",
+            "failureWithHint": "Testhändelsen misslyckades — {hint}",
+            "rateLimited": "För många testhändelser den här timmen. Vänta och försök igen.",
+            "serverError": "Serverfel vid testkörning. Försök igen eller kontakta support.",
+            "networkError": "Det gick inte att nå webhook-slutpunkten. Kontrollera anslutningen."
+          },
+          "rotate": {
+            "preTitle": "Rotera webhook-nyckel?",
+            "preDescription": "En ny nyckel genereras. Den aktuella nyckeln verifierar leveranser i 24 timmar så att du kan uppdatera Zapier utan driftstopp.",
+            "confirm": "Rotera nu",
+            "cancel": "Avbryt",
+            "postTitle": "Nyckel roterad",
+            "postDescription": "Gammal nyckel verifierar tills {graceActiveUntil}. Spara den nya nyckeln direkt och uppdatera Zapier inom 24 timmar.",
+            "acknowledge": "Klar",
+            "close": "Stäng",
+            "success": "Webhook-nyckeln roterades",
+            "failed": "Rotation misslyckades — försök igen eller kontakta support",
+            "rateLimited": "Rotationsgräns nådd (3/timme). Vänta och försök igen."
+          },
+          "recentDeliveries": {
+            "title": "Senaste leveranser",
+            "empty": "Inga senaste leveranser ännu. Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
+            "includeTestDeliveriesLabel": "Inkludera testleveranser",
+            "signature": {
+              "verified": "Verifierad",
+              "rejected": "Signatur avvisad",
+              "unknown": "Okänd"
+            },
+            "processing": {
+              "matched_member_contact": "Matchad medlem (kontakt)",
+              "matched_member_domain": "Matchad medlem (domän)",
+              "matched_member_fuzzy": "Matchad medlem (fuzzy)",
+              "non_member": "Icke-medlem",
+              "unmatched": "Omatchad",
+              "short_circuited_test": "Testhändelse",
+              "duplicate": "Duplikat (idempotens)",
+              "malformed": "Felaktig nyttolast",
+              "rolled_back": "Återställd",
+              "rate_limited": "Hastighetsbegränsad",
+              "ingest_disabled": "Inmatning inaktiverad"
+            }
+          }
         }
       }
     }
@@ -2462,6 +2589,8 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
+      "settingsIntegrationEventcreate": "EventCreate-integration",
+      "events": "Evenemang",
       "sections": {
         "main": "Allmänt",
         "settings": "Inställningar"

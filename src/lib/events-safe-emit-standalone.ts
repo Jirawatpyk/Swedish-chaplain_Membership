@@ -46,7 +46,8 @@ import type {
 export type SafeEmitFailLogEvent =
   | 'f6_webhook_config_load_audit_failed'
   | 'f6_webhook_sig_reject_audit_failed'
-  | 'f6_admin_cross_tenant_probe_audit_failed';
+  | 'f6_admin_cross_tenant_probe_audit_failed'
+  | 'f6_webhook_test_invoked_audit_failed';
 
 export async function safeEmitStandalone<T extends F6AuditEventType>(
   deps: StandaloneAuditDeps,

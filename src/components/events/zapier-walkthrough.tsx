@@ -1,0 +1,76 @@
+/**
+ * T080 helper — Zapier walkthrough (8 steps, Phase B of the wizard).
+ *
+ * 8 numbered cards with EN-only screenshots (committed under
+ * `public/walkthroughs/eventcreate-zapier/`) + per-step localised
+ * narration (EN/TH/SV). The "Zapier UI is English only" notice
+ * appears at the top per FR-025 + Session 2026-05-12 round 3 Q3 /
+ * R12 (the chamber's TH/SV-speaking admin should expect the Zapier
+ * web app itself to be EN; our narration translates the steps).
+ *
+ * Server component — pure render. The wizard orchestrator passes the
+ * tenant-specific webhook URL so step 4 ("paste this URL into Zapier")
+ * is self-explanatory.
+ */
+import Image from 'next/image';
+import { getTranslations } from 'next-intl/server';
+import { Card, CardContent } from '@/components/ui/card';
+import { InfoIcon } from 'lucide-react';
+
+export interface ZapierWalkthroughProps {
+  readonly webhookUrl: string;
+}
+
+const STEP_COUNT = 8;
+
+export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) {
+  const t = await getTranslations('admin.integrations.eventcreate.phaseB');
+
+  return (
+    <section className="space-y-4" aria-labelledby="zapier-walkthrough-heading">
+      <h2 id="zapier-walkthrough-heading" className="text-h3 font-semibold">
+        {t('title')}
+      </h2>
+
+      <Card className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
+        <CardContent className="flex items-start gap-3 py-3 text-sm">
+          <InfoIcon className="size-4 shrink-0 text-blue-600" aria-hidden />
+          <p>{t('englishOnlyNotice')}</p>
+        </CardContent>
+      </Card>
+
+      <ol
+        aria-label={t('stepsLabel')}
+        className="space-y-4"
+      >
+        {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map((step) => (
+          <li key={step}>
+            <Card>
+              <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-start">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground">
+                  {step}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <h3 className="font-semibold">{t(`step${step}.title`)}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {step === 4
+                      ? t('step4.body', { webhookUrl })
+                      : t(`step${step}.body`)}
+                  </p>
+                  <Image
+                    src={`/walkthroughs/eventcreate-zapier/step-${step}.png`}
+                    alt={t(`step${step}.alt`)}
+                    width={1280}
+                    height={720}
+                    className="rounded-md border bg-muted"
+                    sizes="(max-width: 640px) 100vw, 600px"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}

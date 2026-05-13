@@ -57,7 +57,12 @@ export function sanitizeDbErrorMessage(e: unknown): string {
  * @returns the `db_error` Result variant (caller wraps in `err(...)`)
  */
 export function wrapRepoError(
-  repoLabel: 'events' | 'registrations' | 'idempotency' | 'matcher',
+  repoLabel:
+    | 'events'
+    | 'registrations'
+    | 'idempotency'
+    | 'matcher'
+    | 'tenantWebhookConfig',
   e: unknown,
 ): { readonly kind: 'db_error'; readonly message: string } {
   logger.error(

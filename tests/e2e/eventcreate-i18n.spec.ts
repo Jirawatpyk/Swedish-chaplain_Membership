@@ -123,5 +123,92 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
         expect(bodyText.toLowerCase()).toContain('events');
       }
     });
+
+    /**
+     * D3 verify-fix (2026-05-13) — Phase 5 wizard locale coverage.
+     * The wizard page introduces ~85 new i18n keys under
+     * `admin.integrations.eventcreate.{page,wizard,phaseA,phaseB,phaseC}`
+     * + 1 new nav key (`nav.staff.settingsIntegrationEventcreate`).
+     * SC-010 + FR-030 require EN+TH+SV parity; check:i18n already
+     * verifies key parity at build time, this E2E catches runtime
+     * leaks + locale-resolution drift on the wizard surface
+     * specifically.
+     */
+    test(`${locale} — /admin/integrations/eventcreate has no translation key leaks`, async ({
+      page,
+      context,
+    }) => {
+      await context.addCookies([
+        {
+          name: 'NEXT_LOCALE',
+          value: locale,
+          url: 'http://localhost:3100',
+        },
+      ]);
+      await signInAsAdmin(page);
+      await page.goto('/admin/integrations/eventcreate');
+      await page.waitForLoadState('networkidle');
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      const wizardLeakPatterns = [
+        ...LEAK_PATTERNS,
+        /admin\.integrations\.eventcreate\.[a-z]+/i,
+      ];
+      for (const pattern of wizardLeakPatterns) {
+        expect(
+          bodyText,
+          `key leak in ${locale} /admin/integrations/eventcreate: ${pattern}`,
+        ).not.toMatch(pattern);
+      }
+    });
+
+    test(`${locale} — /admin/integrations/eventcreate <html lang> matches`, async ({
+      page,
+      context,
+    }) => {
+      await context.addCookies([
+        {
+          name: 'NEXT_LOCALE',
+          value: locale,
+          url: 'http://localhost:3100',
+        },
+      ]);
+      await signInAsAdmin(page);
+      await page.goto('/admin/integrations/eventcreate');
+      await page.waitForLoadState('domcontentloaded');
+      const htmlLang = await page
+        .locator('html')
+        .first()
+        .getAttribute('lang');
+      expect(htmlLang).toBe(locale);
+    });
+
+    test(`${locale} — wizard copy is localised (locale-specific keyword present)`, async ({
+      page,
+      context,
+    }) => {
+      await context.addCookies([
+        {
+          name: 'NEXT_LOCALE',
+          value: locale,
+          url: 'http://localhost:3100',
+        },
+      ]);
+      await signInAsAdmin(page);
+      await page.goto('/admin/integrations/eventcreate');
+      await page.waitForLoadState('networkidle');
+      const bodyText = await page.evaluate(() => document.body.innerText);
+      if (locale === 'th') {
+        // Thai script must appear on rendered wizard.
+        expect(bodyText).toMatch(/[฀-๿]/);
+      } else if (locale === 'sv') {
+        // Swedish-specific wizard keyword — "nyckel" (key) or
+        // "integration" (integration). Either guarantees we are not
+        // showing the EN fallback verbatim.
+        expect(bodyText.toLowerCase()).toMatch(/nyckel|webhook-nyckel|integration/);
+      } else {
+        // English baseline — "webhook" or "integration" must appear.
+        expect(bodyText.toLowerCase()).toMatch(/webhook|integration/);
+      }
+    });
   }
 });

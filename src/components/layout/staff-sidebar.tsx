@@ -2,7 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import { staffNavConfig } from '@/config/nav';
+import {
+  staffNavConfig,
+  isNavGroup,
+  type NavConfig,
+  type NavGroup,
+  type NavItem,
+  type NavVisibilityFlags,
+} from '@/config/nav';
 import { NavEntry } from '@/components/layout/nav-item';
 import {
   Sidebar,
@@ -18,10 +25,44 @@ import { SidebarToggle } from '@/components/shell/sidebar-toggle';
 
 interface StaffSidebarProps {
   readonly tenantName: string;
+  /**
+   * Optional visibility flags from the server layout. Items with a
+   * `visibilityFlag` are filtered OUT unless their flag is `true`.
+   * Defaults to the empty map — items without a flag are always shown.
+   */
+  readonly navVisibilityFlags?: NavVisibilityFlags;
 }
 
-export function StaffSidebar({ tenantName }: StaffSidebarProps) {
+/**
+ * Filter a nav config by visibility flags. Items with no flag pass
+ * through. Items with a flag are kept only when the flag is `true`.
+ * Empty groups (all children filtered out) are dropped.
+ */
+function filterNavConfig(
+  config: NavConfig,
+  flags: NavVisibilityFlags,
+): NavConfig {
+  function keepItem(item: NavItem | NavGroup): boolean {
+    if (isNavGroup(item)) return true;
+    if (!item.visibilityFlag) return true;
+    return flags[item.visibilityFlag] === true;
+  }
+  return {
+    sections: config.sections
+      .map((section) => ({
+        ...section,
+        items: section.items.filter(keepItem),
+      }))
+      .filter((section) => section.items.length > 0),
+  };
+}
+
+export function StaffSidebar({
+  tenantName,
+  navVisibilityFlags = {},
+}: StaffSidebarProps) {
   const t = useTranslations();
+  const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags);
 
   return (
     <Sidebar collapsible="icon" role="navigation" aria-label={t('nav.staff.ariaLabel')}>
@@ -40,7 +81,7 @@ export function StaffSidebar({ tenantName }: StaffSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        {staffNavConfig.sections.map((section, idx) => (
+        {filtered.sections.map((section, idx) => (
           <SidebarGroup key={section.titleKey ?? `section-${idx}`}>
             {section.titleKey && (
               <SidebarGroupLabel>{t(section.titleKey)}</SidebarGroupLabel>

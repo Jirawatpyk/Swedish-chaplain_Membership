@@ -1,87 +1,100 @@
 /**
- * F6 verify-fix F4 (2026-05-12) — placeholder for the Phase 5
- * tenant onboarding wizard (US3, T080). Note: "F4" here refers to
- * the verify-review finding ID, NOT the F4 invoicing feature.
+ * /admin/integrations/eventcreate page (F6 Phase 5 / US3).
  *
- * Phase 4's /admin/events empty-state variant (a) links here when no
- * tenant_webhook_config row exists ("Set up EventCreate integration"
- * CTA). Without this placeholder, the CTA 404s — a degraded UX between
- * Phase 4 ship and Phase 5 ship if `FEATURE_F6_EVENTCREATE=true` flips
- * early.
+ * Server component — loads the integration config view via
+ * `runLoadIntegrationConfig` and renders the 3-phase progressive
+ * disclosure wizard (`<WebhookConfigWizard>`).
  *
- * Behaviour:
- *   - admin: renders "Coming in Phase 5" notice + link back to events list
- *   - manager: 404 per FR-035 (the entire /admin/integrations/eventcreate
- *     route prefix is admin-only at surface level — manager must not see it)
- *   - member: 404 per FR-035 (surface disclosure)
- *   - kill-switch off: 404
+ * Authz:
+ *   - admin only — manager + member return 404 (FR-035 surface
+ *     disclosure; the existence of secret-bearing surfaces is
+ *     itself sensitive).
+ *   - kill-switch off → 404
  *
- * Phase 5 (T080) will REPLACE this file with the full wizard. Until
- * then, the page exists solely to give the CTA a valid destination
- * and surface the "Coming soon" copy.
+ * The Phase 4 placeholder file lived at this same path and is
+ * REPLACED by this implementation per T080.
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { ArrowLeft } from 'lucide-react';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
+import { resolveTenantFromHeaders } from '@/lib/tenant-context';
+import { runLoadIntegrationConfig } from '@/lib/events-admin-integration-deps';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { buttonVariants } from '@/components/ui/button';
+import { WebhookConfigWizard } from '@/components/events/webhook-config-wizard';
+import { ZapierWalkthrough } from '@/components/events/zapier-walkthrough';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.integrations.eventcreate');
-  return { title: t('placeholder.title') };
+  return { title: t('page.title') };
 }
 
-export default async function EventCreateIntegrationPlaceholderPage() {
+interface PageProps {
+  readonly searchParams: Promise<{ includeTestDeliveries?: string }>;
+}
+
+export default async function EventCreateIntegrationPage({
+  searchParams,
+}: PageProps) {
   if (!env.features.f6EventCreate) {
     notFound();
   }
 
   const { user: currentUser } = await requireSession('staff');
-  // FR-035: /admin/integrations/eventcreate is ADMIN-ONLY at surface
-  // level — manager + member both get 404 (surface-disclosure
-  // prevention; the existence of secret-bearing surfaces is itself
-  // sensitive). Audit emission lives on the canonical Phase 5 page
-  // (T080) — placeholder skips audit to avoid event-type drift while
-  // the canonical wizard hasn't landed.
   if (currentUser.role !== 'admin') {
     notFound();
   }
 
-  const t = await getTranslations('admin.integrations.eventcreate');
+  const h = await headers();
+  const tenantCtx = resolveTenantFromHeaders(h);
+
+  // Derive webhook base URL from the incoming request host so the
+  // page works in dev (localhost:3100), staging, and prod identically.
+  const proto = h.get('x-forwarded-proto') ?? 'https';
+  const host = h.get('host') ?? h.get('x-forwarded-host') ?? 'localhost';
+  const webhookBaseUrl = `${proto}://${host}`;
+
+  const params = await searchParams;
+  const includeTestDeliveries = params.includeTestDeliveries === 'true';
+
+  let view: Awaited<ReturnType<typeof runLoadIntegrationConfig>>;
+  try {
+    view = await runLoadIntegrationConfig(tenantCtx.slug, {
+      includeTestDeliveries,
+      webhookBaseUrl,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_load_integration_config_page_threw',
+        tenantSlug: tenantCtx.slug,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6] integration config page render — runLoadIntegrationConfig threw',
+    );
+    notFound();
+  }
+
+  const t = await getTranslations('admin.integrations.eventcreate.page');
 
   return (
     <FormContainer>
-      <Link
-        href="/admin/events"
-        className={buttonVariants({
-          variant: 'ghost',
-          size: 'sm',
-          className: 'self-start',
-        })}
-      >
-        <ArrowLeft className="size-4" />
-        {t('placeholder.backToEvents')}
-      </Link>
-      <PageHeader
-        title={t('placeholder.title')}
-        subtitle={t('placeholder.subtitle')}
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <WebhookConfigWizard
+        webhookUrl={view.webhookUrl}
+        secretConfigured={view.secretConfigured}
+        {...(view.secretLastFour !== undefined ? { secretLastFour: view.secretLastFour } : {})}
+        graceActiveUntil={view.graceActiveUntil ?? null}
+        ingestEnabled={view.ingestEnabled}
+        lastReceivedAt={view.lastReceivedAt ?? null}
+        recentDeliveries={view.recentDeliveries}
+        includeTestDeliveries={view.recentDeliveriesIncludeTests}
+        walkthrough={<ZapierWalkthrough webhookUrl={view.webhookUrl} />}
       />
-      <Card>
-        <CardContent className="flex flex-col gap-4 py-12 text-center">
-          <h2 className="text-h3 font-semibold">
-            {t('placeholder.heading')}
-          </h2>
-          <p className="mx-auto max-w-md text-muted-foreground">
-            {t('placeholder.body')}
-          </p>
-        </CardContent>
-      </Card>
     </FormContainer>
   );
 }

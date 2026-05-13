@@ -45,6 +45,7 @@ import { eventcreateMetrics } from '@/lib/metrics';
 import { eventsTracer } from '@/lib/otel-tracer';
 import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import { asTenantId } from '@/modules/members';
+import { asUserId } from '@/modules/auth';
 import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import {
   verifyWebhookSignature,
@@ -557,6 +558,88 @@ export async function POST(
             },
             { status: 400 },
           );
+        }
+
+        // --- Step 8.5: Test-webhook sentinel short-circuit (Phase 5 T074) --
+        // Per `contracts/admin-integration-eventcreate-api.md` § POST
+        // test-webhook (round-2 P8): if the synthetic payload uses the
+        // `__test_webhook__` sentinel external IDs, skip the full ACID
+        // unit so no event/registration/idempotency rows land. Emit
+        // `webhook_test_invoked` standalone audit with
+        // `processingOutcome='short_circuited_test'` so the admin's
+        // recent-deliveries panel surfaces the test.
+        //
+        // Defensive read: we don't trust the zod-unvalidated shape, so
+        // a runtime `typeof` guard precedes the access. False match
+        // (random payload that happens to set externalId to the
+        // sentinel) is statistically negligible — the value is
+        // double-underscored + admin-actor-only.
+        const candidate = parsedPayload as {
+          event?: { externalId?: unknown };
+          attendee?: { externalId?: unknown };
+        };
+        const eventExternalId =
+          typeof candidate.event === 'object' &&
+          candidate.event !== null &&
+          typeof candidate.event.externalId === 'string'
+            ? candidate.event.externalId
+            : '';
+        const attendeeExternalId =
+          typeof candidate.attendee === 'object' &&
+          candidate.attendee !== null &&
+          typeof candidate.attendee.externalId === 'string'
+            ? candidate.attendee.externalId
+            : '';
+        if (
+          eventExternalId === '__test_webhook__' &&
+          attendeeExternalId.startsWith('__test_webhook__-')
+        ) {
+          const shortCircuitLatencyMs = Date.now() - startedAtMs;
+          eventcreateMetrics.webhookReceiptsTotal(
+            tenantSlug,
+            'verified',
+            'short_circuited_test',
+          );
+          eventcreateMetrics.ingestLatencyMs(tenantSlug, shortCircuitLatencyMs);
+          // System sentinel actor — the receiver-side audit doesn't know
+          // the admin who clicked "Test webhook" (the run-test-webhook
+          // use-case POSTs the synthetic payload without propagating
+          // session identity, intentionally — actor attribution lives
+          // in the admin route-handler logs). Use the F6 system sentinel
+          // prefix per pino-audit-port convention.
+          const SYSTEM_ACTOR = asUserId('system:f6-test-webhook');
+          await safeEmitStandalone(
+            makeStandaloneAuditDeps(),
+            {
+              eventType: 'webhook_test_invoked',
+              tenantId: asTenantId(tenantSlug),
+              actorType: 'system',
+              actorUserId: SYSTEM_ACTOR,
+              occurredAt: new Date(),
+              summary: `test webhook short-circuited (sentinel external IDs) — latency ${shortCircuitLatencyMs}ms`,
+              payload: {
+                severity: 'info',
+                actorUserId: SYSTEM_ACTOR,
+                testRequestId: requestId,
+                durationMs: shortCircuitLatencyMs,
+              },
+            },
+            {
+              tenantSlug,
+              logEvent: 'f6_webhook_test_invoked_audit_failed',
+              logMsg: '[F6] test-webhook short-circuit audit emission failed (suppressed — 200 still returned)',
+            },
+          );
+          span.setAttribute('f6.outcome', 'short_circuited_test');
+          return NextResponse.json({
+            ok: true,
+            matched: 'short_circuited_test',
+            matchedMemberId: null,
+            eventCreated: false,
+            registrationId: null,
+            quotaEffect: null,
+            processingOutcome: 'short_circuited_test',
+          });
         }
 
         // --- Step 9: Dispatch to ingest use-case ------------------------

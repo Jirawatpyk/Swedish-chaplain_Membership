@@ -308,4 +308,7 @@ export {
   makeStandaloneAuditDeps,
   type StandaloneAuditDeps,
 } from './infrastructure/di';
-export { cryptoWebhookSignatureVerifier } from './infrastructure/crypto-webhook-signature-verifier';
+export {
+  cryptoWebhookSignatureVerifier,
+  signWebhookRequest,
+} from './infrastructure/crypto-webhook-signature-verifier';

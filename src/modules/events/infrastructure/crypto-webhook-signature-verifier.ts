@@ -35,6 +35,30 @@ function computeSignature(secret: string, timestamp: string, rawBody: string): s
 }
 
 /**
+ * Produce the X-Chamber-Signature + X-Chamber-Timestamp headers for a
+ * raw body using the tenant's active secret. Used by the Phase 5 T072
+ * `runTestWebhook` use-case to sign synthetic test deliveries before
+ * POSTing them to the tenant's own webhook URL. Mirror of what
+ * Zapier's "Webhooks by Zapier" Crypto utility produces in production
+ * (T044 verifier accepts both byte-for-byte).
+ *
+ * Pure — no I/O beyond `node:crypto` HMAC primitives. Stateless and
+ * safe to share across concurrent requests.
+ */
+export function signWebhookRequest(input: {
+  readonly secret: string;
+  readonly rawBody: string;
+  readonly now: Date;
+}): { readonly signatureHeader: string; readonly timestamp: string } {
+  const timestamp = Math.floor(input.now.getTime() / 1000).toString();
+  const sig = computeSignature(input.secret, timestamp, input.rawBody);
+  return {
+    signatureHeader: `${SIGNATURE_PREFIX}${sig}`,
+    timestamp,
+  };
+}
+
+/**
  * Constant-time compare of two hex-encoded SHA-256 digests. Returns
  * FALSE on any input-shape error (wrong length, non-hex, missing
  * prefix). NEVER throws — E8 guard.

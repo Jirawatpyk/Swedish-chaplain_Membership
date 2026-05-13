@@ -2411,6 +2411,133 @@
           "heading": "เร็วๆ นี้",
           "body": "ตัวช่วยตั้งค่าการเชื่อมต่อ EventCreate กำลังจะเปิดให้ใช้งานเร็วๆ นี้ ระหว่างนี้กรุณาติดต่อผู้ดูแลระบบเพื่อขอความช่วยเหลือในการตั้งค่า Zap",
           "backToEvents": "กลับไปยังอีเวนต์"
+        },
+        "page": {
+          "title": "การเชื่อมต่อ EventCreate",
+          "subtitle": "เชื่อมต่อ Zapier เพื่อให้การลงทะเบียนผู้เข้าร่วมจาก EventCreate เข้าระบบโดยอัตโนมัติ"
+        },
+        "wizard": {
+          "stepsLabel": "ขั้นตอนการตั้งค่า EventCreate",
+          "phaseAStep": "สร้างคีย์",
+          "phaseBStep": "เชื่อมต่อ Zapier",
+          "phaseCStep": "ทดสอบและจัดการ",
+          "phaseAIntro": "สร้าง webhook secret ใหม่สำหรับหอการค้านี้ คีย์จะแสดงเป็นข้อความครั้งเดียวเท่านั้น โปรดบันทึกในโปรแกรมจัดการรหัสผ่านก่อนดำเนินการต่อ",
+          "generateButton": "สร้าง webhook secret",
+          "generating": "กำลังสร้าง…",
+          "generateFailed": "สร้าง webhook secret ไม่สำเร็จ กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
+          "generateAlreadyExists": "มี webhook secret อยู่แล้วสำหรับหอการค้านี้ กรุณาใช้การหมุนคีย์แทน",
+          "back": "ย้อนกลับ",
+          "connectComplete": "ฉันตั้งค่า Zap แล้ว — ดำเนินการต่อ",
+          "webhookUrlLabel": "URL ของ Webhook",
+          "copyUrl": "คัดลอก URL ของ webhook",
+          "secretLabel": "คีย์ปัจจุบัน",
+          "rotateButton": "หมุนคีย์",
+          "graceActiveUntil": "คีย์เก่ายังตรวจสอบได้จนถึง {timestamp}"
+        },
+        "phaseA": {
+          "secretLabel": "Webhook secret (แสดงครั้งเดียว)",
+          "revealSecret": "แสดงคีย์",
+          "hideSecret": "ซ่อนคีย์",
+          "copySecret": "คัดลอกคีย์ไปคลิปบอร์ด",
+          "copied": "คัดลอกไปคลิปบอร์ดแล้ว",
+          "copyFailed": "คัดลอกไม่สำเร็จ — กรุณาเลือกและคัดลอกด้วยตนเอง",
+          "warning": "บันทึกค่านี้ในโปรแกรมจัดการรหัสผ่านทันที จะไม่แสดงอีกครั้ง",
+          "savedInPasswordManager": "ฉันได้บันทึกคีย์นี้ในโปรแกรมจัดการรหัสผ่านแล้ว",
+          "savedHint": "ยืนยัน 4 ตัวสุดท้าย: {lastFour}"
+        },
+        "phaseB": {
+          "title": "เชื่อมต่อ EventCreate ผ่าน Zapier",
+          "stepsLabel": "ขั้นตอนการตั้งค่า Zapier",
+          "englishOnlyNotice": "เว็บแอป Zapier ใช้ภาษาอังกฤษเท่านั้น คำอธิบายด้านล่างเป็นภาษาไทย แต่ภาพหน้าจอ Zapier แสดงเป็นภาษาอังกฤษ",
+          "step1": {
+            "title": "ขั้นตอนที่ 1: ลงชื่อเข้าใช้ Zapier",
+            "body": "เปิด zapier.com แล้วลงชื่อเข้าใช้ (หรือสร้าง) บัญชี Zapier ที่จะใช้รัน Zap นี้",
+            "alt": "หน้าจอลงชื่อเข้าใช้ Zapier"
+          },
+          "step2": {
+            "title": "ขั้นตอนที่ 2: สร้าง Zap ใหม่",
+            "body": "คลิกปุ่ม Create Zap สีส้มที่แถบนำทางด้านบน",
+            "alt": "หน้าหลัก Zapier ที่ไฮไลต์ปุ่ม Create Zap"
+          },
+          "step3": {
+            "title": "ขั้นตอนที่ 3: เลือก EventCreate เป็นทริกเกอร์",
+            "body": "ค้นหา EventCreate เลือกอีเวนต์ New Attendee Registration แล้วเชื่อมต่อบัญชี EventCreate ของคุณ",
+            "alt": "หน้าตั้งค่าทริกเกอร์ที่แสดง EventCreate"
+          },
+          "step4": {
+            "title": "ขั้นตอนที่ 4: เพิ่มแอ็กชัน Webhooks by Zapier",
+            "body": "เพิ่มขั้นตอนแอ็กชันใหม่ เลือก Webhooks by Zapier → POST วาง URL นี้ในช่อง URL: {webhookUrl}",
+            "alt": "หน้าตั้งค่าแอ็กชัน Webhooks by Zapier"
+          },
+          "step5": {
+            "title": "ขั้นตอนที่ 5: จับคู่ฟิลด์เพย์โหลด",
+            "body": "จับคู่ฟิลด์ EventCreate แต่ละช่องกับคีย์ JSON ในเนื้อความ (event.externalId, attendee.email ฯลฯ) ใช้ตารางอ้างอิงการจับคู่ฟิลด์ด้านล่างหากต้องการความช่วยเหลือ",
+            "alt": "หน้าจอจับคู่ฟิลด์"
+          },
+          "step6": {
+            "title": "ขั้นตอนที่ 6: เพิ่มเฮดเดอร์ลายเซ็น",
+            "body": "ในส่วน Headers เพิ่มแถวสำหรับ X-Chamber-Signature ด้วยค่า HMAC-SHA256 ของเนื้อความโดยใช้ webhook secret ของคุณ ใช้ยูทิลิตี Crypto ของ Zapier ทำได้ง่าย",
+            "alt": "หน้าตั้งค่า Headers แสดงแถว signature"
+          },
+          "step7": {
+            "title": "ขั้นตอนที่ 7: ทดสอบ Zap",
+            "body": "รันการทดสอบในตัวของ Zapier — ควรเห็นการตอบกลับ 200 OK จาก Chamber-OS ยืนยันว่านำเข้าผู้เข้าร่วมจำลองสำเร็จ",
+            "alt": "สถานะทดสอบของ Zapier สำเร็จ"
+          },
+          "step8": {
+            "title": "ขั้นตอนที่ 8: เผยแพร่",
+            "body": "เปิด Zap การลงทะเบียนผู้เข้าร่วม EventCreate ใหม่จะเข้า Chamber-OS ภายในประมาณ 15 นาที",
+            "alt": "สวิตช์เผยแพร่ Zap"
+          }
+        },
+        "phaseC": {
+          "test": {
+            "sendTest": "ส่งอีเวนต์ทดสอบ",
+            "inProgress": "กำลังส่งอีเวนต์ทดสอบ…",
+            "success": "ส่งอีเวนต์ทดสอบสำเร็จ",
+            "successWithOutcome": "ส่งอีเวนต์ทดสอบสำเร็จ ({outcome}, {durationMs}ms)",
+            "failure": "อีเวนต์ทดสอบไม่สำเร็จ",
+            "failureWithHint": "อีเวนต์ทดสอบไม่สำเร็จ — {hint}",
+            "rateLimited": "ส่งทดสอบมากเกินไปในชั่วโมงนี้ กรุณารอแล้วลองใหม่",
+            "serverError": "เซิร์ฟเวอร์เกิดข้อผิดพลาดขณะทดสอบ กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
+            "networkError": "ติดต่อปลายทาง webhook ไม่ได้ กรุณาตรวจสอบการเชื่อมต่อ"
+          },
+          "rotate": {
+            "preTitle": "หมุน webhook secret หรือไม่?",
+            "preDescription": "ระบบจะสร้างคีย์ใหม่ คีย์ปัจจุบันยังตรวจสอบการส่งได้อีก 24 ชั่วโมง เพื่อให้คุณอัปเดต Zapier ได้โดยไม่หยุดบริการ",
+            "confirm": "หมุนเลย",
+            "cancel": "ยกเลิก",
+            "postTitle": "หมุนคีย์เรียบร้อย",
+            "postDescription": "คีย์เก่ายังตรวจสอบได้จนถึง {graceActiveUntil} กรุณาบันทึกคีย์ใหม่ทันทีและอัปเดต Zapier ภายใน 24 ชั่วโมง",
+            "acknowledge": "เสร็จสิ้น",
+            "close": "ปิด",
+            "success": "หมุน webhook secret แล้ว",
+            "failed": "หมุนไม่สำเร็จ — กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
+            "rateLimited": "ถึงขีดจำกัดการหมุน (3 ครั้ง/ชั่วโมง) กรุณารอแล้วลองใหม่"
+          },
+          "recentDeliveries": {
+            "title": "การส่งล่าสุด",
+            "empty": "ยังไม่มีการส่งล่าสุด เรียกใช้ Zap หรือกด \"ส่งอีเวนต์ทดสอบ\" เพื่อดูทราฟฟิก",
+            "includeTestDeliveriesLabel": "รวมการทดสอบ",
+            "signature": {
+              "verified": "ยืนยันแล้ว",
+              "rejected": "ปฏิเสธลายเซ็น",
+              "unknown": "ไม่ทราบ"
+            },
+            "processing": {
+              "matched_member_contact": "จับคู่สมาชิก (ผู้ติดต่อ)",
+              "matched_member_domain": "จับคู่สมาชิก (โดเมน)",
+              "matched_member_fuzzy": "จับคู่สมาชิก (ใกล้เคียง)",
+              "non_member": "ไม่ใช่สมาชิก",
+              "unmatched": "ไม่จับคู่",
+              "short_circuited_test": "อีเวนต์ทดสอบ",
+              "duplicate": "ซ้ำ (idempotency)",
+              "malformed": "เพย์โหลดผิดรูปแบบ",
+              "rolled_back": "ย้อนกลับ",
+              "rate_limited": "ถูกจำกัดอัตรา",
+              "ingest_disabled": "ปิดการรับข้อมูล"
+            }
+          }
         }
       }
     }
@@ -2462,6 +2589,8 @@
       "settings": "ตั้งค่า",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
+      "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
+      "events": "อีเวนต์",
       "sections": {
         "main": "หลัก",
         "settings": "การตั้งค่า"

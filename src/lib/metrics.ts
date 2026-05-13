@@ -2416,6 +2416,7 @@ export const eventcreateMetrics = {
       | 'unauthorized'
       | 'unsupported_media_type'
       | 'tenant_not_found'
+      | 'short_circuited_test'
       | 'n_a',
   ): void {
     safeMetric(() => {
@@ -2519,5 +2520,46 @@ export const eventcreateMetrics = {
         'F6 idempotency-receipt sweep counter — outcome=swept|skipped (FR-036 #11)',
       ).add(1, { tenant: tenantId, outcome });
     });
+  },
+
+  /**
+   * FR-036 #8 — `eventcreate_webhook_secret_rotated_total`.
+   * Counter incremented every time a tenant admin successfully rotates
+   * the webhook secret (FR-008). Per-tenant labelled. Powers the
+   * "secret-rotation operational procedure" runbook + dashboards
+   * tracking key-rotation hygiene.
+   *
+   * Emitted by `runRotateWebhookSecret` composition adapter after
+   * the use-case returns `Result.ok` (post-tx commit so the metric
+   * never overcounts on rollback).
+   */
+  webhookSecretRotated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_secret_rotated_total',
+        'F6 admin-initiated webhook secret rotations, per tenant (FR-036 #8)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * FR-036 #9 — `eventcreate_ingest_disabled_tenant` gauge.
+   * Async gauge: 1 when the tenant has `enabled=false` on the
+   * `tenant_webhook_configs` row (kill-switch ACTIVATED — webhook
+   * receiver returns 503), 0 when `enabled=true`. Powers the
+   * "ingest-disabled tenant detected" alert per `docs/observability.md`
+   * § 24.
+   *
+   * Emitted by `runDisableIngest` composition adapter immediately
+   * after a successful state change. Idempotent: re-setting the same
+   * value at every disable/enable toggle is the intended pattern.
+   */
+  ingestDisabledTenant(tenantId: string, enabled: boolean): void {
+    observeGauge(
+      'eventcreate_ingest_disabled_tenant',
+      'F6 ingest-disabled gauge per tenant — 1=disabled (503), 0=enabled (FR-036 #9)',
+      { tenant: tenantId },
+      enabled ? 0 : 1,
+    );
   },
 } as const;

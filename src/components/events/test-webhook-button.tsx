@@ -1,0 +1,112 @@
+'use client';
+
+/**
+ * T079 — Test-webhook button (F6 Phase 5 / US3 AS2).
+ *
+ * Async POST to `/api/admin/integrations/eventcreate/test-webhook`.
+ * Renders three states:
+ *   - idle: "Send test event"
+ *   - pending: spinner + `aria-busy=true` (disabled)
+ *   - resolved: sonner toast (success/failure) + outcome callback fires
+ *
+ * `aria-live="polite"` SR announcement on resolve. 2-second cooldown
+ * before re-enabling so accidental double-clicks don't immediately
+ * spam the 10/hr rate limit.
+ */
+import { useState } from 'react';
+import { useTranslations } from 'next-intl';
+import { Loader2Icon, SendIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+
+export interface TestWebhookOutcome {
+  readonly ok: boolean;
+  readonly testRequestId: string;
+  readonly processingOutcome?: string;
+  readonly durationMs?: number;
+  readonly failureCategory?: string;
+  readonly hint?: string;
+}
+
+export interface TestWebhookButtonProps {
+  /** Fires after the round-trip resolves so the parent can refresh
+   *  the recent-deliveries panel. */
+  readonly onResolved?: (outcome: TestWebhookOutcome) => void;
+}
+
+export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
+  const t = useTranslations('admin.integrations.eventcreate.phaseC.test');
+  const [loading, setLoading] = useState(false);
+  const [announcement, setAnnouncement] = useState('');
+
+  async function handleClick() {
+    setLoading(true);
+    setAnnouncement(t('inProgress'));
+    try {
+      const res = await fetch(
+        '/api/admin/integrations/eventcreate/test-webhook',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': crypto.randomUUID(),
+          },
+          body: '{}',
+        },
+      );
+      if (res.status === 429) {
+        toast.error(t('rateLimited'));
+        setAnnouncement(t('rateLimited'));
+        return;
+      }
+      if (!res.ok) {
+        toast.error(t('serverError'));
+        setAnnouncement(t('serverError'));
+        return;
+      }
+      const body = (await res.json()) as TestWebhookOutcome;
+      if (body.ok) {
+        toast.success(
+          t('successWithOutcome', {
+            outcome: body.processingOutcome ?? 'verified',
+            durationMs: body.durationMs ?? 0,
+          }),
+        );
+        setAnnouncement(t('success'));
+      } else {
+        toast.error(t('failureWithHint', { hint: body.hint ?? '' }));
+        setAnnouncement(t('failure'));
+      }
+      onResolved?.(body);
+    } catch {
+      toast.error(t('networkError'));
+      setAnnouncement(t('networkError'));
+    } finally {
+      // 2s cooldown so accidental double-clicks don't immediately
+      // consume the 10/hr quota.
+      setTimeout(() => setLoading(false), 2_000);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        type="button"
+        onClick={() => void handleClick()}
+        disabled={loading}
+        aria-busy={loading}
+        className="min-h-11"
+      >
+        {loading ? (
+          <Loader2Icon className="size-4 animate-spin" aria-hidden />
+        ) : (
+          <SendIcon className="size-4" aria-hidden />
+        )}
+        {loading ? t('inProgress') : t('sendTest')}
+      </Button>
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
+    </div>
+  );
+}

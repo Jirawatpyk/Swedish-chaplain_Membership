@@ -2411,6 +2411,133 @@
           "heading": "Coming soon",
           "body": "The EventCreate integration setup wizard is rolling out shortly. Until then, please contact your administrator for help configuring the Zap.",
           "backToEvents": "Back to events"
+        },
+        "page": {
+          "title": "EventCreate integration",
+          "subtitle": "Connect Zapier so EventCreate attendee registrations import automatically."
+        },
+        "wizard": {
+          "stepsLabel": "EventCreate setup steps",
+          "phaseAStep": "Generate secret",
+          "phaseBStep": "Connect Zapier",
+          "phaseCStep": "Test & manage",
+          "phaseAIntro": "Generate a fresh webhook secret for this chamber. You'll see the plaintext value exactly once — copy it to your password manager before continuing.",
+          "generateButton": "Generate webhook secret",
+          "generating": "Generating…",
+          "generateFailed": "Could not generate a webhook secret. Try again or contact support.",
+          "generateAlreadyExists": "A webhook secret already exists for this chamber. Use the rotate-secret action instead.",
+          "back": "Back",
+          "connectComplete": "I've set up the Zap — continue",
+          "webhookUrlLabel": "Webhook URL",
+          "copyUrl": "Copy webhook URL to clipboard",
+          "secretLabel": "Current secret",
+          "rotateButton": "Rotate secret",
+          "graceActiveUntil": "Old secret still verifies until {timestamp}"
+        },
+        "phaseA": {
+          "secretLabel": "Webhook secret (one-time reveal)",
+          "revealSecret": "Reveal secret",
+          "hideSecret": "Hide secret",
+          "copySecret": "Copy secret to clipboard",
+          "copied": "Copied to clipboard",
+          "copyFailed": "Copy failed — select and copy manually",
+          "warning": "Store this value in a password manager now. It will not be shown again.",
+          "savedInPasswordManager": "I've saved this secret in a password manager",
+          "savedHint": "Confirm last 4: {lastFour}"
+        },
+        "phaseB": {
+          "title": "Connect EventCreate via Zapier",
+          "stepsLabel": "Zapier setup walkthrough",
+          "englishOnlyNotice": "The Zapier web app is available in English only. The narration below is localised; the screenshots show Zapier's English interface.",
+          "step1": {
+            "title": "Step 1: Sign in to Zapier",
+            "body": "Open zapier.com and sign in to (or create) the Zapier account you want this Zap to run from.",
+            "alt": "Zapier sign-in screen"
+          },
+          "step2": {
+            "title": "Step 2: Create a new Zap",
+            "body": "Click the orange Create Zap button in the top navigation bar.",
+            "alt": "Zapier home with the Create Zap button highlighted"
+          },
+          "step3": {
+            "title": "Step 3: Pick EventCreate as the trigger",
+            "body": "Search for EventCreate, select New Attendee Registration as the event, and connect your EventCreate account.",
+            "alt": "Zap trigger configuration showing EventCreate"
+          },
+          "step4": {
+            "title": "Step 4: Add a Webhooks by Zapier action",
+            "body": "Add a new action step, choose Webhooks by Zapier → POST. Paste this webhook URL into the URL field: {webhookUrl}",
+            "alt": "Webhooks by Zapier action configuration"
+          },
+          "step5": {
+            "title": "Step 5: Map the payload fields",
+            "body": "Map each EventCreate field to the JSON body keys (event.externalId, attendee.email, etc.). Use the field mapping reference below if you need help.",
+            "alt": "Field mapping screen"
+          },
+          "step6": {
+            "title": "Step 6: Add the signature header",
+            "body": "Under Headers, add a row for X-Chamber-Signature with the HMAC-SHA256 of the body using your webhook secret. Zapier's Crypto utility makes this easy.",
+            "alt": "Headers configuration showing the signature row"
+          },
+          "step7": {
+            "title": "Step 7: Test the Zap",
+            "body": "Run Zapier's built-in test — you should see a 200 OK response from Chamber-OS confirming the synthetic attendee was imported.",
+            "alt": "Zapier test success indicator"
+          },
+          "step8": {
+            "title": "Step 8: Publish",
+            "body": "Turn the Zap on. New EventCreate attendee registrations now flow into Chamber-OS within ~15 minutes.",
+            "alt": "Zap publish toggle"
+          }
+        },
+        "phaseC": {
+          "test": {
+            "sendTest": "Send test event",
+            "inProgress": "Sending test event…",
+            "success": "Test event delivered successfully",
+            "successWithOutcome": "Test event delivered ({outcome}, {durationMs}ms)",
+            "failure": "Test event failed",
+            "failureWithHint": "Test event failed — {hint}",
+            "rateLimited": "Too many test events this hour. Wait and retry.",
+            "serverError": "Server error while running the test. Retry or contact support.",
+            "networkError": "Could not reach the webhook endpoint. Check connectivity."
+          },
+          "rotate": {
+            "preTitle": "Rotate webhook secret?",
+            "preDescription": "A new secret will be generated. The current secret continues to verify deliveries for 24 hours so you can update Zapier without downtime.",
+            "confirm": "Rotate now",
+            "cancel": "Cancel",
+            "postTitle": "Secret rotated",
+            "postDescription": "Old secret continues to verify until {graceActiveUntil}. Save the new secret immediately and update Zapier within 24 hours.",
+            "acknowledge": "Done",
+            "close": "Close",
+            "success": "Webhook secret rotated",
+            "failed": "Rotation failed — try again or contact support",
+            "rateLimited": "Rotation limit reached (3/hour). Wait and retry."
+          },
+          "recentDeliveries": {
+            "title": "Recent deliveries",
+            "empty": "No recent deliveries yet. Trigger a Zap or press \"Send test event\" to see traffic.",
+            "includeTestDeliveriesLabel": "Include test deliveries",
+            "signature": {
+              "verified": "Verified",
+              "rejected": "Signature rejected",
+              "unknown": "Unknown"
+            },
+            "processing": {
+              "matched_member_contact": "Matched member (contact)",
+              "matched_member_domain": "Matched member (domain)",
+              "matched_member_fuzzy": "Matched member (fuzzy)",
+              "non_member": "Non-member",
+              "unmatched": "Unmatched",
+              "short_circuited_test": "Test event",
+              "duplicate": "Duplicate (idempotency hit)",
+              "malformed": "Malformed payload",
+              "rolled_back": "Rolled back",
+              "rate_limited": "Rate-limited",
+              "ingest_disabled": "Ingest disabled"
+            }
+          }
         }
       }
     }
@@ -2460,8 +2587,10 @@
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
+      "events": "Events",
       "settingsInvoices": "Invoice Settings",
       "settingsRenewalSchedules": "Reminder schedules",
+      "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
         "settings": "Settings"
