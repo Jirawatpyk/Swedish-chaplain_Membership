@@ -530,6 +530,57 @@ export async function POST(
           return genericUnauthorized();
         }
 
+        // --- Step 7.5: webhook_secret_grace_used audit (FR-008) --------
+        // Per spec FR-008 + Domain doc `tenant-webhook-config.ts:14-15`:
+        // when signature verification succeeded on the deprecated
+        // grace key (the previous active secret retained for the 24h
+        // post-rotation window), emit a SEPARATE
+        // `webhook_secret_grace_used` audit row IN ADDITION to the
+        // downstream success/duplicate/error audit so SREs can
+        // distinguish "active secret used" from "grace secret used"
+        // without joining on `payload.graceSecretUsed`. The audit
+        // event type was declared in audit-port.ts at Phase 2 but
+        // never emitted until the round-2 verify-fix (H1, 2026-05-13)
+        // wired this site.
+        //
+        // Computed `graceSecretAgeHours` is bounded by `[0, 24]` —
+        // verifier already rejected anything older. Floor to integer
+        // hours so the audit payload is queryable without float-edge
+        // surprises in SRE dashboards.
+        if (
+          verifyOutcome.usedGraceSecret &&
+          webhookConfig.graceRotatedAt !== null
+        ) {
+          const graceAgeMs = Date.now() - webhookConfig.graceRotatedAt.getTime();
+          const graceSecretAgeHours = Math.max(
+            0,
+            Math.floor(graceAgeMs / (60 * 60 * 1000)),
+          );
+          await safeEmitStandalone(
+            makeStandaloneAuditDeps(),
+            {
+              eventType: 'webhook_secret_grace_used',
+              tenantId: asTenantId(tenantSlug),
+              actorType: 'zapier_webhook',
+              actorUserId: null,
+              occurredAt: new Date(),
+              summary: `webhook accepted on grace secret (age ${graceSecretAgeHours}h, last4=${webhookConfig.graceSecret?.slice(-4) ?? 'unknown'})`,
+              payload: {
+                severity: 'warn',
+                requestId,
+                graceSecretAgeHours,
+              },
+            },
+            {
+              tenantSlug,
+              logEvent: 'f6_webhook_grace_used_audit_failed',
+              logMsg: '[F6] grace-secret-used audit emission failed (suppressed — ingest continues)',
+            },
+          );
+          span.setAttribute('f6.grace_secret_used', true);
+          span.setAttribute('f6.grace_secret_age_hours', graceSecretAgeHours);
+        }
+
         // --- Step 8: Parse JSON body ------------------------------------
         let parsedPayload: unknown;
         try {

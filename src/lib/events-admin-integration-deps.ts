@@ -24,7 +24,6 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { env } from '@/lib/env';
 import { runInTenant } from '@/lib/db';
 import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { eventcreateMetrics } from '@/lib/metrics';
@@ -479,67 +478,23 @@ export async function runDisableIngest(
 }
 
 // ---------------------------------------------------------------------------
-// Nav-visibility resolver (T081) — round-2 R1
+// Note on nav-visibility (T081): the integration nav entry is shown
+// unconditionally when `FEATURE_F6_EVENTCREATE=true` (see
+// `contracts/admin-integration-eventcreate-api.md` § "Navigation
+// visibility (R1, revised 2026-05-13)"). The earlier `isEventcreate
+// NavVisible()` resolver was removed in verify-fix round 2 (G2) per
+// Constitution Principle X (Simplicity / YAGNI) — speculative
+// "future per-tenant opt-out config" code with zero current callers.
+// The extension points that DO remain (and are sufficient if a real
+// opt-out requirement materialises later):
+//   - `NavVisibilityFlag` typed union (src/config/nav.ts)
+//   - `visibilityFlag` field on `NavItem`
+//   - `filterNavConfig()` in `src/components/layout/staff-sidebar.tsx`
+// A future resolver would be ~30 lines to add against those hooks,
+// shaped by the real requirement at that time (admin toggle, DB
+// column, super-admin override, etc.) rather than the Phase 5
+// strict-R1 freshness logic that this file used to host.
 // ---------------------------------------------------------------------------
-
-/**
- * Resolve whether `/admin/integrations/eventcreate` should appear in
- * the admin sidebar. Returns `true` when EITHER:
- *   - a `tenant_webhook_configs` row exists, OR
- *   - `last_received_at` is within the last 30 days
- *
- * Otherwise `false` — tenants with no integration history don't see
- * the entry. They can still reach it via direct URL or the
- * events-list empty-state CTA.
- *
- * **Currently unused by the active sidebar** (post-Phase-5 shakedown:
- * the integration entry now appears unconditionally when the F6 kill-
- * switch is on, since first-time admins struggled to discover the
- * setup wizard via the events-list empty-state alone). Retained as an
- * exported public helper for future per-tenant opt-out config (admins
- * who want to suppress the entry on CSV-only chambers) without
- * having to re-derive the freshness logic.
- *
- * Errors fail open (returns `false`) — a transient DB blip should
- * collapse the entry rather than 500 the entire sidebar.
- */
-const NAV_FRESHNESS_DAYS = 30;
-
-export async function isEventcreateNavVisible(
-  tenantSlug: string,
-): Promise<boolean> {
-  // Kill-switch off → entry is never visible regardless of config.
-  if (!env.features.f6EventCreate) return false;
-
-  try {
-    const ctx: TenantContext = asTenantContext(tenantSlug);
-    return await runInTenant(ctx, async (tx) => {
-      const repo = makeDrizzleTenantWebhookConfigRepository(tx);
-      const cfg = await repo.findByTenantSource(
-        asTenantId(tenantSlug),
-        'eventcreate',
-      );
-      if (!cfg.ok || !cfg.value) return false;
-      if (cfg.value.lastReceivedAt === null) {
-        // Row exists but never received — still visible (admin needs
-        // to finish setup).
-        return true;
-      }
-      const ageMs = Date.now() - cfg.value.lastReceivedAt.getTime();
-      return ageMs <= NAV_FRESHNESS_DAYS * 24 * 60 * 60 * 1000;
-    });
-  } catch (e) {
-    logger.error(
-      {
-        event: 'f6_nav_visibility_resolve_failed',
-        tenantSlug,
-        err: e instanceof Error ? e.message : String(e),
-      },
-      '[F6] nav-visibility resolver threw — hiding entry (fail-safe)',
-    );
-    return false;
-  }
-}
 
 // Re-export needed schema for tests that want to probe directly.
 export { tenantWebhookConfigs };
