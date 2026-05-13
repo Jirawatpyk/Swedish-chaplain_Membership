@@ -56,6 +56,12 @@ vi.mock('@/lib/events-admin-integration-deps', () => ({
   runGenerateWebhookSecret: (...args: unknown[]) => runGenerateWebhookSecretMock(...args),
   runRotateWebhookSecret: (...args: unknown[]) => runRotateWebhookSecretMock(...args),
   runRunTestWebhook: (...args: unknown[]) => runRunTestWebhookMock(...args),
+  // Round-6 verify-fix 2026-05-13 (type-design C7) — disable route
+  // imports `runToggleIngest` (the canonical name). The legacy
+  // `runDisableIngest` alias is still exported for backwards compat.
+  // Mock both so this test (and future migrations) work with either
+  // import path.
+  runToggleIngest: (...args: unknown[]) => runDisableIngestMock(...args),
   runDisableIngest: (...args: unknown[]) => runDisableIngestMock(...args),
   rotateSecretRateLimitCheck: (...args: unknown[]) => rotateSecretRateLimitCheckMock(...args),
   testWebhookRateLimitCheck: (...args: unknown[]) => testWebhookRateLimitCheckMock(...args),
@@ -115,8 +121,8 @@ const MEMBER_SESSION = {
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
   getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
-  rotateSecretRateLimitCheckMock.mockResolvedValue({ success: true, reset: Date.now() + 3_600_000 });
-  testWebhookRateLimitCheckMock.mockResolvedValue({ success: true, reset: Date.now() + 3_600_000 });
+  rotateSecretRateLimitCheckMock.mockResolvedValue({ success: true, resetAtUnixMs: Date.now() + 3_600_000 });
+  testWebhookRateLimitCheckMock.mockResolvedValue({ success: true, resetAtUnixMs: Date.now() + 3_600_000 });
   emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
 });
 
@@ -409,7 +415,7 @@ describe('POST /api/admin/integrations/eventcreate/rotate-secret', () => {
   it('429 when rotation rate-limit (3/hr per tenant+actor) is exceeded', async () => {
     rotateSecretRateLimitCheckMock.mockResolvedValueOnce({
       success: false,
-      reset: Date.now() + 3_600_000,
+      resetAtUnixMs: Date.now() + 3_600_000,
     });
     const { POST } = await loadRotateSecretRoute();
     const res = await POST(buildPost('rotate-secret'));
@@ -470,7 +476,7 @@ describe('POST /api/admin/integrations/eventcreate/test-webhook', () => {
       ok: true,
       value: {
         ok: true,
-        testRequestId: 'test-01H',
+        requestId: 'test-01H',
         deliveredAt: '2026-05-12T08:43:11Z',
         verifiedAt: '2026-05-12T08:43:11Z',
         processingOutcome: 'short_circuited_test',
@@ -482,7 +488,7 @@ describe('POST /api/admin/integrations/eventcreate/test-webhook', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.testRequestId).toBe('test-01H');
+    expect(body.requestId).toBe('test-01H');
     expect(body.processingOutcome).toBe('short_circuited_test');
     expect(body.durationMs).toBe(142);
   });
@@ -492,7 +498,7 @@ describe('POST /api/admin/integrations/eventcreate/test-webhook', () => {
       ok: true,
       value: {
         ok: false,
-        testRequestId: 'test-02H',
+        requestId: 'test-02H',
         deliveredAt: '2026-05-12T08:43:11Z',
         signatureOutcome: 'rejected',
         failureCategory: 'signature_mismatch',
@@ -511,7 +517,7 @@ describe('POST /api/admin/integrations/eventcreate/test-webhook', () => {
   it('429 when test-webhook rate-limit (10/hr per tenant+actor) is exceeded', async () => {
     testWebhookRateLimitCheckMock.mockResolvedValueOnce({
       success: false,
-      reset: Date.now() + 3_600_000,
+      resetAtUnixMs: Date.now() + 3_600_000,
     });
     const { POST } = await loadTestWebhookRoute();
     const res = await POST(buildPost('test-webhook'));
@@ -525,7 +531,7 @@ describe('POST /api/admin/integrations/eventcreate/test-webhook', () => {
       ok: true,
       value: {
         ok: true,
-        testRequestId: 'test-z',
+        requestId: 'test-z',
         deliveredAt: '2026-05-12T08:00:00Z',
         verifiedAt: '2026-05-12T08:00:00Z',
         processingOutcome: 'short_circuited_test',
@@ -626,6 +632,49 @@ describe('POST /api/admin/integrations/eventcreate/disable', () => {
       buildPost('disable', { enabled: true, reason: 'reactivate' }),
     );
     expect(res.status).toBe(404);
+  });
+});
+
+// ===========================================================================
+// Round-6 verify-fix 2026-05-13 (M3) — `audit_emit_failed` → 500 mapping
+// for the 4 mutating endpoints. The composition adapter returns
+// `{ ok: false, error: { kind: 'audit_emit_failed' } }` when the DB row
+// mutated but the audit emit failed (Principle I sub-clause 5 forensic-
+// trail gap). Route handlers MUST surface this as 500 so the admin
+// retries — never as 200 (which would mask the gap).
+// ===========================================================================
+
+describe('M3 — audit_emit_failed → 500 mapping (forensic-trail gap surfaces as retry)', () => {
+  it('generate-secret returns 500 when use-case returns audit_emit_failed', async () => {
+    runGenerateWebhookSecretMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'audit_emit_failed', inner: { kind: 'db_error', message: 'audit insert failed' } },
+    });
+    const { POST } = await loadGenerateSecretRoute();
+    const res = await POST(buildPost('generate-secret'));
+    expect(res.status).toBe(500);
+  });
+
+  it('rotate-secret returns 500 when use-case returns audit_emit_failed', async () => {
+    runRotateWebhookSecretMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'audit_emit_failed', inner: { kind: 'db_error', message: 'audit insert failed' } },
+    });
+    const { POST } = await loadRotateSecretRoute();
+    const res = await POST(buildPost('rotate-secret'));
+    expect(res.status).toBe(500);
+  });
+
+  it('disable returns 500 when use-case returns audit_emit_failed', async () => {
+    runDisableIngestMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'audit_emit_failed', message: 'audit emit failed' },
+    });
+    const { POST } = await loadDisableRoute();
+    const res = await POST(
+      buildPost('disable', { enabled: false, reason: 'test' }),
+    );
+    expect(res.status).toBe(500);
   });
 });
 

@@ -18,6 +18,9 @@ import { runLoadIntegrationConfig } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { adminOnlyGuard, deriveWebhookBaseUrl } from './_lib/role-violation-audit';
 
+// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
+export const runtime = 'nodejs';
+
 const ROUTE = '/api/admin/integrations/eventcreate';
 
 export async function GET(request: NextRequest): Promise<Response> {

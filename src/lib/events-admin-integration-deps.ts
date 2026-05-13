@@ -20,7 +20,7 @@
  * is the composition adapter layer — ESLint barrel-enforcement allows
  * deep imports here, and Application use-cases never reach this file.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
@@ -43,12 +43,14 @@ import {
   runTestWebhook,
   type RunTestWebhookError,
   type RunTestWebhookOutcome,
+  type ProcessingOutcomeLabel,
 } from '@/modules/events/application/use-cases/run-test-webhook';
 import {
   signWebhookRequest,
   type WebhookSecret,
   type TenantWebhookConfigAggregate,
 } from '@/modules/events';
+import { asSecretLastFour, type SecretLastFour } from '@/modules/events/domain/secret-last-four';
 import { makeDrizzleTenantWebhookConfigRepository } from '@/modules/events/infrastructure/drizzle-tenant-webhook-config-repository';
 import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
 import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
@@ -62,9 +64,19 @@ const ROTATE_MAX_PER_HOUR = 3;
 const TEST_WEBHOOK_MAX_PER_HOUR = 10;
 const WINDOW_SECONDS = 3600;
 
+/**
+ * Outcome of a rate-limit `check`. Round-6 verify-fix 2026-05-13
+ * (type-design C5) renamed the `reset: number` field to
+ * `resetAtUnixMs` so the unit + epoch are visible at call sites
+ * (previously callers had to inspect the Upstash adapter to know
+ * whether `reset` was milliseconds-until-reset or absolute epoch ms).
+ * The adapter returns absolute epoch ms; the field name now reflects
+ * that contract.
+ */
 export interface RateLimitOutcome {
   readonly success: boolean;
-  readonly reset: number;
+  /** Absolute Unix epoch in milliseconds when the window resets. */
+  readonly resetAtUnixMs: number;
 }
 
 export async function rotateSecretRateLimitCheck(
@@ -76,7 +88,7 @@ export async function rotateSecretRateLimitCheck(
     ROTATE_MAX_PER_HOUR,
     WINDOW_SECONDS,
   );
-  return { success: result.success, reset: result.reset };
+  return { success: result.success, resetAtUnixMs: result.reset };
 }
 
 export async function testWebhookRateLimitCheck(
@@ -88,32 +100,71 @@ export async function testWebhookRateLimitCheck(
     TEST_WEBHOOK_MAX_PER_HOUR,
     WINDOW_SECONDS,
   );
-  return { success: result.success, reset: result.reset };
+  return { success: result.success, resetAtUnixMs: result.reset };
 }
 
 // ---------------------------------------------------------------------------
 // GET config + recent deliveries
 // ---------------------------------------------------------------------------
 
+/**
+ * One row of the recent-deliveries panel. The `processingOutcome` is
+ * typed as the closed `ProcessingOutcomeLabel` union (with `'unknown'`
+ * for non-matching receiver-side enum extensions) plus `null` when the
+ * underlying audit event carries no `processingOutcome` (e.g. a
+ * `webhook_signature_rejected` row).
+ *
+ * Round-6 verify-fix 2026-05-13 (type-design C3) — was previously
+ * `string | null` which let the UI sneak past compile-time checks by
+ * receiving a free-form receiver-side string. The typed enum forces
+ * a deliberate widening when a new processing outcome is added.
+ */
+export type RecentDeliveryProcessingOutcome =
+  | ProcessingOutcomeLabel
+  | 'duplicate'
+  | 'malformed'
+  | 'rolled_back'
+  | 'rate_limited'
+  | 'ingest_disabled'
+  | 'unknown';
+
 export interface RecentDelivery {
   readonly receivedAt: string;
   readonly requestId: string;
   readonly signatureOutcome: 'verified' | 'rejected' | 'unknown';
-  readonly processingOutcome: string | null;
+  readonly processingOutcome: RecentDeliveryProcessingOutcome | null;
   readonly matchedMemberId: string | null;
   readonly registrationId: string | null;
 }
 
-export interface IntegrationConfigView {
-  readonly webhookUrl: string;
-  readonly secretConfigured: boolean;
-  readonly secretLastFour?: string;
-  readonly graceActiveUntil?: string | null;
-  readonly ingestEnabled: boolean;
-  readonly lastReceivedAt?: string | null;
-  readonly recentDeliveries: ReadonlyArray<RecentDelivery>;
-  readonly recentDeliveriesIncludeTests: boolean;
-}
+/**
+ * Discriminated view of the F6 integration config — Round-6 verify-fix
+ * 2026-05-13 (type-design C4) replaced a flat-bag `interface` with two
+ * mutually-exclusive variants keyed on `secretConfigured`. Prior shape
+ * allowed `{secretConfigured: false, secretLastFour: 'abcd'}` to
+ * compile even though the runtime code never produced such a row;
+ * the discriminant now makes that representation illegal.
+ *
+ * Consumers (page server component + `<WebhookConfigWizard>`) narrow
+ * on `secretConfigured` before accessing the post-config fields.
+ */
+export type IntegrationConfigView =
+  | {
+      readonly secretConfigured: false;
+      readonly webhookUrl: string;
+      readonly recentDeliveries: ReadonlyArray<RecentDelivery>;
+      readonly recentDeliveriesIncludeTests: boolean;
+    }
+  | {
+      readonly secretConfigured: true;
+      readonly webhookUrl: string;
+      readonly secretLastFour: SecretLastFour;
+      readonly graceActiveUntil: string | null;
+      readonly ingestEnabled: boolean;
+      readonly lastReceivedAt: string | null;
+      readonly recentDeliveries: ReadonlyArray<RecentDelivery>;
+      readonly recentDeliveriesIncludeTests: boolean;
+    };
 
 export interface LoadConfigOptions {
   readonly includeTestDeliveries: boolean;
@@ -130,9 +181,21 @@ const DELIVERY_EVENT_TYPES = [
   'webhook_rolled_back',
 ] as const;
 
-function lastFour(s: string): string {
-  return s.slice(-4);
-}
+const KNOWN_RECENT_PROCESSING_OUTCOMES: ReadonlySet<RecentDeliveryProcessingOutcome> = new Set<
+  RecentDeliveryProcessingOutcome
+>([
+  'short_circuited_test',
+  'matched_member_contact',
+  'matched_member_domain',
+  'matched_member_fuzzy',
+  'non_member',
+  'unmatched',
+  'duplicate',
+  'malformed',
+  'rolled_back',
+  'rate_limited',
+  'ingest_disabled',
+]);
 
 function mapSignatureOutcome(
   eventType: string,
@@ -143,12 +206,18 @@ function mapSignatureOutcome(
   return 'unknown';
 }
 
-function extractProcessingOutcome(payload: unknown): string | null {
+function extractProcessingOutcome(
+  payload: unknown,
+): RecentDeliveryProcessingOutcome | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const p = payload as Record<string, unknown>;
-  return typeof p['processingOutcome'] === 'string'
-    ? (p['processingOutcome'] as string)
-    : null;
+  const raw = p['processingOutcome'];
+  if (typeof raw !== 'string') return null;
+  return KNOWN_RECENT_PROCESSING_OUTCOMES.has(
+    raw as RecentDeliveryProcessingOutcome,
+  )
+    ? (raw as RecentDeliveryProcessingOutcome)
+    : 'unknown';
 }
 
 function extractMatchedMemberId(payload: unknown): string | null {
@@ -206,9 +275,8 @@ export async function runLoadIntegrationConfig(
 
     if (!cfg) {
       return {
-        webhookUrl,
         secretConfigured: false,
-        ingestEnabled: false,
+        webhookUrl,
         recentDeliveries: [],
         recentDeliveriesIncludeTests: options.includeTestDeliveries,
       } satisfies IntegrationConfigView;
@@ -217,7 +285,26 @@ export async function runLoadIntegrationConfig(
     // Recent deliveries query. RLS-scoped via runInTenant tx, so
     // tenant_id predicate is enforced by policy + index. Belt-and-
     // braces: explicit `eq(auditLog.tenantId, tenantSlug)` for index
-    // utilisation.
+    // utilisation. Round-6 verify-fix 2026-05-13 (code #7) — push the
+    // `webhook_test_invoked` filter into SQL when `!includeTestDeliveries`
+    // so the DB returns exactly `LIMIT` rows instead of over-fetching
+    // 2–3× for the JS-side filter loop. Receiver emits
+    // `webhook_test_invoked` ONLY for short-circuit test paths
+    // (sentinel external IDs); no production webhook delivery uses
+    // this event type, so filtering by event_type is equivalent to
+    // "this is a synthetic test delivery".
+    const baseWhere = and(
+      eq(auditLog.tenantId, tenantSlug),
+      // Our 6-event subset is a small constant; the broader
+      // `audit_event_type` Drizzle enum spans the union of all F1-F8
+      // event types. The PgEnumColumn typing requires `as const`
+      // widening that doesn't compose with a `readonly` tuple, so use
+      // a raw SQL `IN (...)` template to bypass the overload picker.
+      sql`${auditLog.eventType} IN (${sql.join(
+        DELIVERY_EVENT_TYPES.map((t) => sql`${t}`),
+        sql`, `,
+      )})`,
+    );
     const rows = await tx
       .select({
         timestamp: auditLog.timestamp,
@@ -227,59 +314,35 @@ export async function runLoadIntegrationConfig(
       })
       .from(auditLog)
       .where(
-        and(
-          eq(auditLog.tenantId, tenantSlug),
-          // `audit_event_type` Drizzle enum's union spans 130+ values.
-          // Our 6-event subset is type-compatible at runtime but the
-          // PgEnumColumn typing requires `as const` widening that
-          // doesn't compose with a `readonly` tuple. Use a raw SQL
-          // `IN (...)` template to bypass the overload picker.
-          sql`${auditLog.eventType} IN (${sql.join(
-            DELIVERY_EVENT_TYPES.map((t) => sql`${t}`),
-            sql`, `,
-          )})`,
-        ),
+        options.includeTestDeliveries
+          ? baseWhere
+          : and(
+              baseWhere,
+              ne(
+                auditLog.eventType,
+                // Cast through `never` because the enum literal union
+                // doesn't include F6's `ALTER TYPE`-added members at
+                // compile time (same precedent as pino-audit-port.ts).
+                'webhook_test_invoked' as never,
+              ),
+            ),
       )
       .orderBy(desc(auditLog.timestamp))
-      .limit(options.includeTestDeliveries ? RECENT_DELIVERIES_LIMIT * 2 : RECENT_DELIVERIES_LIMIT * 3);
+      .limit(RECENT_DELIVERIES_LIMIT);
 
-    const recent: RecentDelivery[] = [];
-    for (const row of rows) {
-      // Verify-fix (2026-05-13) — bug surfaced via manual smoke-test:
-      // the toggle was broken because the previous filter checked
-      // `processingOutcome === 'short_circuited_test'` but the
-      // `webhook_test_invoked` audit payload has NO `processingOutcome`
-      // field (per audit-port.ts:189-194 the payload is just
-      // {severity, actorUserId, testRequestId, durationMs}). The
-      // extraction always returned null → filter was a no-op → test
-      // rows leaked into the panel regardless of toggle state.
-      //
-      // Correct identifier for a test row is the event_type itself.
-      // Receiver emits `webhook_test_invoked` ONLY for short-circuit
-      // paths (sentinel external IDs); no production webhook delivery
-      // uses this event type. Filtering by `eventType` is therefore
-      // equivalent to "this is a synthetic test delivery".
-      //
-      // Cast to `string` because the Drizzle `auditEventTypeEnum` TS
-      // literal union (src/modules/auth/infrastructure/db/schema.ts:45)
-      // doesn't include F6's enum extensions added via SQL `ALTER TYPE`
-      // in migration 0132 — same reason pino-audit-port.ts:90-95 uses
-      // raw `::audit_event_type` SQL cast at the INSERT site.
+    const recent: RecentDelivery[] = rows.map((row) => {
       const isTestRow = (row.eventType as string) === 'webhook_test_invoked';
-      if (!options.includeTestDeliveries && isTestRow) continue;
-      const processingOutcome = isTestRow
-        ? 'short_circuited_test'
-        : extractProcessingOutcome(row.payload);
-      recent.push({
+      const processingOutcome: RecentDeliveryProcessingOutcome | null =
+        isTestRow ? 'short_circuited_test' : extractProcessingOutcome(row.payload);
+      return {
         receivedAt: new Date(row.timestamp).toISOString(),
         requestId: row.requestId,
         signatureOutcome: mapSignatureOutcome(row.eventType),
         processingOutcome,
         matchedMemberId: extractMatchedMemberId(row.payload),
         registrationId: extractRegistrationId(row.payload),
-      });
-      if (recent.length >= RECENT_DELIVERIES_LIMIT) break;
-    }
+      };
+    });
 
     const graceActiveUntil =
       cfg.graceRotatedAt !== null
@@ -287,9 +350,9 @@ export async function runLoadIntegrationConfig(
         : null;
 
     return {
-      webhookUrl,
       secretConfigured: true,
-      secretLastFour: lastFour(cfg.activeSecret as unknown as string),
+      webhookUrl,
+      secretLastFour: asSecretLastFour(cfg.activeSecret as unknown as string),
       graceActiveUntil,
       ingestEnabled: cfg.enabled,
       lastReceivedAt: cfg.lastReceivedAt
@@ -317,7 +380,7 @@ export async function runGenerateWebhookSecret(
   tenantSlug: string,
   actorUserId: string,
 ): Promise<
-  Result<{ secret: string; secretLastFour: string }, GenerateWebhookSecretError>
+  Result<{ secret: string; secretLastFour: SecretLastFour }, GenerateWebhookSecretError>
 > {
   const ctx: TenantContext = asTenantContext(tenantSlug);
   return runInTenant(ctx, async (tx) => {
@@ -344,7 +407,7 @@ export async function runRotateWebhookSecret(
   actorUserId: string,
 ): Promise<
   Result<
-    { secret: string; secretLastFour: string; graceActiveUntil: string },
+    { secret: string; secretLastFour: SecretLastFour; graceActiveUntil: string },
     RotateWebhookSecretError
   >
 > {
@@ -427,12 +490,32 @@ export async function runRunTestWebhook(
     {
       signRequest: signWebhookRequest,
       httpFetch: async (url, init) => {
-        const res = await fetch(url, init);
-        return {
-          status: res.status,
-          json: () => res.json(),
-          text: () => res.text(),
-        };
+        try {
+          const res = await fetch(url, init);
+          return {
+            status: res.status,
+            json: () => res.json(),
+            text: () => res.text(),
+          };
+        } catch (e) {
+          // Round-6 verify-fix 2026-05-13 (errors E6) — log the
+          // underlying fetch failure so SREs can diagnose DNS / TLS
+          // handshake / abort / timeout causes without manual repro.
+          // The use-case re-throws via its own try/catch as
+          // `failureCategory='network_error'`, so the user-facing
+          // outcome is unchanged — this log is forensic-only.
+          logger.warn(
+            {
+              event: 'f6_test_webhook_fetch_threw',
+              tenantSlug,
+              url,
+              err: e instanceof Error ? e.message : String(e),
+              errName: e instanceof Error ? e.name : null,
+            },
+            '[F6] test-webhook outbound fetch threw — failureCategory=network_error will be returned',
+          );
+          throw e;
+        }
       },
     },
   );
@@ -442,20 +525,40 @@ export async function runRunTestWebhook(
 // POST disable (admin kill-switch toggle per FR-033)
 // ---------------------------------------------------------------------------
 
-export interface DisableInput {
+/**
+ * Round-6 verify-fix 2026-05-13 (type-design C7) — renamed from
+ * `DisableInput` to `ToggleIngestInput` because the surface handles
+ * BOTH enable and disable directions (calling `runDisableIngest(...,
+ * { enabled: true, ... })` to re-enable reads contradictorily). The
+ * old `DisableInput` + `runDisableIngest` names persist below as
+ * `@deprecated` aliases so external callers see a single-cycle
+ * migration window.
+ */
+export interface ToggleIngestInput {
   readonly enabled: boolean;
+  /** 1-500 char operator-supplied explanation captured in the audit row. */
   readonly reason: string;
 }
 
-export type DisableError =
+/**
+ * @deprecated Use {@link ToggleIngestInput}. Removed in F6 v2.
+ */
+export type DisableInput = ToggleIngestInput;
+
+export type ToggleIngestError =
   | TenantWebhookConfigRepositoryError
   | { readonly kind: 'audit_emit_failed'; readonly message: string };
 
-export async function runDisableIngest(
+/**
+ * @deprecated Use {@link ToggleIngestError}. Removed in F6 v2.
+ */
+export type DisableError = ToggleIngestError;
+
+export async function runToggleIngest(
   tenantSlug: string,
   actorUserId: string,
-  input: DisableInput,
-): Promise<Result<{ enabled: boolean }, DisableError>> {
+  input: ToggleIngestInput,
+): Promise<Result<{ enabled: boolean }, ToggleIngestError>> {
   const ctx: TenantContext = asTenantContext(tenantSlug);
   // Round-6 verify-fix 2026-05-13 (H3 metric drift) — captured outside
   // the tx callback so we can correctly emit the FR-036 #9 gauge in
@@ -556,6 +659,12 @@ export async function runDisableIngest(
   }
   return result;
 }
+
+/**
+ * @deprecated Backwards-compat alias for {@link runToggleIngest}.
+ * Removed in F6 v2 once all callers migrate.
+ */
+export const runDisableIngest = runToggleIngest;
 
 // ---------------------------------------------------------------------------
 // Note on nav-visibility (T081): the integration nav entry is shown

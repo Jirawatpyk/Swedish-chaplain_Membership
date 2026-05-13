@@ -157,18 +157,14 @@ function actorSentinel(entry: F6AuditEntry): string {
  * `'no-request-id'` sentinel is returned when no payload field maps.
  *
  * Field-name dispatch:
- *   - Most webhook event types use `payload.requestId` (a deliberate
- *     contract convention — see `webhook_receipt_verified`,
- *     `webhook_signature_rejected`, `webhook_duplicate_rejected` etc.
- *     in audit-port.ts §126-188).
- *   - `webhook_test_invoked` is the OUTLIER — payload uses
- *     `testRequestId` (audit-port.ts:192). Without this fallback the
- *     test-webhook short-circuit audit row gets `request_id =
- *     'no-request-id'` and the recent-deliveries panel renders the
- *     sentinel as the visible request ID, which masks the real
- *     `test-<ts>-<random>` correlation key. Round-3 verify-fix
- *     (2026-05-13) wired this fallback after the issue was caught
- *     during local manual smoke-test of the wizard.
+ *   - All current webhook event types use `payload.requestId` —
+ *     including `webhook_test_invoked` after Round-6 verify-fix
+ *     2026-05-13 (type-design C2) renamed its previously-bespoke
+ *     `testRequestId` field for naming-convention symmetry. The
+ *     legacy `testRequestId` fallback below remains so old audit
+ *     rows (emitted in dev/staging before the field-rename
+ *     deployment) can still hydrate their request_id correctly when
+ *     queried.
  *
  * If/when future event types add yet another field-name variant,
  * extend this dispatch — do NOT silently fall through to the sentinel.
@@ -179,7 +175,10 @@ function extractRequestId(entry: F6AuditEntry): string {
   if (typeof payload['requestId'] === 'string') {
     return payload['requestId'];
   }
-  // `webhook_test_invoked` field-name variant.
+  // Legacy fallback for `webhook_test_invoked` audit rows emitted
+  // before Round-6 (type-design C2) renamed the field. Safe to
+  // remove once all pre-2026-05-13 dev/staging audit rows are
+  // expired beyond their retention window.
   if (typeof payload['testRequestId'] === 'string') {
     return payload['testRequestId'];
   }

@@ -54,17 +54,42 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                   <h3 className="font-semibold">{t(`step${step}.title`)}</h3>
                   <p className="text-sm text-muted-foreground">
                     {step === 4
-                      ? t('step4.body', { webhookUrl })
+                      ? // Round-6 verify-fix 2026-05-13 (UX M-02) —
+                        // wrap the inline `webhookUrl` in `<code>` via
+                        // ICU rich-text so the admin sees a monospace
+                        // copy-affordance instead of the URL melting
+                        // into the surrounding paragraph text.
+                        t.rich('step4.body', {
+                          webhookUrl,
+                          code: (chunks) => (
+                            <code className="break-all rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                              {chunks}
+                            </code>
+                          ),
+                        })
                       : t(`step${step}.body`)}
                   </p>
-                  <Image
-                    src={`/walkthroughs/eventcreate-zapier/step-${step}.png`}
-                    alt={t(`step${step}.alt`)}
-                    width={1280}
-                    height={720}
-                    className="rounded-md border bg-muted"
-                    sizes="(max-width: 640px) 100vw, 600px"
-                  />
+                  <figure className="space-y-1">
+                    <Image
+                      src={`/walkthroughs/eventcreate-zapier/step-${step}.png`}
+                      alt={t(`step${step}.alt`)}
+                      width={1280}
+                      height={720}
+                      className="rounded-md border bg-muted"
+                      sizes="(max-width: 640px) 100vw, 600px"
+                    />
+                    {/*
+                      Round-6 verify-fix 2026-05-13 (UX1) — placeholder
+                      caption so the admin knows the .png is illustrative
+                      pending the real Zapier capture (stakeholder
+                      task T080a). The textual narration above carries
+                      the actionable instruction; image is reference
+                      only.
+                    */}
+                    <figcaption className="text-xs italic text-muted-foreground">
+                      {t('imagePlaceholderNotice')}
+                    </figcaption>
+                  </figure>
                 </div>
               </CardContent>
             </Card>

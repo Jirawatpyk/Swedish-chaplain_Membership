@@ -132,8 +132,10 @@ export function RotateSecretDialog({
               /* Rotation dialog's primary action is the
                  ConfirmationDialog's own "Acknowledge" button below;
                  the embedded WebhookSecretReveal's Continue button is
-                 a no-op secondary path here. Both end up closing the
-                 dialog via `onRotationAcknowledged`. */
+                 a redundant secondary path here — both buttons
+                 converge on the same `onRotationAcknowledged` +
+                 dialog-close call so the admin gets to either trigger
+                 from either click target. */
               onRotationAcknowledged();
               handleOpenChange(false);
             }}

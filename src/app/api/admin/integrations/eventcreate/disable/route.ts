@@ -9,9 +9,12 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { runDisableIngest } from '@/lib/events-admin-integration-deps';
+import { runToggleIngest } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
+
+// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
+export const runtime = 'nodejs';
 
 const ROUTE = '/api/admin/integrations/eventcreate/disable';
 
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const tenantCtx = resolveTenantFromRequest(request);
 
   try {
-    const result = await runDisableIngest(
+    const result = await runToggleIngest(
       tenantCtx.slug,
       guard.actorUserId,
       parsed.data,

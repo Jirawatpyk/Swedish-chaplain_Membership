@@ -52,6 +52,7 @@ import {
   cryptoWebhookSignatureVerifier,
   ingestWebhookAttendee,
   MATCH_TYPE_TO_PROCESSING_OUTCOME,
+  asRequestId,
 } from '@/modules/events';
 import {
   makeIngestWebhookAttendeeDeps,
@@ -671,7 +672,14 @@ export async function POST(
               payload: {
                 severity: 'info',
                 actorUserId: SYSTEM_ACTOR,
-                testRequestId: requestId,
+                // Round-6 verify-fix 2026-05-13 (type-design C2) —
+                // field renamed from `testRequestId` → `requestId`
+                // to share the same convention as
+                // `webhook_receipt_verified` / `webhook_secret_grace_used`
+                // / `webhook_signature_rejected`. Brand at boundary
+                // (string-shape) keeps the audit payload's `RequestId`
+                // invariant compile-checked.
+                requestId: asRequestId(requestId),
                 durationMs: shortCircuitLatencyMs,
               },
             },

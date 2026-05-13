@@ -2429,10 +2429,13 @@
           "back": "Back",
           "connectComplete": "I've set up the Zap — continue",
           "webhookUrlLabel": "Webhook URL",
+          "webhookUrlAriaLabel": "Webhook URL to copy into Zapier",
           "copyUrl": "Copy webhook URL to clipboard",
           "secretLabel": "Current secret",
+          "secretAriaLabel": "Masked webhook secret — last four characters visible",
           "rotateButton": "Rotate secret",
-          "graceActiveUntil": "Old secret still verifies until {timestamp}"
+          "graceActiveUntil": "Old secret still verifies until {timestamp}",
+          "viewSetupGuide": "View setup guide (Zapier walkthrough)"
         },
         "phaseA": {
           "secretLabel": "Webhook secret (one-time reveal)",
@@ -2450,6 +2453,7 @@
           "title": "Connect EventCreate via Zapier",
           "stepsLabel": "Zapier setup walkthrough",
           "englishOnlyNotice": "The Zapier web app is available in English only. The narration below is localised; the screenshots show Zapier's English interface.",
+          "imagePlaceholderNotice": "Reference screenshot — final captures pending stakeholder review. Follow the narration above.",
           "step1": {
             "title": "Step 1: Sign in to Zapier",
             "body": "Open zapier.com and sign in to (or create) the Zapier account you want this Zap to run from.",
@@ -2467,7 +2471,7 @@
           },
           "step4": {
             "title": "Step 4: Add a Webhooks by Zapier action",
-            "body": "Add a new action step, choose Webhooks by Zapier → POST. Paste this webhook URL into the URL field: {webhookUrl}",
+            "body": "Add a new action step, choose Webhooks by Zapier → POST. Paste this webhook URL into the URL field: <code>{webhookUrl}</code>",
             "alt": "Webhooks by Zapier action configuration"
           },
           "step5": {
@@ -2520,6 +2524,7 @@
             "title": "Recent deliveries",
             "empty": "No recent deliveries yet. Trigger a Zap or press \"Send test event\" to see traffic.",
             "includeTestDeliveriesLabel": "Include test deliveries",
+            "toggleFailed": "Could not refresh deliveries. Reload the page to retry.",
             "signature": {
               "verified": "Verified",
               "rejected": "Signature rejected",

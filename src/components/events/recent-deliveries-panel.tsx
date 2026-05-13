@@ -16,27 +16,32 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { RelativeTime } from '@/components/ui/relative-time';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import type {
+  RecentDelivery,
+  RecentDeliveryProcessingOutcome,
+} from '@/lib/events-admin-integration-deps';
 
-export interface RecentDeliveryRow {
-  readonly receivedAt: string;
-  readonly requestId: string;
-  readonly signatureOutcome: 'verified' | 'rejected' | 'unknown';
-  readonly processingOutcome: string | null;
-  readonly matchedMemberId: string | null;
-  readonly registrationId: string | null;
-}
-
+/**
+ * Round-6 verify-fix 2026-05-13 (type-design C3) — Component now
+ * consumes the canonical `RecentDelivery` type from the composition
+ * adapter directly, eliminating the previously-duplicated
+ * `RecentDeliveryRow` interface. Single source of truth for the row
+ * shape — a refactor on the adapter side surfaces TS errors at the UI
+ * consumer instead of relying on structural compatibility (which
+ * succeeded until either side added a new field).
+ */
 export interface RecentDeliveriesPanelProps {
-  readonly deliveries: ReadonlyArray<RecentDeliveryRow>;
+  readonly deliveries: ReadonlyArray<RecentDelivery>;
   readonly includeTestDeliveries: boolean;
 }
 
 function signatureBadgeVariant(
-  outcome: RecentDeliveryRow['signatureOutcome'],
+  outcome: RecentDelivery['signatureOutcome'],
 ): 'default' | 'destructive' | 'secondary' {
   if (outcome === 'verified') return 'default';
   if (outcome === 'rejected') return 'destructive';
@@ -44,30 +49,35 @@ function signatureBadgeVariant(
 }
 
 function processingBadgeVariant(
-  outcome: string | null,
+  outcome: RecentDeliveryProcessingOutcome | null,
 ): 'default' | 'destructive' | 'secondary' | 'outline' {
   if (!outcome) return 'outline';
   if (outcome === 'short_circuited_test') return 'secondary';
-  if (outcome.startsWith('matched_member')) return 'default';
+  if (
+    outcome === 'matched_member_contact' ||
+    outcome === 'matched_member_domain' ||
+    outcome === 'matched_member_fuzzy'
+  ) {
+    return 'default';
+  }
   if (outcome === 'non_member' || outcome === 'unmatched') return 'secondary';
+  if (outcome === 'rolled_back' || outcome === 'malformed') return 'destructive';
   return 'outline';
 }
 
 /**
  * Closed set of processing-outcome values that have a corresponding
  * `processing.<value>` i18n key in `en/th/sv.json`. Any value outside
- * this set falls back to rendering the raw string verbatim (UI never
- * crashes on a receiver-side enum extension).
+ * this set (including the receiver-side `'unknown'` discriminator)
+ * falls back to rendering the raw string verbatim — UI never crashes
+ * on a receiver-side enum extension.
  *
- * Round-6 verify-fix 2026-05-13 — replaces a brittle `defaultMessage`
- * cast through `next-intl`'s values dict (which `next-intl` silently
- * ignores at runtime + throws `IntlError: MISSING_MESSAGE` in dev
- * mode). MUST stay aligned with the keys under
+ * MUST stay aligned with the keys under
  * `admin.integrations.eventcreate.phaseC.recentDeliveries.processing`
  * — add a new entry to BOTH this set AND all 3 locale JSON files
  * when the receiver extends `processing_outcome` to a new value.
  */
-const KNOWN_PROCESSING_OUTCOMES = new Set<string>([
+const KNOWN_PROCESSING_OUTCOMES = new Set<RecentDeliveryProcessingOutcome>([
   'matched_member_contact',
   'matched_member_domain',
   'matched_member_fuzzy',
@@ -97,13 +107,23 @@ export function RecentDeliveriesPanel({
   function handleToggle(next: boolean) {
     setOptimisticInclude(next);
     startTransition(() => {
-      const url = new URL(window.location.href);
-      if (next) {
-        url.searchParams.set('includeTestDeliveries', 'true');
-      } else {
-        url.searchParams.delete('includeTestDeliveries');
+      try {
+        const url = new URL(window.location.href);
+        if (next) {
+          url.searchParams.set('includeTestDeliveries', 'true');
+        } else {
+          url.searchParams.delete('includeTestDeliveries');
+        }
+        router.replace(url.pathname + url.search);
+      } catch (e) {
+        // Round-6 verify-fix 2026-05-13 (errors E3) — surface a
+        // toast so a failed router.replace doesn't look identical to
+        // "panel correctly shows zero rows". Revert optimistic state
+        // so the Switch reflects the actual server-side filter.
+        console.error('[F6] recent-deliveries toggle failed', e);
+        setOptimisticInclude(!next);
+        toast.error(t('toggleFailed'));
       }
-      router.replace(url.pathname + url.search);
     });
   }
 

@@ -2429,10 +2429,13 @@
           "back": "Tillbaka",
           "connectComplete": "Jag har konfigurerat Zap — fortsätt",
           "webhookUrlLabel": "Webhook-URL",
+          "webhookUrlAriaLabel": "Webhook-URL att kopiera till Zapier",
           "copyUrl": "Kopiera webhook-URL till urklipp",
           "secretLabel": "Aktuell nyckel",
+          "secretAriaLabel": "Maskerad webhook-nyckel — endast de fyra sista tecknen visas",
           "rotateButton": "Rotera nyckel",
-          "graceActiveUntil": "Gammal nyckel verifierar fortfarande till {timestamp}"
+          "graceActiveUntil": "Gammal nyckel verifierar fortfarande till {timestamp}",
+          "viewSetupGuide": "Visa konfigurationsguide (Zapier-genomgång)"
         },
         "phaseA": {
           "secretLabel": "Webhook-nyckel (visas en gång)",
@@ -2450,6 +2453,7 @@
           "title": "Anslut EventCreate via Zapier",
           "stepsLabel": "Zapier-konfigurationsguide",
           "englishOnlyNotice": "Zapier-webbappen är endast tillgänglig på engelska. Beskrivningarna nedan är lokaliserade; skärmbilderna visar Zapiers engelska gränssnitt.",
+          "imagePlaceholderNotice": "Referensbild — slutgiltiga skärmbilder väntar på intressentgranskning. Följ beskrivningen ovan.",
           "step1": {
             "title": "Steg 1: Logga in på Zapier",
             "body": "Öppna zapier.com och logga in på (eller skapa) det Zapier-konto som Zap:en ska köras från.",
@@ -2467,7 +2471,7 @@
           },
           "step4": {
             "title": "Steg 4: Lägg till en Webhooks by Zapier-åtgärd",
-            "body": "Lägg till ett nytt åtgärdssteg, välj Webhooks by Zapier → POST. Klistra in denna webhook-URL i URL-fältet: {webhookUrl}",
+            "body": "Lägg till ett nytt åtgärdssteg, välj Webhooks by Zapier → POST. Klistra in denna webhook-URL i URL-fältet: <code>{webhookUrl}</code>",
             "alt": "Konfiguration av Webhooks by Zapier-åtgärd"
           },
           "step5": {
@@ -2520,6 +2524,7 @@
             "title": "Senaste leveranser",
             "empty": "Inga senaste leveranser ännu. Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
             "includeTestDeliveriesLabel": "Inkludera testleveranser",
+            "toggleFailed": "Kunde inte uppdatera leveranser. Ladda om sidan för att försöka igen.",
             "signature": {
               "verified": "Verifierad",
               "rejected": "Signatur avvisad",

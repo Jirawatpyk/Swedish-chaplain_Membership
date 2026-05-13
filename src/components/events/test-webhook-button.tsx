@@ -18,15 +18,18 @@ import { useTranslations } from 'next-intl';
 import { Loader2Icon, SendIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import type { RunTestWebhookOutcome } from '@/modules/events';
 
-export interface TestWebhookOutcome {
-  readonly ok: boolean;
-  readonly testRequestId: string;
-  readonly processingOutcome?: string;
-  readonly durationMs?: number;
-  readonly failureCategory?: string;
-  readonly hint?: string;
-}
+/**
+ * Round-6 verify-fix 2026-05-13 (type-design C1) — the UI previously
+ * re-declared its own `TestWebhookOutcome` interface with `ok: boolean`
+ * and every distinguishing field as `?:` optional. That threw away the
+ * compile-time narrowing the Application-layer `RunTestWebhookOutcome`
+ * discriminated union earns at the use-case boundary. The route
+ * handler serialises `RunTestWebhookOutcome` verbatim to JSON, so
+ * consuming the same type here is a free upgrade.
+ */
+export type TestWebhookOutcome = RunTestWebhookOutcome;
 
 export interface TestWebhookButtonProps {
   /** Fires after the round-trip resolves so the parent can refresh
@@ -82,16 +85,21 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         return;
       }
       const body = (await res.json()) as TestWebhookOutcome;
+      // Round-6 verify-fix 2026-05-13 (type-design C1) — discriminated
+      // narrowing on `body.ok`. The Application-layer
+      // `RunTestWebhookOutcome` guarantees `processingOutcome` /
+      // `durationMs` are present on the success arm and
+      // `failureCategory` / `hint` on the failure arm.
       if (body.ok) {
         toast.success(
           t('successWithOutcome', {
-            outcome: body.processingOutcome ?? 'verified',
-            durationMs: body.durationMs ?? 0,
+            outcome: body.processingOutcome,
+            durationMs: body.durationMs,
           }),
         );
         setAnnouncement(t('success'));
       } else {
-        toast.error(t('failureWithHint', { hint: body.hint ?? '' }));
+        toast.error(t('failureWithHint', { hint: body.hint }));
         setAnnouncement(t('failure'));
       }
       onResolved?.(body);

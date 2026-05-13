@@ -70,7 +70,7 @@ export type FailureCategory =
 export type RunTestWebhookOutcome =
   | {
       readonly ok: true;
-      readonly testRequestId: string;
+      readonly requestId: string;
       readonly deliveredAt: string;
       readonly verifiedAt: string;
       readonly processingOutcome: ProcessingOutcomeLabel;
@@ -78,7 +78,7 @@ export type RunTestWebhookOutcome =
     }
   | {
       readonly ok: false;
-      readonly testRequestId: string;
+      readonly requestId: string;
       readonly deliveredAt: string;
       readonly signatureOutcome: 'rejected' | 'unknown';
       readonly failureCategory: FailureCategory;
@@ -163,7 +163,13 @@ export async function runTestWebhook(
   }
 
   const nowUnixSeconds = Math.floor(input.now.getTime() / 1000);
-  const testRequestId = `test-${nowUnixSeconds}-${Math.random().toString(36).slice(2, 10)}`;
+  // Round-6 verify-fix 2026-05-13 (type-design C2) — variable renamed
+  // from `requestId` to `requestId` to mirror the audit payload
+  // field-name convention now shared across the entire F6 webhook
+  // audit family. The synthetic value format is unchanged
+  // (`test-<unix>-<random>`) so existing correlation patterns in SRE
+  // dashboards still match.
+  const requestId = `test-${nowUnixSeconds}-${Math.random().toString(36).slice(2, 10)}`;
   const syntheticPayload = {
     eventType: 'attendee.registered',
     tenantSlug: input.tenantSlug,
@@ -214,7 +220,7 @@ export async function runTestWebhook(
         'Content-Type': 'application/json',
         'X-Chamber-Signature': signed.signatureHeader,
         'X-Chamber-Timestamp': signed.timestamp,
-        'X-Request-ID': testRequestId,
+        'X-Request-ID': requestId,
       },
       body: rawBody,
     });
@@ -222,7 +228,7 @@ export async function runTestWebhook(
     const deliveredAt = input.now.toISOString();
     return ok({
       ok: false,
-      testRequestId,
+      requestId,
       deliveredAt,
       signatureOutcome: 'unknown',
       failureCategory: 'network_error',
@@ -237,7 +243,7 @@ export async function runTestWebhook(
     const failureCategory = mapFailureCategory(response.status);
     return ok({
       ok: false,
-      testRequestId,
+      requestId,
       deliveredAt,
       signatureOutcome: response.status === 401 ? 'rejected' : 'unknown',
       failureCategory,
@@ -252,7 +258,7 @@ export async function runTestWebhook(
   } catch {
     return ok({
       ok: false,
-      testRequestId,
+      requestId,
       deliveredAt,
       signatureOutcome: 'unknown',
       failureCategory: 'invalid_response_body',
@@ -271,7 +277,7 @@ export async function runTestWebhook(
   ) {
     return ok({
       ok: false,
-      testRequestId,
+      requestId,
       deliveredAt,
       signatureOutcome: 'unknown',
       failureCategory: 'invalid_response_body',
@@ -286,7 +292,7 @@ export async function runTestWebhook(
 
   return ok({
     ok: true,
-    testRequestId,
+    requestId,
     deliveredAt,
     verifiedAt: deliveredAt,
     processingOutcome,

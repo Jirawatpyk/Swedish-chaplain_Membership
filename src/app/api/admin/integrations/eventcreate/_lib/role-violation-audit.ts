@@ -17,6 +17,7 @@
 import type { NextRequest } from 'next/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
@@ -93,10 +94,13 @@ export async function adminOnlyGuard(
   | { kind: 'allow'; actorUserId: string }
   | { kind: 'deny'; response: Response }
 > {
-  // Lazy-import getCurrentSession to keep the helper free of session
-  // type imports at module top-level (test mocks vi.mock the
-  // auth-session module at test load time).
-  const { getCurrentSession } = await import('@/lib/auth-session');
+  // Round-6 verify-fix 2026-05-13 (code #9) — replaced lazy dynamic
+  // `await import('@/lib/auth-session')` with the top-level static
+  // import. The lazy form added per-request overhead, obscured the
+  // dep graph from bundler analysis, and was unnecessary for the
+  // `vi.mock('@/lib/auth-session', …)` pattern (which intercepts at
+  // module-resolution time regardless of import style; same precedent
+  // as F5/F4 admin route helpers).
   const session = await getCurrentSession();
   if (!session) {
     return { kind: 'deny', response: new Response(null, { status: 404 }) };

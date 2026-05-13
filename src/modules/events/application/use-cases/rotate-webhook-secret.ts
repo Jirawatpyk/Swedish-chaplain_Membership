@@ -42,6 +42,7 @@ import type { UserId } from '@/modules/auth';
 import type { WebhookSecret } from '../../domain/branded-types';
 import type { Source } from '../../domain/value-objects/source';
 import { GRACE_WINDOW_MS } from '../../domain/tenant-webhook-config';
+import { asSecretLastFour, type SecretLastFour } from '../../domain/secret-last-four';
 
 export interface RotateWebhookSecretInput {
   readonly tenantId: TenantId;
@@ -54,7 +55,8 @@ export interface RotateWebhookSecretInput {
 export interface RotateWebhookSecretOutput {
   /** Plaintext new active secret — caller MUST display once + never persist. */
   readonly secret: WebhookSecret;
-  readonly secretLastFour: string;
+  /** Last 4 chars for masked display + audit (branded — length=4 enforced). */
+  readonly secretLastFour: SecretLastFour;
   /** ISO timestamp 24h after `now` when the grace secret is invalidated. */
   readonly graceActiveUntil: string;
 }
@@ -75,16 +77,14 @@ export interface RotateWebhookSecretDeps {
   readonly generateSecret: () => WebhookSecret;
 }
 
-function lastFour(secret: string): string {
-  return secret.slice(-4);
-}
-
 export async function rotateWebhookSecret(
   input: RotateWebhookSecretInput,
   deps: RotateWebhookSecretDeps,
 ): Promise<Result<RotateWebhookSecretOutput, RotateWebhookSecretError>> {
   const newSecret = deps.generateSecret();
-  const newSecretLastFour = lastFour(newSecret);
+  // Round-6 verify-fix 2026-05-13 (code #5/#10 + type-design C8) —
+  // shared `asSecretLastFour` from `domain/secret-last-four.ts`.
+  const newSecretLastFour = asSecretLastFour(newSecret);
 
   const rotateResult = await deps.repo.rotateSecret({
     tenantId: input.tenantId,
@@ -102,8 +102,9 @@ export async function rotateWebhookSecret(
   // for the audit payload. `graceSecret` is guaranteed non-null on a
   // successful rotation per the DB invariant (`grace_secret IS NULL ⟺
   // grace_rotated_at IS NULL`).
-  const previousSecretLastFour = rotateResult.value.graceSecret
-    ? lastFour(rotateResult.value.graceSecret)
+  const previousSecretLastFour: SecretLastFour | 'none' = rotateResult.value
+    .graceSecret
+    ? asSecretLastFour(rotateResult.value.graceSecret)
     : 'none';
 
   // 24h grace window per FR-008 + R7.

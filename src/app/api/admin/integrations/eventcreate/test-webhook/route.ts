@@ -27,8 +27,11 @@ import {
 
 const ROUTE = '/api/admin/integrations/eventcreate/test-webhook';
 
-function retryAfterSeconds(reset: number): number {
-  const seconds = Math.ceil((reset - Date.now()) / 1000);
+// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
+export const runtime = 'nodejs';
+
+function retryAfterSeconds(resetAtUnixMs: number): number {
+  const seconds = Math.ceil((resetAtUnixMs - Date.now()) / 1000);
   return seconds > 0 ? seconds : 60;
 }
 
@@ -49,7 +52,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     guard.actorUserId,
   );
   if (!rl.success) {
-    const retryAfter = retryAfterSeconds(rl.reset);
+    const retryAfter = retryAfterSeconds(rl.resetAtUnixMs);
     return NextResponse.json(
       {
         type: 'https://chamber-os.app/errors/rate-limited',

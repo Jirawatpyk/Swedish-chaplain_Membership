@@ -2429,10 +2429,13 @@
           "back": "ย้อนกลับ",
           "connectComplete": "ฉันตั้งค่า Zap แล้ว — ดำเนินการต่อ",
           "webhookUrlLabel": "URL ของ Webhook",
+          "webhookUrlAriaLabel": "URL ของ webhook สำหรับคัดลอกไปยัง Zapier",
           "copyUrl": "คัดลอก URL ของ webhook",
           "secretLabel": "คีย์ปัจจุบัน",
+          "secretAriaLabel": "คีย์ webhook ที่ถูกซ่อน — แสดงเฉพาะ 4 ตัวอักษรท้าย",
           "rotateButton": "หมุนคีย์",
-          "graceActiveUntil": "คีย์เก่ายังตรวจสอบได้จนถึง {timestamp}"
+          "graceActiveUntil": "คีย์เก่ายังตรวจสอบได้จนถึง {timestamp}",
+          "viewSetupGuide": "ดูคู่มือการตั้งค่า (Zapier walkthrough)"
         },
         "phaseA": {
           "secretLabel": "Webhook secret (แสดงครั้งเดียว)",
@@ -2450,6 +2453,7 @@
           "title": "เชื่อมต่อ EventCreate ผ่าน Zapier",
           "stepsLabel": "ขั้นตอนการตั้งค่า Zapier",
           "englishOnlyNotice": "เว็บแอป Zapier ใช้ภาษาอังกฤษเท่านั้น คำอธิบายด้านล่างเป็นภาษาไทย แต่ภาพหน้าจอ Zapier แสดงเป็นภาษาอังกฤษ",
+          "imagePlaceholderNotice": "ภาพอ้างอิง — รอภาพจริงจากการตรวจของผู้มีส่วนได้เสีย กรุณาทำตามคำอธิบายด้านบน",
           "step1": {
             "title": "ขั้นตอนที่ 1: ลงชื่อเข้าใช้ Zapier",
             "body": "เปิด zapier.com แล้วลงชื่อเข้าใช้ (หรือสร้าง) บัญชี Zapier ที่จะใช้รัน Zap นี้",
@@ -2467,7 +2471,7 @@
           },
           "step4": {
             "title": "ขั้นตอนที่ 4: เพิ่มแอ็กชัน Webhooks by Zapier",
-            "body": "เพิ่มขั้นตอนแอ็กชันใหม่ เลือก Webhooks by Zapier → POST วาง URL นี้ในช่อง URL: {webhookUrl}",
+            "body": "เพิ่มขั้นตอนแอ็กชันใหม่ เลือก Webhooks by Zapier → POST วาง URL นี้ในช่อง URL: <code>{webhookUrl}</code>",
             "alt": "หน้าตั้งค่าแอ็กชัน Webhooks by Zapier"
           },
           "step5": {
@@ -2520,6 +2524,7 @@
             "title": "การส่งล่าสุด",
             "empty": "ยังไม่มีการส่งล่าสุด เรียกใช้ Zap หรือกด \"ส่งอีเวนต์ทดสอบ\" เพื่อดูทราฟฟิก",
             "includeTestDeliveriesLabel": "รวมการทดสอบ",
+            "toggleFailed": "ไม่สามารถรีเฟรชรายการได้ ลองโหลดหน้านี้ใหม่",
             "signature": {
               "verified": "ยืนยันแล้ว",
               "rejected": "ปฏิเสธลายเซ็น",

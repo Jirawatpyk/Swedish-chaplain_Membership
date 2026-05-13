@@ -164,16 +164,22 @@ describe('pino-audit-port.emitStandalone', () => {
   });
 
   /**
-   * Round-3 verify-fix (2026-05-13) — `webhook_test_invoked` payload uses
-   * `testRequestId` instead of `requestId`. Before the fix,
-   * `extractRequestId()` only checked `payload.requestId` and the
+   * Round-3 verify-fix (2026-05-13) — `webhook_test_invoked` payload
+   * previously used `testRequestId` instead of `requestId`. Before the
+   * fix, `extractRequestId()` only checked `payload.requestId` and the
    * test-webhook short-circuit's audit row landed with `request_id =
-   * 'no-request-id'` (sentinel), masking the real test correlation key
-   * in the admin recent-deliveries panel. This integration test asserts
-   * the post-fix mapping: `audit_log.request_id` now reflects
-   * `payload.testRequestId` verbatim.
+   * 'no-request-id'` (sentinel), masking the real test correlation
+   * key in the admin recent-deliveries panel.
+   *
+   * Round-6 verify-fix 2026-05-13 (type-design C2) renamed the field
+   * to `requestId` (now branded `RequestId`) for naming-convention
+   * symmetry across all F6 webhook audit event types. The legacy
+   * `testRequestId` fallback in `extractRequestId()` stays so old
+   * audit rows (emitted in dev/staging pre-rename) still hydrate.
+   * This test now asserts BOTH the new canonical path AND the legacy
+   * fallback continue to populate `audit_log.request_id` correctly.
    */
-  it('webhook_test_invoked — payload.testRequestId populates audit_log.request_id', async () => {
+  it('webhook_test_invoked — payload.requestId populates audit_log.request_id (new canonical path)', async () => {
     const t = await createTestTenant('test-chamber');
     try {
       const dummyExecutor = {
@@ -183,24 +189,95 @@ describe('pino-audit-port.emitStandalone', () => {
       } as unknown as TenantTx;
       const port = makePinoAuditPort(dummyExecutor);
 
-      const testRequestId = `test-${Date.now()}-extract-mapping`;
+      const requestId = `test-${Date.now()}-extract-mapping-new`;
+      // Cast the entire payload object to bypass the audit-port's
+      // discriminated-union schema — the integration test exercises
+      // the on-disk JSONB column shape, which is free-form at the
+      // Drizzle adapter level. Production callers use the typed
+      // entry path (see `route.ts:665+` for the canonical site).
+      const payload = {
+        severity: 'info' as const,
+        actorUserId: 'system:f6-test-webhook',
+        requestId,
+        durationMs: 42,
+      } as unknown as Parameters<typeof port.emitStandalone>[0]['payload'];
+
       const result = await port.emitStandalone({
         eventType: 'webhook_test_invoked',
         tenantId: asTenantId(t.ctx.slug),
         actorType: 'system',
         actorUserId: 'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Parameters<typeof port.emitStandalone>[0]['actorUserId'],
         occurredAt: new Date(),
-        summary: 'extract-mapping integration test',
-        payload: {
-          severity: 'info',
-          actorUserId:
-            'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Extract<
-              Parameters<typeof port.emitStandalone>[0]['payload'],
-              { testRequestId: string }
-            >['actorUserId'],
-          testRequestId,
-          durationMs: 42,
+        summary: 'extract-mapping integration test (new path)',
+        payload,
+      });
+
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error('emitStandalone should succeed');
+
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, t.ctx.slug));
+      const ours = rows.filter(
+        (r) =>
+          (r.eventType as string) === 'webhook_test_invoked' &&
+          (r.payload as Record<string, unknown> | null)?.['requestId'] ===
+            requestId,
+      );
+      expect(ours).toHaveLength(1);
+      // Critical assertion — `request_id` column must equal the
+      // `requestId` payload field, NOT the 'no-request-id' sentinel.
+      expect(ours[0]!.requestId).toBe(requestId);
+    } finally {
+      await t.cleanup();
+    }
+  });
+
+  /**
+   * Legacy-fallback path: old audit rows emitted with the bespoke
+   * `testRequestId` field name must still hydrate `request_id`
+   * correctly. Guards against accidentally removing the fallback
+   * branch in `extractRequestId()` before all pre-rename dev/staging
+   * audit rows have expired beyond retention.
+   *
+   * Type-system note: bypass the (now strict) audit-port TS schema
+   * via a casted variant since the production payload contract no
+   * longer accepts `testRequestId`. The Drizzle adapter accepts any
+   * JSONB payload at runtime; the fallback in `extractRequestId()`
+   * is unit-tested against this on-disk shape directly.
+   */
+  it('webhook_test_invoked — legacy payload.testRequestId fallback still populates request_id', async () => {
+    const t = await createTestTenant('test-chamber');
+    try {
+      const dummyExecutor = {
+        execute: () => {
+          throw new Error('not reached');
         },
+      } as unknown as TenantTx;
+      const port = makePinoAuditPort(dummyExecutor);
+
+      const legacyTestRequestId = `test-${Date.now()}-extract-mapping-legacy`;
+      // Cast through `as never` because the post-C2 audit-port schema
+      // rejects the legacy `testRequestId` field — but the Drizzle
+      // adapter doesn't enforce the schema at runtime (JSONB is
+      // free-form), so this test exercises the fallback as it would
+      // fire against an old on-disk audit row.
+      const legacyPayload = {
+        severity: 'info' as const,
+        actorUserId: 'system:f6-test-webhook',
+        testRequestId: legacyTestRequestId,
+        durationMs: 42,
+      } as unknown as Parameters<typeof port.emitStandalone>[0]['payload'];
+
+      const result = await port.emitStandalone({
+        eventType: 'webhook_test_invoked',
+        tenantId: asTenantId(t.ctx.slug),
+        actorType: 'system',
+        actorUserId: 'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Parameters<typeof port.emitStandalone>[0]['actorUserId'],
+        occurredAt: new Date(),
+        summary: 'extract-mapping integration test (legacy path)',
+        payload: legacyPayload,
       });
 
       expect(result.ok).toBe(true);
@@ -214,12 +291,10 @@ describe('pino-audit-port.emitStandalone', () => {
         (r) =>
           (r.eventType as string) === 'webhook_test_invoked' &&
           (r.payload as Record<string, unknown> | null)?.['testRequestId'] ===
-            testRequestId,
+            legacyTestRequestId,
       );
       expect(ours).toHaveLength(1);
-      // Critical assertion — `request_id` column must equal the
-      // `testRequestId` payload field, NOT the 'no-request-id' sentinel.
-      expect(ours[0]!.requestId).toBe(testRequestId);
+      expect(ours[0]!.requestId).toBe(legacyTestRequestId);
     } finally {
       await t.cleanup();
     }

@@ -11,6 +11,9 @@ import { runGenerateWebhookSecret } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
+// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
+export const runtime = 'nodejs';
+
 const ROUTE = '/api/admin/integrations/eventcreate/generate-secret';
 const WARNING =
   'Store this value in a password manager. It will not be shown again.';

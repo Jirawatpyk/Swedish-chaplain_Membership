@@ -18,8 +18,14 @@ const ROUTE = '/api/admin/integrations/eventcreate/rotate-secret';
 const WARNING =
   'Old secret continues to verify for 24h. Update Zapier within this window.';
 
-function retryAfterSeconds(reset: number): number {
-  const seconds = Math.ceil((reset - Date.now()) / 1000);
+// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime
+// pin. Default works today because Drizzle + Neon postgres-js downstream
+// would trigger Node inference, but pinning prevents a future shared-util
+// refactor from accidentally flipping Edge inference on.
+export const runtime = 'nodejs';
+
+function retryAfterSeconds(resetAtUnixMs: number): number {
+  const seconds = Math.ceil((resetAtUnixMs - Date.now()) / 1000);
   return seconds > 0 ? seconds : 60;
 }
 
@@ -40,7 +46,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     guard.actorUserId,
   );
   if (!rl.success) {
-    const retryAfter = retryAfterSeconds(rl.reset);
+    const retryAfter = retryAfterSeconds(rl.resetAtUnixMs);
     return NextResponse.json(
       {
         type: 'https://chamber-os.app/errors/rate-limited',

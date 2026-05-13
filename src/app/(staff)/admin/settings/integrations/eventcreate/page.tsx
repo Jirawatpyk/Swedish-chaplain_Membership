@@ -89,18 +89,17 @@ export default async function EventCreateIntegrationPage({
 
   const t = await getTranslations('admin.integrations.eventcreate.page');
 
+  // Round-6 verify-fix 2026-05-13 (type-design C4) — narrow on the
+  // `secretConfigured` discriminant; the wizard receives the entire
+  // view + walks the same union internally. Eliminates the previous
+  // `{...(secretLastFour !== undefined ? ...)}` ternary spread which
+  // could compile with mismatched fields under the old flat-bag
+  // interface.
   return (
     <FormContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <WebhookConfigWizard
-        webhookUrl={view.webhookUrl}
-        secretConfigured={view.secretConfigured}
-        {...(view.secretLastFour !== undefined ? { secretLastFour: view.secretLastFour } : {})}
-        graceActiveUntil={view.graceActiveUntil ?? null}
-        ingestEnabled={view.ingestEnabled}
-        lastReceivedAt={view.lastReceivedAt ?? null}
-        recentDeliveries={view.recentDeliveries}
-        includeTestDeliveries={view.recentDeliveriesIncludeTests}
+        view={view}
         walkthrough={<ZapierWalkthrough webhookUrl={view.webhookUrl} />}
       />
     </FormContainer>

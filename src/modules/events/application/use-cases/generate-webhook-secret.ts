@@ -39,11 +39,12 @@ import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { WebhookSecret } from '../../domain/branded-types';
 import type { Source } from '../../domain/value-objects/source';
+import { asSecretLastFour, type SecretLastFour } from '../../domain/secret-last-four';
 
 export interface GenerateWebhookSecretInput {
   readonly tenantId: TenantId;
   readonly source: Source;
-  /** Admin user that initiated the generate. Cannot be `null` — FR-035 admin-only surface. */
+  /** Admin actor (FR-035 — surface is admin-only; nullable rejected by type). */
   readonly actorUserId: UserId;
   /** Injected for deterministic test fixtures; production uses `new Date()`. */
   readonly now: Date;
@@ -52,8 +53,8 @@ export interface GenerateWebhookSecretInput {
 export interface GenerateWebhookSecretOutput {
   /** Plaintext secret — caller MUST display once + never persist. */
   readonly secret: WebhookSecret;
-  /** Last 4 chars for masked display + audit payload. */
-  readonly secretLastFour: string;
+  /** Last 4 chars for masked display + audit payload (branded — length=4 enforced). */
+  readonly secretLastFour: SecretLastFour;
 }
 
 export type GenerateWebhookSecretError =
@@ -74,23 +75,16 @@ export interface GenerateWebhookSecretDeps {
   readonly generateSecret: () => WebhookSecret;
 }
 
-/**
- * Extract the last 4 characters of the secret for masked display +
- * audit. Defensive: short secrets (test fixtures) get padded with the
- * full value rather than throwing — operationally a 32-byte secret is
- * always ≥40 chars base64url so the slice is always 4 chars in
- * production.
- */
-function lastFour(secret: string): string {
-  return secret.slice(-4);
-}
-
 export async function generateWebhookSecret(
   input: GenerateWebhookSecretInput,
   deps: GenerateWebhookSecretDeps,
 ): Promise<Result<GenerateWebhookSecretOutput, GenerateWebhookSecretError>> {
   const secret = deps.generateSecret();
-  const secretLastFour = lastFour(secret);
+  // Round-6 verify-fix 2026-05-13 (code #5/#10 + type-design C8) —
+  // `asSecretLastFour` enforces `length === 4` at construction; the
+  // duplicate local `lastFour()` helper was extracted into
+  // `domain/secret-last-four.ts` and shared with `rotateWebhookSecret`.
+  const secretLastFour = asSecretLastFour(secret);
 
   const insertResult = await deps.repo.insert({
     tenantId: input.tenantId,

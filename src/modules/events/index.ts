@@ -301,6 +301,45 @@ export {
   type EventDetailPagination,
 } from './application/use-cases/load-event-detail';
 
+// --- 6b. Phase 5 admin wizard use-case exports (US3) ----------------------
+// Round-6 verify-fix 2026-05-13 — re-exported via the F6 public barrel
+// so cross-module consumers (UI components, API route handlers,
+// composition adapter) can import them without tripping the
+// `no-restricted-imports` ESLint rule that enforces Principle III.
+
+export {
+  generateWebhookSecret,
+  type GenerateWebhookSecretInput,
+  type GenerateWebhookSecretOutput,
+  type GenerateWebhookSecretError,
+  type GenerateWebhookSecretDeps,
+} from './application/use-cases/generate-webhook-secret';
+
+export {
+  rotateWebhookSecret,
+  type RotateWebhookSecretInput,
+  type RotateWebhookSecretOutput,
+  type RotateWebhookSecretError,
+  type RotateWebhookSecretDeps,
+} from './application/use-cases/rotate-webhook-secret';
+
+export {
+  runTestWebhook,
+  type RunTestWebhookInput,
+  type RunTestWebhookOutcome,
+  type RunTestWebhookError,
+  type RunTestWebhookDeps,
+  type FailureCategory as RunTestWebhookFailureCategory,
+  type ProcessingOutcomeLabel as RunTestWebhookProcessingOutcome,
+  type SignRequestFn as RunTestWebhookSignRequestFn,
+  type HttpFetchFn as RunTestWebhookHttpFetchFn,
+} from './application/use-cases/run-test-webhook';
+
+export {
+  asSecretLastFour,
+  type SecretLastFour,
+} from './domain/secret-last-four';
+
 // --- 7. Infrastructure composition factories (DI surface) -------------------
 
 export {

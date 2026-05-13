@@ -70,7 +70,7 @@ describe('runTestWebhook', () => {
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) throw new Error('unreachable');
     expect(outcome.processingOutcome).toBe('short_circuited_test');
-    expect(outcome.testRequestId).toMatch(/^test-/);
+    expect(outcome.requestId).toMatch(/^test-/);
     expect(outcome.durationMs).toBeGreaterThanOrEqual(0);
   });
 

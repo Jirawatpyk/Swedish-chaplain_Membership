@@ -7,12 +7,17 @@
  * implements via Drizzle.
  *
  * Used by:
- *   - Webhook receiver (Phase 3 T052): `findActiveByTenant` to fetch the
+ *   - Webhook receiver (Phase 3 T052): `findByTenantSource` to fetch the
  *     active + grace secrets for verification.
- *   - Admin wizard (Phase 5 T070–T072): `generateSecret`, `rotateSecret`,
+ *   - Admin wizard (Phase 5 T070–T072): `insert`, `rotateSecret`,
  *     `setEnabled`.
  *   - Grace-window cleanup cron (Phase 10): `clearExpiredGrace` for
- *     rows where grace_rotated_at < now - 24h.
+ *     rows where grace_rotated_at < now - 24h. Caller iterates
+ *     tenants and runs the function inside `runInTenant(ctx, fn)`;
+ *     the predicate is pinned to `source='eventcreate'` at the
+ *     adapter for the current F6 surface (extend to a closed
+ *     `source` enum loop if a future source — e.g. CSV/EventCreate-
+ *     V2 — gains its own grace columns).
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
