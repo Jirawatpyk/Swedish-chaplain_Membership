@@ -18,6 +18,7 @@ import { useTranslations } from 'next-intl';
 import { Loader2Icon, SendIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 import type { RunTestWebhookOutcome } from '@/modules/events';
 
 /**
@@ -58,28 +59,25 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         },
       );
       if (res.status === 429) {
-        toast.error(t('rateLimited'));
-        setAnnouncement(t('rateLimited'));
+        // Round 2 SF-LOW8 fix (2026-05-13) — surface the `Retry-After`
+        // seconds in the toast copy so the admin knows how long to
+        // wait. Route emits `Retry-After: <seconds>` + a problem-body
+        // `detail` containing the same value.
+        const retryAfterRaw = res.headers.get('Retry-After');
+        const retryAfter = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : null;
+        const message =
+          retryAfter !== null && Number.isFinite(retryAfter) && retryAfter > 0
+            ? t('rateLimitedWithRetry', { seconds: retryAfter })
+            : t('rateLimited');
+        toast.error(message);
+        setAnnouncement(message);
         return;
       }
       if (!res.ok) {
-        // Round-6 verify-fix 2026-05-13 — extract RFC 7807 `detail`
-        // when present so a 404 (kill-switch / disabled) and a 503
-        // (transient infra) surface distinct copy instead of a single
-        // "Server error" toast. The route layer already produces a
-        // structured problem-body for every non-2xx.
-        const problem = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const detail =
-          problem && typeof problem === 'object' && 'detail' in problem
-            ? (problem as { detail?: unknown }).detail
-            : null;
-        const message =
-          typeof detail === 'string' && detail.length > 0
-            ? detail
-            : t('serverError');
+        // Round 2 simplifier P1 (2026-05-13) — shared
+        // `parseProblemDetail` helper. Surfaces distinct copy for
+        // 404 (kill-switch) vs 500 (audit-fail) vs 503.
+        const message = await parseProblemDetail(res, t('serverError'));
         toast.error(message);
         setAnnouncement(message);
         return;

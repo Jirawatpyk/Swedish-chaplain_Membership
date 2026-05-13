@@ -53,6 +53,7 @@ import {
   ingestWebhookAttendee,
   MATCH_TYPE_TO_PROCESSING_OUTCOME,
   asRequestId,
+  tryRequestId,
 } from '@/modules/events';
 import {
   makeIngestWebhookAttendeeDeps,
@@ -679,7 +680,16 @@ export async function POST(
                 // / `webhook_signature_rejected`. Brand at boundary
                 // (string-shape) keeps the audit payload's `RequestId`
                 // invariant compile-checked.
-                requestId: asRequestId(requestId),
+                //
+                // Round 2 R-H1 fix (2026-05-13) — `asRequestId` THROWS
+                // on non-printable-ASCII or `length > 256`. Inbound
+                // `x-request-id` is user-controlled; defaults to the
+                // `NO_REQUEST_ID` sentinel via `tryRequestId` to avoid
+                // a 500 fall-through that would mask the test-webhook
+                // short-circuit's 200 response. Attacker needs valid
+                // HMAC (low practical impact) but defence-in-depth.
+                requestId:
+                  tryRequestId(requestId) ?? asRequestId(NO_REQUEST_ID),
                 durationMs: shortCircuitLatencyMs,
               },
             },

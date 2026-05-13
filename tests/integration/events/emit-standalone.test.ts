@@ -20,6 +20,23 @@ import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import type { TenantTx } from '@/lib/db';
 
+/**
+ * Round 2 T-Gap6 fix (2026-05-13) — single-purpose helper that owns
+ * the cast from a system-sentinel string to the audit-port's
+ * `actorUserId` brand. Replaces the previous brittle triple-cast
+ * chain (`as ReturnType<typeof asTenantId> & string as unknown as
+ * ...`) which incorrectly went through `asTenantId` and would silently
+ * rot if that brand is renamed. Branded `actorUserId` accepts `UserId`
+ * which is `string & { __brand: 'UserId' }` — the `as` here is the
+ * standard branded-cast pattern at the trust boundary.
+ */
+type SystemActorUserId = Parameters<
+  ReturnType<typeof makePinoAuditPort>['emitStandalone']
+>[0]['actorUserId'];
+function asTestSystemActorUserId(value: `system:${string}`): SystemActorUserId {
+  return value as unknown as SystemActorUserId;
+}
+
 describe('pino-audit-port.emitStandalone', () => {
   let tenant: TestTenant;
 
@@ -190,6 +207,14 @@ describe('pino-audit-port.emitStandalone', () => {
       const port = makePinoAuditPort(dummyExecutor);
 
       const requestId = `test-${Date.now()}-extract-mapping-new`;
+      // Round 2 T-Gap6 fix (2026-05-13) — replace the brittle triple-
+      // cast (`as ReturnType<typeof asTenantId> & string as unknown
+      // as ...`) with a single, semantically-correct
+      // `asTestSystemActorUserId()` helper. The previous chain went
+      // through `asTenantId`, which is the wrong brand — would silently
+      // rot if `asTenantId` is renamed or removed.
+      const actorUserId = asTestSystemActorUserId('system:f6-test-webhook');
+
       // Cast the entire payload object to bypass the audit-port's
       // discriminated-union schema — the integration test exercises
       // the on-disk JSONB column shape, which is free-form at the
@@ -197,7 +222,7 @@ describe('pino-audit-port.emitStandalone', () => {
       // entry path (see `route.ts:665+` for the canonical site).
       const payload = {
         severity: 'info' as const,
-        actorUserId: 'system:f6-test-webhook',
+        actorUserId,
         requestId,
         durationMs: 42,
       } as unknown as Parameters<typeof port.emitStandalone>[0]['payload'];
@@ -206,7 +231,7 @@ describe('pino-audit-port.emitStandalone', () => {
         eventType: 'webhook_test_invoked',
         tenantId: asTenantId(t.ctx.slug),
         actorType: 'system',
-        actorUserId: 'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Parameters<typeof port.emitStandalone>[0]['actorUserId'],
+        actorUserId,
         occurredAt: new Date(),
         summary: 'extract-mapping integration test (new path)',
         payload,
@@ -258,6 +283,7 @@ describe('pino-audit-port.emitStandalone', () => {
       const port = makePinoAuditPort(dummyExecutor);
 
       const legacyTestRequestId = `test-${Date.now()}-extract-mapping-legacy`;
+      const actorUserId = asTestSystemActorUserId('system:f6-test-webhook');
       // Cast through `as never` because the post-C2 audit-port schema
       // rejects the legacy `testRequestId` field — but the Drizzle
       // adapter doesn't enforce the schema at runtime (JSONB is
@@ -265,7 +291,7 @@ describe('pino-audit-port.emitStandalone', () => {
       // fire against an old on-disk audit row.
       const legacyPayload = {
         severity: 'info' as const,
-        actorUserId: 'system:f6-test-webhook',
+        actorUserId,
         testRequestId: legacyTestRequestId,
         durationMs: 42,
       } as unknown as Parameters<typeof port.emitStandalone>[0]['payload'];
@@ -274,7 +300,7 @@ describe('pino-audit-port.emitStandalone', () => {
         eventType: 'webhook_test_invoked',
         tenantId: asTenantId(t.ctx.slug),
         actorType: 'system',
-        actorUserId: 'system:f6-test-webhook' as ReturnType<typeof asTenantId> & string as unknown as Parameters<typeof port.emitStandalone>[0]['actorUserId'],
+        actorUserId,
         occurredAt: new Date(),
         summary: 'extract-mapping integration test (legacy path)',
         payload: legacyPayload,

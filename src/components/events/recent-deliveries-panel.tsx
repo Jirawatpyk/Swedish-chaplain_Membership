@@ -16,14 +16,14 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { RelativeTime } from '@/components/ui/relative-time';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import type {
-  RecentDelivery,
-  RecentDeliveryProcessingOutcome,
+import {
+  KNOWN_RECENT_PROCESSING_OUTCOMES,
+  type RecentDelivery,
+  type RecentDeliveryProcessingOutcome,
 } from '@/lib/events-admin-integration-deps';
 
 /**
@@ -65,31 +65,11 @@ function processingBadgeVariant(
   return 'outline';
 }
 
-/**
- * Closed set of processing-outcome values that have a corresponding
- * `processing.<value>` i18n key in `en/th/sv.json`. Any value outside
- * this set (including the receiver-side `'unknown'` discriminator)
- * falls back to rendering the raw string verbatim — UI never crashes
- * on a receiver-side enum extension.
- *
- * MUST stay aligned with the keys under
- * `admin.integrations.eventcreate.phaseC.recentDeliveries.processing`
- * — add a new entry to BOTH this set AND all 3 locale JSON files
- * when the receiver extends `processing_outcome` to a new value.
- */
-const KNOWN_PROCESSING_OUTCOMES = new Set<RecentDeliveryProcessingOutcome>([
-  'matched_member_contact',
-  'matched_member_domain',
-  'matched_member_fuzzy',
-  'non_member',
-  'unmatched',
-  'short_circuited_test',
-  'duplicate',
-  'malformed',
-  'rolled_back',
-  'rate_limited',
-  'ingest_disabled',
-]);
+// Round 2 simplifier P2 (2026-05-13) — the local
+// `KNOWN_PROCESSING_OUTCOMES` Set was deleted; the canonical
+// `KNOWN_RECENT_PROCESSING_OUTCOMES` is now imported from the
+// composition adapter, eliminating a documented "MUST stay aligned"
+// contract that the type system cannot enforce.
 
 export function RecentDeliveriesPanel({
   deliveries,
@@ -106,24 +86,27 @@ export function RecentDeliveriesPanel({
 
   function handleToggle(next: boolean) {
     setOptimisticInclude(next);
+    // Round 2 SF-LOW9 fix (2026-05-13) — the previous round-6 E3
+    // try/catch wrapped `URL(window.location.href)` + `router.replace`,
+    // but `router.replace` is fire-and-forget (synchronous return,
+    // no awaitable promise). A real async navigation failure happens
+    // AFTER the try-block exits — it cannot be caught here. The only
+    // synchronous-throwable surface is `new URL(window.location.href)`,
+    // which in a real browser is essentially unreachable.
+    //
+    // Behaviour-preserving simplification: invoke the URL build +
+    // router.replace directly inside startTransition. If a future
+    // need to surface navigation failures arises (e.g. service-worker
+    // intercept), wire it via a `useEffect` watching post-navigation
+    // state, not a try/catch here.
     startTransition(() => {
-      try {
-        const url = new URL(window.location.href);
-        if (next) {
-          url.searchParams.set('includeTestDeliveries', 'true');
-        } else {
-          url.searchParams.delete('includeTestDeliveries');
-        }
-        router.replace(url.pathname + url.search);
-      } catch (e) {
-        // Round-6 verify-fix 2026-05-13 (errors E3) — surface a
-        // toast so a failed router.replace doesn't look identical to
-        // "panel correctly shows zero rows". Revert optimistic state
-        // so the Switch reflects the actual server-side filter.
-        console.error('[F6] recent-deliveries toggle failed', e);
-        setOptimisticInclude(!next);
-        toast.error(t('toggleFailed'));
+      const url = new URL(window.location.href);
+      if (next) {
+        url.searchParams.set('includeTestDeliveries', 'true');
+      } else {
+        url.searchParams.delete('includeTestDeliveries');
       }
+      router.replace(url.pathname + url.search);
     });
   }
 
@@ -162,6 +145,22 @@ export function RecentDeliveriesPanel({
         </div>
       </header>
 
+      {/*
+        Round 2 MED-07 fix (2026-05-13) — `aria-live="polite"` moved
+        OFF the `<ul>` to a dedicated `<span role="status">` summary
+        below. The previous wiring caused VoiceOver/NVDA to re-announce
+        every visible row (up to 10 rows × 3 badge labels) on every
+        filter toggle — extremely verbose. The summary span announces
+        only the row-count delta, which is the meaningful change.
+        `aria-busy={pending}` is retained on the `<ul>` so AT
+        suppresses any sub-tree announcements during the transition.
+      */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {pending
+          ? t('updating')
+          : t('listSummary', { count: deliveries.length })}
+      </span>
+
       {deliveries.length === 0 ? (
         <p className="rounded-md border border-dashed bg-muted/40 p-6 text-center text-sm text-muted-foreground">
           {t('empty')}
@@ -169,7 +168,6 @@ export function RecentDeliveriesPanel({
       ) : (
         <ul
           className="divide-y rounded-md border"
-          aria-live="polite"
           aria-busy={pending}
         >
           {deliveries.map((row) => (
@@ -190,7 +188,7 @@ export function RecentDeliveriesPanel({
                 </Badge>
                 {row.processingOutcome ? (
                   <Badge variant={processingBadgeVariant(row.processingOutcome)}>
-                    {KNOWN_PROCESSING_OUTCOMES.has(row.processingOutcome)
+                    {KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
                       ? t(`processing.${row.processingOutcome}`)
                       : row.processingOutcome}
                   </Badge>

@@ -15,10 +15,13 @@
  *      addition surfaces as a COMPILE error at the call site.
  */
 import type { NextRequest } from 'next/server';
-import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import {
+  assertCanonicalBaseUrl,
+  assertCanonicalBaseUrlFromHeaders,
+} from '@/lib/canonical-base-url';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
@@ -123,21 +126,9 @@ export async function adminOnlyGuard(
  * request URL. Used so test-webhook + GET-config can compose the full
  * webhook URL without hardcoding the production hostname.
  *
- * Round-6 verify-fix 2026-05-13 (H4) — validate the request's `Host`
- * header against `APP_BASE_URL` + `APP_ALLOWED_ORIGINS` allowlist
- * before composing the webhook URL. Production behind Vercel terminates
- * at a fixed hostname so this is mostly a defence-in-depth measure for
- * staging / preview deployments where Vercel accepts arbitrary `Host`
- * headers — without validation, an admin on staging could be tricked
- * into copying a spoofed webhook URL pointing at an attacker domain,
- * and the test-webhook flow would also exfiltrate signed POSTs to the
- * attacker host (admin-authenticated, but principle-of-least-surprise
- * violation).
- *
- * Behaviour: if the inbound `Host` matches the canonical origin OR any
- * `APP_ALLOWED_ORIGINS` entry, return it verbatim. Otherwise return
- * `APP_BASE_URL` (canonical) and log a `warn` so SREs can investigate
- * the misuse.
+ * Round 2 (2026-05-13) — the host-allowlist logic was extracted to
+ * `src/lib/canonical-base-url.ts` for testability + DB-import
+ * isolation (T-Gap2 unit-test suite).
  */
 export function deriveWebhookBaseUrl(request: NextRequest): string {
   return assertCanonicalBaseUrl(new URL(request.url).origin, '/api');
@@ -145,47 +136,17 @@ export function deriveWebhookBaseUrl(request: NextRequest): string {
 
 /**
  * Header-driven variant for RSC server components (no `NextRequest`
- * available). Mirrors `deriveWebhookBaseUrl` with the same allowlist
- * semantics — see that function's doc-comment for rationale.
+ * available). Same allowlist semantics — see
+ * `assertCanonicalBaseUrlFromHeaders` for behaviour.
  */
 export function deriveWebhookBaseUrlFromHeaders(
   proto: string | null,
   host: string | null,
 ): string {
-  const scheme = proto ?? 'https';
-  if (!host) {
-    return env.app.baseUrl;
-  }
-  return assertCanonicalBaseUrl(`${scheme}://${host}`, '/page');
+  return assertCanonicalBaseUrlFromHeaders(proto, host);
 }
 
-function assertCanonicalBaseUrl(candidate: string, surface: string): string {
-  let candidateOrigin: string;
-  try {
-    candidateOrigin = new URL(candidate).origin;
-  } catch {
-    return env.app.baseUrl;
-  }
-  const allowlist = new Set<string>([
-    new URL(env.app.baseUrl).origin,
-    ...env.app.allowedOrigins.map((origin: string) => {
-      try {
-        return new URL(origin).origin;
-      } catch {
-        return origin;
-      }
-    }),
-  ]);
-  if (allowlist.has(candidateOrigin)) {
-    return candidateOrigin;
-  }
-  logger.warn(
-    {
-      event: 'f6_webhook_base_url_off_allowlist',
-      candidateOrigin,
-      surface,
-    },
-    '[F6] inbound Host header off allowlist — falling back to APP_BASE_URL',
-  );
-  return env.app.baseUrl;
-}
+// Re-export `logger.warn` import bookkeeping — ESLint flagged the now-
+// unused `logger` import after extracting `assertCanonicalBaseUrl`.
+// Actually it IS still used by `emitIntegrationRoleViolation` below, so
+// no change needed.

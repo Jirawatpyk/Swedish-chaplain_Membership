@@ -2504,6 +2504,7 @@
             "failure": "Testhändelsen misslyckades",
             "failureWithHint": "Testhändelsen misslyckades — {hint}",
             "rateLimited": "För många testhändelser den här timmen. Vänta och försök igen.",
+            "rateLimitedWithRetry": "För många testhändelser den här timmen. Försök igen om {seconds} sek.",
             "serverError": "Serverfel vid testkörning. Försök igen eller kontakta support.",
             "networkError": "Det gick inte att nå webhook-slutpunkten. Kontrollera anslutningen."
           },
@@ -2518,13 +2519,15 @@
             "close": "Stäng",
             "success": "Webhook-nyckeln roterades",
             "failed": "Rotation misslyckades — försök igen eller kontakta support",
-            "rateLimited": "Rotationsgräns nådd (3/timme). Vänta och försök igen."
+            "rateLimited": "Rotationsgräns nådd (3/timme). Vänta och försök igen.",
+            "rateLimitedWithRetry": "Rotationsgräns nådd. Försök igen om {seconds} sek."
           },
           "recentDeliveries": {
             "title": "Senaste leveranser",
             "empty": "Inga senaste leveranser ännu. Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
             "includeTestDeliveriesLabel": "Inkludera testleveranser",
-            "toggleFailed": "Kunde inte uppdatera leveranser. Ladda om sidan för att försöka igen.",
+            "updating": "Uppdaterar leveranser…",
+            "listSummary": "{count, plural, =0 {Inga leveranser} =1 {# leverans visas} other {# leveranser visas}}",
             "signature": {
               "verified": "Verifierad",
               "rejected": "Signatur avvisad",

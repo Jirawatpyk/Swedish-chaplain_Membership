@@ -95,8 +95,25 @@ export function WebhookSecretReveal({
   return (
     <Card>
       <CardContent className="flex flex-col gap-4 py-6">
-        <div className="space-y-2">
-          <Label htmlFor="webhook-secret-input">{t('secretLabel')}</Label>
+        {/*
+          Round 2 CRIT-02 fix (2026-05-13) — `<Label htmlFor="webhook-
+          secret-input">` previously targeted a `<code>` element. HTML
+          `<label>` only associates with form controls; the SR
+          association silently fails. Same A-04 fix that landed in
+          `wizard.tsx` propagated here. Replaced with `<span id>` +
+          `role="group" aria-labelledby`.
+        */}
+        <div
+          className="space-y-2"
+          role="group"
+          aria-labelledby="webhook-secret-label"
+        >
+          <span
+            id="webhook-secret-label"
+            className="text-sm font-medium leading-none"
+          >
+            {t('secretLabel')}
+          </span>
           <div className="flex items-stretch gap-2">
             <code
               id="webhook-secret-input"

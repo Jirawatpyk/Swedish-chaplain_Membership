@@ -72,8 +72,27 @@ export async function POST(request: NextRequest): Promise<Response> {
         },
         '[F6] disable-ingest use-case failed',
       );
+      // Round 2 SF-H1 + SF-H4 (2026-05-13) — distinct `detail` for the
+      // audit-emit-failed forensic-gap path.
+      if (result.error.kind === 'audit_emit_failed') {
+        return NextResponse.json(
+          {
+            type: 'https://chamber-os.app/errors/audit-emit-failed',
+            title: 'Internal Server Error',
+            status: 500,
+            detail:
+              'Ingest state was changed, but the audit trail could not be written. The current state in the dashboard is correct; contact support with this request ID for forensic reconstruction.',
+          },
+          { status: 500 },
+        );
+      }
       return NextResponse.json(
-        { title: 'Internal Server Error' },
+        {
+          type: 'https://chamber-os.app/errors/internal',
+          title: 'Internal Server Error',
+          status: 500,
+          detail: 'Toggle-ingest failed. Retry; if it persists, contact support.',
+        },
         { status: 500 },
       );
     }
@@ -88,7 +107,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       '[F6] disable route threw',
     );
     return NextResponse.json(
-      { title: 'Internal Server Error' },
+      {
+        type: 'https://chamber-os.app/errors/internal',
+        title: 'Internal Server Error',
+        status: 500,
+        detail: 'Unexpected error. Retry; if it persists, contact support.',
+      },
       { status: 500 },
     );
   }

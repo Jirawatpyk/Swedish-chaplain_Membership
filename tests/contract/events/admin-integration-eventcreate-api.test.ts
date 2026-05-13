@@ -56,13 +56,11 @@ vi.mock('@/lib/events-admin-integration-deps', () => ({
   runGenerateWebhookSecret: (...args: unknown[]) => runGenerateWebhookSecretMock(...args),
   runRotateWebhookSecret: (...args: unknown[]) => runRotateWebhookSecretMock(...args),
   runRunTestWebhook: (...args: unknown[]) => runRunTestWebhookMock(...args),
-  // Round-6 verify-fix 2026-05-13 (type-design C7) — disable route
-  // imports `runToggleIngest` (the canonical name). The legacy
-  // `runDisableIngest` alias is still exported for backwards compat.
-  // Mock both so this test (and future migrations) work with either
-  // import path.
+  // Round 2 simplifier P3 (2026-05-13) — canonical name only;
+  // `runDisableIngest` deprecated alias was dropped this round.
+  // Variable name kept (`runDisableIngestMock`) for test-mock
+  // historical clarity; could be renamed in a follow-up sweep.
   runToggleIngest: (...args: unknown[]) => runDisableIngestMock(...args),
-  runDisableIngest: (...args: unknown[]) => runDisableIngestMock(...args),
   rotateSecretRateLimitCheck: (...args: unknown[]) => rotateSecretRateLimitCheckMock(...args),
   testWebhookRateLimitCheck: (...args: unknown[]) => testWebhookRateLimitCheckMock(...args),
 }));

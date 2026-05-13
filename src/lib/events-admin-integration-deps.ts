@@ -5,14 +5,18 @@
  * to the Application use-cases + Infrastructure adapters. Mirrors F6
  * Phase 4 `events-admin-deps.ts` precedent.
  *
- * Exposed factories:
+ * Exposed factories (round-6 type-design C7 renamed disable→toggle):
  *   - `runLoadIntegrationConfig`   — GET config view + recent deliveries
  *   - `runGenerateWebhookSecret`   — POST generate-secret
  *   - `runRotateWebhookSecret`     — POST rotate-secret
  *   - `runRunTestWebhook`          — POST test-webhook
- *   - `runDisableIngest`           — POST disable
+ *   - `runToggleIngest`            — POST disable (enable + disable)
  *   - `rotateSecretRateLimitCheck` — 3/hr/(tenant,actor) gate
  *   - `testWebhookRateLimitCheck`  — 10/hr/(tenant,actor) gate
+ *
+ * The `runDisableIngest` deprecated alias was dropped at Round 2
+ * (Phase 5 verify-fix Round 2 / P3) — zero source-side callers and
+ * F6 unshipped.
  *
  * **Principle III note**: this file imports the Drizzle
  * `tenantWebhookConfigs` table + `auditLog` directly. Per
@@ -181,7 +185,15 @@ const DELIVERY_EVENT_TYPES = [
   'webhook_rolled_back',
 ] as const;
 
-const KNOWN_RECENT_PROCESSING_OUTCOMES: ReadonlySet<RecentDeliveryProcessingOutcome> = new Set<
+/**
+ * Round 2 simplifier P2 (2026-05-13) — single source of truth for the
+ * `processing_outcome` values that have a matching `processing.<value>`
+ * i18n key. Exported so `recent-deliveries-panel.tsx` consumes the
+ * same set instead of duplicating. MUST stay aligned with the keys
+ * under `admin.integrations.eventcreate.phaseC.recentDeliveries.
+ * processing` in EN/TH/SV.
+ */
+export const KNOWN_RECENT_PROCESSING_OUTCOMES: ReadonlySet<RecentDeliveryProcessingOutcome> = new Set<
   RecentDeliveryProcessingOutcome
 >([
   'short_circuited_test',
@@ -206,18 +218,25 @@ function mapSignatureOutcome(
   return 'unknown';
 }
 
+/**
+ * Round 2 simplifier P7 (2026-05-13) — idiomatic type-guard predicate
+ * replaces the previous double-cast pattern. Set's element type is
+ * widened to `string` at the guard site (the only place where the
+ * cast is unavoidable) so the call site stays cast-free.
+ */
+function isKnownRecentProcessingOutcome(
+  v: string,
+): v is RecentDeliveryProcessingOutcome {
+  return (KNOWN_RECENT_PROCESSING_OUTCOMES as ReadonlySet<string>).has(v);
+}
+
 function extractProcessingOutcome(
   payload: unknown,
 ): RecentDeliveryProcessingOutcome | null {
   if (typeof payload !== 'object' || payload === null) return null;
-  const p = payload as Record<string, unknown>;
-  const raw = p['processingOutcome'];
+  const raw = (payload as Record<string, unknown>)['processingOutcome'];
   if (typeof raw !== 'string') return null;
-  return KNOWN_RECENT_PROCESSING_OUTCOMES.has(
-    raw as RecentDeliveryProcessingOutcome,
-  )
-    ? (raw as RecentDeliveryProcessingOutcome)
-    : 'unknown';
+  return isKnownRecentProcessingOutcome(raw) ? raw : 'unknown';
 }
 
 function extractMatchedMemberId(payload: unknown): string | null {
@@ -352,7 +371,11 @@ export async function runLoadIntegrationConfig(
     return {
       secretConfigured: true,
       webhookUrl,
-      secretLastFour: asSecretLastFour(cfg.activeSecret as unknown as string),
+      // Round 2 type-design Concern A fix (2026-05-13) — dropped the
+      // unnecessary `as unknown as string` double-cast. `WebhookSecret
+      // = string & { __brand }` is already assignable to `string` (the
+      // brand intersection is covariant on the unbranded supertype).
+      secretLastFour: asSecretLastFour(cfg.activeSecret),
       graceActiveUntil,
       ingestEnabled: cfg.enabled,
       lastReceivedAt: cfg.lastReceivedAt
@@ -396,6 +419,10 @@ export async function runGenerateWebhookSecret(
       { repo, audit, generateSecret: freshSecret },
     );
   });
+  // Note: there is no "webhookSecretGenerated" counter today (only
+  // rotation is metered). When/if a counter is added, the same H3
+  // pattern below should apply — emit on `result.ok` AND on
+  // `audit_emit_failed` (DB committed), wrapped in try/catch.
 }
 
 // ---------------------------------------------------------------------------
@@ -425,10 +452,23 @@ export async function runRotateWebhookSecret(
       { repo, audit, generateSecret: freshSecret },
     );
   });
-  // FR-036 #8 — emit secret-rotation counter ONLY on successful commit
-  // (post-tx so a rollback never overcounts). Round-6 verify-fix (E5)
-  // wraps in try/catch so a metric-port throw never crashes the route.
-  if (result.ok) {
+  // FR-036 #8 — emit secret-rotation counter on successful commit.
+  //
+  // Round 2 SF-H2 fix (2026-05-13) — also emit on `audit_emit_failed`.
+  // Reasoning mirrors the H3 dashboard-truth invariant applied to
+  // `runToggleIngest`: when the use-case returns `audit_emit_failed`,
+  // the DB row HAS already mutated (audit emission happens AFTER
+  // `repo.rotateSecret` in the use-case). Gating the counter on
+  // `result.ok` under-counts every audit-fail rotation — masking a
+  // real ops event in dashboards. The forensic-trail gap is still
+  // surfaced separately via the route's 500 + the use-case's
+  // `logger.fatal` line.
+  //
+  // Round-6 verify-fix (E5) wraps the emit in try/catch so a
+  // metric-port throw never crashes the route.
+  const rotationCommitted =
+    result.ok || result.error.kind === 'audit_emit_failed';
+  if (rotationCommitted) {
     try {
       eventcreateMetrics.webhookSecretRotated(tenantSlug);
     } catch (metricErr) {
@@ -504,6 +544,18 @@ export async function runRunTestWebhook(
           // The use-case re-throws via its own try/catch as
           // `failureCategory='network_error'`, so the user-facing
           // outcome is unchanged — this log is forensic-only.
+          //
+          // Round 2 SF-LOW7 fix (2026-05-13) — also capture `e.cause`
+          // (the actual undici syscall code: ENOTFOUND / ECONNREFUSED
+          // / CERT_HAS_EXPIRED / UND_ERR_SOCKET / …). Native undici
+          // fetch wraps the syscall error in a generic TypeError
+          // ("fetch failed") and exposes the root via `.cause`. Without
+          // this, SREs see only "fetch failed" + "TypeError" with no
+          // actionable hint.
+          const cause =
+            e instanceof Error && 'cause' in e
+              ? (e as { cause: unknown }).cause
+              : null;
           logger.warn(
             {
               event: 'f6_test_webhook_fetch_threw',
@@ -511,6 +563,12 @@ export async function runRunTestWebhook(
               url,
               err: e instanceof Error ? e.message : String(e),
               errName: e instanceof Error ? e.name : null,
+              errCause:
+                cause === null || cause === undefined
+                  ? null
+                  : typeof cause === 'object' && 'code' in cause
+                    ? String((cause as { code: unknown }).code)
+                    : String(cause),
             },
             '[F6] test-webhook outbound fetch threw — failureCategory=network_error will be returned',
           );
@@ -526,13 +584,12 @@ export async function runRunTestWebhook(
 // ---------------------------------------------------------------------------
 
 /**
- * Round-6 verify-fix 2026-05-13 (type-design C7) — renamed from
- * `DisableInput` to `ToggleIngestInput` because the surface handles
- * BOTH enable and disable directions (calling `runDisableIngest(...,
- * { enabled: true, ... })` to re-enable reads contradictorily). The
- * old `DisableInput` + `runDisableIngest` names persist below as
- * `@deprecated` aliases so external callers see a single-cycle
- * migration window.
+ * Round-6 type-design C7 + Round 2 simplifier P3 (2026-05-13) —
+ * canonical name is `ToggleIngestInput` (the surface handles BOTH
+ * enable and disable). The previously-emitted `DisableInput` /
+ * `DisableError` / `runDisableIngest` deprecated aliases were
+ * dropped this round because F6 has not shipped → there are no
+ * external callers needing a migration window.
  */
 export interface ToggleIngestInput {
   readonly enabled: boolean;
@@ -540,19 +597,9 @@ export interface ToggleIngestInput {
   readonly reason: string;
 }
 
-/**
- * @deprecated Use {@link ToggleIngestInput}. Removed in F6 v2.
- */
-export type DisableInput = ToggleIngestInput;
-
 export type ToggleIngestError =
   | TenantWebhookConfigRepositoryError
   | { readonly kind: 'audit_emit_failed'; readonly message: string };
-
-/**
- * @deprecated Use {@link ToggleIngestError}. Removed in F6 v2.
- */
-export type DisableError = ToggleIngestError;
 
 export async function runToggleIngest(
   tenantSlug: string,
@@ -660,11 +707,9 @@ export async function runToggleIngest(
   return result;
 }
 
-/**
- * @deprecated Backwards-compat alias for {@link runToggleIngest}.
- * Removed in F6 v2 once all callers migrate.
- */
-export const runDisableIngest = runToggleIngest;
+// Round 2 simplifier P3 (2026-05-13) — the `runDisableIngest`
+// deprecated alias was dropped this round (zero source-side callers;
+// F6 unshipped). Single canonical name `runToggleIngest`.
 
 // ---------------------------------------------------------------------------
 // Note on nav-visibility (T081): the integration nav entry is shown

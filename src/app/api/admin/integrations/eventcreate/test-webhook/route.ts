@@ -86,7 +86,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         '[F6] test-webhook use-case failed',
       );
       return NextResponse.json(
-        { title: 'Internal Server Error' },
+        {
+          type: 'https://chamber-os.app/errors/internal',
+          title: 'Internal Server Error',
+          status: 500,
+          detail: 'Test-webhook failed. Retry; if it persists, contact support.',
+        },
         { status: 500 },
       );
     }
@@ -101,7 +106,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       '[F6] test-webhook route threw',
     );
     return NextResponse.json(
-      { title: 'Internal Server Error' },
+      {
+        type: 'https://chamber-os.app/errors/internal',
+        title: 'Internal Server Error',
+        status: 500,
+        detail: 'Unexpected error. Retry; if it persists, contact support.',
+      },
       { status: 500 },
     );
   }

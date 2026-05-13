@@ -29,6 +29,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/members/copy-button';
+import { formatGraceTimestamp } from '@/lib/format-grace-timestamp';
+import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 import type { IntegrationConfigView } from '@/lib/events-admin-integration-deps';
 import { WebhookSecretReveal } from './webhook-secret-reveal';
 import { RotateSecretDialog } from './rotate-secret-dialog';
@@ -68,6 +70,11 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   const [generated, setGenerated] = useState<GeneratedSecret | null>(null);
   const [rotateOpen, setRotateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Round 2 MED-09 fix (2026-05-13) — `<details>` keeps children in
+  // the DOM regardless of open state; the controlled `guideOpen`
+  // flag short-circuits the 8 walkthrough `<Image>` renders until
+  // the admin actually opens the reference panel.
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const steps: StepperStep[] = [
     {
@@ -111,31 +118,27 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
         },
       );
       if (res.status === 409) {
-        // Round-6 verify-fix 2026-05-13 — 409 means the secret already
-        // exists. Recovery flow: refresh server data + advance to
-        // Phase C (masked-secret view) so the admin lands on the
-        // configured surface instead of a dead-end toast.
+        // Round 2 CRIT-01 fix (2026-05-13) — must call `setPhase('c-
+        // test')` SYNCHRONOUSLY before `router.refresh()`. Next.js App
+        // Router preserves client `useState` across refreshes, so the
+        // `phase` state stays `'a-generate'` even after the server
+        // re-renders with `view.secretConfigured=true`. Without the
+        // explicit setPhase, BOTH the Phase A condition (`phase ===
+        // 'a-generate' && !view.secretConfigured`) AND the Phase C
+        // condition (`phase === 'c-test'`) evaluate false → admin
+        // sees only the stepper, nothing else. Round-6 H6 fix added
+        // the refresh but missed this synchronous transition.
         toast.error(t('generateAlreadyExists'));
+        setPhase('c-test');
         router.refresh();
         return;
       }
       if (!res.ok) {
-        // Round-6 verify-fix 2026-05-13 — extract RFC 7807 `detail`
-        // from the route's problem-body so 5xx vs 503 (read-only mode)
-        // vs 404 (kill-switch) surface distinct copy.
-        const problem = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const detail =
-          problem && typeof problem === 'object' && 'detail' in problem
-            ? (problem as { detail?: unknown }).detail
-            : null;
-        const message =
-          typeof detail === 'string' && detail.length > 0
-            ? detail
-            : t('generateFailed');
-        toast.error(message);
+        // Round 2 simplifier P1 (2026-05-13) — shared
+        // `parseProblemDetail` helper replaces the 11-line inline
+        // ladder. Surfaces RFC 7807 `detail` for distinct 5xx/503/404
+        // copy; falls back to the locale-specific generic toast.
+        toast.error(await parseProblemDetail(res, t('generateFailed')));
         return;
       }
       const body = (await res.json()) as { secret: string; secretLastFour: string };
@@ -241,12 +244,30 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
             configured-tenant screen without leaving Phase C — useful
             when re-pasting the webhook URL into a second Zap or when
             onboarding a colleague.
+
+            Round 2 fixes (2026-05-13):
+              - HIGH-04: `<summary>` adds `min-h-6` + `py-1` for the
+                opportunistic WCAG 2.5.8 24×24 tap-target. (The wider
+                44×44 is reserved for primary action buttons; this is
+                a disclosure widget, not a CTA.)
+              - MED-09: walkthrough children render only when the
+                `<details>` is open via a controlled `guideOpen`
+                state. Native `<details>` keeps content in the DOM
+                even when closed, so the 8 `<Image>` tags fired
+                requests on every Phase C render. The controlled
+                pattern keeps native keyboard/screen-reader behaviour
+                while skipping the 8 eager image fetches.
           */}
-          <details className="rounded-md border bg-muted/30 p-3 text-sm">
-            <summary className="cursor-pointer font-medium">
+          <details
+            className="rounded-md border bg-muted/30 p-3 text-sm"
+            onToggle={(e) =>
+              setGuideOpen((e.currentTarget as HTMLDetailsElement).open)
+            }
+          >
+            <summary className="min-h-6 cursor-pointer py-1 font-medium">
               {t('viewSetupGuide')}
             </summary>
-            <div className="mt-3">{walkthrough}</div>
+            {guideOpen ? <div className="mt-3">{walkthrough}</div> : null}
           </details>
 
           <Card>
@@ -268,10 +289,16 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                     Replaced with a `<span id>` + `role="group"
                     aria-labelledby"` on the wrapper so screen readers
                     still announce the group's accessible name.
+
+                    Round 2 MED-08 fix (2026-05-13) — dropped
+                    redundant `aria-label` on `<code>`. The accessible
+                    name is already supplied via the `role="group"
+                    aria-labelledby` wrapper; double-announcement
+                    behaviour varies across screen readers and adds no
+                    information.
                   */}
                   <code
                     className="flex-1 break-all rounded-md border bg-muted px-3 py-2 font-mono text-sm"
-                    aria-label={t('webhookUrlAriaLabel')}
                   >
                     {view.webhookUrl}
                   </code>
@@ -290,7 +317,6 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                 <div className="flex items-center gap-2">
                   <code
                     className="rounded-md border bg-muted px-3 py-2 font-mono text-sm"
-                    aria-label={t('secretAriaLabel')}
                   >
                     whsec_{'•'.repeat(16)}
                     {configured?.secretLastFour ?? ''}
@@ -333,28 +359,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   );
 }
 
-/**
- * Round-6 verify-fix 2026-05-13 (UX F-01/F-02) — render an ISO
- * timestamp via next-intl's `dateTime()` formatter so TH and SV see
- * locale-correct copy (Thai script + day-month order; Swedish 24h
- * clock with "YYYY-MM-DD HH:mm" defaults). EN baseline retains
- * Intl.DateTimeFormat output.
- *
- * Defensive: fall back to the raw ISO when `Date` rejects the input
- * (eg. an unexpected payload shape from a future receiver-side
- * change) so the UI never renders `Invalid Date`.
- */
-function formatGraceTimestamp(
-  format: ReturnType<typeof useFormatter>,
-  iso: string,
-): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return format.dateTime(d, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+// Round 2 refactor (2026-05-13) — `formatGraceTimestamp` extracted to
+// `src/lib/format-grace-timestamp.ts` so the rotate-secret dialog and
+// any future grace-window surface share one implementation (Bangkok-
+// pinned timezone, defensive Invalid Date fallback).

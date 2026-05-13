@@ -53,7 +53,12 @@ export async function GET(request: NextRequest): Promise<Response> {
       '[F6] /api/admin/integrations/eventcreate GET — runLoadIntegrationConfig threw',
     );
     return NextResponse.json(
-      { title: 'Internal Server Error' },
+      {
+        type: 'https://chamber-os.app/errors/internal',
+        title: 'Internal Server Error',
+        status: 500,
+        detail: 'Could not load the integration config. Reload to retry.',
+      },
       { status: 500 },
     );
   }

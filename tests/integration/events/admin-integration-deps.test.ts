@@ -39,6 +39,7 @@ import {
 } from '@/lib/events-admin-integration-deps';
 import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import * as pinoAuditPortModule from '@/modules/events/infrastructure/pino-audit-port';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
 describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
@@ -223,6 +224,79 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
           .where(eq(tenantWebhookConfigs.tenantId, tenant.ctx.slug));
       }
     });
+
+    it('audit_emit_failed forensic path — Result.err + pino.fatal + gauge STILL emits (T-Gap1)', async () => {
+      // Round 2 T-Gap1 fix (2026-05-13) — promised in the file
+      // header but missing from round-6. Closes the H3 dashboard-
+      // truth invariant: when DB committed AND audit emit failed,
+      // the gauge MUST still emit so the dashboard reflects the
+      // real DB state.
+      //
+      // Strategy: spy on `makePinoAuditPort` to return a port whose
+      // `.emit()` resolves to `{ok: false, error: {kind: 'db_error',
+      // message: 'simulated audit failure'}}`. The use-case then
+      // returns Result.err{kind:'audit_emit_failed'} after the DB
+      // row was already updated by `repo.setEnabled` inside the same
+      // tx — Drizzle commits the row (no throw → no rollback).
+      const fatalSpy = vi.spyOn(logger, 'fatal').mockImplementation(() => undefined);
+      const gaugeSpy = vi.spyOn(eventcreateMetrics, 'ingestDisabledTenant');
+      const realMake = pinoAuditPortModule.makePinoAuditPort;
+      const portSpy = vi
+        .spyOn(pinoAuditPortModule, 'makePinoAuditPort')
+        .mockImplementation((tx) => {
+          const real = realMake(tx);
+          return {
+            ...real,
+            emit: vi.fn().mockResolvedValue({
+              ok: false,
+              error: { kind: 'db_error', message: 'simulated audit failure' },
+            }),
+          };
+        });
+      const actor = randomUUID();
+      try {
+        const result = await runToggleIngest(tenant.ctx.slug, actor, {
+          enabled: false,
+          reason: 'T-Gap1 forensic path test',
+        });
+        // 1. Use-case surfaces the audit-emit-failed kind.
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error('unreachable');
+        expect(result.error.kind).toBe('audit_emit_failed');
+
+        // 2. pino.fatal fired with the structured forensic event.
+        expect(fatalSpy).toHaveBeenCalled();
+        const fatalCall = fatalSpy.mock.calls[0];
+        expect(fatalCall?.[0]).toMatchObject({
+          event: 'f6_disable_ingest_audit_emit_failed',
+          tenantSlug: tenant.ctx.slug,
+          enabledAfter: false,
+        });
+
+        // 3. Gauge STILL emitted — this is the H3 dashboard-truth
+        // invariant. Without this, the dashboard freezes at the
+        // prior value while DB has already mutated.
+        expect(gaugeSpy).toHaveBeenCalledWith(tenant.ctx.slug, false);
+
+        // 4. DB row actually mutated (audit failure does NOT roll
+        // back the tx because the use-case returns Result.err
+        // instead of throwing).
+        const rows = await db
+          .select({ enabled: tenantWebhookConfigs.enabled })
+          .from(tenantWebhookConfigs)
+          .where(eq(tenantWebhookConfigs.tenantId, tenant.ctx.slug));
+        expect(rows[0]?.enabled).toBe(false);
+      } finally {
+        portSpy.mockRestore();
+        gaugeSpy.mockRestore();
+        fatalSpy.mockRestore();
+        // Reset row to enabled for next test if any.
+        await db
+          .update(tenantWebhookConfigs)
+          .set({ enabled: true })
+          .where(eq(tenantWebhookConfigs.tenantId, tenant.ctx.slug));
+      }
+    });
   });
 
   describe('runRotateWebhookSecret — webhookSecretRotated counter (M5)', () => {
@@ -278,6 +352,35 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
       expect(result.ok).toBe(false);
       if (result.ok) throw new Error('unreachable');
       expect(result.error.kind).toBe('config_missing');
+    });
+  });
+
+  describe('runToggleIngest — not_found branch when no config row exists (T-Gap3)', () => {
+    // Round 2 T-Gap3 fix (2026-05-13) — agent-flagged gap: T068
+    // covers the route-level mapping (mock returns not_found, route
+    // returns 404), but the actual adapter branch that produces
+    // `{kind:'not_found', tenantId, source:'eventcreate'}` from a
+    // missing tenant_webhook_configs row had no integration test.
+    let freshTenant: TestTenant;
+
+    beforeAll(async () => {
+      // No tenantWebhookConfigs row seeded → triggers the not_found
+      // branch when toggling.
+      freshTenant = await createTestTenant('test-chamber');
+    });
+
+    afterAll(async () => {
+      await freshTenant.cleanup();
+    });
+
+    it('returns Result.err{kind:not_found} when no config row exists', async () => {
+      const result = await runToggleIngest(freshTenant.ctx.slug, randomUUID(), {
+        enabled: false,
+        reason: 'T-Gap3 fresh-tenant test',
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.error.kind).toBe('not_found');
     });
   });
 });

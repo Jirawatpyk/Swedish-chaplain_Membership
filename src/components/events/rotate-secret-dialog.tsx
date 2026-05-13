@@ -12,10 +12,12 @@
  * sees exactly when the old secret stops verifying.
  */
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { WebhookSecretReveal } from './webhook-secret-reveal';
+import { formatGraceTimestamp } from '@/lib/format-grace-timestamp';
+import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 
 export interface RotateSecretDialogProps {
   readonly open: boolean;
@@ -37,6 +39,12 @@ export function RotateSecretDialog({
   onRotationAcknowledged,
 }: RotateSecretDialogProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseC.rotate');
+  // Round 2 R-H2 fix (2026-05-13) — `formatGraceTimestamp` shared
+  // helper renders ISO timestamps with the chamber's Bangkok timezone
+  // + locale-correct date/time format. Previously the raw ISO leaked
+  // through to the TH/SV post-rotation dialog body via the i18n
+  // interpolation.
+  const format = useFormatter();
   const [rotationResult, setRotationResult] = useState<RotationResult | null>(
     null,
   );
@@ -55,28 +63,23 @@ export function RotateSecretDialog({
         },
       );
       if (res.status === 429) {
-        toast.error(t('rateLimited'));
+        // Round 2 SF-LOW8 fix (2026-05-13) — surface the `Retry-After`
+        // seconds in the toast so admin knows how long to wait.
+        const retryAfterRaw = res.headers.get('Retry-After');
+        const retryAfter = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : null;
+        toast.error(
+          retryAfter !== null && Number.isFinite(retryAfter) && retryAfter > 0
+            ? t('rateLimitedWithRetry', { seconds: retryAfter })
+            : t('rateLimited'),
+        );
         return;
       }
       if (!res.ok) {
-        // Round-6 verify-fix 2026-05-13 — extract RFC 7807 `detail`
-        // so 404 (kill-switch) vs 500 (DB outage) vs 503 (read-only)
-        // surface distinct copy instead of a single "Rotation failed"
-        // toast. Route layer already produces a structured problem-
-        // body for every non-2xx.
-        const problem = await res
-          .clone()
-          .json()
-          .catch(() => null);
-        const detail =
-          problem && typeof problem === 'object' && 'detail' in problem
-            ? (problem as { detail?: unknown }).detail
-            : null;
-        toast.error(
-          typeof detail === 'string' && detail.length > 0
-            ? detail
-            : t('failed'),
-        );
+        // Round 2 simplifier P1 (2026-05-13) — shared
+        // `parseProblemDetail` helper. Surfaces distinct copy for
+        // 404 (kill-switch) vs 500 (DB outage / audit-emit-failed)
+        // vs 503 (read-only).
+        toast.error(await parseProblemDetail(res, t('failed')));
         return;
       }
       const body = (await res.json()) as RotationResult & { ok: true };
@@ -109,13 +112,17 @@ export function RotateSecretDialog({
 
   if (rotationResult) {
     // Post-rotation view: render the new secret one-time + grace info.
+    const graceActiveUntilDisplay = formatGraceTimestamp(
+      format,
+      rotationResult.graceActiveUntil,
+    );
     return (
       <ConfirmationDialog
         open={open}
         onOpenChange={handleOpenChange}
         title={t('postTitle')}
         description={t('postDescription', {
-          graceActiveUntil: rotationResult.graceActiveUntil,
+          graceActiveUntil: graceActiveUntilDisplay,
         })}
         confirmLabel={t('acknowledge')}
         cancelLabel={t('close')}

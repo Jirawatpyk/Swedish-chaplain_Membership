@@ -164,11 +164,13 @@ export async function runTestWebhook(
 
   const nowUnixSeconds = Math.floor(input.now.getTime() / 1000);
   // Round-6 verify-fix 2026-05-13 (type-design C2) — variable renamed
-  // from `requestId` to `requestId` to mirror the audit payload
+  // from `testRequestId` to `requestId` to mirror the audit payload
   // field-name convention now shared across the entire F6 webhook
   // audit family. The synthetic value format is unchanged
   // (`test-<unix>-<random>`) so existing correlation patterns in SRE
-  // dashboards still match.
+  // dashboards still match. (Round 2 C-H1 fix — earlier wording said
+  // "from requestId to requestId" which was a typo of the original
+  // identifier.)
   const requestId = `test-${nowUnixSeconds}-${Math.random().toString(36).slice(2, 10)}`;
   const syntheticPayload = {
     eventType: 'attendee.registered',

@@ -85,8 +85,21 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                       task T080a). The textual narration above carries
                       the actionable instruction; image is reference
                       only.
+
+                      Round 2 MED-06 fix (2026-05-13) — upgraded from
+                      `text-xs italic` to `text-sm not-italic` so
+                      contrast against `text-muted-foreground` clears
+                      WCAG 2.1 AA at small-text threshold (4.5:1 not
+                      3:1 large-text). Italic dropped to recover the
+                      ~0.3:1 perceived-contrast loss from oblique
+                      stroke widths.
+
+                      TODO [T080a]: remove `<figcaption>` and delete
+                      `phaseB.imagePlaceholderNotice` from en/th/sv.json
+                      when real captures land. Grep for `T080a` to
+                      find this and related stakeholder-asset gates.
                     */}
-                    <figcaption className="text-xs italic text-muted-foreground">
+                    <figcaption className="text-sm text-muted-foreground">
                       {t('imagePlaceholderNotice')}
                     </figcaption>
                   </figure>

@@ -56,8 +56,28 @@ export async function POST(request: NextRequest): Promise<Response> {
         },
         '[F6] generate-secret use-case failed',
       );
+      // Round 2 SF-H1 + SF-H4 (2026-05-13) — distinct `detail` so the
+      // UI can surface a recovery hint instead of a single generic
+      // "failed" toast.
+      if (result.error.kind === 'audit_emit_failed') {
+        return NextResponse.json(
+          {
+            type: 'https://chamber-os.app/errors/audit-emit-failed',
+            title: 'Internal Server Error',
+            status: 500,
+            detail:
+              'Webhook secret was saved, but the audit trail could not be written. Do NOT click Generate again — rotate the secret instead to acknowledge and replace it.',
+          },
+          { status: 500 },
+        );
+      }
       return NextResponse.json(
-        { title: 'Internal Server Error' },
+        {
+          type: 'https://chamber-os.app/errors/internal',
+          title: 'Internal Server Error',
+          status: 500,
+          detail: 'Generate-secret failed. Retry; if it persists, contact support.',
+        },
         { status: 500 },
       );
     }
@@ -81,7 +101,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       '[F6] generate-secret route threw',
     );
     return NextResponse.json(
-      { title: 'Internal Server Error' },
+      {
+        type: 'https://chamber-os.app/errors/internal',
+        title: 'Internal Server Error',
+        status: 500,
+        detail: 'Unexpected error. Retry; if it persists, contact support.',
+      },
       { status: 500 },
     );
   }

@@ -2504,6 +2504,7 @@
             "failure": "Test event failed",
             "failureWithHint": "Test event failed — {hint}",
             "rateLimited": "Too many test events this hour. Wait and retry.",
+            "rateLimitedWithRetry": "Too many test events this hour. Try again in {seconds}s.",
             "serverError": "Server error while running the test. Retry or contact support.",
             "networkError": "Could not reach the webhook endpoint. Check connectivity."
           },
@@ -2518,13 +2519,15 @@
             "close": "Close",
             "success": "Webhook secret rotated",
             "failed": "Rotation failed — try again or contact support",
-            "rateLimited": "Rotation limit reached (3/hour). Wait and retry."
+            "rateLimited": "Rotation limit reached (3/hour). Wait and retry.",
+            "rateLimitedWithRetry": "Rotation limit reached. Try again in {seconds}s."
           },
           "recentDeliveries": {
             "title": "Recent deliveries",
             "empty": "No recent deliveries yet. Trigger a Zap or press \"Send test event\" to see traffic.",
             "includeTestDeliveriesLabel": "Include test deliveries",
-            "toggleFailed": "Could not refresh deliveries. Reload the page to retry.",
+            "updating": "Updating recent deliveries…",
+            "listSummary": "{count, plural, =0 {No recent deliveries} =1 {# delivery shown} other {# deliveries shown}}",
             "signature": {
               "verified": "Verified",
               "rejected": "Signature rejected",
