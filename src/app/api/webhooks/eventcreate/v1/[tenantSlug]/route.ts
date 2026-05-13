@@ -44,6 +44,7 @@ import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { eventsTracer } from '@/lib/otel-tracer';
 import { redactStack } from '@/lib/redact-stack';
+import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import { asTenantId } from '@/modules/members';
 import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import {
@@ -51,9 +52,6 @@ import {
   cryptoWebhookSignatureVerifier,
   ingestWebhookAttendee,
   MATCH_TYPE_TO_PROCESSING_OUTCOME,
-  type StandaloneAuditDeps,
-  type F6AuditEventType,
-  type F6AuditEntry,
 } from '@/modules/events';
 import {
   makeIngestWebhookAttendeeDeps,
@@ -192,47 +190,13 @@ function markSpanError(span: Span, reason: string): void {
   span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
 }
 
-/**
- * Emit a standalone-tx audit entry from the route layer, suppressing
- * any audit emission failure with a structured log line.
- *
- * Used by the config-load-failed and signature-rejected branches —
- * both are post-decision audit emits where the HTTP response code is
- * already determined. Re-throwing on audit failure would only exchange
- * one observability gap (no audit row) for a worse one (no response
- * + audit row still missing). The composition-root LOUD-failure log
- * lines from `di.ts loudFail` are preserved server-side regardless.
- *
- * Generic `T` preserves the per-event-type payload narrowing from
- * `F6AuditPort.emitStandalone<T>` — a `{eventType, payload}` literal
- * with mismatched payload shape still fails to compile here.
- */
-async function safeEmitStandalone<T extends F6AuditEventType>(
-  deps: StandaloneAuditDeps,
-  entry: F6AuditEntry<T>,
-  failCtx: { tenantSlug: string; logEvent: string; logMsg: string },
-): Promise<void> {
-  try {
-    await deps.emitStandalone(entry);
-  } catch (auditErr) {
-    // R6-W2 staff-review fix (2026-05-13): scrub container paths +
-    // node_modules + webpack-internal:/// from the stack before the
-    // pino sink. Pino REDACT_PATHS does not match `errStack` (it is
-    // not on the wildcard list); explicit redaction here closes the
-    // gap that R008 originally fixed for the wrapRepoError path.
-    const rawStack = auditErr instanceof Error ? auditErr.stack : null;
-    logger.error(
-      {
-        event: failCtx.logEvent,
-        tenantSlug: failCtx.tenantSlug,
-        errName: auditErr instanceof Error ? auditErr.name : 'unknown',
-        errMessage: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        errStack: rawStack === null ? null : (redactStack(rawStack) ?? null),
-      },
-      failCtx.logMsg,
-    );
-  }
-}
+// R7-F staff-review fix (2026-05-13): `safeEmitStandalone` extracted
+// to `@/lib/events-safe-emit-standalone` so admin route handlers can
+// reuse the same idiom (round-6 B7 originally inlined a bare try/
+// catch; round-7 R2-F refactors it). The shared helper omits stack-
+// trace redaction so per-callsite redaction can apply different
+// `redactStack`/`pino-redact` policies; this route's webhook context
+// uses `redactStack` on its own logger.error sites.
 
 // ---------------------------------------------------------------------------
 // Route handler

@@ -15,10 +15,15 @@ export default function EventsListLoading() {
   // PageHeader `<h1>` slot in `<span aria-hidden>` so VoiceOver does
   // not announce "heading level 1" with no label. Card carries
   // `aria-hidden` for the same reason as the detail loading skeleton.
+  // R7-A staff-review fix (2026-05-13): `<span className="block">` —
+  // a default-inline span does not establish a block formatting
+  // context, so the inner block-display Skeleton (`h-7`) could
+  // collapse to 0 height on some browsers. Forcing block restores
+  // CLS-0 layout intent.
   return (
-    <TableContainer>
+    <TableContainer aria-busy="true">
       <PageHeader
-        title={<span aria-hidden><Skeleton className="h-7 w-44" /></span>}
+        title={<span aria-hidden="true" className="block"><Skeleton className="h-7 w-44" /></span>}
         subtitle={<Skeleton className="h-4 w-64" aria-hidden />}
       />
       <Card aria-hidden>

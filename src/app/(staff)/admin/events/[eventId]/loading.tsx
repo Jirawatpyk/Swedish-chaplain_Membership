@@ -8,17 +8,22 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function EventDetailLoading() {
   // R6-W11 staff-review fix (2026-05-13): wrap all skeleton groups
-  // in an `aria-busy=true` container so AT users hear "busy" instead
-  // of stepping through every nameless Skeleton placeholder. Each
-  // structural group also carries `aria-hidden` so the shimmer
-  // rectangles are not exposed as discrete elements. The Skeleton
-  // nested inside the PageHeader `<h1>` slot is wrapped in a
-  // `<span aria-hidden>` to avoid VoiceOver announcing "heading
-  // level 1" with no accessible name.
+  // in `aria-hidden` so the shimmer rectangles are not exposed as
+  // discrete elements. The Skeleton nested inside the PageHeader
+  // `<h1>` slot is wrapped in a `<span aria-hidden>` to avoid
+  // VoiceOver announcing "heading level 1" with no accessible name.
+  // R7-A + R7-B staff-review fix (2026-05-13): (a) `<span
+  // className="block">` — default-inline `<span>` does not
+  // establish a block formatting context, so the inner block-
+  // display Skeleton (`h-7`) could collapse to 0 height on some
+  // browsers. (b) `aria-busy="true"` on the container — the
+  // comment above had previously claimed this but the JSX did not
+  // actually set it, so AT users got silence instead of the
+  // promised "busy" signal.
   return (
-    <DetailContainer>
+    <DetailContainer aria-busy="true">
       <PageHeader
-        title={<span aria-hidden><Skeleton className="h-7 w-72" /></span>}
+        title={<span aria-hidden="true" className="block"><Skeleton className="h-7 w-72" /></span>}
         subtitle={<Skeleton className="h-4 w-48" aria-hidden />}
       />
       <Card aria-hidden>

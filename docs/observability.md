@@ -1321,6 +1321,7 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | Alert | Condition | Severity | Runbook |
 |---|---|---|---|
 | `f6_webhook_signature_burst` | rate(`eventcreate_webhook_receipts_total{signature_outcome!='verified'}`) > 5/min per tenant for 10 min | P2 | `docs/runbooks/f6-webhook-signature-burst.md` (Phase 10) |
+| `f6_webhook_precondition_burst` | rate(`audit_event_type='webhook_ingest_precondition_failed'`) > 2/min per tenant for 5 min | P2 | `docs/runbooks/f6-webhook-precondition-burst.md` (Phase 10) — Neon connectivity / RLS regression signal. Added R7-E staff-review fix 2026-05-13 closing the round-6 W5 follow-up gap. |
 | `f6_admin_event_detail_enumeration` | distinct `event_id_hash` from same `actor_user_id` ≥ 10 within 5 min | P2 | `docs/runbooks/f6-admin-event-detail-not-found.md` (Phase 10 T124+) |
 | `f6_cross_tenant_probe_burst` | `cross_tenant_probe` audit rate > 1/min per tenant for 5 min | P1 | (Phase 10 — covers webhook + admin surface) |
 | `f6_idempotency_sweep_stalled` | SLO-F6-004 violation | P2 | `docs/runbooks/f6-idempotency-sweep.md` (Phase 10) |

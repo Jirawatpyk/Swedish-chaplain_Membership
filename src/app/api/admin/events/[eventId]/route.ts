@@ -22,6 +22,7 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
+import { safeEmitStandalone } from '@/lib/events-safe-emit-standalone';
 import {
   MATCH_TYPES,
   makeStandaloneAuditDeps,
@@ -192,9 +193,24 @@ export async function GET(
         .update(eventId)
         .digest('hex')
         .slice(0, 16);
-      try {
-        const auditDeps = makeStandaloneAuditDeps();
-        await auditDeps.emitStandalone({
+      // R7-G staff-review fix (2026-05-13): cap X-Request-ID at 200
+      // chars before writing to audit_log.payload — mirrors the W1
+      // cap on the webhook route. audit_log.payload is JSONB (no
+      // column-level size enforcement); an authenticated admin
+      // sending an oversized header would otherwise bloat the audit
+      // row. Lower risk than W1 (admin auth required vs. public
+      // webhook) but consistency closes the inconsistency defect.
+      const rawAdminRequestId =
+        (request.headers.get('x-request-id')?.trim() ?? '').slice(0, 200);
+      // R7-F staff-review fix (2026-05-13): use the shared
+      // `safeEmitStandalone` helper instead of an inline bare
+      // try/catch so this emit follows the same structured
+      // logEvent/logMsg shape as every other F6 standalone emit
+      // (webhook config-load + signature-reject paths). Audit
+      // failure still cannot block the 404 response.
+      await safeEmitStandalone(
+        makeStandaloneAuditDeps(),
+        {
           eventType: 'cross_tenant_probe',
           tenantId: asTenantId(tenantCtx.slug),
           actorType: session.user.role === 'admin' ? 'admin' : 'manager',
@@ -209,21 +225,17 @@ export async function GET(
               request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
               request.headers.get('x-real-ip') ??
               'unknown',
-            requestId: request.headers.get('x-request-id') ?? null,
+            requestId: rawAdminRequestId.length > 0 ? rawAdminRequestId : null,
             attemptedRoute: `/api/admin/events/${eventIdHash}`,
           },
-        });
-      } catch (auditErr) {
-        // Audit emit failure must not block 404 — log + continue.
-        logger.error(
-          {
-            event: 'f6_admin_cross_tenant_probe_audit_failed',
-            tenantSlug: tenantCtx.slug,
-            errName: auditErr instanceof Error ? auditErr.name : 'unknown',
-          },
-          '[F6] admin cross_tenant_probe audit emit failed (suppressed — 404 still returned)',
-        );
-      }
+        },
+        {
+          tenantSlug: tenantCtx.slug,
+          logEvent: 'f6_admin_cross_tenant_probe_audit_failed',
+          logMsg:
+            '[F6] admin cross_tenant_probe audit emit failed (suppressed — 404 still returned)',
+        },
+      );
       // Preserve the ephemeral pino marker too — gives SRE
       // dashboards a faster signal than waiting for audit_log
       // aggregation. event_id_hash matches the audit summary line

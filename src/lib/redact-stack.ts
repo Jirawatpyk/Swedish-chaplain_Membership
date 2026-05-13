@@ -31,12 +31,16 @@ export function redactStack(stack: string | undefined): string | undefined {
   return (
     stack
       // Strip absolute Linux/Vercel container paths (`/var/task/...`,
-      // `/var/runtime/...`, etc.), absolute Windows dev paths, and
-      // `/private/` (macOS dev `/private/var` etc.) + any
-      // `node_modules` prefix (leaks installed-package paths +
-      // workspace layout).
+      // `/var/runtime/...`, etc.), absolute Windows dev paths,
+      // `/private/` (macOS dev `/private/var` etc.), `node_modules/`
+      // (leaks installed-package paths + workspace layout), and
+      // round-7 R2-C hardening (2026-05-13): `srv/` (Docker app
+      // dirs), `data/` (Kubernetes PVC mounts), `run/` (systemd
+      // runtime). Vercel sin1 uses `/var/task/` so the original
+      // alternation covered current deployment; these additions
+      // future-proof against containerisation changes.
       .replace(
-        /(?:[a-z]:)?[\\\/](?:var|usr|home|opt|tmp|root|users|private|node_modules)[\\\/][\w.\-\\\/]+/gi,
+        /(?:[a-z]:)?[\\\/](?:var|usr|home|opt|tmp|root|users|private|node_modules|srv|data|run)[\\\/][\w.\-\\\/]+/gi,
         '[redacted-path]',
       )
       // Strip Next.js `webpack-internal:///` URLs which leak the
