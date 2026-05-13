@@ -442,10 +442,16 @@ export async function POST(
             },
             '[F6] webhook config load failed',
           );
+          // R6-W5 staff-review fix (2026-05-13): switch from
+          // `webhook_rolled_back` (semantically: primary tx began then
+          // was rolled back) to the dedicated
+          // `webhook_ingest_precondition_failed` event so SRE filters
+          // on `webhook_rolled_back` don't see spurious config-load
+          // blips. The two are queryable independently in audit_log.
           await safeEmitStandalone(
             makeStandaloneAuditDeps(),
             {
-              eventType: 'webhook_rolled_back',
+              eventType: 'webhook_ingest_precondition_failed',
               tenantId: asTenantId(tenantSlug),
               actorType: 'system',
               actorUserId: null,
@@ -453,11 +459,10 @@ export async function POST(
               summary: `webhook config load failed: ${e instanceof Error ? e.name : 'unknown'}`,
               payload: {
                 severity: 'error',
-                requestId,
-                source: 'eventcreate',
-                failureStage: 'unknown',
-                errorMessage: 'config load failed',
-                errorStack: null,
+                requestId: rawRequestId.length > 0 ? rawRequestId : null,
+                sourceIp,
+                stage: 'config_load_failed',
+                errorName: e instanceof Error ? e.name : 'unknown',
               },
             },
             {

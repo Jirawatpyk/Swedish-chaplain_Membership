@@ -180,3 +180,23 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     );
   });
 });
+
+describe('F6_DEFAULT_RETENTION_YEARS — staff-review R6-W6 guard (2026-05-13)', () => {
+  it('is exactly 5 years', async () => {
+    // R6-W6 staff-review fix (2026-05-13): retention is hardcoded at
+    // the Infrastructure layer (pino-audit-port.insertAuditRow line
+    // 104) rather than threaded through the AuditEntry envelope. A
+    // future edit that silently bumped this to 10 (analogy with F4
+    // tax-document upgrade) would land without a spec amendment.
+    // This guard makes the constant a load-bearing assertion: any
+    // change to the retention floor MUST update this test in lockstep,
+    // forcing a Spec Kit ticket + reviewer awareness.
+    //
+    // PDPA/GDPR data-minimisation rationale: F6 audit events cover
+    // attendee ingest + admin actions on attendee records. The 5y
+    // floor matches F1/F2/F3/F5/F7/F8 defaults; F4 (tax docs) is the
+    // sole 10y exception per Thai Revenue Code §87/3.
+    const mod = await import('@/modules/events/infrastructure/pino-audit-port');
+    expect(mod.F6_DEFAULT_RETENTION_YEARS).toBe(5);
+  });
+});

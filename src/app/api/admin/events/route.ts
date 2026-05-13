@@ -21,6 +21,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { clampPageSize, coerceBoolean } from './_lib/query-helpers';
 import { emitEventsRoleViolation } from './_lib/role-violation-audit';
@@ -120,19 +121,34 @@ export async function GET(request: NextRequest) {
   }
   // H3 fix (verify-finding): trim categoryFilter; null on whitespace-only.
   const trimmedCategory = parsed.data.categoryFilter?.trim();
-  // wrap runInTenant raw rejection
-  // path. Result.err returns flow normally; only DB-connection-lost
-  // class throws should hit the catch.
+  // R6-W3 staff-review fix (2026-05-13): wrap the use-case dispatch in
+  // an OTel root span so SLO-F6-002 (admin list p95 < 500ms) is
+  // measurable from trace data. Attributes are bounded-cardinality
+  // (tenant slug + integer page + integer pageSize) per the
+  // events-tracer redaction contract in src/lib/otel-tracer.ts:97-101.
+  // wrap runInTenant raw rejection path. Result.err returns flow
+  // normally; only DB-connection-lost class throws should hit the
+  // catch.
   let result: Awaited<ReturnType<typeof runListEvents>>;
   try {
-    result = await runListEvents(tenantCtx.slug, {
-      page: parsed.data.page,
-      pageSize: parsed.data.pageSize,
-      includeArchived: parsed.data.includeArchived,
-      partnerBenefitOnly: parsed.data.partnerBenefitOnly,
-      culturalEventOnly: parsed.data.culturalEventOnly,
-      categoryFilter: trimmedCategory && trimmedCategory.length > 0 ? trimmedCategory : null,
-    });
+    result = await withActiveSpan(
+      eventsTracer(),
+      'admin_events_list',
+      {
+        'tenant.id': tenantCtx.slug,
+        'f6.page': parsed.data.page,
+        'f6.page_size': parsed.data.pageSize,
+      },
+      async () =>
+        runListEvents(tenantCtx.slug, {
+          page: parsed.data.page,
+          pageSize: parsed.data.pageSize,
+          includeArchived: parsed.data.includeArchived,
+          partnerBenefitOnly: parsed.data.partnerBenefitOnly,
+          culturalEventOnly: parsed.data.culturalEventOnly,
+          categoryFilter: trimmedCategory && trimmedCategory.length > 0 ? trimmedCategory : null,
+        }),
+    );
   } catch (e) {
     logger.error(
       {

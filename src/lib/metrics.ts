@@ -2489,4 +2489,35 @@ export const eventcreateMetrics = {
       ).add(1, { tenant: tenantId, primary_stage: primaryStage });
     });
   },
+
+  /**
+   * R6-W4 staff-review fix (2026-05-13) — FR-036 #11 (idempotency_sweep).
+   *
+   * `eventcreate_idempotency_sweep_rows_total` counter — emitted by the
+   * daily cron handler that purges expired rows from
+   * `eventcreate_idempotency_receipts` (TTL = 7d). Two labels:
+   *   - outcome=swept → rows deleted in the run
+   *   - outcome=skipped → rows skipped because TTL not yet expired
+   *
+   * Alert (defined in `docs/observability.md § 24`): `rate(swept) == 0
+   * for ≥2 consecutive days while table row count is growing` →
+   * stalled-sweep page. The counter is the SLI input; without it the
+   * alert is unimplementable.
+   *
+   * The cron handler that wires this counter ships in Phase 10 (T116).
+   * Counter declared now so it is reachable + dashboardable before the
+   * handler lands. Zero-emission counter is correctly absent from
+   * Prometheus output until first call — no observability noise pre-flag.
+   */
+  idempotencySweepRowsTotal(
+    tenantId: string,
+    outcome: 'swept' | 'skipped',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_idempotency_sweep_rows_total',
+        'F6 idempotency-receipt sweep counter — outcome=swept|skipped (FR-036 #11)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
 } as const;

@@ -86,6 +86,14 @@ export const F6_AUDIT_EVENT_TYPES = [
   'cross_tenant_probe',
   'role_violation_blocked',
   'webhook_rate_limit_exceeded',
+  // R6-W5 staff-review fix (2026-05-13): dedicated event type for
+  // pre-tx config-load failures so the `webhook_rolled_back` taxonomy
+  // stays clean (it now genuinely means "primary tx began then rolled
+  // back"). SREs filter on either independently; previously a Neon
+  // connection blip during config-load was dumped into the
+  // rollback bucket, polluting incident triage. Backed by migration
+  // 0137 enum extension.
+  'webhook_ingest_precondition_failed',
 ] as const;
 
 export type F6AuditEventType = (typeof F6_AUDIT_EVENT_TYPES)[number];
@@ -417,6 +425,27 @@ export interface AuditPayloads {
     readonly sourceIp: string;
     readonly currentRpmObserved: number;
     readonly retryAfterSeconds: number;
+  };
+  /**
+   * R6-W5 staff-review fix (2026-05-13). Distinct from `webhook_rolled_back`:
+   *   - `webhook_rolled_back` = primary tx began then was rolled back
+   *     by a stage failure (FR-037 strict-tx semantics)
+   *   - `webhook_ingest_precondition_failed` = a check BEFORE the tx
+   *     opened failed — config load DB error, tenant resolution
+   *     anomaly, etc. No state change to roll back; documenting the
+   *     event separately keeps SRE filtering accurate.
+   */
+  webhook_ingest_precondition_failed: {
+    readonly severity: Severity;
+    readonly requestId: string | null;
+    readonly sourceIp: string;
+    /**
+     * Which precondition failed. `config_load_failed` is the only
+     * currently-emitting cause; the union is open to future additions
+     * (e.g., `tenant_resolution_failed`).
+     */
+    readonly stage: 'config_load_failed';
+    readonly errorName: string;
   };
 }
 

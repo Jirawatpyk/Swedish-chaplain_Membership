@@ -201,4 +201,86 @@ describe('T039 — F6 idempotency: 5× same X-Request-ID → 1 fresh + 4 duplica
     );
     expect(regs.length).toBe(1);
   });
+
+  it('R6-W8 — US1 AS2 invariant: non-member ingest emits ZERO quota audit events', async () => {
+    // R6-W8 staff-review fix (2026-05-13): US1 AS2 spec states
+    // "no quota is decremented, and the audit log entry records the
+    // non-member outcome." The match-attendee unit + integration tests
+    // assert the `non_member` resolution, but no test queries
+    // audit_log to assert that quota event types
+    // (`quota_partnership_decremented`, `quota_cultural_decremented`,
+    // `quota_over_quota_warning`, `quota_credit_back_refund`,
+    // `quota_credit_back_archive`) are NEVER emitted on the
+    // non-member ingest path. Quota bugs without this guard would
+    // accumulate silently and only surface at year-end reconciliation.
+    const eventExternalId = `event_no_quota_${Date.now()}`;
+    const attendeeExternalId = `att_no_quota_${Date.now()}`;
+    const requestId = `req-no-quota-${Date.now()}`;
+    const payload = makeWebhookPayload({
+      event: { externalId: eventExternalId },
+      attendee: {
+        externalId: attendeeExternalId,
+        // Use a domain that won't match any seeded member (test tenant
+        // has no F3 members at all in this file → all ingests resolve
+        // to `non_member` via Rule 4).
+        email: `outsider@no-match-domain-${Date.now()}.example`,
+      },
+    });
+    const deps = makeIngestWebhookAttendeeDeps();
+
+    const result = await ingestWebhookAttendee(
+      {
+        tenantId: tenant.ctx.slug,
+        requestId,
+        source: 'eventcreate_webhook',
+        rawPayload: payload,
+        sourceIp: '127.0.0.1',
+      },
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('non-member ingest should succeed');
+    expect(result.value.matched).toBe('non_member');
+    expect(result.value.quotaEffect.countedAgainstPartnership).toBe(false);
+    expect(result.value.quotaEffect.countedAgainstCulturalQuota).toBe(false);
+
+    // Query audit_log for any of the 5 quota event types tied to this
+    // ingest. The match-resolution audit payloads (`attendee_*`) do
+    // not carry `requestId` (only the receipt-verified + duplicate +
+    // rolled-back payloads thread it). Correlate via `registrationId`
+    // which IS present in the match-resolution payload shape.
+    const registrationId = result.value.registrationId;
+    const QUOTA_EVENT_TYPES = [
+      'quota_partnership_decremented',
+      'quota_cultural_decremented',
+      'quota_over_quota_warning',
+      'quota_credit_back_refund',
+      'quota_credit_back_archive',
+    ] as const;
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.tenantId, tenant.ctx.slug));
+    const ourQuotaRows = auditRows.filter(
+      (r) =>
+        (QUOTA_EVENT_TYPES as readonly string[]).includes(
+          r.eventType as string,
+        ) &&
+        (r.payload as Record<string, unknown> | null)?.['registrationId'] ===
+          registrationId,
+    );
+    expect(ourQuotaRows.length).toBe(0);
+
+    // Sanity: the expected non_member audit row IS present (positive
+    // control so a future bug that silences ALL audit emits on this
+    // path doesn't pass the negative assertion alone).
+    const nonMemberRows = auditRows.filter(
+      (r) =>
+        (r.eventType as string) === 'attendee_non_member' &&
+        (r.payload as Record<string, unknown> | null)?.['registrationId'] ===
+          registrationId,
+    );
+    expect(nonMemberRows.length).toBe(1);
+  });
 });

@@ -20,6 +20,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import {
   MATCH_TYPES,
@@ -126,17 +127,33 @@ export async function GET(
   // trim `q` and treat whitespace-only
   // as null so the repo doesn't hit ilike with an empty pattern.
   const trimmedQ = parsed.data.q?.trim();
-  // wrap raw runInTenant rejection path.
+  // R6-W3 staff-review fix (2026-05-13): wrap use-case dispatch in an
+  // OTel root span so SLO-F6-003 (admin detail p95 < 800ms) is
+  // measurable. Attributes bounded-cardinality only — eventId is NOT
+  // included verbatim (could be probing PII / unbounded label) but
+  // page/pageSize/has_q/unmatchedOnly are safe to surface.
   let result: Awaited<ReturnType<typeof runLoadEventDetail>>;
   try {
-    result = await runLoadEventDetail(tenantCtx.slug, {
-      eventId,
-      page: parsed.data.page,
-      pageSize: parsed.data.pageSize,
-      matchTypeFilter: parsed.data.matchTypeFilter ?? null,
-      unmatchedOnly: parsed.data.unmatchedOnly,
-      q: trimmedQ && trimmedQ.length > 0 ? trimmedQ : null,
-    });
+    result = await withActiveSpan(
+      eventsTracer(),
+      'admin_events_detail',
+      {
+        'tenant.id': tenantCtx.slug,
+        'f6.page': parsed.data.page,
+        'f6.page_size': parsed.data.pageSize,
+        'f6.unmatched_only': parsed.data.unmatchedOnly,
+        'f6.has_search_query': !!(trimmedQ && trimmedQ.length > 0),
+      },
+      async () =>
+        runLoadEventDetail(tenantCtx.slug, {
+          eventId,
+          page: parsed.data.page,
+          pageSize: parsed.data.pageSize,
+          matchTypeFilter: parsed.data.matchTypeFilter ?? null,
+          unmatchedOnly: parsed.data.unmatchedOnly,
+          q: trimmedQ && trimmedQ.length > 0 ? trimmedQ : null,
+        }),
+    );
   } catch (e) {
     logger.error(
       {

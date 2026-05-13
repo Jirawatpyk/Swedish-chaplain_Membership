@@ -447,6 +447,26 @@ describe('T053 — GET /api/admin/events (list contract)', () => {
     expect(res.status).toBe(200);
   });
 
+  it('R6-W7 — unknown role string returns 404 (mutation-guard against role-gate inversion)', async () => {
+    // R6-W7 staff-review fix (2026-05-13): an accidental inversion
+    // of the role gate (`if (role === 'admin' || role === 'manager')`)
+    // would still pass the admin/manager/member happy-path triad
+    // because they cover the three KNOWN roles. An unexpected role
+    // string distinguishes the additive-allow-list (correct) from a
+    // subtractive-deny-list (incorrect). The role gate is structured
+    // as deny-by-default; this test pins that semantics.
+    getCurrentSessionMock.mockResolvedValueOnce({
+      user: {
+        id: 'u-superadmin',
+        email: 'superadmin@example.com',
+        role: 'superadmin' as unknown as 'member',
+      },
+    });
+    const { GET } = await loadListRoute();
+    const res = await GET(buildListRequest());
+    expect(res.status).toBe(404);
+  });
+
   it('404 Not Found — member role returns 404 per FR-035 surface disclosure', async () => {
     getCurrentSessionMock.mockResolvedValueOnce({
       user: {
