@@ -108,9 +108,14 @@ export function RotateSecretDialog({
           <WebhookSecretReveal
             secret={rotationResult.secret}
             secretLastFour={rotationResult.secretLastFour}
-            onConfirmSaved={() => {
-              /* Wizard-style checkbox; primary action stays the
-                 dialog's "Acknowledge" button. */
+            onContinue={() => {
+              /* Rotation dialog's primary action is the
+                 ConfirmationDialog's own "Acknowledge" button below;
+                 the embedded WebhookSecretReveal's Continue button is
+                 a no-op secondary path here. Both end up closing the
+                 dialog via `onRotationAcknowledged`. */
+              onRotationAcknowledged();
+              handleOpenChange(false);
             }}
           />
         </div>

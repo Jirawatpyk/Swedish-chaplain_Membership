@@ -2443,7 +2443,8 @@
           "copyFailed": "คัดลอกไม่สำเร็จ — กรุณาเลือกและคัดลอกด้วยตนเอง",
           "warning": "บันทึกค่านี้ในโปรแกรมจัดการรหัสผ่านทันที จะไม่แสดงอีกครั้ง",
           "savedInPasswordManager": "ฉันได้บันทึกคีย์นี้ในโปรแกรมจัดการรหัสผ่านแล้ว",
-          "savedHint": "ยืนยัน 4 ตัวสุดท้าย: {lastFour}"
+          "savedHint": "ยืนยัน 4 ตัวสุดท้าย: {lastFour}",
+          "continueToSetup": "ไปขั้นตอนตั้งค่า Zapier"
         },
         "phaseB": {
           "title": "เชื่อมต่อ EventCreate ผ่าน Zapier",

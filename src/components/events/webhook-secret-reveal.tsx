@@ -31,14 +31,22 @@ export interface WebhookSecretRevealProps {
   readonly secret: string;
   /** Last 4 chars (for the "saved-as" reminder beside the checkbox). */
   readonly secretLastFour: string;
-  /** Fires when the user ticks the "saved" checkbox — wizard advances. */
-  readonly onConfirmSaved: () => void;
+  /**
+   * Fires when the user clicks "Continue to Zapier setup" AFTER ticking
+   * the "saved in password manager" checkbox. The explicit Continue
+   * button (verify-fix 2026-05-13) replaced an earlier auto-advance-on-
+   * checkbox callback that unmounted this component mid-state-update,
+   * causing a Playwright race condition + occasional missed advances
+   * in production. The button stays disabled until the checkbox is
+   * ticked (FR-024 gate preserved).
+   */
+  readonly onContinue: () => void;
 }
 
 export function WebhookSecretReveal({
   secret,
   secretLastFour,
-  onConfirmSaved,
+  onContinue,
 }: WebhookSecretRevealProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseA');
   const [visible, setVisible] = useState(false);
@@ -80,7 +88,8 @@ export function WebhookSecretReveal({
 
   function handleSavedChange(value: boolean) {
     setSaved(value);
-    if (value) onConfirmSaved();
+    // No longer auto-advances. The "Continue" button below is enabled
+    // when `saved === true` and explicitly invokes `onContinue`.
   }
 
   return (
@@ -155,6 +164,19 @@ export function WebhookSecretReveal({
             </p>
           </div>
         </div>
+
+        {/* Explicit Continue button (verify-fix 2026-05-13). Disabled
+            until the saved-checkbox is ticked — preserves FR-024 gate
+            without the race-condition risk of auto-advance-on-tick. */}
+        <Button
+          type="button"
+          onClick={onContinue}
+          disabled={!saved}
+          aria-disabled={!saved}
+          className="min-h-11 self-end"
+        >
+          {t('continueToSetup')}
+        </Button>
       </CardContent>
     </Card>
   );

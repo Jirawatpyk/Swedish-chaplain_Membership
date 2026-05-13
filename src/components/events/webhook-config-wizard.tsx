@@ -127,7 +127,7 @@ export function WebhookConfigWizard(props: WebhookConfigWizardProps) {
     }
   }
 
-  function handleConfirmSaved() {
+  function handleContinueFromReveal() {
     setPhase('b-walkthrough');
   }
 
@@ -168,7 +168,7 @@ export function WebhookConfigWizard(props: WebhookConfigWizardProps) {
           <WebhookSecretReveal
             secret={generated.secret}
             secretLastFour={generated.secretLastFour}
-            onConfirmSaved={handleConfirmSaved}
+            onContinue={handleContinueFromReveal}
           />
         </div>
       )}

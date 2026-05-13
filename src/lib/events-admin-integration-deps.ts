@@ -233,9 +233,31 @@ export async function runLoadIntegrationConfig(
 
     const recent: RecentDelivery[] = [];
     for (const row of rows) {
-      const processingOutcome = extractProcessingOutcome(row.payload);
-      const isShortCircuit = processingOutcome === 'short_circuited_test';
-      if (!options.includeTestDeliveries && isShortCircuit) continue;
+      // Verify-fix (2026-05-13) — bug surfaced via manual smoke-test:
+      // the toggle was broken because the previous filter checked
+      // `processingOutcome === 'short_circuited_test'` but the
+      // `webhook_test_invoked` audit payload has NO `processingOutcome`
+      // field (per audit-port.ts:189-194 the payload is just
+      // {severity, actorUserId, testRequestId, durationMs}). The
+      // extraction always returned null → filter was a no-op → test
+      // rows leaked into the panel regardless of toggle state.
+      //
+      // Correct identifier for a test row is the event_type itself.
+      // Receiver emits `webhook_test_invoked` ONLY for short-circuit
+      // paths (sentinel external IDs); no production webhook delivery
+      // uses this event type. Filtering by `eventType` is therefore
+      // equivalent to "this is a synthetic test delivery".
+      //
+      // Cast to `string` because the Drizzle `auditEventTypeEnum` TS
+      // literal union (src/modules/auth/infrastructure/db/schema.ts:45)
+      // doesn't include F6's enum extensions added via SQL `ALTER TYPE`
+      // in migration 0132 — same reason pino-audit-port.ts:90-95 uses
+      // raw `::audit_event_type` SQL cast at the INSERT site.
+      const isTestRow = (row.eventType as string) === 'webhook_test_invoked';
+      if (!options.includeTestDeliveries && isTestRow) continue;
+      const processingOutcome = isTestRow
+        ? 'short_circuited_test'
+        : extractProcessingOutcome(row.payload);
       recent.push({
         receivedAt: new Date(row.timestamp).toISOString(),
         requestId: row.requestId,

@@ -2443,7 +2443,8 @@
           "copyFailed": "Kopiering misslyckades — markera och kopiera manuellt",
           "warning": "Spara värdet i en lösenordshanterare omedelbart. Det visas inte igen.",
           "savedInPasswordManager": "Jag har sparat nyckeln i en lösenordshanterare",
-          "savedHint": "Bekräfta sista 4: {lastFour}"
+          "savedHint": "Bekräfta sista 4: {lastFour}",
+          "continueToSetup": "Fortsätt till Zapier-installation"
         },
         "phaseB": {
           "title": "Anslut EventCreate via Zapier",

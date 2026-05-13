@@ -2443,7 +2443,8 @@
           "copyFailed": "Copy failed — select and copy manually",
           "warning": "Store this value in a password manager now. It will not be shown again.",
           "savedInPasswordManager": "I've saved this secret in a password manager",
-          "savedHint": "Confirm last 4: {lastFour}"
+          "savedHint": "Confirm last 4: {lastFour}",
+          "continueToSetup": "Continue to Zapier setup"
         },
         "phaseB": {
           "title": "Connect EventCreate via Zapier",
