@@ -234,9 +234,16 @@ export default async function AdminEventDetailPage({
         aria-labelledby="attendees-heading"
         className="flex flex-col gap-4"
       >
-        <h3 id="attendees-heading" className="text-h3 font-semibold">
+        {/* R6-B5 staff-review fix (2026-05-13): h3 → h2 to close the
+            heading-level skip (PageHeader emits h1; EventDetailHeader
+            intentionally renders no heading). WCAG 2.1 SC 1.3.1 (Info
+            and Relationships, Level A): skipping a heading level
+            signals a missing section to AT users. Visual `text-h3`
+            class preserves the existing size — semantic level and
+            visual size are decoupled. */}
+        <h2 id="attendees-heading" className="text-h3 font-semibold">
           {t('attendees.heading')}
-        </h3>
+        </h2>
         <AttendeeTable
           rows={
             registrations.map((r) => ({

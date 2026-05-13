@@ -142,6 +142,27 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
     [searchInput, searchParams, pushUrl],
   );
 
+  // R6-W12 staff-review fix (2026-05-13): clear-on-Escape handler.
+  // `<Input type="search">` renders the native browser X clear button
+  // on most desktop browsers but it is absent on iOS Safari and some
+  // Android WebViews and has no keyboard equivalent. The Escape key
+  // both clears the local input state AND strips `q` + `page` from
+  // the URL so the table snaps back to the unfiltered view. No-op
+  // when the input is already empty (avoids a useless URL push).
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key !== 'Escape') return;
+      if (searchInput === '' && !searchParams.has('q')) return;
+      e.preventDefault();
+      setSearchInput('');
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete('q');
+      next.delete('page');
+      pushUrl(next);
+    },
+    [searchInput, searchParams, pushUrl],
+  );
+
   return (
     <div className="flex flex-col gap-4" aria-busy={isPending}>
       <div className="flex flex-wrap items-center gap-2">
@@ -150,6 +171,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
             type="search"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             placeholder={t('searchPlaceholder')}
             aria-label={t('searchLabel')}
             className="max-w-md"
@@ -282,7 +304,13 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                     {!r.countedAgainstPartnership &&
                       !r.countedAgainstCulturalQuota &&
                       !r.isOverQuota && (
-                        <Badge variant="outline" className="text-muted-foreground">
+                        // R6-B4 staff-review fix (2026-05-13): dropped
+                        // `text-muted-foreground` override which produced
+                        // ~2:1 contrast on the white card (WCAG 1.4.3
+                        // fail). Default `Badge variant="outline"` text
+                        // already clears 4.5:1; outline-only border
+                        // preserves the de-emphasis intent.
+                        <Badge variant="outline">
                           {tQuota('none')}
                         </Badge>
                       )}

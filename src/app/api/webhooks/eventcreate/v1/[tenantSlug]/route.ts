@@ -43,6 +43,7 @@ import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { eventsTracer } from '@/lib/otel-tracer';
+import { redactStack } from '@/lib/redact-stack';
 import { asTenantId } from '@/modules/members';
 import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import {
@@ -214,13 +215,19 @@ async function safeEmitStandalone<T extends F6AuditEventType>(
   try {
     await deps.emitStandalone(entry);
   } catch (auditErr) {
+    // R6-W2 staff-review fix (2026-05-13): scrub container paths +
+    // node_modules + webpack-internal:/// from the stack before the
+    // pino sink. Pino REDACT_PATHS does not match `errStack` (it is
+    // not on the wildcard list); explicit redaction here closes the
+    // gap that R008 originally fixed for the wrapRepoError path.
+    const rawStack = auditErr instanceof Error ? auditErr.stack : null;
     logger.error(
       {
         event: failCtx.logEvent,
         tenantSlug: failCtx.tenantSlug,
         errName: auditErr instanceof Error ? auditErr.name : 'unknown',
         errMessage: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        errStack: auditErr instanceof Error ? auditErr.stack : null,
+        errStack: rawStack === null ? null : (redactStack(rawStack) ?? null),
       },
       failCtx.logMsg,
     );
@@ -261,7 +268,15 @@ export async function POST(
     return notFoundResponse();
   }
 
-  const rawRequestId = request.headers.get('x-request-id')?.trim() ?? '';
+  // R6-W1 staff-review fix (2026-05-13): cap the header at 200 chars
+  // before any further use. Both `audit_log.request_id` and
+  // `eventcreate_idempotency_receipts.request_id` are unbounded text
+  // columns; without this cap a sustained Upstash-fail-open attack
+  // window could push 64-KiB request IDs into 600k+ audit rows over
+  // the 7-day idempotency window. The 200-char cap matches the eventId
+  // cap set by Phase 4 round-5 R002.
+  const rawRequestId =
+    (request.headers.get('x-request-id')?.trim() ?? '').slice(0, 200);
   const requestId = rawRequestId.length > 0 ? rawRequestId : NO_REQUEST_ID;
   const sourceIp =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??

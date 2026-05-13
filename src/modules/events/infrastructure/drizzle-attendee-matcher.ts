@@ -89,16 +89,24 @@ export function makeDrizzleAttendeeMatcher(
 
         // --- Rule 2: domain match (skip if personal email) --------------
         if (domain.length > 0 && !isPersonalEmail(input.attendeeEmail)) {
-          // Find distinct member_ids whose contacts have emails in the
-          // attendee's domain.
-          const domainSuffix = `%@${domain}`;
+          // R6-B6 staff-review fix (2026-05-13): escape LIKE wildcards
+          // in the domain segment before composing the pattern. A
+          // domain containing `_` or `%` (e.g., `company_name.com`)
+          // would otherwise over-match unrelated contacts and silently
+          // resolve as `member_domain` against the wrong member. The
+          // `\` ESCAPE clause must be paired in the SQL fragment.
+          // (Drizzle parameterises the value so no SQL injection
+          // existed, but the semantic correctness is what this fix
+          // restores.)
+          const escapedDomain = domain.replace(/\\/g, '\\\\').replace(/_/g, '\\_').replace(/%/g, '\\%');
+          const domainSuffix = `%@${escapedDomain}`;
           const domainRows = await executor
             .selectDistinct({ memberId: contacts.memberId })
             .from(contacts)
             .where(
               and(
                 eq(contacts.tenantId, input.tenantId),
-                sql`lower(${contacts.email}) LIKE ${domainSuffix}`,
+                sql`lower(${contacts.email}) LIKE ${domainSuffix} ESCAPE '\\'`,
               ),
             )
             .limit(2);

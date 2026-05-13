@@ -540,6 +540,25 @@ export const REDACT_PATHS = [
   'attendeeEmail',
   '*.attendeeEmail',
   '*.*.attendeeEmail',
+  // R6-S20 staff-review fix (2026-05-13, PDPA M-6): attendee name +
+  // company are PII under PDPA/GDPR. The audit-replay path emits
+  // `webhook_rolled_back` and `webhook_signature_rejected` payloads
+  // that may include `attendee_name` / `attendee_company` if a future
+  // audit shape extension lands. Add explicit redact paths now so any
+  // future emit is suppressed by default. Both snake-case + camelCase
+  // depth-2 — same pattern as attendee_email above.
+  'attendee_name',
+  '*.attendee_name',
+  '*.*.attendee_name',
+  'attendeeName',
+  '*.attendeeName',
+  '*.*.attendeeName',
+  'attendee_company',
+  '*.attendee_company',
+  '*.*.attendee_company',
+  'attendeeCompany',
+  '*.attendeeCompany',
+  '*.*.attendeeCompany',
   // F6 deterministic pseudonymisation salt — env var name + camelCase
   // accessor shape on `env.eventcreate.piiPseudonymSalt`. A leak would
   // let an attacker pre-compute pseudonyms for non-member registrations

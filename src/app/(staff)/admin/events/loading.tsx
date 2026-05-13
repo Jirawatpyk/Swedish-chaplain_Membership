@@ -11,13 +11,17 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function EventsListLoading() {
+  // R6-W11 staff-review fix (2026-05-13): wrap Skeleton inside the
+  // PageHeader `<h1>` slot in `<span aria-hidden>` so VoiceOver does
+  // not announce "heading level 1" with no label. Card carries
+  // `aria-hidden` for the same reason as the detail loading skeleton.
   return (
     <TableContainer>
       <PageHeader
-        title={<Skeleton className="h-7 w-44" />}
-        subtitle={<Skeleton className="h-4 w-64" />}
+        title={<span aria-hidden><Skeleton className="h-7 w-44" /></span>}
+        subtitle={<Skeleton className="h-4 w-64" aria-hidden />}
       />
-      <Card>
+      <Card aria-hidden>
         <CardContent className="flex flex-col gap-4">
           <div className="flex gap-2" aria-hidden>
             {Array.from({ length: 3 }).map((_, i) => (

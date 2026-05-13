@@ -44,6 +44,7 @@
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
+import { redactStack } from '@/lib/redact-stack';
 import { asTenantId } from '@/modules/members';
 import {
   EventCreatePayloadV1,
@@ -595,7 +596,13 @@ export async function ingestWebhookAttendee(
   } catch (e) {
     errorMessage = e instanceof Error ? e.message : String(e);
     const stage: FailureStage = e instanceof TxStageError ? e.stage : failureStage;
-    const errorStack = e instanceof Error && e.stack ? e.stack : null;
+    // R6-W2 staff-review fix (2026-05-13): scrub Vercel container
+    // paths + macOS /private/* + node_modules + webpack-internal:///
+    // from the stack BEFORE persisting to the 5-year audit row. The
+    // pre-redaction stack is never written anywhere — only the
+    // sanitised version reaches `audit_log.payload.errorStack`.
+    const rawStack = e instanceof Error && e.stack ? e.stack : null;
+    const errorStack = rawStack === null ? null : (redactStack(rawStack) ?? null);
 
     // FR-037 dual-write fallback: emit `webhook_rolled_back` in a
     // SEPARATE tx so the audit row commits even though the primary tx

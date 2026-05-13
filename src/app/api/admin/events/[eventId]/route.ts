@@ -21,7 +21,12 @@ import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
-import { MATCH_TYPES } from '@/modules/events';
+import {
+  MATCH_TYPES,
+  makeStandaloneAuditDeps,
+} from '@/modules/events';
+import { asTenantId } from '@/modules/members';
+import { asUserId } from '@/modules/auth';
 import { clampPageSize, coerceBoolean } from '../_lib/query-helpers';
 import { emitEventsRoleViolation } from '../_lib/role-violation-audit';
 
@@ -149,36 +154,71 @@ export async function GET(
 
   if (!result.ok) {
     if (result.error.kind === 'not_found') {
-      // emit a soft cross-tenant probe
-      // marker at the admin detail route on every 404. The RLS layer
-      // cannot reliably distinguish "row missing" from "row exists in
-      // another tenant" without a root-db probe (which itself is a
-      // potential information-leak surface). Instead, we log every
-      // admin 404 with a hashed eventId so security review can
-      // correlate enumeration patterns post-hoc. The full
-      // `cross_tenant_probe` audit emit is reserved for the webhook
-      // path where the cross-tenant signal is definitive (signed-by
-      // A delivered to B).
-      // reuse the cached `tenantCtx.slug` from the
-      // earlier successful resolve (line ~170) instead of calling
-      // `resolveTenantFromRequest(request).slug` a second time. The
-      // second call was unguarded — a mid-request host-header anomaly
-      // would throw to the framework, hiding the 404 audit log AND
-      // returning a 500 error page instead of the surface-disclosure
-      // 404. Caching avoids both the double-resolve cost AND the
-      // failure-mode divergence.
+      // R6-B7 staff-review fix (2026-05-13): emit a durable
+      // `cross_tenant_probe` audit row IN ADDITION to the ephemeral
+      // `logger.warn` marker below. Constitution v1.4.0 Principle I
+      // sub-clause 4: "cross-tenant access attempts (even failed
+      // ones) MUST be logged as high-severity security events."
+      // RLS cannot distinguish "row missing" from "row exists in
+      // another tenant" without a root-db probe (itself a leak
+      // surface). Emitting the audit at every 404 means SREs get a
+      // 5-year durable trail to correlate enumeration patterns —
+      // logger.warn alone rotates within days.
+      //
+      // For admin surface: `probedTenantId === signedTenantId` (no
+      // signature; the actor is authorised for their tenant and
+      // probed an eventId not present in it). Audit-emit failure
+      // MUST NEVER block the 404 — wrap in try/catch (mirrors the
+      // FR-035 role_violation_blocked emit pattern).
+      const eventIdHash = crypto
+        .createHash('sha256')
+        .update(eventId)
+        .digest('hex')
+        .slice(0, 16);
+      try {
+        const auditDeps = makeStandaloneAuditDeps();
+        await auditDeps.emitStandalone({
+          eventType: 'cross_tenant_probe',
+          tenantId: asTenantId(tenantCtx.slug),
+          actorType: session.user.role === 'admin' ? 'admin' : 'manager',
+          actorUserId: asUserId(session.user.id),
+          occurredAt: new Date(),
+          summary: `admin event-detail 404 — possible enumeration probe (event_id_hash=${eventIdHash})`,
+          payload: {
+            severity: 'warn',
+            probedTenantId: asTenantId(tenantCtx.slug),
+            signedTenantId: asTenantId(tenantCtx.slug),
+            sourceIp:
+              request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+              request.headers.get('x-real-ip') ??
+              'unknown',
+            requestId: request.headers.get('x-request-id') ?? null,
+            attemptedRoute: `/api/admin/events/${eventIdHash}`,
+          },
+        });
+      } catch (auditErr) {
+        // Audit emit failure must not block 404 — log + continue.
+        logger.error(
+          {
+            event: 'f6_admin_cross_tenant_probe_audit_failed',
+            tenantSlug: tenantCtx.slug,
+            errName: auditErr instanceof Error ? auditErr.name : 'unknown',
+          },
+          '[F6] admin cross_tenant_probe audit emit failed (suppressed — 404 still returned)',
+        );
+      }
+      // Preserve the ephemeral pino marker too — gives SRE
+      // dashboards a faster signal than waiting for audit_log
+      // aggregation. event_id_hash matches the audit summary line
+      // for correlation across both sinks.
       logger.warn(
         {
           event: 'admin_event_detail_not_found',
           actor_user_id: session.user.id,
           tenant_slug: tenantCtx.slug,
-          event_id_hash: crypto
-            .createHash('sha256')
-            .update(eventId)
-            .digest('hex')
-            .slice(0, 16),
+          event_id_hash: eventIdHash,
         },
-        '[F6] admin event-detail 404 — soft cross-tenant-probe marker',
+        '[F6] admin event-detail 404 — cross-tenant-probe (audit emitted)',
       );
       return new NextResponse(null, { status: 404 });
     }

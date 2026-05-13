@@ -65,8 +65,14 @@ const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
   },
   non_member: {
     Icon: Circle,
-    badgeClass:
-      'border-border text-muted-foreground',
+    // R6-B3 staff-review fix (2026-05-13): `text-muted-foreground`
+    // (oklch 0.515) measured ~2:1 against the white card surface
+    // (oklch 1.000) — well below the WCAG 2.1 SC 1.4.3 4.5:1 floor
+    // for normal-weight text. `text-foreground` clears ~18:1 light /
+    // ~14:1 dark. The visual de-emphasis intent is preserved by the
+    // outline-only border + Circle icon vs. the filled green tick on
+    // `member_contact`.
+    badgeClass: 'border-border text-foreground',
   },
   unmatched: {
     Icon: AlertTriangle,

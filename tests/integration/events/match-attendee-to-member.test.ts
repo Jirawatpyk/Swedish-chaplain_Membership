@@ -146,6 +146,56 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
     }
   });
 
+  it('Rule 2 LIKE-wildcard escape (R6-B6) — domain containing `_` does NOT over-match similarly-shaped domains', async () => {
+    // Seed a fresh member with a contact at a domain containing a
+    // literal underscore. Without the round-6 B6 escape fix, the
+    // generated SQL pattern `%@evil_domain.com` would treat `_` as a
+    // wildcard and over-match `evilXdomain.com` / `evilYdomain.com`
+    // etc., silently resolving as `member_domain` against the wrong
+    // member. With the escape fix the underscore is treated literally
+    // and `evilXdomain.com` falls through to `non_member`.
+    const memberLikeProbeId = randomUUID();
+    const contactLikeProbeId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: memberLikeProbeId,
+        companyName: 'LIKE-Escape Probe Co.',
+        country: 'SE',
+        planId: PLAN_ID,
+        planYear: 2026,
+        status: 'active',
+      } as unknown as typeof members.$inferInsert);
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: contactLikeProbeId,
+        memberId: memberLikeProbeId,
+        email: 'probe@evil_domain.example',
+        firstName: 'Like',
+        lastName: 'Probe',
+        isPrimary: true,
+      } as unknown as typeof contacts.$inferInsert);
+    });
+    // Attempt to match an attendee at `evilXdomain.example` — without
+    // ESCAPE this would falsely resolve to the LIKE-probe member.
+    const result = await runInTenant(tenant.ctx, async (tx) => {
+      const matcher = makeDrizzleAttendeeMatcher(tx);
+      return matchAttendeeToMember(
+        {
+          tenantId: asTenantId(tenant.ctx.slug),
+          attendeeEmail: asAttendeeEmail('attendee@evilXdomain.example'),
+          attendeeCompany: null,
+        },
+        { matcher },
+      );
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Must NOT match the LIKE-probe member via wildcard expansion.
+      expect(result.value.resolution.type).toBe('non_member');
+    }
+  });
+
   it('Rule 2 skipped — personal email (gmail.com) on deny list does NOT fall through to domain match', async () => {
     // Even if a member has a gmail contact, an attendee with gmail
     // email must NOT match by domain (would false-positive every

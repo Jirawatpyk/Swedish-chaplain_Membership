@@ -2341,7 +2341,7 @@
           },
           "allArchived": {
             "title": "Alla evenemang är arkiverade",
-            "body": "{count, plural, one {# evenemang har arkiverats.} other {# evenemang har arkiverats.}}",
+            "body": "{count, plural, one {1 evenemang har arkiverats.} other {# evenemang har arkiverats.}}",
             "cta": "Visa arkiverade evenemang"
           }
         }

@@ -356,7 +356,7 @@ async function EmptyState({
           href="/admin/integrations/eventcreate"
           className={buttonVariants({ variant: 'default' })}
         >
-          <PlusIcon className="size-4" />
+          <PlusIcon aria-hidden="true" className="size-4" />
           {t('noIntegration.cta')}
         </Link>
       </div>

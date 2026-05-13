@@ -953,6 +953,13 @@
       "when": 1794124800000,
       "tag": "0135_f6_force_expire_grace_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "7",
+      "when": 1794211200000,
+      "tag": "0136_f6_event_registrations_non_member_no_contact_check",
+      "breakpoints": true
     }
   ]
 }
