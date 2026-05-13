@@ -19,6 +19,8 @@ import { Loader2Icon, SendIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
+import { parseRetryAfterSeconds } from '@/lib/http/parse-retry-after';
+import { adminPost } from '@/lib/http/admin-post';
 import type { RunTestWebhookOutcome } from '@/modules/events';
 
 /**
@@ -47,26 +49,14 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
     setLoading(true);
     setAnnouncement(t('inProgress'));
     try {
-      const res = await fetch(
+      // Round 3 S-H3 — shared `adminPost` replaces the boilerplate.
+      const res = await adminPost(
         '/api/admin/integrations/eventcreate/test-webhook',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Idempotency-Key': crypto.randomUUID(),
-          },
-          body: '{}',
-        },
       );
       if (res.status === 429) {
-        // Round 2 SF-LOW8 fix (2026-05-13) — surface the `Retry-After`
-        // seconds in the toast copy so the admin knows how long to
-        // wait. Route emits `Retry-After: <seconds>` + a problem-body
-        // `detail` containing the same value.
-        const retryAfterRaw = res.headers.get('Retry-After');
-        const retryAfter = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : null;
+        const retryAfter = parseRetryAfterSeconds(res);
         const message =
-          retryAfter !== null && Number.isFinite(retryAfter) && retryAfter > 0
+          retryAfter !== null
             ? t('rateLimitedWithRetry', { seconds: retryAfter })
             : t('rateLimited');
         toast.error(message);
@@ -74,10 +64,11 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         return;
       }
       if (!res.ok) {
-        // Round 2 simplifier P1 (2026-05-13) — shared
-        // `parseProblemDetail` helper. Surfaces distinct copy for
-        // 404 (kill-switch) vs 500 (audit-fail) vs 503.
-        const message = await parseProblemDetail(res, t('serverError'));
+        const message = await parseProblemDetail(
+          res,
+          t('serverError'),
+          'test-webhook',
+        );
         toast.error(message);
         setAnnouncement(message);
         return;

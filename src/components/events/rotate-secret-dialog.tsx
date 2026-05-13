@@ -18,6 +18,8 @@ import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { WebhookSecretReveal } from './webhook-secret-reveal';
 import { formatGraceTimestamp } from '@/lib/format-grace-timestamp';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
+import { parseRetryAfterSeconds } from '@/lib/http/parse-retry-after';
+import { adminPost } from '@/lib/http/admin-post';
 
 export interface RotateSecretDialogProps {
   readonly open: boolean;
@@ -51,35 +53,26 @@ export function RotateSecretDialog({
 
   async function handleConfirm() {
     try {
-      const res = await fetch(
+      // Round 3 S-H3 — shared `adminPost` replaces the boilerplate.
+      const res = await adminPost(
         '/api/admin/integrations/eventcreate/rotate-secret',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Idempotency-Key': crypto.randomUUID(),
-          },
-          body: '{}',
-        },
       );
       if (res.status === 429) {
-        // Round 2 SF-LOW8 fix (2026-05-13) — surface the `Retry-After`
-        // seconds in the toast so admin knows how long to wait.
-        const retryAfterRaw = res.headers.get('Retry-After');
-        const retryAfter = retryAfterRaw ? Number.parseInt(retryAfterRaw, 10) : null;
+        // Round 3 S-M1 — shared `parseRetryAfterSeconds` returns `null`
+        // for missing/non-integer/zero/negative values, with a forensic
+        // console.warn for HTTP-date form (M-err-4).
+        const retryAfter = parseRetryAfterSeconds(res);
         toast.error(
-          retryAfter !== null && Number.isFinite(retryAfter) && retryAfter > 0
+          retryAfter !== null
             ? t('rateLimitedWithRetry', { seconds: retryAfter })
             : t('rateLimited'),
         );
         return;
       }
       if (!res.ok) {
-        // Round 2 simplifier P1 (2026-05-13) — shared
-        // `parseProblemDetail` helper. Surfaces distinct copy for
-        // 404 (kill-switch) vs 500 (DB outage / audit-emit-failed)
-        // vs 503 (read-only).
-        toast.error(await parseProblemDetail(res, t('failed')));
+        toast.error(
+          await parseProblemDetail(res, t('failed'), 'rotate-secret'),
+        );
         return;
       }
       const body = (await res.json()) as RotationResult & { ok: true };
@@ -99,10 +92,16 @@ export function RotateSecretDialog({
 
   // Reset state when the dialog closes (so a follow-up open doesn't
   // flash the previous secret).
-  function handleOpenChange(next: boolean) {
+  //
+  // Round 3 M-code-2 (2026-05-13) — accepts an `acknowledgedAlready`
+  // flag from the explicit Acknowledge-button paths so we don't emit
+  // `onRotationAcknowledged()` twice when the dialog closes via the
+  // confirm-button (which already calls it inline). The previous
+  // version emitted on both confirm AND close → two `router.refresh()`
+  // calls per acknowledgement.
+  function handleOpenChange(next: boolean, acknowledgedAlready = false) {
     if (!next) {
-      if (rotationResult) {
-        // Acknowledge the rotation before closing so parent refreshes.
+      if (rotationResult && !acknowledgedAlready) {
         onRotationAcknowledged();
       }
       setRotationResult(null);
@@ -128,7 +127,7 @@ export function RotateSecretDialog({
         cancelLabel={t('close')}
         onConfirm={() => {
           onRotationAcknowledged();
-          handleOpenChange(false);
+          handleOpenChange(false, true);
         }}
       >
         <div className="py-2">
@@ -144,7 +143,7 @@ export function RotateSecretDialog({
                  dialog-close call so the admin gets to either trigger
                  from either click target. */
               onRotationAcknowledged();
-              handleOpenChange(false);
+              handleOpenChange(false, true);
             }}
           />
         </div>

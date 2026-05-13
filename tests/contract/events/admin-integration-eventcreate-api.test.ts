@@ -43,7 +43,7 @@ const runLoadIntegrationConfigMock = vi.fn();
 const runGenerateWebhookSecretMock = vi.fn();
 const runRotateWebhookSecretMock = vi.fn();
 const runRunTestWebhookMock = vi.fn();
-const runDisableIngestMock = vi.fn();
+const runToggleIngestMock = vi.fn();
 const rotateSecretRateLimitCheckMock = vi.fn();
 const testWebhookRateLimitCheckMock = vi.fn();
 
@@ -56,13 +56,13 @@ vi.mock('@/lib/events-admin-integration-deps', () => ({
   runGenerateWebhookSecret: (...args: unknown[]) => runGenerateWebhookSecretMock(...args),
   runRotateWebhookSecret: (...args: unknown[]) => runRotateWebhookSecretMock(...args),
   runRunTestWebhook: (...args: unknown[]) => runRunTestWebhookMock(...args),
-  // Round 2 simplifier P3 (2026-05-13) — canonical name only;
-  // `runDisableIngest` deprecated alias was dropped this round.
-  // Variable name kept (`runDisableIngestMock`) for test-mock
-  // historical clarity; could be renamed in a follow-up sweep.
-  runToggleIngest: (...args: unknown[]) => runDisableIngestMock(...args),
+  runToggleIngest: (...args: unknown[]) => runToggleIngestMock(...args),
   rotateSecretRateLimitCheck: (...args: unknown[]) => rotateSecretRateLimitCheckMock(...args),
   testWebhookRateLimitCheck: (...args: unknown[]) => testWebhookRateLimitCheckMock(...args),
+  // Round 3 M-type-5 — route imports `asBoundedReason` to brand the
+  // disable-route `reason`. Mock passes the raw string through so
+  // existing call-argument assertions still match.
+  asBoundedReason: (s: string) => s,
 }));
 
 vi.mock('@/lib/auth-session', () => ({
@@ -565,7 +565,7 @@ describe('POST /api/admin/integrations/eventcreate/test-webhook', () => {
 
 describe('POST /api/admin/integrations/eventcreate/disable', () => {
   it('200 when admin disables ingest with reason', async () => {
-    runDisableIngestMock.mockResolvedValueOnce({ ok: true, value: { enabled: false } });
+    runToggleIngestMock.mockResolvedValueOnce({ ok: true, value: { enabled: false } });
     const { POST } = await loadDisableRoute();
     const res = await POST(
       buildPost('disable', { enabled: false, reason: 'incident response' }),
@@ -573,7 +573,7 @@ describe('POST /api/admin/integrations/eventcreate/disable', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.enabled).toBe(false);
-    expect(runDisableIngestMock).toHaveBeenCalledWith(
+    expect(runToggleIngestMock).toHaveBeenCalledWith(
       TENANT_SLUG,
       ADMIN_USER_ID,
       expect.objectContaining({ enabled: false, reason: 'incident response' }),
@@ -581,7 +581,7 @@ describe('POST /api/admin/integrations/eventcreate/disable', () => {
   });
 
   it('200 when admin re-enables ingest', async () => {
-    runDisableIngestMock.mockResolvedValueOnce({ ok: true, value: { enabled: true } });
+    runToggleIngestMock.mockResolvedValueOnce({ ok: true, value: { enabled: true } });
     const { POST } = await loadDisableRoute();
     const res = await POST(
       buildPost('disable', { enabled: true, reason: 'incident resolved' }),
@@ -595,7 +595,7 @@ describe('POST /api/admin/integrations/eventcreate/disable', () => {
     const { POST } = await loadDisableRoute();
     const res = await POST(buildPost('disable', { enabled: false }));
     expect(res.status).toBe(400);
-    expect(runDisableIngestMock).not.toHaveBeenCalled();
+    expect(runToggleIngestMock).not.toHaveBeenCalled();
   });
 
   it('400 when body is malformed (non-boolean enabled)', async () => {
@@ -617,11 +617,11 @@ describe('POST /api/admin/integrations/eventcreate/disable', () => {
         payload: expect.objectContaining({ attemptedAction: 'disable_ingest' }),
       }),
     );
-    expect(runDisableIngestMock).not.toHaveBeenCalled();
+    expect(runToggleIngestMock).not.toHaveBeenCalled();
   });
 
   it('404 when use-case returns not_found (no config row exists)', async () => {
-    runDisableIngestMock.mockResolvedValueOnce({
+    runToggleIngestMock.mockResolvedValueOnce({
       ok: false,
       error: { kind: 'not_found' },
     });
@@ -664,7 +664,7 @@ describe('M3 — audit_emit_failed → 500 mapping (forensic-trail gap surfaces 
   });
 
   it('disable returns 500 when use-case returns audit_emit_failed', async () => {
-    runDisableIngestMock.mockResolvedValueOnce({
+    runToggleIngestMock.mockResolvedValueOnce({
       ok: false,
       error: { kind: 'audit_emit_failed', message: 'audit emit failed' },
     });

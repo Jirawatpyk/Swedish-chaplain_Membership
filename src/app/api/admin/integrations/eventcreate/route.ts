@@ -16,9 +16,9 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { runLoadIntegrationConfig } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard, deriveWebhookBaseUrl } from './_lib/role-violation-audit';
 
-// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
 export const runtime = 'nodejs';
 
 const ROUTE = '/api/admin/integrations/eventcreate';
@@ -36,6 +36,8 @@ export async function GET(request: NextRequest): Promise<Response> {
   const tenantCtx = resolveTenantFromRequest(request);
   const includeTestDeliveries =
     new URL(request.url).searchParams.get('includeTestDeliveries') === 'true';
+  // Round 3 H1 — surface a request ID in every 500 problem body.
+  const requestId = crypto.randomUUID();
 
   try {
     const view = await runLoadIntegrationConfig(tenantCtx.slug, {
@@ -49,17 +51,16 @@ export async function GET(request: NextRequest): Promise<Response> {
         event: 'f6_load_integration_config_threw',
         tenantSlug: tenantCtx.slug,
         err: e instanceof Error ? e.message : String(e),
+        requestId,
       },
       '[F6] /api/admin/integrations/eventcreate GET — runLoadIntegrationConfig threw',
     );
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/internal',
-        title: 'Internal Server Error',
-        status: 500,
-        detail: 'Could not load the integration config. Reload to retry.',
-      },
-      { status: 500 },
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Could not load the integration config. Reload to retry.',
+      { extras: { requestId } },
     );
   }
 }

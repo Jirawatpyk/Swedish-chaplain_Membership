@@ -2543,6 +2543,29 @@ export const eventcreateMetrics = {
   },
 
   /**
+   * Round 3 H3 (2026-05-13) — generate counterpart of
+   * `webhookSecretRotated`. Powers the same dashboard-truth invariant:
+   * the gauge fires when the secret row commits to the DB, regardless
+   * of whether the audit trail emit succeeded — operators must SEE the
+   * audit-orphan row that an `audit_emit_failed` result leaves behind,
+   * not infer it from a `pino.fatal` line that may rotate within
+   * minutes in busy production logs.
+   *
+   * Emitted by `runGenerateWebhookSecret` composition adapter when
+   * `result.ok` OR `result.error.kind === 'audit_emit_failed'` (the
+   * row IS in the DB in both cases). Round 2 SF-H2 established this
+   * pattern for rotate; Round 3 H3 brings generate to parity.
+   */
+  webhookSecretGenerated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_secret_generated_total',
+        'F6 admin-initiated webhook secret generations, per tenant (Round 3 H3 — dashboard-truth on audit-emit failure)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * FR-036 #9 — `eventcreate_ingest_disabled_tenant` gauge.
    * Async gauge: 1 when the tenant has `enabled=false` on the
    * `tenant_webhook_configs` row (kill-switch ACTIVATED — webhook

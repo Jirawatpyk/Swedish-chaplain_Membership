@@ -24,7 +24,7 @@ import {
   KNOWN_RECENT_PROCESSING_OUTCOMES,
   type RecentDelivery,
   type RecentDeliveryProcessingOutcome,
-} from '@/lib/events-admin-integration-deps';
+} from '@/lib/events-admin-integration-types';
 
 /**
  * Round-6 verify-fix 2026-05-13 (type-design C3) — Component now
@@ -65,12 +65,6 @@ function processingBadgeVariant(
   return 'outline';
 }
 
-// Round 2 simplifier P2 (2026-05-13) — the local
-// `KNOWN_PROCESSING_OUTCOMES` Set was deleted; the canonical
-// `KNOWN_RECENT_PROCESSING_OUTCOMES` is now imported from the
-// composition adapter, eliminating a documented "MUST stay aligned"
-// contract that the type system cannot enforce.
-
 export function RecentDeliveriesPanel({
   deliveries,
   includeTestDeliveries,
@@ -86,27 +80,29 @@ export function RecentDeliveriesPanel({
 
   function handleToggle(next: boolean) {
     setOptimisticInclude(next);
-    // Round 2 SF-LOW9 fix (2026-05-13) — the previous round-6 E3
-    // try/catch wrapped `URL(window.location.href)` + `router.replace`,
-    // but `router.replace` is fire-and-forget (synchronous return,
-    // no awaitable promise). A real async navigation failure happens
-    // AFTER the try-block exits — it cannot be caught here. The only
-    // synchronous-throwable surface is `new URL(window.location.href)`,
-    // which in a real browser is essentially unreachable.
-    //
-    // Behaviour-preserving simplification: invoke the URL build +
-    // router.replace directly inside startTransition. If a future
-    // need to surface navigation failures arises (e.g. service-worker
-    // intercept), wire it via a `useEffect` watching post-navigation
-    // state, not a try/catch here.
+    // Round 3 M-err-6 (2026-05-13) — keep a narrow try/catch around
+    // `new URL(window.location.href)`. In a real browser the throw is
+    // unreachable, but Playwright fixtures / Sentry session-replay /
+    // tenant-specific service workers can shim `window.location` —
+    // an unwrapped throw inside `startTransition` would propagate to
+    // a React render-phase error and unmount the entire Phase C
+    // panel. Catch + console.error preserves the panel and surfaces
+    // the shim mismatch to DevTools so the cause is debuggable.
     startTransition(() => {
-      const url = new URL(window.location.href);
-      if (next) {
-        url.searchParams.set('includeTestDeliveries', 'true');
-      } else {
-        url.searchParams.delete('includeTestDeliveries');
+      try {
+        const url = new URL(window.location.href);
+        if (next) {
+          url.searchParams.set('includeTestDeliveries', 'true');
+        } else {
+          url.searchParams.delete('includeTestDeliveries');
+        }
+        router.replace(url.pathname + url.search);
+      } catch (e) {
+        console.error(
+          '[F6] recent-deliveries toggle navigation failed',
+          e,
+        );
       }
-      router.replace(url.pathname + url.search);
     });
   }
 
@@ -120,16 +116,7 @@ export function RecentDeliveriesPanel({
           {t('title')}
         </h2>
         <div className="flex items-center gap-2">
-          {/*
-            Round-6 verify-fix 2026-05-13 (A-03 UX) — dropped the
-            redundant `aria-label` on `<Switch>`. The visible `<Label
-            htmlFor>` association below already provides the accessible
-            name for screen readers; carrying both yields a double-
-            announcement and is an a11y anti-pattern. shadcn `<Switch>`
-            forwards the native `aria-labelledby` via the
-            `htmlFor`→`id` link, so removing the explicit aria-label
-            is safe.
-          */}
+          {/* Accessible name comes from the sibling `<Label htmlFor>`. */}
           <Switch
             id="include-test-deliveries"
             checked={optimisticInclude}

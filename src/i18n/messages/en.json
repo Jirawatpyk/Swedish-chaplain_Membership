@@ -2426,6 +2426,7 @@
           "generating": "Generating…",
           "generateFailed": "Could not generate a webhook secret. Try again or contact support.",
           "generateAlreadyExists": "A webhook secret already exists for this chamber. Use the rotate-secret action instead.",
+          "postRefreshResyncFailed": "Your webhook secret was saved, but the page didn't refresh cleanly. Reload to view the masked secret.",
           "back": "Back",
           "connectComplete": "I've set up the Zap — continue",
           "webhookUrlLabel": "Webhook URL",
@@ -2527,7 +2528,7 @@
             "empty": "No recent deliveries yet. Trigger a Zap or press \"Send test event\" to see traffic.",
             "includeTestDeliveriesLabel": "Include test deliveries",
             "updating": "Updating recent deliveries…",
-            "listSummary": "{count, plural, =0 {No recent deliveries} =1 {# delivery shown} other {# deliveries shown}}",
+            "listSummary": "{count, plural, =0 {No recent deliveries} one {# delivery shown} other {# deliveries shown}}",
             "signature": {
               "verified": "Verified",
               "rejected": "Signature rejected",

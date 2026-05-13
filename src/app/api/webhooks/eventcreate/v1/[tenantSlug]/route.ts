@@ -245,6 +245,21 @@ export async function POST(
   const rawRequestId =
     (request.headers.get('x-request-id')?.trim() ?? '').slice(0, 200);
   const requestId = rawRequestId.length > 0 ? rawRequestId : NO_REQUEST_ID;
+  if (rawRequestId.length === 0) {
+    // Round 3 M-err-2 (2026-05-13) — proactive warn when an inbound
+    // webhook arrives without `X-Request-ID`. `audit_log.request_id`
+    // is the primary forensic correlation key for the entire F6
+    // webhook surface; without a proactive signal SREs only discover
+    // a Zapier config drift after an incident triage query groups by
+    // `request_id = 'no-request-id'`.
+    logger.warn(
+      {
+        event: 'f6_webhook_missing_request_id',
+        tenantSlug,
+      },
+      '[F6] inbound webhook missing X-Request-ID header — sentinel substituted',
+    );
+  }
   const sourceIp =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
     request.headers.get('x-real-ip') ??

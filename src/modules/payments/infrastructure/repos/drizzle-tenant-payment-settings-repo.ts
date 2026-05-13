@@ -17,6 +17,12 @@
  * Both tags are busted when `updateSettings` fires so stale-tag
  * reads cannot survive a processor-account-id rotation.
  */
+// `revalidateTag` + `unstable_cache` are server-only APIs. Marking
+// the module explicitly prevents Next.js 16 / Turbopack from emitting
+// the misleading "imported in the Pages Router" build error when the
+// dev-mode RSC graph walker touches this module through unrelated
+// route-handler chains.
+import 'server-only';
 import { eq, sql } from 'drizzle-orm';
 // Audit 2026-04-26 round-2 #4 REVERTED via self-review #R2-A3:
 // kept on deprecated `unstable_cache()` because the `'use cache'`

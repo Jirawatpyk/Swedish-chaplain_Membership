@@ -3,27 +3,24 @@
  * Response. Falls back to the supplied fallback string when the
  * response body is missing, malformed, or has no `detail` field.
  *
- * Round 2 simplifier P1 (2026-05-13) — extracted from three F6 UI
- * handlers (`webhook-config-wizard`, `rotate-secret-dialog`,
- * `test-webhook-button`) that each carried an identical 9-11 line
- * ladder doing the same defensive parse + type-guard. Centralising
- * here also fixes the implicit "preserve the response body" contract
- * via `res.clone()` so callers can still consume the original stream.
+ * Round 2 simplifier P1 — centralises the 9-11 line ladder previously
+ * duplicated across three F6 UI handlers. Co-located with
+ * `problem-response.ts` (server side) and `admin-post.ts` /
+ * `parse-retry-after.ts` (client side) under `src/lib/http/`.
  *
- * Behaviour:
- *   - `res.clone()` to preserve the original body for downstream use
- *   - `.json().catch(() => null)` — never throws
- *   - Type-guard `typeof detail === 'string' && detail.length > 0`
- *   - Otherwise returns `fallback` verbatim
+ * Round 3 M-err-3 — accepts a `surface` label and emits a single
+ * `console.warn` when the response body is non-JSON or missing
+ * `detail`. Captures `res.status` + `content-type` so DevTools shows
+ * the upstream-returned-HTML pattern (Vercel 502, framework crash
+ * before serialiser, etc.) without instrumenting every call site.
  *
- * Caller responsibility: pass an i18n-translated fallback string so
- * the UI never surfaces an English-only "Server error" to TH/SV
- * locales when the route fails to emit `detail` (defence-in-depth
- * for routes that don't yet ship a problem-body).
+ * Caller responsibility: pass an i18n-translated fallback so the UI
+ * never surfaces an English-only "Server error" to TH/SV locales.
  */
 export async function parseProblemDetail(
   res: Response,
   fallback: string,
+  surface?: string,
 ): Promise<string> {
   const problem = await res
     .clone()
@@ -33,5 +30,16 @@ export async function parseProblemDetail(
     const detail = (problem as { detail?: unknown }).detail;
     if (typeof detail === 'string' && detail.length > 0) return detail;
   }
+  // Body was non-JSON or missing `detail`. Emit a forensic-only
+  // breadcrumb so SREs see "server returned HTML instead of JSON"
+  // without having to grep every call site.
+  console.warn(
+    '[chamber-os] parseProblemDetail fallback used',
+    {
+      surface: surface ?? 'unknown',
+      status: res.status,
+      contentType: res.headers.get('content-type'),
+    },
+  );
   return fallback;
 }

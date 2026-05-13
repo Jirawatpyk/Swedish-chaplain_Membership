@@ -36,6 +36,7 @@ import {
   runRotateWebhookSecret,
   runRunTestWebhook,
   runToggleIngest,
+  asBoundedReason,
 } from '@/lib/events-admin-integration-deps';
 import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -187,7 +188,7 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
       try {
         const result = await runToggleIngest(tenant.ctx.slug, actor, {
           enabled: false,
-          reason: 'H7 happy path test',
+          reason: asBoundedReason('H7 happy path test'),
         });
         expect(result.ok).toBe(true);
         if (!result.ok) throw new Error('unreachable');
@@ -257,8 +258,18 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
       try {
         const result = await runToggleIngest(tenant.ctx.slug, actor, {
           enabled: false,
-          reason: 'T-Gap1 forensic path test',
+          reason: asBoundedReason('T-Gap1 forensic path test'),
         });
+        // 0. Sanity — verify the spy ACTUALLY intercepted the
+        //    `makePinoAuditPort` factory call inside the use-case.
+        //    Round 3 M-test-2 (2026-05-13) — without this assertion a
+        //    future bundler upgrade that breaks Vitest's ESM
+        //    live-binding semantics would silently fall through to the
+        //    real port and the test would pass by accident (because
+        //    the real port emits + commits cleanly on a happy-path
+        //    tenant). Asserting the spy fired locks the invariant.
+        expect(portSpy).toHaveBeenCalled();
+
         // 1. Use-case surfaces the audit-emit-failed kind.
         expect(result.ok).toBe(false);
         if (result.ok) throw new Error('unreachable');
@@ -365,7 +376,11 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
 
     beforeAll(async () => {
       // No tenantWebhookConfigs row seeded → triggers the not_found
-      // branch when toggling.
+      // branch when toggling. `createTestTenant` mints a UUID-suffixed
+      // slug so this fresh tenant is automatically disjoint from the
+      // sibling `config_missing` describe block's tenant — Round 3
+      // M-test-1 reviewer concern is moot because the helper already
+      // guarantees isolation by construction.
       freshTenant = await createTestTenant('test-chamber');
     });
 
@@ -374,13 +389,28 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
     });
 
     it('returns Result.err{kind:not_found} when no config row exists', async () => {
-      const result = await runToggleIngest(freshTenant.ctx.slug, randomUUID(), {
-        enabled: false,
-        reason: 'T-Gap3 fresh-tenant test',
-      });
-      expect(result.ok).toBe(false);
-      if (result.ok) throw new Error('unreachable');
-      expect(result.error.kind).toBe('not_found');
+      // Round 3 H6 (2026-05-13) — explicitly assert the gauge is NOT
+      // emitted on the not_found branch. T-Gap1 (forensic path) locks
+      // the "DB committed, audit failed → gauge STILL fires" half of
+      // the H3 dashboard-truth invariant; this test locks the opposite
+      // half — when the use-case short-circuits BEFORE `dbStateMutated
+      // = true`, the gauge MUST stay silent. A future regression that
+      // moves the `dbStateMutated` flag above the precondition check
+      // would slip a phantom gauge tick into dashboards for tenants
+      // that never had a row.
+      const gaugeSpy = vi.spyOn(eventcreateMetrics, 'ingestDisabledTenant');
+      try {
+        const result = await runToggleIngest(freshTenant.ctx.slug, randomUUID(), {
+          enabled: false,
+          reason: asBoundedReason('T-Gap3 fresh-tenant test'),
+        });
+        expect(result.ok).toBe(false);
+        if (result.ok) throw new Error('unreachable');
+        expect(result.error.kind).toBe('not_found');
+        expect(gaugeSpy).not.toHaveBeenCalled();
+      } finally {
+        gaugeSpy.mockRestore();
+      }
     });
   });
 });

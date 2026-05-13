@@ -145,8 +145,3 @@ export function deriveWebhookBaseUrlFromHeaders(
 ): string {
   return assertCanonicalBaseUrlFromHeaders(proto, host);
 }
-
-// Re-export `logger.warn` import bookkeeping — ESLint flagged the now-
-// unused `logger` import after extracting `assertCanonicalBaseUrl`.
-// Actually it IS still used by `emitIntegrationRoleViolation` below, so
-// no change needed.

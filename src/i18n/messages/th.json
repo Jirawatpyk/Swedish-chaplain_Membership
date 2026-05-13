@@ -2426,6 +2426,7 @@
           "generating": "กำลังสร้าง…",
           "generateFailed": "สร้าง webhook secret ไม่สำเร็จ กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
           "generateAlreadyExists": "มี webhook secret อยู่แล้วสำหรับหอการค้านี้ กรุณาใช้การหมุนคีย์แทน",
+          "postRefreshResyncFailed": "บันทึก webhook secret แล้ว แต่หน้านี้รีเฟรชไม่สมบูรณ์ กรุณาโหลดหน้าใหม่เพื่อดูคีย์แบบปกปิด",
           "back": "ย้อนกลับ",
           "connectComplete": "ฉันตั้งค่า Zap แล้ว — ดำเนินการต่อ",
           "webhookUrlLabel": "URL ของ Webhook",

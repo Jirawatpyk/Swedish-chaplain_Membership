@@ -112,6 +112,64 @@ describe('deriveWebhookBaseUrl — host allowlist (H4 defence-in-depth)', () => 
   });
 });
 
+describe('production-route wrapper delegates to allowlist helper (Round 3 H5)', () => {
+  beforeEach(() => {
+    warnSpy.mockReset();
+  });
+
+  // Round 3 H5 (2026-05-13) — closes the reviewer's gap: T-Gap2's
+  // unit-test shim is byte-equivalent to the production helper, but a
+  // future refactor that deletes the `assertCanonicalBaseUrl` call
+  // (e.g. reads `request.headers.get('host')` directly) would not be
+  // caught. This block imports the REAL `deriveWebhookBaseUrl` from
+  // `_lib/role-violation-audit.ts` and verifies it still delegates.
+  //
+  // Mocks the `@/modules/events` barrel so the import chain doesn't
+  // drag the DB client into the unit-test module graph.
+
+  it('production deriveWebhookBaseUrl delegates to assertCanonicalBaseUrl', async () => {
+    vi.doMock('@/modules/events', () => ({
+      makeStandaloneAuditDeps: () => ({}),
+    }));
+    vi.doMock('@/modules/members', () => ({
+      asTenantId: (s: string) => s,
+    }));
+    vi.doMock('@/modules/auth', () => ({
+      asUserId: (s: string) => s,
+    }));
+    vi.doMock('@/lib/auth-session', () => ({
+      getCurrentSession: async () => null,
+    }));
+    vi.doMock('@/lib/tenant-context', () => ({
+      resolveTenantFromRequest: () => ({ slug: 'test-tenant' }),
+    }));
+
+    const mod = await import(
+      '@/app/api/admin/integrations/eventcreate/_lib/role-violation-audit'
+    );
+
+    // Canonical origin passes through verbatim.
+    const canonical = mod.deriveWebhookBaseUrl({
+      url: 'https://canonical.chamber-os.app/api/admin/integrations/eventcreate',
+    } as unknown as NextRequest);
+    expect(canonical).toBe('https://canonical.chamber-os.app');
+
+    // Off-allowlist origin falls back to canonical and emits the warn —
+    // proves the wrapper actually calls `assertCanonicalBaseUrl`.
+    const spoofed = mod.deriveWebhookBaseUrl({
+      url: 'https://attacker.example.com/api/admin/integrations/eventcreate',
+    } as unknown as NextRequest);
+    expect(spoofed).toBe('https://canonical.chamber-os.app');
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+
+    vi.doUnmock('@/modules/events');
+    vi.doUnmock('@/modules/members');
+    vi.doUnmock('@/modules/auth');
+    vi.doUnmock('@/lib/auth-session');
+    vi.doUnmock('@/lib/tenant-context');
+  });
+});
+
 describe('deriveWebhookBaseUrlFromHeaders — RSC page variant', () => {
   beforeEach(() => {
     warnSpy.mockReset();

@@ -3,6 +3,11 @@
  *
  * FR-008 — 24h grace-window rotation. Admin-only. Rate-limited
  * 3/hour per (tenant, actor).
+ *
+ * Default `runtime = 'nodejs'` works today because Drizzle + Neon
+ * postgres-js downstream would trigger Node inference, but pinning
+ * prevents a future shared-util refactor from accidentally flipping
+ * Edge inference on.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { env } from '@/lib/env';
@@ -12,22 +17,15 @@ import {
   rotateSecretRateLimitCheck,
 } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
 const ROUTE = '/api/admin/integrations/eventcreate/rotate-secret';
 const WARNING =
   'Old secret continues to verify for 24h. Update Zapier within this window.';
 
-// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime
-// pin. Default works today because Drizzle + Neon postgres-js downstream
-// would trigger Node inference, but pinning prevents a future shared-util
-// refactor from accidentally flipping Edge inference on.
 export const runtime = 'nodejs';
-
-function retryAfterSeconds(resetAtUnixMs: number): number {
-  const seconds = Math.ceil((resetAtUnixMs - Date.now()) / 1000);
-  return seconds > 0 ? seconds : 60;
-}
 
 export async function POST(request: NextRequest): Promise<Response> {
   if (!env.features.f6EventCreate) {
@@ -46,20 +44,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     guard.actorUserId,
   );
   if (!rl.success) {
-    const retryAfter = retryAfterSeconds(rl.resetAtUnixMs);
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/rate-limited',
-        title: 'Too many requests',
-        status: 429,
-        detail: `Secret-rotation rate limit exceeded. Retry after ${retryAfter}s.`,
-      },
-      {
-        status: 429,
-        headers: { 'Retry-After': retryAfter.toString() },
-      },
+    const retryAfter = retryAfterSecondsFromRl({ reset: rl.resetAtUnixMs });
+    return problemResponse(
+      429,
+      'rate-limited',
+      'Too many requests',
+      `Secret-rotation rate limit exceeded. Retry after ${retryAfter}s.`,
+      { headers: { 'Retry-After': retryAfter.toString() } },
     );
   }
+
+  // Round 3 H1 — surface a request ID in every 500 problem body so the
+  // recovery copy's "contact support with this request ID" promise has
+  // an actual identifier to give. The same ID is emitted on the pino
+  // error line so SREs can correlate.
+  const requestId = crypto.randomUUID();
 
   try {
     const result = await runRotateWebhookSecret(
@@ -75,32 +74,25 @@ export async function POST(request: NextRequest): Promise<Response> {
           event: 'f6_rotate_secret_failed',
           tenantSlug: tenantCtx.slug,
           errKind: result.error.kind,
+          requestId,
         },
         '[F6] rotate-secret use-case failed',
       );
-      // Round 2 SF-H1 + SF-H4 (2026-05-13) — distinct `detail` for
-      // audit-emit-failed so the admin knows the rotation committed
-      // but the trail is broken.
       if (result.error.kind === 'audit_emit_failed') {
-        return NextResponse.json(
-          {
-            type: 'https://chamber-os.app/errors/audit-emit-failed',
-            title: 'Internal Server Error',
-            status: 500,
-            detail:
-              'Webhook secret was rotated, but the audit trail could not be written. The new secret is active and the old secret is in its 24h grace window. Contact support with this request ID for forensic reconstruction.',
-          },
-          { status: 500 },
+        return problemResponse(
+          500,
+          'audit-emit-failed',
+          'Internal Server Error',
+          'Webhook secret was rotated, but the audit trail could not be written. The new secret is active and the old secret is in its 24h grace window. Contact support with this request ID for forensic reconstruction.',
+          { extras: { requestId } },
         );
       }
-      return NextResponse.json(
-        {
-          type: 'https://chamber-os.app/errors/internal',
-          title: 'Internal Server Error',
-          status: 500,
-          detail: 'Rotate-secret failed. Retry; if it persists, contact support.',
-        },
-        { status: 500 },
+      return problemResponse(
+        500,
+        'internal',
+        'Internal Server Error',
+        'Rotate-secret failed. Retry; if it persists, contact support.',
+        { extras: { requestId } },
       );
     }
     return NextResponse.json(
@@ -119,17 +111,16 @@ export async function POST(request: NextRequest): Promise<Response> {
         event: 'f6_rotate_secret_threw',
         tenantSlug: tenantCtx.slug,
         err: e instanceof Error ? e.message : String(e),
+        requestId,
       },
       '[F6] rotate-secret route threw',
     );
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/internal',
-        title: 'Internal Server Error',
-        status: 500,
-        detail: 'Unexpected error. Retry; if it persists, contact support.',
-      },
-      { status: 500 },
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Unexpected error. Retry; if it persists, contact support.',
+      { extras: { requestId } },
     );
   }
 }

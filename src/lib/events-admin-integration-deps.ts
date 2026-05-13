@@ -47,8 +47,28 @@ import {
   runTestWebhook,
   type RunTestWebhookError,
   type RunTestWebhookOutcome,
-  type ProcessingOutcomeLabel,
 } from '@/modules/events/application/use-cases/run-test-webhook';
+// Round 3 verify-fix 2026-05-13 — pull client-safe types + the
+// `KNOWN_RECENT_PROCESSING_OUTCOMES` Set from the dedicated pure
+// module. Eliminates the transitive Client Component leak that
+// allowed `@/modules/members` barrel → F8 renewals deps → F5
+// `revalidateTag` to bleed into the wizard's client-side bundle.
+import {
+  KNOWN_RECENT_PROCESSING_OUTCOMES,
+  isKnownRecentProcessingOutcome,
+  type IntegrationConfigView,
+  type LoadConfigOptions,
+  type RecentDelivery,
+  type RecentDeliveryProcessingOutcome,
+} from './events-admin-integration-types';
+export {
+  KNOWN_RECENT_PROCESSING_OUTCOMES,
+  isKnownRecentProcessingOutcome,
+  type IntegrationConfigView,
+  type LoadConfigOptions,
+  type RecentDelivery,
+  type RecentDeliveryProcessingOutcome,
+};
 import {
   signWebhookRequest,
   type WebhookSecret,
@@ -111,69 +131,12 @@ export async function testWebhookRateLimitCheck(
 // GET config + recent deliveries
 // ---------------------------------------------------------------------------
 
-/**
- * One row of the recent-deliveries panel. The `processingOutcome` is
- * typed as the closed `ProcessingOutcomeLabel` union (with `'unknown'`
- * for non-matching receiver-side enum extensions) plus `null` when the
- * underlying audit event carries no `processingOutcome` (e.g. a
- * `webhook_signature_rejected` row).
- *
- * Round-6 verify-fix 2026-05-13 (type-design C3) — was previously
- * `string | null` which let the UI sneak past compile-time checks by
- * receiving a free-form receiver-side string. The typed enum forces
- * a deliberate widening when a new processing outcome is added.
- */
-export type RecentDeliveryProcessingOutcome =
-  | ProcessingOutcomeLabel
-  | 'duplicate'
-  | 'malformed'
-  | 'rolled_back'
-  | 'rate_limited'
-  | 'ingest_disabled'
-  | 'unknown';
-
-export interface RecentDelivery {
-  readonly receivedAt: string;
-  readonly requestId: string;
-  readonly signatureOutcome: 'verified' | 'rejected' | 'unknown';
-  readonly processingOutcome: RecentDeliveryProcessingOutcome | null;
-  readonly matchedMemberId: string | null;
-  readonly registrationId: string | null;
-}
-
-/**
- * Discriminated view of the F6 integration config — Round-6 verify-fix
- * 2026-05-13 (type-design C4) replaced a flat-bag `interface` with two
- * mutually-exclusive variants keyed on `secretConfigured`. Prior shape
- * allowed `{secretConfigured: false, secretLastFour: 'abcd'}` to
- * compile even though the runtime code never produced such a row;
- * the discriminant now makes that representation illegal.
- *
- * Consumers (page server component + `<WebhookConfigWizard>`) narrow
- * on `secretConfigured` before accessing the post-config fields.
- */
-export type IntegrationConfigView =
-  | {
-      readonly secretConfigured: false;
-      readonly webhookUrl: string;
-      readonly recentDeliveries: ReadonlyArray<RecentDelivery>;
-      readonly recentDeliveriesIncludeTests: boolean;
-    }
-  | {
-      readonly secretConfigured: true;
-      readonly webhookUrl: string;
-      readonly secretLastFour: SecretLastFour;
-      readonly graceActiveUntil: string | null;
-      readonly ingestEnabled: boolean;
-      readonly lastReceivedAt: string | null;
-      readonly recentDeliveries: ReadonlyArray<RecentDelivery>;
-      readonly recentDeliveriesIncludeTests: boolean;
-    };
-
-export interface LoadConfigOptions {
-  readonly includeTestDeliveries: boolean;
-  readonly webhookBaseUrl: string;
-}
+// Round 3 verify-fix 2026-05-13 — `RecentDelivery`,
+// `RecentDeliveryProcessingOutcome`, `IntegrationConfigView`, and
+// `LoadConfigOptions` moved to `events-admin-integration-types.ts`
+// so client components can consume them without crossing the
+// server-only dependency chain. Re-exported above for back-compat
+// with existing call-sites that import from this lib file.
 
 const RECENT_DELIVERIES_LIMIT = 10;
 const DELIVERY_EVENT_TYPES = [
@@ -185,30 +148,6 @@ const DELIVERY_EVENT_TYPES = [
   'webhook_rolled_back',
 ] as const;
 
-/**
- * Round 2 simplifier P2 (2026-05-13) — single source of truth for the
- * `processing_outcome` values that have a matching `processing.<value>`
- * i18n key. Exported so `recent-deliveries-panel.tsx` consumes the
- * same set instead of duplicating. MUST stay aligned with the keys
- * under `admin.integrations.eventcreate.phaseC.recentDeliveries.
- * processing` in EN/TH/SV.
- */
-export const KNOWN_RECENT_PROCESSING_OUTCOMES: ReadonlySet<RecentDeliveryProcessingOutcome> = new Set<
-  RecentDeliveryProcessingOutcome
->([
-  'short_circuited_test',
-  'matched_member_contact',
-  'matched_member_domain',
-  'matched_member_fuzzy',
-  'non_member',
-  'unmatched',
-  'duplicate',
-  'malformed',
-  'rolled_back',
-  'rate_limited',
-  'ingest_disabled',
-]);
-
 function mapSignatureOutcome(
   eventType: string,
 ): 'verified' | 'rejected' | 'unknown' {
@@ -216,18 +155,6 @@ function mapSignatureOutcome(
   if (eventType === 'webhook_test_invoked') return 'verified';
   if (eventType === 'webhook_signature_rejected') return 'rejected';
   return 'unknown';
-}
-
-/**
- * Round 2 simplifier P7 (2026-05-13) — idiomatic type-guard predicate
- * replaces the previous double-cast pattern. Set's element type is
- * widened to `string` at the guard site (the only place where the
- * cast is unavoidable) so the call site stays cast-free.
- */
-function isKnownRecentProcessingOutcome(
-  v: string,
-): v is RecentDeliveryProcessingOutcome {
-  return (KNOWN_RECENT_PROCESSING_OUTCOMES as ReadonlySet<string>).has(v);
 }
 
 function extractProcessingOutcome(
@@ -406,7 +333,7 @@ export async function runGenerateWebhookSecret(
   Result<{ secret: string; secretLastFour: SecretLastFour }, GenerateWebhookSecretError>
 > {
   const ctx: TenantContext = asTenantContext(tenantSlug);
-  return runInTenant(ctx, async (tx) => {
+  const result = await runInTenant(ctx, async (tx) => {
     const repo = makeDrizzleTenantWebhookConfigRepository(tx);
     const audit = makePinoAuditPort(tx);
     return generateWebhookSecret(
@@ -419,10 +346,31 @@ export async function runGenerateWebhookSecret(
       { repo, audit, generateSecret: freshSecret },
     );
   });
-  // Note: there is no "webhookSecretGenerated" counter today (only
-  // rotation is metered). When/if a counter is added, the same H3
-  // pattern below should apply — emit on `result.ok` AND on
-  // `audit_emit_failed` (DB committed), wrapped in try/catch.
+  // Round 3 H3 (2026-05-13) — generate counter parity with rotate's
+  // SF-H2/H3 dashboard-truth pattern. When the use-case returns
+  // `audit_emit_failed`, the DB row HAS already been written (audit
+  // emission happens AFTER `repo.create`); gating the counter on
+  // `result.ok` would under-count audit-fail commits and hide
+  // audit-orphan rows in dashboards. Wrapped in try/catch so a
+  // metric-port throw never crashes the route.
+  const generationCommitted =
+    result.ok || result.error.kind === 'audit_emit_failed';
+  if (generationCommitted) {
+    try {
+      eventcreateMetrics.webhookSecretGenerated(tenantSlug);
+    } catch (metricErr) {
+      logger.warn(
+        {
+          event: 'f6_metric_emit_failed',
+          metricName: 'webhookSecretGenerated',
+          tenantSlug,
+          err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+        },
+        '[F6] metric emit failed (suppressed) — counter undercount possible',
+      );
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -498,7 +446,14 @@ export async function runRunTestWebhook(
   tenantSlug: string,
   actorUserId: string,
   options: RunTestWebhookComposeInput,
-): Promise<Result<RunTestWebhookOutcome, RunTestWebhookError | { kind: 'config_missing' }>> {
+): Promise<
+  Result<
+    RunTestWebhookOutcome,
+    | RunTestWebhookError
+    | { kind: 'config_missing' }
+    | { kind: 'config_load_failed'; errKind: string }
+  >
+> {
   const ctx: TenantContext = asTenantContext(tenantSlug);
 
   // Load active secret outside the use-case (use-case is HTTP-bound,
@@ -507,12 +462,18 @@ export async function runRunTestWebhook(
     const repo = makeDrizzleTenantWebhookConfigRepository(tx);
     return repo.findByTenantSource(asTenantId(tenantSlug), 'eventcreate');
   });
+  // Round 3 M-err-7 (2026-05-13) — separate the "DB load failed"
+  // discriminant from "row not present". Previously both returned
+  // `config_missing` and the route mapped to 404, causing transient
+  // Neon outages to surface as "tenant not configured" 404s even when
+  // the tenant IS configured. Route now maps `config_load_failed` →
+  // 500 + RFC 7807 problem body.
   if (!cfg.ok) {
     logger.error(
       { event: 'f6_test_webhook_config_load_failed', tenantSlug, errKind: cfg.error.kind },
       '[F6] test-webhook config load failed',
     );
-    return err({ kind: 'config_missing' });
+    return err({ kind: 'config_load_failed', errKind: cfg.error.kind });
   }
   if (cfg.value === null) {
     return err({ kind: 'config_missing' });
@@ -584,17 +545,34 @@ export async function runRunTestWebhook(
 // ---------------------------------------------------------------------------
 
 /**
- * Round-6 type-design C7 + Round 2 simplifier P3 (2026-05-13) —
- * canonical name is `ToggleIngestInput` (the surface handles BOTH
- * enable and disable). The previously-emitted `DisableInput` /
- * `DisableError` / `runDisableIngest` deprecated aliases were
- * dropped this round because F6 has not shipped → there are no
- * external callers needing a migration window.
+ * Round 3 M-type-5 (2026-05-13) — operator-supplied explanation is a
+ * branded `BoundedReason` (1-500 chars, non-empty after trim).
+ * Previously typed as a free `string` — the 1-500 invariant lived
+ * only in the JSDoc + the route's zod schema. The brand lifts the
+ * invariant into the type system so a future caller bypassing the
+ * route-layer validation (test helpers, internal admin scripts) gets
+ * a compile error instead of corrupting the audit row.
+ */
+export type BoundedReason = string & { readonly __brand: 'BoundedReason' };
+
+export function asBoundedReason(raw: string): BoundedReason {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0 || trimmed.length > 500) {
+    throw new Error(
+      `asBoundedReason: length must be 1-500 after trim, got ${trimmed.length}`,
+    );
+  }
+  return trimmed as BoundedReason;
+}
+
+/**
+ * Canonical name is `ToggleIngestInput` (the surface handles BOTH
+ * enable and disable).
  */
 export interface ToggleIngestInput {
   readonly enabled: boolean;
   /** 1-500 char operator-supplied explanation captured in the audit row. */
-  readonly reason: string;
+  readonly reason: BoundedReason;
 }
 
 export type ToggleIngestError =

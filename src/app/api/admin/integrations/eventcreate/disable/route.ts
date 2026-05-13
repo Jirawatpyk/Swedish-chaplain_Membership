@@ -9,11 +9,14 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { runToggleIngest } from '@/lib/events-admin-integration-deps';
+import {
+  runToggleIngest,
+  asBoundedReason,
+} from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { problemResponse } from '@/lib/http/problem-response';
 import { adminOnlyGuard } from '../_lib/role-violation-audit';
 
-// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
 export const runtime = 'nodejs';
 
 const ROUTE = '/api/admin/integrations/eventcreate/disable';
@@ -41,24 +44,32 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
   const parsed = BodySchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/malformed-body',
-        title: 'Invalid request body',
-        status: 400,
-        errors: parsed.error.issues,
-      },
-      { status: 400 },
+    return problemResponse(
+      400,
+      'malformed-body',
+      'Invalid request body',
+      'Request body failed validation. See `errors` for field-level issues.',
+      { extras: { errors: parsed.error.issues } },
     );
   }
 
   const tenantCtx = resolveTenantFromRequest(request);
+  // Round 3 H1 — surface a request ID in every 500 problem body.
+  const requestId = crypto.randomUUID();
 
   try {
     const result = await runToggleIngest(
       tenantCtx.slug,
       guard.actorUserId,
-      parsed.data,
+      {
+        enabled: parsed.data.enabled,
+        // Round 3 M-type-5 — brand at the boundary so the use-case +
+        // audit payload cannot accept a degenerate empty/oversize
+        // string. Schema-level zod check above guarantees the input
+        // satisfies the invariant; the brand makes the contract
+        // type-system-visible.
+        reason: asBoundedReason(parsed.data.reason),
+      },
     );
     if (!result.ok) {
       if (result.error.kind === 'not_found') {
@@ -69,31 +80,25 @@ export async function POST(request: NextRequest): Promise<Response> {
           event: 'f6_disable_ingest_failed',
           tenantSlug: tenantCtx.slug,
           errKind: result.error.kind,
+          requestId,
         },
         '[F6] disable-ingest use-case failed',
       );
-      // Round 2 SF-H1 + SF-H4 (2026-05-13) — distinct `detail` for the
-      // audit-emit-failed forensic-gap path.
       if (result.error.kind === 'audit_emit_failed') {
-        return NextResponse.json(
-          {
-            type: 'https://chamber-os.app/errors/audit-emit-failed',
-            title: 'Internal Server Error',
-            status: 500,
-            detail:
-              'Ingest state was changed, but the audit trail could not be written. The current state in the dashboard is correct; contact support with this request ID for forensic reconstruction.',
-          },
-          { status: 500 },
+        return problemResponse(
+          500,
+          'audit-emit-failed',
+          'Internal Server Error',
+          'Ingest state was changed, but the audit trail could not be written. The current state in the dashboard is correct; contact support with this request ID for forensic reconstruction.',
+          { extras: { requestId } },
         );
       }
-      return NextResponse.json(
-        {
-          type: 'https://chamber-os.app/errors/internal',
-          title: 'Internal Server Error',
-          status: 500,
-          detail: 'Toggle-ingest failed. Retry; if it persists, contact support.',
-        },
-        { status: 500 },
+      return problemResponse(
+        500,
+        'internal',
+        'Internal Server Error',
+        'Toggle-ingest failed. Retry; if it persists, contact support.',
+        { extras: { requestId } },
       );
     }
     return NextResponse.json(result.value, { status: 200 });
@@ -103,17 +108,16 @@ export async function POST(request: NextRequest): Promise<Response> {
         event: 'f6_disable_ingest_threw',
         tenantSlug: tenantCtx.slug,
         err: e instanceof Error ? e.message : String(e),
+        requestId,
       },
       '[F6] disable route threw',
     );
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/internal',
-        title: 'Internal Server Error',
-        status: 500,
-        detail: 'Unexpected error. Retry; if it persists, contact support.',
-      },
-      { status: 500 },
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Unexpected error. Retry; if it persists, contact support.',
+      { extras: { requestId } },
     );
   }
 }

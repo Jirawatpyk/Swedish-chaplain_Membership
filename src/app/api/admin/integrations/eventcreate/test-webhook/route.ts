@@ -20,6 +20,8 @@ import {
   testWebhookRateLimitCheck,
 } from '@/lib/events-admin-integration-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { problemResponse } from '@/lib/http/problem-response';
 import {
   adminOnlyGuard,
   deriveWebhookBaseUrl,
@@ -27,13 +29,7 @@ import {
 
 const ROUTE = '/api/admin/integrations/eventcreate/test-webhook';
 
-// Round-6 verify-fix 2026-05-13 (code #8) — explicit Node runtime pin.
 export const runtime = 'nodejs';
-
-function retryAfterSeconds(resetAtUnixMs: number): number {
-  const seconds = Math.ceil((resetAtUnixMs - Date.now()) / 1000);
-  return seconds > 0 ? seconds : 60;
-}
 
 export async function POST(request: NextRequest): Promise<Response> {
   if (!env.features.f6EventCreate) {
@@ -52,20 +48,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     guard.actorUserId,
   );
   if (!rl.success) {
-    const retryAfter = retryAfterSeconds(rl.resetAtUnixMs);
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/rate-limited',
-        title: 'Too many requests',
-        status: 429,
-        detail: `Test-webhook rate limit exceeded. Retry after ${retryAfter}s.`,
-      },
-      {
-        status: 429,
-        headers: { 'Retry-After': retryAfter.toString() },
-      },
+    const retryAfter = retryAfterSecondsFromRl({ reset: rl.resetAtUnixMs });
+    return problemResponse(
+      429,
+      'rate-limited',
+      'Too many requests',
+      `Test-webhook rate limit exceeded. Retry after ${retryAfter}s.`,
+      { headers: { 'Retry-After': retryAfter.toString() } },
     );
   }
+
+  // Round 3 H1 — surface a request ID in every 500 problem body.
+  const requestId = crypto.randomUUID();
 
   try {
     const result = await runRunTestWebhook(
@@ -77,22 +71,43 @@ export async function POST(request: NextRequest): Promise<Response> {
       if (result.error.kind === 'config_missing') {
         return new NextResponse(null, { status: 404 });
       }
+      // Round 3 M-err-7 — distinguish "row missing" (404) from
+      // "DB load failed" (500). The use-case now emits a separate
+      // `config_load_failed` discriminant so a transient Neon outage
+      // no longer surfaces as misleading 404 to the admin.
+      if (result.error.kind === 'config_load_failed') {
+        logger.error(
+          {
+            event: 'f6_test_webhook_config_load_failed',
+            tenantSlug: tenantCtx.slug,
+            errKind: result.error.errKind,
+            requestId,
+          },
+          '[F6] test-webhook config load failed — propagating as 500',
+        );
+        return problemResponse(
+          500,
+          'internal',
+          'Internal Server Error',
+          'Could not load the webhook configuration. Retry; if it persists, contact support with this request ID.',
+          { extras: { requestId } },
+        );
+      }
       logger.error(
         {
           event: 'f6_test_webhook_failed',
           tenantSlug: tenantCtx.slug,
           errKind: result.error.kind,
+          requestId,
         },
         '[F6] test-webhook use-case failed',
       );
-      return NextResponse.json(
-        {
-          type: 'https://chamber-os.app/errors/internal',
-          title: 'Internal Server Error',
-          status: 500,
-          detail: 'Test-webhook failed. Retry; if it persists, contact support.',
-        },
-        { status: 500 },
+      return problemResponse(
+        500,
+        'internal',
+        'Internal Server Error',
+        'Test-webhook failed. Retry; if it persists, contact support.',
+        { extras: { requestId } },
       );
     }
     return NextResponse.json(result.value, { status: 200 });
@@ -102,17 +117,16 @@ export async function POST(request: NextRequest): Promise<Response> {
         event: 'f6_test_webhook_threw',
         tenantSlug: tenantCtx.slug,
         err: e instanceof Error ? e.message : String(e),
+        requestId,
       },
       '[F6] test-webhook route threw',
     );
-    return NextResponse.json(
-      {
-        type: 'https://chamber-os.app/errors/internal',
-        title: 'Internal Server Error',
-        status: 500,
-        detail: 'Unexpected error. Retry; if it persists, contact support.',
-      },
-      { status: 500 },
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Unexpected error. Retry; if it persists, contact support.',
+      { extras: { requestId } },
     );
   }
 }

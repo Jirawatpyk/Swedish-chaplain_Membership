@@ -20,7 +20,7 @@
  * Receives server-loaded props from the page server component so the
  * first paint shows the correct state without a client-side fetch.
  */
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -31,7 +31,8 @@ import { Badge } from '@/components/ui/badge';
 import { CopyButton } from '@/components/members/copy-button';
 import { formatGraceTimestamp } from '@/lib/format-grace-timestamp';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
-import type { IntegrationConfigView } from '@/lib/events-admin-integration-deps';
+import { adminPost } from '@/lib/http/admin-post';
+import type { IntegrationConfigView } from '@/lib/events-admin-integration-types';
 import { WebhookSecretReveal } from './webhook-secret-reveal';
 import { RotateSecretDialog } from './rotate-secret-dialog';
 import { TestWebhookButton } from './test-webhook-button';
@@ -76,6 +77,24 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   // the admin actually opens the reference panel.
   const [guideOpen, setGuideOpen] = useState(false);
 
+  // Round 3 M-err-5 (2026-05-13) — post-`router.refresh()` resync
+  // guard. CRIT-01's synchronous `setPhase('c-test')` flips the
+  // client state ahead of the refresh, but if the server-component
+  // re-render hits an error (e.g. transient Neon load failure
+  // upstream of `runLoadIntegrationConfig`), `view` stays at the
+  // pre-409 shape (`secretConfigured: false`). The wizard then
+  // renders Phase C against a `null` discriminant — empty masked
+  // secret, broken last-4 chip. Toast asks the admin to reload so
+  // they don't sit on a half-rendered screen wondering why the
+  // last-4 hint is blank.
+  useEffect(() => {
+    if (phase === 'c-test' && !view.secretConfigured) {
+      toast.error(t('postRefreshResyncFailed'));
+    }
+    // Intentional: react to phase + view changes; toast is idempotent
+    // (sonner dedupes by message).
+  }, [phase, view.secretConfigured, t]);
+
   const steps: StepperStep[] = [
     {
       id: 'a',
@@ -106,16 +125,12 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   async function handleGenerate() {
     setGenerating(true);
     try {
-      const res = await fetch(
+      // Round 3 S-H3 — shared `adminPost` helper replaces the
+      // 11-line `Content-Type + Idempotency-Key + body` boilerplate
+      // that this file + rotate-secret-dialog + test-webhook-button
+      // each carried verbatim.
+      const res = await adminPost(
         '/api/admin/integrations/eventcreate/generate-secret',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Idempotency-Key': crypto.randomUUID(),
-          },
-          body: '{}',
-        },
       );
       if (res.status === 409) {
         // Round 2 CRIT-01 fix (2026-05-13) — must call `setPhase('c-
@@ -138,7 +153,9 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
         // `parseProblemDetail` helper replaces the 11-line inline
         // ladder. Surfaces RFC 7807 `detail` for distinct 5xx/503/404
         // copy; falls back to the locale-specific generic toast.
-        toast.error(await parseProblemDetail(res, t('generateFailed')));
+        toast.error(
+          await parseProblemDetail(res, t('generateFailed'), 'generate-secret'),
+        );
         return;
       }
       const body = (await res.json()) as { secret: string; secretLastFour: string };
@@ -216,10 +233,23 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
         <div className="space-y-4">
           {walkthrough}
           <div className="flex justify-end gap-2">
+            {/*
+              Round 3 H2 (2026-05-13) — Back-to-Phase-A only when the
+              one-time-reveal payload is still in memory. The reveal
+              payload is set once on the 200-generate response; the
+              409 / refresh paths clear it (CRIT-01 fix synchronously
+              moves to 'c-test'). Falling back to Phase A without
+              `generated` would render an empty card with no last-4
+              hint — broken dead-end for keyboard + screen-reader
+              users. Fall back to Phase C instead (configured-tenant
+              view is correct once the row exists).
+            */}
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setPhase('a-reveal')}
+              onClick={() =>
+                generated ? setPhase('a-reveal') : setPhase('c-test')
+              }
             >
               {t('back')}
             </Button>

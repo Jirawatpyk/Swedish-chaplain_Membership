@@ -48,14 +48,37 @@ const CANONICAL_ORIGIN_ALLOWLIST: ReadonlySet<string> = new Set<string>([
  * @param surface — short label included in the warn log so SREs can
  *                  distinguish admin-API vs RSC-page misuse
  */
+/**
+ * Round 3 M-type-4 — `surface` is a closed literal union, not a free
+ * string. The off-allowlist + malformed-URL warns become a
+ * bounded-cardinality metric label rather than an unbounded log
+ * dimension.
+ */
+export type CanonicalBaseUrlSurface = '/api' | '/page';
+
 export function assertCanonicalBaseUrl(
   candidate: string,
-  surface: string,
+  surface: CanonicalBaseUrlSurface,
 ): string {
   let candidateOrigin: string;
   try {
     candidateOrigin = new URL(candidate).origin;
-  } catch {
+  } catch (e) {
+    // Round 3 H4 (2026-05-13) — emit a sibling warn so a malformed-URL
+    // fallback is dashboard-visible alongside the off-allowlist warn.
+    // A bare `Host: ;evil` (URL-parse failure) is more suspicious than
+    // a well-formed-but-off-allowlist host yet the previous catch
+    // swallowed it silently. SRE filters on `f6_webhook_base_url_*`
+    // now cover both classes.
+    logger.warn(
+      {
+        event: 'f6_webhook_base_url_malformed',
+        candidate,
+        surface,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6] inbound Host candidate failed URL parse — falling back to APP_BASE_URL',
+    );
     return env.app.baseUrl;
   }
   if (CANONICAL_ORIGIN_ALLOWLIST.has(candidateOrigin)) {
