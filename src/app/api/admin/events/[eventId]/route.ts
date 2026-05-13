@@ -186,7 +186,8 @@ export async function GET(
       // For admin surface: `probedTenantId === signedTenantId` (no
       // signature; the actor is authorised for their tenant and
       // probed an eventId not present in it). Audit-emit failure
-      // MUST NEVER block the 404 — wrap in try/catch (mirrors the
+      // MUST NEVER block the 404 — delegated to `safeEmitStandalone`
+      // (R7-F) which suppresses and logs internally (mirrors the
       // FR-035 role_violation_blocked emit pattern).
       const eventIdHash = crypto
         .createHash('sha256')
@@ -200,6 +201,15 @@ export async function GET(
       // sending an oversized header would otherwise bloat the audit
       // row. Lower risk than W1 (admin auth required vs. public
       // webhook) but consistency closes the inconsistency defect.
+      //
+      // R8-S1 round-8 fix: empty/whitespace-only header is coerced
+      // to `null` here (line 230) rather than the webhook's
+      // `NO_REQUEST_ID` sentinel because `audit_log.payload` is JSONB
+      // and accepts null cleanly. The webhook path writes to
+      // `audit_log.request_id` which is a NOT-NULL forensically-
+      // indexed text column where null cannot land, hence the
+      // sentinel string at that callsite. Different downstream
+      // semantics, intentionally diverged.
       const rawAdminRequestId =
         (request.headers.get('x-request-id')?.trim() ?? '').slice(0, 200);
       // R7-F staff-review fix (2026-05-13): use the shared

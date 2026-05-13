@@ -397,10 +397,16 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
       expect.objectContaining({ event: 'f6_webhook_config_load_failed' }),
       expect.any(String),
     );
+    // R6-W5 + R8-I3: config-load failure now emits the dedicated
+    // `webhook_ingest_precondition_failed` event type with stage:
+    // 'config_load_failed' (was previously misrouted to
+    // `webhook_rolled_back` with failureStage: 'unknown' — fixed
+    // round-6 W5 to separate strict-tx rollbacks from pre-tx
+    // failures).
     expect(auditEmitStandaloneMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: 'webhook_rolled_back',
-        payload: expect.objectContaining({ failureStage: 'unknown' }),
+        eventType: 'webhook_ingest_precondition_failed',
+        payload: expect.objectContaining({ stage: 'config_load_failed' }),
       }),
     );
     errorSpy.mockRestore();
@@ -444,5 +450,40 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     // (currently deferred to Wave 3.3+).
     const body = await res.json();
     expect(body.title).toMatch(/Internal error/i);
+  });
+
+  it('R8-I3 — webhook X-Request-ID capped at 200 chars before reaching ingest use-case (R6-W1 regression guard)', async () => {
+    // R6-W1 applied .slice(0, 200) to the webhook-side X-Request-ID
+    // header before threading it through the audit log + idempotency
+    // receipts. Without the cap, sustained Upstash-fail-open windows
+    // would let a 64-KiB header pollute the idempotency table and
+    // audit log over the 7-day TTL. This test pins the cap by
+    // asserting the ingest use-case sees a 200-char requestId given
+    // an oversized header.
+    ingestWebhookAttendeeMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        matched: 'non_member',
+        matchedMemberId: null,
+        eventCreated: true,
+        registrationId: '01H2DEF',
+        quotaEffect: {
+          countedAgainstPartnership: false,
+          countedAgainstCulturalQuota: false,
+        },
+        ingestLatencyMs: 50,
+      },
+    });
+    const oversized = 'X'.repeat(500);
+    const { POST } = await loadRoute();
+    const req = buildRequest(makeWebhookPayload(), {
+      'X-Request-ID': oversized,
+    });
+    await POST(req, { params: Promise.resolve({ tenantSlug: TENANT_SLUG }) });
+    expect(ingestWebhookAttendeeMock).toHaveBeenCalledTimes(1);
+    const call = ingestWebhookAttendeeMock.mock.calls[0] as [
+      { requestId: string },
+    ];
+    expect(call[0].requestId.length).toBe(200);
   });
 });

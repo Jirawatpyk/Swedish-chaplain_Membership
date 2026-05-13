@@ -54,4 +54,26 @@ describe('<TableContainer>', () => {
     expect(wrapper.className).not.toMatch(/overflow-x-(?:auto|scroll|hidden)/);
     expect(wrapper.className).not.toMatch(/overflow-(?:auto|scroll|hidden)/);
   });
+
+  // Round-8 R8 review fix (2026-05-13, closes S-3 gap): see
+  // detail-container.test.tsx for full rationale.
+  it('forwards aria-busy="true" prop to the underlying div', () => {
+    const { container } = render(
+      <TableContainer aria-busy="true">
+        <p>body</p>
+      </TableContainer>,
+    );
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('omits aria-busy when prop not provided', () => {
+    const { container } = render(
+      <TableContainer>
+        <p>body</p>
+      </TableContainer>,
+    );
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.getAttribute('aria-busy')).toBeNull();
+  });
 });

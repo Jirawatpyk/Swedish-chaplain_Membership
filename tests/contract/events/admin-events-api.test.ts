@@ -209,10 +209,11 @@ function buildListRequest(query: Record<string, string> = {}): NextRequest {
 function buildDetailRequest(
   eventId: string,
   query: Record<string, string> = {},
+  headers: Record<string, string> = {},
 ): NextRequest {
   const url = new URL(`https://app.test/api/admin/events/${eventId}`);
   for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
-  return new NextRequest(url.toString(), { method: 'GET' });
+  return new NextRequest(url.toString(), { method: 'GET', headers });
 }
 
 // ---------------------------------------------------------------------------
@@ -835,6 +836,60 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       expect.any(String),
     );
     loggerWarnSpy.mockRestore();
+  });
+
+  it('R8-I3 — cross_tenant_probe audit caps X-Request-ID at 200 chars (R7-G regression guard)', async () => {
+    // R7-G applied .slice(0, 200) to the admin-side X-Request-ID
+    // header before writing it to audit_log.payload.requestId. The
+    // JSONB column has no size enforcement; without the cap an
+    // authenticated admin could write unbounded text into the audit
+    // row. This test pins the cap by asserting the emit-mock receives
+    // a payload whose requestId length === 200 when given an
+    // oversized header.
+    loadEventDetailMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'not_found' },
+    });
+    const { GET } = await loadDetailRoute();
+    const eventId = 'a1b2c3d4-1234-4abc-89de-fedcba987654';
+    const oversized = 'X'.repeat(500);
+    await GET(
+      buildDetailRequest(eventId, {}, { 'X-Request-ID': oversized }),
+      { params: Promise.resolve({ eventId }) },
+    );
+    expect(emitStandaloneMock).toHaveBeenCalledTimes(1);
+    const call = emitStandaloneMock.mock.calls[0] as [Record<string, unknown>];
+    const entry = call[0] as {
+      eventType: string;
+      payload: { requestId: string | null };
+    };
+    expect(entry.eventType).toBe('cross_tenant_probe');
+    expect(entry.payload.requestId).not.toBeNull();
+    expect((entry.payload.requestId ?? '').length).toBe(200);
+  });
+
+  it('R8-I3 — cross_tenant_probe audit coerces empty/whitespace X-Request-ID to null', async () => {
+    // Empty header (after trim) → null (distinguishes "no header"
+    // from "real ID equal to ''"). The cap fix preserves this prior
+    // semantic (length > 0 ? : null).
+    loadEventDetailMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'not_found' },
+    });
+    const { GET } = await loadDetailRoute();
+    const eventId = 'a1b2c3d4-1234-4abc-89de-fedcba987654';
+    await GET(
+      buildDetailRequest(eventId, {}, { 'X-Request-ID': '   ' }),
+      { params: Promise.resolve({ eventId }) },
+    );
+    expect(emitStandaloneMock).toHaveBeenCalledTimes(1);
+    const call = emitStandaloneMock.mock.calls[0] as [Record<string, unknown>];
+    const entry = call[0] as {
+      eventType: string;
+      payload: { requestId: string | null };
+    };
+    expect(entry.eventType).toBe('cross_tenant_probe');
+    expect(entry.payload.requestId).toBeNull();
   });
 
   it('404 Not Found — member role returns 404 on detail per FR-035', async () => {
