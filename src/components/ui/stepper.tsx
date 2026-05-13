@@ -54,7 +54,15 @@ function Stepper({
       className={cn(
         "flex w-full",
         orientation === "horizontal"
-          ? "flex-row items-start gap-2"
+          ? // F6 verify-fix (2026-05-13): gap-0 so connector lines from
+            // adjacent steps meet without an 8px visual break. Labels
+            // remain visually spaced because each <li> is `flex-1`
+            // text-center — labels are centered within their slot, not
+            // hard-anchored against the step boundary. Vertical
+            // breathing room from the indicator block to the label
+            // comes from the inner div's `mt-2` (8px) — sufficient
+            // without horizontal gap.
+            "flex-row items-start gap-0"
           : "flex-col gap-4",
         className,
       )}
@@ -81,15 +89,31 @@ function Stepper({
                 orientation === "horizontal" && "w-full",
               )}
             >
-              {orientation === "horizontal" && index > 0 && (
+              {/*
+                F6 verify-fix (2026-05-13): ALWAYS render both connectors
+                in horizontal mode so every indicator sits flex-center
+                within its <li>. Previously the first step had no BEFORE
+                connector and the last step had no AFTER connector —
+                first indicator anchored start, last indicator anchored
+                end, labels (centered) no longer aligned vertically with
+                their indicators. First-step BEFORE + last-step AFTER
+                render as `bg-transparent` so they reserve flex space
+                without drawing the line outside the wizard's first/
+                last indicator. Combined with the parent `gap-0`, the
+                middle connectors meet at <li> boundaries → visually
+                continuous progression from step 1 indicator to last.
+              */}
+              {orientation === "horizontal" && (
                 <span
                   aria-hidden="true"
                   data-slot="stepper-connector"
                   className={cn(
                     "h-px flex-1",
-                    step.status === "upcoming"
-                      ? "bg-border"
-                      : "bg-primary",
+                    index === 0
+                      ? "bg-transparent"
+                      : step.status === "upcoming"
+                        ? "bg-border"
+                        : "bg-primary",
                   )}
                 />
               )}
@@ -111,15 +135,17 @@ function Stepper({
                   <span aria-hidden="true">{index + 1}</span>
                 )}
               </span>
-              {orientation === "horizontal" && !isLast && (
+              {orientation === "horizontal" && (
                 <span
                   aria-hidden="true"
                   data-slot="stepper-connector"
                   className={cn(
                     "h-px flex-1",
-                    step.status === "complete"
-                      ? "bg-primary"
-                      : "bg-border",
+                    isLast
+                      ? "bg-transparent"
+                      : step.status === "complete"
+                        ? "bg-primary"
+                        : "bg-border",
                   )}
                 />
               )}

@@ -353,7 +353,7 @@ async function EmptyState({
           {t('noIntegration.body')}
         </p>
         <Link
-          href="/admin/integrations/eventcreate"
+          href="/admin/settings/integrations/eventcreate"
           className={buttonVariants({ variant: 'default' })}
         >
           <PlusIcon aria-hidden="true" className="size-4" />
@@ -372,7 +372,7 @@ async function EmptyState({
           {t('noDeliveries.body')}
         </p>
         <Link
-          href="/admin/integrations/eventcreate"
+          href="/admin/settings/integrations/eventcreate"
           className={buttonVariants({ variant: 'outline' })}
         >
           {t('noDeliveries.cta')}

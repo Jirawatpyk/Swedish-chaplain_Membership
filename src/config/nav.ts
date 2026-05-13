@@ -187,8 +187,8 @@ export const staffNavConfig: NavConfig = {
         {
           titleKey: 'nav.staff.settingsIntegrationEventcreate',
           icon: PlugZapIcon,
-          href: '/admin/integrations/eventcreate',
-          activePattern: '/admin/integrations/eventcreate',
+          href: '/admin/settings/integrations/eventcreate',
+          activePattern: '/admin/settings/integrations/eventcreate',
         },
       ],
     },

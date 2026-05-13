@@ -36,6 +36,16 @@ async function expectNoAxeViolations(
   page: Page,
   surface: string,
 ): Promise<void> {
+  // Wait for `<title>` to be populated before scanning. Next.js 16
+  // RSC streams `generateMetadata` output AFTER the initial DOM is
+  // parsed, so `domcontentloaded` fires while `<title>` is still
+  // empty — axe-core rule `document-title` (WCAG 2.4.2 Level A) then
+  // flags a false-positive on the first run that disappears on the
+  // retry once the streamed metadata has landed. Pinning the wait
+  // here makes the scan deterministic for every caller.
+  await page.waitForFunction(() => document.title.length > 0, undefined, {
+    timeout: 15_000,
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze();
@@ -77,14 +87,23 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     await signInAsAdmin(page);
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const firstRowLink = page.getByRole('table').getByRole('link').first();
-    if (!(await firstRowLink.isVisible().catch(() => false))) {
-      test.skip(
-        true,
-        'No seeded F6 events available — detail page a11y scan needs at least one row',
-      );
-      return;
-    }
+    // D1 verify-fix (2026-05-13, round-2) — explicit wait for the
+    // table to render BEFORE counting links. On mobile viewports the
+    // Turbopack cold compile of TanStack Table v8 + RSC stream can
+    // land in chunks; counting immediately returns 0 because the
+    // <table> element hasn't attached yet. The Locator chain itself
+    // is lazy — `.count()` does NOT auto-wait. Wait for the table to
+    // be attached, then count links via `toBeAttached` (works for
+    // off-screen links too — desktop table or mobile horizontal-
+    // scroll layout both have links in DOM, just outside viewport).
+    const table = page.getByRole('table');
+    await expect(table).toBeVisible({ timeout: 15_000 });
+    const firstRowLink = table
+      .locator('a[href^="/admin/events/"]')
+      .filter({ hasNot: page.locator('[aria-current]') })
+      .first();
+    await expect(firstRowLink).toBeAttached({ timeout: 10_000 });
+    await firstRowLink.scrollIntoViewIfNeeded();
     await firstRowLink.click();
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
     await page.waitForLoadState('domcontentloaded');
@@ -102,13 +121,13 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
    */
   test('admin integration wizard (/admin/integrations/eventcreate)', async ({ page }) => {
     await signInAsAdmin(page);
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
     // Guard against scanning a 404 page — wait until the wizard's H1
     // is visible before the axe scan kicks off.
     await expect(
       page.getByRole('heading', { level: 1 }),
     ).toBeVisible();
-    await expectNoAxeViolations(page, '/admin/integrations/eventcreate');
+    await expectNoAxeViolations(page, '/admin/settings/integrations/eventcreate');
   });
 });

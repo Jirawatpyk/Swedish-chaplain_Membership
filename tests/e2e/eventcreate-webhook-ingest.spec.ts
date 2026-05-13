@@ -14,10 +14,50 @@
  * (test helper to be authored alongside Phase 5 T080).
  */
 import { test, expect } from '@playwright/test';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
+import { F6_E2E_FIXTURE_SECRET } from './helpers/eventcreate-seed';
 
-const TEST_SECRET = process.env['E2E_F6_TEST_WEBHOOK_SECRET'] ?? 'placeholder';
-const TENANT_SLUG = process.env['E2E_F6_TENANT_SLUG'] ?? 'test-swecham';
+/**
+ * D1 verify-fix (2026-05-13) — request-id helper.
+ *
+ * Background: `src/proxy.ts` validates inbound `X-Request-ID` against
+ * `REQUEST_ID_PATTERN = /^[a-f0-9-]{8,128}$/i` (src/lib/request-id.ts:58).
+ * Non-hex IDs like `req-as3-${Date.now()}` (the previous spec default)
+ * are REJECTED and replaced with a fresh UUIDv7 per request. That made
+ * AS3's "same X-Request-ID twice → 409" assertion impossible: two
+ * inbound calls with identical `req-as3-*` headers each received a
+ * DIFFERENT proxy-generated UUIDv7, so the receiver-side idempotency
+ * check never fired.
+ *
+ * Fix: use `randomUUID()` (UUIDv4 — matches `[a-f0-9-]{36}`) so the
+ * proxy passes the inbound ID through verbatim. AS3 then sees the
+ * SAME request_id on both calls and idempotency correctly returns 409
+ * on the second.
+ */
+function uniqueRequestId(suffix: string): string {
+  // Embed the test-suffix in the UUID's last group so log/audit
+  // grepping can still find AS-scoped rows (e.g. `tail | grep as3`)
+  // even though the bytes are hex-shaped.
+  const u = randomUUID();
+  // Replace last 12 chars with a deterministic suffix derived from
+  // `suffix` (left-padded with zeros, truncated, hex-only).
+  const safe = suffix.toLowerCase().replace(/[^a-f0-9]/g, '').slice(0, 12).padStart(12, '0');
+  return `${u.slice(0, 24)}${safe}`;
+}
+
+// D1 verify-fix (2026-05-13) — defaults aligned with the global-setup
+// `seedF6Events` seed (helpers/eventcreate-seed.ts). Previously
+// TEST_SECRET defaulted to `'placeholder'` (never matched the seeded
+// row) and TENANT_SLUG defaulted to `'test-swecham'` (no row created
+// for that tenant). Both made the spec functionally un-runnable
+// without per-developer env-var overrides — defaults now reflect the
+// real seeded shape so `pnpm test:e2e` works out of the box.
+const TEST_SECRET =
+  process.env['E2E_F6_TEST_WEBHOOK_SECRET'] ?? F6_E2E_FIXTURE_SECRET;
+const TENANT_SLUG =
+  process.env['E2E_F6_TENANT_SLUG'] ??
+  process.env['TENANT_SLUG'] ??
+  'swecham';
 const BASE_URL = process.env['PLAYWRIGHT_BASE_URL'] ?? 'http://localhost:3100';
 
 function signBody(body: unknown, secret: string, timestampSeconds?: number) {
@@ -59,7 +99,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
           'Content-Type': 'application/json',
           'X-Chamber-Signature': signed.signatureHeader,
           'X-Chamber-Timestamp': signed.timestamp,
-          'X-Request-ID': `req-as1-${Date.now()}`,
+          'X-Request-ID': uniqueRequestId('as1'),
         },
       },
     );
@@ -71,7 +111,29 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
   });
 
   test('AS2 — non-member attendee persists with match_type=non_member', async ({ request }) => {
-    const payload = makePayload({ attendee: { email: 'random-stranger@unaffiliated-domain.example' } });
+    // D1 verify-fix (2026-05-13) — TWO bugs to dodge:
+    //   1. `makePayload` shallow-spreads `...overrides` at root → if
+    //      caller passes `{attendee: {x: y}}` the `attendee` object is
+    //      REPLACED entirely, not deep-merged. Previously this dropped
+    //      required `externalId`/`fullName`/`registeredAt` fields →
+    //      zod rejected with 400 → no registration row → spec
+    //      assertion `matched=non_member` was never reached because
+    //      the underlying POST silently failed. Workaround: pass the
+    //      FULL attendee object including all required fields.
+    //   2. Default attendee `companyName` is `'Fogmaker International
+    //      AB'` which IS a seeded member → fuzzy step matched even
+    //      when email indicates non-member. Sentinel `E2E-NonMember-
+    //      Sentinel-Co-2026` never seeded → fuzzy step finds zero
+    //      candidates → falls through to non_member.
+    const payload = makePayload({
+      attendee: {
+        externalId: `att_as2_${Date.now()}`,
+        email: 'random-stranger@unaffiliated-domain.example',
+        fullName: 'AS2 Non-Member Stranger',
+        companyName: 'E2E-NonMember-Sentinel-Co-2026',
+        registeredAt: '2026-06-01T10:00:00Z',
+      },
+    });
     const signed = signBody(payload, TEST_SECRET);
     const res = await request.post(`${BASE_URL}/api/webhooks/eventcreate/v1/${TENANT_SLUG}`, {
       data: signed.rawBody,
@@ -79,7 +141,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
         'Content-Type': 'application/json',
         'X-Chamber-Signature': signed.signatureHeader,
         'X-Chamber-Timestamp': signed.timestamp,
-        'X-Request-ID': `req-as2-${Date.now()}`,
+        'X-Request-ID': uniqueRequestId('as2'),
       },
     });
     expect(res.status()).toBe(200);
@@ -89,7 +151,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
   });
 
   test('AS3 — duplicate X-Request-ID within 7d returns 409 with no new registration', async ({ request }) => {
-    const requestId = `req-as3-${Date.now()}`;
+    const requestId = uniqueRequestId('as3');
     const payload = makePayload();
     const signed = signBody(payload, TEST_SECRET);
     const headers = {
@@ -118,7 +180,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
         'Content-Type': 'application/json',
         'X-Chamber-Signature': 'sha256=00' + 'a'.repeat(62),
         'X-Chamber-Timestamp': Math.floor(Date.now() / 1000).toString(),
-        'X-Request-ID': `req-as4-${Date.now()}`,
+        'X-Request-ID': uniqueRequestId('as4'),
       },
     });
     expect(res.status()).toBe(401);
@@ -136,7 +198,7 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
         'Content-Type': 'application/json',
         'X-Chamber-Signature': signed.signatureHeader,
         'X-Chamber-Timestamp': signed.timestamp,
-        'X-Request-ID': `req-as5-${Date.now()}`,
+        'X-Request-ID': uniqueRequestId('as5'),
       },
     });
     expect(res.status()).toBe(401);

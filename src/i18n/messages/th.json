@@ -2636,7 +2636,10 @@
     "void": "ยกเลิก",
     "pay": "บันทึกการชำระ",
     "renewals": "การต่ออายุ",
-    "schedules": "ตารางการแจ้งเตือนต่ออายุ"
+    "schedules": "ตารางการแจ้งเตือนต่ออายุ",
+    "invoicing": "ตั้งค่าใบแจ้งหนี้",
+    "integrations": "การเชื่อมต่อ",
+    "eventcreate": "EventCreate"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

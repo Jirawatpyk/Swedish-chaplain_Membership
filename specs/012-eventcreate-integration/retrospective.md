@@ -27,8 +27,8 @@
 
 | # | Item | Owner | Status |
 |---|---|---|---|
-| P4-G1 | `pnpm test:e2e --grep "F6 events list and detail" --workers=1` against seeded tenant + admin login | maintainer | DEFERRED (T054 — code-complete, manual gate) |
-| P4-G2 | `pnpm test:e2e --grep "@a11y T055" --workers=1` axe-core scan of list + detail | maintainer | DEFERRED (T055 — code-complete, manual gate) |
+| P4-G1 | `pnpm test:e2e --grep "F6 events list and detail" --workers=1` against seeded tenant + admin login | maintainer | **CLOSED 2026-05-13** — 7/7 PASS chromium/3.6min after `seedF6Events` helper landed in `tests/e2e/helpers/eventcreate-seed.ts` + wired in `global-setup.ts` (3 events + 6 registrations + 1 webhook_config UPSERT idempotent). Required env var addition: `FEATURE_F6_EVENTCREATE=true` + `EVENTCREATE_PII_PSEUDONYM_SALT=<base64>` in `.env.local`. |
+| P4-G2 | `pnpm test:e2e --grep "@a11y T055" --workers=1` axe-core scan of list + detail | maintainer | **CLOSED 2026-05-13** — 3/3 PASS chromium/2.3min (list + detail + Phase 5 D2 wizard). Round-1 flaky on detail closed via spec-side fix: added `page.waitForFunction(() => document.title.length > 0)` inside `expectNoAxeViolations` helper because Next.js 16 RSC streams `generateMetadata` AFTER DOM-ready → axe-core saw empty `<title>` and falsely flagged WCAG 2.4.2-A. Production code is unaffected (test-only timing race). |
 | P4-G3 | `pnpm test:e2e --grep "@i18n T056" --workers=1` EN+TH+SV leak-key + `<html lang>` scan | maintainer | DEFERRED (T056 — code-complete, manual gate) |
 | P4-G4 | Cross-browser smoke (chromium + mobile-chrome + mobile-safari) on /admin/events list + detail | maintainer | DEFERRED (parallels F8 T270 cross-browser gate) |
 | P4-G5 | Manual SR pass on list + detail (NVDA + VoiceOver) — verify aria-pressed toggle, table sort indicators, deep-link "opens in new tab" announcement | maintainer | DEFERRED |

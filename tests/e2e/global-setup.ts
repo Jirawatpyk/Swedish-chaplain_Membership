@@ -15,6 +15,7 @@ import postgres from 'postgres';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import { seedF7Broadcasts } from './helpers/broadcasts-seed';
 import { seedF8Renewals } from './helpers/renewals-seed';
+import { seedF6Events } from './helpers/eventcreate-seed';
 
 async function resetF5IssuedInvoice(): Promise<void> {
   const id = process.env.E2E_ISSUED_INVOICE_ID;
@@ -83,6 +84,17 @@ async function globalSetup(): Promise<void> {
     }
   } catch (error) {
     console.warn('[e2e global setup] F8 renewals seed failed:', String(error));
+  }
+
+  try {
+    const eventsSeed = await seedF6Events();
+    if (eventsSeed) {
+      process.env.E2E_SEED_F6_PB_EVENT_ID = eventsSeed.partnerBenefitEventId;
+      process.env.E2E_SEED_F6_CULTURAL_EVENT_ID = eventsSeed.culturalEventId;
+      process.env.E2E_SEED_F6_ARCHIVED_EVENT_ID = eventsSeed.archivedEventId;
+    }
+  } catch (error) {
+    console.warn('[e2e global setup] F6 events seed failed:', String(error));
   }
 }
 

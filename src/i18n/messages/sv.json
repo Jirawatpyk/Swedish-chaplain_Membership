@@ -2636,7 +2636,10 @@
     "void": "Annullera",
     "pay": "Registrera betalning",
     "renewals": "Förnyelser",
-    "schedules": "Påminnelseschema"
+    "schedules": "Påminnelseschema",
+    "invoicing": "Fakturainställningar",
+    "integrations": "Integrationer",
+    "eventcreate": "EventCreate"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

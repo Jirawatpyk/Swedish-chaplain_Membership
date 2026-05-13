@@ -145,6 +145,20 @@ const STATIC_LABEL_KEYS = {
   // slugs.
   renewals: 'renewals',
   schedules: 'schedules',
+  // F4 — `/admin/settings/invoicing` breadcrumb segment. The URL slug
+  // is `invoicing` (gerund) not `invoices` (plural noun), so it
+  // doesn't collide with the standalone `/admin/invoices` list page's
+  // own `invoices` label above. Pre-existing gap from F4 ship —
+  // closed in F6 Phase 5 verify-fix together with the new
+  // `integrations`/`eventcreate` segments.
+  invoicing: 'invoicing',
+  // F6 — `/admin/integrations/eventcreate` breadcrumb segments.
+  // `integrations` is an organisational segment (no page.tsx at that
+  // level — handled by NON_ROUTE_BY_PARENT in breadcrumb-path.ts so
+  // the segment renders non-clickable). `eventcreate` is the wizard
+  // page itself (clickable / current page).
+  integrations: 'integrations',
+  eventcreate: 'eventcreate',
 } as const;
 
 // Verb segments resolve by parent resource. The outer key is the parent

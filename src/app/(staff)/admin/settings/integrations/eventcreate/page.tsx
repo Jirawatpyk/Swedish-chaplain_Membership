@@ -1,5 +1,5 @@
 /**
- * /admin/integrations/eventcreate page (F6 Phase 5 / US3).
+ * /admin/settings/integrations/eventcreate page (F6 Phase 5 / US3).
  *
  * Server component — loads the integration config view via
  * `runLoadIntegrationConfig` and renders the 3-phase progressive
@@ -11,8 +11,13 @@
  *     itself sensitive).
  *   - kill-switch off → 404
  *
- * The Phase 4 placeholder file lived at this same path and is
- * REPLACED by this implementation per T080.
+ * Path note (Phase 5 verify-fix 2026-05-13): route moved from
+ * `/admin/integrations/eventcreate` (Phase 4 placeholder origin) to
+ * `/admin/settings/integrations/eventcreate` so the breadcrumb
+ * (URL-derived) matches the sidebar grouping under Settings ("the
+ * wizard IS a setting" per stakeholder review). API routes stay at
+ * `/api/admin/integrations/eventcreate/**` — page and API namespaces
+ * are decoupled. Phase 4 placeholder REPLACED in-place by T080.
  */
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';

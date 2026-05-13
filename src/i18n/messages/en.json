@@ -2636,7 +2636,10 @@
     "void": "Void",
     "pay": "Record Payment",
     "renewals": "Renewals",
-    "schedules": "Reminder schedules"
+    "schedules": "Reminder schedules",
+    "invoicing": "Invoice Settings",
+    "integrations": "Integrations",
+    "eventcreate": "EventCreate"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",

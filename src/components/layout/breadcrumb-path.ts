@@ -84,6 +84,13 @@ export function parseBreadcrumbPath({
     // the Settings index, not 404. See `src/app/(staff)/admin/settings/
     // page.tsx` for the index page itself.
     ['settings', new Set(['renewals'])],
+    // F6 — `/admin/integrations/<source>` has no index page at the
+    // `integrations` level (only nested integration pages like
+    // `eventcreate/`). Clicking the "integrations" breadcrumb segment
+    // would 404 — rewrite href to `/admin` so it bounces back to the
+    // dashboard, AND mark the segment non-linkable so the rendered
+    // text appears as a plain organisational marker.
+    ['admin', new Set(['integrations'])],
   ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;

@@ -46,6 +46,14 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
       page,
       context,
     }) => {
+      // Sign in FIRST (sign-in page is locale-derived; helper assumes
+      // English labels), THEN switch locale via cookie. Reversing this
+      // pair was a Phase-4-ship spec bug surfaced when the cookie+
+      // signInAsAdmin order forced the sign-in page to render in TH/SV
+      // and the EN-only `getByLabel(/email/i)` regex inside
+      // `signInAsAdmin` timed out at 180s on every non-EN test (D3
+      // verify-fix 2026-05-13).
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -53,7 +61,6 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
           url: 'http://localhost:3100',
         },
       ]);
-      await signInAsAdmin(page);
       await page.goto('/admin/events');
       await page.waitForLoadState('networkidle');
       const bodyText = await page.evaluate(() => document.body.innerText);
@@ -69,6 +76,14 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
       page,
       context,
     }) => {
+      // Sign in FIRST (sign-in page is locale-derived; helper assumes
+      // English labels), THEN switch locale via cookie. Reversing this
+      // pair was a Phase-4-ship spec bug surfaced when the cookie+
+      // signInAsAdmin order forced the sign-in page to render in TH/SV
+      // and the EN-only `getByLabel(/email/i)` regex inside
+      // `signInAsAdmin` timed out at 180s on every non-EN test (D3
+      // verify-fix 2026-05-13).
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -76,7 +91,6 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
           url: 'http://localhost:3100',
         },
       ]);
-      await signInAsAdmin(page);
       await page.goto('/admin/events');
       await page.waitForLoadState('domcontentloaded');
       const htmlLang = await page
@@ -90,6 +104,14 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
       page,
       context,
     }) => {
+      // Sign in FIRST (sign-in page is locale-derived; helper assumes
+      // English labels), THEN switch locale via cookie. Reversing this
+      // pair was a Phase-4-ship spec bug surfaced when the cookie+
+      // signInAsAdmin order forced the sign-in page to render in TH/SV
+      // and the EN-only `getByLabel(/email/i)` regex inside
+      // `signInAsAdmin` timed out at 180s on every non-EN test (D3
+      // verify-fix 2026-05-13).
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -97,7 +119,6 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
           url: 'http://localhost:3100',
         },
       ]);
-      await signInAsAdmin(page);
       // T11 fix (verify-finding 2026-05-12): force the empty-state path
       // by navigating to a known-impossible filter combination
       // (categoryFilter that no seed event will ever match) so the
@@ -134,10 +155,18 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
      * leaks + locale-resolution drift on the wizard surface
      * specifically.
      */
-    test(`${locale} — /admin/integrations/eventcreate has no translation key leaks`, async ({
+    test(`${locale} — /admin/settings/integrations/eventcreate has no translation key leaks`, async ({
       page,
       context,
     }) => {
+      // Sign in FIRST (sign-in page is locale-derived; helper assumes
+      // English labels), THEN switch locale via cookie. Reversing this
+      // pair was a Phase-4-ship spec bug surfaced when the cookie+
+      // signInAsAdmin order forced the sign-in page to render in TH/SV
+      // and the EN-only `getByLabel(/email/i)` regex inside
+      // `signInAsAdmin` timed out at 180s on every non-EN test (D3
+      // verify-fix 2026-05-13).
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -145,8 +174,7 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
           url: 'http://localhost:3100',
         },
       ]);
-      await signInAsAdmin(page);
-      await page.goto('/admin/integrations/eventcreate');
+      await page.goto('/admin/settings/integrations/eventcreate');
       await page.waitForLoadState('networkidle');
       const bodyText = await page.evaluate(() => document.body.innerText);
       const wizardLeakPatterns = [
@@ -156,15 +184,23 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
       for (const pattern of wizardLeakPatterns) {
         expect(
           bodyText,
-          `key leak in ${locale} /admin/integrations/eventcreate: ${pattern}`,
+          `key leak in ${locale} /admin/settings/integrations/eventcreate: ${pattern}`,
         ).not.toMatch(pattern);
       }
     });
 
-    test(`${locale} — /admin/integrations/eventcreate <html lang> matches`, async ({
+    test(`${locale} — /admin/settings/integrations/eventcreate <html lang> matches`, async ({
       page,
       context,
     }) => {
+      // Sign in FIRST (sign-in page is locale-derived; helper assumes
+      // English labels), THEN switch locale via cookie. Reversing this
+      // pair was a Phase-4-ship spec bug surfaced when the cookie+
+      // signInAsAdmin order forced the sign-in page to render in TH/SV
+      // and the EN-only `getByLabel(/email/i)` regex inside
+      // `signInAsAdmin` timed out at 180s on every non-EN test (D3
+      // verify-fix 2026-05-13).
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -172,8 +208,7 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
           url: 'http://localhost:3100',
         },
       ]);
-      await signInAsAdmin(page);
-      await page.goto('/admin/integrations/eventcreate');
+      await page.goto('/admin/settings/integrations/eventcreate');
       await page.waitForLoadState('domcontentloaded');
       const htmlLang = await page
         .locator('html')
@@ -186,6 +221,14 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
       page,
       context,
     }) => {
+      // Sign in FIRST (sign-in page is locale-derived; helper assumes
+      // English labels), THEN switch locale via cookie. Reversing this
+      // pair was a Phase-4-ship spec bug surfaced when the cookie+
+      // signInAsAdmin order forced the sign-in page to render in TH/SV
+      // and the EN-only `getByLabel(/email/i)` regex inside
+      // `signInAsAdmin` timed out at 180s on every non-EN test (D3
+      // verify-fix 2026-05-13).
+      await signInAsAdmin(page);
       await context.addCookies([
         {
           name: 'NEXT_LOCALE',
@@ -193,8 +236,7 @@ test.describe('@i18n T056 — F6 admin events list+detail locale coverage', () =
           url: 'http://localhost:3100',
         },
       ]);
-      await signInAsAdmin(page);
-      await page.goto('/admin/integrations/eventcreate');
+      await page.goto('/admin/settings/integrations/eventcreate');
       await page.waitForLoadState('networkidle');
       const bodyText = await page.evaluate(() => document.body.innerText);
       if (locale === 'th') {

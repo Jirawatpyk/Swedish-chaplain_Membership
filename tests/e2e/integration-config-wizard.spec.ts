@@ -63,7 +63,7 @@ test.describe('F6 wizard — fresh tenant (AS1) @workers=1', () => {
   test('AS1 — Phase A renders Generate Secret CTA + one-time reveal + saved-checkbox gate (FR-024)', async ({
     page,
   }) => {
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
 
     // PageHeader visible
@@ -111,7 +111,7 @@ test.describe('F6 wizard — fresh tenant (AS1) @workers=1', () => {
   test('AS1 + FR-025 — Phase B Zapier walkthrough renders 8 steps + EN-only notice', async ({
     page,
   }) => {
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
 
     // Walk through Phase A → checkbox gate → explicit Continue → Phase B
@@ -161,7 +161,7 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
   test('AS3 — Phase C masked secret + "Rotate secret" CTA (NOT plaintext reveal)', async ({
     page,
   }) => {
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
 
     // Configured tenant — Phase A button MUST NOT be present.
@@ -186,7 +186,7 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
   test('AS2 + FR-023 — "Send test event" button delivers + outcome appears <30s', async ({
     page,
   }) => {
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
 
     const testButton = page.getByRole('button', {
@@ -207,7 +207,7 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
   test('AS3 + R5 — recent-deliveries panel includes Switch toggle for test deliveries', async ({
     page,
   }) => {
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
 
     // Per round-2 R5: test deliveries hidden by default; admin toggles
@@ -224,7 +224,7 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
   test('FR-008 — rotate-secret dialog shows grace-window info + Escape closes safely', async ({
     page,
   }) => {
-    await page.goto('/admin/integrations/eventcreate');
+    await page.goto('/admin/settings/integrations/eventcreate');
     await page.waitForLoadState('domcontentloaded');
 
     const rotateButton = page.getByRole('button', { name: /rotate secret/i });

@@ -1,5 +1,5 @@
 /**
- * /admin/integrations/eventcreate loading skeleton (T080).
+ * /admin/settings/integrations/eventcreate loading skeleton (T080).
  *
  * Renders a placeholder stepper + card layout while the server
  * component fetches the integration config via

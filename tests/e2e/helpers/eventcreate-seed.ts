@@ -111,3 +111,203 @@ export async function resetAndSeedKnownSecret(
   await resetEventcreateState(tenantSlug);
   await seedKnownWebhookSecret(tenantSlug, secret);
 }
+
+// ===========================================================================
+// `seedF6Events` — seed real events + registrations for the admin LIST
+// + DETAIL E2E suites (`events-list-and-detail.spec.ts` US2 AS1-AS5).
+//
+// Distinct from the webhook-ingest seed above:
+//   • That path seeds ONLY the webhook config + a known secret so the
+//     webhook-ingest spec can exercise the public POST endpoint with
+//     signed payloads. No persisted event/registration rows.
+//   • This path bypasses the webhook entirely and inserts events +
+//     registrations directly into the DB, which is what the admin
+//     /admin/events list page reads. The test-webhook button (Phase 5
+//     T072) cannot produce these rows — it short-circuits at the
+//     receiver per spec round-2 P8 (`__test_webhook__` sentinel).
+//
+// Tenant: `E2E_TENANT_SLUG` (default `swecham`) — matches the admin
+// session helper's resolved tenant.
+//
+// Idempotent — every INSERT uses ON CONFLICT DO UPDATE keyed on the
+// deterministic sentinel `external_id` so re-runs converge on the same
+// shape. UUIDs are DB-generated; cross-run stable lookup uses
+// `external_id`.
+// ===========================================================================
+
+// Deterministic sentinels so the seed is idempotent across runs.
+// All `e2e-f6-event-*` and `e2e-f6-reg-*` rows are owned by the e2e
+// fixture and safe to UPSERT.
+const EXT_EVENT_PB = 'e2e-f6-event-partner-benefit';
+const EXT_EVENT_CULTURAL = 'e2e-f6-event-cultural';
+const EXT_EVENT_ARCHIVED = 'e2e-f6-event-archived';
+
+const EXT_REG_E1_NON_1 = 'e2e-f6-reg-e1-nonmember-1';
+const EXT_REG_E1_NON_2 = 'e2e-f6-reg-e1-nonmember-2';
+const EXT_REG_E1_UNMATCHED = 'e2e-f6-reg-e1-unmatched';
+const EXT_REG_E2_NON = 'e2e-f6-reg-e2-nonmember';
+const EXT_REG_E2_UNMATCHED_1 = 'e2e-f6-reg-e2-unmatched-1';
+const EXT_REG_E2_UNMATCHED_2 = 'e2e-f6-reg-e2-unmatched-2';
+
+export interface SeedEventsResult {
+  readonly tenantId: string;
+  readonly partnerBenefitEventId: string;
+  readonly culturalEventId: string;
+  readonly archivedEventId: string;
+}
+
+export async function seedF6Events(
+  tenantSlug: string = TENANT_ID,
+): Promise<SeedEventsResult | null> {
+  const client = openClient();
+  if (!client) return null;
+  try {
+    // 1. Webhook config row — `enabled=true` + `last_received_at=NOW()`
+    //    so `emptyStateContext.{integrationConfigured,everReceivedDelivery}
+    //    = true` and the list page renders the table path (not an
+    //    empty-state variant). UPSERT keyed on (tenant_id, source).
+    await client.sql`
+      INSERT INTO tenant_webhook_configs (
+        tenant_id, source,
+        webhook_secret_active, webhook_secret_grace, grace_rotated_at,
+        enabled, last_received_at
+      ) VALUES (
+        ${tenantSlug}, 'eventcreate',
+        ${F6_E2E_FIXTURE_SECRET}, NULL, NULL,
+        TRUE, NOW()
+      )
+      ON CONFLICT (tenant_id, source) DO UPDATE
+        SET enabled = TRUE,
+            last_received_at = NOW(),
+            webhook_secret_active = EXCLUDED.webhook_secret_active
+    `;
+
+    // 2. Events (3 rows) — distinct `start_date` so AS1's default
+    //    `start_date DESC` sort produces a stable order. One row each:
+    //      • partner-benefit active (eventcreate_url set for AS3 deep link)
+    //      • cultural active (separate row for AS1 sort verification)
+    //      • archived (AS5 variant c "Show archived" toggle target)
+    const eventRows = await client.sql<
+      Array<{ event_id: string; external_id: string }>
+    >`
+      INSERT INTO events (
+        tenant_id, source, external_id,
+        name, description, start_date, end_date, location, category,
+        eventcreate_url,
+        is_partner_benefit, is_cultural_event, archived_at, metadata
+      ) VALUES
+        (${tenantSlug}, 'eventcreate', ${EXT_EVENT_PB},
+         'E2E F6 Partner Benefit Event', 'Seeded by tests/e2e/helpers/eventcreate-seed.ts',
+         '2026-06-21T18:00:00Z', '2026-06-21T22:00:00Z',
+         'Singapore', 'networking',
+         'https://events.example/e2e-f6-partner-benefit',
+         TRUE, FALSE, NULL, '{}'::jsonb),
+        (${tenantSlug}, 'eventcreate', ${EXT_EVENT_CULTURAL},
+         'E2E F6 Cultural Event', 'Seeded by tests/e2e/helpers/eventcreate-seed.ts',
+         '2026-05-10T18:00:00Z', '2026-05-10T22:00:00Z',
+         'Singapore', 'cultural',
+         'https://events.example/e2e-f6-cultural',
+         FALSE, TRUE, NULL, '{}'::jsonb),
+        (${tenantSlug}, 'eventcreate', ${EXT_EVENT_ARCHIVED},
+         'E2E F6 Archived Event', 'Seeded by tests/e2e/helpers/eventcreate-seed.ts',
+         '2026-04-01T18:00:00Z', '2026-04-01T22:00:00Z',
+         'Singapore', 'networking',
+         'https://events.example/e2e-f6-archived',
+         FALSE, FALSE, NOW(), '{}'::jsonb)
+      ON CONFLICT (tenant_id, source, external_id) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            start_date = EXCLUDED.start_date,
+            end_date = EXCLUDED.end_date,
+            location = EXCLUDED.location,
+            category = EXCLUDED.category,
+            eventcreate_url = EXCLUDED.eventcreate_url,
+            is_partner_benefit = EXCLUDED.is_partner_benefit,
+            is_cultural_event = EXCLUDED.is_cultural_event,
+            archived_at = EXCLUDED.archived_at,
+            last_updated_at = NOW()
+      RETURNING event_id::text AS event_id, external_id
+    `;
+
+    const byExt = new Map(eventRows.map((r) => [r.external_id, r.event_id]));
+    const partnerBenefitEventId = byExt.get(EXT_EVENT_PB);
+    const culturalEventId = byExt.get(EXT_EVENT_CULTURAL);
+    const archivedEventId = byExt.get(EXT_EVENT_ARCHIVED);
+    if (!partnerBenefitEventId || !culturalEventId || !archivedEventId) {
+      throw new Error('[e2e seed F6] events upsert returned <3 rows');
+    }
+
+    // 3. Registrations (6 rows total) — only NON-MEMBER variants so we
+    //    avoid the F3 members + contacts FK chain. AS4 "Show unmatched
+    //    only" still has filterable rows because each active event has
+    //    ≥1 `match_type='unmatched'` registration.
+    //
+    //    CHECK constraint `event_registrations_non_member_no_quota`
+    //    (migration 0128 + tightened 0136) requires non_member/unmatched
+    //    rows to have NULL matched_member_id + NULL matched_contact_id +
+    //    counted_against_partnership=FALSE + counted_against_cultural_quota
+    //    =FALSE.
+    await client.sql`
+      INSERT INTO event_registrations (
+        tenant_id, event_id, external_id,
+        attendee_email, attendee_name, attendee_company,
+        match_type, matched_member_id, matched_contact_id,
+        ticket_type, ticket_price_thb, payment_status,
+        counted_against_partnership, counted_against_cultural_quota,
+        metadata, registered_at
+      ) VALUES
+        (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_NON_1},
+         'alice@e2e-f6-outsider.example', 'Alice Outsider', 'Outsider Co. Ltd',
+         'non_member', NULL, NULL,
+         'Non-member ticket', 50000, 'paid',
+         FALSE, FALSE, '{}'::jsonb, '2026-06-01T10:00:00Z'),
+        (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_NON_2},
+         'bob@e2e-f6-outsider.example', 'Bob Outsider', 'Outsider Co. Ltd',
+         'non_member', NULL, NULL,
+         'Non-member ticket', 50000, 'paid',
+         FALSE, FALSE, '{}'::jsonb, '2026-06-01T11:00:00Z'),
+        (${tenantSlug}, ${partnerBenefitEventId}, ${EXT_REG_E1_UNMATCHED},
+         'carol@e2e-f6-ambiguous.example', 'Carol Ambiguous', 'Ambig Holdings',
+         'unmatched', NULL, NULL,
+         NULL, NULL, 'paid',
+         FALSE, FALSE, '{}'::jsonb, '2026-06-01T12:00:00Z'),
+        (${tenantSlug}, ${culturalEventId}, ${EXT_REG_E2_NON},
+         'dan@e2e-f6-outsider.example', 'Dan Outsider', 'Outsider Co. Ltd',
+         'non_member', NULL, NULL,
+         'Non-member ticket', 30000, 'paid',
+         FALSE, FALSE, '{}'::jsonb, '2026-04-20T10:00:00Z'),
+        (${tenantSlug}, ${culturalEventId}, ${EXT_REG_E2_UNMATCHED_1},
+         'eve@e2e-f6-ambiguous.example', 'Eve Ambiguous', 'Ambig Holdings',
+         'unmatched', NULL, NULL,
+         NULL, NULL, 'paid',
+         FALSE, FALSE, '{}'::jsonb, '2026-04-20T11:00:00Z'),
+        (${tenantSlug}, ${culturalEventId}, ${EXT_REG_E2_UNMATCHED_2},
+         'frank@e2e-f6-ambiguous.example', 'Frank Ambiguous', 'Ambig Holdings',
+         'unmatched', NULL, NULL,
+         NULL, NULL, 'paid',
+         FALSE, FALSE, '{}'::jsonb, '2026-04-20T12:00:00Z')
+      ON CONFLICT (tenant_id, event_id, external_id) DO UPDATE
+        SET attendee_email = EXCLUDED.attendee_email,
+            attendee_name = EXCLUDED.attendee_name,
+            attendee_company = EXCLUDED.attendee_company,
+            match_type = EXCLUDED.match_type,
+            ticket_type = EXCLUDED.ticket_type,
+            ticket_price_thb = EXCLUDED.ticket_price_thb,
+            payment_status = EXCLUDED.payment_status,
+            registered_at = EXCLUDED.registered_at
+    `;
+
+    console.log(
+      `[e2e seed F6] OK — tenant=${tenantSlug} events=3 registrations=6 (3 non_member + 3 unmatched)`,
+    );
+
+    return {
+      tenantId: tenantSlug,
+      partnerBenefitEventId,
+      culturalEventId,
+      archivedEventId,
+    };
+  } finally {
+    await client.end();
+  }
+}
