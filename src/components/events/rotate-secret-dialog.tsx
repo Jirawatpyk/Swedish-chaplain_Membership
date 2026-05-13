@@ -59,7 +59,24 @@ export function RotateSecretDialog({
         return;
       }
       if (!res.ok) {
-        toast.error(t('failed'));
+        // Round-6 verify-fix 2026-05-13 — extract RFC 7807 `detail`
+        // so 404 (kill-switch) vs 500 (DB outage) vs 503 (read-only)
+        // surface distinct copy instead of a single "Rotation failed"
+        // toast. Route layer already produces a structured problem-
+        // body for every non-2xx.
+        const problem = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const detail =
+          problem && typeof problem === 'object' && 'detail' in problem
+            ? (problem as { detail?: unknown }).detail
+            : null;
+        toast.error(
+          typeof detail === 'string' && detail.length > 0
+            ? detail
+            : t('failed'),
+        );
         return;
       }
       const body = (await res.json()) as RotationResult & { ok: true };
@@ -69,7 +86,10 @@ export function RotateSecretDialog({
         graceActiveUntil: body.graceActiveUntil,
       });
       toast.success(t('success'));
-    } catch {
+    } catch (e) {
+      // Round-6 verify-fix 2026-05-13 — surface to DevTools so devs
+      // can debug network failures without manual repro.
+      console.error('[F6] rotate-secret request failed', e);
       toast.error(t('failed'));
     }
   }

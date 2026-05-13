@@ -53,6 +53,34 @@ function processingBadgeVariant(
   return 'outline';
 }
 
+/**
+ * Closed set of processing-outcome values that have a corresponding
+ * `processing.<value>` i18n key in `en/th/sv.json`. Any value outside
+ * this set falls back to rendering the raw string verbatim (UI never
+ * crashes on a receiver-side enum extension).
+ *
+ * Round-6 verify-fix 2026-05-13 — replaces a brittle `defaultMessage`
+ * cast through `next-intl`'s values dict (which `next-intl` silently
+ * ignores at runtime + throws `IntlError: MISSING_MESSAGE` in dev
+ * mode). MUST stay aligned with the keys under
+ * `admin.integrations.eventcreate.phaseC.recentDeliveries.processing`
+ * — add a new entry to BOTH this set AND all 3 locale JSON files
+ * when the receiver extends `processing_outcome` to a new value.
+ */
+const KNOWN_PROCESSING_OUTCOMES = new Set<string>([
+  'matched_member_contact',
+  'matched_member_domain',
+  'matched_member_fuzzy',
+  'non_member',
+  'unmatched',
+  'short_circuited_test',
+  'duplicate',
+  'malformed',
+  'rolled_back',
+  'rate_limited',
+  'ingest_disabled',
+]);
+
 export function RecentDeliveriesPanel({
   deliveries,
   includeTestDeliveries,
@@ -89,12 +117,21 @@ export function RecentDeliveriesPanel({
           {t('title')}
         </h2>
         <div className="flex items-center gap-2">
+          {/*
+            Round-6 verify-fix 2026-05-13 (A-03 UX) — dropped the
+            redundant `aria-label` on `<Switch>`. The visible `<Label
+            htmlFor>` association below already provides the accessible
+            name for screen readers; carrying both yields a double-
+            announcement and is an a11y anti-pattern. shadcn `<Switch>`
+            forwards the native `aria-labelledby` via the
+            `htmlFor`→`id` link, so removing the explicit aria-label
+            is safe.
+          */}
           <Switch
             id="include-test-deliveries"
             checked={optimisticInclude}
             onCheckedChange={handleToggle}
             disabled={pending}
-            aria-label={t('includeTestDeliveriesLabel')}
           />
           <Label
             htmlFor="include-test-deliveries"
@@ -133,9 +170,9 @@ export function RecentDeliveriesPanel({
                 </Badge>
                 {row.processingOutcome ? (
                   <Badge variant={processingBadgeVariant(row.processingOutcome)}>
-                    {t(`processing.${row.processingOutcome}`, {
-                      defaultMessage: row.processingOutcome,
-                    } as unknown as Record<string, string>)}
+                    {KNOWN_PROCESSING_OUTCOMES.has(row.processingOutcome)
+                      ? t(`processing.${row.processingOutcome}`)
+                      : row.processingOutcome}
                   </Badge>
                 ) : null}
               </div>

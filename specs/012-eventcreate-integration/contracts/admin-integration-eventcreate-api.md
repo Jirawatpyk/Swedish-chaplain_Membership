@@ -20,7 +20,13 @@ The admin sidebar / left-nav entry for `/admin/integrations/eventcreate` is **sh
 - `FEATURE_F6_EVENTCREATE=false` → entry hidden, route 404, surface invisible.
 - `FEATURE_F6_EVENTCREATE=true` → entry visible to admin role. Manager + member still receive 404 + `role_violation_blocked` audit at the route layer (FR-035 unchanged).
 
-**Future per-tenant opt-out** (deferred): an `isEventcreateNavVisible(tenantSlug)` resolver remains exported from `src/lib/events-admin-integration-deps.ts` as a public helper; if a CSV-only tenant requests suppression, a per-tenant flag wired through `staffNavConfig.NavItem.visibilityFlag` can route to that resolver without re-deriving the freshness logic.
+**Future per-tenant opt-out** (deferred): the original Phase 5 draft retained an `isEventcreateNavVisible(tenantSlug)` resolver in `src/lib/events-admin-integration-deps.ts` to support per-tenant freshness-based hiding. **Removed in verify-fix round-2 (G2)** per Constitution Principle X (Simplicity / YAGNI) — the resolver had zero call sites and the requirement was speculative. The extension points that remain (and are sufficient when a real opt-out requirement materialises later):
+
+- `NavVisibilityFlag` typed union (`src/config/nav.ts`) — closed string-literal union; adding a new flag forces both producer (resolver) and consumer (sidebar) to acknowledge it at compile time.
+- `visibilityFlag` field on `NavItem` (`src/config/nav.ts`).
+- `filterNavConfig()` in `src/components/layout/staff-sidebar.tsx` — wires `NavVisibilityFlags` into the sidebar render path.
+
+A future resolver would be ~30 lines to add against those hooks, shaped by the real requirement at that time (admin toggle, DB column, super-admin override, etc.) rather than the Phase 5 strict-R1 freshness logic this contract section used to mandate.
 
 **Phase 4 gap fix bundled in this Phase 5 ship**: a missing `/admin/events` nav entry (no Phase 4 task added it) was added under the same `staffNavConfig.sections[0]` group so admins can reach the events list — which carries the "Set up EventCreate integration" empty-state CTA (FR-020 / US2 AS5 variant a) — from the sidebar without typing the URL.
 

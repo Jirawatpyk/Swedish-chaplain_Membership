@@ -186,9 +186,21 @@ export async function runLoadIntegrationConfig(
     if (cfgResult.ok) {
       cfg = cfgResult.value;
     } else {
+      // Round-6 verify-fix 2026-05-13 (E4) — DB-load failure must
+      // surface as a 500 rather than collapsing into a "first-visit
+      // view". The previous behaviour displayed an empty wizard
+      // (Phase A "Generate secret") to an admin whose tenant already
+      // had a configured row — clicking Generate then hit 409
+      // `already_exists` with zero hint that the prior visible state
+      // was caused by an Infrastructure error. Caller route catches
+      // and maps to 500 + RFC 7807 problem body (now with usable
+      // `detail` after H6 fix).
       logger.error(
         { event: 'f6_load_integration_config_failed', tenantSlug, errKind: cfgResult.error.kind },
-        '[F6] config load failed — returning first-visit view',
+        '[F6] config load failed — propagating as 500',
+      );
+      throw new Error(
+        `f6_load_integration_config_failed: ${cfgResult.error.kind}`,
       );
     }
 
@@ -351,9 +363,22 @@ export async function runRotateWebhookSecret(
     );
   });
   // FR-036 #8 — emit secret-rotation counter ONLY on successful commit
-  // (post-tx so a rollback never overcounts).
+  // (post-tx so a rollback never overcounts). Round-6 verify-fix (E5)
+  // wraps in try/catch so a metric-port throw never crashes the route.
   if (result.ok) {
-    eventcreateMetrics.webhookSecretRotated(tenantSlug);
+    try {
+      eventcreateMetrics.webhookSecretRotated(tenantSlug);
+    } catch (metricErr) {
+      logger.warn(
+        {
+          event: 'f6_metric_emit_failed',
+          metricName: 'webhookSecretRotated',
+          tenantSlug,
+          err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+        },
+        '[F6] metric emit failed (suppressed) — counter undercount possible',
+      );
+    }
   }
   return result;
 }
@@ -432,6 +457,16 @@ export async function runDisableIngest(
   input: DisableInput,
 ): Promise<Result<{ enabled: boolean }, DisableError>> {
   const ctx: TenantContext = asTenantContext(tenantSlug);
+  // Round-6 verify-fix 2026-05-13 (H3 metric drift) — captured outside
+  // the tx callback so we can correctly emit the FR-036 #9 gauge in
+  // BOTH the all-good path AND the "DB committed but audit emit
+  // failed" path. The previous version only emitted on `result.ok`,
+  // which meant audit-emit failure left the gauge stuck at the prior
+  // value while the DB state had actually flipped — a real
+  // observability/state-truth gap.
+  let dbStateMutated = false;
+  let mutatedEnabledState = input.enabled;
+
   const result = await runInTenant(ctx, async (tx) => {
     const repo = makeDrizzleTenantWebhookConfigRepository(tx);
     const audit = makePinoAuditPort(tx);
@@ -456,6 +491,12 @@ export async function runDisableIngest(
       input.enabled,
     );
     if (!update.ok) return update;
+    // Row mutated successfully. Even if audit emit fails below and the
+    // outer Result becomes Result.err, the DB row WILL commit at tx-end
+    // (Drizzle commits unless we throw). The gauge therefore must
+    // reflect the post-mutation state regardless of audit outcome.
+    dbStateMutated = true;
+    mutatedEnabledState = update.value.enabled;
 
     const auditRes = await audit.emit({
       eventType: 'ingest_disabled_tenant_admin',
@@ -490,11 +531,28 @@ export async function runDisableIngest(
 
     return ok({ enabled: update.value.enabled });
   });
-  // FR-036 #9 — emit ingest-disabled gauge after successful state
-  // change so dashboards + the "ingest-disabled tenant detected"
-  // alert (docs/observability.md § 24) reflect the new state.
-  if (result.ok) {
-    eventcreateMetrics.ingestDisabledTenant(tenantSlug, result.value.enabled);
+  // FR-036 #9 — emit ingest-disabled gauge after the DB row mutated
+  // (regardless of audit emit outcome) so the dashboard + alert reflect
+  // the actual DB state. Wrap in try/catch so a metric-port throw
+  // (e.g. Prometheus gateway unreachable) never crashes the route —
+  // gauge emission is observability, NOT a correctness invariant.
+  if (dbStateMutated) {
+    try {
+      eventcreateMetrics.ingestDisabledTenant(
+        tenantSlug,
+        mutatedEnabledState,
+      );
+    } catch (metricErr) {
+      logger.warn(
+        {
+          event: 'f6_metric_emit_failed',
+          metricName: 'ingestDisabledTenant',
+          tenantSlug,
+          err: metricErr instanceof Error ? metricErr.message : String(metricErr),
+        },
+        '[F6] metric emit failed (suppressed) — dashboard drift possible until next state change',
+      );
+    }
   }
   return result;
 }

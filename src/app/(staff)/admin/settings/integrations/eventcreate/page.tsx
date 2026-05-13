@@ -28,6 +28,7 @@ import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadIntegrationConfig } from '@/lib/events-admin-integration-deps';
+import { deriveWebhookBaseUrlFromHeaders } from '@/app/api/admin/integrations/eventcreate/_lib/role-violation-audit';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { WebhookConfigWizard } from '@/components/events/webhook-config-wizard';
@@ -57,11 +58,13 @@ export default async function EventCreateIntegrationPage({
   const h = await headers();
   const tenantCtx = resolveTenantFromHeaders(h);
 
-  // Derive webhook base URL from the incoming request host so the
-  // page works in dev (localhost:3100), staging, and prod identically.
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  const host = h.get('host') ?? h.get('x-forwarded-host') ?? 'localhost';
-  const webhookBaseUrl = `${proto}://${host}`;
+  // Round-6 verify-fix 2026-05-13 (H4) — derive webhook base URL via
+  // the allowlisted helper so a spoofed Host header on staging /
+  // preview cannot render a webhook URL pointing at an attacker host.
+  // Falls back to `APP_BASE_URL` on off-allowlist Host + logs a warn.
+  const proto = h.get('x-forwarded-proto');
+  const host = h.get('host') ?? h.get('x-forwarded-host');
+  const webhookBaseUrl = deriveWebhookBaseUrlFromHeaders(proto, host);
 
   const params = await searchParams;
   const includeTestDeliveries = params.includeTestDeliveries === 'true';

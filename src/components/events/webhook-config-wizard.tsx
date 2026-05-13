@@ -110,17 +110,40 @@ export function WebhookConfigWizard(props: WebhookConfigWizardProps) {
         },
       );
       if (res.status === 409) {
+        // Round-6 verify-fix 2026-05-13 — 409 means the secret already
+        // exists. Recovery flow: refresh server data + advance to
+        // Phase C (masked-secret view) so the admin lands on the
+        // configured surface instead of a dead-end toast.
         toast.error(t('generateAlreadyExists'));
+        router.refresh();
         return;
       }
       if (!res.ok) {
-        toast.error(t('generateFailed'));
+        // Round-6 verify-fix 2026-05-13 — extract RFC 7807 `detail`
+        // from the route's problem-body so 5xx vs 503 (read-only mode)
+        // vs 404 (kill-switch) surface distinct copy.
+        const problem = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const detail =
+          problem && typeof problem === 'object' && 'detail' in problem
+            ? (problem as { detail?: unknown }).detail
+            : null;
+        const message =
+          typeof detail === 'string' && detail.length > 0
+            ? detail
+            : t('generateFailed');
+        toast.error(message);
         return;
       }
       const body = (await res.json()) as { secret: string; secretLastFour: string };
       setGenerated({ secret: body.secret, secretLastFour: body.secretLastFour });
       setPhase('a-reveal');
-    } catch {
+    } catch (e) {
+      // Round-6 verify-fix 2026-05-13 — surface to DevTools so devs
+      // can debug network failures without manual repro.
+      console.error('[F6] generate-secret request failed', e);
       toast.error(t('generateFailed'));
     } finally {
       setGenerating(false);

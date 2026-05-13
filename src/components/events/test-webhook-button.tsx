@@ -60,8 +60,25 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         return;
       }
       if (!res.ok) {
-        toast.error(t('serverError'));
-        setAnnouncement(t('serverError'));
+        // Round-6 verify-fix 2026-05-13 — extract RFC 7807 `detail`
+        // when present so a 404 (kill-switch / disabled) and a 503
+        // (transient infra) surface distinct copy instead of a single
+        // "Server error" toast. The route layer already produces a
+        // structured problem-body for every non-2xx.
+        const problem = await res
+          .clone()
+          .json()
+          .catch(() => null);
+        const detail =
+          problem && typeof problem === 'object' && 'detail' in problem
+            ? (problem as { detail?: unknown }).detail
+            : null;
+        const message =
+          typeof detail === 'string' && detail.length > 0
+            ? detail
+            : t('serverError');
+        toast.error(message);
+        setAnnouncement(message);
         return;
       }
       const body = (await res.json()) as TestWebhookOutcome;
@@ -78,7 +95,11 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         setAnnouncement(t('failure'));
       }
       onResolved?.(body);
-    } catch {
+    } catch (e) {
+      // Round-6 verify-fix 2026-05-13 — surface error to DevTools so
+      // SREs/devs can diagnose root cause (DNS / TLS / abort / timeout)
+      // without manual repro. User-facing toast stays generic.
+      console.error('[F6] test-webhook request failed', e);
       toast.error(t('networkError'));
       setAnnouncement(t('networkError'));
     } finally {
@@ -98,7 +119,10 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         className="min-h-11"
       >
         {loading ? (
-          <Loader2Icon className="size-4 animate-spin" aria-hidden />
+          <Loader2Icon
+            className="size-4 animate-spin motion-reduce:animate-none"
+            aria-hidden
+          />
         ) : (
           <SendIcon className="size-4" aria-hidden />
         )}
