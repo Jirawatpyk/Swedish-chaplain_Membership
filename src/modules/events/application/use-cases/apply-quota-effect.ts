@@ -71,6 +71,7 @@ import {
   wrapAuditEmitFailure,
   wrapLockFailure,
 } from './_helpers/error-wrappers';
+import { quotaAccountingErrorMessage } from './_helpers/repo-error-message';
 
 export interface ApplyQuotaEffectInput {
   readonly tenantId: TenantId;
@@ -139,7 +140,18 @@ export type ApplyQuotaEffectError =
       readonly message: string;
       readonly cause: InvalidLockKeyError;
     }
-  | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
+  | {
+      /**
+       * R7 TEST-FR-05 closure — `message` field added for shape
+       * consistency with archive-event.ts:152 + the F2/F3/F4/F5
+       * sibling repo-error variants. Route handlers using
+       * `error.message` for RFC 7807 detail rendering now get a
+       * meaningful string instead of `undefined`.
+       */
+      readonly kind: 'quota_lookup_failed';
+      readonly message: string;
+      readonly cause: QuotaAccountingError;
+    }
   | {
       readonly kind: 'audit_emit_failed';
       readonly message: string;
@@ -218,7 +230,11 @@ export async function applyQuotaEffect(
     fiscalYear: input.fiscalYear,
   });
   if (!lookup.ok) {
-    return err({ kind: 'quota_lookup_failed', cause: lookup.error });
+    return err({
+      kind: 'quota_lookup_failed',
+      message: quotaAccountingErrorMessage(lookup.error),
+      cause: lookup.error,
+    });
   }
   const { allotments, consumed } = lookup.value;
 

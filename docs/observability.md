@@ -1316,7 +1316,7 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | **SLO-F6-004** idempotency-sweep liveness | rate(`*_sweep_rows_total{outcome=swept}`) > 0 over rolling 48h while table row count > 0 | counter + tenant_webhook_configs row count | 0% — paged on first failure |
 | **SLO-F6-005** match-rate availability | `eventcreate_match_rate` gauge ≥ 0.95 (SC-002) | gauge + alerting threshold | informational — soft target |
 | **SLO-F6-006** audit completeness | `eventcreate_audit_fallback_double_failure_total` == 0 over rolling 30d | counter | 0% — pages on first occurrence |
-| **SLO-F6-007** admin archive/toggle p95 (staff-review-4 PERF-R6-05) | < 5s @ N=50 / < 12s @ N=200 registrations | proposed histograms `eventcreate_archive_duration_ms` + `eventcreate_toggle_duration_ms` (Phase 10 emit wiring) | informational at SweCham scale; hard target for MTA tenants with N>200. Bounded above by Vercel function `maxDuration = 60` (PERF-R6-01 closure) and `listForRequota` row cap of 2000 (SEC-R6-01 closure). |
+| **SLO-F6-007** admin archive/toggle p95 (staff-review-4 PERF-R6-05) | < 5s @ N=50 / < 12s @ N=200 registrations | histograms `eventcreate_archive_duration_ms` + `eventcreate_toggle_duration_ms` emitted from `src/lib/events-admin-deps.ts` via try/finally on both success + error paths | informational at SweCham scale; hard target for MTA tenants with N>200. Bounded above by Vercel function `maxDuration = 60` (PERF-R6-01 closure) and `listForRequota` row cap of 2000 (SEC-R6-01 closure). |
 
 ### 24.3 Alerts
 

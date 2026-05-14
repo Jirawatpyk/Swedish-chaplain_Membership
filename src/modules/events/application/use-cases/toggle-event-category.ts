@@ -85,6 +85,7 @@ import { buildQuotaLockKey } from './apply-quota-effect';
 import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
+  quotaAccountingErrorMessage,
 } from './_helpers/repo-error-message';
 import { emitQuotaScopeAudit } from './_helpers/emit-quota-scope-audit';
 import {
@@ -172,7 +173,17 @@ export type ToggleEventCategoryError =
       readonly message: string;
       readonly cause: InvalidLockKeyError;
     }
-  | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
+  | {
+      /**
+       * R7 TEST-FR-05 closure — `message` field added for shape
+       * consistency with sibling F6 use-case error variants (archive
+       * + apply-quota-effect). Route handlers reading `error.message`
+       * for RFC 7807 `detail` rendering now get a meaningful string.
+       */
+      readonly kind: 'quota_lookup_failed';
+      readonly message: string;
+      readonly cause: QuotaAccountingError;
+    }
   | {
       readonly kind: 'audit_emit_failed';
       readonly message: string;
@@ -300,7 +311,11 @@ export async function toggleEventCategory(
           fiscalYear,
         });
         if (!lookup.ok) {
-          return err({ kind: 'quota_lookup_failed', cause: lookup.error });
+          return err({
+            kind: 'quota_lookup_failed',
+            message: quotaAccountingErrorMessage(lookup.error),
+            cause: lookup.error,
+          });
         }
         // Subtract the row's own contribution so SUM excludes self
         const consumedExcludingSelf =
@@ -345,7 +360,11 @@ export async function toggleEventCategory(
             fiscalYear,
           });
           if (!lookup.ok) {
-            return err({ kind: 'quota_lookup_failed', cause: lookup.error });
+            return err({
+            kind: 'quota_lookup_failed',
+            message: quotaAccountingErrorMessage(lookup.error),
+            cause: lookup.error,
+          });
           }
           // Consumed BEFORE our credit-back still includes this row.
           // The allotment-after AFTER our credit-back is allotment - (consumed - 1).
@@ -366,7 +385,11 @@ export async function toggleEventCategory(
           fiscalYear,
         });
         if (!lookup.ok) {
-          return err({ kind: 'quota_lookup_failed', cause: lookup.error });
+          return err({
+            kind: 'quota_lookup_failed',
+            message: quotaAccountingErrorMessage(lookup.error),
+            cause: lookup.error,
+          });
         }
         const consumedExcludingSelf =
           lookup.value.consumed.culturalConsumedForYear -
@@ -397,7 +420,11 @@ export async function toggleEventCategory(
             fiscalYear,
           });
           if (!lookup.ok) {
-            return err({ kind: 'quota_lookup_failed', cause: lookup.error });
+            return err({
+            kind: 'quota_lookup_failed',
+            message: quotaAccountingErrorMessage(lookup.error),
+            cause: lookup.error,
+          });
           }
           allotmentAfterCultural =
             lookup.value.allotments.culturalPerYear -

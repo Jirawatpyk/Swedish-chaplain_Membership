@@ -404,6 +404,107 @@ describe('emitMatchingQuotaMetric — ARCH-R6-02 direct dispatcher coverage', ()
     expect(partnershipSpy).not.toHaveBeenCalled();
   });
 
+  it('TEST-FR-01 — planTier label flows from payload to quotaPartnershipDecremented counter', async () => {
+    // R7 TEST-FR-01 closure — the previous 5 dispatcher tests all
+    // emit with planTier=null (payload omits it). This test pins the
+    // PERF-05 flow-through: payload.planTier='diamond' must reach the
+    // counter as the second positional arg. A regression dropping the
+    // payload-read in `emitMatchingQuotaMetric` would silently degrade
+    // the OTel `plan_tier` label to 'unknown' across all SweCham
+    // traffic, invalidating the per-tier dashboard.
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_partnership_decremented',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'partnership decrement with tier label',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        perEventAllotmentBefore: 6,
+        perEventAllotmentAfter: 5,
+        planTier: 'diamond',
+      },
+    });
+    expect(partnershipSpy).toHaveBeenCalledTimes(1);
+    expect(partnershipSpy).toHaveBeenCalledWith('test-chamber', 'diamond');
+  });
+
+  it('TEST-FR-01 — planTier label flows from payload to quotaCulturalDecremented counter', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_cultural_decremented',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'cultural decrement with tier label',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        fiscalYear: 2026,
+        annualAllotmentBefore: 2,
+        annualAllotmentAfter: 1,
+        planTier: 'premium',
+      },
+    });
+    expect(culturalSpy).toHaveBeenCalledTimes(1);
+    expect(culturalSpy).toHaveBeenCalledWith('test-chamber', 'premium');
+  });
+
+  it('TEST-FR-06 — emitStandalone path ALSO fires the matching counter (PERF-R6-03 closure)', async () => {
+    // R7 TEST-FR-06 closure — PERF-R6-03 wired `emitMatchingQuotaMetric`
+    // into BOTH `emit()` AND `emitStandalone()`. Existing 5 dispatcher
+    // tests only exercise `emit()`. A future refactor dropping the
+    // emitStandalone callsite would silently stop firing counters for
+    // any standalone quota emit (e.g., F6.1 manual recovery scripts).
+    //
+    // emitStandalone uses `db.transaction(...)` — mock the root db's
+    // transaction method to invoke the callback with a passthrough
+    // executor that returns the audit row id.
+    const { db } = await import('@/lib/db');
+    const dbTxSpy = vi.spyOn(db, 'transaction').mockImplementation(
+      // @ts-expect-error — minimal stub matches the runtime callback shape
+      (async (cb) => {
+        // Always return the audit row shape — the SET LOCAL calls
+        // don't read the return value, only the final INSERT does.
+        // Returning the same shape for every execute() call is safe
+        // because the SET LOCALs' return is discarded by insertAuditRow.
+        const tx = {
+          execute: vi.fn().mockResolvedValue([{ id: 'audit-test-id' }]),
+        } as unknown as TenantTx;
+        return cb(tx);
+      }) as never,
+    );
+
+    const port = makePinoAuditPort(executor);
+    await port.emitStandalone({
+      eventType: 'quota_credit_back_archive',
+      tenantId: 'test-chamber' as never,
+      actorType: 'admin',
+      actorUserId: 'u-1' as never,
+      occurredAt: new Date(),
+      summary: 'standalone archive credit-back',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        scope: 'partnership',
+        allotmentAfter: 4,
+      },
+    });
+
+    expect(creditBackSpy).toHaveBeenCalledTimes(1);
+    expect(creditBackSpy).toHaveBeenCalledWith('test-chamber', 'archive', 'partnership');
+    dbTxSpy.mockRestore();
+  });
+
   it('invalid scope in payload — over-quota dispatcher skips counter (defensive guard)', async () => {
     const port = makePinoAuditPort(executor);
     await port.emit({

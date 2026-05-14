@@ -53,35 +53,53 @@ import type {
 import type { RegistrationsRepository } from '../application/ports/registrations-repository';
 
 /**
- * R6 PERF-05 closure — derive an OTel-labelable plan tier slug from
- * the F2 `membership_plans.plan_id` string. SweCham 2026 packaging
- * uses canonical tier slugs (see `docs/membership-benefits-analysis.md`):
- *   - Corporate: small / large / premium
- *   - Partnership: gold / platinum / diamond
- *   - Other: standard (legacy / non-tiered)
- * The plan_id is typically `{tier}-{year}` (e.g., `diamond-2026`) or
- * just `{tier}`. We extract the prefix word and validate against the
- * known tier set; unknown returns null (counter labels as 'unknown').
+ * R6 PERF-05 closure (R7 CODE-FR-01 corrected) — derive an OTel-
+ * labelable plan tier slug from the F2 `membership_plans.plan_id`
+ * string. Canonical SweCham 2026 plan_ids are documented at
+ * `docs/membership-benefits-analysis.md:157` and listed in the
+ * seed SQL block at the same file lines 247-260:
+ *
+ *   - Corporate (6 tiers): `premium`, `large`, `regular`,
+ *     `start-up`, `individual`, `thai-alumni`
+ *   - Partnership (3 tiers): `diamond`, `platinum`, `gold`
+ *
+ * The plan_id format is `{tier-slug}` optionally with a `-{year}`
+ * suffix (e.g., `diamond-2026`, `start-up-2026`,
+ * `thai-alumni-2027`). We strip the trailing year suffix only
+ * (regex `/-\d{4}$/`) and validate the remainder against the closed
+ * allowlist — this preserves hyphenated slugs like `start-up` +
+ * `thai-alumni` that the previous greedy `/^[a-z]+/` regex
+ * silently truncated to `start` / `thai` (both then rejected by
+ * the allowlist → label degraded to `unknown` for 4 of 6 corporate
+ * tiers on the live SweCham tenant). This was the R7 BLOCKER.
  *
  * The plan_id slug guard is case-insensitive and uses a closed
- * allowlist — no risk of label cardinality explosion via attacker-
- * controlled plan_ids (which are admin-created anyway).
+ * allowlist — no risk of OTel label cardinality explosion via
+ * attacker-controlled plan_ids (admin-created anyway, but defense-
+ * in-depth).
  */
-const KNOWN_PLAN_TIERS = new Set([
-  'small',
-  'large',
+export const KNOWN_PLAN_TIERS = [
+  // 6 corporate tiers
   'premium',
-  'gold',
-  'platinum',
+  'large',
+  'regular',
+  'start-up',
+  'individual',
+  'thai-alumni',
+  // 3 partnership tiers
   'diamond',
-  'standard',
-]);
-function derivePlanTier(planId: string): string | null {
-  // Extract the leading alphabetic word (e.g., `diamond-2026` → `diamond`).
-  const match = planId.toLowerCase().match(/^[a-z]+/);
-  if (!match) return null;
-  const tier = match[0];
-  return KNOWN_PLAN_TIERS.has(tier) ? tier : null;
+  'platinum',
+  'gold',
+] as const;
+export type PlanTier = (typeof KNOWN_PLAN_TIERS)[number];
+
+export function derivePlanTier(planId: string): PlanTier | null {
+  // Strip the year suffix only (e.g., `diamond-2026` → `diamond`,
+  // `start-up-2026` → `start-up`, `thai-alumni-2027` → `thai-alumni`).
+  const stripped = planId.toLowerCase().replace(/-\d{4}$/, '');
+  return (KNOWN_PLAN_TIERS as readonly string[]).includes(stripped)
+    ? (stripped as PlanTier)
+    : null;
 }
 
 export function makeDrizzleQuotaAccountingAdapter(

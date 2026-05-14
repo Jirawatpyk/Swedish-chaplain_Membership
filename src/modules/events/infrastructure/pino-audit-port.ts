@@ -48,14 +48,17 @@ import { sanitizeDbErrorMessage } from './sanitize-db-error';
  * `eventcreateMetrics`). Called after `insertAuditRow` returns so the
  * counter increments only when the row insert succeeded.
  *
- * **R6 PERF-R6-02 caveat (H3 dashboard-truth accuracy)**: this dispatcher
- * fires AFTER `insertAuditRow` resolves but BEFORE the caller's
- * transaction commits. If the surrounding tx later rolls back (e.g.,
- * a later iteration in the archive loop emits an audit-emit failure →
- * `runInTenantWithRollbackOnErr` rolls the entire tx), the audit row
- * for THIS iteration is NOT persisted in `audit_log`, but the OTel
- * counter increment is NOT reversible. Drift is bounded to
- * `(currentIteration − 1)` phantom increments per archive failure +
+ * **R6 PERF-R6-02 caveat (H3 dashboard-truth accuracy; R7 COMMENT-FR-03 corrected)**:
+ * this dispatcher fires AFTER `insertAuditRow` resolves but BEFORE
+ * the caller's transaction commits. If the surrounding tx later rolls
+ * back (e.g., a later iteration in the archive loop emits an audit-
+ * emit failure → `runInTenantWithRollbackOnErr` rolls the entire tx),
+ * the audit row for THIS iteration is NOT persisted in `audit_log`,
+ * but the OTel counter increment is NOT reversible. Drift is bounded
+ * to **`≤ 2 × currentIteration`** phantom counter increments per
+ * archive failure — EACH counted row can emit BOTH partnership AND
+ * cultural credit-back audits (one per scope), and each emit fires
+ * one OTel counter increment via this dispatcher. The drift is
  * observable via the accompanying `logger.error` on the error path.
  *
  * This is a deliberate trade-off matching the F5 payment-receipt +
@@ -310,9 +313,13 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
     ): Promise<Result<AuditEventId, AuditEmitError>> {
       try {
         const id = await insertAuditRow(executor, entry);
-        // Phase 6 WARN-1 — fire matching OTel counter AFTER the audit
-        // row commits in the caller's tx (the row commits on tx commit;
-        // best-effort metric emission cannot block or fail the tx).
+        // R7 CODE-FR-03 corrected — fire matching OTel counter AFTER
+        // `insertAuditRow` resolves (not after tx commit). See H3
+        // docstring above L51-66 — counter increment is NOT tx-bound;
+        // partial-tx-rollback drift is documented and bounded to
+        // `≤ 2 × currentIteration` phantom increments (each row can
+        // emit BOTH partnership + cultural credit-back audits =>
+        // 2 counters/row).
         emitMatchingQuotaMetric(entry);
         return ok(id as AuditEventId);
       } catch (e) {

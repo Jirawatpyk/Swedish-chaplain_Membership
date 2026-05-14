@@ -213,17 +213,27 @@ export async function runToggleEventCategory(
 ): Promise<Result<ToggleEventCategoryOutput, ToggleEventCategoryError>> {
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
-  // R6 PERF-R6-05 closure — record toggle duration histogram for
-  // SLO-F6-007 monitoring. Fires on BOTH success and error paths so
-  // pool-pressure regressions surface even when archive returns err.
-  const startedAtMs = Date.now();
+  // R6 PERF-R6-05 closure (R7 ERR-FR-02 hardened) — record toggle
+  // duration histogram for SLO-F6-007 monitoring. `performance.now()`
+  // is the monotonic clock (Vercel Fluid Compute can NTP-adjust
+  // `Date.now()` backwards mid-invocation, producing negative
+  // latencies that some OTel SDKs drop as out-of-range and others
+  // accept as artificially-low observations that skew p50 down).
+  // `Math.max(0, ...)` is defense-in-depth in case `performance.now()`
+  // also exhibits unexpected behavior in some runtime environments.
+  // Fires on BOTH success and error paths so pool-pressure regressions
+  // surface even when toggle returns err.
+  const startedAt = performance.now();
   try {
     return await runInTenantWithRollbackOnErr(ctx, async (tx) => {
       const deps = makeToggleEventCategoryDeps(tx, ctx);
       return toggleEventCategory({ ...input, tenantId }, deps);
     });
   } finally {
-    eventcreateMetrics.toggleDurationMs(tenantSlug, Date.now() - startedAtMs);
+    eventcreateMetrics.toggleDurationMs(
+      tenantSlug,
+      Math.max(0, performance.now() - startedAt),
+    );
   }
 }
 
@@ -273,16 +283,21 @@ export async function runArchiveEvent(
 ): Promise<Result<ArchiveEventOutput, ArchiveEventError>> {
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
-  // R6 PERF-R6-05 closure — record archive duration histogram for
-  // SLO-F6-007 monitoring (target: p95 < 5s @ N=50 / < 12s @ N=200).
-  // Fires on BOTH success and error paths via finally clause.
-  const startedAtMs = Date.now();
+  // R6 PERF-R6-05 closure (R7 ERR-FR-02 hardened) — record archive
+  // duration histogram for SLO-F6-007 monitoring (target: p95 < 5s @
+  // N=50 / < 12s @ N=200). Uses monotonic `performance.now()` instead
+  // of wall-clock `Date.now()` to avoid NTP-induced negative latencies.
+  // See toggle wrapper above for rationale.
+  const startedAt = performance.now();
   try {
     return await runInTenantWithRollbackOnErr(ctx, async (tx) => {
       const deps = makeArchiveEventDeps(tx, ctx);
       return archiveEvent({ ...input, tenantId }, deps);
     });
   } finally {
-    eventcreateMetrics.archiveDurationMs(tenantSlug, Date.now() - startedAtMs);
+    eventcreateMetrics.archiveDurationMs(
+      tenantSlug,
+      Math.max(0, performance.now() - startedAt),
+    );
   }
 }

@@ -493,41 +493,50 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             ),
           )
           .orderBy(asc(eventRegistrations.matchedMemberId), asc(eventRegistrations.registrationId))
-          // R6 SEC-R6-01 — defensive row cap. Archive + toggle loops
-          // hold a single tx for the entire N-iteration credit-back
-          // pass; an event with thousands of paid+matched registrations
-          // could monopolise a connection slot for >10s (PERF-R6-01
-          // raises Vercel maxDuration to 60, but pool pressure is a
-          // separate concern). 2000 is well above SweCham's largest
-          // realistic event (~200 attendees) but caps the worst case
-          // at ~12s wall-clock. If an event exceeds the cap, archive
-          // still succeeds for the first 2000 rows; the operator
-          // observes `registrationsAffected` < actual N in the macro
-          // `event_archived` audit and can trigger a follow-up sweep.
-          // At SweCham scale (~131 members) this guard is dormant;
-          // defense-in-depth for future MTA tenants.
-          .limit(LIST_FOR_REQUOTA_CAP);
-        // R6 SEC-R6-01 follow-up closure — when the LIMIT is reached,
-        // emit a structured `logger.warn` so operators discover the
-        // truncation via Vercel runtime logs rather than via the
-        // `registrationsAffected < actual N` discrepancy on the macro
-        // audit row. Promoting this to a dedicated audit_event_type
-        // (`event_archive_row_cap_hit`) is a Phase 11 follow-up if
-        // the cap is actually hit in production — current scale +
-        // log-warn is sufficient signal.
-        if (rows.length >= LIST_FOR_REQUOTA_CAP) {
+          // R6 SEC-R6-01 (R7 ERR-FR-01 hardened) — defensive row cap.
+          // Archive + toggle loops hold a single tx for the entire
+          // N-iteration credit-back pass; an event with thousands of
+          // paid+matched registrations could monopolise a connection
+          // slot for >10s (PERF-R6-01 raises Vercel maxDuration to 60,
+          // but pool pressure is a separate concern). SweCham's
+          // largest realistic event historically <200 attendees;
+          // 2000 is the defense-in-depth ceiling for future MTA
+          // tenants. At SweCham scale this guard is dormant.
+          //
+          // **R7 ERR-FR-01 fix** — use `.limit(LIST_FOR_REQUOTA_CAP + 1)`
+          // and slice down to `LIST_FOR_REQUOTA_CAP` for the return
+          // value. This lets us distinguish "exactly at cap, no data
+          // lost" (raw rows.length === cap, NO warn) from "over cap,
+          // some rows silently dropped" (raw rows.length === cap+1,
+          // warn fires with truncated=true). The previous `>= cap`
+          // check fired false-positive warnings for any event landing
+          // exactly at 2000 rows.
+          .limit(LIST_FOR_REQUOTA_CAP + 1);
+        const truncated = rows.length > LIST_FOR_REQUOTA_CAP;
+        const safeRows = truncated ? rows.slice(0, LIST_FOR_REQUOTA_CAP) : rows;
+        // R6 SEC-R6-01 follow-up closure — emit a structured
+        // `logger.warn` ONLY when truncation actually happened so
+        // operators discover dropped rows via Vercel runtime logs
+        // rather than via the `registrationsAffected < actual N`
+        // discrepancy on the macro audit row. Promoting this to a
+        // dedicated audit_event_type (`event_archive_row_cap_hit`)
+        // is a Phase 11 follow-up if the cap is actually hit in
+        // production — current scale + log-warn is sufficient signal.
+        if (truncated) {
           logger.warn(
             {
               event: 'f6_list_for_requota_cap_hit',
               tenantId,
               eventId,
               cap: LIST_FOR_REQUOTA_CAP,
-              rowsReturned: rows.length,
+              rowsReturned: safeRows.length,
+              truncated: true,
+              droppedAtLeast: rows.length - LIST_FOR_REQUOTA_CAP,
             },
-            `[F6] listForRequota row cap reached — archive/toggle credit-back will only process first ${LIST_FOR_REQUOTA_CAP} rows; remainder requires a follow-up sweep`,
+            `[F6] listForRequota truncated — at least ${rows.length - LIST_FOR_REQUOTA_CAP} row(s) silently dropped from credit-back; follow-up sweep required`,
           );
         }
-        return ok(rows.map(toAggregate));
+        return ok(safeRows.map(toAggregate));
       } catch (e) {
         return err(wrapRepoError('registrations', e));
       }

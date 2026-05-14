@@ -19,7 +19,8 @@
  *   - FR-019a (archive sets archived_at + reverses counted_against_*)
  *   - research.md R5 advisory lock + computed-on-read
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant, db } from '@/lib/db';
@@ -169,12 +170,26 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       await tenant.cleanup();
     });
 
-    it('archive → archived_at set + 3 rows flip counted=false + 3 credit-back audits + macro event_archived', async () => {
+    it('archive → archived_at set + 3 rows flip counted=false + 3 credit-back audits + macro event_archived + duration histogram fired (R7 TEST-FR-03)', async () => {
+      // R7 TEST-FR-03 closure — spy on the duration histogram emit so
+      // the SLO-F6-007 signal is verified to fire from the wrapper's
+      // try/finally (and so a future regression that drops the
+      // `finally` block surfaces here, not silently in production).
+      const durationSpy = vi.spyOn(eventcreateMetrics, 'archiveDurationMs');
       const result = await runArchiveEvent(tenant.ctx.slug, {
         eventId: eventInternalId as never,
         actorUserId: asUserId(userId),
         occurredAt: new Date(),
       });
+      try {
+        expect(durationSpy).toHaveBeenCalledTimes(1);
+        const [calledTenantSlug, calledLatencyMs] = durationSpy.mock.calls[0]!;
+        expect(calledTenantSlug).toBe(tenant.ctx.slug);
+        expect(calledLatencyMs).toBeGreaterThanOrEqual(0); // monotonic clock + clamp
+        expect(calledLatencyMs).toBeLessThan(60_000); // sanity vs maxDuration ceiling
+      } finally {
+        durationSpy.mockRestore();
+      }
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.registrationsAffected).toBe(3);

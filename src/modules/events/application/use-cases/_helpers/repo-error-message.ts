@@ -21,6 +21,7 @@
  */
 import type { EventsRepositoryError } from '../../ports/events-repository';
 import type { RegistrationsRepositoryError } from '../../ports/registrations-repository';
+import type { QuotaAccountingError } from '../../ports/quota-accounting-port';
 
 export function eventsRepoErrorMessage(e: EventsRepositoryError): string {
   switch (e.kind) {
@@ -45,5 +46,25 @@ export function registrationsRepoErrorMessage(
       return `event_registrations pseudonymised row rejected: ${e.registrationId}`;
     case 'not_implemented':
       return `event_registrations.${e.method} not_implemented (${e.futureTask})`;
+  }
+}
+
+/**
+ * R7 TYPE-FR-04 closure — `QuotaAccountingError` discriminated-union
+ * unwrapper for the 5 sites that emit `quota_lookup_failed`. The 3
+ * sibling repo-error helpers above use the same `switch on .kind`
+ * pattern; this completes the symmetry across the 4 F6 Result.err
+ * types that flow through use-case error variants. Adding a new
+ * `QuotaAccountingError` variant becomes a compile-time error here
+ * (the `switch` is exhaustive — `never` check at the bottom).
+ */
+export function quotaAccountingErrorMessage(e: QuotaAccountingError): string {
+  switch (e.kind) {
+    case 'db_error':
+      return `quota lookup: ${e.message}`;
+    case 'member_not_found':
+      return `quota lookup: member ${e.memberId} not found`;
+    case 'plan_not_found':
+      return `quota lookup: plan not found for member ${e.memberId}`;
   }
 }

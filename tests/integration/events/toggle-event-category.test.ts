@@ -20,7 +20,8 @@
  * Uses the production `runToggleEventCategory` composition root so the
  * test exercises the exact path the admin route handler walks.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant, db } from '@/lib/db';
@@ -172,7 +173,9 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
       await tenant.cleanup();
     });
 
-    it('toggling is_partner_benefit ON → 3 rows flip to counted=true + 3 decremented audits + 1 macro toggle audit', async () => {
+    it('toggling is_partner_benefit ON → 3 rows flip to counted=true + 3 decremented audits + 1 macro toggle audit + duration histogram fired (R7 TEST-FR-03)', async () => {
+      // R7 TEST-FR-03 closure — spy on duration histogram (SLO-F6-007).
+      const durationSpy = vi.spyOn(eventcreateMetrics, 'toggleDurationMs');
       const result = await runToggleEventCategory(tenant.ctx.slug, {
         eventId: eventInternalId as never,
         flag: 'is_partner_benefit',
@@ -180,6 +183,15 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         actorUserId: asUserId(userId),
         occurredAt: new Date(),
       });
+      try {
+        expect(durationSpy).toHaveBeenCalledTimes(1);
+        const [calledTenantSlug, calledLatencyMs] = durationSpy.mock.calls[0]!;
+        expect(calledTenantSlug).toBe(tenant.ctx.slug);
+        expect(calledLatencyMs).toBeGreaterThanOrEqual(0);
+        expect(calledLatencyMs).toBeLessThan(60_000);
+      } finally {
+        durationSpy.mockRestore();
+      }
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.previousValue).toBe(false);

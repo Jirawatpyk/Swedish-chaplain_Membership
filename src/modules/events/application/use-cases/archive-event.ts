@@ -69,6 +69,7 @@ import { deriveFiscalYear } from '@/lib/fiscal-year';
 import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
+  quotaAccountingErrorMessage,
 } from './_helpers/repo-error-message';
 import {
   wrapAuditEmitFailure,
@@ -240,21 +241,25 @@ export async function archiveEvent(
   // equals calendar year. Other tenants can diverge later.
   const fiscalYear = deriveFiscalYear(eventBefore.startDate.toISOString(), 1);
 
-  // **R6 PERF-R6-04 closure** — batch `queryAllotments` by unique
-  // memberId. Pre-loop: walk the `counted` list and collect the unique
-  // set of `(memberId)` whose registrations will be credit-backed.
-  // Issue ONE `queryAllotments` per unique member to capture
-  // `(allotments, initialConsumed)` snapshot. Then inside the per-row
-  // loop, instead of re-issuing `queryAllotments` (3 RTTs/row), use
-  // the cached allotments + an in-memory `decrementsCache` to track
-  // how many rows we've credited back so far for THIS member —
-  // `currentConsumed = initialConsumed - decrementsCache.partnership`.
+  // **R6 PERF-R6-04 closure (R7 COMMENT-FR-02 clarified)** — batch
+  // `queryAllotments` by unique memberId. Pre-loop: walk the `counted`
+  // list and collect the unique set of `(memberId)` whose registrations
+  // will be credit-backed. Issue ONE `queryAllotments` per unique member
+  // to capture `(allotments, initialConsumed)` snapshot. Then inside
+  // the per-row loop, instead of re-issuing `queryAllotments`, use the
+  // cached allotments + an in-memory `decrementsCache` to track how
+  // many rows we've credited back so far for THIS member —
+  // `currentConsumed = initialConsumed - decrementsCache.<scope>`.
   // The audit emit's `allotmentAfter` then computes correctly as
-  // `allotments.partnershipPerEvent - currentConsumed` without
-  // re-touching the DB. For events with M unique members and N total
-  // counted rows (M ≤ N), this reduces from N×3 = 3N RTTs to M×3 + 0
-  // RTTs for plan-lookup. At SweCham scale (M ≈ 0.8N typically)
-  // savings are ~25%; at corporate-guest scale (M ≪ N) savings ≥ 60%.
+  // `allotments.<scopeAllotment> - currentConsumed` without re-touching
+  // the DB. RTT impact (queryAllotments calls only — setQuotaEffect +
+  // audit-emit per row are unchanged):
+  //   - Before: N × 1 = N queryAllotments calls (3 RTTs each)
+  //   - After: M × 1 = M queryAllotments calls (3 RTTs each)
+  // where M = |unique members| ≤ N. For events where M ≪ N (corporate
+  // members registering multiple guests on the same event), this is a
+  // meaningful saving. Benchmark with measured numbers tracked under
+  // T154c (Phase 11 perf-bench follow-up if profiling shows need).
   type CachedAllotments = {
     readonly allotments: PlanAllotments;
     readonly initialConsumed: ConsumedQuota;
@@ -275,14 +280,13 @@ export async function archiveEvent(
       fiscalYear,
     });
     if (!lookup.ok) {
-      const e = lookup.error;
-      const msg =
-        e.kind === 'db_error'
-          ? e.message
-          : e.kind === 'member_not_found'
-            ? `quota lookup failed pre-loop: member ${e.memberId} not found`
-            : `quota lookup failed pre-loop: plan not found for member ${e.memberId}`;
-      return err({ kind: 'quota_lookup_failed', message: msg, cause: e });
+      // R7 TYPE-FR-04 — use shared `quotaAccountingErrorMessage` helper
+      // instead of inline ternary (exhaustiveness-checked via switch).
+      return err({
+        kind: 'quota_lookup_failed',
+        message: `pre-loop ${quotaAccountingErrorMessage(lookup.error)}`,
+        cause: lookup.error,
+      });
     }
     allotmentsCache.set(m, {
       allotments: lookup.value.allotments,
@@ -294,18 +298,22 @@ export async function archiveEvent(
   // concurrent ingests on the same (member, event) block until our
   // archive commits.
   //
-  // **R6 REL-R6-03 + PERF-R6-02 caveat (H3 dashboard-truth)**: if this
-  // loop aborts mid-iteration (lock failure, queryAllotments failure,
-  // or audit-emit failure), the surrounding tx ROLLS BACK via
+  // **R6 REL-R6-03 + PERF-R6-02 caveat (H3 dashboard-truth; R7 COMMENT-FR-03 corrected)**:
+  // if this loop aborts mid-iteration (lock failure, queryAllotments
+  // failure, or audit-emit failure), the surrounding tx ROLLS BACK via
   // `runInTenantWithRollbackOnErr` → all `event_registrations` UPDATEs
   // and `audit_log` INSERTs persisted so far are undone. However, OTel
   // counters incremented via `eventcreateMetrics.quotaCreditBack(...)`
   // in `pino-audit-port.ts:emitMatchingQuotaMetric` are NOT reversed
   // (counters are best-effort observability, not part of the tx).
-  // Drift is bounded to `(currentIteration − 1)` phantom credit-back
-  // counter increments per archive failure, and is observable via the
-  // accompanying `logger.error` on the error path. The audit_log table
-  // remains authoritative; counters are informational. Matches the F5
+  // Drift is bounded to `≤ 2 × currentIteration` phantom credit-back
+  // counter increments per archive failure — EACH counted row can
+  // emit BOTH partnership AND cultural credit-back audits (one per
+  // scope, the two `if (wasPartnership)` / `if (wasCultural)` blocks
+  // below are independent), and each emit fires one counter via the
+  // dispatcher. Drift is observable via the accompanying
+  // `logger.error` on the error path. The audit_log table remains
+  // authoritative; counters are informational. Matches the F5
   // payment-receipt + F7 broadcast-delivery precedent.
   for (const reg of counted) {
     const memberId = reg.match.matchedMemberId;
@@ -347,15 +355,22 @@ export async function archiveEvent(
     const memberKey = String(memberId);
     const cached = allotmentsCache.get(memberKey);
     if (!cached) {
-      // Defensive — `uniqueMembers` was populated from the same
-      // `counted` list, so the cache MUST contain this member. If we
-      // reach this branch, the pre-loop walk dropped a memberId
-      // (programmer error, not a transient failure). Fail loud.
-      return err({
-        kind: 'quota_lookup_failed',
-        message: `archive loop: member ${memberKey} missing from pre-loop allotments cache (programmer error)`,
-        cause: { kind: 'member_not_found', memberId },
-      });
+      // R7 ERR-FR-04 — programmer error (NOT a transient DB failure):
+      // `uniqueMembers` was populated from the same `counted` list, so
+      // the cache MUST contain this member. Throw a plain Error here
+      // instead of returning `quota_lookup_failed` (which is documented
+      // as a TRANSIENT failure variant) — a synthesized
+      // `member_not_found` cause would mislead the SRE runbook into a
+      // data-integrity hunt rather than a code-regression hunt. The
+      // throw escapes to `runInTenantWithRollbackOnErr`, which catches
+      // it, rolls back the tx, and surfaces a 500 with full pino stack
+      // for SRE diagnosis. Matches the "fail loud" intent of the
+      // defensive check.
+      throw new Error(
+        `archive-event invariant: memberId ${memberKey} missing from ` +
+          `pre-loop allotmentsCache (programmer error — uniqueMembers ` +
+          `walk dropped a memberId; check counted-list / Set construction)`,
+      );
     }
     const decrementsSoFar = decrementsCache.get(memberKey) ?? {
       partnership: 0,
