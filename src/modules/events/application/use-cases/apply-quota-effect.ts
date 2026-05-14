@@ -62,11 +62,15 @@ import type {
 import type { F6AuditPort, ActorType, AuditEmitError } from '../ports/audit-port';
 import {
   asLockKey,
+  type InvalidLockKeyError,
   type AdvisoryLockAcquirer,
   type LockKey,
 } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
-import { auditEmitErrorMessage } from './_helpers/audit-error-message';
+import {
+  wrapAuditEmitFailure,
+  wrapLockFailure,
+} from './_helpers/error-wrappers';
 
 export interface ApplyQuotaEffectInput {
   readonly tenantId: TenantId;
@@ -109,11 +113,31 @@ export interface ApplyQuotaEffectOutput {
   >;
 }
 
+/**
+ * **R2-TYPE-B + R3-CRIT-2 + R3-IMP-5 (wave-6 round-12)** — every variant
+ * carries a `cause` discriminator (where applicable) so route handlers
+ * can surface the underlying retry-eligibility context:
+ *   - `lock_acquisition_failed.cause: Error` — transient pg-driver error,
+ *     SRE retry runbook eligible
+ *   - `lock_key_invariant_violation.cause: InvalidLockKeyError` —
+ *     programmer error / schema drift, page on-call, DO NOT retry
+ *   - `quota_lookup_failed.cause: QuotaAccountingError` — discriminator
+ *     for `db_error | member_not_found | plan_not_found`
+ *   - `audit_emit_failed.cause: AuditEmitError` — `db_error |
+ *     enum_value_unknown` for the inner audit-port failure
+ * Route handlers extract via the pino `err: ... .cause` log key (NOT
+ * the legacy `cause:` key — pino auto-serializes `err`).
+ */
 export type ApplyQuotaEffectError =
   | {
       readonly kind: 'lock_acquisition_failed';
       readonly message: string;
-      readonly cause: unknown;
+      readonly cause: Error;
+    }
+  | {
+      readonly kind: 'lock_key_invariant_violation';
+      readonly message: string;
+      readonly cause: InvalidLockKeyError;
     }
   | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
   | {
@@ -183,11 +207,7 @@ export async function applyQuotaEffect(
       buildQuotaLockKey(input.tenantId, input.matchedMemberId, input.eventId),
     );
   } catch (e) {
-    return err({
-      kind: 'lock_acquisition_failed',
-      message: (e as Error)?.message ?? 'unknown',
-      cause: e,
-    });
+    return err(wrapLockFailure(e));
   }
 
   // (3) Plan allotments + consumed counts.
@@ -244,11 +264,7 @@ export async function applyQuotaEffect(
         },
       });
       if (!r.ok) {
-        return err({
-          kind: 'audit_emit_failed',
-          message: auditEmitErrorMessage(r.error),
-          cause: r.error,
-        });
+        return err(wrapAuditEmitFailure(r.error));
       }
       emittedAuditEventTypes.push('quota_partnership_decremented');
     } else {
@@ -269,11 +285,7 @@ export async function applyQuotaEffect(
         },
       });
       if (!r.ok) {
-        return err({
-          kind: 'audit_emit_failed',
-          message: auditEmitErrorMessage(r.error),
-          cause: r.error,
-        });
+        return err(wrapAuditEmitFailure(r.error));
       }
       emittedAuditEventTypes.push('quota_over_quota_warning');
     }
@@ -302,11 +314,7 @@ export async function applyQuotaEffect(
         },
       });
       if (!r.ok) {
-        return err({
-          kind: 'audit_emit_failed',
-          message: auditEmitErrorMessage(r.error),
-          cause: r.error,
-        });
+        return err(wrapAuditEmitFailure(r.error));
       }
       emittedAuditEventTypes.push('quota_cultural_decremented');
     } else {
@@ -327,11 +335,7 @@ export async function applyQuotaEffect(
         },
       });
       if (!r.ok) {
-        return err({
-          kind: 'audit_emit_failed',
-          message: auditEmitErrorMessage(r.error),
-          cause: r.error,
-        });
+        return err(wrapAuditEmitFailure(r.error));
       }
       emittedAuditEventTypes.push('quota_over_quota_warning');
     }

@@ -76,7 +76,10 @@ import type {
   QuotaAccountingError,
 } from '../ports/quota-accounting-port';
 import type { F6AuditPort, AuditEmitError } from '../ports/audit-port';
-import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
+import type {
+  AdvisoryLockAcquirer,
+  InvalidLockKeyError,
+} from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
 import {
@@ -84,7 +87,10 @@ import {
   registrationsRepoErrorMessage,
 } from './_helpers/repo-error-message';
 import { emitQuotaScopeAudit } from './_helpers/emit-quota-scope-audit';
-import { auditEmitErrorMessage } from './_helpers/audit-error-message';
+import {
+  wrapAuditEmitFailure,
+  wrapLockFailure,
+} from './_helpers/error-wrappers';
 
 export type ToggleFlag = 'is_partner_benefit' | 'is_cultural_event';
 
@@ -110,20 +116,38 @@ export interface ToggleEventCategoryOutput {
 }
 
 /**
- * **IMP-5 wave-5 batch-3** — `events_repo_error` and
- * `registrations_repo_error` now carry the full underlying
- * discriminated `<Repo>Error` as `cause`, in addition to the
- * pre-formatted `message` (kept for log-line ergonomics + backward
- * compat with route 500 handlers that surfaced `message` verbatim
- * before this change). Callers that need retry-vs-no-retry logic
- * can pattern-match on `cause.kind`:
+ * **IMP-5 wave-5 batch-3 + R2-TYPE-B + R3-CRIT-2 + R3-IMP-5 (round-12)** —
+ * every variant carries a `cause` discriminator where applicable so route
+ * handlers can surface the retry-eligibility context for SRE runbooks.
+ *
+ * `events_repo_error` and `registrations_repo_error` carry the full
+ * underlying discriminated `<Repo>Error` as `cause`, in addition to the
+ * pre-formatted `message`. Callers needing retry-vs-no-retry logic can
+ * pattern-match on `cause.kind`:
  *   - `db_error` → transient, retry-eligible
  *   - `invariant_violation` → RLS / schema drift, page SREs
  *   - `pseudonymised_row_rejected` → never retry, drop row from set
  *   - `not_implemented` → compile-time-prevented stub callout
  *
- * Mirrors the existing `quota_lookup_failed.cause` shape so the
- * F6 admin error union is internally consistent.
+ * `lock_acquisition_failed.cause: Error` — transient pg-driver error,
+ * SRE retry runbook eligible. Non-Error throws are normalised at the
+ * catch site (R3-CRIT-3) so pino's `err`-key serializer always sees
+ * a real Error instance.
+ *
+ * `lock_key_invariant_violation.cause: InvalidLockKeyError` — programmer
+ * error / schema drift, page on-call, DO NOT retry. Bucketed separately
+ * from `lock_acquisition_failed` (R3-CRIT-2) so SRE retry filters
+ * exclude it.
+ *
+ * `quota_lookup_failed.cause: QuotaAccountingError` — discriminator
+ * for `db_error | member_not_found | plan_not_found`.
+ *
+ * `audit_emit_failed.cause: AuditEmitError` — `db_error |
+ * enum_value_unknown` for the inner audit-port failure.
+ *
+ * Route handlers extract via the pino `err: ... .cause` log key (NOT
+ * the legacy `cause:` key — pino auto-serializes `err` into
+ * `{type, message, stack}`).
  */
 export type ToggleEventCategoryError =
   | { readonly kind: 'event_not_found'; readonly eventId: EventId }
@@ -141,7 +165,12 @@ export type ToggleEventCategoryError =
   | {
       readonly kind: 'lock_acquisition_failed';
       readonly message: string;
-      readonly cause: unknown;
+      readonly cause: Error;
+    }
+  | {
+      readonly kind: 'lock_key_invariant_violation';
+      readonly message: string;
+      readonly cause: InvalidLockKeyError;
     }
   | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
   | {
@@ -244,11 +273,7 @@ export async function toggleEventCategory(
         buildQuotaLockKey(input.tenantId, memberId, input.eventId),
       );
     } catch (e) {
-      return err({
-        kind: 'lock_acquisition_failed',
-        message: (e as Error)?.message ?? 'unknown',
-        cause: e,
-      });
+      return err(wrapLockFailure(e));
     }
 
     const currentPartnership = reg.quotaEffect.countedAgainstPartnership;
@@ -497,11 +522,7 @@ export async function toggleEventCategory(
           },
   });
   if (!macroResult.ok) {
-    return err({
-      kind: 'audit_emit_failed',
-      message: auditEmitErrorMessage(macroResult.error),
-      cause: macroResult.error,
-    });
+    return err(wrapAuditEmitFailure(macroResult.error));
   }
 
   return ok({

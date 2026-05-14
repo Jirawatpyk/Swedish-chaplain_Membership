@@ -74,11 +74,27 @@ export type LockKey = string & { readonly [lockKeyBrand]: true };
  * visible error (the call site is a use-case-internal construction
  * that should always pass).
  */
+/**
+ * Module-level regex const so the error message in `InvalidLockKeyError`
+ * can never drift from the matcher (R3-CRIT-1 fix — wave-6 round-12).
+ *
+ * **F6-private invariant** (R3-SUGG-2): the `{1,4}` segment cap reflects
+ * F6's current canonical key shapes:
+ *   - `eventcreate-quota:tenant:member:event`        (3 segments — quota lock)
+ *   - `eventcreate:rotate-secret:tenant:source`     (3 segments)
+ * F4 / F5 / F7 / F8 build raw strings without this validation; this brand
+ * is **NOT** shared with those modules today. A future cross-module hoist
+ * would need to widen the cap (currently 4 covers all five families
+ * coincidentally) and live under `src/lib/`.
+ */
+const LOCK_KEY_REGEX = /^[a-z0-9-]+(:[A-Za-z0-9._-]+){1,4}$/;
+const LOCK_KEY_MAX_LENGTH = 256;
+
 export function asLockKey(value: string): LockKey {
   if (
     typeof value !== 'string' ||
-    !/^[a-z0-9-]+(:[A-Za-z0-9._-]+){1,4}$/.test(value) ||
-    value.length > 256
+    !LOCK_KEY_REGEX.test(value) ||
+    value.length > LOCK_KEY_MAX_LENGTH
   ) {
     throw new InvalidLockKeyError(value);
   }
@@ -88,7 +104,7 @@ export function asLockKey(value: string): LockKey {
 export class InvalidLockKeyError extends Error {
   constructor(public readonly raw: string) {
     super(
-      `Invalid advisory-lock key (must match /^[a-z0-9-]+:[\\x20-\\x7e]+$/ and be ≤256 chars): ${JSON.stringify(raw).slice(0, 200)}`,
+      `Invalid advisory-lock key (must match ${LOCK_KEY_REGEX} and be ≤${LOCK_KEY_MAX_LENGTH} chars): ${JSON.stringify(raw).slice(0, 200)}`,
     );
     this.name = 'InvalidLockKeyError';
   }

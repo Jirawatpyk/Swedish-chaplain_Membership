@@ -44,14 +44,20 @@ import type {
   RegistrationsRepositoryError,
 } from '../ports/registrations-repository';
 import type { F6AuditPort, AuditEmitError } from '../ports/audit-port';
-import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
+import type {
+  AdvisoryLockAcquirer,
+  InvalidLockKeyError,
+} from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
 import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
 } from './_helpers/repo-error-message';
-import { auditEmitErrorMessage } from './_helpers/audit-error-message';
+import {
+  wrapAuditEmitFailure,
+  wrapLockFailure,
+} from './_helpers/error-wrappers';
 
 export interface ArchiveEventInput {
   readonly tenantId: TenantId;
@@ -70,8 +76,19 @@ export interface ArchiveEventOutput {
 }
 
 /**
- * **IMP-5 wave-5 batch-3** — repo errors carry `cause` discriminator
- * (see toggle-event-category.ts for the full pattern rationale).
+ * **IMP-5 wave-5 batch-3 + R2-TYPE-B + R3-CRIT-2 + R3-IMP-5 (round-12)** —
+ * every variant carries a `cause` discriminator where applicable so route
+ * handlers can surface the retry-eligibility context for SRE runbooks:
+ *   - `events_repo_error` / `registrations_repo_error` → `cause` carries the
+ *     discriminated repo error (db_error | invariant_violation |
+ *     pseudonymised_row_rejected | not_implemented)
+ *   - `lock_acquisition_failed.cause: Error` — transient, retry-eligible
+ *   - `lock_key_invariant_violation.cause: InvalidLockKeyError` —
+ *     programmer error / schema drift, page on-call, DO NOT retry
+ *   - `audit_emit_failed.cause: AuditEmitError` — `db_error |
+ *     enum_value_unknown` for the inner audit-port failure
+ * Route handlers extract via the pino `err: ... .cause` log key (NOT
+ * the legacy `cause:` key — pino auto-serializes `err`).
  */
 export type ArchiveEventError =
   | { readonly kind: 'event_not_found'; readonly eventId: EventId }
@@ -89,7 +106,12 @@ export type ArchiveEventError =
   | {
       readonly kind: 'lock_acquisition_failed';
       readonly message: string;
-      readonly cause: unknown;
+      readonly cause: Error;
+    }
+  | {
+      readonly kind: 'lock_key_invariant_violation';
+      readonly message: string;
+      readonly cause: InvalidLockKeyError;
     }
   | {
       readonly kind: 'audit_emit_failed';
@@ -175,11 +197,7 @@ export async function archiveEvent(
         buildQuotaLockKey(input.tenantId, memberId, input.eventId),
       );
     } catch (e) {
-      return err({
-        kind: 'lock_acquisition_failed',
-        message: (e as Error)?.message ?? 'unknown',
-        cause: e,
-      });
+      return err(wrapLockFailure(e));
     }
 
     const wasPartnership = reg.quotaEffect.countedAgainstPartnership;
@@ -229,11 +247,7 @@ export async function archiveEvent(
         },
       });
       if (!r.ok) {
-        return err({
-          kind: 'audit_emit_failed',
-          message: auditEmitErrorMessage(r.error),
-          cause: r.error,
-        });
+        return err(wrapAuditEmitFailure(r.error));
       }
       partnershipReversals += 1;
     }
@@ -252,11 +266,7 @@ export async function archiveEvent(
         },
       });
       if (!r.ok) {
-        return err({
-          kind: 'audit_emit_failed',
-          message: auditEmitErrorMessage(r.error),
-          cause: r.error,
-        });
+        return err(wrapAuditEmitFailure(r.error));
       }
       culturalReversals += 1;
     }
@@ -282,11 +292,7 @@ export async function archiveEvent(
     },
   });
   if (!macro.ok) {
-    return err({
-      kind: 'audit_emit_failed',
-      message: auditEmitErrorMessage(macro.error),
-      cause: macro.error,
-    });
+    return err(wrapAuditEmitFailure(macro.error));
   }
 
   return ok({

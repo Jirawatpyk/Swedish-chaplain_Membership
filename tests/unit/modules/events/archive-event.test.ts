@@ -279,11 +279,12 @@ describe('archiveEvent — Phase 6 wave-4 (FR-019a)', () => {
       expect(emitMock).not.toHaveBeenCalled();
     });
 
-    it('lock_acquisition_failed when advisoryLockAcquirer throws', async () => {
+    it('lock_acquisition_failed when advisoryLockAcquirer throws (with cause:Error — R3-IMP-1)', async () => {
+      const pgError = new Error('pg session terminated');
       const { deps } = makeDeps({
         listForRequota: async () => ok([makeRegistration()]),
         acquire: async () => {
-          throw new Error('pg session terminated');
+          throw pgError;
         },
       });
       const result = await archiveEvent(baseInput(), deps);
@@ -292,19 +293,28 @@ describe('archiveEvent — Phase 6 wave-4 (FR-019a)', () => {
         expect(result.error.kind).toBe('lock_acquisition_failed');
         if (result.error.kind === 'lock_acquisition_failed') {
           expect(result.error.message).toContain('pg session terminated');
+          // R3-IMP-1: cause preserves original Error for pino `err` key
+          expect(result.error.cause).toBe(pgError);
+          expect(result.error.cause).toBeInstanceOf(Error);
         }
       }
     });
 
-    it('audit_emit_failed when credit-back audit emit fails', async () => {
+    it('audit_emit_failed when credit-back audit emit fails (with cause:AuditEmitError — R3-IMP-1)', async () => {
+      const auditError = { kind: 'db_error' as const, message: 'audit log down' };
       const { deps } = makeDeps({
         listForRequota: async () => ok([makeRegistration()]),
-        emit: async () => err({ kind: 'db_error', message: 'audit log down' }),
+        emit: async () => err(auditError),
       });
       const result = await archiveEvent(baseInput(), deps);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.kind).toBe('audit_emit_failed');
+        if (result.error.kind === 'audit_emit_failed') {
+          // R3-IMP-1: cause preserves the inner discriminator
+          expect(result.error.cause).toEqual(auditError);
+          expect(result.error.cause.kind).toBe('db_error');
+        }
       }
     });
   });

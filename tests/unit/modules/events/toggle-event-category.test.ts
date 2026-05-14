@@ -285,11 +285,12 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       if (!r.ok) expect(r.error.kind).toBe('registrations_repo_error');
     });
 
-    it('lock_acquisition_failed when advisoryLockAcquirer throws', async () => {
+    it('lock_acquisition_failed when advisoryLockAcquirer throws (with cause:Error — R3-IMP-1)', async () => {
+      const pgError = new Error('pg lock timeout');
       const { deps } = makeDeps({
         listForRequota: async () => ok([makeRegistration()]),
         acquire: async () => {
-          throw new Error('pg lock timeout');
+          throw pgError;
         },
       });
       const r = await toggleEventCategory(baseInput(), deps);
@@ -298,6 +299,8 @@ describe('toggleEventCategory — Phase 6 T087', () => {
         expect(r.error.kind).toBe('lock_acquisition_failed');
         if (r.error.kind === 'lock_acquisition_failed') {
           expect(r.error.message).toContain('pg lock timeout');
+          expect(r.error.cause).toBe(pgError);
+          expect(r.error.cause).toBeInstanceOf(Error);
         }
       }
     });
@@ -313,15 +316,22 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       if (!r.ok) expect(r.error.kind).toBe('quota_lookup_failed');
     });
 
-    it('audit_emit_failed during per-row decremented emit', async () => {
+    it('audit_emit_failed during per-row decremented emit (with cause:AuditEmitError — R3-IMP-1)', async () => {
+      const auditError = { kind: 'db_error' as const, message: 'audit log unreachable' };
       const { deps } = makeDeps({
         listForRequota: async () => ok([makeRegistration()]),
         // First emit fails (the per-row decremented audit)
-        emit: async () => err({ kind: 'db_error', message: 'audit log unreachable' }),
+        emit: async () => err(auditError),
       });
       const r = await toggleEventCategory(baseInput(), deps);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.kind).toBe('audit_emit_failed');
+      if (!r.ok) {
+        expect(r.error.kind).toBe('audit_emit_failed');
+        if (r.error.kind === 'audit_emit_failed') {
+          expect(r.error.cause).toEqual(auditError);
+          expect(r.error.cause.kind).toBe('db_error');
+        }
+      }
     });
   });
 

@@ -26,6 +26,7 @@ import {
   applyQuotaEffect,
   buildQuotaLockKey,
   NEUTRAL_QUOTA_EFFECT,
+  InvalidLockKeyError,
   type ApplyQuotaEffectDeps,
   type ApplyQuotaEffectInput,
   type QuotaAccountingPort,
@@ -141,10 +142,11 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
   });
 
   describe('error paths (lock, lookup, audit)', () => {
-    it('advisory lock acquisition throws → lock_acquisition_failed', async () => {
+    it('advisory lock acquisition throws → lock_acquisition_failed (with cause:Error — R3-IMP-1)', async () => {
+      const pgError = new Error('pg session lost');
       const { deps } = makeDeps({
         acquire: async () => {
-          throw new Error('pg session lost');
+          throw pgError;
         },
       });
       const result = await applyQuotaEffect(baseInput(), deps);
@@ -153,6 +155,48 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
         expect(result.error.kind).toBe('lock_acquisition_failed');
         if (result.error.kind === 'lock_acquisition_failed') {
           expect(result.error.message).toContain('pg session lost');
+          // R3-IMP-1: assert cause carries original Error so future
+          // refactor that drops `cause: e` from wrapLockFailure fails here.
+          expect(result.error.cause).toBe(pgError);
+          expect(result.error.cause).toBeInstanceOf(Error);
+        }
+      }
+    });
+
+    it('advisory lock catch normalises non-Error throw → synthetic Error preserved on cause (R3-CRIT-3)', async () => {
+      const { deps } = makeDeps({
+        acquire: async () => {
+          // simulate a non-Error throw (string) — pre-R3 would log `cause: {}`
+          throw 'lock-string-throw';
+        },
+      });
+      const result = await applyQuotaEffect(baseInput(), deps);
+      expect(result.ok).toBe(false);
+      if (!result.ok && result.error.kind === 'lock_acquisition_failed') {
+        expect(result.error.cause).toBeInstanceOf(Error);
+        expect(result.error.cause.message).toContain('non-error throw');
+        expect(result.error.cause.message).toContain('lock-string-throw');
+      }
+    });
+
+    it('InvalidLockKeyError from acquire → lock_key_invariant_violation (NOT generic lock_acquisition_failed) — R3-CRIT-2', async () => {
+      // Simulate a programmer-error path: the lock-key validator throws.
+      // Pre-R3 this would bucket as `lock_acquisition_failed` (retry-eligible)
+      // and SRE retry runbook would loop the bug. R3-CRIT-2 routes it to
+      // `lock_key_invariant_violation` (page on-call, DO NOT retry).
+      const lockKeyError = new InvalidLockKeyError('eventcreate_quota:bad-underscore');
+      const { deps } = makeDeps({
+        acquire: async () => {
+          throw lockKeyError;
+        },
+      });
+      const result = await applyQuotaEffect(baseInput(), deps);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe('lock_key_invariant_violation');
+        if (result.error.kind === 'lock_key_invariant_violation') {
+          expect(result.error.cause).toBe(lockKeyError);
+          expect(result.error.cause).toBeInstanceOf(InvalidLockKeyError);
         }
       }
     });
@@ -172,9 +216,10 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
       }
     });
 
-    it('audit emit returns err → audit_emit_failed (FR-037 strict-tx)', async () => {
+    it('audit emit returns err → audit_emit_failed with cause:AuditEmitError (FR-037 strict-tx + R3-IMP-1)', async () => {
+      const auditError = { kind: 'db_error' as const, message: 'audit log unavailable' };
       const { deps } = makeDeps({
-        emit: async () => err({ kind: 'db_error', message: 'audit log unavailable' }),
+        emit: async () => err(auditError),
       });
       const result = await applyQuotaEffect(baseInput(), deps);
       expect(result.ok).toBe(false);
@@ -182,6 +227,11 @@ describe('applyQuotaEffect — Phase 6 T085', () => {
         expect(result.error.kind).toBe('audit_emit_failed');
         if (result.error.kind === 'audit_emit_failed') {
           expect(result.error.message).toContain('audit log unavailable');
+          // R3-IMP-1: cause preserves the inner AuditEmitError
+          // discriminator so SRE can pattern-match on db_error vs
+          // enum_value_unknown without re-parsing the message.
+          expect(result.error.cause).toEqual(auditError);
+          expect(result.error.cause.kind).toBe('db_error');
         }
       }
     });

@@ -131,8 +131,21 @@ export async function POST(
             event: 'admin_event_archive_use_case_error',
             eventId,
             errKind: result.error.kind,
-            cause: 'cause' in result.error ? result.error.cause : undefined,
-            message: 'message' in result.error ? result.error.message : undefined,
+            // pino's `err` key auto-serializes Error → {type, message, stack}.
+            // Use `typeof === 'object' && !null` guard before `in` to survive
+            // a future primitive-shaped error variant (R3-CRIT-3 + R3-LOW-1).
+            err:
+              typeof result.error === 'object' &&
+              result.error !== null &&
+              'cause' in result.error
+                ? result.error.cause
+                : undefined,
+            message:
+              typeof result.error === 'object' &&
+              result.error !== null &&
+              'message' in result.error
+                ? result.error.message
+                : undefined,
           },
           '[F6] archiveEvent returned use-case error',
         );

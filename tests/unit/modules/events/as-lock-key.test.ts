@@ -41,6 +41,23 @@ describe('asLockKey — Phase 6 wave-6 (CRIT-R2-3)', () => {
       expect(() => asLockKey('feature:tenant_slug.with-dots')).not.toThrow();
     });
 
+    it('accepts exactly 4 trailing segments (regex {1,4} upper-bound, R3-IMP-6)', () => {
+      // Locks the documented {1,4} segment cap from the negative side.
+      // If the cap is silently tightened to {1,3} the canonical F6 key
+      // still passes but other future shapes would not — this guard
+      // detects that drift.
+      expect(() => asLockKey('feature:s1:s2:s3:s4')).not.toThrow();
+    });
+
+    it('accepts exactly 256 chars (within segment alphabet)', () => {
+      const tail = 'x'.repeat(256 - 'feature:'.length);
+      const key = `feature:${tail}`;
+      expect(key.length).toBe(256);
+      expect(() => asLockKey(key)).not.toThrow();
+    });
+  });
+
+  describe('rejects malformed segments (R3-IMP-6 — moved out of accepts group)', () => {
     it('rejects spaces in segments (wave-6 tighter regex)', () => {
       expect(() => asLockKey('feature:tail with spaces')).toThrow(
         InvalidLockKeyError,
@@ -57,13 +74,6 @@ describe('asLockKey — Phase 6 wave-6 (CRIT-R2-3)', () => {
       expect(() =>
         asLockKey('feature:s1:s2:s3:s4:s5'),
       ).toThrow(InvalidLockKeyError);
-    });
-
-    it('accepts exactly 256 chars (within segment alphabet)', () => {
-      const tail = 'x'.repeat(256 - 'feature:'.length);
-      const key = `feature:${tail}`;
-      expect(key.length).toBe(256);
-      expect(() => asLockKey(key)).not.toThrow();
     });
   });
 

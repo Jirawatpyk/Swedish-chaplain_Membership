@@ -620,9 +620,11 @@ export async function ingestWebhookAttendee(
         if (!quotaResult.ok) {
           const qe = quotaResult.error;
           let detail: string;
-          if (qe.kind === 'lock_acquisition_failed') {
-            detail = qe.message;
-          } else if (qe.kind === 'audit_emit_failed') {
+          if (
+            qe.kind === 'lock_acquisition_failed' ||
+            qe.kind === 'lock_key_invariant_violation' ||
+            qe.kind === 'audit_emit_failed'
+          ) {
             detail = qe.message;
           } else {
             // quota_lookup_failed
