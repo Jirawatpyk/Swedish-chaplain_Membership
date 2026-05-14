@@ -50,7 +50,7 @@ import {
   TooltipTrigger,
   TooltipProvider,
 } from '@/components/ui/tooltip';
-import { ArchiveIcon, PencilIcon } from 'lucide-react';
+import { ArchiveIcon, PencilIcon, PencilLineIcon } from 'lucide-react';
 import { toast } from 'sonner';
 // F8 Phase 6 Wave H — risk-score badge for the directory column. F8
 // shared primitive lives at src/components/renewals/risk-score-badge.tsx
@@ -118,6 +118,50 @@ type Props = {
 };
 
 const columnHelper = createColumnHelper<MembersTableRow>();
+
+/**
+ * C7 round-10 ui-design-specialist — column-header affordance for the
+ * 3 editable cells (status / country / notes). Renders the label + a
+ * small pencil icon; hovering / focusing the icon surfaces the
+ * instruction ("Double-click any cell in this column to edit inline.
+ * Enter to save, Escape to cancel."). Only mounted when the caller
+ * passes `editable={true}` — manager view drops it.
+ *
+ * Icon-only (no "Editable" text) per maintainer feedback — keeps the
+ * column header compact. `aria-label` + Tooltip carry the meaning for
+ * sighted + SR users.
+ */
+function EditableColumnHeader({
+  label,
+  editable,
+}: {
+  label: string;
+  editable: boolean;
+}) {
+  const t = useTranslations('admin.members.inlineEdit');
+  if (!editable) return <>{label}</>;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{label}</span>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                aria-label={t('columnHeaderHintTooltip')}
+              />
+            }
+          >
+            <PencilLineIcon aria-hidden="true" className="size-3" />
+          </TooltipTrigger>
+          <TooltipContent>{t('columnHeaderHintTooltip')}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </span>
+  );
+}
 
 function StatusBadge({ status }: { status: MembersTableRow['status'] }) {
   const t = useTranslations('admin.members.directory');
@@ -580,7 +624,12 @@ export function MembersTable({
       ),
     }),
     columnHelper.accessor('country', {
-      header: () => t('columns.country'),
+      header: () => (
+        <EditableColumnHeader
+          label={t('columns.country')}
+          editable={enableSelection}
+        />
+      ),
       cell: (info) =>
         enableSelection ? (
           <InlineCountryCell
@@ -626,7 +675,12 @@ export function MembersTable({
       },
     }),
     columnHelper.accessor('status', {
-      header: () => t('columns.status'),
+      header: () => (
+        <EditableColumnHeader
+          label={t('columns.status')}
+          editable={enableSelection}
+        />
+      ),
       cell: (info) =>
         enableSelection ? (
           <InlineStatusCell
@@ -706,7 +760,12 @@ export function MembersTable({
       },
     }),
     columnHelper.accessor('notes', {
-      header: () => t('columns.notes'),
+      header: () => (
+        <EditableColumnHeader
+          label={t('columns.notes')}
+          editable={enableSelection}
+        />
+      ),
       cell: (info) =>
         enableSelection ? (
           <InlineNotesCell

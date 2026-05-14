@@ -921,6 +921,8 @@
         "saveFailed": "Save failed. Reverted.",
         "saving": "Saving…",
         "saved": "Saved",
+        "columnHeaderHint": "Editable",
+        "columnHeaderHintTooltip": "Double-click any cell in this column to edit inline. Press Enter to save, Escape to cancel.",
         "toggleStatus": "Toggle status (currently {current})",
         "editCountry": "Edit country",
         "editCountryHint": "Double-click to edit country (ISO 3166-1 alpha-2)",

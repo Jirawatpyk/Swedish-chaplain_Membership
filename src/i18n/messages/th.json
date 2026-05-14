@@ -921,6 +921,8 @@
         "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
         "saving": "กำลังบันทึก…",
         "saved": "บันทึกแล้ว",
+        "columnHeaderHint": "แก้ไขได้",
+        "columnHeaderHintTooltip": "ดับเบิ้ลคลิกเซลล์ในคอลัมน์นี้เพื่อแก้ไขในตาราง กด Enter เพื่อบันทึก กด Escape เพื่อยกเลิก",
         "toggleStatus": "สลับสถานะ (ปัจจุบัน: {current})",
         "editCountry": "แก้ไขประเทศ",
         "editCountryHint": "ดับเบิลคลิกเพื่อแก้ไขรหัสประเทศ (ISO 3166-1 alpha-2)",

@@ -921,6 +921,8 @@
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
         "saved": "Sparat",
+        "columnHeaderHint": "Redigerbar",
+        "columnHeaderHintTooltip": "Dubbelklicka på en cell i denna kolumn för att redigera direkt. Tryck Enter för att spara, Escape för att avbryta.",
         "toggleStatus": "Växla status (nuvarande: {current})",
         "editCountry": "Redigera land",
         "editCountryHint": "Dubbelklicka för att redigera landskod (ISO 3166-1 alpha-2)",
