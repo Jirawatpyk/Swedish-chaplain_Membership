@@ -2755,4 +2755,21 @@ export const eventcreateMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * Phase 7 review C-1/C-2 fix — `csv_import_row_failed` /
+   * `csv_import_completed` audit-emit failure counter. Fires when the
+   * audit emitter swallows an error (forensic-trail loss). Operators
+   * should alert on `rate > 0` because each event represents a row-
+   * level (or per-import) audit gap that no other surface can
+   * reconstruct.
+   */
+  csvImportAuditEmitFailed(tenantId: string, eventType: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_audit_emit_failed_total',
+        'F6 CSV-import audit-emit failure counter (forensic-trail gap)',
+      ).add(1, { tenant: tenantId, event_type: eventType });
+    });
+  },
 } as const;

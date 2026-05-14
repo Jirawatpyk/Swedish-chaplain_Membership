@@ -26,9 +26,10 @@
  * Pure client component — no DB access. The route handler at
  * `/api/admin/events/import` does the parse-and-import.
  */
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, UploadCloud } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -102,6 +103,14 @@ export function CsvMappingForm() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const fileInputId = useId();
   const liveRegionId = useId();
+  // H-12 + M-2 fix (2026-05-15): track whether a previous completed
+  // phase happened so the idle re-entry announcement only fires on
+  // intentional reset (not on first mount). Derived from
+  // `phase.kind` history — set in the same transition that emits
+  // `setPhase({kind:'completed'})` so render-time reads don't trip
+  // `react-hooks/refs` or `react-hooks/set-state-in-effect`.
+  const [hasPreviouslyCompleted, setHasPreviouslyCompleted] =
+    useState(false);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -139,50 +148,87 @@ export function CsvMappingForm() {
       });
       return;
     }
-    if (res.status === 200) {
-      const summary = (await res.json()) as CsvImportResultPayload;
-      setPhase({ kind: 'completed', summary });
-      return;
-    }
-    if (res.status === 400) {
-      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      const missingColumns = Array.isArray(body['missingColumns'])
-        ? (body['missingColumns'] as string[])
-        : undefined;
-      setPhase({
-        kind: 'error',
-        title: missingColumns
-          ? tErrors('headerInvalidTitle')
-          : tErrors('badRequestTitle'),
-        detail: String(body['detail'] ?? body['title'] ?? tErrors('badRequestDetail')),
-        ...(missingColumns ? { missingColumns } : {}),
-      });
-      return;
-    }
-    if (res.status === 413) {
-      setPhase({
-        kind: 'error',
-        title: tErrors('fileTooLargeTitle'),
-        detail: tErrors('fileTooLargeDetail'),
-      });
-      return;
-    }
-    if (res.status === 429) {
-      const retryAfter = res.headers.get('Retry-After') ?? '';
-      setPhase({
-        kind: 'error',
-        title: tErrors('rateLimitedTitle'),
-        detail: tErrors('rateLimitedDetail', { retryAfter }),
-      });
-      return;
-    }
-    if (res.status === 504) {
-      setPhase({
-        kind: 'error',
-        title: tErrors('timeoutTitle'),
-        detail: tErrors('timeoutDetail'),
-      });
-      return;
+    // H-5 + simplify #8 fix (2026-05-15): switch dispatch on res.status
+    // + wrap res.json() parse to catch truncated/non-JSON server
+    // responses (proxy interposition, mid-flight reset). L-2 fix:
+    // Retry-After header may be either delta-seconds or HTTP-date; we
+    // parse defensively + fall back to 60s if non-numeric.
+    switch (res.status) {
+      case 200: {
+        let summary: CsvImportResultPayload;
+        try {
+          summary = (await res.json()) as CsvImportResultPayload;
+        } catch (e) {
+          setPhase({
+            kind: 'error',
+            title: tErrors('unexpectedTitle'),
+            detail:
+              e instanceof Error ? e.message : tErrors('unexpectedDetail'),
+          });
+          return;
+        }
+        setPhase({ kind: 'completed', summary });
+        setHasPreviouslyCompleted(true);
+        // M-1 fix: sonner success toast — esp. needed for the
+        // idempotency case where rowsProcessed=0 reads like a failure
+        // without the toast framing the situation.
+        toast.success(t('importSuccessToast'), {
+          description: t('importSuccessToastDesc', {
+            count: summary.rowsProcessed,
+          }),
+        });
+        return;
+      }
+      case 400: {
+        const body = (await res.json().catch(() => ({}))) as Record<
+          string,
+          unknown
+        >;
+        const missingColumns = Array.isArray(body['missingColumns'])
+          ? (body['missingColumns'] as string[])
+          : undefined;
+        setPhase({
+          kind: 'error',
+          title: missingColumns
+            ? tErrors('headerInvalidTitle')
+            : tErrors('badRequestTitle'),
+          detail: String(
+            body['detail'] ?? body['title'] ?? tErrors('badRequestDetail'),
+          ),
+          ...(missingColumns ? { missingColumns } : {}),
+        });
+        return;
+      }
+      case 413:
+        setPhase({
+          kind: 'error',
+          title: tErrors('fileTooLargeTitle'),
+          detail: tErrors('fileTooLargeDetail'),
+        });
+        return;
+      case 429: {
+        // L-2: parse Retry-After defensively — header spec allows
+        // delta-seconds OR HTTP-date. Non-numeric → fall back to "60".
+        const retryAfterRaw = res.headers.get('Retry-After') ?? '';
+        const retryAfterSeconds = Number.isFinite(Number(retryAfterRaw))
+          ? retryAfterRaw
+          : '60';
+        setPhase({
+          kind: 'error',
+          title: tErrors('rateLimitedTitle'),
+          detail: tErrors('rateLimitedDetail', {
+            retryAfter: retryAfterSeconds,
+          }),
+        });
+        return;
+      }
+      case 504:
+        setPhase({
+          kind: 'error',
+          title: tErrors('timeoutTitle'),
+          detail: tErrors('timeoutDetail'),
+        });
+        return;
     }
     const detail = await parseProblemDetail(res, tErrors('unexpectedDetail'));
     setPhase({
@@ -190,13 +236,39 @@ export function CsvMappingForm() {
       title: tErrors('unexpectedTitle'),
       detail,
     });
-  }, [phase, tErrors]);
+  }, [phase, t, tErrors]);
 
   const resetToUpload = useCallback(() => setPhase({ kind: 'idle' }), []);
+
+  // H-12 + M-2 fix (2026-05-15): top-level aria-live region announces
+  // phase transitions across BOTH render branches (completed-result
+  // card AND form Card). Dynamically-mounted live regions are not
+  // reliably announced by NVDA/JAWS — the observer registers at DOM
+  // insertion time and content arriving WITH the node is often
+  // swallowed. Keeping the region at component root makes it
+  // pre-existing for every transition:
+  //   - submitting → "Import in progress"
+  //   - completed  → "Import complete. Review the summary."
+  //   - idle (post-completed) → "Form reset. Upload a new CSV."
+  const liveRegion = (
+    <div
+      id={liveRegionId}
+      aria-live="polite"
+      aria-atomic="true"
+      className="sr-only"
+    >
+      {phase.kind === 'submitting' && t('uploadInProgressSr')}
+      {phase.kind === 'completed' && t('importCompleteSr')}
+      {phase.kind === 'idle' &&
+        hasPreviouslyCompleted &&
+        t('resetToUploadSr')}
+    </div>
+  );
 
   if (phase.kind === 'completed') {
     return (
       <div className="flex flex-col gap-4">
+        {liveRegion}
         <CsvImportResult result={phase.summary} />
         <div>
           <Button
@@ -219,14 +291,7 @@ export function CsvMappingForm() {
         <CardDescription>{t('formDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
-        <div
-          id={liveRegionId}
-          aria-live="polite"
-          aria-atomic="true"
-          className="sr-only"
-        >
-          {phase.kind === 'submitting' ? t('uploadInProgressSr') : ''}
-        </div>
+        {liveRegion}
 
         {phase.kind === 'error' ? (
           <ErrorPanel phase={phase} onRetry={resetToUpload} />
@@ -336,7 +401,10 @@ function PreviewPanel({
 }: PreviewPanelProps) {
   const t = useTranslations('admin.events.import.preview');
   const hasMissing = preview.missingRequired.length > 0;
-  const sampleRows = useMemo(() => preview.rows.slice(0, 10), [preview.rows]);
+  // simplify #9 fix: `preview.rows` is already capped to 10 rows by
+  // `sniffPreview` (slice(0,11) over header + 10 body rows). No
+  // additional slice needed; useMemo was a no-op churn.
+  const sampleRows = preview.rows;
 
   return (
     <div className="flex flex-col gap-4">
@@ -370,7 +438,7 @@ function PreviewPanel({
               data-testid={`column-mapping-${canonical}`}
               className={`text-caption rounded-md border px-2 py-1 font-mono ${
                 preview.detectedColumns.includes(canonical)
-                  ? 'border-emerald-600 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100'
+                  ? 'border-emerald-700 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100'
                   : 'border-destructive text-destructive'
               }`}
             >
@@ -383,7 +451,7 @@ function PreviewPanel({
               data-testid={`column-mapping-${canonical}`}
               className={`text-caption rounded-md border px-2 py-1 font-mono ${
                 preview.detectedColumns.includes(canonical)
-                  ? 'border-emerald-600 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100'
+                  ? 'border-emerald-700 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100'
                   : 'border-border text-muted-foreground'
               }`}
               title={t('optionalColumnTooltip')}
@@ -402,7 +470,10 @@ function PreviewPanel({
           {t('previewRowsTitle', { count: sampleRows.length })}
         </h3>
         <div className="overflow-x-auto">
-          <table className="text-caption w-full border-collapse font-mono">
+          <table
+            className="text-caption w-full border-collapse font-mono"
+            aria-label={t('tableAriaLabel', { fileName })}
+          >
             <thead>
               <tr>
                 {preview.detectedColumns.map((c) => (

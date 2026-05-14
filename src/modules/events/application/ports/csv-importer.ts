@@ -70,7 +70,17 @@ export type CsvImporterError =
        */
       readonly missingColumns: ReadonlyArray<string>;
     }
-  | { readonly kind: 'invalid_utf8'; readonly offset: number }
+  | {
+      readonly kind: 'invalid_utf8';
+      /** Best-effort byte offset (often 0 — TextDecoder doesn't expose). */
+      readonly offset: number;
+      /**
+       * H-2 fix (2026-05-15): real decoder error message preserved so
+       * routes can surface a user-actionable hint (e.g., "re-save as
+       * UTF-8 without BOM") instead of a generic 500.
+       */
+      readonly reason: string;
+    }
   | { readonly kind: 'file_too_large'; readonly bytes: number; readonly max: number };
 
 export interface CsvImporter {

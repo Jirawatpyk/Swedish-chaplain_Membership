@@ -17,17 +17,7 @@
  * dependencies mocked at module-boundary so no DB, no Upstash, no
  * actual CSV parser is hit. Pattern mirrors
  * `tests/contract/events/admin-integration-eventcreate-api.test.ts`
- * (Phase 5 T068) + `tests/contract/events/admin-events-api.test.ts`
- * (Phase 4 T053).
- *
- * RED reason: the route file `@/app/api/admin/events/import/route.ts`
- * and the composition adapter `@/lib/events-csv-import-deps` do NOT
- * exist yet (T095 GREEN lands them). The dynamic import throws
- * MODULE_NOT_FOUND so EVERY test FAILS at suite-load. That IS the
- * [RED — T090] marker.
- *
- * Turns GREEN: T093 (parser adapter) + T094 (import-csv use-case) +
- * T095 (route handler + composition adapter + rate-limit factory).
+ * + `tests/contract/events/admin-events-api.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -120,29 +110,17 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Dynamic route loader — RED until T095 lands.
+// Dynamic route loader
 // ---------------------------------------------------------------------------
 
 async function loadImportRoute() {
-  // Plain `await import(...)` per the Phase-3 T036 / Phase-5 F5
-  // precedent (see `tests/contract/events/webhook-eventcreate-v1.test.ts`
-  // comment at line 85+ — project memory's `new Function(...)` bypass
-  // is incompatible with Vitest's module loader on this branch; plain
-  // dynamic import gives the cleaner RED signal). Until T095 lands the
-  // route file, Vite's static-analysis alias transform rejects the
-  // import at suite-load with `Failed to resolve import "@/app/..."`.
-  // That suite-load failure IS the [RED — T090] marker — vitest
-  // reports `0 tests` for the suite with a clear pointer to the
-  // missing module.
   try {
     return (await import('@/app/api/admin/events/import/route')) as {
       POST: (req: NextRequest) => Promise<Response>;
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(
-      `[RED — T090] POST /api/admin/events/import route not yet implemented (T095). Import error: ${msg}`,
-    );
+    throw new Error(`csv-import route load failed: ${msg}`);
   }
 }
 

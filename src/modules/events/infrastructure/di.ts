@@ -138,7 +138,7 @@ export function makeIngestWebhookAttendeeDeps(): IngestWebhookAttendeeDeps {
 }
 
 /**
- * T094/T095 Phase 7 — Full deps for the CSV bulk-import path. Wires:
+ * Phase 7 — Full deps for the CSV bulk-import path. Wires:
  *   - `csvImporter` → singleton `streamingCsvImporter` (hand-rolled
  *     stateless parser; safe to share across requests).
  *   - `runInTenantTx` → same factory as the webhook ingest pipeline,

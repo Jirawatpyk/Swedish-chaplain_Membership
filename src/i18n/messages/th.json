@@ -2526,6 +2526,10 @@
         "cancelCta": "ยกเลิก",
         "submittingCta": "กำลังนำเข้า — กรุณารอ",
         "uploadInProgressSr": "กำลังนำเข้า CSV กรุณารอสักครู่",
+        "importCompleteSr": "นำเข้าเสร็จสมบูรณ์ กรุณาตรวจสอบสรุปผลด้านล่าง",
+        "resetToUploadSr": "รีเซ็ตแบบฟอร์มแล้ว อัปโหลดไฟล์ CSV ใหม่",
+        "importSuccessToast": "นำเข้าเสร็จสมบูรณ์",
+        "importSuccessToastDesc": "{count, plural, =0 {ไม่มีแถวใหม่ — นำเข้าทั้งหมดแล้วก่อนหน้า} other {นำเข้า # แถว}}",
         "retryCta": "ลองอีกครั้ง",
         "uploadAnother": "อัปโหลด CSV อีกไฟล์",
         "preview": {
@@ -2535,7 +2539,8 @@
           "optionalColumnTooltip": "ไม่บังคับ — เพิ่มข้อมูลกิจกรรมที่ละเอียดขึ้นหากมี",
           "previewRowsTitle": "ตัวอย่าง ({count} แถว)",
           "missingColumnsTitle": "CSV ขาดคอลัมน์ที่จำเป็น",
-          "missingColumnsDescription": "กรุณาส่งออกไฟล์ใหม่หลังเพิ่มคอลัมน์เหล่านี้:"
+          "missingColumnsDescription": "กรุณาส่งออกไฟล์ใหม่หลังเพิ่มคอลัมน์เหล่านี้:",
+          "tableAriaLabel": "ตัวอย่าง CSV สำหรับ {fileName}"
         },
         "result": {
           "regionLabel": "ผลการนำเข้า CSV",

@@ -2526,6 +2526,10 @@
         "cancelCta": "Avbryt",
         "submittingCta": "Importerar — vänta",
         "uploadInProgressSr": "CSV-import pågår. Vänta.",
+        "importCompleteSr": "Importen är klar. Se sammanfattningen nedan.",
+        "resetToUploadSr": "Formuläret är återställt. Ladda upp en ny CSV-fil.",
+        "importSuccessToast": "Importen är klar",
+        "importSuccessToastDesc": "{count, plural, =0 {Inga nya rader — alla har redan importerats.} one {1 rad importerad.} other {# rader importerade.}}",
         "retryCta": "Försök igen",
         "uploadAnother": "Ladda upp en till CSV",
         "preview": {
@@ -2533,9 +2537,10 @@
           "columnMappingTitle": "Identifierade kolumner",
           "columnMappingLegend": "Obligatoriska kolumner visas i grönt; valfria i dämpad stil. Saknade obligatoriska kolumner blockerar importen.",
           "optionalColumnTooltip": "Valfri — lägger till mer detaljerad evenemangsinformation om den finns.",
-          "previewRowsTitle": "Förhandsgranskning ({count} rader)",
+          "previewRowsTitle": "Förhandsgranskning ({count, plural, one {# rad} other {# rader}})",
           "missingColumnsTitle": "CSV saknar obligatoriska kolumner",
-          "missingColumnsDescription": "Exportera filen på nytt efter att du lagt till dessa kolumner:"
+          "missingColumnsDescription": "Exportera filen på nytt efter att du lagt till dessa kolumner:",
+          "tableAriaLabel": "CSV-förhandsgranskning för {fileName}"
         },
         "result": {
           "regionLabel": "Resultat av CSV-import",

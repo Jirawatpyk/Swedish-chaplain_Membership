@@ -499,14 +499,20 @@ export async function processAttendeeInTx(
       ) {
         detail = qe.message;
       } else {
-        // quota_lookup_failed
+        // quota_lookup_failed — simplify (2026-05-15): switch over the
+        // nested cause kind instead of the prior triple-nested ternary
+        // (CLAUDE.md explicit rule against nested ternaries).
         const c = qe.cause;
-        detail =
-          c.kind === 'db_error'
-            ? c.message
-            : c.kind === 'member_not_found'
-              ? `member_not_found memberId=${c.memberId}`
-              : `plan_not_found memberId=${c.memberId}`;
+        switch (c.kind) {
+          case 'db_error':
+            detail = c.message;
+            break;
+          case 'member_not_found':
+            detail = `member_not_found memberId=${c.memberId}`;
+            break;
+          default:
+            detail = `plan_not_found memberId=${c.memberId}`;
+        }
       }
       throw new TxStageError(
         'quota_decrement',

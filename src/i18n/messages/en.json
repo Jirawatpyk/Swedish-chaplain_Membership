@@ -2526,6 +2526,10 @@
         "cancelCta": "Cancel",
         "submittingCta": "Importing — please wait",
         "uploadInProgressSr": "CSV import in progress. Please wait.",
+        "importCompleteSr": "Import complete. Review the summary below.",
+        "resetToUploadSr": "Form reset. Upload a new CSV file.",
+        "importSuccessToast": "Import complete",
+        "importSuccessToastDesc": "{count, plural, =0 {No new rows — all already imported.} one {1 row imported.} other {# rows imported.}}",
         "retryCta": "Try again",
         "uploadAnother": "Upload another CSV",
         "preview": {
@@ -2533,9 +2537,10 @@
           "columnMappingTitle": "Detected columns",
           "columnMappingLegend": "Required columns in green; optional columns in muted style. Missing required columns block the import.",
           "optionalColumnTooltip": "Optional — adds richer event metadata if present.",
-          "previewRowsTitle": "Preview ({count} rows)",
+          "previewRowsTitle": "Preview ({count, plural, one {# row} other {# rows}})",
           "missingColumnsTitle": "CSV is missing required columns",
-          "missingColumnsDescription": "Re-export the CSV after adding these columns:"
+          "missingColumnsDescription": "Re-export the CSV after adding these columns:",
+          "tableAriaLabel": "CSV preview for {fileName}"
         },
         "result": {
           "regionLabel": "CSV import result",

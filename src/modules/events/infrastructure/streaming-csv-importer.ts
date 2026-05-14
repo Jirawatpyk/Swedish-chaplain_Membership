@@ -1,5 +1,5 @@
 /**
- * T093 — Streaming CSV importer (F6 Infrastructure adapter).
+ * Streaming CSV importer (F6 Infrastructure adapter).
  *
  * Hand-rolled UTF-8 CSV parser implementing the `CsvImporter`
  * Application port (`src/modules/events/application/ports/csv-importer.ts`).
@@ -108,8 +108,21 @@ function decodeUtf8(bytes: Uint8Array): Result<string, CsvImporterError> {
   try {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     return ok(stripBom(decoder.decode(bytes)));
-  } catch {
-    return err({ kind: 'invalid_utf8', offset: 0 });
+  } catch (e) {
+    // H-2 fix (2026-05-15): preserve the real decoder error so the
+    // route can surface a user-actionable hint (admin should re-save
+    // their CSV as UTF-8). `offset:0` is retained as a soft signal
+    // (real byte offset not exposed by TextDecoder); the appended
+    // `reason` field carries the genuine decoder message that callers
+    // can log + display.
+    return err({
+      kind: 'invalid_utf8',
+      offset: 0,
+      reason:
+        e instanceof Error
+          ? e.message
+          : 'UTF-8 decode failed (re-save the CSV as UTF-8 without BOM)',
+    });
   }
 }
 

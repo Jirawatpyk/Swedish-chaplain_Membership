@@ -20,9 +20,11 @@
  */
 import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { eventcreateMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
 import {
   importCsv,
   makeImportCsvDeps,
+  type ImportCsvOutcome,
   type ImportSummary,
 } from '@/modules/events';
 import type { UserId } from '@/modules/auth';
@@ -46,6 +48,11 @@ export interface CsvImportRateLimitResult {
  * Inherits Upstash fail-open from the auth rate-limiter adapter; emits
  * `eventcreate_csv_import_rate_limit_fallback_total` so SREs can alert
  * on Upstash outages without losing the route's availability.
+ *
+ * M-2 fix (2026-05-15): fail-open now also logs a `warn` line so a
+ * post-incident audit can identify which actor imported during the
+ * Upstash outage (security investigation visibility — bypassed rate
+ * limits during cross-tenant abuse scenarios).
  */
 export async function csvImportRateLimitCheck(
   tenantSlug: string,
@@ -58,6 +65,14 @@ export async function csvImportRateLimitCheck(
   );
   if (result.fellBack) {
     eventcreateMetrics.csvImportRateLimitFallback(tenantSlug);
+    logger.warn(
+      {
+        event: 'f6_csv_import_rate_limit_fell_open',
+        tenantSlug,
+        actorUserId,
+      },
+      '[F6] CSV-import rate limit Upstash unreachable — fell open to in-memory bucket (per-process only). Post-incident: this actor may have exceeded the documented 5/hr cap during outage.',
+    );
   }
   return { success: result.success, resetAtUnixMs: result.reset };
 }
@@ -68,33 +83,31 @@ export async function csvImportRateLimitCheck(
 
 export interface RunImportCsvInput {
   readonly tenantSlug: string;
-  readonly actorUserId: string;
+  /**
+   * H-15 fix (2026-05-15): branded UserId at the boundary instead of
+   * `string` with internal `as UserId` cast. Route handler brands via
+   * `asUserId(session.user.id)` before invoking. Matches F4/F5
+   * branding pattern at composition adapters.
+   */
+  readonly actorUserId: UserId;
   readonly bytes: Uint8Array;
   readonly columnMapping?: ReadonlyMap<string, string>;
 }
 
-export type RunImportCsvOutcome =
-  | {
-      readonly kind: 'completed';
-      readonly summary: ImportSummary;
-    }
-  | {
-      readonly kind: 'invalid_header';
-      readonly missingColumns: ReadonlyArray<string>;
-    }
-  | { readonly kind: 'timeout' }
-  | { readonly kind: 'unexpected_error'; readonly message: string };
+/**
+ * H-14 fix (2026-05-15): collapse duplicate discriminated-union to a
+ * type alias. Previously declared a structurally-identical clone of
+ * `ImportCsvOutcome` here — drift risk if Application added a 5th
+ * variant. Now re-aliases the canonical Application type so future
+ * variants propagate automatically.
+ */
+export type RunImportCsvOutcome = ImportCsvOutcome;
 
 /**
  * Invoke the `importCsv` Application use-case with a fresh
  * `makeImportCsvDeps()` factory. Surface the result discriminated
  * union verbatim — the route handler maps each kind to its HTTP
  * status (200 / 400 / 504 / 500).
- *
- * `actorUserId` is supplied as a `UserId`-branded value by the route
- * handler (extracted from the F1 session). We pass it through the
- * use-case → audit emitter path so `csv_import_completed` and
- * `csv_import_row_failed` rows attribute correctly to the admin.
  */
 export async function runImportCsv(
   input: RunImportCsvInput,
@@ -103,7 +116,7 @@ export async function runImportCsv(
   const outcome = await importCsv(
     {
       tenantId: input.tenantSlug,
-      actorUserId: input.actorUserId as UserId,
+      actorUserId: input.actorUserId,
       bytes: input.bytes,
       ...(input.columnMapping !== undefined && {
         columnMapping: input.columnMapping,

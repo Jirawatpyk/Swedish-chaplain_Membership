@@ -41,6 +41,7 @@ import {
   runImportCsv,
   csvImportRateLimitCheck,
 } from '@/lib/events-csv-import-deps';
+import { asUserId } from '@/modules/auth';
 import { adminOnlyGuard } from '../../integrations/eventcreate/_lib/role-violation-audit';
 
 const ROUTE = '/api/admin/events/import';
@@ -174,7 +175,31 @@ export async function POST(request: NextRequest): Promise<Response> {
     type?: string;
   };
 
-  const arrayBuffer = await file.arrayBuffer();
+  // H-4 fix (2026-05-15): wrap arrayBuffer() to catch AbortError /
+  // socket reset / RangeError / OOM. Without the try/catch a mid-upload
+  // disconnect bubbles to Next.js as a generic 500 with no requestId,
+  // no log line, and no metric increment — admin retries blindly.
+  let arrayBuffer: ArrayBuffer;
+  try {
+    arrayBuffer = await file.arrayBuffer();
+  } catch (e) {
+    logger.warn(
+      {
+        event: 'f6_csv_import_body_read_failed',
+        err: e instanceof Error ? e.message : String(e),
+        tenantSlug,
+        requestId,
+      },
+      '[F6] CSV import file.arrayBuffer() failed — upload likely interrupted',
+    );
+    return problemResponse(
+      400,
+      'body-read-failed',
+      'Bad Request',
+      'Could not read the uploaded file body. The upload may have been interrupted — please re-upload the CSV.',
+      { extras: { requestId } },
+    );
+  }
   if (arrayBuffer.byteLength > MAX_BYTES) {
     return problemResponse(
       413,
@@ -190,7 +215,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     outcome = await runImportCsv({
       tenantSlug,
-      actorUserId: guard.actorUserId,
+      // H-15 fix (2026-05-15): brand at the composition-adapter
+      // boundary; runImportCsv input now requires UserId, not string.
+      actorUserId: asUserId(guard.actorUserId),
       bytes,
     });
   } catch (e) {

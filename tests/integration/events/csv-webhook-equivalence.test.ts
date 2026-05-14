@@ -37,18 +37,10 @@
  *   `processing_outcome.sourceIp`). FAILS if any column differs in
  *   a way the equivalence rule does not excuse.
  *
- * RED reason:
- *   1. `importCsv` use-case is not yet exported from `@/modules/events`
- *      (T094 GREEN adds it via the barrel re-export per Phase 7 plan).
- *   2. `makeImportCsvDeps` factory does not exist in
- *      `@/lib/events-csv-import-deps` (T095 GREEN adds it).
- *   Both imports fail at suite-load until T094 + T095 land.
- *
- * Turns GREEN: T094 + T095 land the use-case + composition factory.
- * The shared `processAttendeeInTx` helper (Phase 7 pre-work refactor,
- * already shipped) guarantees the equivalence by construction — both
- * webhook and CSV paths run identical attendee-processing logic, so
- * the hash-and-compare is provably correct by design.
+ * The shared `processAttendeeInTx` helper guarantees the equivalence
+ * by construction — both webhook and CSV paths run identical
+ * attendee-processing logic, so the hash-and-compare is provably
+ * correct by design.
  */
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -62,6 +54,7 @@ import {
   ingestWebhookAttendee,
 } from '@/modules/events';
 import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
+import { asUserId } from '@/modules/auth';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
 // ---------------------------------------------------------------------------
@@ -295,7 +288,7 @@ function summariseRegistrations(
 // Test suite
 // ---------------------------------------------------------------------------
 
-describe('T092 — F6 CSV ↔ webhook byte-equivalence (FR-027 / SC-006)', () => {
+describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / SC-006)', () => {
   let tenantA: TestTenant;
   let tenantB: TestTenant;
 
@@ -364,7 +357,7 @@ describe('T092 — F6 CSV ↔ webhook byte-equivalence (FR-027 / SC-006)', () =>
     // logic accepts non-UUID values for test contexts.
     const csvResult = await runImportCsv({
       tenantSlug: tenantB.ctx.slug,
-      actorUserId: '00000000-0000-0000-0000-000000000099',
+      actorUserId: asUserId('00000000-0000-0000-0000-000000000099'),
       bytes: csvBytes,
     });
     expect(csvResult.kind).toBe('completed');

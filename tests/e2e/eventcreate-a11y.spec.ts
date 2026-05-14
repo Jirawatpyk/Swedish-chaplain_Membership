@@ -130,4 +130,24 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     ).toBeVisible();
     await expectNoAxeViolations(page, '/admin/settings/integrations/eventcreate');
   });
+
+  /**
+   * H-13 fix (2026-05-15) — F6 Phase 7 CSV import surface axe-core
+   * scan. Three visual states render distinct DOM trees; the idle state
+   * is the most-frequently visited (every admin click on "Import CSV"
+   * lands here first). Preview-with-error + completed-with-result are
+   * exercised by T091 functional E2E; the axe scan here covers WCAG
+   * 2.1 AA defects that the functional spec wouldn't catch (colour
+   * contrast, label-input pairing, focusable-without-visible-focus,
+   * landmark hierarchy).
+   */
+  test('admin CSV import — idle state (/admin/events/import) @a11y', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(
+      page.getByRole('heading', { level: 1 }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page, '/admin/events/import');
+  });
 });
