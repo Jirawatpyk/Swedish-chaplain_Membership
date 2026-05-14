@@ -144,9 +144,67 @@ export function makeToggleEventCategoryDeps(
 }
 
 /**
+ * Internal rollback signal — thrown inside `runInTenant` to force
+ * Postgres to roll back the open transaction when a use-case returns
+ * `Result.err`. The outer catch unwraps the signal back into the
+ * canonical `Result.err` shape so callers continue to type-check
+ * against the use-case's documented error union.
+ *
+ * Why this exists (wave-5 cross-check finding CRIT-1): `runInTenant`
+ * is plain `db.transaction(fn)`. Postgres only rolls back when the
+ * callback **throws** — a resolved `Result.err` value is treated as
+ * success by the DB driver and the tx COMMITS. Before this signal,
+ * `toggle-event-category` / `archive-event` could leave partial state
+ * (e.g., event flag flipped + half the registrations credit-backed)
+ * if a later step in the use-case loop returned `err`. The signal +
+ * outer catch closes the FR-037 strict-tx ACID invariant for admin
+ * write paths. The ingest path uses the same conceptual pattern via
+ * `TxStageError` thrown from inside the use-case body.
+ *
+ * Internal to this file — NOT exported. Callers see a normal `Result`.
+ */
+class TxRollbackSignal<E> extends Error {
+  constructor(readonly resultError: E) {
+    super('runInTenant rollback signal — Result.err propagation');
+    this.name = 'TxRollbackSignal';
+  }
+}
+
+/**
+ * Wraps `runInTenant` so a `Result.err` return from the use-case
+ * triggers Postgres ROLLBACK (by throwing internally), then unwraps
+ * the signal back into `Result.err` for the caller. Any non-signal
+ * throw from `runInTenant` (DB connection drop, RLS assertion, etc.)
+ * is re-thrown so the route's catch handler maps it to 500.
+ */
+async function runInTenantWithRollbackOnErr<T, E>(
+  ctx: ReturnType<typeof asTenantContext>,
+  fn: (tx: TenantTx) => Promise<Result<T, E>>,
+): Promise<Result<T, E>> {
+  try {
+    return await runInTenant(ctx, async (tx) => {
+      const result = await fn(tx);
+      if (!result.ok) {
+        throw new TxRollbackSignal<E>(result.error);
+      }
+      return result;
+    });
+  } catch (e) {
+    if (e instanceof TxRollbackSignal) {
+      return { ok: false, error: e.resultError as E };
+    }
+    throw e;
+  }
+}
+
+/**
  * Convenience for the toggle-{partner-benefit,cultural-event} route
  * handlers. Wraps `runInTenant` + deps composition so the route is a
  * thin parser-and-dispatch shell.
+ *
+ * NOTE (wave-5 CRIT-1 fix): uses `runInTenantWithRollbackOnErr` so
+ * partial state from a mid-loop failure (e.g., audit emit fails after
+ * the event flag flipped) ROLLS BACK instead of committing.
  */
 export async function runToggleEventCategory(
   tenantSlug: string,
@@ -154,7 +212,7 @@ export async function runToggleEventCategory(
 ): Promise<Result<ToggleEventCategoryOutput, ToggleEventCategoryError>> {
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
-  return runInTenant(ctx, async (tx) => {
+  return runInTenantWithRollbackOnErr(ctx, async (tx) => {
     const deps = makeToggleEventCategoryDeps(tx, ctx);
     return toggleEventCategory({ ...input, tenantId }, deps);
   });
@@ -177,13 +235,21 @@ export function makeArchiveEventDeps(executor: TenantTx) {
   };
 }
 
+/**
+ * NOTE (wave-5 CRIT-1 fix): uses `runInTenantWithRollbackOnErr` so
+ * if the archive credit-back loop fails mid-iteration after `setArchived`
+ * already updated `events.archived_at`, the entire archive ROLLS BACK
+ * — preserving FR-037 strict-tx ACID. Without this wrapper a partial
+ * archive would commit (event archived + only some registrations
+ * credit-backed) and leave permanent drift in the quota counters.
+ */
 export async function runArchiveEvent(
   tenantSlug: string,
   input: Omit<ArchiveEventInput, 'tenantId'>,
 ): Promise<Result<ArchiveEventOutput, ArchiveEventError>> {
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
-  return runInTenant(ctx, async (tx) => {
+  return runInTenantWithRollbackOnErr(ctx, async (tx) => {
     const deps = makeArchiveEventDeps(tx);
     return archiveEvent({ ...input, tenantId }, deps);
   });

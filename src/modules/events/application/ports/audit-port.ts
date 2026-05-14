@@ -1,11 +1,15 @@
 /**
  * `F6AuditPort` Application port (F6).
  *
- * Closed TypeScript union over the 35 F6 audit event types (canonical
- * taxonomy in data-model.md § 4 + contracts/audit-port.md). The discriminated
- * `AuditPayloads` mapped type gives compile-time enforcement that
- * callers pass the correct payload shape for the event they emit —
- * mismatch is a type error.
+ * Closed TypeScript union over the 37 F6 audit event types (canonical
+ * taxonomy in data-model.md § 4 + contracts/audit-port.md; enum extended
+ * by migrations 0132 + 0137; migration 0138 added a
+ * `wizard_privacy_notice_acknowledged` Postgres value that was
+ * subsequently removed from the TS surface during round-10 staff
+ * review — the DB slot is harmlessly retained, no application code
+ * can write to it). The discriminated `AuditPayloads` mapped type
+ * gives compile-time enforcement that callers pass the correct
+ * payload shape for the event they emit — mismatch is a type error.
  *
  * All F6 events default to **5-year retention**. F6 has no tax-document
  * overlap (F4's 10y retention does not apply). The Drizzle adapter

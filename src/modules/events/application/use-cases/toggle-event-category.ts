@@ -253,12 +253,21 @@ export async function toggleEventCategory(
             lookup.value.allotments.partnershipPerEvent - consumedExcludingSelf - 1;
         } else if (!room && !currentPartnership) {
           auditOnPartnership = 'over_quota';
+        } else if (!room && currentPartnership) {
+          // Edge case (IMP-1 wave-5): the allotment shrank since this
+          // row was originally counted. We keep `counted_against=true`
+          // (toggling ON should never credit-back an already-counted
+          // row) but the member is now ABOVE allotment. Emit
+          // `quota_over_quota_warning` so the audit trail documents
+          // the silent drift instead of leaving a phantom-consumed
+          // slot with no explanation. SC-004 zero-error invariant is
+          // preserved (no double-count, no missed decrement) — this
+          // event-type is the canonical signal for "registration is
+          // over the current allotment ceiling".
+          auditOnPartnership = 'over_quota';
+          nextPartnership = true; // keep counted, audit the drift
         }
-        // If room && currentPartnership: already true, nothing to audit
-        // If !room && currentPartnership: shouldn't happen (we just toggled ON, row was counted? then it stays counted)
-        //   — actually possible if allotment shrank since insert. Keep
-        //     it counted (toggling ON shouldn't credit back an already-
-        //     counted row).
+        // If room && currentPartnership: already true, nothing to audit.
       } else {
         // Toggle OFF: every counted row flips to false
         nextPartnership = false;
@@ -307,6 +316,11 @@ export async function toggleEventCategory(
           auditOnCultural = 'decremented';
           allotmentAfterCultural =
             lookup.value.allotments.culturalPerYear - consumedExcludingSelf - 1;
+        } else if (!room && currentCultural) {
+          // Same edge case as partnership scope (IMP-1 wave-5). Audit
+          // the drift, keep row counted.
+          auditOnCultural = 'over_quota';
+          nextCultural = true;
         } else if (!room && !currentCultural) {
           auditOnCultural = 'over_quota';
         }
@@ -370,15 +384,14 @@ export async function toggleEventCategory(
       };
 
       if (auditOnPartnership === 'decremented') {
-        const lookup = await deps.quotaAccountingPort.queryAllotments({
-          tenantId: input.tenantId,
-          memberId,
-          eventId: input.eventId,
-          fiscalYear,
-        });
-        if (!lookup.ok) {
-          return err({ kind: 'quota_lookup_failed', cause: lookup.error });
-        }
+        // CRIT-2 fix (wave-5): derive `perEventAllotmentBefore` from
+        // `allotmentAfterPartnership + 1` instead of re-querying
+        // `queryAllotments` AFTER `setQuotaEffect` already flipped
+        // `counted_against_partnership=true`. The post-UPDATE SUM
+        // would include this row, producing an off-by-one (low) for
+        // `before`. The pre-UPDATE math at the decision branch
+        // (`allotmentAfter = allotment - consumedExcludingSelf - 1`)
+        // implies `before = allotmentAfter + 1` by construction.
         const r = await deps.audit.emit({
           ...baseAudit,
           eventType: 'quota_partnership_decremented',
@@ -388,9 +401,7 @@ export async function toggleEventCategory(
             registrationId: reg.registrationId,
             memberId,
             eventId: input.eventId,
-            perEventAllotmentBefore:
-              lookup.value.allotments.partnershipPerEvent -
-              (lookup.value.consumed.partnershipConsumedForEvent),
+            perEventAllotmentBefore: allotmentAfterPartnership + 1,
             perEventAllotmentAfter: allotmentAfterPartnership,
           },
         });
@@ -445,15 +456,9 @@ export async function toggleEventCategory(
       }
 
       if (auditOnCultural === 'decremented') {
-        const lookup = await deps.quotaAccountingPort.queryAllotments({
-          tenantId: input.tenantId,
-          memberId,
-          eventId: input.eventId,
-          fiscalYear,
-        });
-        if (!lookup.ok) {
-          return err({ kind: 'quota_lookup_failed', cause: lookup.error });
-        }
+        // CRIT-2 fix (wave-5) — see partnership counterpart above for
+        // the off-by-one rationale. Cultural mirror uses the same
+        // derivation: `before = allotmentAfter + 1`.
         const r = await deps.audit.emit({
           ...baseAudit,
           eventType: 'quota_cultural_decremented',
@@ -464,9 +469,7 @@ export async function toggleEventCategory(
             memberId,
             eventId: input.eventId,
             fiscalYear,
-            annualAllotmentBefore:
-              lookup.value.allotments.culturalPerYear -
-              (lookup.value.consumed.culturalConsumedForYear),
+            annualAllotmentBefore: allotmentAfterCultural + 1,
             annualAllotmentAfter: allotmentAfterCultural,
           },
         });

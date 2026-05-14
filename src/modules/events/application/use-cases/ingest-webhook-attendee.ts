@@ -11,14 +11,21 @@
  *        `duplicate_request_id` err. Tx commits with ONLY the duplicate
  *        audit row (no event/registration side effects).
  *   4. Event upsert (FR-010 last-write-wins)
- *   5. Attendee match (4-rule cascade)
- *   6. Quota effect compute (Phase 3 MVP = neutral; Phase 6 T085 wires real)
- *   7. Registration insert (FR-011 ON CONFLICT DO NOTHING — second
- *      idempotency layer)
- *   8. Emit `webhook_receipt_verified` + match-resolution audit IN-TX
- *   9. Tx commits — return success
+ *   5. Attendee match (4-rule cascade) + registration INSERT with
+ *      neutral quota flags (canonical ordering — flag decision happens
+ *      AFTER the row exists so the SUM-based consumed counter is
+ *      self-consistent)
+ *   5b. Apply quota effect — advisory lock + queryAllotments + decide
+ *       `counted_against_*` + emit `quota_*` audit + UPDATE row when
+ *       flags flip from neutral (Phase 6 T085 wave-1)
+ *   5c. Refund credit-back — when an existing-row delivery arrives with
+ *       `payment_status='refunded'` AND prior row was counted, flip
+ *       `counted_against_*=false` + emit `quota_credit_back_refund`
+ *       per previously-true scope (Phase 6 wave-3a FR-018 / US4 AS4)
+ *   6. Emit `webhook_receipt_verified` + match-resolution audit IN-TX
+ *   7. Tx commits — return success
  *
- * On any throw at stages 3–8: tx ROLLS BACK (zero side effects); the
+ * On any throw at stages 3–6: tx ROLLS BACK (zero side effects); the
  * catch block emits `webhook_rolled_back` in a SEPARATE tx via
  * `emitRolledBackStandalone` (FR-037 dual-write fallback). Returns
  * `rolled_back` err.
@@ -84,7 +91,7 @@ import type {
 } from '../ports/audit-port';
 import type { QuotaAccountingPort } from '../ports/quota-accounting-port';
 import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
-import { applyQuotaEffect } from './apply-quota-effect';
+import { applyQuotaEffect, buildQuotaLockKey } from './apply-quota-effect';
 import type { AuditEventId } from '@/modules/auth';
 import type { MemberId } from '@/modules/members';
 
@@ -687,13 +694,18 @@ export async function ingestWebhookAttendee(
       if (isRefundTransition) {
         failureStage = 'quota_decrement';
         try {
+          // IMP-2 fix (wave-5): use the canonical `buildQuotaLockKey`
+          // helper for single-source-of-truth on the lock namespace.
+          // `apply-quota-effect.ts` is already imported above so the
+          // import graph cost is zero; the previous inline string was
+          // a duplication footgun (a future namespace rename would
+          // need to touch both sites).
           await ports.advisoryLockAcquirer.acquire(
-            // Inline the lock-key derivation rather than importing the
-            // shared helper to keep the use-case's import graph narrow
-            // (apply-quota-effect already imports the helper for its
-            // own call site; the same string format is the canonical
-            // namespace per research.md R5).
-            `eventcreate-quota:${input.tenantId}:${matchedMemberId}:${event.eventId}`,
+            buildQuotaLockKey(
+              asTenantId(input.tenantId),
+              matchedMemberId,
+              event.eventId,
+            ),
           );
         } catch (e) {
           throw new TxStageError(
@@ -727,6 +739,17 @@ export async function ingestWebhookAttendee(
         let lookupResult:
           | Awaited<ReturnType<typeof ports.quotaAccountingPort.queryAllotments>>
           | null = null;
+        // IMP-3 fix (wave-5): if `queryAllotments` fails, throw
+        // `TxStageError('quota_decrement', ...)` so the FR-037 strict-
+        // tx unit rolls back instead of emitting an audit row with a
+        // falsified `allotmentAfter: 0`. Previously a DB error on this
+        // read silently zeroed the audit-payload counter, producing a
+        // 5-year forensic record that LOOKS like "member is fully
+        // out of quota" when in fact the read failed. The audit log
+        // is the canonical source of truth for the credit-back —
+        // populating it with garbage when we cannot compute the
+        // correct value is a worse outcome than rolling back and
+        // letting Zapier retry.
         if (prev.countedAgainstPartnership || prev.countedAgainstCulturalQuota) {
           lookupResult = await ports.quotaAccountingPort.queryAllotments({
             tenantId: asTenantId(input.tenantId),
@@ -734,6 +757,16 @@ export async function ingestWebhookAttendee(
             eventId: event.eventId,
             fiscalYear: deriveFiscalYear(event.startDate.toISOString(), 1),
           });
+          if (!lookupResult.ok) {
+            throw new TxStageError(
+              'quota_decrement',
+              `refund credit-back allotment lookup failed: ${
+                lookupResult.error.kind === 'db_error'
+                  ? lookupResult.error.message
+                  : lookupResult.error.kind
+              }`,
+            );
+          }
         }
         const baseRefundAudit = {
           tenantId: asTenantId(input.tenantId),
@@ -742,16 +775,15 @@ export async function ingestWebhookAttendee(
           occurredAt: new Date(),
         };
         if (prev.countedAgainstPartnership) {
-          let allotmentAfter = 0;
-          if (lookupResult?.ok) {
-            const { allotments, consumed } = lookupResult.value;
-            // Post-refund consumed already excludes our row (we just
-            // flipped counted_against_partnership=false) so this is the
-            // canonical remaining count.
-            allotmentAfter =
-              allotments.partnershipPerEvent -
-              consumed.partnershipConsumedForEvent;
-          }
+          // `lookupResult` is guaranteed ok here per the throw above
+          // when either previous flag is true.
+          const { allotments, consumed } = lookupResult!.value;
+          // Post-refund consumed already excludes our row (we just
+          // flipped counted_against_partnership=false) so this is the
+          // canonical remaining count.
+          const allotmentAfter =
+            allotments.partnershipPerEvent -
+            consumed.partnershipConsumedForEvent;
           await emitOrThrow(audit, {
             ...baseRefundAudit,
             eventType: 'quota_credit_back_refund',
@@ -766,12 +798,9 @@ export async function ingestWebhookAttendee(
           });
         }
         if (prev.countedAgainstCulturalQuota) {
-          let allotmentAfter = 0;
-          if (lookupResult?.ok) {
-            const { allotments, consumed } = lookupResult.value;
-            allotmentAfter =
-              allotments.culturalPerYear - consumed.culturalConsumedForYear;
-          }
+          const { allotments, consumed } = lookupResult!.value;
+          const allotmentAfter =
+            allotments.culturalPerYear - consumed.culturalConsumedForYear;
           await emitOrThrow(audit, {
             ...baseRefundAudit,
             eventType: 'quota_credit_back_refund',

@@ -10,10 +10,12 @@
  *     full-event matchCounts aggregate, with unmatchedOnly +
  *     matchTypeFilter + ilike substring filters)
  *
- * Remaining methods (`findByEmailLower`, `countConsumedByMember`,
- * `updateMatchAndQuota`, `listPseudonymiseEligible`, `pseudonymiseRow`,
- * `hardDelete`) throw `not_implemented` until Phase 6 (T086), Phase 9
- * (T104), and Phase 10 (T110+T113) land them.
+ * Phase 6 wave-1+3+4 added: `countConsumedByMember` (T086 quota
+ * adapter), `setQuotaEffect` (T085 wiring), `markRefunded` (FR-018
+ * refund flip), `listForRequota` (T087 + archive snapshots). Remaining
+ * stubs (`findByEmailLower`, `updateMatchAndQuota`, `listPseudonymiseEligible`,
+ * `pseudonymiseRow`, `hardDelete`) still throw `not_implemented` until
+ * Phase 9 (T104) and Phase 10 (T110+T113) land them.
  */
 import { and, asc, desc, eq, inArray, or, sql, ilike, like, type SQL } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';

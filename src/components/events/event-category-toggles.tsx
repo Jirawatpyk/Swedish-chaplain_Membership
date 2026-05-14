@@ -91,18 +91,35 @@ export function EventCategoryToggles({
   const [openDialog, setOpenDialog] = useState<
     'partner_benefit' | 'cultural_event' | null
   >(null);
+  // CRIT-4 fix (wave-5): per-flag spinner state so Loader2 renders
+  // ONLY on the button being processed. Previously the shared
+  // `pending` from `useTransition` ran both spinners simultaneously
+  // even though only one POST was in flight (WCAG 4.1.3 Status
+  // Messages violation — SR announced "busy" on the inactive flag).
+  // `disabled={disabled || pending}` stays unified so both buttons
+  // are click-locked during ANY mid-flight POST (prevents double-
+  // submit across flags).
+  const [activeFlag, setActiveFlag] = useState<
+    'partner_benefit' | 'cultural_event' | null
+  >(null);
 
   function handleConfirm(
     flag: 'partner_benefit' | 'cultural_event',
     nextValue: boolean,
   ) {
-    setOpenDialog(null);
+    setActiveFlag(flag);
     startTransition(async () => {
       const endpoint =
         flag === 'partner_benefit'
           ? 'toggle-partner-benefit'
           : 'toggle-cultural-event';
       const result = await postToggle(eventId, endpoint, nextValue);
+      // CRIT-5 mirror fix (wave-5): close dialog AFTER the POST
+      // resolves so focus stays trapped inside the dialog during
+      // in-flight state. Trigger button is disabled via
+      // `disabled || pending` so a second click cannot reopen.
+      setOpenDialog(null);
+      setActiveFlag(null);
       if (result.ok) {
         toast.success(t('successTitle'), {
           description: t('successDescription', {
@@ -139,6 +156,7 @@ export function EventCategoryToggles({
               size="sm"
               disabled={disabled || pending}
               type="button"
+              aria-busy={activeFlag === 'partner_benefit'}
             />
           }
         >
@@ -148,7 +166,7 @@ export function EventCategoryToggles({
               ? t('unflagPartnerBenefit')
               : t('flagPartnerBenefit')}
           </span>
-          {pending && (
+          {activeFlag === 'partner_benefit' && (
             <Loader2
               aria-hidden="true"
               className="size-3 animate-spin"
@@ -170,7 +188,7 @@ export function EventCategoryToggles({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
                 handleConfirm('partner_benefit', !isPartnerBenefit)
@@ -195,6 +213,7 @@ export function EventCategoryToggles({
               size="sm"
               disabled={disabled || pending}
               type="button"
+              aria-busy={activeFlag === 'cultural_event'}
             />
           }
         >
@@ -204,7 +223,7 @@ export function EventCategoryToggles({
               ? t('unflagCulturalEvent')
               : t('flagCulturalEvent')}
           </span>
-          {pending && (
+          {activeFlag === 'cultural_event' && (
             <Loader2
               aria-hidden="true"
               className="size-3 animate-spin"
@@ -226,7 +245,7 @@ export function EventCategoryToggles({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>{t('cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
                 handleConfirm('cultural_event', !isCulturalEvent)

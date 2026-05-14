@@ -25,7 +25,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Archive, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,10 +80,18 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
 
+  // CRIT-5 fix (wave-5): keep the dialog OPEN while the POST is
+  // in-flight so focus stays trapped inside the dialog AlertDialog
+  // (focus restoration to a `disabled` trigger button is undefined-
+  // behavior across Base UI / Radix). The dialog closes via the
+  // `setOpen(false)` call AFTER the request resolves (in either
+  // success / 409 / error branch). The trigger button itself is
+  // disabled (pending=true) so a second user-click cannot re-open
+  // the dialog while one POST is mid-flight.
   function handleConfirm() {
-    setOpen(false);
     startTransition(async () => {
       const result = await postArchive(eventId);
+      setOpen(false);
       if (result.ok) {
         toast.success(t('successTitle'), {
           description: t('successDescription', {
@@ -115,6 +123,7 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
             size="sm"
             disabled={pending}
             type="button"
+            aria-busy={pending}
           />
         }
       >
@@ -134,8 +143,19 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
           <AlertDialogDescription>{t('confirmBody')}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction onClick={handleConfirm}>
+          {/* CRIT-3 fix (wave-5): Cancel autoFocus per ux-standards
+              §6.2 — focus starts on the safe action so an
+              accidental Enter does not archive. */}
+          <AlertDialogCancel autoFocus>{t('cancel')}</AlertDialogCancel>
+          {/* CRIT-3 fix (wave-5): destructive variant on the
+              confirmation button. Archive is irreversible
+              (no in-product un-archive in v1) — visual hierarchy
+              must communicate severity. Mirrors the F3
+              `archive-member-button.tsx:132` precedent. */}
+          <AlertDialogAction
+            onClick={handleConfirm}
+            className={buttonVariants({ variant: 'destructive' })}
+          >
             {t('confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>
