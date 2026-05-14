@@ -21,7 +21,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { PlusIcon } from 'lucide-react';
+import { PlusIcon, InboxIcon, SendIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -166,7 +166,12 @@ export default async function AdminEventsListPage({
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <Card>
+      {/* P4 (round-10) — 120ms fade-in when the loaded content
+          replaces the loading.tsx skeleton. `motion-reduce:animate-none`
+          honours prefers-reduced-motion (WCAG 2.3.3). Lives on the
+          Card so the PageHeader (which renders identically in
+          loading state) doesn't re-animate. */}
+      <Card className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
         <CardContent className="flex flex-col gap-4">
           {!result || !result.ok ? (
             <div className="py-12 text-center">
@@ -377,20 +382,42 @@ async function EmptyState({
     );
   }
 
-  // Variant (b) — configured but no deliveries yet
+  // Variant (b) — configured but no deliveries yet.
+  // P2 (round-10 ui-design-specialist) — promoted to a primary "Send a
+  // test event" CTA + InboxIcon as illustration. The body copy already
+  // alludes to the test-webhook escape hatch; the CTA now matches.
+  // Secondary link lets admins jump to the integration-settings surface
+  // without the test affordance. `#test` fragment lets Phase 5 wizard
+  // scroll-to-phaseC when it lands (no-op when it doesn't, no
+  // regression). Reduced-motion safe: no animation here — the parent
+  // page-level fade-in (P4) already handles motion semantics.
   if (!emptyContext.everReceivedDelivery) {
     return (
       <div className="flex flex-col items-center gap-4 py-12 text-center">
+        <InboxIcon
+          aria-hidden="true"
+          className="size-12 stroke-1 text-muted-foreground"
+        />
+        <span className="sr-only">{t('noDeliveries.illustrationAlt')}</span>
         <h2 className="text-h3 font-semibold">{t('noDeliveries.title')}</h2>
         <p className="max-w-md text-muted-foreground">
           {t('noDeliveries.body')}
         </p>
-        <Link
-          href="/admin/settings/integrations/eventcreate"
-          className={buttonVariants({ variant: 'outline' })}
-        >
-          {t('noDeliveries.cta')}
-        </Link>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Link
+            href="/admin/settings/integrations/eventcreate#test"
+            className={buttonVariants({ variant: 'default' })}
+          >
+            <SendIcon aria-hidden="true" data-icon="inline-start" />
+            {t('noDeliveries.primaryCta')}
+          </Link>
+          <Link
+            href="/admin/settings/integrations/eventcreate"
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            {t('noDeliveries.cta')}
+          </Link>
+        </div>
       </div>
     );
   }

@@ -2344,7 +2344,9 @@
           "noDeliveries": {
             "title": "Väntar på första evenemanget",
             "body": "Din Zap ska leverera nya deltagardata inom cirka 15 minuter efter en EventCreate-registrering. Du kan också skicka en testwebhook för att bekräfta anslutningen.",
-            "cta": "Konfigurera EventCreate"
+            "primaryCta": "Skicka ett testevenemang",
+            "cta": "Visa integrationsinställningar",
+            "illustrationAlt": "Illustration av tom inkorg"
           },
           "allArchived": {
             "title": "Alla evenemang är arkiverade",

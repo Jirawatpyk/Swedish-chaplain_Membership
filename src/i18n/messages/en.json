@@ -2344,7 +2344,9 @@
           "noDeliveries": {
             "title": "Waiting for first event",
             "body": "Your Zap should deliver new attendee data within about 15 minutes after their EventCreate registration. You can also send a test webhook to verify the connection.",
-            "cta": "Configure EventCreate"
+            "primaryCta": "Send a test event",
+            "cta": "View integration settings",
+            "illustrationAlt": "Empty inbox illustration"
           },
           "allArchived": {
             "title": "All events are archived",

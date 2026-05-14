@@ -229,7 +229,13 @@ export default async function AdminEventDetailPage({
   const { event, registrations, pagination } = result.value;
 
   return (
-    <DetailContainer>
+    /* P4 (round-10) — 120ms fade-in when the loaded content replaces
+       the loading.tsx skeleton. `motion-safe:` honours
+       prefers-reduced-motion (WCAG 2.3.3) — reduced-motion users get
+       an instant swap. Lives on the loaded-state container only;
+       loading.tsx renders the same DetailContainer without these
+       classes so the skeleton itself does not fade. */
+    <DetailContainer className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-[120ms]">
       {/* Register the event name as the breadcrumb label for the
           dynamic `[eventId]` segment so the trail reads
           "Events / <Event Name>" instead of
