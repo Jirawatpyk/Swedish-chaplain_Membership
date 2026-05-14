@@ -219,17 +219,32 @@ export async function runToggleEventCategory(
 }
 
 /**
- * Phase 6 wave-4 — composes the archive-event deps bag. Archive does
- * NOT need `quotaAccountingPort` (the use-case directly zeros out
- * counted_against_* flags without recomputing allotments — the
- * canonical computed-on-read source remains accurate post-archive
- * because consumed_count derived from SUM(counted_against=true) will
- * naturally exclude every archived row).
+ * Phase 6 wave-4 — composes the archive-event deps bag.
+ *
+ * **Staff-review-4 SUGG-2 update**: archive NOW needs
+ * `quotaAccountingPort` to compute actual `allotmentAfter` per
+ * `quota_credit_back_archive` audit row (matching the refund credit-
+ * back pattern at `ingest-webhook-attendee.ts:786`). The previous
+ * design hardcoded `allotmentAfter: 0` as a sentinel, which forensic
+ * dashboards filtering on `allotmentAfter > 0` would silently skip.
+ * The macro `event_archived` audit still carries the aggregate
+ * reversal count (`registrationsAffected`) — that remains the
+ * authoritative dashboard number — but per-row credit-back audits
+ * now mirror the refund path's forensic shape.
  */
-export function makeArchiveEventDeps(executor: TenantTx) {
+export function makeArchiveEventDeps(
+  executor: TenantTx,
+  ctx: ReturnType<typeof asTenantContext>,
+) {
+  const registrationsRepo = makeDrizzleRegistrationsRepository(executor);
   return {
     eventsRepo: makeDrizzleEventsRepository(executor),
-    registrationsRepo: makeDrizzleRegistrationsRepository(executor),
+    registrationsRepo,
+    quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+      executor,
+      ctx,
+      registrationsRepo,
+    ),
     advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(executor),
     audit: makePinoAuditPort(executor),
   };
@@ -250,7 +265,7 @@ export async function runArchiveEvent(
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
   return runInTenantWithRollbackOnErr(ctx, async (tx) => {
-    const deps = makeArchiveEventDeps(tx);
+    const deps = makeArchiveEventDeps(tx, ctx);
     return archiveEvent({ ...input, tenantId }, deps);
   });
 }

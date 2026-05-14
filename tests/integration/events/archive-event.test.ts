@@ -324,4 +324,76 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       }
     });
   });
+
+  /**
+   * Phase 6 staff-review-4 WARN-3 — cross-tenant UPDATE probe.
+   * Constitution v1.4.0 Principle I (NON-NEG) Review-Gate blocker
+   * requires every UPDATE surface to demonstrate that an actor in
+   * Tenant A cannot mutate Tenant B's data. The archive use-case is
+   * an UPDATE (events.archived_at + event_registrations.counted_*) so
+   * it MUST be exercised here.
+   *
+   * Failure mode the test guards against: if `runInTenant` were ever
+   * regressed (or the quota adapter dropped its tenantId filter — see
+   * WARN-2), this test would observe Tenant A archiving Tenant B's
+   * event. RLS at the DB layer should hide the row → `event_not_found`.
+   */
+  describe('cross-tenant isolation (WARN-3 staff-review-4 — Principle I Review-Gate)', () => {
+    let tenantA: TestTenant;
+    let tenantB: TestTenant;
+    let userA: string;
+    const tenantBEventId = randomUUID();
+
+    beforeAll(async () => {
+      tenantA = await createTestTenant('test-swecham');
+      tenantB = await createTestTenant('test-chamber');
+      const u = await createActiveTestUser('admin');
+      userA = u.userId;
+
+      // Seed Tenant B's event row directly (active, NOT archived).
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx.insert(events).values({
+          tenantId: tenantB.ctx.slug,
+          eventId: tenantBEventId,
+          source: 'eventcreate',
+          externalId: `event_tenantB_${Date.now()}`,
+          name: 'Tenant-B Event (must remain active)',
+          startDate: new Date('2026-09-15T18:00:00+07:00'),
+          archivedAt: null,
+          isPartnerBenefit: true,
+          isCulturalEvent: false,
+        } as unknown as typeof events.$inferInsert);
+      });
+    });
+
+    afterAll(async () => {
+      await tenantA.cleanup();
+      await tenantB.cleanup();
+    });
+
+    it('actor in tenant A cannot archive tenant B event (RLS hides → event_not_found)', async () => {
+      // Tenant-A actor calls runArchiveEvent against TENANT B's eventId.
+      // RLS scopes the events.findById query to tenantA's GUC, so the
+      // row is invisible — use-case returns event_not_found.
+      const result = await runArchiveEvent(tenantA.ctx.slug, {
+        eventId: tenantBEventId as never,
+        actorUserId: asUserId(userA),
+        occurredAt: new Date(),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe('event_not_found');
+      }
+
+      // Verify Tenant B's row was NOT touched (archived_at still null).
+      const tenantBRow = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select({ archivedAt: events.archivedAt })
+          .from(events)
+          .where(eq(events.eventId, tenantBEventId))
+          .limit(1),
+      );
+      expect(tenantBRow[0]?.archivedAt ?? null).toBeNull();
+    });
+  });
 });

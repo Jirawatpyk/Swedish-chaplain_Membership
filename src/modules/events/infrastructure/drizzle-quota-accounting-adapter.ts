@@ -74,11 +74,17 @@ export function makeDrizzleQuotaAccountingAdapter(
       let allotments: PlanAllotments;
       try {
         // Single SELECT joining members → membership_plans through the
-        // tx executor. Both rows live in the SAME tenant (composite FK
-        // constraint at the migration layer; RLS additionally enforces
-        // tenant scope). Returns the BenefitMatrix JSONB column,
-        // typed via Drizzle's $type<BenefitMatrix>() on the schema
-        // column declaration.
+        // tx executor. Constitution v1.4.0 Principle I (NON-NEG) clause 2
+        // requires TWO-LAYER tenant isolation — explicit
+        // `WHERE tenant_id = ?` at the application layer PLUS Postgres
+        // RLS+FORCE at the database layer. The TenantTx executor has
+        // `SET LOCAL app.current_tenant` set so RLS scopes the query
+        // already; the explicit filter below is defense-in-depth that
+        // matches the F2/F3/F4/F5 adapter precedent and would still scope
+        // the query if a future regression dropped the runInTenant wrap.
+        // The leftJoin condition already includes
+        // `membershipPlans.tenantId = members.tenantId` (line below),
+        // closing the symmetry on both tables.
         const rows = await executor
           .select({
             planId: members.planId,
@@ -94,7 +100,12 @@ export function makeDrizzleQuotaAccountingAdapter(
               eq(membershipPlans.planYear, members.planYear),
             ),
           )
-          .where(eq(members.memberId, input.memberId))
+          .where(
+            and(
+              eq(members.tenantId, input.tenantId),
+              eq(members.memberId, input.memberId),
+            ),
+          )
           .limit(1);
         const row = rows[0];
         if (!row) {

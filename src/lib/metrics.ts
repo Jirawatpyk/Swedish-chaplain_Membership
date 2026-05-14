@@ -2607,4 +2607,67 @@ export const eventcreateMetrics = {
       ).add(1, { tenant: tenantId, outcome });
     });
   },
+
+  /**
+   * Phase 6 staff-review-4 WARN-1 — quota OTel counters declared in
+   * `docs/observability.md § 24.1.4` as Phase 6 deliverables. Audit-log
+   * DB rows (`audit_log.event_type='quota_*'`) carry the same forensic
+   * data, but the OTel surface powers the chamber-admin dashboards +
+   * Grafana alerts for over-quota bursts and credit-back anomalies.
+   *
+   * Emission policy: ALL three counters fire on `Result.ok` from the
+   * use-case (`applyQuotaEffect`, `archiveEvent`, `toggleEventCategory`,
+   * or the ingest-refund-credit-back branch). On `audit_emit_failed`
+   * the use-case returns err so the counters do NOT fire — this is
+   * intentional: the metric and the audit row commit together (H3
+   * dashboard-truth pattern from Phase 5 round 3).
+   *
+   * The fourth counter `eventcreate_quota_over_quota_warnings_total`
+   * is implied by the audit taxonomy + R10 over-quota alert and is
+   * declared here for completeness — `docs/observability.md § 24.1.4`
+   * lists it alongside the decrement counters during staff-review-4
+   * closure.
+   */
+  quotaPartnershipDecremented(tenantId: string, planTier: string | null): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_partnership_decremented_total',
+        'F6 partnership-per-event quota decrement counter (Phase 6 WARN-1 — observability.md § 24.1.4)',
+      ).add(1, { tenant: tenantId, plan_tier: planTier ?? 'unknown' });
+    });
+  },
+
+  quotaCulturalDecremented(tenantId: string, planTier: string | null): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_cultural_decremented_total',
+        'F6 cultural-per-year quota decrement counter (Phase 6 WARN-1 — observability.md § 24.1.4)',
+      ).add(1, { tenant: tenantId, plan_tier: planTier ?? 'unknown' });
+    });
+  },
+
+  quotaCreditBack(
+    tenantId: string,
+    cause: 'refund' | 'archive' | 'relink',
+    scope: 'partnership' | 'cultural',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_credit_back_total',
+        'F6 quota credit-back counter labelled by cause (refund|archive|relink) × scope (partnership|cultural) (Phase 6 WARN-1 — observability.md § 24.1.4)',
+      ).add(1, { tenant: tenantId, cause, scope });
+    });
+  },
+
+  quotaOverQuotaWarning(
+    tenantId: string,
+    scope: 'partnership' | 'cultural',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_over_quota_warnings_total',
+        'F6 over-quota arrival warning counter (Phase 6 WARN-1 — partner of `quota_over_quota_warning` audit event)',
+      ).add(1, { tenant: tenantId, scope });
+    });
+  },
 } as const;

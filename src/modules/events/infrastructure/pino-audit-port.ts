@@ -31,6 +31,7 @@ import { sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import type {
   F6AuditPort,
@@ -40,6 +41,84 @@ import type {
 } from '../application/ports/audit-port';
 import type { AuditEventId } from '@/modules/auth';
 import { sanitizeDbErrorMessage } from './sanitize-db-error';
+
+/**
+ * Phase 6 staff-review-4 WARN-1 — single dispatcher that maps a freshly
+ * committed F6 audit row to its matching OTel counter (declared in
+ * `eventcreateMetrics`). Called after `insertAuditRow` resolves so the
+ * counter only fires when the audit row is actually persisted —
+ * matches the H3 dashboard-truth pattern from Phase 5 round 3.
+ *
+ * Counter dimensions:
+ *   - `plan_tier` for decrement counters is currently 'unknown' because
+ *     the F6 audit payloads don't carry the F2 plan tier. PERF-05 (Phase
+ *     10 follow-up) will extend `PlanAllotments` to thread the tier
+ *     label through `queryAllotments` and into the audit payload.
+ *   - `scope` for over-quota + credit-back counters reads from
+ *     `entry.payload.scope` (always present per audit-port.ts payload
+ *     types — `'partnership' | 'cultural'`).
+ *
+ * Wrapped in try/catch — metric emission failure must not propagate to
+ * the Result chain (audit row already committed; partial observability
+ * is acceptable; the metric layer is best-effort).
+ */
+function emitMatchingQuotaMetric(entry: F6AuditEntry): void {
+  try {
+    const tenantId = String(entry.tenantId);
+    switch (entry.eventType) {
+      case 'quota_partnership_decremented':
+        eventcreateMetrics.quotaPartnershipDecremented(tenantId, null);
+        break;
+      case 'quota_cultural_decremented':
+        eventcreateMetrics.quotaCulturalDecremented(tenantId, null);
+        break;
+      case 'quota_over_quota_warning': {
+        const scope = (entry.payload as { scope?: string } | null)?.scope;
+        if (scope === 'partnership' || scope === 'cultural') {
+          eventcreateMetrics.quotaOverQuotaWarning(tenantId, scope);
+        }
+        break;
+      }
+      case 'quota_credit_back_refund': {
+        const scope = (entry.payload as { scope?: string } | null)?.scope;
+        if (scope === 'partnership' || scope === 'cultural') {
+          eventcreateMetrics.quotaCreditBack(tenantId, 'refund', scope);
+        }
+        break;
+      }
+      case 'quota_credit_back_archive': {
+        const scope = (entry.payload as { scope?: string } | null)?.scope;
+        if (scope === 'partnership' || scope === 'cultural') {
+          eventcreateMetrics.quotaCreditBack(tenantId, 'archive', scope);
+        }
+        break;
+      }
+      // quota_credit_back_relink reserved for future use-case (F6.1
+      // re-matching surface). Falls through silently.
+      default:
+        // Non-quota audit events — handled by other metric paths
+        // (webhookReceiptsTotal, webhookSecretRotated, etc.) or
+        // intentionally counter-less.
+        break;
+    }
+  } catch (e) {
+    // Defensive — `eventcreateMetrics.*` already wraps in `safeMetric`,
+    // but a guard here ensures no metric exception leaks into the
+    // calling tx context. Logged at warn so operators see drift.
+    logger.warn(
+      {
+        event: 'f6_quota_metric_emit_failed',
+        eventType: entry.eventType,
+        tenantId: String(entry.tenantId),
+        err:
+          e instanceof Error
+            ? { name: e.name, message: e.message }
+            : { name: 'non_error', message: String(e) },
+      },
+      'F6 quota metric emit failed — audit row was persisted but OTel counter did not increment',
+    );
+  }
+}
 
 /**
  * F6 default retention — 5 years. No tax-document overlap (F4's 10y
@@ -198,6 +277,10 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
     ): Promise<Result<AuditEventId, AuditEmitError>> {
       try {
         const id = await insertAuditRow(executor, entry);
+        // Phase 6 WARN-1 — fire matching OTel counter AFTER the audit
+        // row commits in the caller's tx (the row commits on tx commit;
+        // best-effort metric emission cannot block or fail the tx).
+        emitMatchingQuotaMetric(entry);
         return ok(id as AuditEventId);
       } catch (e) {
         logFullError(

@@ -236,7 +236,7 @@ describe('CRIT-R2-2 (wave-6) — tx rollback evidence for archive + toggle', () 
     let archiveResult: { ok: boolean; error?: { kind: string } };
     try {
       archiveResult = await runInTenant(tenant.ctx, async (tx) => {
-        const deps = makeArchiveEventDeps(tx as TenantTx);
+        const deps = makeArchiveEventDeps(tx as TenantTx, tenant.ctx);
         // Poison the audit emit to fail on the macro event_archived
         // call (the LAST emit after all writes committed in-tx).
         const realEmit = deps.audit.emit;

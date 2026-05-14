@@ -42,11 +42,25 @@
  * Gated on E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD env vars per repo
  * convention; skip at runtime when missing.
  */
+import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+
+/**
+ * Phase 6 staff-review-4 SUGG-3 — `global-setup.ts` already seeds F6
+ * events via `seedF6Events` and exports the partner-benefit event ID
+ * to `E2E_SEED_F6_PB_EVENT_ID`. Use that directly instead of clicking
+ * the first row + skipping on absence, so these tests provide
+ * unconditional CI coverage of the AS1+AS2+AS4 admin surfaces.
+ *
+ * If the seed env var is missing (extremely fresh environment), the
+ * suite falls back to the `test.skip` path with a clear message —
+ * mirrors the F7/F8 pattern for environment-conditional E2E.
+ */
+const SEED_PB_EVENT_ID = process.env.E2E_SEED_F6_PB_EVENT_ID ?? null;
 
 // Dev-server cold compile + Next.js Turbopack chunk on first nav can
 // push individual tests past 30s; widen for cross-page navigation
@@ -78,24 +92,19 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     await expect(table.or(empty).first()).toBeVisible();
   });
 
-  test('event detail page renders Quota column + attendee-status badges (when seeded data exists)', async ({
+  test('event detail page renders Quota column + attendee-status badges', async ({
     page,
   }) => {
-    await page.goto('/admin/events');
-    await page.waitForLoadState('domcontentloaded');
-
-    // Find any event row. If empty state, skip — this test asserts UI
-    // rendering, not data presence (seeded data is environment-specific).
-    const rows = page.getByRole('row');
-    const hasRow = (await rows.count()) > 1; // 1 = header
+    // SUGG-3 — use the seeded partner-benefit event from global-setup
+    // so this test runs unconditionally in CI rather than skipping on
+    // empty-state. The fallback path remains for environments without
+    // seed env vars (truly fresh setup).
     test.skip(
-      !hasRow,
-      'No seeded events present — skipping detail-render assertion',
+      !SEED_PB_EVENT_ID,
+      'E2E_SEED_F6_PB_EVENT_ID missing — global-setup did not seed F6 events',
     );
 
-    // Click the first non-header row
-    const firstRow = rows.nth(1);
-    await firstRow.click();
+    await page.goto(`/admin/events/${SEED_PB_EVENT_ID}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Expect event detail page mounted (h1 + attendees section)
@@ -113,14 +122,12 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
   test('admin sees Partner-benefit + Cultural-event toggle buttons in event header', async ({
     page,
   }) => {
-    await page.goto('/admin/events');
-    await page.waitForLoadState('domcontentloaded');
-    const rows = page.getByRole('row');
-    const hasRow = (await rows.count()) > 1;
-    test.skip(!hasRow, 'No seeded events — skipping toggle-UI render assertion');
+    test.skip(
+      !SEED_PB_EVENT_ID,
+      'E2E_SEED_F6_PB_EVENT_ID missing — global-setup did not seed F6 events',
+    );
 
-    const firstRow = rows.nth(1);
-    await firstRow.click();
+    await page.goto(`/admin/events/${SEED_PB_EVENT_ID}`);
     await page.waitForLoadState('domcontentloaded');
 
     // Look for either flag-state of each toggle. The button label
@@ -139,14 +146,12 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
   test('clicking Partner-benefit toggle opens confirmation dialog + Cancel returns without state change', async ({
     page,
   }) => {
-    await page.goto('/admin/events');
-    await page.waitForLoadState('domcontentloaded');
-    const rows = page.getByRole('row');
-    const hasRow = (await rows.count()) > 1;
-    test.skip(!hasRow, 'No seeded events — skipping toggle-confirm assertion');
+    test.skip(
+      !SEED_PB_EVENT_ID,
+      'E2E_SEED_F6_PB_EVENT_ID missing — global-setup did not seed F6 events',
+    );
 
-    const firstRow = rows.nth(1);
-    await firstRow.click();
+    await page.goto(`/admin/events/${SEED_PB_EVENT_ID}`);
     await page.waitForLoadState('domcontentloaded');
 
     const partnerToggle = page.getByRole('button', {
@@ -178,5 +183,73 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     await dialog.getByRole('button', { name: /cancel/i }).click();
     await expect(dialog).not.toBeVisible();
     await expect(partnerToggle).toHaveText(initialName ?? '');
+  });
+
+  /**
+   * Phase 6 staff-review-4 SUGG-4 — `@a11y` axe-core WCAG 2.1 AA scan
+   * on the quota admin surface. F3/F4/F7 specs include axe-core scans
+   * per Constitution Principle VI; F6 Phase 6's Quota column +
+   * AlertDialog toggle wrappers had no a11y assertions until now.
+   *
+   * Fails only on `serious` / `critical` violations (mirrors the
+   * existing `eventcreate-a11y.spec.ts` convention). `minor` and
+   * `moderate` are logged for triage but do not fail the run.
+   */
+  test('@a11y F6 quota admin surface (event detail + AlertDialog) axe-core scan', async ({
+    page,
+  }) => {
+    test.skip(
+      !SEED_PB_EVENT_ID,
+      'E2E_SEED_F6_PB_EVENT_ID missing — global-setup did not seed F6 events',
+    );
+
+    await page.goto(`/admin/events/${SEED_PB_EVENT_ID}`);
+    await page.waitForLoadState('domcontentloaded');
+    // Wait for streamed metadata to settle (matches eventcreate-a11y.spec
+    // expectNoAxeViolations helper precedent — Next.js 16 RSC streams
+    // <title> after the initial DOM parse).
+    await page.waitForFunction(() => document.title.length > 0, undefined, {
+      timeout: 15_000,
+    });
+
+    // (1) scan with dialog CLOSED — covers Quota column + toggle buttons.
+    const detailResults = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    const detailSerious = detailResults.violations.filter(
+      (v) => v.impact === 'serious' || v.impact === 'critical',
+    );
+    if (detailSerious.length > 0) {
+      console.error(
+        '[axe quota-detail] serious/critical violations:',
+        JSON.stringify(detailSerious, null, 2),
+      );
+    }
+    expect(detailSerious, 'quota detail page: serious/critical axe violations').toHaveLength(0);
+
+    // (2) open the AlertDialog and scan focus-trapped overlay state.
+    const partnerToggle = page.getByRole('button', {
+      name: /(flag as partner benefit|remove partner-benefit flag)/i,
+    });
+    await partnerToggle.click();
+    const dialog = page.getByRole('alertdialog');
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    const dialogResults = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze();
+    const dialogSerious = dialogResults.violations.filter(
+      (v) => v.impact === 'serious' || v.impact === 'critical',
+    );
+    if (dialogSerious.length > 0) {
+      console.error(
+        '[axe quota-alertdialog] serious/critical violations:',
+        JSON.stringify(dialogSerious, null, 2),
+      );
+    }
+    expect(dialogSerious, 'quota AlertDialog: serious/critical axe violations').toHaveLength(0);
+    // Cleanup — return focus to the trigger so the test does not
+    // dirty the page state for subsequent specs.
+    await dialog.getByRole('button', { name: /cancel/i }).click();
+    await expect(dialog).not.toBeVisible();
   });
 });

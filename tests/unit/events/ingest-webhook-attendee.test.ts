@@ -84,6 +84,7 @@ function buildPorts(overrides: Partial<TxScopedPorts> = {}): TxScopedPorts {
       findByEmailLower: vi.fn(),
       countConsumedByMember: vi.fn(),
       updateMatchAndQuota: vi.fn(),
+      markRefunded: vi.fn(),
       listPseudonymiseEligible: vi.fn(),
       pseudonymiseRow: vi.fn(),
       hardDelete: vi.fn(),
@@ -107,6 +108,20 @@ function buildPorts(overrides: Partial<TxScopedPorts> = {}): TxScopedPorts {
       emit: vi.fn().mockResolvedValue(ok('audit-id')),
       emitRolledBack: vi.fn().mockResolvedValue(ok('audit-id')),
       emitStandalone: vi.fn().mockResolvedValue(ok('audit-id')),
+    },
+    quotaAccountingPort: {
+      queryAllotments: vi.fn().mockResolvedValue(
+        ok({
+          allotments: { partnershipPerEvent: 6, culturalPerYear: 12 },
+          consumed: {
+            partnershipConsumedForEvent: 0,
+            culturalConsumedForYear: 0,
+          },
+        }),
+      ),
+    },
+    advisoryLockAcquirer: {
+      acquire: vi.fn().mockResolvedValue(undefined),
     },
     ...overrides,
   } as TxScopedPorts;
@@ -231,5 +246,269 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('unreachable');
     expect(result.value.ingestLatencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  /**
+   * Phase 6 staff-review-4 WARN-6 — `isRefundTransition` branch unit test.
+   * AS4 (refund credit-back) end-to-end is covered at the integration
+   * layer (`tests/integration/events/quota-accounting.test.ts:578-756`)
+   * but the 5-condition guard at `ingest-webhook-attendee.ts:689-695`
+   * had no pure-unit coverage. A regression dropping the
+   * `existingPaymentStatus !== 'refunded'` idempotency check would
+   * break the integration test only — costly to surface.
+   *
+   * This test forces `insertOnConflictDoNothing` to return
+   * `isNewRegistration: false` with an existing row carrying
+   * `paymentStatus: 'paid'` + `countedAgainstPartnership: true`, then
+   * delivers an incoming payload with `paymentStatus: 'refunded'`. The
+   * expected outcomes:
+   *
+   *   1. `markRefunded` is invoked (the flip-to-refunded UPDATE)
+   *   2. The audit port receives `quota_credit_back_refund` for the
+   *      partnership scope (and NOT for cultural — that flag was false)
+   *   3. The advisory lock is acquired exactly once in the refund block
+   *   4. `quotaAccountingPort.queryAllotments` is called to read
+   *      `allotmentAfter` (the value emitted in the audit payload)
+   *   5. Use-case still returns Result.ok (the refund transition is
+   *      not an error path; it is a normal state transition).
+   */
+  it('isRefundTransition (paid→refunded with partnership counted) → markRefunded + quota_credit_back_refund + ok', async () => {
+    const memberIdLiteral = '11111111-1111-1111-1111-111111111111';
+    const existingRegPaidPartnership = {
+      tenantId: 'test',
+      registrationId: 'reg-prior-paid',
+      eventId: 'evt-1',
+      externalId: 'ext-att-refund-1',
+      attendee: {
+        email: 'refunder@example.com',
+        name: 'Refund Sample',
+        company: 'Diamond Co',
+      },
+      match: {
+        type: 'member_contact' as const,
+        matchedMemberId: memberIdLiteral,
+        matchedContactId: 'contact-1',
+      },
+      ticket: { type: null, priceThb: null, paymentStatus: 'paid' as const },
+      quotaEffect: {
+        countedAgainstPartnership: true,
+        countedAgainstCulturalQuota: false,
+      },
+      metadata: {},
+      registeredAt: new Date(),
+      importedAt: new Date(),
+      piiPseudonymisedAt: null,
+    };
+
+    const ports = buildPorts();
+    // Event is partner-benefit so apply-quota would normally fire,
+    // but the refund branch short-circuits BEFORE shouldApplyQuota
+    // for the existing-row case.
+    (ports.eventsRepo.upsert as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        event: {
+          tenantId: 'test',
+          eventId: 'evt-1',
+          source: 'eventcreate',
+          externalId: 'ext-evt-1',
+          name: 'Refund Test Event',
+          description: null,
+          startDate: new Date('2026-06-15T18:00:00+07:00'),
+          endDate: null,
+          location: null,
+          category: null,
+          eventcreateUrl: null,
+          isPartnerBenefit: true,
+          isCulturalEvent: false,
+          archivedAt: null,
+          metadata: {},
+          importedAt: new Date(),
+          lastUpdatedAt: new Date(),
+        },
+        eventCreated: false,
+      }),
+    );
+    // Existing row already counted=true on partnership.
+    (
+      ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({
+        registration: existingRegPaidPartnership,
+        isNewRegistration: false,
+      }),
+    );
+    // markRefunded returns the flipped row + previous-state markers
+    // that the use-case reads via `flip.value.previousQuotaEffect` to
+    // decide which scope audits to emit.
+    (
+      ports.registrationsRepo.markRefunded as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({
+        registration: {
+          ...existingRegPaidPartnership,
+          ticket: {
+            ...existingRegPaidPartnership.ticket,
+            paymentStatus: 'refunded',
+          },
+          quotaEffect: {
+            countedAgainstPartnership: false,
+            countedAgainstCulturalQuota: false,
+          },
+        },
+        previousQuotaEffect: existingRegPaidPartnership.quotaEffect,
+        previousPaymentStatus: 'paid',
+      }),
+    );
+    // Attendee matcher returns the same matched member as the existing row.
+    (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        resolution: {
+          type: 'member_contact',
+          matchedMemberId: memberIdLiteral,
+          matchedContactId: 'contact-1',
+        },
+        fuzzyDetail: null,
+        unmatchedCandidates: null,
+      }),
+    );
+
+    const deps = buildDeps(ports);
+    const refundInput = {
+      ...VALID_INPUT,
+      rawPayload: makeWebhookPayload({
+        attendee: {
+          externalId: 'ext-att-refund-1',
+          email: 'refunder@example.com',
+          companyName: 'Diamond Co',
+          fullName: 'Refund Sample',
+          paymentStatus: 'refunded',
+        },
+      }),
+    };
+
+    const result = await ingestWebhookAttendee(refundInput, deps);
+
+    expect(result.ok).toBe(true);
+    // markRefunded MUST be called exactly once.
+    expect(ports.registrationsRepo.markRefunded).toHaveBeenCalledTimes(1);
+    // queryAllotments MUST be called (to source the allotmentAfter
+    // value baked into the audit payload).
+    expect(ports.quotaAccountingPort.queryAllotments).toHaveBeenCalled();
+    // The audit port should have received a quota_credit_back_refund
+    // emit for partnership scope.
+    const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const creditBackRefundCalls = emitCalls.filter(([entry]) => {
+      return (entry as { eventType: string }).eventType === 'quota_credit_back_refund';
+    });
+    expect(creditBackRefundCalls.length).toBe(1);
+    const refundEntry = creditBackRefundCalls[0]![0] as {
+      payload: { scope: string; allotmentAfter: number };
+    };
+    expect(refundEntry.payload.scope).toBe('partnership');
+    expect(refundEntry.payload.allotmentAfter).toBe(6); // 6 partnership − 0 consumed
+  });
+
+  /**
+   * Idempotency guard: re-delivery of an already-refunded row must
+   * NOT re-fire `markRefunded` or emit another `quota_credit_back_refund`.
+   * Locks the `existingReg.ticket.paymentStatus !== 'refunded'` check
+   * at the unit layer.
+   */
+  it('isRefundTransition idempotent: existing row already refunded → no re-emit, no markRefunded', async () => {
+    const memberIdLiteral = '22222222-2222-2222-2222-222222222222';
+    const alreadyRefundedReg = {
+      tenantId: 'test',
+      registrationId: 'reg-already-refunded',
+      eventId: 'evt-1',
+      externalId: 'ext-att-already-refunded',
+      attendee: {
+        email: 'idemp@example.com',
+        name: 'Idempotent',
+        company: 'Diamond Co',
+      },
+      match: {
+        type: 'member_contact' as const,
+        matchedMemberId: memberIdLiteral,
+        matchedContactId: 'contact-2',
+      },
+      ticket: { type: null, priceThb: null, paymentStatus: 'refunded' as const },
+      quotaEffect: {
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      metadata: {},
+      registeredAt: new Date(),
+      importedAt: new Date(),
+      piiPseudonymisedAt: null,
+    };
+
+    const ports = buildPorts();
+    (ports.eventsRepo.upsert as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        event: {
+          tenantId: 'test',
+          eventId: 'evt-1',
+          source: 'eventcreate',
+          externalId: 'ext-evt-1',
+          name: 'Refund Idempotent Test',
+          description: null,
+          startDate: new Date(),
+          endDate: null,
+          location: null,
+          category: null,
+          eventcreateUrl: null,
+          isPartnerBenefit: true,
+          isCulturalEvent: false,
+          archivedAt: null,
+          metadata: {},
+          importedAt: new Date(),
+          lastUpdatedAt: new Date(),
+        },
+        eventCreated: false,
+      }),
+    );
+    (
+      ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({
+        registration: alreadyRefundedReg,
+        isNewRegistration: false,
+      }),
+    );
+    (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        resolution: {
+          type: 'member_contact',
+          matchedMemberId: memberIdLiteral,
+          matchedContactId: 'contact-2',
+        },
+        fuzzyDetail: null,
+        unmatchedCandidates: null,
+      }),
+    );
+
+    const deps = buildDeps(ports);
+    const refundReplayInput = {
+      ...VALID_INPUT,
+      rawPayload: makeWebhookPayload({
+        attendee: {
+          externalId: 'ext-att-already-refunded',
+          email: 'idemp@example.com',
+          companyName: 'Diamond Co',
+          fullName: 'Idempotent',
+          paymentStatus: 'refunded',
+        },
+      }),
+    };
+
+    const result = await ingestWebhookAttendee(refundReplayInput, deps);
+
+    expect(result.ok).toBe(true);
+    expect(ports.registrationsRepo.markRefunded).not.toHaveBeenCalled();
+    const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const creditBackRefundCalls = emitCalls.filter(([entry]) => {
+      return (entry as { eventType: string }).eventType === 'quota_credit_back_refund';
+    });
+    expect(creditBackRefundCalls.length).toBe(0);
   });
 });

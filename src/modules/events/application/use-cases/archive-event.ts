@@ -4,11 +4,20 @@
  * Admin archive action per FR-019a. Atomically:
  *   1. Loads the event via `eventsRepo.findById` →
  *      `event_not_found` / `already_archived` short-circuits.
- *   2. SELECTs every matched paid non-pseudonymised registration via
+ *   2. UPDATEs `events.archived_at = NOW()` via
+ *      `eventsRepo.setArchived` FIRST so any concurrent ingest landing
+ *      between this step and step 3 below sees `archived_at !== null`
+ *      and short-circuits in `applyQuotaEffect` (cannot insert a new
+ *      counted=true row). This makes the no-new-counted-row invariant
+ *      EXPLICIT at the code level rather than implicit via the
+ *      per-(member, event) advisory lock acquired later in step 4.
+ *   3. SELECTs every previously-counted registration via
  *      `registrationsRepo.listForRequota` (ordered by
- *      `matched_member_id ASC` for deadlock-safe lock order).
- *   3. UPDATEs `events.archived_at = NOW()` via
- *      `eventsRepo.setArchived`.
+ *      `matched_member_id ASC` for deadlock-safe lock order in step 4).
+ *      Snapshot taken AFTER the archive UPDATE is the strongest
+ *      invariant: any row not in this list is guaranteed to either
+ *      already be counted=false or be a future ingest that will
+ *      short-circuit on the now-archived flag.
  *   4. For each previously-counted registration row:
  *        a. Acquire the per-(tenant, member, event) advisory lock —
  *           same `eventcreate-quota:` namespace the ingest path uses
@@ -48,8 +57,13 @@ import type {
   AdvisoryLockAcquirer,
   InvalidLockKeyError,
 } from '../ports/advisory-lock-acquirer';
+import type {
+  QuotaAccountingPort,
+  QuotaAccountingError,
+} from '../ports/quota-accounting-port';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
@@ -117,12 +131,32 @@ export type ArchiveEventError =
       readonly kind: 'audit_emit_failed';
       readonly message: string;
       readonly cause: AuditEmitError;
+    }
+  | {
+      /**
+       * Phase 6 staff-review-4 SUGG-2 closure — `queryAllotments` for the
+       * post-credit-back `allotmentAfter` value failed. Matches the
+       * F4 refund credit-back pattern so the audit payload carries an
+       * accurate "slots remaining after this credit" rather than a `0`
+       * sentinel. A `quota_lookup_failed` here aborts the archive tx
+       * (FR-037 strict-tx) so the audit log never carries stale data.
+       */
+      readonly kind: 'quota_lookup_failed';
+      readonly cause: QuotaAccountingError;
     };
 
 export interface ArchiveEventDeps {
   readonly eventsRepo: EventsRepository;
   readonly registrationsRepo: RegistrationsRepository;
   readonly advisoryLockAcquirer: AdvisoryLockAcquirer;
+  /**
+   * Phase 6 staff-review-4 SUGG-2 — needed to compute actual
+   * `allotmentAfter` per credit-back audit row, matching the refund
+   * credit-back pattern. The previous implementation hardcoded
+   * `allotmentAfter: 0` as a sentinel which forensic dashboards
+   * filtering on `allotmentAfter > 0` would silently skip.
+   */
+  readonly quotaAccountingPort: QuotaAccountingPort;
   readonly audit: F6AuditPort;
 }
 
@@ -147,9 +181,29 @@ export async function archiveEvent(
     return err({ kind: 'already_archived', eventId: input.eventId });
   }
 
-  // (2) Snapshot the rows that need credit-back BEFORE we archive the
-  // event. Ordered by matched_member_id ASC for deadlock-safe lock
-  // acquisition.
+  // (2) UPDATE the event flag FIRST so applyQuotaEffect short-circuits
+  // for any concurrent ingest landing after this point — the
+  // archived_at !== null check at apply-quota-effect.ts means no NEW
+  // counted=true row can be inserted from now on. This makes the
+  // post-snapshot safety invariant EXPLICIT rather than implicit via
+  // the per-(member, event) advisory lock acquired in step 4.
+  const setArchivedResult = await deps.eventsRepo.setArchived(
+    input.tenantId,
+    input.eventId,
+    input.occurredAt,
+  );
+  if (!setArchivedResult.ok) {
+    return err({
+      kind: 'events_repo_error',
+      message: eventsRepoErrorMessage(setArchivedResult.error),
+      cause: setArchivedResult.error,
+    });
+  }
+  const eventAfter = setArchivedResult.value;
+
+  // (3) Snapshot the rows that need credit-back AFTER the archive
+  // commits inside this tx. Ordered by matched_member_id ASC for
+  // deadlock-safe lock acquisition in step 4.
   const listResult = await deps.registrationsRepo.listForRequota(
     input.tenantId,
     input.eventId,
@@ -167,23 +221,15 @@ export async function archiveEvent(
       r.quotaEffect.countedAgainstCulturalQuota,
   );
 
-  // (3) UPDATE the event flag.
-  const setArchivedResult = await deps.eventsRepo.setArchived(
-    input.tenantId,
-    input.eventId,
-    input.occurredAt,
-  );
-  if (!setArchivedResult.ok) {
-    return err({
-      kind: 'events_repo_error',
-      message: eventsRepoErrorMessage(setArchivedResult.error),
-      cause: setArchivedResult.error,
-    });
-  }
-  const eventAfter = setArchivedResult.value;
-
   let partnershipReversals = 0;
   let culturalReversals = 0;
+
+  // SUGG-2 staff-review-4 — derive fiscal year once outside the loop
+  // for the cultural-scope queryAllotments call below. Asia/Bangkok
+  // tenant fiscal year boundary is handled by `deriveFiscalYear`
+  // (js-joda backed); SweCham fiscal-year-start-month=1 → fiscal year
+  // equals calendar year. Other tenants can diverge later.
+  const fiscalYear = deriveFiscalYear(eventBefore.startDate.toISOString(), 1);
 
   // (4) Per-row credit-back. Each row gets its own advisory lock so
   // concurrent ingests on the same (member, event) block until our
@@ -219,6 +265,28 @@ export async function archiveEvent(
       });
     }
 
+    // SUGG-2 — query allotments AFTER setQuotaEffect commits the
+    // counted=false flip so `consumed.*` reflects the post-credit-back
+    // state. The audit `allotmentAfter` value now mirrors the refund
+    // credit-back path's semantics (see ingest-webhook-attendee.ts:786).
+    // Forensic dashboards filtering on `allotmentAfter > 0` will now
+    // surface archive credit-backs correctly rather than treating the
+    // legacy `0` sentinel as "member has no slots".
+    let postLookup: Awaited<
+      ReturnType<typeof deps.quotaAccountingPort.queryAllotments>
+    > | null = null;
+    if (wasPartnership || wasCultural) {
+      postLookup = await deps.quotaAccountingPort.queryAllotments({
+        tenantId: input.tenantId,
+        memberId,
+        eventId: input.eventId,
+        fiscalYear,
+      });
+      if (!postLookup.ok) {
+        return err({ kind: 'quota_lookup_failed', cause: postLookup.error });
+      }
+    }
+
     const baseAudit = {
       tenantId: input.tenantId,
       actorType: 'admin' as const,
@@ -226,7 +294,10 @@ export async function archiveEvent(
       occurredAt: input.occurredAt,
     };
 
-    if (wasPartnership) {
+    if (wasPartnership && postLookup?.ok) {
+      const { allotments, consumed } = postLookup.value;
+      const allotmentAfter =
+        allotments.partnershipPerEvent - consumed.partnershipConsumedForEvent;
       const r = await deps.audit.emit({
         ...baseAudit,
         eventType: 'quota_credit_back_archive',
@@ -236,14 +307,7 @@ export async function archiveEvent(
           registrationId: reg.registrationId,
           memberId,
           scope: 'partnership',
-          // allotmentAfter is left as 0 here because the archive
-          // already nuked the row's contribution; consumed-count for
-          // the (member, event) now drops by 1, but the canonical
-          // counter is computed-on-read and never persisted. The
-          // event_archived macro audit carries the aggregate reversal
-          // count (registrationsAffected) — that's the more useful
-          // dashboard metric.
-          allotmentAfter: 0,
+          allotmentAfter,
         },
       });
       if (!r.ok) {
@@ -252,7 +316,10 @@ export async function archiveEvent(
       partnershipReversals += 1;
     }
 
-    if (wasCultural) {
+    if (wasCultural && postLookup?.ok) {
+      const { allotments, consumed } = postLookup.value;
+      const allotmentAfter =
+        allotments.culturalPerYear - consumed.culturalConsumedForYear;
       const r = await deps.audit.emit({
         ...baseAudit,
         eventType: 'quota_credit_back_archive',
@@ -262,7 +329,7 @@ export async function archiveEvent(
           registrationId: reg.registrationId,
           memberId,
           scope: 'cultural',
-          allotmentAfter: 0,
+          allotmentAfter,
         },
       });
       if (!r.ok) {

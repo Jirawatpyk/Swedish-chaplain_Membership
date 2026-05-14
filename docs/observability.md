@@ -1298,9 +1298,10 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | Metric | Phase | Notes |
 |---|---|---|
 | `eventcreate_match_rate` | Phase 4+ | observable gauge per tenant; computed from `eventcreate_webhook_receipts_total{processing_outcome=matched_*}` ratio |
-| `eventcreate_quota_partnership_decremented_total` | Phase 6 | counter labelled tenant + plan tier |
-| `eventcreate_quota_cultural_decremented_total` | Phase 6 | counter labelled tenant + plan tier |
-| `eventcreate_quota_credit_back_total` | Phase 6 | counter labelled tenant + cause (refund|archive|relink) |
+| `eventcreate_quota_partnership_decremented_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + plan tier (plan_tier='unknown' pending PERF-05 Phase 10 follow-up — payload threading) |
+| `eventcreate_quota_cultural_decremented_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + plan tier (plan_tier='unknown' pending PERF-05) |
+| `eventcreate_quota_credit_back_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + cause (refund|archive|relink) + scope (partnership|cultural) |
+| `eventcreate_quota_over_quota_warnings_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + scope (partnership|cultural) — burst threshold alert R10 |
 | `eventcreate_csv_import_duration_ms` | Phase 7 | histogram per tenant |
 | `eventcreate_webhook_secret_rotation_total` | Phase 8 | counter per tenant |
 | `eventcreate_tenant_ingest_disabled_gauge` | Phase 8 | observable gauge — 1 when tenant disabled |

@@ -493,4 +493,73 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
       }
     });
   });
+
+  /**
+   * Phase 6 staff-review-4 WARN-3 — cross-tenant UPDATE probe.
+   * Constitution v1.4.0 Principle I (NON-NEG) Review-Gate blocker.
+   * Toggle is an UPDATE surface (events.is_partner_benefit/
+   * is_cultural_event + event_registrations.counted_against_*) — RLS
+   * must hide Tenant B's event row from a Tenant A actor so the
+   * use-case short-circuits with event_not_found and Tenant B's flags
+   * remain unchanged.
+   */
+  describe('cross-tenant isolation (WARN-3 staff-review-4 — Principle I Review-Gate)', () => {
+    let tenantA: TestTenant;
+    let tenantB: TestTenant;
+    let userA: string;
+    const tenantBEventId = randomUUID();
+
+    beforeAll(async () => {
+      tenantA = await createTestTenant('test-swecham');
+      tenantB = await createTestTenant('test-chamber');
+      const u = await createActiveTestUser('admin');
+      userA = u.userId;
+
+      // Seed Tenant B's event row with is_partner_benefit=false. If
+      // cross-tenant isolation is broken, the toggle below would
+      // flip this to true.
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx.insert(events).values({
+          tenantId: tenantB.ctx.slug,
+          eventId: tenantBEventId,
+          source: 'eventcreate',
+          externalId: `event_tenantB_${Date.now()}`,
+          name: 'Tenant-B Event (flag must stay false)',
+          startDate: new Date('2026-10-15T18:00:00+07:00'),
+          archivedAt: null,
+          isPartnerBenefit: false,
+          isCulturalEvent: false,
+        } as unknown as typeof events.$inferInsert);
+      });
+    });
+
+    afterAll(async () => {
+      await tenantA.cleanup();
+      await tenantB.cleanup();
+    });
+
+    it('actor in tenant A cannot toggle tenant B event (RLS hides → event_not_found)', async () => {
+      const result = await runToggleEventCategory(tenantA.ctx.slug, {
+        eventId: tenantBEventId as never,
+        flag: 'is_partner_benefit',
+        newValue: true,
+        actorUserId: asUserId(userA),
+        occurredAt: new Date(),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe('event_not_found');
+      }
+
+      // Verify Tenant B's row was NOT toggled (flag still false).
+      const tenantBRow = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select({ isPartnerBenefit: events.isPartnerBenefit })
+          .from(events)
+          .where(eq(events.eventId, tenantBEventId))
+          .limit(1),
+      );
+      expect(tenantBRow[0]?.isPartnerBenefit).toBe(false);
+    });
+  });
 });

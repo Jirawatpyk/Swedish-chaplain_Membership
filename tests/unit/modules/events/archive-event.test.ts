@@ -117,6 +117,14 @@ function makeDeps(
     listForRequota: RegistrationsRepository['listForRequota'];
     setQuotaEffect: RegistrationsRepository['setQuotaEffect'];
     acquire: AdvisoryLockAcquirer['acquire'];
+    /**
+     * Staff-review-4 SUGG-2 — archive now threads quotaAccountingPort to
+     * compute real `allotmentAfter` per credit-back row. Default mock
+     * returns ample remaining quota (6/6 partnership, 12/12 cultural)
+     * minus the consumed-count of the row being credited back, mirroring
+     * the post-credit-back state.
+     */
+    queryAllotments: import('@/modules/events/application/ports/quota-accounting-port').QuotaAccountingPort['queryAllotments'];
     emit: F6AuditPort['emit'];
   }> = {},
 ): {
@@ -126,6 +134,7 @@ function makeDeps(
   listForRequotaMock: ReturnType<typeof vi.fn>;
   setQuotaEffectMock: ReturnType<typeof vi.fn>;
   acquireMock: ReturnType<typeof vi.fn>;
+  queryAllotmentsMock: ReturnType<typeof vi.fn>;
   emitMock: ReturnType<typeof vi.fn>;
 } {
   const findByIdMock = vi.fn(
@@ -152,6 +161,21 @@ function makeDeps(
   );
   const acquireMock = vi.fn(
     overrides.acquire ?? (async () => undefined),
+  );
+  // SUGG-2 — post-credit-back queryAllotments mock; ample remaining
+  // quota by default (6 partnership / 12 cultural, 0 consumed) so the
+  // emitted audit payload's allotmentAfter is the full plan capacity
+  // unless a per-test override narrows the result.
+  const queryAllotmentsMock = vi.fn(
+    overrides.queryAllotments ??
+      (async () =>
+        ok({
+          allotments: { partnershipPerEvent: 6, culturalPerYear: 12 },
+          consumed: {
+            partnershipConsumedForEvent: 0,
+            culturalConsumedForYear: 0,
+          },
+        })),
   );
   const emitMock = vi.fn(
     overrides.emit ?? (async () => ok('audit-1' as AuditEventId)),
@@ -185,6 +209,7 @@ function makeDeps(
       hardDelete: vi.fn() as never,
     } as RegistrationsRepository,
     advisoryLockAcquirer: { acquire: acquireMock as never },
+    quotaAccountingPort: { queryAllotments: queryAllotmentsMock as never },
     audit: {
       emit: emitMock as never,
       emitRolledBack: vi.fn() as never,
@@ -197,6 +222,7 @@ function makeDeps(
     setArchivedMock,
     listForRequotaMock,
     setQuotaEffectMock,
+    queryAllotmentsMock,
     acquireMock,
     emitMock,
   };
@@ -254,7 +280,7 @@ describe('archiveEvent — Phase 6 wave-4 (FR-019a)', () => {
     });
 
     it('registrations_repo_error when listForRequota fails', async () => {
-      const { deps, setArchivedMock } = makeDeps({
+      const { deps } = makeDeps({
         listForRequota: async () =>
           err({ kind: 'db_error', message: 'listForRequota down' }),
       });
@@ -263,7 +289,15 @@ describe('archiveEvent — Phase 6 wave-4 (FR-019a)', () => {
       if (!result.ok) {
         expect(result.error.kind).toBe('registrations_repo_error');
       }
-      expect(setArchivedMock).not.toHaveBeenCalled();
+      // SUGG-1 staff-review-4 — after the step-order swap, setArchived
+      // runs BEFORE listForRequota (step 2 instead of step 3), so the
+      // mock IS called even when listForRequota fails. The tx wrapper
+      // (runInTenantWithRollbackOnErr) rolls back the events.archived_at
+      // write on Result.err — this unit test exercises the use-case in
+      // isolation without the wrapper, so the spy state reflects the
+      // pre-rollback call ordering. The integration test in
+      // `tx-rollback-on-err.test.ts` proves the rollback semantics
+      // end-to-end against live Neon.
     });
 
     it('events_repo_error when setArchived fails', async () => {
