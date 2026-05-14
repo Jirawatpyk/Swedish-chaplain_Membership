@@ -181,6 +181,254 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
   });
 });
 
+/**
+ * Phase 6 staff-review-4 Round 6 ARCH-R6-02 closure — direct unit
+ * coverage for the `emitMatchingQuotaMetric` dispatcher hidden inside
+ * `pino-audit-port.ts:65-121`. Round 5 already shipped the 4 OTel
+ * counter declarations + the dispatcher hook in `emit()`, but the
+ * dispatcher itself had NO direct test coverage. A future refactor
+ * dropping a switch-case arm (e.g., renaming `quota_credit_back_refund`
+ * to `quota_credit_back_payment_refund`) would silently stop firing
+ * the counter — no test would fail because the `safeMetric` wrapper
+ * absorbs failures and the integration tests assert audit rows, not
+ * OTel counter values.
+ *
+ * The dispatcher fires from a switch on `entry.eventType`. We spy on
+ * `eventcreateMetrics.*` and feed each quota event-type through `emit()`
+ * to assert the right counter is incremented with the right labels.
+ * The `default` case is verified by feeding a non-quota event through
+ * `emit()` and asserting NO counter fired.
+ */
+describe('emitMatchingQuotaMetric — ARCH-R6-02 direct dispatcher coverage', () => {
+  let executor: TenantTx;
+  let partnershipSpy: ReturnType<typeof vi.spyOn>;
+  let culturalSpy: ReturnType<typeof vi.spyOn>;
+  let creditBackSpy: ReturnType<typeof vi.spyOn>;
+  let overQuotaSpy: ReturnType<typeof vi.spyOn>;
+  let webhookReceiptsSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    // Stub the executor.execute → returns an audit_log RETURNING id row
+    // matching `insertAuditRow` shape (`rows[0].id`) so the success path
+    // runs to completion, allowing emitMatchingQuotaMetric to fire.
+    executor = {
+      execute: vi.fn().mockResolvedValue([{ id: 'audit-test-id' }]),
+    } as unknown as TenantTx;
+
+    // Spy on every counter the dispatcher may fire. Match the actual
+    // names declared in `src/lib/metrics.ts` to fail if names drift.
+    const metrics = await import('@/lib/metrics');
+    partnershipSpy = vi
+      .spyOn(metrics.eventcreateMetrics, 'quotaPartnershipDecremented')
+      .mockImplementation(() => {});
+    culturalSpy = vi
+      .spyOn(metrics.eventcreateMetrics, 'quotaCulturalDecremented')
+      .mockImplementation(() => {});
+    creditBackSpy = vi
+      .spyOn(metrics.eventcreateMetrics, 'quotaCreditBack')
+      .mockImplementation(() => {});
+    overQuotaSpy = vi
+      .spyOn(metrics.eventcreateMetrics, 'quotaOverQuotaWarning')
+      .mockImplementation(() => {});
+    // Webhook-receipts counter — used to verify the dispatcher's
+    // `default: break` arm does NOT accidentally fire it.
+    webhookReceiptsSpy = vi
+      .spyOn(metrics.eventcreateMetrics, 'webhookReceiptsTotal')
+      .mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('quota_partnership_decremented → fires quotaPartnershipDecremented with plan_tier=null', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_partnership_decremented',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'unit-test partnership decrement',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        perEventAllotmentBefore: 6,
+        perEventAllotmentAfter: 5,
+      },
+    });
+    expect(partnershipSpy).toHaveBeenCalledTimes(1);
+    expect(partnershipSpy).toHaveBeenCalledWith('test-chamber', null);
+    expect(culturalSpy).not.toHaveBeenCalled();
+    expect(creditBackSpy).not.toHaveBeenCalled();
+    expect(overQuotaSpy).not.toHaveBeenCalled();
+  });
+
+  it('quota_cultural_decremented → fires quotaCulturalDecremented with plan_tier=null', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_cultural_decremented',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'unit-test cultural decrement',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        fiscalYear: 2026,
+        annualAllotmentBefore: 2,
+        annualAllotmentAfter: 1,
+      },
+    });
+    expect(culturalSpy).toHaveBeenCalledTimes(1);
+    expect(culturalSpy).toHaveBeenCalledWith('test-chamber', null);
+    expect(partnershipSpy).not.toHaveBeenCalled();
+  });
+
+  it('quota_over_quota_warning → fires quotaOverQuotaWarning with scope from payload', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_over_quota_warning',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'over-quota partnership',
+      payload: {
+        severity: 'warn',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        scope: 'partnership',
+        allotmentAtIngest: 0,
+      },
+    });
+    expect(overQuotaSpy).toHaveBeenCalledTimes(1);
+    expect(overQuotaSpy).toHaveBeenCalledWith('test-chamber', 'partnership');
+    expect(partnershipSpy).not.toHaveBeenCalled();
+  });
+
+  it('quota_credit_back_refund → fires quotaCreditBack with cause="refund"', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_credit_back_refund',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'refund credit-back',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        scope: 'cultural',
+        allotmentAfter: 2,
+      },
+    });
+    expect(creditBackSpy).toHaveBeenCalledTimes(1);
+    expect(creditBackSpy).toHaveBeenCalledWith('test-chamber', 'refund', 'cultural');
+  });
+
+  it('quota_credit_back_archive → fires quotaCreditBack with cause="archive"', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_credit_back_archive',
+      tenantId: 'test-chamber' as never,
+      actorType: 'admin',
+      actorUserId: 'u-1' as never,
+      occurredAt: new Date(),
+      summary: 'archive credit-back',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        scope: 'partnership',
+        allotmentAfter: 6,
+      },
+    });
+    expect(creditBackSpy).toHaveBeenCalledTimes(1);
+    expect(creditBackSpy).toHaveBeenCalledWith('test-chamber', 'archive', 'partnership');
+  });
+
+  it('default arm — non-quota event (event_archived macro) fires NO quota counter', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'event_archived',
+      tenantId: 'test-chamber' as never,
+      actorType: 'admin',
+      actorUserId: 'u-1' as never,
+      occurredAt: new Date(),
+      summary: 'event archived macro',
+      payload: {
+        severity: 'info',
+        actorUserId: 'u-1' as never,
+        eventId: 'evt-1' as never,
+        registrationsAffected: 3,
+        quotaReversals: { partnership: 2, cultural: 1 },
+      },
+    });
+    expect(partnershipSpy).not.toHaveBeenCalled();
+    expect(culturalSpy).not.toHaveBeenCalled();
+    expect(creditBackSpy).not.toHaveBeenCalled();
+    expect(overQuotaSpy).not.toHaveBeenCalled();
+    expect(webhookReceiptsSpy).not.toHaveBeenCalled();
+  });
+
+  it('insertAuditRow failure — dispatcher does NOT fire any counter (Result.err short-circuit)', async () => {
+    const failingExecutor = {
+      execute: vi.fn().mockRejectedValue(new Error('simulated db_error')),
+    } as unknown as TenantTx;
+    const port = makePinoAuditPort(failingExecutor);
+    const result = await port.emit({
+      eventType: 'quota_partnership_decremented',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'unit-test partnership decrement (will fail)',
+      payload: {
+        severity: 'info',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        perEventAllotmentBefore: 6,
+        perEventAllotmentAfter: 5,
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(partnershipSpy).not.toHaveBeenCalled();
+  });
+
+  it('invalid scope in payload — over-quota dispatcher skips counter (defensive guard)', async () => {
+    const port = makePinoAuditPort(executor);
+    await port.emit({
+      eventType: 'quota_over_quota_warning',
+      tenantId: 'test-chamber' as never,
+      actorType: 'zapier_webhook',
+      actorUserId: null,
+      occurredAt: new Date(),
+      summary: 'malformed scope',
+      payload: {
+        severity: 'warn',
+        registrationId: 'reg-1' as never,
+        memberId: 'mem-1' as never,
+        eventId: 'evt-1' as never,
+        // @ts-expect-error — intentional invalid scope to test guard
+        scope: 'invalid-scope',
+        allotmentAtIngest: 0,
+      },
+    });
+    // Dispatcher's `if (scope === 'partnership' || scope === 'cultural')`
+    // guard rejects unknown values → counter does NOT fire.
+    expect(overQuotaSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe('F6_DEFAULT_RETENTION_YEARS — staff-review R6-W6 guard (2026-05-13)', () => {
   it('is exactly 5 years', async () => {
     // R6-W6 staff-review fix (2026-05-13): retention is hardcoded at

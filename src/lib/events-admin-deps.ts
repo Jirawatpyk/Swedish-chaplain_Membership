@@ -34,6 +34,7 @@
  */
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantId, type TenantId } from '@/modules/members';
 // `asTenantContext` already
 // validates slug format (throws `InvalidTenantSlugError` on malformed
@@ -212,10 +213,18 @@ export async function runToggleEventCategory(
 ): Promise<Result<ToggleEventCategoryOutput, ToggleEventCategoryError>> {
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
-  return runInTenantWithRollbackOnErr(ctx, async (tx) => {
-    const deps = makeToggleEventCategoryDeps(tx, ctx);
-    return toggleEventCategory({ ...input, tenantId }, deps);
-  });
+  // R6 PERF-R6-05 closure — record toggle duration histogram for
+  // SLO-F6-007 monitoring. Fires on BOTH success and error paths so
+  // pool-pressure regressions surface even when archive returns err.
+  const startedAtMs = Date.now();
+  try {
+    return await runInTenantWithRollbackOnErr(ctx, async (tx) => {
+      const deps = makeToggleEventCategoryDeps(tx, ctx);
+      return toggleEventCategory({ ...input, tenantId }, deps);
+    });
+  } finally {
+    eventcreateMetrics.toggleDurationMs(tenantSlug, Date.now() - startedAtMs);
+  }
 }
 
 /**
@@ -264,8 +273,16 @@ export async function runArchiveEvent(
 ): Promise<Result<ArchiveEventOutput, ArchiveEventError>> {
   const ctx = asTenantContext(tenantSlug);
   const tenantId: TenantId = asTenantId(tenantSlug);
-  return runInTenantWithRollbackOnErr(ctx, async (tx) => {
-    const deps = makeArchiveEventDeps(tx, ctx);
-    return archiveEvent({ ...input, tenantId }, deps);
-  });
+  // R6 PERF-R6-05 closure — record archive duration histogram for
+  // SLO-F6-007 monitoring (target: p95 < 5s @ N=50 / < 12s @ N=200).
+  // Fires on BOTH success and error paths via finally clause.
+  const startedAtMs = Date.now();
+  try {
+    return await runInTenantWithRollbackOnErr(ctx, async (tx) => {
+      const deps = makeArchiveEventDeps(tx, ctx);
+      return archiveEvent({ ...input, tenantId }, deps);
+    });
+  } finally {
+    eventcreateMetrics.archiveDurationMs(tenantSlug, Date.now() - startedAtMs);
+  }
 }

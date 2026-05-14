@@ -18,6 +18,16 @@ import { runToggleEventCategory } from '@/lib/events-admin-deps';
 import { asUserId } from '@/modules/auth';
 import { emitEventsRoleViolation } from '../../_lib/role-violation-audit';
 
+/**
+ * Phase 6 staff-review-4 PERF-R6-01 — pin Node runtime + raise function
+ * timeout for toggle re-evaluation. Same rationale as the partner-benefit
+ * toggle route. `maxDuration = 60` ensures the O(N) per-row work
+ * completes or returns a structured Result.err instead of a Vercel
+ * default-timeout 504 page.
+ */
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 const BodySchema = z.object({
   newValue: z.boolean(),
 });

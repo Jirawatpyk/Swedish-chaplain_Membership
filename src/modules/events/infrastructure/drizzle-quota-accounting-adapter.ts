@@ -52,6 +52,38 @@ import type {
 } from '../application/ports/quota-accounting-port';
 import type { RegistrationsRepository } from '../application/ports/registrations-repository';
 
+/**
+ * R6 PERF-05 closure — derive an OTel-labelable plan tier slug from
+ * the F2 `membership_plans.plan_id` string. SweCham 2026 packaging
+ * uses canonical tier slugs (see `docs/membership-benefits-analysis.md`):
+ *   - Corporate: small / large / premium
+ *   - Partnership: gold / platinum / diamond
+ *   - Other: standard (legacy / non-tiered)
+ * The plan_id is typically `{tier}-{year}` (e.g., `diamond-2026`) or
+ * just `{tier}`. We extract the prefix word and validate against the
+ * known tier set; unknown returns null (counter labels as 'unknown').
+ *
+ * The plan_id slug guard is case-insensitive and uses a closed
+ * allowlist — no risk of label cardinality explosion via attacker-
+ * controlled plan_ids (which are admin-created anyway).
+ */
+const KNOWN_PLAN_TIERS = new Set([
+  'small',
+  'large',
+  'premium',
+  'gold',
+  'platinum',
+  'diamond',
+  'standard',
+]);
+function derivePlanTier(planId: string): string | null {
+  // Extract the leading alphabetic word (e.g., `diamond-2026` → `diamond`).
+  const match = planId.toLowerCase().match(/^[a-z]+/);
+  if (!match) return null;
+  const tier = match[0];
+  return KNOWN_PLAN_TIERS.has(tier) ? tier : null;
+}
+
 export function makeDrizzleQuotaAccountingAdapter(
   executor: TenantTx,
   // Retained in the signature even though no longer used by the inner
@@ -119,9 +151,20 @@ export function makeDrizzleQuotaAccountingAdapter(
           return err({ kind: 'plan_not_found', memberId: input.memberId });
         }
         const bm: BenefitMatrix = row.benefitMatrix;
+        // R6 PERF-05 closure — extract plan tier from the slug-shaped
+        // `plan_id` (canonical SweCham 2026 packaging: `diamond`,
+        // `platinum`, `gold`, `premium`, `large`, `small`,
+        // `standard`). Falls back to null when the plan_id doesn't
+        // contain a recognised tier classifier — the counter then
+        // labels as `plan_tier='unknown'`. Recognised tiers are the
+        // union of the 6 corporate + 3 partnership tiers from
+        // `docs/membership-benefits-analysis.md`.
+        const planId = String(row.planId).toLowerCase();
+        const planTier = derivePlanTier(planId);
         allotments = {
           partnershipPerEvent: bm.partnership?.event_tickets_included ?? 0,
           culturalPerYear: bm.cultural_tickets_per_year,
+          planTier,
         };
       } catch (e) {
         return err({

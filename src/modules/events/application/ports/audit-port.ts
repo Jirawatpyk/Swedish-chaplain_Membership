@@ -278,6 +278,12 @@ export interface AuditPayloads {
     readonly eventId: EventId;
     readonly perEventAllotmentBefore: number;
     readonly perEventAllotmentAfter: number;
+    /**
+     * R6 PERF-05 closure — F2 plan tier slug for OTel counter
+     * `plan_tier` label. Nullable; legacy data or non-tiered plans
+     * emit null and the counter falls back to `plan_tier='unknown'`.
+     */
+    readonly planTier?: string | null;
   };
   quota_cultural_decremented: {
     readonly severity: Severity;
@@ -287,6 +293,8 @@ export interface AuditPayloads {
     readonly fiscalYear: number;
     readonly annualAllotmentBefore: number;
     readonly annualAllotmentAfter: number;
+    /** R6 PERF-05 closure — see `quota_partnership_decremented.planTier`. */
+    readonly planTier?: string | null;
   };
   quota_credit_back_refund: {
     readonly severity: Severity;

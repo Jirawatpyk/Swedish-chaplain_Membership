@@ -73,6 +73,28 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to run admin quota E2E',
   );
 
+  /**
+   * R6 TEST-R6-05 — fail-loud health check. `global-setup.ts` seeds
+   * F6 events via `seedF6Events` and surfaces failures only as
+   * `console.warn` (does NOT throw — by design, so unrelated suites
+   * still run). Without this health-check, an infrastructure failure
+   * (Neon outage, schema drift, missing tenant config) silently
+   * degrades all 4 SEED_PB_EVENT_ID-dependent tests to `test.skip`
+   * — CI runs green despite the quota admin surface being untested.
+   *
+   * This test is the canary: if global-setup did NOT populate
+   * `E2E_SEED_F6_PB_EVENT_ID`, fail the run with a clear pointer to
+   * the cause. Other tests in this describe still use `test.skip` as
+   * a defensive guard, but the failure here is the operator-visible
+   * signal.
+   */
+  test('CI health check: global-setup populated E2E_SEED_F6_PB_EVENT_ID', () => {
+    expect(
+      process.env.E2E_SEED_F6_PB_EVENT_ID,
+      'E2E_SEED_F6_PB_EVENT_ID missing — check global-setup.ts seedF6Events failure in earlier console.warn line; the quota-accounting suite cannot validate its surface without a seeded partner-benefit event row',
+    ).toBeTruthy();
+  });
+
   test.beforeEach(async ({ page }) => {
     await signInAsAdmin(page);
   });
@@ -234,7 +256,14 @@ test.describe('F6 quota accounting — admin UI surface @workers=1', () => {
     await partnerToggle.click();
     const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible({ timeout: 5_000 });
+    // R6 TEST-R6-04 — scope axe to the focus-trapped alertdialog
+    // region only. Without `.include(...)` axe scans the full page
+    // including the dimmed backdrop, which can produce false-positive
+    // color-contrast violations on the inert background content
+    // depending on Radix version. F5's invoice-dialog scan uses the
+    // same scoped pattern.
     const dialogResults = await new AxeBuilder({ page })
+      .include('[role="alertdialog"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze();
     const dialogSerious = dialogResults.violations.filter(

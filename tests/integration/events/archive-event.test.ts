@@ -333,16 +333,22 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
    * an UPDATE (events.archived_at + event_registrations.counted_*) so
    * it MUST be exercised here.
    *
-   * Failure mode the test guards against: if `runInTenant` were ever
-   * regressed (or the quota adapter dropped its tenantId filter — see
-   * WARN-2), this test would observe Tenant A archiving Tenant B's
-   * event. RLS at the DB layer should hide the row → `event_not_found`.
+   * **R6 ARCH-R6-01 strengthening**: in addition to the bare-event
+   * probe (which only exercises the `events.findById` SELECT gate),
+   * Tenant B is now seeded with a counted-true `event_registrations`
+   * row. After the cross-tenant probe attempts the archive, we
+   * separately verify that Tenant B's registration row STILL has
+   * `counted_against_partnership = true` — confirming the multi-step
+   * UPDATE path (setArchived + per-row setQuotaEffect) cannot reach
+   * across tenants even if the SELECT gate were somehow bypassed.
    */
   describe('cross-tenant isolation (WARN-3 staff-review-4 — Principle I Review-Gate)', () => {
     let tenantA: TestTenant;
     let tenantB: TestTenant;
     let userA: string;
     const tenantBEventId = randomUUID();
+    const tenantBMemberId = randomUUID();
+    const tenantBRegistrationId = randomUUID();
 
     beforeAll(async () => {
       tenantA = await createTestTenant('test-swecham');
@@ -350,8 +356,34 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       const u = await createActiveTestUser('admin');
       userA = u.userId;
 
-      // Seed Tenant B's event row directly (active, NOT archived).
+      // Seed Tenant B's event row + a counted registration so the
+      // probe exercises the FULL archive path (setArchived would also
+      // re-write event_registrations.counted_* if RLS were bypassed).
+      const tenantBPlanId = `tenantB-plan-${randomUUID().slice(0, 8)}`;
       await runInTenant(tenantB.ctx, async (tx) => {
+        // Plan + member needed for the event_registrations FK.
+        // Use planCategory='corporate' here to sidestep the
+        // `partnership_bundles_corporate` CHECK constraint that requires
+        // a partnership plan to bundle a corporate plan via
+        // includesCorporatePlanId — this cross-tenant probe only needs
+        // a valid plan/member row to drive the RLS test.
+        await seedF8MembershipPlan(tx, {
+          tenantSlug: tenantB.ctx.slug,
+          planId: tenantBPlanId,
+          planName: { en: 'TenantB Corporate (cross-tenant probe)' },
+          benefitMatrix: diamondMatrix,
+          planCategory: 'corporate',
+          createdBy: userA,
+        });
+        await tx.insert(members).values({
+          tenantId: tenantB.ctx.slug,
+          memberId: tenantBMemberId,
+          companyName: 'TenantB Co',
+          country: 'TH',
+          planId: tenantBPlanId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
         await tx.insert(events).values({
           tenantId: tenantB.ctx.slug,
           eventId: tenantBEventId,
@@ -363,6 +395,25 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
           isPartnerBenefit: true,
           isCulturalEvent: false,
         } as unknown as typeof events.$inferInsert);
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenantB.ctx.slug,
+          registrationId: tenantBRegistrationId,
+          eventId: tenantBEventId,
+          externalId: `att_tenantB_${Date.now()}`,
+          attendeeEmail: 'tenantB-attendee@example.com',
+          attendeeName: 'TenantB Attendee',
+          attendeeCompany: 'TenantB Co',
+          matchType: 'member_contact',
+          matchedMemberId: tenantBMemberId,
+          matchedContactId: null,
+          ticketType: null,
+          ticketPriceThb: null,
+          paymentStatus: 'paid',
+          countedAgainstPartnership: true,
+          countedAgainstCulturalQuota: false,
+          registeredAt: new Date(),
+          piiPseudonymisedAt: null,
+        } as unknown as typeof eventRegistrations.$inferInsert);
       });
     });
 
@@ -371,10 +422,11 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       await tenantB.cleanup();
     });
 
-    it('actor in tenant A cannot archive tenant B event (RLS hides → event_not_found)', async () => {
+    it('actor in tenant A cannot archive tenant B event (RLS hides → event_not_found) + Tenant B event_registrations unchanged', async () => {
       // Tenant-A actor calls runArchiveEvent against TENANT B's eventId.
       // RLS scopes the events.findById query to tenantA's GUC, so the
-      // row is invisible — use-case returns event_not_found.
+      // row is invisible — use-case returns event_not_found BEFORE any
+      // mutation reaches the registrations UPDATE path.
       const result = await runArchiveEvent(tenantA.ctx.slug, {
         eventId: tenantBEventId as never,
         actorUserId: asUserId(userA),
@@ -385,15 +437,32 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
         expect(result.error.kind).toBe('event_not_found');
       }
 
-      // Verify Tenant B's row was NOT touched (archived_at still null).
-      const tenantBRow = await runInTenant(tenantB.ctx, async (tx) =>
+      // (1) Verify Tenant B's event row was NOT touched (archived_at still null).
+      const tenantBEventRow = await runInTenant(tenantB.ctx, async (tx) =>
         tx
           .select({ archivedAt: events.archivedAt })
           .from(events)
           .where(eq(events.eventId, tenantBEventId))
           .limit(1),
       );
-      expect(tenantBRow[0]?.archivedAt ?? null).toBeNull();
+      expect(tenantBEventRow[0]?.archivedAt ?? null).toBeNull();
+
+      // (2) R6 ARCH-R6-01 — verify Tenant B's event_registrations row
+      // ALSO still has counted_against_partnership = true. If RLS were
+      // ever broken to allow cross-tenant UPDATE on events but not
+      // event_registrations, the SELECT in (1) would still catch the
+      // archive — but this second assertion catches the inverse case
+      // (RLS broken on event_registrations only).
+      const tenantBRegRow = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select({
+            countedAgainstPartnership: eventRegistrations.countedAgainstPartnership,
+          })
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.registrationId, tenantBRegistrationId))
+          .limit(1),
+      );
+      expect(tenantBRegRow[0]?.countedAgainstPartnership).toBe(true);
     });
   });
 });

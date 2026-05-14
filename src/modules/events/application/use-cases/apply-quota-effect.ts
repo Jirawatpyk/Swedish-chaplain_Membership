@@ -261,6 +261,11 @@ export async function applyQuotaEffect(
           eventId: input.eventId,
           perEventAllotmentBefore: before,
           perEventAllotmentAfter: after,
+          // R6 PERF-05 closure — plan tier sourced from queryAllotments
+          // (Infrastructure adapter derives from membership_plans.plan_id).
+          // Surfaces through audit payload → consumed by metric
+          // dispatcher in pino-audit-port.ts for the `plan_tier` label.
+          planTier: allotments.planTier ?? null,
         },
       });
       if (!r.ok) {
@@ -311,6 +316,8 @@ export async function applyQuotaEffect(
           fiscalYear: input.fiscalYear,
           annualAllotmentBefore: before,
           annualAllotmentAfter: after,
+          // R6 PERF-05 closure — see partnership branch above.
+          planTier: allotments.planTier ?? null,
         },
       });
       if (!r.ok) {

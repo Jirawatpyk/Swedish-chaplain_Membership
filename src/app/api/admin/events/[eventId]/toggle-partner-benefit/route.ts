@@ -32,6 +32,18 @@ import { runToggleEventCategory } from '@/lib/events-admin-deps';
 import { asUserId } from '@/modules/auth';
 import { emitEventsRoleViolation } from '../../_lib/role-violation-audit';
 
+/**
+ * Phase 6 staff-review-4 PERF-R6-01 — pin Node runtime + raise function
+ * timeout for toggle re-evaluation. Same rationale as archive route:
+ * the use-case performs O(N) per-row work (advisory lock + queryAllotments
+ * + conditional setQuotaEffect + per-scope audit emit). Without
+ * `maxDuration` Vercel applies the plan-default (10s Hobby / 60s Pro),
+ * risking silent 504 on large events. `maxDuration = 60` ensures the
+ * use-case completes or returns a structured Result.err.
+ */
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 const BodySchema = z.object({
   newValue: z.boolean(),
 });

@@ -474,7 +474,41 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
       expect(payload.fiscalYear).toBe(2026);
     });
 
-    it('cultural quota: event at 2027-01-01 00:30 BKK (= 17:30 UTC) resolves to FY 2027', async () => {
+    /**
+     * R6 SUGG-R5-1 closure — tighten the FY=2027 assertion by using a
+     * FRESH member with an unconsumed 2027 allotment. The previous
+     * implementation reused Helen Premium (whose cultural allotment
+     * was already consumed in earlier tests in this describe), so the
+     * Jan 1 BKK test could fall through to the over-quota path and
+     * vacuously pass even on a UTC-vs-BKK regression. With a fresh
+     * member, the decrement path is the ONLY valid outcome and the
+     * FY=2027 assertion binds unconditionally.
+     */
+    it('cultural quota: event at 2027-01-01 00:30 BKK (= 17:30 UTC) resolves to FY 2027 (fresh member binds assertion)', async () => {
+      const freshMemberId = randomUUID();
+      const freshContactId = randomUUID();
+      const FRESH_EMAIL = `fresh-fy2027-${Date.now()}@premium.example`;
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: freshMemberId,
+          companyName: 'Fresh FY2027 Co',
+          country: 'TH',
+          planId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: freshContactId,
+          memberId: freshMemberId,
+          firstName: 'Fresh',
+          lastName: 'FY2027',
+          email: FRESH_EMAIL,
+          isPrimary: true,
+        } as unknown as typeof contacts.$inferInsert);
+      });
+
       const fyBoundaryExternalId = `event_fy_jan01_bkk_${Date.now()}`;
       const fyBoundaryEventId = randomUUID();
       await runInTenant(tenant.ctx, async (tx) => {
@@ -503,48 +537,124 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
             },
             attendee: {
               externalId: `att_fy_jan01_${Date.now()}`,
-              email: ATTENDEE_EMAIL,
-              companyName: 'Premium Cultural Co',
-              fullName: 'Helen Premium',
+              email: FRESH_EMAIL,
+              companyName: 'Fresh FY2027 Co',
+              fullName: 'Fresh FY2027',
             },
           }),
           sourceIp: '127.0.0.1',
         },
         makeIngestWebhookAttendeeDeps(),
       );
-      // This row may be NEUTRAL because the member already consumed
-      // their 2026 allotment in the earlier test — but the audit (if
-      // emitted) must carry fiscalYear=2027. If quota is exhausted,
-      // a `quota_over_quota_warning` carries the scope='cultural'.
-      // Either path is acceptable; we only assert the FY when a
-      // decrement audit was emitted, AND the over-quota audit
-      // belongs to FY 2027 if that is the path taken.
+      expect(result.ok).toBe(true);
+
+      // Fresh member's FY 2027 allotment is unconsumed → decrement
+      // path is the ONLY valid outcome (no over-quota fallback).
+      const allTenantAudits = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenant.ctx.slug));
+      const decrementAudits = allTenantAudits
+        .filter((r) => String(r.eventType) === 'quota_cultural_decremented')
+        .filter((r) => {
+          const p = r.payload as Record<string, unknown> | null;
+          return p?.eventId === fyBoundaryEventId;
+        });
+      expect(decrementAudits.length).toBe(1);
+      const payload = decrementAudits[0]!.payload as Record<string, unknown>;
+      // Unconditional FY=2027 assertion — js-joda must convert
+      // 2026-12-31T17:30:00Z to Bangkok-local 2027-01-01T00:30+07:00
+      // and the fiscal-year allocator must read the BKK year.
+      expect(payload.fiscalYear).toBe(2027);
+    });
+
+    /**
+     * R6 TEST-R6-01 — exact midnight UTC boundary
+     * (2026-12-31T17:00:00Z = 2027-01-01T00:00:00+07:00 BKK). Catches
+     * the off-by-one-second regression at the exact boundary where
+     * `isBefore(midnight)` vs `isBeforeOrEqual(midnight)` semantics
+     * could silently swap years. Uses a fresh member so over-quota
+     * fallback cannot mask the assertion.
+     */
+    it('cultural quota: event at EXACTLY 2027-01-01 00:00 BKK (= 17:00 UTC, boundary second) resolves to FY 2027 (TEST-R6-01)', async () => {
+      const exactMidnightMemberId = randomUUID();
+      const exactMidnightContactId = randomUUID();
+      const EXACT_EMAIL = `exact-midnight-${Date.now()}@premium.example`;
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: exactMidnightMemberId,
+          companyName: 'Exact Midnight Co',
+          country: 'TH',
+          planId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: exactMidnightContactId,
+          memberId: exactMidnightMemberId,
+          firstName: 'Exact',
+          lastName: 'Midnight',
+          email: EXACT_EMAIL,
+          isPrimary: true,
+        } as unknown as typeof contacts.$inferInsert);
+      });
+
+      const exactMidnightExternalId = `event_exact_midnight_${Date.now()}`;
+      const exactMidnightEventId = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(events).values({
+          tenantId: tenant.ctx.slug,
+          eventId: exactMidnightEventId,
+          source: 'eventcreate',
+          externalId: exactMidnightExternalId,
+          name: 'Cultural at EXACT 00:00 BKK Jan 1',
+          startDate: new Date('2026-12-31T17:00:00Z'),
+          isPartnerBenefit: false,
+          isCulturalEvent: true,
+        } as unknown as typeof events.$inferInsert);
+      });
+
+      const result = await ingestWebhookAttendee(
+        {
+          tenantId: tenant.ctx.slug,
+          requestId: `req-exact-midnight-${Date.now()}`,
+          source: 'eventcreate_webhook',
+          rawPayload: makeWebhookPayload({
+            event: {
+              externalId: exactMidnightExternalId,
+              name: 'Cultural at EXACT 00:00 BKK Jan 1',
+              startDate: '2026-12-31T17:00:00Z',
+            },
+            attendee: {
+              externalId: `att_exact_${Date.now()}`,
+              email: EXACT_EMAIL,
+              companyName: 'Exact Midnight Co',
+              fullName: 'Exact Midnight',
+            },
+          }),
+          sourceIp: '127.0.0.1',
+        },
+        makeIngestWebhookAttendeeDeps(),
+      );
       expect(result.ok).toBe(true);
 
       const allTenantAudits = await db
         .select()
         .from(auditLog)
         .where(eq(auditLog.tenantId, tenant.ctx.slug));
-      const matchingAudits = allTenantAudits
-        .filter((r) => {
-          const t = String(r.eventType);
-          return (
-            t === 'quota_cultural_decremented' ||
-            t === 'quota_over_quota_warning'
-          );
-        })
+      const decrementAudits = allTenantAudits
+        .filter((r) => String(r.eventType) === 'quota_cultural_decremented')
         .filter((r) => {
           const p = r.payload as Record<string, unknown> | null;
-          return p?.eventId === fyBoundaryEventId;
+          return p?.eventId === exactMidnightEventId;
         });
-      expect(matchingAudits.length).toBeGreaterThanOrEqual(1);
-      const row = matchingAudits[0]!;
-      const p = row.payload as Record<string, unknown>;
-      if (String(row.eventType) === 'quota_cultural_decremented') {
-        expect(p.fiscalYear).toBe(2027);
-      }
-      // js-joda boundary correctness verified: 00:30 BKK on Jan 1 is
-      // FY 2027 even though UTC clock reads 2026-12-31 17:30.
+      expect(decrementAudits.length).toBe(1);
+      const payload = decrementAudits[0]!.payload as Record<string, unknown>;
+      // At BKK Jan 1 00:00:00, the calendar year (= fiscal year for
+      // SweCham) is 2027. Even at the exact boundary second.
+      expect(payload.fiscalYear).toBe(2027);
     });
   });
 

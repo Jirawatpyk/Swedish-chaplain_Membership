@@ -42,6 +42,19 @@ export interface PlanAllotments {
    * timezone (Asia/Bangkok for SweCham — env.tenant.timezone).
    */
   readonly culturalPerYear: number;
+  /**
+   * Phase 6 staff-review-4 round-6 PERF-05 closure — F2 plan tier
+   * slug (e.g., `'diamond'`, `'platinum'`, `'gold'`, `'premium'`,
+   * `'large'`, `'small'`) for OTel counter labelling
+   * (`eventcreate_quota_*_decremented_total{plan_tier}`). Optional +
+   * nullable because legacy data + plans without a recognised tier
+   * classifier may return null/undefined — counter falls back to
+   * `plan_tier='unknown'` in that case. Derived in the Infrastructure
+   * adapter from the `membership_plans.plan_id` value. Optional (not
+   * required) so existing test fixtures + future plan loaders without
+   * tier metadata typecheck cleanly.
+   */
+  readonly planTier?: string | null;
 }
 
 /**

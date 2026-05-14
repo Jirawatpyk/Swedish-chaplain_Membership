@@ -2615,18 +2615,25 @@ export const eventcreateMetrics = {
    * data, but the OTel surface powers the chamber-admin dashboards +
    * Grafana alerts for over-quota bursts and credit-back anomalies.
    *
-   * Emission policy: ALL three counters fire on `Result.ok` from the
-   * use-case (`applyQuotaEffect`, `archiveEvent`, `toggleEventCategory`,
-   * or the ingest-refund-credit-back branch). On `audit_emit_failed`
-   * the use-case returns err so the counters do NOT fire — this is
-   * intentional: the metric and the audit row commit together (H3
-   * dashboard-truth pattern from Phase 5 round 3).
+   * Emission policy: counters fire from `emitMatchingQuotaMetric` in
+   * `pino-audit-port.ts` immediately after `insertAuditRow` returns
+   * a row id, scoped to the audit-event-type switch case.
+   *
+   * **R6 PERF-R6-02 corrected H3 caveat**: counter increments happen
+   * AFTER the row insert but BEFORE the surrounding tx commits. If the
+   * tx subsequently rolls back (FR-037 dual-write path), the audit row
+   * for that iteration is NOT persisted but the counter increment is
+   * NOT reversible. Counter drift on the unhappy path is bounded to
+   * `≤(N − 1)` phantom increments per archive failure where N is the
+   * number of registrations processed before the failing row. The
+   * `audit_log` table remains authoritative; these counters are
+   * informational. SREs investigating discrepancies between counter
+   * and row counts should treat the row count as truth.
    *
    * The fourth counter `eventcreate_quota_over_quota_warnings_total`
    * is implied by the audit taxonomy + R10 over-quota alert and is
    * declared here for completeness — `docs/observability.md § 24.1.4`
-   * lists it alongside the decrement counters during staff-review-4
-   * closure.
+   * lists it alongside the decrement counters.
    */
   quotaPartnershipDecremented(tenantId: string, planTier: string | null): void {
     safeMetric(() => {
@@ -2668,6 +2675,38 @@ export const eventcreateMetrics = {
         'eventcreate_quota_over_quota_warnings_total',
         'F6 over-quota arrival warning counter (Phase 6 WARN-1 — partner of `quota_over_quota_warning` audit event)',
       ).add(1, { tenant: tenantId, scope });
+    });
+  },
+
+  /**
+   * R6 PERF-R6-05 closure — duration histogram for archive admin
+   * action. Powers SLO-F6-007 (admin archive p95 < 5s @ N=50 / < 12s @
+   * N=200). Emitted from `runArchiveEvent` composition adapter after
+   * Result resolution (success OR err). Useful for monitoring how
+   * archive latency scales with `registrationsAffected`.
+   */
+  archiveDurationMs(tenantId: string, latencyMs: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_archive_duration_ms',
+        'F6 admin archive operation duration (SLO-F6-007; PERF-R6-05 closure)',
+        'ms',
+      ).record(latencyMs, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R6 PERF-R6-05 closure — duration histogram for toggle-event-category
+   * admin action. Same SLO budget as archive. Emitted from
+   * `runToggleEventCategory` composition adapter after Result resolution.
+   */
+  toggleDurationMs(tenantId: string, latencyMs: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_toggle_duration_ms',
+        'F6 admin toggle-event-category operation duration (SLO-F6-007; PERF-R6-05 closure)',
+        'ms',
+      ).record(latencyMs, { tenant: tenantId });
     });
   },
 } as const;

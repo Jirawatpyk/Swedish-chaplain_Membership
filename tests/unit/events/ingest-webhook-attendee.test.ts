@@ -394,6 +394,11 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     // queryAllotments MUST be called (to source the allotmentAfter
     // value baked into the audit payload).
     expect(ports.quotaAccountingPort.queryAllotments).toHaveBeenCalled();
+    // R6 TEST-R6-02 — advisory lock MUST be acquired before the
+    // refund-credit-back path proceeds. Lock absence would create a
+    // TOCTOU window with concurrent ingest workers that ALSO try to
+    // touch this (member, event) registration.
+    expect(ports.advisoryLockAcquirer.acquire).toHaveBeenCalledTimes(1);
     // The audit port should have received a quota_credit_back_refund
     // emit for partnership scope.
     const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
@@ -406,6 +411,445 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     };
     expect(refundEntry.payload.scope).toBe('partnership');
     expect(refundEntry.payload.allotmentAfter).toBe(6); // 6 partnership − 0 consumed
+  });
+
+  /**
+   * R6 REL-R6-04 — pin the `allotmentAfter` formula against the
+   * `consumed` subtraction. The existing happy-path test uses
+   * `consumed=0` so it cannot detect a regression where the formula
+   * silently drops the subtraction term (e.g.,
+   * `allotmentAfter = partnershipPerEvent` instead of
+   * `partnershipPerEvent - partnershipConsumedForEvent`). This test
+   * uses `consumed=2` and asserts `allotmentAfter === 4` (6 − 2).
+   */
+  it('isRefundTransition with non-zero consumed: allotmentAfter correctly subtracts (REL-R6-04)', async () => {
+    const memberIdLiteral = '11111111-1111-1111-1111-111111111111';
+    const existingRegPaidPartnership = {
+      tenantId: 'test',
+      registrationId: 'reg-prior-paid-2',
+      eventId: 'evt-1',
+      externalId: 'ext-att-consumed-2',
+      attendee: { email: 'refunder@example.com', name: 'Refund Sample', company: 'Diamond Co' },
+      match: {
+        type: 'member_contact' as const,
+        matchedMemberId: memberIdLiteral,
+        matchedContactId: 'contact-1',
+      },
+      ticket: { type: null, priceThb: null, paymentStatus: 'paid' as const },
+      quotaEffect: {
+        countedAgainstPartnership: true,
+        countedAgainstCulturalQuota: false,
+      },
+      metadata: {},
+      registeredAt: new Date(),
+      importedAt: new Date(),
+      piiPseudonymisedAt: null,
+    };
+
+    const ports = buildPorts({
+      // queryAllotments returns consumed=2 (other rows still counted
+      // post-this-refund-flip) so allotmentAfter = 6 - 2 = 4.
+      quotaAccountingPort: {
+        queryAllotments: vi.fn().mockResolvedValue(
+          ok({
+            allotments: { partnershipPerEvent: 6, culturalPerYear: 12 },
+            consumed: {
+              partnershipConsumedForEvent: 2,
+              culturalConsumedForYear: 0,
+            },
+          }),
+        ),
+      } as never,
+    });
+    (ports.eventsRepo.upsert as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        event: {
+          tenantId: 'test',
+          eventId: 'evt-1',
+          source: 'eventcreate',
+          externalId: 'ext-evt-1',
+          name: 'Refund Consumed-Subtraction Test',
+          description: null,
+          startDate: new Date('2026-06-15T18:00:00+07:00'),
+          endDate: null,
+          location: null,
+          category: null,
+          eventcreateUrl: null,
+          isPartnerBenefit: true,
+          isCulturalEvent: false,
+          archivedAt: null,
+          metadata: {},
+          importedAt: new Date(),
+          lastUpdatedAt: new Date(),
+        },
+        eventCreated: false,
+      }),
+    );
+    (
+      ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({ registration: existingRegPaidPartnership, isNewRegistration: false }),
+    );
+    (
+      ports.registrationsRepo.markRefunded as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({
+        registration: {
+          ...existingRegPaidPartnership,
+          ticket: { ...existingRegPaidPartnership.ticket, paymentStatus: 'refunded' },
+          quotaEffect: {
+            countedAgainstPartnership: false,
+            countedAgainstCulturalQuota: false,
+          },
+        },
+        previousQuotaEffect: existingRegPaidPartnership.quotaEffect,
+        previousPaymentStatus: 'paid',
+      }),
+    );
+    (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        resolution: {
+          type: 'member_contact',
+          matchedMemberId: memberIdLiteral,
+          matchedContactId: 'contact-1',
+        },
+        fuzzyDetail: null,
+        unmatchedCandidates: null,
+      }),
+    );
+
+    const result = await ingestWebhookAttendee(
+      {
+        ...VALID_INPUT,
+        rawPayload: makeWebhookPayload({
+          attendee: {
+            externalId: 'ext-att-consumed-2',
+            email: 'refunder@example.com',
+            companyName: 'Diamond Co',
+            fullName: 'Refund Sample',
+            paymentStatus: 'refunded',
+          },
+        }),
+      },
+      buildDeps(ports),
+    );
+
+    expect(result.ok).toBe(true);
+    const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const creditBackRefundCalls = emitCalls.filter(([entry]) => {
+      return (entry as { eventType: string }).eventType === 'quota_credit_back_refund';
+    });
+    expect(creditBackRefundCalls.length).toBe(1);
+    const refundEntry = creditBackRefundCalls[0]![0] as {
+      payload: { scope: string; allotmentAfter: number };
+    };
+    // 6 partnership allotment − 2 still-consumed = 4 remaining
+    expect(refundEntry.payload.allotmentAfter).toBe(4);
+  });
+
+  /**
+   * R6 TEST-R6-03 — cultural-only scope credit-back. Mirror of the
+   * partnership happy-path test but with the existing row's quota flags
+   * inverted. Catches a typo regression where the dispatcher might
+   * check `previousQuotaEffect.countedAgainstPartnership` twice instead
+   * of once for cultural scope.
+   */
+  it('isRefundTransition cultural-only scope → only cultural credit-back fires (TEST-R6-03)', async () => {
+    const memberIdLiteral = '33333333-3333-3333-3333-333333333333';
+    const existingRegCulturalOnly = {
+      tenantId: 'test',
+      registrationId: 'reg-prior-cultural',
+      eventId: 'evt-cultural',
+      externalId: 'ext-att-cultural',
+      attendee: { email: 'cultural@example.com', name: 'Cultural Sample', company: 'Premium Co' },
+      match: {
+        type: 'member_contact' as const,
+        matchedMemberId: memberIdLiteral,
+        matchedContactId: 'contact-cultural',
+      },
+      ticket: { type: null, priceThb: null, paymentStatus: 'paid' as const },
+      quotaEffect: {
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: true,
+      },
+      metadata: {},
+      registeredAt: new Date(),
+      importedAt: new Date(),
+      piiPseudonymisedAt: null,
+    };
+
+    const ports = buildPorts();
+    (ports.eventsRepo.upsert as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        event: {
+          tenantId: 'test',
+          eventId: 'evt-cultural',
+          source: 'eventcreate',
+          externalId: 'ext-evt-cultural',
+          name: 'Cultural Refund Test',
+          description: null,
+          startDate: new Date('2026-08-15T18:00:00+07:00'),
+          endDate: null,
+          location: null,
+          category: null,
+          eventcreateUrl: null,
+          isPartnerBenefit: false,
+          isCulturalEvent: true,
+          archivedAt: null,
+          metadata: {},
+          importedAt: new Date(),
+          lastUpdatedAt: new Date(),
+        },
+        eventCreated: false,
+      }),
+    );
+    (
+      ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({ registration: existingRegCulturalOnly, isNewRegistration: false }),
+    );
+    (
+      ports.registrationsRepo.markRefunded as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({
+        registration: {
+          ...existingRegCulturalOnly,
+          ticket: { ...existingRegCulturalOnly.ticket, paymentStatus: 'refunded' },
+          quotaEffect: {
+            countedAgainstPartnership: false,
+            countedAgainstCulturalQuota: false,
+          },
+        },
+        previousQuotaEffect: existingRegCulturalOnly.quotaEffect,
+        previousPaymentStatus: 'paid',
+      }),
+    );
+    (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        resolution: {
+          type: 'member_contact',
+          matchedMemberId: memberIdLiteral,
+          matchedContactId: 'contact-cultural',
+        },
+        fuzzyDetail: null,
+        unmatchedCandidates: null,
+      }),
+    );
+
+    const result = await ingestWebhookAttendee(
+      {
+        ...VALID_INPUT,
+        rawPayload: makeWebhookPayload({
+          attendee: {
+            externalId: 'ext-att-cultural',
+            email: 'cultural@example.com',
+            companyName: 'Premium Co',
+            fullName: 'Cultural Sample',
+            paymentStatus: 'refunded',
+          },
+        }),
+      },
+      buildDeps(ports),
+    );
+
+    expect(result.ok).toBe(true);
+    const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const creditBackCalls = emitCalls.filter(
+      ([entry]) =>
+        (entry as { eventType: string }).eventType === 'quota_credit_back_refund',
+    );
+    expect(creditBackCalls.length).toBe(1);
+    const culturalEntry = creditBackCalls[0]![0] as {
+      payload: { scope: string };
+    };
+    expect(culturalEntry.payload.scope).toBe('cultural');
+  });
+
+  /**
+   * R6 TEST-R6-03 — both scopes counted simultaneously. Some corporate
+   * tiers grant BOTH partnership-per-event tickets AND cultural-per-year
+   * tickets, so a refund could trigger 2 credit-back audits in a single
+   * tx. Asserts the loop emits both, not one or zero.
+   */
+  it('isRefundTransition both scopes counted → 2 credit-back audits emitted (TEST-R6-03)', async () => {
+    const memberIdLiteral = '44444444-4444-4444-4444-444444444444';
+    const existingRegBothScopes = {
+      tenantId: 'test',
+      registrationId: 'reg-both-scopes',
+      eventId: 'evt-dual',
+      externalId: 'ext-att-dual',
+      attendee: { email: 'dual@example.com', name: 'Dual', company: 'Diamond+Premium Co' },
+      match: {
+        type: 'member_contact' as const,
+        matchedMemberId: memberIdLiteral,
+        matchedContactId: 'contact-dual',
+      },
+      ticket: { type: null, priceThb: null, paymentStatus: 'paid' as const },
+      quotaEffect: {
+        countedAgainstPartnership: true,
+        countedAgainstCulturalQuota: true,
+      },
+      metadata: {},
+      registeredAt: new Date(),
+      importedAt: new Date(),
+      piiPseudonymisedAt: null,
+    };
+
+    const ports = buildPorts();
+    (ports.eventsRepo.upsert as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        event: {
+          tenantId: 'test',
+          eventId: 'evt-dual',
+          source: 'eventcreate',
+          externalId: 'ext-evt-dual',
+          name: 'Dual-Scope Refund Test',
+          description: null,
+          startDate: new Date('2026-09-15T18:00:00+07:00'),
+          endDate: null,
+          location: null,
+          category: null,
+          eventcreateUrl: null,
+          isPartnerBenefit: true,
+          isCulturalEvent: true,
+          archivedAt: null,
+          metadata: {},
+          importedAt: new Date(),
+          lastUpdatedAt: new Date(),
+        },
+        eventCreated: false,
+      }),
+    );
+    (
+      ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({ registration: existingRegBothScopes, isNewRegistration: false }),
+    );
+    (
+      ports.registrationsRepo.markRefunded as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({
+        registration: {
+          ...existingRegBothScopes,
+          ticket: { ...existingRegBothScopes.ticket, paymentStatus: 'refunded' },
+          quotaEffect: {
+            countedAgainstPartnership: false,
+            countedAgainstCulturalQuota: false,
+          },
+        },
+        previousQuotaEffect: existingRegBothScopes.quotaEffect,
+        previousPaymentStatus: 'paid',
+      }),
+    );
+    (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        resolution: {
+          type: 'member_contact',
+          matchedMemberId: memberIdLiteral,
+          matchedContactId: 'contact-dual',
+        },
+        fuzzyDetail: null,
+        unmatchedCandidates: null,
+      }),
+    );
+
+    const result = await ingestWebhookAttendee(
+      {
+        ...VALID_INPUT,
+        rawPayload: makeWebhookPayload({
+          attendee: {
+            externalId: 'ext-att-dual',
+            email: 'dual@example.com',
+            companyName: 'Diamond+Premium Co',
+            fullName: 'Dual',
+            paymentStatus: 'refunded',
+          },
+        }),
+      },
+      buildDeps(ports),
+    );
+
+    expect(result.ok).toBe(true);
+    const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const creditBackCalls = emitCalls.filter(
+      ([entry]) =>
+        (entry as { eventType: string }).eventType === 'quota_credit_back_refund',
+    );
+    expect(creditBackCalls.length).toBe(2);
+    const scopes = creditBackCalls.map(
+      (call) => (call[0] as { payload: { scope: string } }).payload.scope,
+    );
+    expect(scopes.sort()).toEqual(['cultural', 'partnership']);
+  });
+
+  /**
+   * R6 TEST-R6-03 — non-member existing row (matchedMemberId === null).
+   * Non-members never had quota counted, so the refund branch must
+   * short-circuit without calling markRefunded or emitting credit-back
+   * audits. Locks the 5-condition guard's `matchedMemberId !== null`
+   * predicate.
+   */
+  it('isRefundTransition non-member (matchedMemberId=null) → guard short-circuits, no refund processing (TEST-R6-03)', async () => {
+    const existingRegNonMember = {
+      tenantId: 'test',
+      registrationId: 'reg-non-member',
+      eventId: 'evt-1',
+      externalId: 'ext-att-non-member',
+      attendee: { email: 'nonmember@example.com', name: 'Non Member', company: 'Random Inc' },
+      match: {
+        type: 'non_member' as const,
+        matchedMemberId: null,
+        matchedContactId: null,
+      },
+      ticket: { type: null, priceThb: null, paymentStatus: 'paid' as const },
+      quotaEffect: {
+        countedAgainstPartnership: false,
+        countedAgainstCulturalQuota: false,
+      },
+      metadata: {},
+      registeredAt: new Date(),
+      importedAt: new Date(),
+      piiPseudonymisedAt: null,
+    };
+
+    const ports = buildPorts();
+    (
+      ports.registrationsRepo.insertOnConflictDoNothing as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(
+      ok({ registration: existingRegNonMember, isNewRegistration: false }),
+    );
+    (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        resolution: { type: 'non_member', matchedMemberId: null, matchedContactId: null },
+        fuzzyDetail: null,
+        unmatchedCandidates: null,
+      }),
+    );
+
+    const result = await ingestWebhookAttendee(
+      {
+        ...VALID_INPUT,
+        rawPayload: makeWebhookPayload({
+          attendee: {
+            externalId: 'ext-att-non-member',
+            email: 'nonmember@example.com',
+            companyName: 'Random Inc',
+            fullName: 'Non Member',
+            paymentStatus: 'refunded',
+          },
+        }),
+      },
+      buildDeps(ports),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(ports.registrationsRepo.markRefunded).not.toHaveBeenCalled();
+    const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const creditBackCalls = emitCalls.filter(
+      ([entry]) =>
+        (entry as { eventType: string }).eventType === 'quota_credit_back_refund',
+    );
+    expect(creditBackCalls.length).toBe(0);
   });
 
   /**

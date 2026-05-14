@@ -60,6 +60,8 @@ import type {
 import type {
   QuotaAccountingPort,
   QuotaAccountingError,
+  PlanAllotments,
+  ConsumedQuota,
 } from '../ports/quota-accounting-port';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
@@ -140,8 +142,15 @@ export type ArchiveEventError =
        * accurate "slots remaining after this credit" rather than a `0`
        * sentinel. A `quota_lookup_failed` here aborts the archive tx
        * (FR-037 strict-tx) so the audit log never carries stale data.
+       *
+       * **R6 REL-R6-01 closure** — `message` field added for shape
+       * consistency with `events_repo_error` / `registrations_repo_error`
+       * / `lock_*` / `audit_emit_failed` variants. Route handlers using
+       * `error.message` for RFC 7807 `detail` rendering now get a
+       * meaningful string instead of `undefined`.
        */
       readonly kind: 'quota_lookup_failed';
+      readonly message: string;
       readonly cause: QuotaAccountingError;
     };
 
@@ -231,9 +240,73 @@ export async function archiveEvent(
   // equals calendar year. Other tenants can diverge later.
   const fiscalYear = deriveFiscalYear(eventBefore.startDate.toISOString(), 1);
 
+  // **R6 PERF-R6-04 closure** — batch `queryAllotments` by unique
+  // memberId. Pre-loop: walk the `counted` list and collect the unique
+  // set of `(memberId)` whose registrations will be credit-backed.
+  // Issue ONE `queryAllotments` per unique member to capture
+  // `(allotments, initialConsumed)` snapshot. Then inside the per-row
+  // loop, instead of re-issuing `queryAllotments` (3 RTTs/row), use
+  // the cached allotments + an in-memory `decrementsCache` to track
+  // how many rows we've credited back so far for THIS member —
+  // `currentConsumed = initialConsumed - decrementsCache.partnership`.
+  // The audit emit's `allotmentAfter` then computes correctly as
+  // `allotments.partnershipPerEvent - currentConsumed` without
+  // re-touching the DB. For events with M unique members and N total
+  // counted rows (M ≤ N), this reduces from N×3 = 3N RTTs to M×3 + 0
+  // RTTs for plan-lookup. At SweCham scale (M ≈ 0.8N typically)
+  // savings are ~25%; at corporate-guest scale (M ≪ N) savings ≥ 60%.
+  type CachedAllotments = {
+    readonly allotments: PlanAllotments;
+    readonly initialConsumed: ConsumedQuota;
+  };
+  const allotmentsCache = new Map<string, CachedAllotments>();
+  const decrementsCache = new Map<string, { partnership: number; cultural: number }>();
+  const uniqueMembers = new Set<string>();
+  for (const r of counted) {
+    if (r.match.matchedMemberId !== null) {
+      uniqueMembers.add(String(r.match.matchedMemberId));
+    }
+  }
+  for (const m of uniqueMembers) {
+    const lookup = await deps.quotaAccountingPort.queryAllotments({
+      tenantId: input.tenantId,
+      memberId: m as unknown as Parameters<typeof deps.quotaAccountingPort.queryAllotments>[0]['memberId'],
+      eventId: input.eventId,
+      fiscalYear,
+    });
+    if (!lookup.ok) {
+      const e = lookup.error;
+      const msg =
+        e.kind === 'db_error'
+          ? e.message
+          : e.kind === 'member_not_found'
+            ? `quota lookup failed pre-loop: member ${e.memberId} not found`
+            : `quota lookup failed pre-loop: plan not found for member ${e.memberId}`;
+      return err({ kind: 'quota_lookup_failed', message: msg, cause: e });
+    }
+    allotmentsCache.set(m, {
+      allotments: lookup.value.allotments,
+      initialConsumed: lookup.value.consumed,
+    });
+  }
+
   // (4) Per-row credit-back. Each row gets its own advisory lock so
   // concurrent ingests on the same (member, event) block until our
   // archive commits.
+  //
+  // **R6 REL-R6-03 + PERF-R6-02 caveat (H3 dashboard-truth)**: if this
+  // loop aborts mid-iteration (lock failure, queryAllotments failure,
+  // or audit-emit failure), the surrounding tx ROLLS BACK via
+  // `runInTenantWithRollbackOnErr` → all `event_registrations` UPDATEs
+  // and `audit_log` INSERTs persisted so far are undone. However, OTel
+  // counters incremented via `eventcreateMetrics.quotaCreditBack(...)`
+  // in `pino-audit-port.ts:emitMatchingQuotaMetric` are NOT reversed
+  // (counters are best-effort observability, not part of the tx).
+  // Drift is bounded to `(currentIteration − 1)` phantom credit-back
+  // counter increments per archive failure, and is observable via the
+  // accompanying `logger.error` on the error path. The audit_log table
+  // remains authoritative; counters are informational. Matches the F5
+  // payment-receipt + F7 broadcast-delivery precedent.
   for (const reg of counted) {
     const memberId = reg.match.matchedMemberId;
     if (memberId === null) continue;
@@ -265,27 +338,29 @@ export async function archiveEvent(
       });
     }
 
-    // SUGG-2 — query allotments AFTER setQuotaEffect commits the
-    // counted=false flip so `consumed.*` reflects the post-credit-back
-    // state. The audit `allotmentAfter` value now mirrors the refund
-    // credit-back path's semantics (see ingest-webhook-attendee.ts:786).
-    // Forensic dashboards filtering on `allotmentAfter > 0` will now
-    // surface archive credit-backs correctly rather than treating the
-    // legacy `0` sentinel as "member has no slots".
-    let postLookup: Awaited<
-      ReturnType<typeof deps.quotaAccountingPort.queryAllotments>
-    > | null = null;
-    if (wasPartnership || wasCultural) {
-      postLookup = await deps.quotaAccountingPort.queryAllotments({
-        tenantId: input.tenantId,
-        memberId,
-        eventId: input.eventId,
-        fiscalYear,
+    // R6 PERF-R6-04 — read from pre-loop allotments cache instead of
+    // re-issuing queryAllotments per row. The cache was populated
+    // BEFORE the loop with one queryAllotments call per unique member,
+    // and we track per-scope decrement counts in `decrementsCache` so
+    // `currentConsumed = initialConsumed - decrementsSoFar` matches
+    // the live DB state without an extra RTT.
+    const memberKey = String(memberId);
+    const cached = allotmentsCache.get(memberKey);
+    if (!cached) {
+      // Defensive — `uniqueMembers` was populated from the same
+      // `counted` list, so the cache MUST contain this member. If we
+      // reach this branch, the pre-loop walk dropped a memberId
+      // (programmer error, not a transient failure). Fail loud.
+      return err({
+        kind: 'quota_lookup_failed',
+        message: `archive loop: member ${memberKey} missing from pre-loop allotments cache (programmer error)`,
+        cause: { kind: 'member_not_found', memberId },
       });
-      if (!postLookup.ok) {
-        return err({ kind: 'quota_lookup_failed', cause: postLookup.error });
-      }
     }
+    const decrementsSoFar = decrementsCache.get(memberKey) ?? {
+      partnership: 0,
+      cultural: 0,
+    };
 
     const baseAudit = {
       tenantId: input.tenantId,
@@ -294,10 +369,13 @@ export async function archiveEvent(
       occurredAt: input.occurredAt,
     };
 
-    if (wasPartnership && postLookup?.ok) {
-      const { allotments, consumed } = postLookup.value;
+    if (wasPartnership) {
+      // Track THIS row's credit-back before computing the audit.
+      decrementsSoFar.partnership += 1;
+      const currentConsumed =
+        cached.initialConsumed.partnershipConsumedForEvent - decrementsSoFar.partnership;
       const allotmentAfter =
-        allotments.partnershipPerEvent - consumed.partnershipConsumedForEvent;
+        cached.allotments.partnershipPerEvent - currentConsumed;
       const r = await deps.audit.emit({
         ...baseAudit,
         eventType: 'quota_credit_back_archive',
@@ -316,10 +394,12 @@ export async function archiveEvent(
       partnershipReversals += 1;
     }
 
-    if (wasCultural && postLookup?.ok) {
-      const { allotments, consumed } = postLookup.value;
+    if (wasCultural) {
+      decrementsSoFar.cultural += 1;
+      const currentConsumed =
+        cached.initialConsumed.culturalConsumedForYear - decrementsSoFar.cultural;
       const allotmentAfter =
-        allotments.culturalPerYear - consumed.culturalConsumedForYear;
+        cached.allotments.culturalPerYear - currentConsumed;
       const r = await deps.audit.emit({
         ...baseAudit,
         eventType: 'quota_credit_back_archive',
@@ -337,6 +417,8 @@ export async function archiveEvent(
       }
       culturalReversals += 1;
     }
+
+    decrementsCache.set(memberKey, decrementsSoFar);
   }
 
   // (5) Macro event_archived audit.

@@ -20,6 +20,15 @@
 import { and, asc, desc, eq, inArray, or, sql, ilike, like, type SQL } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
+
+/**
+ * R6 SEC-R6-01 — `listForRequota` row cap. See call-site comment for
+ * full rationale. Module-level const so the SELECT and the post-fetch
+ * `>= LIST_FOR_REQUOTA_CAP` check stay in lockstep + the value is
+ * inspectable in tests.
+ */
+export const LIST_FOR_REQUOTA_CAP = 2000;
 import { eventRegistrations, events, type EventRegistrationRow } from './schema';
 import type {
   RegistrationsRepository,
@@ -483,7 +492,41 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
               sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
             ),
           )
-          .orderBy(asc(eventRegistrations.matchedMemberId), asc(eventRegistrations.registrationId));
+          .orderBy(asc(eventRegistrations.matchedMemberId), asc(eventRegistrations.registrationId))
+          // R6 SEC-R6-01 — defensive row cap. Archive + toggle loops
+          // hold a single tx for the entire N-iteration credit-back
+          // pass; an event with thousands of paid+matched registrations
+          // could monopolise a connection slot for >10s (PERF-R6-01
+          // raises Vercel maxDuration to 60, but pool pressure is a
+          // separate concern). 2000 is well above SweCham's largest
+          // realistic event (~200 attendees) but caps the worst case
+          // at ~12s wall-clock. If an event exceeds the cap, archive
+          // still succeeds for the first 2000 rows; the operator
+          // observes `registrationsAffected` < actual N in the macro
+          // `event_archived` audit and can trigger a follow-up sweep.
+          // At SweCham scale (~131 members) this guard is dormant;
+          // defense-in-depth for future MTA tenants.
+          .limit(LIST_FOR_REQUOTA_CAP);
+        // R6 SEC-R6-01 follow-up closure — when the LIMIT is reached,
+        // emit a structured `logger.warn` so operators discover the
+        // truncation via Vercel runtime logs rather than via the
+        // `registrationsAffected < actual N` discrepancy on the macro
+        // audit row. Promoting this to a dedicated audit_event_type
+        // (`event_archive_row_cap_hit`) is a Phase 11 follow-up if
+        // the cap is actually hit in production — current scale +
+        // log-warn is sufficient signal.
+        if (rows.length >= LIST_FOR_REQUOTA_CAP) {
+          logger.warn(
+            {
+              event: 'f6_list_for_requota_cap_hit',
+              tenantId,
+              eventId,
+              cap: LIST_FOR_REQUOTA_CAP,
+              rowsReturned: rows.length,
+            },
+            `[F6] listForRequota row cap reached — archive/toggle credit-back will only process first ${LIST_FOR_REQUOTA_CAP} rows; remainder requires a follow-up sweep`,
+          );
+        }
         return ok(rows.map(toAggregate));
       } catch (e) {
         return err(wrapRepoError('registrations', e));

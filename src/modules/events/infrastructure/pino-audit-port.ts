@@ -44,10 +44,26 @@ import { sanitizeDbErrorMessage } from './sanitize-db-error';
 
 /**
  * Phase 6 staff-review-4 WARN-1 — single dispatcher that maps a freshly
- * committed F6 audit row to its matching OTel counter (declared in
- * `eventcreateMetrics`). Called after `insertAuditRow` resolves so the
- * counter only fires when the audit row is actually persisted —
- * matches the H3 dashboard-truth pattern from Phase 5 round 3.
+ * inserted F6 audit row to its matching OTel counter (declared in
+ * `eventcreateMetrics`). Called after `insertAuditRow` returns so the
+ * counter increments only when the row insert succeeded.
+ *
+ * **R6 PERF-R6-02 caveat (H3 dashboard-truth accuracy)**: this dispatcher
+ * fires AFTER `insertAuditRow` resolves but BEFORE the caller's
+ * transaction commits. If the surrounding tx later rolls back (e.g.,
+ * a later iteration in the archive loop emits an audit-emit failure →
+ * `runInTenantWithRollbackOnErr` rolls the entire tx), the audit row
+ * for THIS iteration is NOT persisted in `audit_log`, but the OTel
+ * counter increment is NOT reversible. Drift is bounded to
+ * `(currentIteration − 1)` phantom increments per archive failure +
+ * observable via the accompanying `logger.error` on the error path.
+ *
+ * This is a deliberate trade-off matching the F5 payment-receipt +
+ * F7 broadcast-delivery precedent — `audit_log` table is the
+ * authoritative source of truth; OTel counters are best-effort
+ * observability + can over-count by ≤1 per partial rollback. The
+ * "commit together" claim in the original Phase 5 H3 comment was
+ * over-precise; this docstring is the corrected version.
  *
  * Counter dimensions:
  *   - `plan_tier` for decrement counters is currently 'unknown' because
@@ -59,19 +75,36 @@ import { sanitizeDbErrorMessage } from './sanitize-db-error';
  *     types — `'partnership' | 'cultural'`).
  *
  * Wrapped in try/catch — metric emission failure must not propagate to
- * the Result chain (audit row already committed; partial observability
+ * the Result chain (audit row insert succeeded; partial observability
  * is acceptable; the metric layer is best-effort).
+ *
+ * **R6 SUGG-R5-2 + PERF-R6-03 closure**: this dispatcher is now invoked
+ * from BOTH `emit()` (caller's strict-tx path) AND `emitStandalone()`
+ * (separate-tx path for events outside a use-case strict-tx). The
+ * `emitRolledBack()` path is intentionally NOT wired because it only
+ * handles `webhook_rolled_back` — never a quota event — and double-
+ * invocation would be defensive but unnecessary at runtime.
  */
 function emitMatchingQuotaMetric(entry: F6AuditEntry): void {
   try {
     const tenantId = String(entry.tenantId);
     switch (entry.eventType) {
-      case 'quota_partnership_decremented':
-        eventcreateMetrics.quotaPartnershipDecremented(tenantId, null);
+      case 'quota_partnership_decremented': {
+        // R6 PERF-05 closure — plan_tier label sourced from the audit
+        // payload (threaded through queryAllotments → applyQuotaEffect
+        // → audit emit). Falls back to null for legacy data; the
+        // counter renders that as `plan_tier='unknown'`.
+        const planTier = (entry.payload as { planTier?: string | null } | null)
+          ?.planTier ?? null;
+        eventcreateMetrics.quotaPartnershipDecremented(tenantId, planTier);
         break;
-      case 'quota_cultural_decremented':
-        eventcreateMetrics.quotaCulturalDecremented(tenantId, null);
+      }
+      case 'quota_cultural_decremented': {
+        const planTier = (entry.payload as { planTier?: string | null } | null)
+          ?.planTier ?? null;
+        eventcreateMetrics.quotaCulturalDecremented(tenantId, planTier);
         break;
+      }
       case 'quota_over_quota_warning': {
         const scope = (entry.payload as { scope?: string } | null)?.scope;
         if (scope === 'partnership' || scope === 'cultural') {
@@ -382,6 +415,13 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
           await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${entry.tenantId}'`));
           return await insertAuditRow(tx, entry);
         });
+        // R6 SUGG-R5-2 + PERF-R6-03 — fire the matching OTel counter
+        // for any quota event routed through this standalone path
+        // (e.g., a future F6.1 manual-recovery script). Currently the
+        // only standalone caller is `webhook_signature_rejected` which
+        // falls through to `default: break`, so this is forward-compat
+        // hardening — no behavioural change today.
+        emitMatchingQuotaMetric(entry);
         return ok(id as AuditEventId);
       } catch (e) {
         logFullError(

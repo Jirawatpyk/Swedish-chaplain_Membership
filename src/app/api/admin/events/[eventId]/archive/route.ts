@@ -32,6 +32,26 @@ import { runArchiveEvent } from '@/lib/events-admin-deps';
 import { asUserId } from '@/modules/auth';
 import { emitEventsRoleViolation } from '../../_lib/role-violation-audit';
 
+/**
+ * Phase 6 staff-review-4 PERF-R6-01 — explicitly pin Node runtime + raise
+ * function timeout for archive operations.
+ *
+ * Archive performs O(N) work in the registrations matched to the event
+ * (per-row advisory lock + setQuotaEffect UPDATE + queryAllotments
+ * SELECT + per-scope audit emit). At the upper-bound N=300 paid+matched
+ * registrations, the worst-case wall-clock is ~6s at Neon Singapore
+ * RTT — comfortably within `maxDuration = 60` (Vercel Pro plan ceiling).
+ *
+ * Without this declaration Vercel applies the plan-default timeout
+ * (10s on Hobby, 60s on Pro). On Hobby with a 100+ row event the
+ * function would silently 504, the tx would roll back, but the client
+ * would never receive a structured error — admin sees a generic
+ * Vercel timeout page. With `maxDuration = 60` the use-case always
+ * gets to complete or return a structured `Result.err` body.
+ */
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 export async function POST(
   request: NextRequest,
   ctx: { params: Promise<{ eventId: string }> },

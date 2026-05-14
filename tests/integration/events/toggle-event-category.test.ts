@@ -508,6 +508,8 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
     let tenantB: TestTenant;
     let userA: string;
     const tenantBEventId = randomUUID();
+    const tenantBMemberId = randomUUID();
+    const tenantBRegistrationId = randomUUID();
 
     beforeAll(async () => {
       tenantA = await createTestTenant('test-swecham');
@@ -515,10 +517,32 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
       const u = await createActiveTestUser('admin');
       userA = u.userId;
 
-      // Seed Tenant B's event row with is_partner_benefit=false. If
-      // cross-tenant isolation is broken, the toggle below would
-      // flip this to true.
+      // Seed Tenant B's event row + a registration with counted=false.
+      // R6 ARCH-R6-01 strengthening: if RLS is broken on
+      // event_registrations only, the toggle ON path would set
+      // counted=true. The second assertion below catches that.
+      const tenantBPlanId = `tenantB-plan-${randomUUID().slice(0, 8)}`;
       await runInTenant(tenantB.ctx, async (tx) => {
+        // planCategory='corporate' sidesteps the partnership_bundles_
+        // corporate CHECK constraint; this probe only needs a valid
+        // plan/member row to drive the RLS test.
+        await seedF8MembershipPlan(tx, {
+          tenantSlug: tenantB.ctx.slug,
+          planId: tenantBPlanId,
+          planName: { en: 'TenantB Corporate (cross-tenant probe)' },
+          benefitMatrix: diamondMatrix,
+          planCategory: 'corporate',
+          createdBy: userA,
+        });
+        await tx.insert(members).values({
+          tenantId: tenantB.ctx.slug,
+          memberId: tenantBMemberId,
+          companyName: 'TenantB Co',
+          country: 'TH',
+          planId: tenantBPlanId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
         await tx.insert(events).values({
           tenantId: tenantB.ctx.slug,
           eventId: tenantBEventId,
@@ -530,6 +554,25 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
           isPartnerBenefit: false,
           isCulturalEvent: false,
         } as unknown as typeof events.$inferInsert);
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenantB.ctx.slug,
+          registrationId: tenantBRegistrationId,
+          eventId: tenantBEventId,
+          externalId: `att_tenantB_${Date.now()}`,
+          attendeeEmail: 'tenantB-toggle-attendee@example.com',
+          attendeeName: 'TenantB Toggle Attendee',
+          attendeeCompany: 'TenantB Co',
+          matchType: 'member_contact',
+          matchedMemberId: tenantBMemberId,
+          matchedContactId: null,
+          ticketType: null,
+          ticketPriceThb: null,
+          paymentStatus: 'paid',
+          countedAgainstPartnership: false,
+          countedAgainstCulturalQuota: false,
+          registeredAt: new Date(),
+          piiPseudonymisedAt: null,
+        } as unknown as typeof eventRegistrations.$inferInsert);
       });
     });
 
@@ -538,7 +581,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
       await tenantB.cleanup();
     });
 
-    it('actor in tenant A cannot toggle tenant B event (RLS hides → event_not_found)', async () => {
+    it('actor in tenant A cannot toggle tenant B event (RLS hides → event_not_found) + Tenant B event_registrations counted=false', async () => {
       const result = await runToggleEventCategory(tenantA.ctx.slug, {
         eventId: tenantBEventId as never,
         flag: 'is_partner_benefit',
@@ -551,15 +594,30 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         expect(result.error.kind).toBe('event_not_found');
       }
 
-      // Verify Tenant B's row was NOT toggled (flag still false).
-      const tenantBRow = await runInTenant(tenantB.ctx, async (tx) =>
+      // (1) Verify Tenant B's event flag NOT toggled (still false).
+      const tenantBEventRow = await runInTenant(tenantB.ctx, async (tx) =>
         tx
           .select({ isPartnerBenefit: events.isPartnerBenefit })
           .from(events)
           .where(eq(events.eventId, tenantBEventId))
           .limit(1),
       );
-      expect(tenantBRow[0]?.isPartnerBenefit).toBe(false);
+      expect(tenantBEventRow[0]?.isPartnerBenefit).toBe(false);
+
+      // (2) R6 ARCH-R6-01 — verify Tenant B's event_registrations row
+      // still has countedAgainstPartnership = false. If RLS on
+      // event_registrations were broken, the toggle ON path would
+      // have set this to true via setQuotaEffect.
+      const tenantBRegRow = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select({
+            countedAgainstPartnership: eventRegistrations.countedAgainstPartnership,
+          })
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.registrationId, tenantBRegistrationId))
+          .limit(1),
+      );
+      expect(tenantBRegRow[0]?.countedAgainstPartnership).toBe(false);
     });
   });
 });
