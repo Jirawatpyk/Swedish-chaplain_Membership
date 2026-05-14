@@ -226,6 +226,20 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                 <p className="font-medium">{t('tierNotice.title')}</p>
                 <p className="text-muted-foreground">{t('tierNotice.body')}</p>
                 <p className="text-muted-foreground">
+                  {/*
+                    Round 2 review-fix W-R10-01 (2026-05-14) —
+                    forward-reference to Phase 7 (US5 / T090–T099)
+                    route. The href matches the canonical
+                    `/admin/events/import` path from plan.md project
+                    structure. Until Phase 7 ships, this resolves
+                    to the standard Next.js 404 boundary; acceptable
+                    transient state while F6 ships dark behind
+                    FEATURE_F6_EVENTCREATE=false (no user reaches
+                    this surface in production until flag-flip).
+                    Phase 7 implementation MUST land at exactly
+                    this path — any rename is a forward-compat
+                    break against this banner.
+                  */}
                   {t.rich('tierNotice.csvFallback', {
                     csvLink: (chunks) => (
                       <Link

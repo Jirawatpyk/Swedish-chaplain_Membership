@@ -96,18 +96,16 @@ export const F6_AUDIT_EVENT_TYPES = [
   // rollback bucket, polluting incident triage. Backed by migration
   // 0137 enum extension.
   'webhook_ingest_precondition_failed',
-  // Phase 5 review-fix W-05 reverted (2026-05-13) — reserved-but-
-  // unused enum value. Migration 0138 already added this name to the
-  // Postgres `audit_event_type` enum; Postgres enum values cannot be
-  // dropped without an offline rebuild, so the value remains in the
-  // type system + DB schema. The original PDPA §39 / GDPR Art. 30
-  // record-of-processing audit was deemed unnecessary in maintainer
-  // review (the privacy-notice template + DPIA + W-06 ZAPIER_DPA_
-  // EXECUTED boot guard already satisfy the legal record-keeping
-  // duty). If a future feature wants to record per-tenant template
-  // acknowledgements, the enum slot is available and the AuditPayloads
-  // entry below documents the originally-intended shape.
-  'wizard_privacy_notice_acknowledged',
+  // NB: migration `0138_f6_wizard_privacy_notice_acknowledged_audit.sql`
+  // added a `wizard_privacy_notice_acknowledged` value to the Postgres
+  // `audit_event_type` enum during round 9. The TS surface for that
+  // event was removed in round 10 staff review (W-R10-02) after the
+  // W-05 use-case was reverted — the privacy-notice template +
+  // DPIA + W-06 `ZAPIER_DPA_EXECUTED` boot guard already cover the
+  // PDPA §39 / GDPR Art. 30 record-keeping duty. Postgres enum
+  // values cannot be dropped without an offline rebuild so the DB
+  // keeps the slot harmlessly; no application code can write to it
+  // (TS enum type no longer includes the variant).
 ] as const;
 
 export type F6AuditEventType = (typeof F6_AUDIT_EVENT_TYPES)[number];
@@ -494,19 +492,6 @@ export interface AuditPayloads {
     readonly errorName: string;
   };
 
-  /**
-   * Phase 5 review-fix W-05 reverted (2026-05-13) — payload shape
-   * preserved for documentation + future revival. Audit event is
-   * defined in the enum but no emitter ships; consumers should
-   * ignore this entry today. See the enum entry above for the full
-   * revert rationale.
-   */
-  wizard_privacy_notice_acknowledged: {
-    readonly severity: Severity;
-    readonly actorUserId: UserId;
-    readonly privacyNoticeVersion: string;
-    readonly acknowledgedAt: string;
-  };
 }
 
 export type AuditPayloadFor<T extends F6AuditEventType> = AuditPayloads[T];

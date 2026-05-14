@@ -35,15 +35,34 @@ export default async function EventCreateIntegrationLoading() {
           indicators) so the visual handoff to the real stepper is
           CLS-0 per docs/ux-standards.md § 2.1.
         */}
+        {/*
+          Round 2 review-fix WARN-01 (2026-05-14) — match real
+          `<Stepper>` horizontal layout exactly:
+          - parent `<ol>`: `flex flex-row items-start gap-0`
+          - each `<li>`: `flex min-w-0 flex-1 flex-col items-center text-center`
+          - indicator row: `flex w-full items-center` with before/after
+            connector strips flanking the size-7 circle
+          - label row: `mt-2` to match Stepper's mt-2 label offset
+
+          The skeleton size-7 circle + h-px connectors mirror the
+          real component's sizing so hydration is CLS-0 (was minor
+          jump under `items-center` before this fix).
+        */}
         <ol
-          className="flex items-center"
+          className="flex flex-row items-start gap-0"
           aria-label={t('loading')}
         >
           {[1, 2, 3].map((n) => (
-            <li key={n} className="flex flex-1 items-center gap-2">
-              <Skeleton className="size-8 shrink-0 rounded-full" />
-              <Skeleton className="h-4 flex-1" />
-              {n < 3 ? <Skeleton className="h-px w-6 shrink-0" /> : null}
+            <li
+              key={n}
+              className="flex min-w-0 flex-1 flex-col items-center text-center"
+            >
+              <div className="flex w-full items-center">
+                <Skeleton className="h-px flex-1" />
+                <Skeleton className="size-7 shrink-0 rounded-full" />
+                <Skeleton className="h-px flex-1" />
+              </div>
+              <Skeleton className="mt-2 h-4 w-20" />
             </li>
           ))}
         </ol>

@@ -70,7 +70,7 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
       */}
       <Card size="sm" className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
         <CardContent className="flex items-start gap-3 text-sm">
-          <InfoIcon className="size-4 shrink-0 text-blue-600" aria-hidden />
+          <InfoIcon className="size-4 shrink-0 text-blue-600 dark:text-blue-300" aria-hidden />
           <p>{t('englishOnlyNotice')}</p>
         </CardContent>
       </Card>
