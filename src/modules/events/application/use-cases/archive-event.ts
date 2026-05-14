@@ -35,8 +35,14 @@ import { ok, err, type Result } from '@/lib/result';
 import type { TenantId } from '@/modules/members';
 import type { EventId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
-import type { EventsRepository } from '../ports/events-repository';
-import type { RegistrationsRepository } from '../ports/registrations-repository';
+import type {
+  EventsRepository,
+  EventsRepositoryError,
+} from '../ports/events-repository';
+import type {
+  RegistrationsRepository,
+  RegistrationsRepositoryError,
+} from '../ports/registrations-repository';
 import type { F6AuditPort } from '../ports/audit-port';
 import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
@@ -62,11 +68,23 @@ export interface ArchiveEventOutput {
   };
 }
 
+/**
+ * **IMP-5 wave-5 batch-3** — repo errors carry `cause` discriminator
+ * (see toggle-event-category.ts for the full pattern rationale).
+ */
 export type ArchiveEventError =
   | { readonly kind: 'event_not_found'; readonly eventId: EventId }
   | { readonly kind: 'already_archived'; readonly eventId: EventId }
-  | { readonly kind: 'events_repo_error'; readonly message: string }
-  | { readonly kind: 'registrations_repo_error'; readonly message: string }
+  | {
+      readonly kind: 'events_repo_error';
+      readonly message: string;
+      readonly cause: EventsRepositoryError;
+    }
+  | {
+      readonly kind: 'registrations_repo_error';
+      readonly message: string;
+      readonly cause: RegistrationsRepositoryError;
+    }
   | { readonly kind: 'lock_acquisition_failed'; readonly message: string }
   | { readonly kind: 'audit_emit_failed'; readonly message: string };
 
@@ -87,6 +105,7 @@ export async function archiveEvent(
     return err({
       kind: 'events_repo_error',
       message: eventsRepoErrorMessage(eventLookup.error),
+      cause: eventLookup.error,
     });
   }
   const eventBefore = eventLookup.value;
@@ -108,6 +127,7 @@ export async function archiveEvent(
     return err({
       kind: 'registrations_repo_error',
       message: registrationsRepoErrorMessage(listResult.error),
+      cause: listResult.error,
     });
   }
   const counted = listResult.value.filter(
@@ -126,6 +146,7 @@ export async function archiveEvent(
     return err({
       kind: 'events_repo_error',
       message: eventsRepoErrorMessage(setArchivedResult.error),
+      cause: setArchivedResult.error,
     });
   }
   const eventAfter = setArchivedResult.value;
@@ -166,6 +187,7 @@ export async function archiveEvent(
       return err({
         kind: 'registrations_repo_error',
         message: registrationsRepoErrorMessage(upd.error),
+        cause: upd.error,
       });
     }
 

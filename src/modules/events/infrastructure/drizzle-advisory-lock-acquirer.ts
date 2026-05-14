@@ -12,13 +12,16 @@
  */
 import { sql } from 'drizzle-orm';
 import type { TenantTx } from '@/lib/db';
-import type { AdvisoryLockAcquirer } from '../application/ports/advisory-lock-acquirer';
+import type {
+  AdvisoryLockAcquirer,
+  LockKey,
+} from '../application/ports/advisory-lock-acquirer';
 
 export function makeDrizzleAdvisoryLockAcquirer(
   executor: TenantTx,
 ): AdvisoryLockAcquirer {
   return {
-    async acquire(lockKey: string): Promise<void> {
+    async acquire(lockKey: LockKey): Promise<void> {
       await executor.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
       );

@@ -187,8 +187,13 @@ export type {
   QuotaAccountingError,
 } from './application/ports/quota-accounting-port';
 
+export {
+  asLockKey,
+  InvalidLockKeyError,
+} from './application/ports/advisory-lock-acquirer';
 export type {
   AdvisoryLockAcquirer,
+  LockKey,
 } from './application/ports/advisory-lock-acquirer';
 
 export type {

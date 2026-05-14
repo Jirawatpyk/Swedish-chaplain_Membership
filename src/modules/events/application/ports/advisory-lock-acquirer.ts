@@ -17,13 +17,71 @@
  *   `eventcreate-quota:${tenantId}:${memberId}:${eventId}` —
  *   per-(tenant, member, event) coordination key.
  *
+ * **I-6 wave-5 batch-3** — `LockKey` brand:
+ *   The branded type prevents a typo-class bug where a caller could
+ *   silently pass `'eventcreate_quota:...'` (underscore) instead of
+ *   `'eventcreate-quota:...'` (hyphen), producing a separate Postgres
+ *   advisory-lock partition and bypassing the FR-037 ACID coordination.
+ *   The only legitimate way to produce a `LockKey` is through the
+ *   `buildQuotaLockKey()` smart constructor in `apply-quota-effect.ts`
+ *   (or a future feature-specific builder). Direct casts are blocked
+ *   by the symbol brand.
+ *
+ *   Note: F4/F5/F7/F8 currently pass `string` to their inline
+ *   `pg_advisory_xact_lock(hashtextextended(...))` calls — they do NOT
+ *   go through a port. F6 is the only module with a port-shaped
+ *   advisory-lock surface, so branding here is internally consistent
+ *   AND doesn't require touching the other modules. A future
+ *   Constitution amendment could mandate the brand cross-module.
+ *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+
+declare const lockKeyBrand: unique symbol;
+
+/**
+ * Branded string for Postgres advisory-lock keys. Construct via a
+ * feature-specific builder (e.g., `buildQuotaLockKey()`) — direct
+ * casting from `string` is forbidden by the brand.
+ */
+export type LockKey = string & { readonly [lockKeyBrand]: true };
+
+/**
+ * Smart constructor for `LockKey`. Validates the canonical namespace
+ * prefix shape: `<feature>:<tenant-scoped-segment-list>` where the
+ * feature prefix MUST contain only `[a-z0-9-]` (rejects underscore
+ * typos like `eventcreate_quota:` vs the canonical `eventcreate-quota:`)
+ * and at least one `:` separator must follow.
+ *
+ * Throws `InvalidLockKeyError` on malformed input — callers should
+ * surface this as a programmer-error / TxStageError, NOT a user-
+ * visible error (the call site is a use-case-internal construction
+ * that should always pass).
+ */
+export function asLockKey(value: string): LockKey {
+  if (
+    typeof value !== 'string' ||
+    !/^[a-z0-9-]+:[\x20-\x7e]+$/.test(value) ||
+    value.length > 256
+  ) {
+    throw new InvalidLockKeyError(value);
+  }
+  return value as LockKey;
+}
+
+export class InvalidLockKeyError extends Error {
+  constructor(public readonly raw: string) {
+    super(
+      `Invalid advisory-lock key (must match /^[a-z0-9-]+:[\\x20-\\x7e]+$/ and be ≤256 chars): ${JSON.stringify(raw).slice(0, 200)}`,
+    );
+    this.name = 'InvalidLockKeyError';
+  }
+}
 
 export interface AdvisoryLockAcquirer {
   /**
    * Acquire a Postgres transaction-scoped advisory lock keyed by the
-   * caller-supplied string. The string is hashed via
+   * caller-supplied `LockKey`. The string is hashed via
    * `hashtextextended(_, 0)` to produce the bigint key Postgres expects.
    *
    * The call BLOCKS until the lock is held (or the tx is rolled back).
@@ -33,5 +91,5 @@ export interface AdvisoryLockAcquirer {
    * Throws on DB error (caller wraps in TxStageError to propagate
    * through the strict-tx rollback path).
    */
-  acquire(lockKey: string): Promise<void>;
+  acquire(lockKey: LockKey): Promise<void>;
 }

@@ -63,8 +63,14 @@ import type { EventId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
 import type { QuotaEffect } from '../../domain/event-registration';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
-import type { EventsRepository } from '../ports/events-repository';
-import type { RegistrationsRepository } from '../ports/registrations-repository';
+import type {
+  EventsRepository,
+  EventsRepositoryError,
+} from '../ports/events-repository';
+import type {
+  RegistrationsRepository,
+  RegistrationsRepositoryError,
+} from '../ports/registrations-repository';
 import type {
   QuotaAccountingPort,
   QuotaAccountingError,
@@ -77,6 +83,7 @@ import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
 } from './_helpers/repo-error-message';
+import { emitQuotaScopeAudit } from './_helpers/emit-quota-scope-audit';
 
 export type ToggleFlag = 'is_partner_benefit' | 'is_cultural_event';
 
@@ -101,11 +108,35 @@ export interface ToggleEventCategoryOutput {
   readonly nextValue: boolean;
 }
 
+/**
+ * **IMP-5 wave-5 batch-3** — `events_repo_error` and
+ * `registrations_repo_error` now carry the full underlying
+ * discriminated `<Repo>Error` as `cause`, in addition to the
+ * pre-formatted `message` (kept for log-line ergonomics + backward
+ * compat with route 500 handlers that surfaced `message` verbatim
+ * before this change). Callers that need retry-vs-no-retry logic
+ * can pattern-match on `cause.kind`:
+ *   - `db_error` → transient, retry-eligible
+ *   - `invariant_violation` → RLS / schema drift, page SREs
+ *   - `pseudonymised_row_rejected` → never retry, drop row from set
+ *   - `not_implemented` → compile-time-prevented stub callout
+ *
+ * Mirrors the existing `quota_lookup_failed.cause` shape so the
+ * F6 admin error union is internally consistent.
+ */
 export type ToggleEventCategoryError =
   | { readonly kind: 'event_not_found'; readonly eventId: EventId }
   | { readonly kind: 'event_archived'; readonly eventId: EventId }
-  | { readonly kind: 'events_repo_error'; readonly message: string }
-  | { readonly kind: 'registrations_repo_error'; readonly message: string }
+  | {
+      readonly kind: 'events_repo_error';
+      readonly message: string;
+      readonly cause: EventsRepositoryError;
+    }
+  | {
+      readonly kind: 'registrations_repo_error';
+      readonly message: string;
+      readonly cause: RegistrationsRepositoryError;
+    }
   | { readonly kind: 'lock_acquisition_failed'; readonly message: string }
   | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
   | { readonly kind: 'audit_emit_failed'; readonly message: string };
@@ -128,6 +159,7 @@ export async function toggleEventCategory(
     return err({
       kind: 'events_repo_error',
       message: eventsRepoErrorMessage(eventLookup.error),
+      cause: eventLookup.error,
     });
   }
   const eventBefore = eventLookup.value;
@@ -170,6 +202,7 @@ export async function toggleEventCategory(
     return err({
       kind: 'events_repo_error',
       message: eventsRepoErrorMessage(setFlagResult.error),
+      cause: setFlagResult.error,
     });
   }
   const eventAfter = setFlagResult.value;
@@ -184,6 +217,7 @@ export async function toggleEventCategory(
     return err({
       kind: 'registrations_repo_error',
       message: registrationsRepoErrorMessage(requotaList.error),
+      cause: requotaList.error,
     });
   }
 
@@ -355,6 +389,7 @@ export async function toggleEventCategory(
         return err({
           kind: 'registrations_repo_error',
           message: registrationsRepoErrorMessage(upd.error),
+          cause: upd.error,
         });
       }
       registrationsReevaluated += 1;
@@ -369,144 +404,35 @@ export async function toggleEventCategory(
         occurredAt: input.occurredAt,
       };
 
-      if (auditOnPartnership === 'decremented') {
-        // CRIT-2 fix (wave-5): derive `perEventAllotmentBefore` from
-        // `allotmentAfterPartnership + 1` instead of re-querying
-        // `queryAllotments` AFTER `setQuotaEffect` already flipped
-        // `counted_against_partnership=true`. The post-UPDATE SUM
-        // would include this row, producing an off-by-one (low) for
-        // `before`. The pre-UPDATE math at the decision branch
-        // (`allotmentAfter = allotment - consumedExcludingSelf - 1`)
-        // implies `before = allotmentAfter + 1` by construction.
-        const r = await deps.audit.emit({
-          ...baseAudit,
-          eventType: 'quota_partnership_decremented',
-          summary: `partnership decremented via toggle: registration ${reg.registrationId} re-flagged after event toggle`,
-          payload: {
-            severity: 'info',
-            registrationId: reg.registrationId,
-            memberId,
-            eventId: input.eventId,
-            perEventAllotmentBefore: allotmentAfterPartnership + 1,
-            perEventAllotmentAfter: allotmentAfterPartnership,
-          },
+      // REFACTOR H3 (wave-5 batch-3) — collapsed 6 parallel audit-emit
+      // branches (partnership × {decremented/over_quota/credit_back} +
+      // cultural × {...}) into the shared `emitQuotaScopeAudit` helper.
+      // Eliminates ~80 LOC of mirror-duplication and removes the bug
+      // class where the partnership branch was updated but the cultural
+      // mirror was forgotten (or vice versa).
+      if (auditOnPartnership !== null) {
+        const emitResult = await emitQuotaScopeAudit(deps.audit, baseAudit, {
+          scope: 'partnership',
+          action: auditOnPartnership,
+          registrationId: reg.registrationId,
+          memberId,
+          eventId: input.eventId,
+          allotmentAfter: allotmentAfterPartnership,
+          fiscalYear,
         });
-        if (!r.ok) {
-          return err({
-            kind: 'audit_emit_failed',
-            message:
-              'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
-          });
-        }
-      } else if (auditOnPartnership === 'over_quota') {
-        const r = await deps.audit.emit({
-          ...baseAudit,
-          eventType: 'quota_over_quota_warning',
-          summary: `partnership over-quota via toggle: registration ${reg.registrationId}`,
-          payload: {
-            severity: 'warn',
-            registrationId: reg.registrationId,
-            memberId,
-            eventId: input.eventId,
-            scope: 'partnership',
-            allotmentAtIngest: 0,
-          },
-        });
-        if (!r.ok) {
-          return err({
-            kind: 'audit_emit_failed',
-            message:
-              'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
-          });
-        }
-      } else if (auditOnPartnership === 'credit_back') {
-        const r = await deps.audit.emit({
-          ...baseAudit,
-          eventType: 'quota_credit_back_archive',
-          summary: `partnership credit-back via toggle OFF: registration ${reg.registrationId}`,
-          payload: {
-            severity: 'info',
-            registrationId: reg.registrationId,
-            memberId,
-            scope: 'partnership',
-            allotmentAfter: allotmentAfterPartnership,
-          },
-        });
-        if (!r.ok) {
-          return err({
-            kind: 'audit_emit_failed',
-            message:
-              'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
-          });
-        }
+        if (!emitResult.ok) return err(emitResult.error);
       }
-
-      if (auditOnCultural === 'decremented') {
-        // CRIT-2 fix (wave-5) — see partnership counterpart above for
-        // the off-by-one rationale. Cultural mirror uses the same
-        // derivation: `before = allotmentAfter + 1`.
-        const r = await deps.audit.emit({
-          ...baseAudit,
-          eventType: 'quota_cultural_decremented',
-          summary: `cultural decremented via toggle: registration ${reg.registrationId}`,
-          payload: {
-            severity: 'info',
-            registrationId: reg.registrationId,
-            memberId,
-            eventId: input.eventId,
-            fiscalYear,
-            annualAllotmentBefore: allotmentAfterCultural + 1,
-            annualAllotmentAfter: allotmentAfterCultural,
-          },
+      if (auditOnCultural !== null) {
+        const emitResult = await emitQuotaScopeAudit(deps.audit, baseAudit, {
+          scope: 'cultural',
+          action: auditOnCultural,
+          registrationId: reg.registrationId,
+          memberId,
+          eventId: input.eventId,
+          allotmentAfter: allotmentAfterCultural,
+          fiscalYear,
         });
-        if (!r.ok) {
-          return err({
-            kind: 'audit_emit_failed',
-            message:
-              'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
-          });
-        }
-      } else if (auditOnCultural === 'over_quota') {
-        const r = await deps.audit.emit({
-          ...baseAudit,
-          eventType: 'quota_over_quota_warning',
-          summary: `cultural over-quota via toggle: registration ${reg.registrationId}`,
-          payload: {
-            severity: 'warn',
-            registrationId: reg.registrationId,
-            memberId,
-            eventId: input.eventId,
-            scope: 'cultural',
-            allotmentAtIngest: 0,
-          },
-        });
-        if (!r.ok) {
-          return err({
-            kind: 'audit_emit_failed',
-            message:
-              'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
-          });
-        }
-      } else if (auditOnCultural === 'credit_back') {
-        const r = await deps.audit.emit({
-          ...baseAudit,
-          eventType: 'quota_credit_back_archive',
-          summary: `cultural credit-back via toggle OFF: registration ${reg.registrationId}`,
-          payload: {
-            severity: 'info',
-            registrationId: reg.registrationId,
-            memberId,
-            scope: 'cultural',
-            allotmentAfter: allotmentAfterCultural,
-          },
-        });
-        if (!r.ok) {
-          return err({
-            kind: 'audit_emit_failed',
-            message:
-              'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
-          });
-        }
+        if (!emitResult.ok) return err(emitResult.error);
       }
     }
   }

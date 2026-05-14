@@ -60,7 +60,11 @@ import type {
   QuotaAccountingError,
 } from '../ports/quota-accounting-port';
 import type { F6AuditPort, ActorType } from '../ports/audit-port';
-import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
+import {
+  asLockKey,
+  type AdvisoryLockAcquirer,
+  type LockKey,
+} from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 
 export interface ApplyQuotaEffectInput {
@@ -118,13 +122,19 @@ export interface ApplyQuotaEffectDeps {
 /**
  * Tenant-scoped Postgres advisory-lock key per research.md R5. Exported
  * for test introspection (concurrency tests assert lock contention).
+ *
+ * **I-6 wave-5 batch-3** — returns the branded `LockKey` type so callers
+ * cannot accidentally pass an unvalidated string to
+ * `AdvisoryLockAcquirer.acquire`. Validation runs through `asLockKey`
+ * which rejects typos like `eventcreate_quota:` (underscore) vs the
+ * canonical `eventcreate-quota:` (hyphen).
  */
 export function buildQuotaLockKey(
   tenantId: TenantId,
   memberId: MemberId,
   eventId: EventId,
-): string {
-  return `eventcreate-quota:${tenantId}:${memberId}:${eventId}`;
+): LockKey {
+  return asLockKey(`eventcreate-quota:${tenantId}:${memberId}:${eventId}`);
 }
 
 /**
