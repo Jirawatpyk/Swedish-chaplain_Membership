@@ -10,6 +10,7 @@
  */
 
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
@@ -62,17 +63,56 @@ interface PageProps {
   >;
 }
 
+/**
+ * P5 round-10 ui-design-specialist — request-scoped cached member
+ * fetch so `generateMetadata` + the page component share a single
+ * database round-trip per request. React.cache() memoises per-request
+ * only (no cross-request leakage) — the canonical App Router pattern
+ * for fetch-on-render-twice.
+ *
+ * Returns the full discriminated `Result` so the page component can
+ * still branch on `not_found` / `forbidden` / `server_error` for its
+ * bespoke error cards. `generateMetadata` only cares about the happy
+ * path and falls back to the generic title on `!ok`.
+ *
+ * Cache key is the memberId string. Tenant + auth context are
+ * resolved inside the cached function so each request's headers are
+ * captured fresh — React.cache() scopes the memo to the React render
+ * pass, not across requests.
+ */
+const cachedGetMember = cache(async (memberId: string) => {
+  const h = await headers();
+  const pseudoReq = new Request('http://localhost:3100', { headers: h });
+  const tenant = resolveTenantFromRequest(pseudoReq as never);
+  const requestId = requestIdFromHeaders(h);
+  const deps = buildMembersDeps(tenant);
+  return getMember(
+    memberId as MemberId,
+    { actorUserId: 'server-component', requestId },
+    deps,
+  );
+});
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  const t = await getTranslations('admin.members');
-  // `admin.members.detail.title` is `{companyName}` interpolated;
-  // resolving it would require a DB lookup that the page itself
-  // already does. Use the list-page title for both branches —
-  // browser tab shows "Members · SweCham Membership" regardless.
-  if (!UUID_RE.test(memberId)) return { title: t('title') };
-  return { title: t('title') };
+  const tRoot = await getTranslations('admin.members');
+  const tDetail = await getTranslations('admin.members.detail');
+  // P5 round-10 — fetch the member through the request-scoped
+  // `cachedGetMember` so the page component below dedupes the same
+  // call (single DB round-trip per request). Falls back to the
+  // generic directory title when the member can't be resolved
+  // (invalid UUID / missing row / auth fail) so the metadata pipeline
+  // never throws — the page component handles the not-found render.
+  if (!UUID_RE.test(memberId)) return { title: tRoot('title') };
+  const result = await cachedGetMember(memberId);
+  if (!result.ok) return { title: tRoot('title') };
+  return {
+    title: tDetail('title', {
+      companyName: result.value.member.companyName,
+    }),
+  };
 }
 
 function Field({
@@ -203,21 +243,21 @@ export default async function MemberDetailPage({
 
   const session = await requireSession('staff');
   const h = await headers();
-  // Pass a pseudo-Request so resolveTenantFromRequest can honour the
-  // T115t `x-tenant` header override used by throwaway-tenant E2E.
-  // Without this the fn falls back to env.tenant.slug, silently
-  // breaking test harnesses that target the member detail page.
+  // Pseudo-Request lets resolveTenantFromRequest honour the T115t
+  // `x-tenant` header override used by throwaway-tenant E2E.
   const pseudoReq = new Request('http://localhost:3100', { headers: h });
   const tenant = resolveTenantFromRequest(pseudoReq as never);
   const requestId = requestIdFromHeaders(h);
-
   const deps = buildMembersDeps(tenant);
-  const result = await getMember(
-    memberId as MemberId,
-    { actorUserId: 'server-component', requestId },
-    deps,
-  );
 
+  // P5 round-10 — single DB round-trip per request via React.cache().
+  // `generateMetadata` already invoked `cachedGetMember(memberId)`
+  // before this component renders; that result is memoised on the
+  // request and resolves here without a second query. The plan + auth
+  // + tenant resolution above are sync pure ops (no DB) so doing them
+  // twice (once in cachedGetMember internally, once here for the plan
+  // lookup below) costs microseconds.
+  const result = await cachedGetMember(memberId);
   const t = await getTranslations('admin.members.detail');
 
   if (!result.ok) {
