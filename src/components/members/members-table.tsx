@@ -56,6 +56,8 @@ import { toast } from 'sonner';
 // shared primitive lives at src/components/renewals/risk-score-badge.tsx
 // and is barrel-safe (Domain types only; no Drizzle/server imports).
 import { RiskScoreBadge } from '@/components/renewals/risk-score-badge';
+// C4 round-10 ui-design-specialist — flag emoji + localised country name.
+import { CountryDisplay } from './country-display';
 
 export type MembersTableRow = {
   readonly member_id: string;
@@ -304,7 +306,9 @@ function InlineCountryCell({
         className="group inline-flex min-h-[28px] min-w-[40px] cursor-pointer items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editCountry')}
       >
-        <span>{country}</span>
+        {/* C4 round-10 — flag-only matches the read-only manager
+            view so admin/manager rows have identical width. */}
+        <CountryDisplay code={country} variant="flag-only" />
         <PencilIcon
           className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
           aria-hidden="true"
@@ -585,7 +589,10 @@ export function MembersTable({
             onSave={onInlineEdit}
           />
         ) : (
-          info.getValue()
+          // C4 round-10 — `variant="flag-only"` per user preference:
+          // ISO code redundant when the flag already identifies the
+          // country. Hover/SR surfaces the localised full name.
+          <CountryDisplay code={info.getValue()} variant="flag-only" />
         ),
     }),
     columnHelper.accessor('plan_display_name', {

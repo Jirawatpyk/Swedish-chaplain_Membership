@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { InfoIcon } from 'lucide-react';
 import {
   MembersTable,
   type MembersTableRow,
@@ -92,6 +93,12 @@ export function DirectoryWithBulk({
 
   return (
     <>
+      {/* C3 round-10 ui-design-specialist — manager banner. Without it
+          the table looked identical to admin's first paint (same chevron
+          hover hint + same status badge styling) so managers repeatedly
+          tried to double-click cells and got nothing. Banner makes the
+          read-only constraint explicit + points to the resolution path. */}
+      {!isAdmin && <ManagerReadOnlyBanner />}
       <MembersTable
         rows={rows}
         nextCursor={null}
@@ -108,5 +115,27 @@ export function DirectoryWithBulk({
         />
       )}
     </>
+  );
+}
+
+/**
+ * Subtle banner above the manager directory table. Uses an Info icon
+ * + muted-background so the banner doesn't dominate but is unmissable
+ * on first visit. `role="status"` so SR users hear it when the page
+ * loads (without interrupting other regions).
+ */
+function ManagerReadOnlyBanner() {
+  const t = useTranslations('admin.members.directory');
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-4 py-3 text-sm"
+    >
+      <InfoIcon
+        aria-hidden="true"
+        className="size-4 shrink-0 text-muted-foreground"
+      />
+      <p className="text-muted-foreground">{t('managerReadOnlyBanner')}</p>
+    </div>
   );
 }

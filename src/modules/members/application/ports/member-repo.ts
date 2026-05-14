@@ -14,12 +14,22 @@ import type { TaxId } from '../../domain/value-objects/tax-id';
 
 // --- Directory search types (US2) -------------------------------------------
 
+export type RiskBand = 'healthy' | 'warning' | 'at-risk' | 'critical';
+
 export type DirectoryFilter = {
   readonly q?: string;
   readonly status?: readonly ('active' | 'inactive' | 'archived')[];
   readonly planYear?: number;
   readonly country?: string;
   readonly planId?: string;
+  /**
+   * I1 round-10 ui-design-specialist — filter members by at-risk band
+   * surfaced in the F8-fed `risk_score_band` column. Null/undefined =
+   * no filter (default). When provided, matches members whose band is
+   * the supplied value; members with `null` band (not yet scored) are
+   * excluded from the filtered result.
+   */
+  readonly riskBand?: RiskBand;
   readonly limit: number;
   readonly cursor?: string;
 };
@@ -36,6 +46,7 @@ export type DirectoryOffsetFilter = {
   readonly planYear?: number;
   readonly country?: string;
   readonly planId?: string;
+  readonly riskBand?: RiskBand;
   readonly limit: number;
   readonly offset: number;
 };

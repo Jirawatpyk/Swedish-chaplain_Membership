@@ -392,6 +392,10 @@ export const drizzleMemberRepo: MemberRepo = {
         conds.push(eq(members.country, filter.country));
       if (filter.planId !== undefined)
         conds.push(eq(members.planId, filter.planId));
+      // I1 round-10 ui-design-specialist — same filter on the cursor
+      // path. See searchDirectoryWithCount for rationale.
+      if (filter.riskBand !== undefined)
+        conds.push(eq(members.riskScoreBand, filter.riskBand));
 
       // Cursor: decode base64 → "<iso>|<memberId>" or "NULL|<memberId>"
       if (filter.cursor) {
@@ -573,6 +577,12 @@ export const drizzleMemberRepo: MemberRepo = {
           conds.push(eq(members.country, filter.country));
         if (filter.planId !== undefined)
           conds.push(eq(members.planId, filter.planId));
+        // I1 round-10 ui-design-specialist — filter by F8-derived
+        // risk_score_band. Members with `null` band (not yet scored)
+        // are excluded when this filter is active (eq() over the
+        // nullable column matches only rows with the exact value).
+        if (filter.riskBand !== undefined)
+          conds.push(eq(members.riskScoreBand, filter.riskBand));
 
         const whereClause = and(
           or(...statuses.map((s) => eq(members.status, s)))!,

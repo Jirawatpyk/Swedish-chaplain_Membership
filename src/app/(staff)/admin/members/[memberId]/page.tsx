@@ -39,6 +39,7 @@ import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
+import { CountryDisplay } from '@/components/members/country-display';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
@@ -218,7 +219,6 @@ export default async function MemberDetailPage({
   );
 
   const t = await getTranslations('admin.members.detail');
-  const tRoot = await getTranslations('admin.members');
 
   if (!result.ok) {
     if (result.error.type === 'not_found') {
@@ -282,7 +282,23 @@ export default async function MemberDetailPage({
     <DetailContainer>
       <PageHeader
         title={member.companyName}
-        subtitle={tRoot('subtitle')}
+        /* C2 round-10 ui-design-specialist — previous subtitle was the
+           generic directory blurb ("Manage chamber members…") which made
+           every member detail page look identical. Now: "{Plan} · Year
+           {year}" — the two attributes admins actually want to see
+           below the company name. Switches to "…  · Archived" when the
+           member is archived. */
+        subtitle={
+          member.status === 'archived'
+            ? t('subtitleArchived', {
+                plan: planDisplayName,
+                year: member.planYear,
+              })
+            : t('subtitle', {
+                plan: planDisplayName,
+                year: member.planYear,
+              })
+        }
         actions={
           <>
             {/* "Back to members" button removed per ux-standards.md § 11/19
@@ -356,7 +372,12 @@ export default async function MemberDetailPage({
               />
               <Field
                 label={t('fields.country')}
-                value={member.country}
+                /* C4 round-10 ui-design-specialist — flag + localised name
+                   instead of raw "TH" / "SE". `value=null` + the
+                   CountryDisplay rendered in `extra` keeps the Field
+                   primitive's label/value layout intact. */
+                value={null}
+                extra={<CountryDisplay code={member.country} />}
               />
               <Field
                 label={t('fields.legalEntityType')}

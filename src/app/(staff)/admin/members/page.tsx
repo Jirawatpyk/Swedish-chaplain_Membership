@@ -52,9 +52,17 @@ interface SearchParams {
   readonly plan_id?: string;
   readonly show_archived?: string;
   readonly page?: string;
+  /** I1 round-10 — quick filter on F8-derived risk score band. */
+  readonly risk_band?: string;
 }
 
 const VALID_STATUSES = new Set(['active', 'inactive', 'archived']);
+const VALID_RISK_BANDS = new Set([
+  'healthy',
+  'warning',
+  'at-risk',
+  'critical',
+]);
 
 const PAGE_SIZE = 50;
 
@@ -116,11 +124,21 @@ async function MembersDirectoryBody({
     statuses = ['active', 'inactive'];
   }
 
+  const riskBand =
+    query.risk_band && VALID_RISK_BANDS.has(query.risk_band)
+      ? (query.risk_band as
+          | 'healthy'
+          | 'warning'
+          | 'at-risk'
+          | 'critical')
+      : undefined;
+
   const hasFilters =
     (query.q !== undefined && query.q.trim().length > 0) ||
     (query.status !== undefined && query.status !== 'all') ||
     (query.plan_id !== undefined && query.plan_id !== 'all') ||
-    query.show_archived === '1';
+    query.show_archived === '1' ||
+    riskBand !== undefined;
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page =
@@ -139,6 +157,7 @@ async function MembersDirectoryBody({
         ...(query.plan_id && query.plan_id !== 'all'
           ? { planId: query.plan_id }
           : {}),
+        ...(riskBand ? { riskBand } : {}),
         status: [...statuses],
         limit: PAGE_SIZE,
         offset,
