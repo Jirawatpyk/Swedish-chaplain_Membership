@@ -656,6 +656,10 @@
         "title": "{companyName}",
         "subtitle": "{plan} · År {year}",
         "subtitleArchived": "{plan} · År {year} · Arkiverad",
+        "timelinePreview": {
+          "viewAll": "Visa all aktivitet",
+          "empty": "Ingen aktivitet ännu."
+        },
         "sections": {
           "company": "Företag",
           "contacts": "Kontakter",

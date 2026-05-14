@@ -656,6 +656,10 @@
         "title": "{companyName}",
         "subtitle": "{plan} · Year {year}",
         "subtitleArchived": "{plan} · Year {year} · Archived",
+        "timelinePreview": {
+          "viewAll": "View all activity",
+          "empty": "No recent activity yet."
+        },
         "sections": {
           "company": "Company",
           "contacts": "Contacts",

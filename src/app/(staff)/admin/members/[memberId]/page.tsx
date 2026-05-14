@@ -48,6 +48,10 @@ import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
 import {
+  TimelinePreviewSection,
+  TimelinePreviewSkeleton,
+} from './_components/timeline-preview-section';
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -586,6 +590,20 @@ export default async function MemberDetailPage({
             />
           </Suspense>
         )}
+
+        {/* I7 round-10 ui-design-specialist — inline 3-event timeline
+            preview. Saves a round-trip through /timeline for the
+            common "what happened recently" check. Own Suspense
+            boundary mirrors the invoices pattern: the audit-log query
+            is independent of getMember + contacts and can't block the
+            main paint. */}
+        <Suspense fallback={<TimelinePreviewSkeleton />}>
+          <TimelinePreviewSection
+            memberId={member.memberId}
+            actorUserId={session.user.id}
+            actorRole={session.user.role as 'admin' | 'manager' | 'member'}
+          />
+        </Suspense>
     </DetailContainer>
   );
 }

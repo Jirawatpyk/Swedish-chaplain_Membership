@@ -656,6 +656,10 @@
         "title": "{companyName}",
         "subtitle": "{plan} · ปี {year}",
         "subtitleArchived": "{plan} · ปี {year} · เก็บถาวร",
+        "timelinePreview": {
+          "viewAll": "ดูกิจกรรมทั้งหมด",
+          "empty": "ยังไม่มีกิจกรรมล่าสุด"
+        },
         "sections": {
           "company": "ข้อมูลบริษัท",
           "contacts": "ผู้ติดต่อ",
