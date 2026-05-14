@@ -339,98 +339,62 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
       }
     },
 
-    async setArchived(
-      tenantId: TenantId,
-      eventId: EventId,
-      archivedAt: Date,
-    ): Promise<Result<EventAggregate, EventsRepositoryError>> {
-      try {
-        const updated = await executor
-          .update(events)
-          .set({
-            archivedAt,
-            lastUpdatedAt: archivedAt,
-          })
-          .where(
-            and(
-              eq(events.tenantId, tenantId),
-              eq(events.eventId, eventId),
-            ),
-          )
-          .returning();
-        if (updated.length === 0) {
-          return err({
-            kind: 'invariant_violation',
-            invariant:
-              'events.setArchived: row not found — caller passed an eventId with no matching row in this tenant',
-          });
-        }
-        return ok(toAggregate(updated[0]!));
-      } catch (e) {
-        return err(wrapRepoError('events', e));
-      }
-    },
-    async setPartnerBenefit(
-      tenantId: TenantId,
-      eventId: EventId,
-      next: boolean,
-    ): Promise<Result<EventAggregate, EventsRepositoryError>> {
-      try {
-        const updated = await executor
-          .update(events)
-          .set({
-            isPartnerBenefit: next,
-            lastUpdatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(events.tenantId, tenantId),
-              eq(events.eventId, eventId),
-            ),
-          )
-          .returning();
-        if (updated.length === 0) {
-          return err({
-            kind: 'invariant_violation',
-            invariant:
-              'events.setPartnerBenefit: row not found — caller passed an eventId with no matching row in this tenant',
-          });
-        }
-        return ok(toAggregate(updated[0]!));
-      } catch (e) {
-        return err(wrapRepoError('events', e));
-      }
-    },
-    async setCulturalEvent(
-      tenantId: TenantId,
-      eventId: EventId,
-      next: boolean,
-    ): Promise<Result<EventAggregate, EventsRepositoryError>> {
-      try {
-        const updated = await executor
-          .update(events)
-          .set({
-            isCulturalEvent: next,
-            lastUpdatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(events.tenantId, tenantId),
-              eq(events.eventId, eventId),
-            ),
-          )
-          .returning();
-        if (updated.length === 0) {
-          return err({
-            kind: 'invariant_violation',
-            invariant:
-              'events.setCulturalEvent: row not found — caller passed an eventId with no matching row in this tenant',
-          });
-        }
-        return ok(toAggregate(updated[0]!));
-      } catch (e) {
-        return err(wrapRepoError('events', e));
-      }
-    },
+    setArchived: (tenantId, eventId, archivedAt) =>
+      updateEventRow(executor, tenantId, eventId, 'setArchived', {
+        archivedAt,
+        lastUpdatedAt: archivedAt,
+      }),
+    setPartnerBenefit: (tenantId, eventId, next) =>
+      updateEventRow(executor, tenantId, eventId, 'setPartnerBenefit', {
+        isPartnerBenefit: next,
+        lastUpdatedAt: new Date(),
+      }),
+    setCulturalEvent: (tenantId, eventId, next) =>
+      updateEventRow(executor, tenantId, eventId, 'setCulturalEvent', {
+        isCulturalEvent: next,
+        lastUpdatedAt: new Date(),
+      }),
   };
+}
+
+/**
+ * Phase 6 wave-5 REFACTOR H2 — file-local helper extracted from the
+ * 3 near-identical `setArchived` / `setPartnerBenefit` /
+ * `setCulturalEvent` adapter methods. Each was ~30 lines of mechanical
+ * UPDATE-then-return-or-invariant-violation; this collapses them to
+ * 4-line delegates while preserving the per-method `invariant`
+ * message label (the only meaningful per-call variance).
+ *
+ * Keeps `wrapRepoError` + `invariant_violation` + the tenant-scoped
+ * WHERE clause as the single source of truth for the F6 event-flag
+ * UPDATE shape.
+ */
+async function updateEventRow(
+  executor: TenantTx,
+  tenantId: TenantId,
+  eventId: EventId,
+  invariantLabel: 'setArchived' | 'setPartnerBenefit' | 'setCulturalEvent',
+  setValues: Partial<typeof events.$inferInsert>,
+): Promise<Result<EventAggregate, EventsRepositoryError>> {
+  try {
+    const updated = await executor
+      .update(events)
+      .set(setValues)
+      .where(
+        and(
+          eq(events.tenantId, tenantId),
+          eq(events.eventId, eventId),
+        ),
+      )
+      .returning();
+    if (updated.length === 0) {
+      return err({
+        kind: 'invariant_violation',
+        invariant: `events.${invariantLabel}: row not found — caller passed an eventId with no matching row in this tenant`,
+      });
+    }
+    return ok(toAggregate(updated[0]!));
+  } catch (e) {
+    return err(wrapRepoError('events', e));
+  }
 }

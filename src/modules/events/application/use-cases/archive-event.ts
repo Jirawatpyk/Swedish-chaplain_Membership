@@ -41,6 +41,10 @@ import type { F6AuditPort } from '../ports/audit-port';
 import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
+import {
+  eventsRepoErrorMessage,
+  registrationsRepoErrorMessage,
+} from './_helpers/repo-error-message';
 
 export interface ArchiveEventInput {
   readonly tenantId: TenantId;
@@ -82,10 +86,7 @@ export async function archiveEvent(
   if (!eventLookup.ok) {
     return err({
       kind: 'events_repo_error',
-      message:
-        eventLookup.error.kind === 'db_error'
-          ? eventLookup.error.message
-          : eventLookup.error.kind,
+      message: eventsRepoErrorMessage(eventLookup.error),
     });
   }
   const eventBefore = eventLookup.value;
@@ -106,10 +107,7 @@ export async function archiveEvent(
   if (!listResult.ok) {
     return err({
       kind: 'registrations_repo_error',
-      message:
-        listResult.error.kind === 'db_error'
-          ? listResult.error.message
-          : listResult.error.kind,
+      message: registrationsRepoErrorMessage(listResult.error),
     });
   }
   const counted = listResult.value.filter(
@@ -127,12 +125,7 @@ export async function archiveEvent(
   if (!setArchivedResult.ok) {
     return err({
       kind: 'events_repo_error',
-      message:
-        setArchivedResult.error.kind === 'db_error'
-          ? setArchivedResult.error.message
-          : setArchivedResult.error.kind === 'invariant_violation'
-            ? setArchivedResult.error.invariant
-            : setArchivedResult.error.kind,
+      message: eventsRepoErrorMessage(setArchivedResult.error),
     });
   }
   const eventAfter = setArchivedResult.value;
@@ -170,16 +163,10 @@ export async function archiveEvent(
       },
     );
     if (!upd.ok) {
-      const e = upd.error;
-      const msg =
-        e.kind === 'db_error'
-          ? e.message
-          : e.kind === 'invariant_violation'
-            ? e.invariant
-            : e.kind === 'pseudonymised_row_rejected'
-              ? `pseudonymised row ${e.registrationId}`
-              : e.kind;
-      return err({ kind: 'registrations_repo_error', message: msg });
+      return err({
+        kind: 'registrations_repo_error',
+        message: registrationsRepoErrorMessage(upd.error),
+      });
     }
 
     const baseAudit = {

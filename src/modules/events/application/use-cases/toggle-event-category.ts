@@ -73,6 +73,10 @@ import type { F6AuditPort } from '../ports/audit-port';
 import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
+import {
+  eventsRepoErrorMessage,
+  registrationsRepoErrorMessage,
+} from './_helpers/repo-error-message';
 
 export type ToggleFlag = 'is_partner_benefit' | 'is_cultural_event';
 
@@ -123,10 +127,7 @@ export async function toggleEventCategory(
   if (!eventLookup.ok) {
     return err({
       kind: 'events_repo_error',
-      message:
-        eventLookup.error.kind === 'db_error'
-          ? eventLookup.error.message
-          : eventLookup.error.kind,
+      message: eventsRepoErrorMessage(eventLookup.error),
     });
   }
   const eventBefore = eventLookup.value;
@@ -168,12 +169,7 @@ export async function toggleEventCategory(
   if (!setFlagResult.ok) {
     return err({
       kind: 'events_repo_error',
-      message:
-        setFlagResult.error.kind === 'db_error'
-          ? setFlagResult.error.message
-          : setFlagResult.error.kind === 'invariant_violation'
-            ? setFlagResult.error.invariant
-            : setFlagResult.error.kind,
+      message: eventsRepoErrorMessage(setFlagResult.error),
     });
   }
   const eventAfter = setFlagResult.value;
@@ -187,10 +183,7 @@ export async function toggleEventCategory(
   if (!requotaList.ok) {
     return err({
       kind: 'registrations_repo_error',
-      message:
-        requotaList.error.kind === 'db_error'
-          ? requotaList.error.message
-          : requotaList.error.kind,
+      message: registrationsRepoErrorMessage(requotaList.error),
     });
   }
 
@@ -361,14 +354,7 @@ export async function toggleEventCategory(
       if (!upd.ok) {
         return err({
           kind: 'registrations_repo_error',
-          message:
-            upd.error.kind === 'db_error'
-              ? upd.error.message
-              : upd.error.kind === 'invariant_violation'
-                ? upd.error.invariant
-                : upd.error.kind === 'pseudonymised_row_rejected'
-                  ? `pseudonymised row ${upd.error.registrationId}`
-                  : upd.error.kind,
+          message: registrationsRepoErrorMessage(upd.error),
         });
       }
       registrationsReevaluated += 1;
