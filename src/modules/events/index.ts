@@ -188,6 +188,10 @@ export type {
 } from './application/ports/quota-accounting-port';
 
 export type {
+  AdvisoryLockAcquirer,
+} from './application/ports/advisory-lock-acquirer';
+
+export type {
   EventsRepository,
   UpsertEventInput,
   UpsertEventResult,
@@ -268,6 +272,18 @@ export {
   matchAttendeeToMember,
   type MatchAttendeeToMemberDeps,
 } from './application/use-cases/match-attendee-to-member';
+
+// --- 5b. Phase 6 use-case exports (US4 benefit quota accounting) ----------
+
+export {
+  applyQuotaEffect,
+  buildQuotaLockKey,
+  NEUTRAL_QUOTA_EFFECT,
+  type ApplyQuotaEffectInput,
+  type ApplyQuotaEffectOutput,
+  type ApplyQuotaEffectError,
+  type ApplyQuotaEffectDeps,
+} from './application/use-cases/apply-quota-effect';
 
 export {
   forceExpireGraceSecret,

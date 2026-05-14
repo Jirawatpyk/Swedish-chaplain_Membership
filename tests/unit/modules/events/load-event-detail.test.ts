@@ -52,6 +52,7 @@ function makeMockRegistrationsRepo(): RegistrationsRepository {
     findByEmailLower: vi.fn(),
     countConsumedByMember: vi.fn(),
     updateMatchAndQuota: vi.fn(),
+    setQuotaEffect: vi.fn(),
     listPseudonymiseEligible: vi.fn(),
     pseudonymiseRow: vi.fn(),
     hardDelete: vi.fn(),

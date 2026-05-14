@@ -164,6 +164,26 @@ export interface RegistrationsRepository {
   ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>>;
 
   /**
+   * Updates ONLY the `counted_against_partnership` +
+   * `counted_against_cultural_quota` flags on an existing row. Used by
+   * the Phase 6 quota wiring path: `ingestWebhookAttendee` inserts the
+   * registration with neutral flags (default), then `applyQuotaEffect`
+   * decides the real flags under the advisory lock, then this method
+   * persists them. Splitting INSERT-then-UPDATE keeps the canonical
+   * "lock → read consumed → decide → write" order intact (the new row
+   * IS visible to the SUM query inside the same tx but contributes
+   * zero because its flag is `false` at INSERT time).
+   *
+   * Idempotent — re-running with the same flags is a no-op UPDATE.
+   * REJECTS rows where `piiPseudonymisedAt IS NOT NULL`.
+   */
+  setQuotaEffect(
+    tenantId: TenantId,
+    registrationId: RegistrationId,
+    nextQuotaEffect: QuotaEffect,
+  ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>>;
+
+  /**
    * Daily retention sweep eligibility scan per FR-032 / SC-011 (Phase 10
    * T113). Returns rows where match_type IN ('non_member','unmatched')
    * AND piiPseudonymisedAt IS NULL AND registeredAt < (now - 2y).

@@ -45,6 +45,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { redactStack } from '@/lib/redact-stack';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { asTenantId } from '@/modules/members';
 import {
   EventCreatePayloadV1,
@@ -81,6 +82,9 @@ import type {
   F6AuditEntry,
   AuditEmitError,
 } from '../ports/audit-port';
+import type { QuotaAccountingPort } from '../ports/quota-accounting-port';
+import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
+import { applyQuotaEffect } from './apply-quota-effect';
 import type { AuditEventId } from '@/modules/auth';
 import type { MemberId } from '@/modules/members';
 
@@ -173,6 +177,18 @@ export interface TxScopedPorts {
   readonly idempotencyStore: IdempotencyStore;
   readonly attendeeMatcher: AttendeeMatcher;
   readonly audit: F6AuditPort;
+  /**
+   * Phase 6 T085 — F2 plan + F3 member + F6 consumed-count read bridge
+   * (`drizzle-quota-accounting-adapter.ts`). Composed inside the same tx
+   * so plan + member reads share the strict-tx RLS binding.
+   */
+  readonly quotaAccountingPort: QuotaAccountingPort;
+  /**
+   * Phase 6 T085 — Postgres tenant-scoped advisory-lock acquirer used by
+   * `applyQuotaEffect` to serialise concurrent quota decisions for the
+   * same (tenant, member, event) tuple. Lock auto-released at tx-end.
+   */
+  readonly advisoryLockAcquirer: AdvisoryLockAcquirer;
 }
 
 export interface IngestWebhookAttendeeDeps {
@@ -487,10 +503,14 @@ export async function ingestWebhookAttendee(
         throw new TxStageError('event_upsert', matchResult.error.message);
       }
 
-      // 4. Quota effect — Phase 3 MVP returns neutral; Phase 6 T085
-      // wires the real `apply-quota-effect.ts` that reads F2 plan +
-      // counts consumed registrations under an advisory lock.
-      const quotaEffect: QuotaEffect = {
+      // 4. Pre-insert quota effect: ALWAYS neutral at the INSERT statement.
+      // The advisory-lock + decide-then-write sequence runs in step 5b
+      // AFTER the row exists. This preserves research.md R5's canonical
+      // ordering (lock → read consumed → decide → write) — the new row
+      // is visible to the SUM query inside the same tx but contributes
+      // zero because its `counted_against_*` columns default to false at
+      // INSERT, then get UPDATE'd if the decision says "room available".
+      let quotaEffect: QuotaEffect = {
         countedAgainstPartnership: false,
         countedAgainstCulturalQuota: false,
       };
@@ -546,6 +566,99 @@ export async function ingestWebhookAttendee(
           );
         }
         throw new TxStageError('registration_insert', msg);
+      }
+
+      // 5b. Apply quota effect — Phase 6 T085 wiring.
+      // Acquires `eventcreate-quota:{tenant}:{member}:{event}` advisory
+      // lock, queries F2 plan allotments + F6 consumed counts, decides
+      // counted_against_* flags, emits the appropriate quota audit
+      // (decremented OR over_quota_warning), and UPDATEs the row when
+      // flags flip from neutral. Refunded ingests + non-benefit events
+      // short-circuit inside the use-case (no lock, no audit).
+      const event = eventUpsert.value.event;
+      const matchedMemberId = matchResult.value.resolution.matchedMemberId;
+      const shouldApplyQuota =
+        regInsert.value.isNewRegistration &&
+        matchedMemberId !== null &&
+        event.archivedAt === null &&
+        (event.isPartnerBenefit || event.isCulturalEvent) &&
+        parsed.data.attendee.paymentStatus !== 'refunded';
+      if (shouldApplyQuota) {
+        failureStage = 'quota_decrement';
+        const quotaResult = await applyQuotaEffect(
+          {
+            tenantId: asTenantId(input.tenantId),
+            matchedMemberId: matchedMemberId,
+            eventId: event.eventId,
+            registrationId: regInsert.value.registration.registrationId,
+            eventFlags: {
+              isPartnerBenefit: event.isPartnerBenefit,
+              isCulturalEvent: event.isCulturalEvent,
+            },
+            // FR-016 — calendar year of event.startDate in Asia/Bangkok
+            // wall time. For SweCham fiscal-year-start-month=1, fiscal
+            // year == calendar year. Other tenants may diverge later.
+            fiscalYear: deriveFiscalYear(event.startDate.toISOString(), 1),
+            paymentStatus: parsed.data.attendee.paymentStatus,
+            actorType: 'zapier_webhook',
+            actorUserId: null,
+            occurredAt: new Date(),
+          },
+          {
+            quotaAccountingPort: ports.quotaAccountingPort,
+            advisoryLockAcquirer: ports.advisoryLockAcquirer,
+            audit,
+          },
+        );
+        if (!quotaResult.ok) {
+          const qe = quotaResult.error;
+          let detail: string;
+          if (qe.kind === 'lock_acquisition_failed') {
+            detail = qe.message;
+          } else if (qe.kind === 'audit_emit_failed') {
+            detail = qe.message;
+          } else {
+            // quota_lookup_failed
+            const c = qe.cause;
+            detail =
+              c.kind === 'db_error'
+                ? c.message
+                : c.kind === 'member_not_found'
+                  ? `member_not_found memberId=${c.memberId}`
+                  : `plan_not_found memberId=${c.memberId}`;
+          }
+          throw new TxStageError(
+            'quota_decrement',
+            `apply-quota-effect failed (${qe.kind}): ${detail}`,
+          );
+        }
+        const decided = quotaResult.value.quotaEffect;
+        if (
+          decided.countedAgainstPartnership ||
+          decided.countedAgainstCulturalQuota
+        ) {
+          // Flag at least one bit; persist the UPDATE.
+          const upd = await registrationsRepo.setQuotaEffect(
+            asTenantId(input.tenantId),
+            regInsert.value.registration.registrationId,
+            decided,
+          );
+          if (!upd.ok) {
+            const e = upd.error;
+            const msg =
+              e.kind === 'db_error'
+                ? e.message
+                : e.kind === 'invariant_violation'
+                  ? `setQuotaEffect invariant: ${e.invariant}`
+                  : e.kind === 'pseudonymised_row_rejected'
+                    ? `setQuotaEffect on pseudonymised row ${e.registrationId}`
+                    : `setQuotaEffect ${e.kind}`;
+            throw new TxStageError('quota_decrement', msg);
+          }
+          quotaEffect = decided;
+        }
+        // If decided is neutral (over-quota path), no UPDATE needed —
+        // the row already has both flags = false from the INSERT.
       }
 
       // 6. Emit success audit + match-resolution audit

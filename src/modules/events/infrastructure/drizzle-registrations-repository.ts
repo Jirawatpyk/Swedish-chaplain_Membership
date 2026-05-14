@@ -18,7 +18,7 @@
 import { and, asc, desc, eq, inArray, or, sql, ilike, like, type SQL } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
-import { eventRegistrations, type EventRegistrationRow } from './schema';
+import { eventRegistrations, events, type EventRegistrationRow } from './schema';
 import type {
   RegistrationsRepository,
   InsertRegistrationInput,
@@ -26,6 +26,7 @@ import type {
   ListRegistrationsByEventInput,
   ListRegistrationsByEventResult,
   RegistrationsRepositoryError,
+  CountConsumedByMemberInput,
 } from '../application/ports/registrations-repository';
 import type { EventRegistrationAggregate } from '../domain/event-registration';
 import type {
@@ -334,11 +335,111 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     async findByEmailLower() {
       return err({ kind: 'not_implemented', method: 'findByEmailLower', futureTask: 'Phase 10 T110' });
     },
-    async countConsumedByMember() {
-      return err({ kind: 'not_implemented', method: 'countConsumedByMember', futureTask: 'Phase 6 T086' });
+    async countConsumedByMember(
+      input: CountConsumedByMemberInput,
+    ): Promise<Result<number, RegistrationsRepositoryError>> {
+      try {
+        if (input.scope.kind === 'partnership_per_event') {
+          // Per-event partnership scope: count rows for THIS event where
+          // counted_against_partnership = true. Tenant-isolation enforced
+          // by RLS + explicit tenant_id predicate (belt-and-braces).
+          const rows = await executor
+            .select({ count: sql<number>`COUNT(*)::int` })
+            .from(eventRegistrations)
+            .where(
+              and(
+                eq(eventRegistrations.tenantId, input.tenantId),
+                eq(eventRegistrations.matchedMemberId, input.memberId),
+                eq(eventRegistrations.eventId, input.scope.eventId),
+                eq(eventRegistrations.countedAgainstPartnership, true),
+              ),
+            );
+          return ok(Number(rows[0]?.count ?? 0));
+        }
+        // Cultural per-year scope: count rows across all this member's
+        // events with counted_against_cultural_quota = true whose event's
+        // start_date falls in the supplied fiscalYear (calendar year in
+        // Asia/Bangkok wall time per FR-016). Joined on events to get
+        // start_date; uses partial idx `events_tenant_cultural_event_idx`
+        // + per-tenant matched_member idx on event_registrations.
+        const culturalRows = await executor
+          .select({ count: sql<number>`COUNT(*)::int` })
+          .from(eventRegistrations)
+          .innerJoin(
+            events,
+            and(
+              eq(events.tenantId, eventRegistrations.tenantId),
+              eq(events.eventId, eventRegistrations.eventId),
+            ),
+          )
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, input.tenantId),
+              eq(eventRegistrations.matchedMemberId, input.memberId),
+              eq(eventRegistrations.countedAgainstCulturalQuota, true),
+              sql`EXTRACT(YEAR FROM ${events.startDate} AT TIME ZONE 'Asia/Bangkok')::int = ${input.scope.fiscalYear}`,
+            ),
+          );
+        return ok(Number(culturalRows[0]?.count ?? 0));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
     async updateMatchAndQuota() {
       return err({ kind: 'not_implemented', method: 'updateMatchAndQuota', futureTask: 'Phase 9 T104' });
+    },
+    async setQuotaEffect(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+      nextQuotaEffect,
+    ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>> {
+      try {
+        // FR-014 — pseudonymised rows are immutable except for the
+        // pseudonymisation sweep itself. Defensive guard at the
+        // adapter layer; matches the relink-flow precedent in T104.
+        const updated = await executor
+          .update(eventRegistrations)
+          .set({
+            countedAgainstPartnership: nextQuotaEffect.countedAgainstPartnership,
+            countedAgainstCulturalQuota: nextQuotaEffect.countedAgainstCulturalQuota,
+          })
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          // Either the row doesn't exist (would be an invariant_violation
+          // since the caller just inserted it) OR pii_pseudonymised_at
+          // is non-null. Re-read to discriminate.
+          const probe = await executor
+            .select({
+              piiPseudonymisedAt: eventRegistrations.piiPseudonymisedAt,
+            })
+            .from(eventRegistrations)
+            .where(
+              and(
+                eq(eventRegistrations.tenantId, tenantId),
+                eq(eventRegistrations.registrationId, registrationId),
+              ),
+            )
+            .limit(1);
+          if (probe.length === 0) {
+            return err({
+              kind: 'invariant_violation',
+              invariant:
+                'event_registrations.setQuotaEffect: row not found — caller passed a registrationId that has no row in this tenant',
+            });
+          }
+          return err({ kind: 'pseudonymised_row_rejected', registrationId });
+        }
+        return ok(toAggregate(updated[0]!));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
     async listPseudonymiseEligible() {
       return err({ kind: 'not_implemented', method: 'listPseudonymiseEligible', futureTask: 'Phase 10 T113' });

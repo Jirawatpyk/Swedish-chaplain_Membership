@@ -53,6 +53,8 @@ import { makeDrizzleRegistrationsRepository } from './drizzle-registrations-repo
 import { makeDrizzleIdempotencyStore } from './drizzle-idempotency-store';
 import { makeDrizzleAttendeeMatcher } from './drizzle-attendee-matcher';
 import { makePinoAuditPort } from './pino-audit-port';
+import { makeDrizzleQuotaAccountingAdapter } from './drizzle-quota-accounting-adapter';
+import { makeDrizzleAdvisoryLockAcquirer } from './drizzle-advisory-lock-acquirer';
 
 /**
  * Minimal deps for callers that only need standalone-tx audit
@@ -95,12 +97,24 @@ export function makeIngestWebhookAttendeeDeps(): IngestWebhookAttendeeDeps {
     ): Promise<T> => {
       const ctx = asTenantContext(tenantId);
       return runInTenant(ctx, async (tx) => {
+        const registrationsRepo = makeDrizzleRegistrationsRepository(tx);
         const ports: TxScopedPorts = {
           eventsRepo: makeDrizzleEventsRepository(tx),
-          registrationsRepo: makeDrizzleRegistrationsRepository(tx),
+          registrationsRepo,
           idempotencyStore: makeDrizzleIdempotencyStore(tx),
           attendeeMatcher: makeDrizzleAttendeeMatcher(tx),
           audit: makePinoAuditPort(tx),
+          // Phase 6 T086 — F2 plan + F3 member + F6 consumed-count bridge.
+          // The adapter shares the tx-bound registrationsRepo so its
+          // consumed-count query joins through the same connection that
+          // holds the advisory lock.
+          quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+            tx,
+            ctx,
+            registrationsRepo,
+          ),
+          // Phase 6 T085 — Postgres tenant-scoped advisory lock acquirer.
+          advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(tx),
         };
         return fn(ports);
       });
