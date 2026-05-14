@@ -706,7 +706,7 @@
         "emergencyPrimary": {
           "ariaLabel": "Hjälp — nödöverföring av primär kontakt",
           "title": "Nödöverföring av primär kontakt",
-          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Klicka på Lägg till kontakt för att skapa en sekundär kontakt med den nya personens uppgifter och använd sedan Befordra för att göra dem till den nya primära. Den gamla primära nedgraderas automatiskt."
+          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Öppna Redigera-sidan och lägg till den nya personen under \"Övriga kontakter\", återgå sedan hit och använd Befordra för att göra dem till den primära. Den gamla primära nedgraderas automatiskt."
         },
         "portal": {
           "linked": "Portalansluten"
@@ -727,7 +727,8 @@
         "totalEvents": "{count, plural, one {# händelse} other {# händelser}}",
         "payload": {
           "primary": "primär",
-          "primaryContactPromoted": "primär kontakt befordrad"
+          "primaryContactPromoted": "primär kontakt befordrad",
+          "archiveReason": "Anledning: {reason}"
         },
         "invoiceDraftCreated": "Fakturautkast skapat",
         "invoiceIssued": "Faktura {documentNumber} utställd",
@@ -2426,7 +2427,8 @@
           "alreadyArchivedTitle": "Redan arkiverat",
           "alreadyArchivedDescription": "En annan administratör arkiverade detta evenemang i en samtidig begäran. Sidan har uppdaterats.",
           "errorTitle": "Kunde inte arkivera evenemang",
-          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support."
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
+          "loading": "Arkiverar evenemang…"
         },
         "ticketsRemaining": "{remaining, plural, one {# biljett kvar} other {# biljetter kvar}} av {total}",
         "auditEvents": {
@@ -2453,13 +2455,15 @@
           "confirmUnflagCulturalTitle": "Ta bort kulturevenemangsmarkeringen?",
           "confirmUnflagCulturalBody": "Alla räknade kulturbiljetter på detta evenemang krediteras tillbaka till medlemmarna för det aktuella kalenderåret.",
           "cancel": "Avbryt",
-          "confirm": "Bekräfta",
+          "confirm": "Tillämpa",
           "successTitle": "Kategorimarkering uppdaterad",
           "successDescription": "{count, plural, =0 {Inga registreringar behövde omvärderas.} one {1 registrering omvärderades.} other {# registreringar omvärderades.}}",
           "archivedTitle": "Evenemang arkiverat",
           "archivedDescription": "Arkiverade evenemang är kvotneutrala och kan inte återmarkeras.",
           "errorTitle": "Kunde inte uppdatera markering",
-          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support."
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
+          "loadingPartnerBenefit": "Uppdaterar partnerförmånsmarkering…",
+          "loadingCulturalEvent": "Uppdaterar kulturevenemangsmarkering…"
         }
       },
       "matchType": {
@@ -3111,6 +3115,10 @@
       "portalLinked": "Portalkopplad",
       "noContacts": "Inga kontakter hittades.",
       "fields": {
+        "memberId": "Medlems-ID",
+        "memberIdHelp": "Ange detta ID när du kontaktar kammarens support.",
+        "memberIdCopy": "Kopiera medlems-ID",
+        "memberIdCopied": "Medlems-ID kopierat",
         "companyName": "Företagsnamn",
         "legalEntityType": "Juridisk form",
         "country": "Land",
@@ -3403,10 +3411,54 @@
       "at_risk_snoozed": "Riskvarning pausad",
       "at_risk_outreach_recorded": "Kontakt registrerad",
       "at_risk_compute_partial_failure": "Riskpoängsberäkning delvis misslyckad",
+      "at_risk_skipped_below_min_tenure": "Riskpoäng hoppades över — under min. medlemstid",
+      "escalation_task_created": "Eskaleringsuppgift skapad",
+      "escalation_task_completed": "Eskaleringsuppgift slutförd",
+      "escalation_task_reassigned": "Eskaleringsuppgift omfördelad",
+      "escalation_task_skipped": "Eskaleringsuppgift hoppad",
+      "lapsed_member_admin_reactivated": "Förfallen medlem återaktiverad",
+      "lapsed_member_admin_reactivation_rejected": "Återaktivering avvisad",
+      "lapsed_member_admin_reactivation_timed_out": "Återaktivering tidsavbruten",
+      "manual_outreach_required": "Manuell kontakt krävs",
+      "member_auto_reactivation_blocked": "Autoåteraktivering blockerad",
+      "member_auto_reactivation_unblocked": "Autoåteraktivering avblockerad",
+      "member_email_unverified_threshold_crossed": "Tröskel för overifierad e-post överskriden",
+      "renewal_completed": "Förnyelse slutförd",
+      "renewal_completed_post_lapse": "Förnyelse slutförd efter utgång",
+      "renewal_cross_member_probe": "Korsmedlemsundersökning upptäckt",
+      "renewal_cross_tenant_probe": "Korstenant-undersökning (förnyelser)",
+      "renewal_cycle_cancelled": "Förnyelsecykel avbruten",
+      "renewal_cycle_completed_offline": "Förnyelse slutförd offline",
+      "renewal_cycle_price_frozen": "Förnyelsepris låst",
+      "renewal_invoice_created": "Förnyelsefaktura skapad",
+      "renewal_lapsed": "Förnyelse utgången",
+      "renewal_reminder_deferred_read_only": "Förnyelsepåminnelse uppskjuten — skrivskyddat läge",
+      "renewal_reminder_retried": "Förnyelsepåminnelse försökt igen",
+      "renewal_reminder_send_failed": "Förnyelsepåminnelse misslyckades",
+      "renewal_reminder_send_failed_permanent": "Förnyelsepåminnelse permanent misslyckad",
+      "renewal_reminder_sent": "Förnyelsepåminnelse skickad",
+      "renewal_reminder_skipped": "Förnyelsepåminnelse hoppad",
+      "renewal_schedule_policy_updated": "Förnyelseschemapolicy uppdaterad",
+      "renewal_schedule_rescheduled": "Förnyelse omplanerad",
+      "renewal_schedule_reschedule_skipped": "Förnyelseomplanering hoppad",
+      "renewal_self_service_initiated": "Medlemsinitierad förnyelse",
+      "renewal_skipped_no_joined_at": "Förnyelse hoppad — inget anslutningsdatum",
+      "renewal_token_clicked_on_completed_cycle": "Förnyelselänk klickad på slutförd cykel",
+      "renewal_token_invalid": "Ogiltig förnyelsetoken",
+      "renewal_with_plan_change": "Förnyelse med paketbyte",
       "tier_upgrade_suggested": "Nivåuppgradering föreslagen",
       "tier_upgrade_accepted": "Nivåuppgradering godkänd",
       "tier_upgrade_dismissed": "Nivåuppgradering avvisad",
       "tier_upgrade_already_at_target": "Redan på målnivå",
+      "tier_upgrade_applied_at_renewal": "Nivåuppgradering tillämpad vid förnyelse",
+      "tier_upgrade_apply_post_invoice_paid_failed": "Nivåuppgradering misslyckades efter betald faktura",
+      "tier_upgrade_catalogue_row_dropped": "Nivåuppgraderingsrad borttagen ur katalog",
+      "tier_upgrade_pending_admin_verification_due": "Nivåuppgradering — admin-verifiering förfallen",
+      "tier_upgrade_pending_member_notified": "Nivåuppgradering — medlem aviserad",
+      "tier_upgrade_pending_member_notify_failed": "Nivåuppgradering — medlemavisering misslyckades",
+      "tier_upgrade_pending_member_notify_skipped": "Nivåuppgradering — medlemavisering hoppad",
+      "tier_upgrade_pending_orphan_detected": "Föräldralös nivåuppgradering upptäckt",
+      "tier_upgrade_pending_superseded_by_manual_change": "Nivåuppgradering ersatt av manuell ändring",
       "tier_upgrade_skipped_no_thresholds_configured": "Nivåuppgradering hoppades över — inga tröskelvärden",
       "tier_upgrade_tenant_disabled": "Nivåuppgradering inaktiverad för denna kammare",
       "cron_bearer_auth_rejected": "Cron-autentisering nekad",

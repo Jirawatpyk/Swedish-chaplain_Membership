@@ -47,7 +47,9 @@ import type { ProcessingOutcome } from '../../domain/value-objects/webhook-outco
 import type { SecretLastFour } from '../../domain/secret-last-four';
 import type { RequestId } from '../../domain/branded-types';
 
-// --- Canonical event-type list (35 events, mirrors migration 0132) ---------
+// --- Canonical event-type list (37 events; migrations 0132 + 0137; 0138 ---
+// added `wizard_privacy_notice_acknowledged` enum value retired from TS
+// during round-10 staff review, retained harmlessly in Postgres)
 
 export const F6_AUDIT_EVENT_TYPES = [
   // Webhook ingest (8)

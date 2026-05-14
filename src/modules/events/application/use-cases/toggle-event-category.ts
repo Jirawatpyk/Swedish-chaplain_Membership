@@ -393,47 +393,64 @@ export async function toggleEventCategory(
         });
       }
       registrationsReevaluated += 1;
+    }
 
-      // Emit per-scope audits inline so the audit row commits IN the
-      // same tx — failure propagates upward and triggers rollback at
-      // the route handler (FR-037).
-      const baseAudit = {
-        tenantId: input.tenantId,
-        actorType: 'admin' as const,
-        actorUserId: input.actorUserId,
-        occurredAt: input.occurredAt,
-      };
+    // (5e) Audit emission — runs REGARDLESS of `changed`.
+    //
+    // **CRIT-R2-1 fix (wave-6)**: previously the audit emit block was
+    // gated behind `if (changed)`. This silently dropped the
+    // `quota_over_quota_warning` for the IMP-1 edge case (toggle ON +
+    // row already counted + plan allotment shrank → row stays counted,
+    // `nextPartnership === currentPartnership`, `changed === false`,
+    // no audit fired). The comment claimed "documents the silent
+    // drift" but the audit was never emitted — comment + code drift.
+    //
+    // Hoisting the emit OUT of `if (changed)` ensures the over-quota
+    // signal is always recorded in the 5-year audit trail, regardless
+    // of whether the row's flag bits flipped. The `decremented` and
+    // `credit_back` branches only fire when `changed` is true (their
+    // semantic precondition is that the row's flag actually moved),
+    // but `over_quota` fires whenever the scope detects drift — even
+    // if no UPDATE was needed.
+    const baseAudit = {
+      tenantId: input.tenantId,
+      actorType: 'admin' as const,
+      actorUserId: input.actorUserId,
+      occurredAt: input.occurredAt,
+    };
 
-      // REFACTOR H3 (wave-5 batch-3) — collapsed 6 parallel audit-emit
-      // branches (partnership × {decremented/over_quota/credit_back} +
-      // cultural × {...}) into the shared `emitQuotaScopeAudit` helper.
-      // Eliminates ~80 LOC of mirror-duplication and removes the bug
-      // class where the partnership branch was updated but the cultural
-      // mirror was forgotten (or vice versa).
-      if (auditOnPartnership !== null) {
-        const emitResult = await emitQuotaScopeAudit(deps.audit, baseAudit, {
-          scope: 'partnership',
-          action: auditOnPartnership,
-          registrationId: reg.registrationId,
-          memberId,
-          eventId: input.eventId,
-          allotmentAfter: allotmentAfterPartnership,
-          fiscalYear,
-        });
-        if (!emitResult.ok) return err(emitResult.error);
-      }
-      if (auditOnCultural !== null) {
-        const emitResult = await emitQuotaScopeAudit(deps.audit, baseAudit, {
-          scope: 'cultural',
-          action: auditOnCultural,
-          registrationId: reg.registrationId,
-          memberId,
-          eventId: input.eventId,
-          allotmentAfter: allotmentAfterCultural,
-          fiscalYear,
-        });
-        if (!emitResult.ok) return err(emitResult.error);
-      }
+    // REFACTOR H3 — unified per-scope helper. The helper accepts ANY
+    // of the 3 actions; we only invoke it when the decision branches
+    // assigned a non-null action AND the action's precondition holds.
+    if (
+      auditOnPartnership !== null &&
+      (auditOnPartnership === 'over_quota' || changed)
+    ) {
+      const emitResult = await emitQuotaScopeAudit(deps.audit, baseAudit, {
+        scope: 'partnership',
+        action: auditOnPartnership,
+        registrationId: reg.registrationId,
+        memberId,
+        eventId: input.eventId,
+        allotmentAfter: allotmentAfterPartnership,
+        fiscalYear,
+      });
+      if (!emitResult.ok) return err(emitResult.error);
+    }
+    if (
+      auditOnCultural !== null &&
+      (auditOnCultural === 'over_quota' || changed)
+    ) {
+      const emitResult = await emitQuotaScopeAudit(deps.audit, baseAudit, {
+        scope: 'cultural',
+        action: auditOnCultural,
+        registrationId: reg.registrationId,
+        memberId,
+        eventId: input.eventId,
+        allotmentAfter: allotmentAfterCultural,
+        fiscalYear,
+      });
+      if (!emitResult.ok) return err(emitResult.error);
     }
   }
 

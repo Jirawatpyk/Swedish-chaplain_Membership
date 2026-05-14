@@ -133,11 +133,14 @@ export async function POST(
           { status: 409 },
         );
       default:
+        // HIGH-R2-2 fix (wave-6) — see toggle-partner-benefit sibling.
         logger.error(
           {
             event: 'admin_event_toggle_cultural_event_use_case_error',
             eventId,
             errKind: result.error.kind,
+            cause: 'cause' in result.error ? result.error.cause : undefined,
+            message: 'message' in result.error ? result.error.message : undefined,
           },
           '[F6] toggleEventCategory returned use-case error',
         );

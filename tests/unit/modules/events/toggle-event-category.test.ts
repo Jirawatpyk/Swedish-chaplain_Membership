@@ -371,16 +371,11 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       expect(decrementCall![0].payload.perEventAllotmentAfter).toBe(2);
     });
 
-    it('toggle ON 1 row over-quota (already uncounted, no room) → no row change, only macro audit', async () => {
-      // Current implementation: per-row audits emit ONLY when the row
-      // changes (setQuotaEffect UPDATE writes). For an uncounted row
-      // that stays uncounted (toggle ON to a full member), `changed`
-      // is false → no per-row audit. The over-quota signal is
-      // captured implicitly by the macro `event_partner_benefit_toggled`
-      // audit's `registrationsReevaluated=0` field. (Note: a future
-      // enhancement could emit per-row over_quota_warning even for
-      // unchanged rows to surface members who are NEAR / AT cap; the
-      // macro count is currently the sole signal.)
+    it('toggle ON 1 row over-quota (uncounted, no room) → quota_over_quota_warning audit emits even though row unchanged (CRIT-R2-1)', async () => {
+      // CRIT-R2-1 wave-6 fix: previously the audit emit was gated
+      // behind `if (changed)`, dropping the over-quota signal for
+      // members already at cap. Hoisting the emit out preserves the
+      // 5-year audit trail completeness invariant.
       const { deps, emitMock } = makeDeps({
         listForRequota: async () => ok([makeRegistration()]),
         queryAllotments: async () =>
@@ -395,10 +390,18 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       const r = await toggleEventCategory(baseInput(), deps);
       expect(r.ok).toBe(true);
       if (r.ok) {
+        // Row unchanged → registrationsReevaluated counts only rows
+        // that ACTUALLY flipped; an over-quota row that stayed
+        // uncounted is not a flip.
         expect(r.value.registrationsReevaluated).toBe(0);
       }
-      // Only the macro toggle audit fires — no per-row decrement /
-      // over_quota / credit_back since the row didn't change.
+      // Per-row over_quota_warning MUST fire (CRIT-R2-1 invariant).
+      const overQuota = emitMock.mock.calls.filter(
+        (c) => c[0].eventType === 'quota_over_quota_warning',
+      );
+      expect(overQuota.length).toBe(1);
+      expect(overQuota[0]![0].payload.scope).toBe('partnership');
+      // No decrement audit (correct — no quota was decremented).
       const decrement = emitMock.mock.calls.filter(
         (c) => c[0].eventType === 'quota_partnership_decremented',
       );
@@ -436,7 +439,7 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       expect(creditBack![0].payload.scope).toBe('partnership');
     });
 
-    it('IMP-1 edge case: !room && currentCounted → emits over_quota_warning, keeps row counted', async () => {
+    it('IMP-1 + CRIT-R2-1: !room && currentCounted (plan-shrunk) → over_quota_warning fires + row stays counted + setQuotaEffect NOT called', async () => {
       const { deps, emitMock, setQuotaEffectMock } = makeDeps({
         listForRequota: async () =>
           ok([
@@ -466,13 +469,16 @@ describe('toggleEventCategory — Phase 6 T087', () => {
       if (r.ok) {
         expect(r.value.registrationsReevaluated).toBe(0);
       }
+      // CRIT-R2-1: setQuotaEffect NOT called (correct — row didn't change)
       expect(setQuotaEffectMock).not.toHaveBeenCalled();
-      // BUT the over_quota_warning audit IS emitted to document drift
-      // (NOTE: in current implementation, audit emits only happen
-      // when `changed === true` — the IMP-1 fix flagged this audit
-      // but the changed-guard suppresses it. The audit policy is
-      // intentionally "audit on row change" so drift documentation
-      // is acceptable to defer to the macro toggle audit.)
+      // CRIT-R2-1: over_quota_warning audit IS emitted (drift documented)
+      const overQuota = emitMock.mock.calls.filter(
+        (c) => c[0].eventType === 'quota_over_quota_warning',
+      );
+      expect(overQuota.length).toBe(1);
+      expect(overQuota[0]![0].payload.scope).toBe('partnership');
+      expect(overQuota[0]![0].payload.allotmentAtIngest).toBe(0);
+      // Macro toggle audit also fires
       const macroCall = emitMock.mock.calls.find(
         (c) => c[0].eventType === 'event_partner_benefit_toggled',
       );

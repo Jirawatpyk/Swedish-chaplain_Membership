@@ -25,7 +25,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Archive, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -115,15 +115,33 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        // NEW-I1 fix (wave-6): guard re-open during in-flight POST
+        // here instead of disabling the trigger button. Keeps the
+        // trigger focusable so focus-return after dialog close
+        // (during pending) doesn't fall through to document.body
+        // (WCAG 2.4.3 violation under disabled-trigger fallback).
+        if (pending) return;
+        setOpen(next);
+      }}
+    >
+      {/* NEW-I3 fix (wave-6): SR loading announcement via sr-only
+          role="status" aria-live. `aria-busy` on a `disabled` button
+          is an ARIA antipattern — JAWS/NVDA skip the announcement on
+          inert elements. A dedicated live region gives SR users a
+          coherent "processing …" cue. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {pending ? t('loading') : ''}
+      </span>
       <AlertDialogTrigger
         render={
           <Button
             variant="destructive-outline"
             size="sm"
-            disabled={pending}
+            aria-disabled={pending}
             type="button"
-            aria-busy={pending}
           />
         }
       >
@@ -147,14 +165,23 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
               §6.2 — focus starts on the safe action so an
               accidental Enter does not archive. */}
           <AlertDialogCancel autoFocus>{t('cancel')}</AlertDialogCancel>
-          {/* CRIT-3 fix (wave-5): destructive variant on the
-              confirmation button. Archive is irreversible
-              (no in-product un-archive in v1) — visual hierarchy
-              must communicate severity. Mirrors the F3
-              `archive-member-button.tsx:132` precedent. */}
+          {/* CRIT-3 fix (wave-5) + NEW-C1 fix (wave-6): solid
+              destructive bg + foreground tokens for ~12:1 contrast
+              in BOTH light and dark mode. The tonal `text-destructive`
+              variant (oklch coral on muted bg) measured ~4.0:1 in
+              dark mode — below WCAG AA 4.5:1 for normal text.
+              Archive is irreversible (no in-product un-archive in
+              v1) so visual hierarchy MUST clearly communicate
+              severity. The solid red bg + white text is the
+              project-standard destructive treatment.
+              **NEW-C2 fix (wave-6)**: `disabled={pending}` prevents
+              double-click race that would POST duplicate archive
+              requests → duplicate audit log rows for one user
+              action. */}
           <AlertDialogAction
             onClick={handleConfirm}
-            className={buttonVariants({ variant: 'destructive' })}
+            disabled={pending}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive disabled:pointer-events-none disabled:opacity-50"
           >
             {t('confirm')}
           </AlertDialogAction>

@@ -143,20 +143,41 @@ export function EventCategoryToggles({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {/* NEW-I3 fix (wave-6): SR loading announcement via sr-only
+          role="status" aria-live. `aria-busy` on a `disabled` button
+          is an ARIA antipattern — JAWS/NVDA skip the announcement on
+          inert elements. A dedicated live region adjacent to the
+          buttons gives SR users a coherent "processing …" cue. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {activeFlag === 'partner_benefit'
+          ? t('loadingPartnerBenefit')
+          : activeFlag === 'cultural_event'
+            ? t('loadingCulturalEvent')
+            : ''}
+      </span>
       <AlertDialog
         open={openDialog === 'partner_benefit'}
-        onOpenChange={(open) =>
-          setOpenDialog(open ? 'partner_benefit' : null)
-        }
+        onOpenChange={(open) => {
+          // NEW-I1 fix (wave-6): guard re-open during in-flight POST
+          // here instead of disabling the trigger button. Keeping the
+          // trigger focus-able prevents the focus-return-to-disabled
+          // bug when the dialog closes while `pending === true`
+          // (WCAG 2.4.3 Focus Visible). The `disabled` prop from the
+          // parent (parent passes `disabled={!event.archivedAt}`) is
+          // still honoured — only the pending-derived disable is moved
+          // here.
+          if (pending) return;
+          setOpenDialog(open ? 'partner_benefit' : null);
+        }}
       >
         <AlertDialogTrigger
           render={
             <Button
               variant={isPartnerBenefit ? 'secondary' : 'outline'}
               size="sm"
-              disabled={disabled || pending}
+              disabled={disabled}
+              aria-disabled={pending}
               type="button"
-              aria-busy={activeFlag === 'partner_benefit'}
             />
           }
         >
@@ -193,6 +214,8 @@ export function EventCategoryToggles({
               onClick={() =>
                 handleConfirm('partner_benefit', !isPartnerBenefit)
               }
+              disabled={pending}
+              className="disabled:pointer-events-none disabled:opacity-50"
             >
               {t('confirm')}
             </AlertDialogAction>
@@ -202,18 +225,19 @@ export function EventCategoryToggles({
 
       <AlertDialog
         open={openDialog === 'cultural_event'}
-        onOpenChange={(open) =>
-          setOpenDialog(open ? 'cultural_event' : null)
-        }
+        onOpenChange={(open) => {
+          if (pending) return; // NEW-I1 — see partner_benefit sibling
+          setOpenDialog(open ? 'cultural_event' : null);
+        }}
       >
         <AlertDialogTrigger
           render={
             <Button
               variant={isCulturalEvent ? 'secondary' : 'outline'}
               size="sm"
-              disabled={disabled || pending}
+              disabled={disabled}
+              aria-disabled={pending}
               type="button"
-              aria-busy={activeFlag === 'cultural_event'}
             />
           }
         >
@@ -250,6 +274,8 @@ export function EventCategoryToggles({
               onClick={() =>
                 handleConfirm('cultural_event', !isCulturalEvent)
               }
+              disabled={pending}
+              className="disabled:pointer-events-none disabled:opacity-50"
             >
               {t('confirm')}
             </AlertDialogAction>

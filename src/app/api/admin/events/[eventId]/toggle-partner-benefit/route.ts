@@ -148,11 +148,19 @@ export async function POST(
           { status: 409 },
         );
       default:
+        // HIGH-R2-2 fix (wave-6): include `cause` discriminator
+        // (IMP-5 added in wave-5 batch-3) so SREs can distinguish
+        // transient `db_error` (retry-eligible) from
+        // `invariant_violation` (RLS / schema drift — page on-call)
+        // vs `pseudonymised_row_rejected` (drop row, never retry).
+        // Plus surface `message` for fast triage.
         logger.error(
           {
             event: 'admin_event_toggle_partner_benefit_use_case_error',
             eventId,
             errKind: result.error.kind,
+            cause: 'cause' in result.error ? result.error.cause : undefined,
+            message: 'message' in result.error ? result.error.message : undefined,
           },
           '[F6] toggleEventCategory returned use-case error',
         );

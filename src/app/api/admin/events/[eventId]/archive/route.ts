@@ -124,11 +124,15 @@ export async function POST(
           { status: 409 },
         );
       default:
+        // HIGH-R2-2 fix (wave-6) — surface IMP-5's `cause` discriminator
+        // for SRE retry/page classification (see toggle siblings).
         logger.error(
           {
             event: 'admin_event_archive_use_case_error',
             eventId,
             errKind: result.error.kind,
+            cause: 'cause' in result.error ? result.error.cause : undefined,
+            message: 'message' in result.error ? result.error.message : undefined,
           },
           '[F6] archiveEvent returned use-case error',
         );

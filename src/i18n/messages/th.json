@@ -706,7 +706,7 @@
         "emergencyPrimary": {
           "ariaLabel": "ช่วยเหลือ — การโอนผู้ติดต่อหลักฉุกเฉิน",
           "title": "การโอนผู้ติดต่อหลักฉุกเฉิน",
-          "body": "ต้องการโอนผู้ติดต่อหลักไปยังบุคคลใหม่ (เช่น ผู้ติดต่อหลักคนก่อนลาออก) ใช่หรือไม่? คลิก \"เพิ่มผู้ติดต่อ\" เพื่อสร้างผู้ติดต่อรองด้วยข้อมูลของบุคคลใหม่ จากนั้นใช้ \"เลื่อนขั้น\" เพื่อทำให้เป็นผู้ติดต่อหลักใหม่ ผู้ติดต่อหลักเดิมจะถูกลดระดับอัตโนมัติ"
+          "body": "ต้องการโอนผู้ติดต่อหลักไปยังบุคคลใหม่ (เช่น ผู้ติดต่อหลักคนก่อนลาออก) ใช่หรือไม่? เปิดหน้าแก้ไขแล้วเพิ่มบุคคลใหม่ในกลุ่ม \"ผู้ติดต่ออื่น ๆ\" จากนั้นกลับมาที่หน้านี้และใช้ \"เลื่อนขั้น\" เพื่อทำให้เป็นผู้ติดต่อหลัก ผู้ติดต่อหลักเดิมจะถูกลดระดับอัตโนมัติ"
         },
         "portal": {
           "linked": "เชื่อมบัญชีพอร์ทัล"
@@ -727,7 +727,8 @@
         "totalEvents": "{count, plural, other {# เหตุการณ์}}",
         "payload": {
           "primary": "ผู้ติดต่อหลัก",
-          "primaryContactPromoted": "เลื่อนขึ้นเป็นผู้ติดต่อหลัก"
+          "primaryContactPromoted": "เลื่อนขึ้นเป็นผู้ติดต่อหลัก",
+          "archiveReason": "เหตุผล: {reason}"
         },
         "invoiceDraftCreated": "สร้างร่างใบแจ้งหนี้",
         "invoiceIssued": "ออกใบแจ้งหนี้ {documentNumber}",
@@ -2426,7 +2427,8 @@
           "alreadyArchivedTitle": "ถูกเก็บถาวรอยู่แล้ว",
           "alreadyArchivedDescription": "ผู้ดูแลคนอื่นได้เก็บถาวรกิจกรรมนี้พร้อมกัน รีเฟรชหน้าให้แล้ว",
           "errorTitle": "ไม่สามารถเก็บถาวรกิจกรรมได้",
-          "errorDescription": "กรุณาลองอีกครั้ง หากปัญหายังคงอยู่ โปรดติดต่อฝ่ายสนับสนุน"
+          "errorDescription": "กรุณาลองอีกครั้ง หากปัญหายังคงอยู่ โปรดติดต่อฝ่ายสนับสนุน",
+          "loading": "กำลังเก็บถาวรกิจกรรม…"
         },
         "ticketsRemaining": "{remaining, plural, other {เหลือ # ใบ}} จาก {total}",
         "auditEvents": {
@@ -2453,13 +2455,15 @@
           "confirmUnflagCulturalTitle": "ยกเลิกสถานะกิจกรรมวัฒนธรรมหรือไม่?",
           "confirmUnflagCulturalBody": "ตั๋วกิจกรรมวัฒนธรรมที่ถูกนับไว้ทั้งหมดในกิจกรรมนี้จะถูกคืนกลับให้สมาชิกในปีปฏิทินปัจจุบัน",
           "cancel": "ยกเลิก",
-          "confirm": "ยืนยัน",
+          "confirm": "ดำเนินการ",
           "successTitle": "ปรับสถานะหมวดหมู่เรียบร้อย",
           "successDescription": "{count, plural, =0 {ไม่มีรายการที่ต้องประเมินใหม่} other {ประเมินการลงทะเบียนใหม่ # รายการ}}",
           "archivedTitle": "กิจกรรมถูกเก็บถาวรแล้ว",
           "archivedDescription": "กิจกรรมที่ถูกเก็บถาวรไม่นับโควต้าและไม่สามารถปรับสถานะหมวดหมู่ได้",
           "errorTitle": "ไม่สามารถปรับสถานะหมวดหมู่ได้",
-          "errorDescription": "กรุณาลองอีกครั้ง หากปัญหายังคงอยู่ โปรดติดต่อฝ่ายสนับสนุน"
+          "errorDescription": "กรุณาลองอีกครั้ง หากปัญหายังคงอยู่ โปรดติดต่อฝ่ายสนับสนุน",
+          "loadingPartnerBenefit": "กำลังปรับสถานะสิทธิประโยชน์พาร์ตเนอร์ชิป…",
+          "loadingCulturalEvent": "กำลังปรับสถานะกิจกรรมวัฒนธรรม…"
         }
       },
       "matchType": {
@@ -3111,6 +3115,10 @@
       "portalLinked": "เชื่อมต่อพอร์ทัลแล้ว",
       "noContacts": "ไม่พบผู้ติดต่อ",
       "fields": {
+        "memberId": "รหัสสมาชิก",
+        "memberIdHelp": "อ้างอิงรหัสนี้เมื่อติดต่อทีมสนับสนุนหอการค้า",
+        "memberIdCopy": "คัดลอกรหัสสมาชิก",
+        "memberIdCopied": "คัดลอกรหัสสมาชิกแล้ว",
         "companyName": "ชื่อบริษัท",
         "legalEntityType": "ประเภทนิติบุคคล",
         "country": "ประเทศ",
@@ -3403,10 +3411,54 @@
       "at_risk_snoozed": "เลื่อนการแจ้งเตือนความเสี่ยง",
       "at_risk_outreach_recorded": "บันทึกการติดต่อ",
       "at_risk_compute_partial_failure": "คำนวณคะแนนความเสี่ยงบางส่วนไม่สำเร็จ",
+      "at_risk_skipped_below_min_tenure": "ข้ามการคำนวณคะแนนความเสี่ยง — อายุสมาชิกต่ำกว่าเกณฑ์",
+      "escalation_task_created": "สร้างงานเร่งรัด",
+      "escalation_task_completed": "งานเร่งรัดเสร็จสิ้น",
+      "escalation_task_reassigned": "มอบหมายงานเร่งรัดใหม่",
+      "escalation_task_skipped": "ข้ามงานเร่งรัด",
+      "lapsed_member_admin_reactivated": "ผู้ดูแลระบบเปิดสมาชิกที่หมดอายุอีกครั้ง",
+      "lapsed_member_admin_reactivation_rejected": "ปฏิเสธคำขอเปิดสมาชิกอีกครั้ง",
+      "lapsed_member_admin_reactivation_timed_out": "คำขอเปิดสมาชิกอีกครั้งหมดเวลา",
+      "manual_outreach_required": "ต้องติดต่อด้วยตนเอง",
+      "member_auto_reactivation_blocked": "บล็อกการเปิดอัตโนมัติ",
+      "member_auto_reactivation_unblocked": "ปลดบล็อกการเปิดอัตโนมัติ",
+      "member_email_unverified_threshold_crossed": "อีเมลที่ไม่ยืนยันเกินเกณฑ์",
+      "renewal_completed": "ต่ออายุสมาชิกเสร็จสิ้น",
+      "renewal_completed_post_lapse": "ต่ออายุเสร็จหลังหมดอายุ",
+      "renewal_cross_member_probe": "ตรวจพบการสำรวจข้ามสมาชิก",
+      "renewal_cross_tenant_probe": "ตรวจพบการสำรวจข้ามหอการค้า (ต่ออายุ)",
+      "renewal_cycle_cancelled": "ยกเลิกรอบการต่ออายุ",
+      "renewal_cycle_completed_offline": "ต่ออายุเสร็จแบบออฟไลน์",
+      "renewal_cycle_price_frozen": "ตรึงราคาการต่ออายุ",
+      "renewal_invoice_created": "สร้างใบแจ้งหนี้ต่ออายุ",
+      "renewal_lapsed": "การต่ออายุหมดอายุ",
+      "renewal_reminder_deferred_read_only": "เลื่อนแจ้งเตือนต่ออายุ — โหมดอ่านอย่างเดียว",
+      "renewal_reminder_retried": "ลองส่งแจ้งเตือนต่ออายุอีกครั้ง",
+      "renewal_reminder_send_failed": "ส่งแจ้งเตือนต่ออายุไม่สำเร็จ",
+      "renewal_reminder_send_failed_permanent": "ส่งแจ้งเตือนต่ออายุล้มเหลวถาวร",
+      "renewal_reminder_sent": "ส่งการแจ้งเตือนต่ออายุแล้ว",
+      "renewal_reminder_skipped": "ข้ามการแจ้งเตือนต่ออายุ",
+      "renewal_schedule_policy_updated": "อัปเดตนโยบายตารางต่ออายุ",
+      "renewal_schedule_rescheduled": "เลื่อนการต่ออายุ",
+      "renewal_schedule_reschedule_skipped": "ข้ามการเลื่อนต่ออายุ",
+      "renewal_self_service_initiated": "สมาชิกเริ่มต่ออายุเอง",
+      "renewal_skipped_no_joined_at": "ข้ามการต่ออายุ — ไม่มีวันที่เริ่มเป็นสมาชิก",
+      "renewal_token_clicked_on_completed_cycle": "คลิกลิงก์ต่ออายุบนรอบที่เสร็จแล้ว",
+      "renewal_token_invalid": "โทเค็นต่ออายุไม่ถูกต้อง",
+      "renewal_with_plan_change": "ต่ออายุพร้อมเปลี่ยนแพ็กเกจ",
       "tier_upgrade_suggested": "แนะนำการอัปเกรดระดับสมาชิก",
       "tier_upgrade_accepted": "ยืนยันการอัปเกรดระดับสมาชิก",
       "tier_upgrade_dismissed": "ปฏิเสธการอัปเกรดระดับสมาชิก",
       "tier_upgrade_already_at_target": "อยู่ในระดับเป้าหมายอยู่แล้ว",
+      "tier_upgrade_applied_at_renewal": "นำการอัปเกรดไปใช้ในการต่ออายุ",
+      "tier_upgrade_apply_post_invoice_paid_failed": "อัปเกรดล้มเหลวหลังชำระใบแจ้งหนี้",
+      "tier_upgrade_catalogue_row_dropped": "ลบรายการอัปเกรดออกจากแคตตาล็อก",
+      "tier_upgrade_pending_admin_verification_due": "การอัปเกรด — ครบกำหนดผู้ดูแลตรวจสอบ",
+      "tier_upgrade_pending_member_notified": "การอัปเกรด — แจ้งสมาชิกแล้ว",
+      "tier_upgrade_pending_member_notify_failed": "การอัปเกรด — แจ้งสมาชิกไม่สำเร็จ",
+      "tier_upgrade_pending_member_notify_skipped": "การอัปเกรด — ข้ามการแจ้งสมาชิก",
+      "tier_upgrade_pending_orphan_detected": "ตรวจพบการอัปเกรดที่ค้าง",
+      "tier_upgrade_pending_superseded_by_manual_change": "การอัปเกรดถูกแทนที่ด้วยการเปลี่ยนแปลงด้วยตนเอง",
       "tier_upgrade_skipped_no_thresholds_configured": "ข้ามการอัปเกรด — ยังไม่ได้กำหนดเกณฑ์",
       "tier_upgrade_tenant_disabled": "ปิดใช้งานการอัปเกรดสำหรับองค์กรนี้",
       "cron_bearer_auth_rejected": "ปฏิเสธการยืนยันตัวตนของ cron",

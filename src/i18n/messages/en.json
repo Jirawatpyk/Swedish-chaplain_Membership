@@ -706,7 +706,7 @@
         "emergencyPrimary": {
           "ariaLabel": "Help — emergency primary contact transfer",
           "title": "Emergency primary contact transfer",
-          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Click Add contact to create a secondary contact with the new person's details, then use Promote to make them the new primary. The old primary is automatically demoted."
+          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Open the Edit page and add the new person under \"Other contacts\", then return here and use Promote to make them the primary. The old primary is automatically demoted."
         },
         "portal": {
           "linked": "Portal linked"
@@ -727,7 +727,8 @@
         "totalEvents": "{count, plural, one {# event} other {# events}}",
         "payload": {
           "primary": "primary",
-          "primaryContactPromoted": "primary contact promoted"
+          "primaryContactPromoted": "primary contact promoted",
+          "archiveReason": "Reason: {reason}"
         },
         "invoiceDraftCreated": "Invoice draft created",
         "invoiceIssued": "Invoice {documentNumber} issued",
@@ -2426,7 +2427,8 @@
           "alreadyArchivedTitle": "Already archived",
           "alreadyArchivedDescription": "Another admin archived this event in a concurrent request. The page has been refreshed.",
           "errorTitle": "Could not archive event",
-          "errorDescription": "Please try again. If the issue persists, contact support."
+          "errorDescription": "Please try again. If the issue persists, contact support.",
+          "loading": "Archiving event…"
         },
         "ticketsRemaining": "{remaining, plural, one {# ticket remaining} other {# tickets remaining}} of {total}",
         "auditEvents": {
@@ -2459,7 +2461,9 @@
           "archivedTitle": "Event archived",
           "archivedDescription": "Archived events are quota-neutral and cannot be re-flagged.",
           "errorTitle": "Could not update flag",
-          "errorDescription": "Please try again. If the issue persists, contact support."
+          "errorDescription": "Please try again. If the issue persists, contact support.",
+          "loadingPartnerBenefit": "Updating partner-benefit flag…",
+          "loadingCulturalEvent": "Updating cultural-event flag…"
         }
       },
       "matchType": {
@@ -3111,6 +3115,10 @@
       "portalLinked": "Portal linked",
       "noContacts": "No contacts found.",
       "fields": {
+        "memberId": "Member ID",
+        "memberIdHelp": "Reference this ID when contacting chamber support.",
+        "memberIdCopy": "Copy member ID",
+        "memberIdCopied": "Member ID copied",
         "companyName": "Company Name",
         "legalEntityType": "Legal Entity Type",
         "country": "Country",
@@ -3403,10 +3411,54 @@
       "at_risk_snoozed": "At-risk snoozed",
       "at_risk_outreach_recorded": "Outreach recorded",
       "at_risk_compute_partial_failure": "At-risk score partial failure",
+      "at_risk_skipped_below_min_tenure": "At-risk score skipped — below min tenure",
+      "escalation_task_created": "Escalation task created",
+      "escalation_task_completed": "Escalation task completed",
+      "escalation_task_reassigned": "Escalation task reassigned",
+      "escalation_task_skipped": "Escalation task skipped",
+      "lapsed_member_admin_reactivated": "Lapsed member reactivated by admin",
+      "lapsed_member_admin_reactivation_rejected": "Reactivation rejected",
+      "lapsed_member_admin_reactivation_timed_out": "Reactivation request timed out",
+      "manual_outreach_required": "Manual outreach required",
+      "member_auto_reactivation_blocked": "Auto-reactivation blocked",
+      "member_auto_reactivation_unblocked": "Auto-reactivation unblocked",
+      "member_email_unverified_threshold_crossed": "Email-unverified threshold crossed",
+      "renewal_completed": "Renewal completed",
+      "renewal_completed_post_lapse": "Renewal completed after lapse",
+      "renewal_cross_member_probe": "Cross-member probe detected",
+      "renewal_cross_tenant_probe": "Cross-tenant probe (renewals)",
+      "renewal_cycle_cancelled": "Renewal cycle cancelled",
+      "renewal_cycle_completed_offline": "Renewal completed offline",
+      "renewal_cycle_price_frozen": "Renewal price frozen",
+      "renewal_invoice_created": "Renewal invoice created",
+      "renewal_lapsed": "Renewal lapsed",
+      "renewal_reminder_deferred_read_only": "Renewal reminder deferred — read-only mode",
+      "renewal_reminder_retried": "Renewal reminder retried",
+      "renewal_reminder_send_failed": "Renewal reminder send failed",
+      "renewal_reminder_send_failed_permanent": "Renewal reminder permanently failed",
+      "renewal_reminder_sent": "Renewal reminder sent",
+      "renewal_reminder_skipped": "Renewal reminder skipped",
+      "renewal_schedule_policy_updated": "Renewal schedule policy updated",
+      "renewal_schedule_rescheduled": "Renewal rescheduled",
+      "renewal_schedule_reschedule_skipped": "Renewal reschedule skipped",
+      "renewal_self_service_initiated": "Member-initiated renewal",
+      "renewal_skipped_no_joined_at": "Renewal skipped — no join date",
+      "renewal_token_clicked_on_completed_cycle": "Renewal link clicked on completed cycle",
+      "renewal_token_invalid": "Invalid renewal token",
+      "renewal_with_plan_change": "Renewal with plan change",
       "tier_upgrade_suggested": "Tier upgrade suggested",
       "tier_upgrade_accepted": "Tier upgrade accepted",
       "tier_upgrade_dismissed": "Tier upgrade dismissed",
       "tier_upgrade_already_at_target": "Already at target tier",
+      "tier_upgrade_applied_at_renewal": "Tier upgrade applied at renewal",
+      "tier_upgrade_apply_post_invoice_paid_failed": "Tier-upgrade apply failed after invoice paid",
+      "tier_upgrade_catalogue_row_dropped": "Tier-upgrade catalogue row dropped",
+      "tier_upgrade_pending_admin_verification_due": "Tier upgrade — admin verification due",
+      "tier_upgrade_pending_member_notified": "Tier upgrade — member notified",
+      "tier_upgrade_pending_member_notify_failed": "Tier upgrade — member notify failed",
+      "tier_upgrade_pending_member_notify_skipped": "Tier upgrade — member notify skipped",
+      "tier_upgrade_pending_orphan_detected": "Tier-upgrade orphan detected",
+      "tier_upgrade_pending_superseded_by_manual_change": "Tier upgrade superseded by manual change",
       "tier_upgrade_skipped_no_thresholds_configured": "Tier upgrade skipped — no thresholds",
       "tier_upgrade_tenant_disabled": "Tier upgrade disabled for tenant",
       "cron_bearer_auth_rejected": "Cron auth rejected",
