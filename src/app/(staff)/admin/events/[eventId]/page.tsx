@@ -10,6 +10,7 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { redactStack } from '@/lib/redact-stack';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
@@ -186,10 +187,22 @@ export default async function AdminEventDetailPage({
       );
     }
   } catch (e) {
+    // R9-I1 staff-review fix (2026-05-14) — round-8 W2 contract carry.
+    // Scrub container paths from stack before pino captures it.
     logger.error(
       {
         event: 'admin_event_detail_page_render_throw',
-        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+        err:
+          e instanceof Error
+            ? {
+                name: e.name,
+                message: e.message,
+                stack:
+                  typeof e.stack === 'string'
+                    ? (redactStack(e.stack) ?? null)
+                    : null,
+              }
+            : String(e),
         eventId,
       },
       '[F6] /admin/events/[eventId] detail page — runLoadEventDetail threw',

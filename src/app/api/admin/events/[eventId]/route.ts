@@ -18,6 +18,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
@@ -156,10 +157,23 @@ export async function GET(
         }),
     );
   } catch (e) {
+    // R9-I1 staff-review fix (2026-05-14) — see `route.ts` sibling
+    // for full rationale. `redactStack` strips container paths
+    // before pino sees the stack (round-8 W2 contract carry).
     logger.error(
       {
         event: 'admin_event_detail_route_throw',
-        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+        err:
+          e instanceof Error
+            ? {
+                name: e.name,
+                message: e.message,
+                stack:
+                  typeof e.stack === 'string'
+                    ? (redactStack(e.stack) ?? null)
+                    : null,
+              }
+            : String(e),
         eventId,
       },
       '[F6] /api/admin/events/[eventId] — runLoadEventDetail threw',

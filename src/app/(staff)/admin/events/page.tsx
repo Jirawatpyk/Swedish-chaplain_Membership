@@ -24,6 +24,7 @@ import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { redactStack } from '@/lib/redact-stack';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
@@ -140,10 +141,23 @@ export default async function AdminEventsListPage({
       );
     }
   } catch (e) {
+    // R9-I1 staff-review fix (2026-05-14) — scrub container paths
+    // (Vercel `/var/task/...`, node_modules, webpack-internal:///)
+    // from stack before pino captures it. Round-8 W2 contract carry.
     logger.error(
       {
         event: 'admin_events_page_render_throw',
-        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+        err:
+          e instanceof Error
+            ? {
+                name: e.name,
+                message: e.message,
+                stack:
+                  typeof e.stack === 'string'
+                    ? (redactStack(e.stack) ?? null)
+                    : null,
+              }
+            : String(e),
       },
       '[F6] /admin/events list page — runListEvents threw',
     );

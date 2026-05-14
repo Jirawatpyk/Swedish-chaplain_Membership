@@ -19,6 +19,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
@@ -150,10 +151,26 @@ export async function GET(request: NextRequest) {
         }),
     );
   } catch (e) {
+    // R9-I1 staff-review fix (2026-05-14): scrub container paths
+    // (`/var/task/...`), node_modules, webpack-internal:/// from the
+    // stack BEFORE pino captures it. The pino REDACT_PATHS list has no
+    // entry for `*.stack`, so this catch site was leaking deployment
+    // filesystem structure into observability sinks (round-9 code-
+    // reviewer agent — closes the round-8 W2 contract carry).
     logger.error(
       {
         event: 'admin_events_list_route_throw',
-        err: e instanceof Error ? { name: e.name, message: e.message, stack: e.stack } : String(e),
+        err:
+          e instanceof Error
+            ? {
+                name: e.name,
+                message: e.message,
+                stack:
+                  typeof e.stack === 'string'
+                    ? (redactStack(e.stack) ?? null)
+                    : null,
+              }
+            : String(e),
       },
       '[F6] /api/admin/events list — runListEvents threw',
     );
