@@ -403,7 +403,7 @@
           "planIdHelp": "ตัวพิมพ์เล็ก ตัวเลข และเครื่องหมายขีดเท่านั้น (เช่น diamond, start-up)",
           "planIdPlaceholder": "เช่น premium",
           "loadingLabel": "กำลังโหลดรายการแพ็กเกจ…",
-          "planYear": "ปีของแพ็กเกจ",
+          "planYear": "ปีแพ็กเกจ",
           "planName": "ชื่อแพ็กเกจ",
           "description": "คำอธิบาย",
           "sortOrder": "ลำดับการแสดงผล",
@@ -595,7 +595,7 @@
             "all": "ทุกสถานะ",
             "active": "ใช้งาน",
             "inactive": "หยุดใช้งาน",
-            "archived": "จัดเก็บแล้ว"
+            "archived": "เก็บถาวรแล้ว"
           },
           "plan": {
             "label": "แพ็กเกจ",
@@ -615,8 +615,9 @@
           "notes": "บันทึก"
         },
         "riskPlaceholder": "—",
-        "riskNotComputed": "—",
+        "riskNotComputed": "ยังไม่มีคะแนน",
         "riskNotComputedAria": "ยังไม่ได้คำนวณคะแนนความเสี่ยง",
+        "riskNotComputedTooltip": "คะแนนความเสี่ยงคำนวณหลังจากสมาชิกมีกิจกรรม 30 วัน สมาชิกที่เพิ่งเพิ่มเข้ามาจะเริ่มมีคะแนนเมื่อข้อมูลครบ",
         "rowAriaLabel": "เปิดรายละเอียด {company}",
         "noPrimary": "ไม่มีผู้ติดต่อหลัก",
         "loadMore": "โหลดเพิ่ม",
@@ -669,7 +670,7 @@
           "registrationFeePaidNo": "ยังไม่ชำระ",
           "status": "สถานะ",
           "lastActivityAt": "กิจกรรมล่าสุด",
-          "archivedAt": "วันที่จัดเก็บ",
+          "archivedAt": "วันที่เก็บถาวร",
           "notes": "หมายเหตุภายใน",
           "firstName": "ชื่อ",
           "lastName": "นามสกุล",
@@ -687,7 +688,7 @@
         },
         "notFound": {
           "title": "ไม่พบสมาชิก",
-          "description": "สมาชิกรายนี้อาจถูกจัดเก็บ หรือ URL ไม่ถูกต้อง",
+          "description": "สมาชิกรายนี้อาจถูกเก็บถาวร หรือ URL ไม่ถูกต้อง",
           "cta": "กลับไปรายการสมาชิก"
         },
         "unknown": "—",
@@ -880,6 +881,7 @@
         "toolbarLabel": "ดำเนินการเป็นชุด",
         "selectedCount": "เลือกแล้ว {count} รายการ",
         "overCap": "สูงสุด {max} สมาชิกต่อชุด กรุณาแบ่งรายการ",
+        "overCapHelper": "เลือก {count} จาก {total} — ประมวลผลได้ครั้งละ {max} เท่านั้น ยกเลิกรายการที่เลือกเกินแถวที่ {max} หรือใช้ตัวกรองเพื่อจำกัดรายการ",
         "actions": {
           "archive": "เก็บเข้าคลัง",
           "change_plan": "เปลี่ยนแพ็กเกจ",
@@ -906,6 +908,7 @@
         "statusUpdated": "อัปเดตสถานะแล้ว",
         "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
         "saving": "กำลังบันทึก…",
+        "saved": "บันทึกแล้ว",
         "toggleStatus": "สลับสถานะ (ปัจจุบัน: {current})",
         "editCountry": "แก้ไขประเทศ",
         "editCountryHint": "ดับเบิลคลิกเพื่อแก้ไขรหัสประเทศ (ISO 3166-1 alpha-2)",
@@ -935,11 +938,11 @@
         "bannerTitle": "เก็บถาวรเมื่อ {date}",
         "withinWindow": "เหลือ {daysRemaining} วันในช่วง 90 วันสำหรับการกู้คืน",
         "windowExpired": "เก็บถาวรเมื่อ {daysSinceArchive} วันก่อน เกินช่วง 90 วันสำหรับการกู้คืนแล้ว",
-        "windowExpiredTooltip": "เก็บถาวรเกิน 90 วัน กรุณาติดต่อผู้ดูแลแพลตฟอร์มเพื่อกู้คืน",
+        "windowExpiredTooltip": "เก็บถาวรเกิน 90 วัน กรุณาติดต่อผู้ดูแลระบบเพื่อกู้คืน",
         "undeleteCta": "กู้คืน",
         "undeleteSuccess": "กู้คืนสมาชิกแล้ว",
         "undeleteError": "ไม่สามารถกู้คืนได้ โปรดลองอีกครั้ง",
-        "windowExpiredToast": "ช่วงเวลากู้คืน (90 วัน) หมดแล้ว กรุณาติดต่อผู้ดูแลแพลตฟอร์มเพื่อกู้คืน"
+        "windowExpiredToast": "ช่วงเวลากู้คืน (90 วัน) หมดแล้ว กรุณาติดต่อผู้ดูแลระบบเพื่อกู้คืน"
       },
       "undelete": {
         "cta": "กู้คืน",
@@ -1223,7 +1226,7 @@
           "memberId": "สมาชิก",
           "memberIdHelp": "ใส่ UUID ของสมาชิก — ตัวเลือกแบบกราฟิกจะมาในรอบถัดไป",
           "planId": "แพ็กเกจ",
-          "planYear": "ปีของแพ็กเกจ"
+          "planYear": "ปีแพ็กเกจ"
         },
         "memberPicker": {
           "placeholder": "เลือกสมาชิก…",
@@ -2827,7 +2830,7 @@
           "issueDate": "วันที่ออก",
           "dueDate": "วันครบกำหนด",
           "paidDate": "วันที่ชำระ",
-          "planYear": "ปีของแพ็กเกจ"
+          "planYear": "ปีแพ็กเกจ"
         },
         "lines": {
           "description": "รายละเอียด",
@@ -3102,7 +3105,7 @@
         "country": "ประเทศ",
         "website": "เว็บไซต์",
         "description": "รายละเอียด",
-        "planYear": "ปีแผน",
+        "planYear": "ปีแพ็กเกจ",
         "registrationDate": "วันที่ลงทะเบียน",
         "status": "สถานะ"
       },

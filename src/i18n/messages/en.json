@@ -615,8 +615,9 @@
           "notes": "Notes"
         },
         "riskPlaceholder": "—",
-        "riskNotComputed": "—",
+        "riskNotComputed": "Not yet scored",
         "riskNotComputedAria": "Risk score not yet computed",
+        "riskNotComputedTooltip": "Risk score is computed after the first 30 days of activity. Newly-added members will see a score once they accumulate enough data.",
         "rowAriaLabel": "Open {company} details",
         "noPrimary": "No primary contact",
         "loadMore": "Load more",
@@ -880,6 +881,7 @@
         "toolbarLabel": "Bulk actions",
         "selectedCount": "{count, plural, one {# selected} other {# selected}}",
         "overCap": "Maximum {max} members per batch. Split the selection.",
+        "overCapHelper": "{count} of {total} selected — only {max} can be processed at once. Deselect rows past row {max}, or use filters to narrow the list before re-selecting.",
         "actions": {
           "archive": "Archive",
           "change_plan": "Change plan",
@@ -906,6 +908,7 @@
         "statusUpdated": "Status updated",
         "saveFailed": "Save failed. Reverted.",
         "saving": "Saving…",
+        "saved": "Saved",
         "toggleStatus": "Toggle status (currently {current})",
         "editCountry": "Edit country",
         "editCountryHint": "Double-click to edit country (ISO 3166-1 alpha-2)",
@@ -935,14 +938,14 @@
         "bannerTitle": "Archived on {date}",
         "withinWindow": "{daysRemaining, plural, one {# day remaining} other {# days remaining}} in the 90-day undelete window.",
         "windowExpired": "Archived {daysSinceArchive} days ago — beyond the 90-day undelete window.",
-        "windowExpiredTooltip": "Archived > 90 days — contact platform admin to restore.",
-        "undeleteCta": "Undelete",
+        "windowExpiredTooltip": "Archived > 90 days — contact a system admin to restore.",
+        "undeleteCta": "Restore",
         "undeleteSuccess": "Member restored.",
         "undeleteError": "Could not restore. Please try again.",
-        "windowExpiredToast": "Archive window (90 days) has expired. Contact platform admin to restore."
+        "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore."
       },
       "undelete": {
-        "cta": "Undelete",
+        "cta": "Restore",
         "confirmTitle": "Restore member?",
         "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
         "success": "Member restored.",

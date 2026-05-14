@@ -219,7 +219,10 @@ async function MembersDirectoryBody({
   return (
     <>
       <DirectoryFilters plans={planOptions} />
-      <Suspense fallback={<MembersTableSkeleton />}>
+      {/* C1 round-10 — pass `withSelection={isAdmin}` so the
+          shimmer-skeleton column count matches the real table for the
+          current role (admin: 10 cols incl. checkbox; manager: 9). */}
+      <Suspense fallback={<MembersTableSkeleton withSelection={isAdmin} />}>
         <DirectoryWithBulk
           rows={rows}
           page={page}

@@ -44,7 +44,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { PencilIcon } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from '@/components/ui/tooltip';
+import { ArchiveIcon, PencilIcon } from 'lucide-react';
 import { toast } from 'sonner';
 // F8 Phase 6 Wave H — risk-score badge for the directory column. F8
 // shared primitive lives at src/components/renewals/risk-score-badge.tsx
@@ -114,12 +120,20 @@ const columnHelper = createColumnHelper<MembersTableRow>();
 function StatusBadge({ status }: { status: MembersTableRow['status'] }) {
   const t = useTranslations('admin.members.directory');
   const label = t(`filters.status.${status}`);
-  const variant: 'default' | 'secondary' | 'outline' =
-    status === 'active'
-      ? 'default'
-      : status === 'inactive'
-        ? 'secondary'
-        : 'outline';
+  // P10 round-10 ui-design-specialist — archived was visually identical
+  // to a generic neutral chip (outline variant only, no icon). Surface
+  // an ArchiveIcon prefix + secondary variant so the archive state is
+  // scan-able at a glance in a 50-row directory.
+  if (status === 'archived') {
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <ArchiveIcon aria-hidden="true" className="size-3" />
+        <span>{label}</span>
+      </Badge>
+    );
+  }
+  const variant: 'default' | 'secondary' =
+    status === 'active' ? 'default' : 'secondary';
   return <Badge variant={variant}>{label}</Badge>;
 }
 
@@ -135,6 +149,10 @@ function InlineStatusCell({
 }) {
   const t = useTranslations('admin.members.inlineEdit');
   const [saving, setSaving] = useState(false);
+  // P8 round-10 — pair "saving" announcement with a "saved" flash so
+  // SR users hear closure on the inline-edit transaction, not just the
+  // start. Auto-clears after 2s so the live region stays quiet.
+  const [savedFlash, setSavedFlash] = useState(false);
   const [optimistic, setOptimistic] = useState(status);
 
   // Round-2 review I-4: sync optimistic state when the `status` prop
@@ -144,6 +162,12 @@ function InlineStatusCell({
     setOptimistic(status);
   }, [status]);
 
+  useEffect(() => {
+    if (!savedFlash) return;
+    const id = setTimeout(() => setSavedFlash(false), 2000);
+    return () => clearTimeout(id);
+  }, [savedFlash]);
+
   const handleToggle = useCallback(async () => {
     if (!onSave || status === 'archived') return;
     const next = optimistic === 'active' ? 'inactive' : 'active';
@@ -152,6 +176,7 @@ function InlineStatusCell({
     const result = await onSave(memberId, 'status', next);
     setSaving(false);
     if (result.ok) {
+      setSavedFlash(true);
       toast.success(t('statusUpdated'));
     } else {
       setOptimistic(status); // rollback
@@ -179,7 +204,7 @@ function InlineStatusCell({
         aria-hidden="true"
       />
       <span className="sr-only" aria-live="polite">
-        {saving ? t('saving') : ''}
+        {saving ? t('saving') : savedFlash ? t('saved') : ''}
       </span>
     </button>
   );
@@ -205,6 +230,8 @@ function InlineCountryCell({
   // `editing` is `null` when not editing; holds the draft value while editing.
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // P8 round-10 — pair the saving announcement with a saved flash.
+  const [savedFlash, setSavedFlash] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   // Round-4 review R4-I1: `saving` state update is async — if user presses
   // Enter then blur fires immediately, both handlers read `saving=false`
@@ -216,6 +243,12 @@ function InlineCountryCell({
   // triggering handleSave with the stale closure. A sync cancelling flag
   // lets the Escape branch short-circuit the queued blur's handleSave.
   const cancellingRef = useRef(false);
+
+  useEffect(() => {
+    if (!savedFlash) return;
+    const id = setTimeout(() => setSavedFlash(false), 2000);
+    return () => clearTimeout(id);
+  }, [savedFlash]);
 
   const handleSave = useCallback(async () => {
     if (cancellingRef.current || !onSave || editing === null || savingRef.current) return;
@@ -235,6 +268,7 @@ function InlineCountryCell({
       const result = await onSave(memberId, 'country', normalised);
       setSaving(false);
       if (result.ok) {
+        setSavedFlash(true);
         toast.success(t('countryUpdated'));
         setEditing(null);
       } else {
@@ -311,7 +345,7 @@ function InlineCountryCell({
         aria-label={t('countryInput')}
       />
       <span className="sr-only" aria-live="polite">
-        {saving ? t('saving') : ''}
+        {saving ? t('saving') : savedFlash ? t('saved') : ''}
       </span>
     </div>
   );
@@ -341,11 +375,19 @@ function InlineNotesCell({
   // draft. On cancel/save we go back to reading `notes` directly.
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // P8 round-10 — pair the saving announcement with a saved flash.
+  const [savedFlash, setSavedFlash] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Round-4 R4-I1: sync guard against onBlur + Enter double-fire race.
   const savingRef = useRef(false);
   // Staff-review SW-6: sync guard against Escape+blur draft loss.
   const cancellingRef = useRef(false);
+
+  useEffect(() => {
+    if (!savedFlash) return;
+    const id = setTimeout(() => setSavedFlash(false), 2000);
+    return () => clearTimeout(id);
+  }, [savedFlash]);
 
   const handleSave = useCallback(async () => {
     if (cancellingRef.current || !onSave || editing === null || savingRef.current) return;
@@ -360,6 +402,7 @@ function InlineNotesCell({
       const result = await onSave(memberId, 'notes', next);
       setSaving(false);
       if (result.ok) {
+        setSavedFlash(true);
         toast.success(t('notesUpdated'));
         setEditing(null);
       } else {
@@ -390,13 +433,17 @@ function InlineNotesCell({
   }
 
   if (editing === null) {
-    const preview = notes ? (notes.length > 24 ? notes.slice(0, 24) + '…' : notes) : '—';
+    // I5 round-10 — preview was clipped at 24 chars (notes accepts
+    // 4000). Bumped to 60 so multi-sentence notes are readable
+    // without entering edit mode. Full text remains available via
+    // `title` tooltip for sighted users + sr-only span for SR users.
+    const preview = notes ? (notes.length > 60 ? notes.slice(0, 60) + '…' : notes) : '—';
     return (
       <button
         type="button"
         onDoubleClick={() => setEditing(notes ?? '')}
         title={notes ?? t('editNotesHint')}
-        className="group inline-flex min-h-[28px] max-w-[180px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+        className="group inline-flex min-h-[28px] max-w-[260px] cursor-pointer items-center gap-1 truncate rounded-md px-1 py-0.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
         aria-label={t('editNotes')}
       >
         <span className="truncate">{preview}</span>
@@ -438,7 +485,7 @@ function InlineNotesCell({
         placeholder={t('notesPlaceholder')}
       />
       <span className="sr-only" aria-live="polite">
-        {saving ? t('saving') : ''}
+        {saving ? t('saving') : savedFlash ? t('saved') : ''}
       </span>
     </div>
   );
@@ -589,13 +636,32 @@ export function MembersTable({
       cell: (info) => {
         const flag = info.getValue();
         if (flag === null) {
+          // C5 round-10 ui-design-specialist — the previous em-dash
+          // placeholder + sr-only "Risk score not yet computed" made
+          // sighted admins think the data was broken. Show a short
+          // descriptive label + a tooltip that explains WHY (newly-
+          // added members don't have a score until 30 days of activity
+          // accumulate per FR-035 min-tenure rule). Cell stays compact;
+          // the tooltip surfaces the rationale on hover/focus.
           return (
-            <span
-              className="text-muted-foreground"
-              aria-label={t('riskNotComputedAria')}
-            >
-              {t('riskNotComputed')}
-            </span>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <span
+                      tabIndex={0}
+                      className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                      aria-label={t('riskNotComputedAria')}
+                    />
+                  }
+                >
+                  {t('riskNotComputed')}
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t('riskNotComputedTooltip')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           );
         }
         // F8 Phase 6 Wave H — render real RiskScoreBadge from F8 module.

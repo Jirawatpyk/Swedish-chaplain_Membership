@@ -197,7 +197,7 @@ export function MemberForm({
 
       {/* --- Company section --- */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
+        <legend className="px-2 text-base font-semibold">
           {t('sections.company')}
         </legend>
 
@@ -398,7 +398,7 @@ export function MemberForm({
 
       {/* --- Primary contact section --- */}
       <fieldset className="flex flex-col gap-4 rounded-md border p-4">
-        <legend className="px-2 text-sm font-semibold">
+        <legend className="px-2 text-base font-semibold">
           {t('sections.primaryContact')}
         </legend>
 

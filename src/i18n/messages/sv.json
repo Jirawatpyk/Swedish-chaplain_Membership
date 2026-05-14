@@ -615,8 +615,9 @@
           "notes": "Anteckningar"
         },
         "riskPlaceholder": "—",
-        "riskNotComputed": "—",
+        "riskNotComputed": "Ingen poäng än",
         "riskNotComputedAria": "Riskpoäng inte beräknad ännu",
+        "riskNotComputedTooltip": "Riskpoängen beräknas efter 30 dagars aktivitet. Nyligen tillagda medlemmar får poäng när data har samlats in.",
         "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
         "loadMore": "Ladda fler",
@@ -880,6 +881,7 @@
         "toolbarLabel": "Massåtgärder",
         "selectedCount": "{count, plural, one {# vald} other {# valda}}",
         "overCap": "Max {max} medlemmar per omgång. Dela upp urvalet.",
+        "overCapHelper": "{count} av {total} valda — endast {max} kan behandlas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att smalna av listan innan du markerar om.",
         "actions": {
           "archive": "Arkivera",
           "change_plan": "Byt plan",
@@ -906,6 +908,7 @@
         "statusUpdated": "Status uppdaterad",
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
+        "saved": "Sparat",
         "toggleStatus": "Växla status (nuvarande: {current})",
         "editCountry": "Redigera land",
         "editCountryHint": "Dubbelklicka för att redigera landskod (ISO 3166-1 alpha-2)",
@@ -935,11 +938,11 @@
         "bannerTitle": "Arkiverad {date}",
         "withinWindow": "{daysRemaining, plural, one {# dag kvar} other {# dagar kvar}} i 90-dagars återställningsfönstret.",
         "windowExpired": "Arkiverad för {daysSinceArchive} dagar sedan — utanför 90-dagars återställningsfönstret.",
-        "windowExpiredTooltip": "Arkiverad > 90 dagar — kontakta plattformsadministratören för att återställa.",
+        "windowExpiredTooltip": "Arkiverad > 90 dagar — kontakta systemadministratören för att återställa.",
         "undeleteCta": "Återställ",
         "undeleteSuccess": "Medlemmen har återställts.",
         "undeleteError": "Kunde inte återställa. Försök igen.",
-        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta plattformsadministratören för att återställa."
+        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa."
       },
       "undelete": {
         "cta": "Återställ",

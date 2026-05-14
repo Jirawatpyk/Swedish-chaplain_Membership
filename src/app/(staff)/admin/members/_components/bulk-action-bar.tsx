@@ -21,7 +21,13 @@ import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 
-type BulkAction = 'archive' | 'change_plan' | 'send_portal_invite';
+// I9 round-10 ui-design-specialist — `change_plan` was declared but
+// never surfaced as a button (only Archive + Send-Portal-Invite render
+// below). Dropped from the union so a future refactor can't fork to
+// dead code; if reintroduced, add both the button AND the union entry
+// in the same diff. The i18n string `admin.members.bulk.actions.change_plan`
+// is preserved for if/when the button lands.
+type BulkAction = 'archive' | 'send_portal_invite';
 
 type Props = {
   readonly selectedIds: string[];
@@ -114,9 +120,23 @@ export function BulkActionBar({
               {t('selectedCount', { count })}
             </span>
             {overCap && (
-              <span className="text-xs text-destructive" role="alert">
-                {t('overCap', { max: BULK_CAP })}
-              </span>
+              <div className="flex flex-col gap-0.5" role="alert">
+                <span className="text-xs font-medium text-destructive">
+                  {t('overCap', { max: BULK_CAP })}
+                </span>
+                {/* I2 round-10 ui-design-specialist — surface concrete
+                    split guidance ("X of Y selected — deselect past row
+                    Z, or filter the list") instead of just a "Maximum
+                    100" error. Admins need the next step, not just the
+                    constraint. */}
+                <span className="text-xs text-muted-foreground">
+                  {t('overCapHelper', {
+                    count,
+                    total: count,
+                    max: BULK_CAP,
+                  })}
+                </span>
+              </div>
             )}
           </div>
 
