@@ -39,6 +39,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type {
@@ -192,6 +193,11 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
   );
 
   return (
+    /* Round-11 review fix — single TooltipProvider hoisted here so
+       MatchStatusBadge + QuotaEffectBadge inside row cells don't each
+       instantiate their own provider (was 100+ providers on a 50-row
+       page; tooltip race + Tab order noise). */
+    <TooltipProvider>
     <div className="flex flex-col gap-4" aria-busy={isPending}>
       <div className="flex flex-wrap items-center gap-2">
         <form onSubmit={submitSearch} className="flex flex-1 gap-2">
@@ -372,5 +378,6 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
         </Table>
       )}
     </div>
+    </TooltipProvider>
   );
 }

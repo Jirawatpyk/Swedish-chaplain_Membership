@@ -28,7 +28,6 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  TooltipProvider,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
@@ -86,21 +85,21 @@ export function QuotaEffectBadge({
     </Badge>
   );
   if (!tooltip) return badge;
+  // Round-11 review fix — TooltipProvider HOISTED to the calling table.
+  // See match-status-badge.tsx for full rationale.
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span
-              tabIndex={0}
-              className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            />
-          }
-        >
-          {badge}
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          />
+        }
+      >
+        {badge}
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }

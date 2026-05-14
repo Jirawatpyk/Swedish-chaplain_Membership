@@ -111,6 +111,7 @@ export function DirectoryWithBulk({
         <BulkActionBar
           selectedIds={selectedIds}
           selectedCompanyNames={selectedCompanyNames}
+          totalMatching={total}
           onClear={handleClear}
         />
       )}

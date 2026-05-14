@@ -605,7 +605,7 @@
           "risk": {
             "label": "Riskband",
             "all": "Alla riskband",
-            "healthy": "Frisk",
+            "healthy": "God status",
             "warning": "Varning",
             "at-risk": "I riskzon",
             "critical": "Kritisk"

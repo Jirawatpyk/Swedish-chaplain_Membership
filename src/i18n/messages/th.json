@@ -935,7 +935,7 @@
         "saving": "กำลังบันทึก…",
         "saved": "บันทึกแล้ว",
         "columnHeaderHint": "แก้ไขได้",
-        "columnHeaderHintTooltip": "ดับเบิ้ลคลิกเซลล์ในคอลัมน์นี้เพื่อแก้ไขในตาราง กด Enter เพื่อบันทึก กด Escape เพื่อยกเลิก",
+        "columnHeaderHintTooltip": "ดับเบิลคลิกเซลล์ในคอลัมน์นี้เพื่อแก้ไขในตาราง กด Enter เพื่อบันทึก กด Escape เพื่อยกเลิก",
         "toggleStatus": "สลับสถานะ (ปัจจุบัน: {current})",
         "editCountry": "แก้ไขประเทศ",
         "editCountryHint": "ดับเบิลคลิกเพื่อแก้ไขรหัสประเทศ (ISO 3166-1 alpha-2)",
@@ -2482,9 +2482,9 @@
         }
       },
       "matchType": {
-        "member_contact": "ยืนยันตัวตน (อีเมล)",
-        "member_domain": "ยืนยันตัวตน (โดเมน)",
-        "member_fuzzy": "น่าจะเป็นสมาชิก",
+        "member_contact": "ยืนยันแล้ว (อีเมลตรง)",
+        "member_domain": "ยืนยันแล้ว (โดเมนบริษัท)",
+        "member_fuzzy": "ใกล้เคียง (โปรดตรวจสอบ)",
         "non_member": "ไม่ใช่สมาชิก",
         "unmatched": "ต้องตรวจสอบ"
       },

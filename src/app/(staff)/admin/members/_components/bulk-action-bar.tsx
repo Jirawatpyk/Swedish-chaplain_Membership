@@ -32,12 +32,19 @@ type BulkAction = 'archive' | 'send_portal_invite';
 type Props = {
   readonly selectedIds: string[];
   readonly selectedCompanyNames: string[];
+  /**
+   * Total rows matching the current directory filter (across ALL
+   * pages). Used by `overCapHelper` to say "X of Y matching" rather
+   * than the tautological "X of X selected" the initial cut produced.
+   */
+  readonly totalMatching: number;
   readonly onClear: () => void;
 };
 
 export function BulkActionBar({
   selectedIds,
   selectedCompanyNames,
+  totalMatching,
   onClear,
 }: Props) {
   const t = useTranslations('admin.members.bulk');
@@ -132,7 +139,7 @@ export function BulkActionBar({
                 <span className="text-xs text-muted-foreground">
                   {t('overCapHelper', {
                     count,
-                    total: count,
+                    total: totalMatching,
                     max: BULK_CAP,
                   })}
                 </span>

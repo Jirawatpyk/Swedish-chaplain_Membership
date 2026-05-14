@@ -19,6 +19,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocale } from 'next-intl';
 import i18nIsoCountries from 'i18n-iso-countries';
+// Round-11 review (block-ship #4) — pre-register the EN locale at
+// module load so SSR + client first paint always produce the full
+// localised name for the canonical locale (no "🇹🇭 TH → 🇹🇭 Thailand"
+// flash). TH + SV remain dynamic-imported on demand inside
+// `ensureLocaleLoaded` below — they're smaller user populations and
+// the lazy load avoids bundling every supported locale eagerly.
+import enLocale from 'i18n-iso-countries/langs/en.json';
 
 type Props = {
   /** ISO 3166-1 alpha-2 country code (uppercase). */
@@ -63,6 +70,13 @@ function codeToFlag(code: string): string {
 // Locale registrations are global to the lib; use a module-scoped set
 // to avoid double-registering (which is fine but wasteful).
 const registered = new Set<string>();
+
+// Eager-register EN at module load so SSR + first paint can resolve
+// the name immediately for the default locale. Side-effect runs once
+// per process; safe under HMR (i18nIsoCountries.registerLocale is
+// idempotent).
+i18nIsoCountries.registerLocale(enLocale as never);
+registered.add('en');
 
 async function ensureLocaleLoaded(locale: string): Promise<void> {
   if (registered.has(locale)) return;

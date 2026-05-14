@@ -69,34 +69,38 @@ interface PageProps {
 }
 
 /**
- * P5 round-10 ui-design-specialist — request-scoped cached member
- * fetch so `generateMetadata` + the page component share a single
- * database round-trip per request. React.cache() memoises per-request
- * only (no cross-request leakage) — the canonical App Router pattern
- * for fetch-on-render-twice.
+ * P5 round-10 ui-design-specialist — request-scoped cached LIGHT
+ * member fetch for `generateMetadata` only. Returns just the
+ * `companyName` (the only field the `<title>` template needs).
  *
- * Returns the full discriminated `Result` so the page component can
- * still branch on `not_found` / `forbidden` / `server_error` for its
- * bespoke error cards. `generateMetadata` only cares about the happy
- * path and falls back to the generic title on `!ok`.
+ * Round-11 review fix — was previously using the full `getMember`
+ * use-case with a synthetic `actorUserId: 'server-component'`. That
+ * sentinel polluted the audit trail: a cross-tenant probe via
+ * `/admin/members/<foreign-uuid>` would emit
+ * `member_cross_tenant_probe` attributed to 'server-component' rather
+ * than the real admin who clicked the URL. The page component below
+ * runs the FULL `getMember` use-case (with `session.user.id`) so the
+ * authoritative audit row is still written; this metadata-only path
+ * skips audit entirely.
  *
- * Cache key is the memberId string. Tenant + auth context are
- * resolved inside the cached function so each request's headers are
- * captured fresh — React.cache() scopes the memo to the React render
- * pass, not across requests.
+ * Cost: 1 extra `findById` DB round-trip per page load (single-row
+ * by PK — negligible). React.cache() still memoises the metadata
+ * call so multiple `generateMetadata` retries within the same render
+ * pass share the result.
  */
-const cachedGetMember = cache(async (memberId: string) => {
-  const h = await headers();
-  const pseudoReq = new Request('http://localhost:3100', { headers: h });
-  const tenant = resolveTenantFromRequest(pseudoReq as never);
-  const requestId = requestIdFromHeaders(h);
-  const deps = buildMembersDeps(tenant);
-  return getMember(
-    memberId as MemberId,
-    { actorUserId: 'server-component', requestId },
-    deps,
-  );
-});
+const cachedCompanyNameForTitle = cache(
+  async (memberId: string): Promise<string | null> => {
+    const h = await headers();
+    const pseudoReq = new Request('http://localhost:3100', { headers: h });
+    const tenant = resolveTenantFromRequest(pseudoReq as never);
+    const deps = buildMembersDeps(tenant);
+    const result = await deps.memberRepo.findById(
+      tenant,
+      memberId as MemberId,
+    );
+    return result.ok ? result.value.companyName : null;
+  },
+);
 
 export async function generateMetadata({
   params,
@@ -111,12 +115,10 @@ export async function generateMetadata({
   // (invalid UUID / missing row / auth fail) so the metadata pipeline
   // never throws — the page component handles the not-found render.
   if (!UUID_RE.test(memberId)) return { title: tRoot('title') };
-  const result = await cachedGetMember(memberId);
-  if (!result.ok) return { title: tRoot('title') };
+  const companyName = await cachedCompanyNameForTitle(memberId);
+  if (!companyName) return { title: tRoot('title') };
   return {
-    title: tDetail('title', {
-      companyName: result.value.member.companyName,
-    }),
+    title: tDetail('title', { companyName }),
   };
 }
 
@@ -178,6 +180,16 @@ type PendingInvitation = {
    * badge.
    */
   readonly expiresAt: Date;
+  /**
+   * Round-11 review fix — precomputed at the page-level (single
+   * `Date.now()` call per request) instead of inside ContactBlock,
+   * which the react-hooks/purity lint flagged as impure-during-render.
+   * Server component still renders once per request so `Date.now()`
+   * is conceptually pure here, but the precompute makes the rule
+   * happy and centralises the "now" instant for any future
+   * snapshot-style consistency requirement.
+   */
+  readonly daysUntilExpiry: number;
 };
 
 function ContactBlock({
@@ -194,16 +206,10 @@ function ContactBlock({
   // "Invite to portal" is only shown when the contact has an email and
   // is not already linked to an F1 portal account (FR-012 / T056).
   const canInvite = Boolean(contact.email) && !contact.linkedUserId;
-  // C6 round-10 — derive expires-in-days for the inline pending badge.
-  const daysUntilExpiry = pendingInvitation
-    ? Math.max(
-        0,
-        Math.ceil(
-          (pendingInvitation.expiresAt.getTime() - Date.now()) /
-            (1000 * 60 * 60 * 24),
-        ),
-      )
-    : null;
+  // Round-11 review fix — `daysUntilExpiry` is precomputed at the page
+  // level (single `Date.now()` per request) and passed in via the
+  // `pendingInvitation` prop.
+  const daysUntilExpiry = pendingInvitation?.daysUntilExpiry ?? null;
   // Rendered as a plain flat row (no border, no bg) inside the outer
   // Contacts Card. Multiple contacts are separated by <Separator />
   // elements in the parent CardContent — no nested cards, no visual
@@ -304,14 +310,19 @@ export default async function MemberDetailPage({
   const requestId = requestIdFromHeaders(h);
   const deps = buildMembersDeps(tenant);
 
-  // P5 round-10 — single DB round-trip per request via React.cache().
-  // `generateMetadata` already invoked `cachedGetMember(memberId)`
-  // before this component renders; that result is memoised on the
-  // request and resolves here without a second query. The plan + auth
-  // + tenant resolution above are sync pure ops (no DB) so doing them
-  // twice (once in cachedGetMember internally, once here for the plan
-  // lookup below) costs microseconds.
-  const result = await cachedGetMember(memberId);
+  // Round-11 review fix — call `getMember` use-case directly with the
+  // REAL session user as the actor. The earlier React.cache()-shared
+  // path attributed `member_cross_tenant_probe` audits to
+  // `'server-component'` (a synthetic sentinel from
+  // `generateMetadata`). `generateMetadata` now uses a separate light
+  // `findById`-only path (`cachedCompanyNameForTitle`) that emits no
+  // audit; the authoritative audit row is written here with the
+  // correct admin actorUserId.
+  const result = await getMember(
+    memberId as MemberId,
+    { actorUserId: session.user.id, requestId },
+    deps,
+  );
   const t = await getTranslations('admin.members.detail');
 
   if (!result.ok) {
@@ -365,10 +376,25 @@ export default async function MemberDetailPage({
       member.memberId,
     );
     if (pendingRes.ok) {
+      // Round-11 review fix — compute `daysUntilExpiry` once per
+      // request rather than inside ContactBlock. Server component
+      // renders once per HTTP request so `Date.now()` returns a
+      // single stable value for the duration of this render pass —
+      // the react-hooks/purity rule's general concern (re-render
+      // instability) does not apply to RSC. Disable inline.
+      // eslint-disable-next-line react-hooks/purity -- RSC: single render per request
+      const nowMs = Date.now();
+      const dayMs = 1000 * 60 * 60 * 24;
       pendingInvitationsByContactId = new Map(
         pendingRes.value.map((row) => [
           row.contactId,
-          { expiresAt: row.expiresAt },
+          {
+            expiresAt: row.expiresAt,
+            daysUntilExpiry: Math.max(
+              0,
+              Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
+            ),
+          },
         ]),
       );
     } else {

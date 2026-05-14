@@ -36,7 +36,6 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  TooltipProvider,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { MatchType } from '@/modules/events';
@@ -105,21 +104,23 @@ export function MatchStatusBadge({
     </Badge>
   );
   if (!tooltip) return badge;
+  // Round-11 review fix — TooltipProvider HOISTED to the calling table
+  // (attendee-table, events-list-table) so 50-row tables don't spawn
+  // 100+ providers per render. Caller MUST wrap the table body in
+  // `<TooltipProvider>` for the tooltip to function.
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span
-              tabIndex={0}
-              className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            />
-          }
-        >
-          {badge}
-        </TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          />
+        }
+      >
+        {badge}
+      </TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }

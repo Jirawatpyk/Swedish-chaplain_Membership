@@ -140,25 +140,24 @@ function EditableColumnHeader({
 }) {
   const t = useTranslations('admin.members.inlineEdit');
   if (!editable) return <>{label}</>;
+  // Round-11 review fix — TooltipProvider HOISTED to MembersTable root.
   return (
     <span className="inline-flex items-center gap-1">
       <span>{label}</span>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                aria-label={t('columnHeaderHintTooltip')}
-              />
-            }
-          >
-            <PencilLineIcon aria-hidden="true" className="size-3" />
-          </TooltipTrigger>
-          <TooltipContent>{t('columnHeaderHintTooltip')}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className="inline-flex size-4 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+              aria-label={t('columnHeaderHintTooltip')}
+            />
+          }
+        >
+          <PencilLineIcon aria-hidden="true" className="size-3" />
+        </TooltipTrigger>
+        <TooltipContent>{t('columnHeaderHintTooltip')}</TooltipContent>
+      </Tooltip>
     </span>
   );
 }
@@ -704,25 +703,26 @@ export function MembersTable({
           // added members don't have a score until 30 days of activity
           // accumulate per FR-035 min-tenure rule). Cell stays compact;
           // the tooltip surfaces the rationale on hover/focus.
+          // Round-11 review fix — TooltipProvider HOISTED to MembersTable
+          // root (line ~770). Per-row TooltipProvider × N rows produced
+          // tooltip races + Tab order noise at scale.
           return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span
-                      tabIndex={0}
-                      className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                      aria-label={t('riskNotComputedAria')}
-                    />
-                  }
-                >
-                  {t('riskNotComputed')}
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('riskNotComputedTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    tabIndex={0}
+                    className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    aria-label={t('riskNotComputedAria')}
+                  />
+                }
+              >
+                {t('riskNotComputed')}
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('riskNotComputedTooltip')}
+              </TooltipContent>
+            </Tooltip>
           );
         }
         // F8 Phase 6 Wave H — render real RiskScoreBadge from F8 module.
@@ -841,6 +841,11 @@ export function MembersTable({
   }, [enableSelection]);
 
   return (
+    /* Round-11 review fix — single TooltipProvider hoisted here so
+       `EditableColumnHeader` (×3 in admin view) + risk-cell tooltip
+       (×N rows with null band) don't each instantiate their own
+       provider per render. Tooltip race + Tab order noise resolved. */
+    <TooltipProvider>
     <div className="flex flex-col gap-4" ref={tableContainerRef}>
       {enableSelection && selectedCount > 0 && (
         <div
@@ -954,6 +959,7 @@ export function MembersTable({
         </div>
       )}
     </div>
+    </TooltipProvider>
   );
 }
 
