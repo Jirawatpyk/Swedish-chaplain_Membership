@@ -675,7 +675,8 @@
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
           "plan": "Paket",
-          "audit": "Senaste aktivitet"
+          "audit": "Senaste aktivitet",
+          "contactStatusBadges": "Kontaktstatus"
         },
         "fields": {
           "memberId": "Medlems-ID",

@@ -85,17 +85,14 @@ export function QuotaEffectBadge({
     </Badge>
   );
   if (!tooltip) return badge;
-  // Round-11 review fix — TooltipProvider HOISTED to the calling table.
-  // See match-status-badge.tsx for full rationale.
+  // Round-11 + 12 review fixes — TooltipProvider hoisted to table root
+  // + tabIndex dropped from wrapper. See match-status-badge.tsx for
+  // full rationale (badge aria-label is the primary SR signal;
+  // tooltip is supplementary hover-only explanation).
   return (
     <Tooltip>
       <TooltipTrigger
-        render={
-          <span
-            tabIndex={0}
-            className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-          />
-        }
+        render={<span className="inline-flex rounded-md" />}
       >
         {badge}
       </TooltipTrigger>

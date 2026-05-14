@@ -17,6 +17,16 @@ import { runInTenant } from '@/lib/db';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
+// MIGRATION 0017 SECURITY CONTRACT — chamber_app can SELECT only:
+//   • invitations.user_id
+//   • invitations.consumed_at
+//   • invitations.expires_at
+// The `id` column IS the raw 7-day invite token + `created_at` is
+// owner-role only. Adding either to ANY `.select({...})` in this file
+// triggers Postgres 42501 (insufficient_privilege) at runtime with no
+// TypeScript guard. See `findPendingInvitationsForMember` below for
+// the canonical example; the C6 regression that surfaced "Could not
+// load pending invitations" in dev was caused by ignoring this rule.
 import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';

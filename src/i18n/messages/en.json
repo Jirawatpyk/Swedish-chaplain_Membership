@@ -675,7 +675,8 @@
           "primary": "Primary contact",
           "secondary": "Other contacts",
           "plan": "Plan",
-          "audit": "Recent activity"
+          "audit": "Recent activity",
+          "contactStatusBadges": "Contact status"
         },
         "fields": {
           "memberId": "Member ID",

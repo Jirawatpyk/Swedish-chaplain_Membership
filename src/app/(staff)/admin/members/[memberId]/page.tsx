@@ -217,45 +217,53 @@ function ContactBlock({
   return (
     <div>
       <div className="mb-3 flex flex-row items-start justify-between gap-4">
-        <h3 className="text-base font-semibold">
-          {`${contact.firstName} ${contact.lastName}`.trim()}
-          {contact.isPrimary && (
-            <Badge className="ml-2" variant="default">
-              {t('sections.primary')}
-            </Badge>
-          )}
-          {contact.linkedUserId && !pendingInvitation && (
-            <Badge className="ml-2" variant="secondary">
-              {t('portal.linked')}
-            </Badge>
-          )}
-          {/* C6 round-10 ui-design-specialist — inline pending-invitation
-              badge on the contact who was invited but hasn't redeemed
-              yet. Shows the remaining days so admins know when a
-              re-invite may be needed. Replaces the "Portal linked"
-              badge when an invitation is still pending (the user row
-              exists but `consumed_at` is NULL — not yet a real portal
-              user). */}
-          {pendingInvitation && daysUntilExpiry !== null && (
-            <Badge
-              variant="outline"
-              className="ml-2 gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
-              title={t('pendingInvitations.expiresAt', {
-                date: pendingInvitation.expiresAt.toISOString().slice(0, 10),
-              })}
-            >
-              <MailWarningIcon
-                aria-hidden="true"
-                className="size-3"
-              />
-              <span>
-                {t('pendingInvitations.expiresInDays', {
-                  days: daysUntilExpiry,
+        {/* Round-11 review fix — badges moved OUT of the <h3> so the
+            heading text reads cleanly to screen readers (was producing
+            "John Smith Primary Portal linked Expires in 5 days" as a
+            single heading-tree node on VoiceOver). Heading + badge
+            cluster live in adjacent flex containers, separated by
+            `gap-2`. The badge cluster ships its own aria-label so SRs
+            still hear the state info after the heading. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-semibold">
+            {`${contact.firstName} ${contact.lastName}`.trim()}
+          </h3>
+          <div
+            className="flex flex-wrap items-center gap-2"
+            aria-label={t('sections.contactStatusBadges')}
+          >
+            {contact.isPrimary && (
+              <Badge variant="default">{t('sections.primary')}</Badge>
+            )}
+            {contact.linkedUserId && !pendingInvitation && (
+              <Badge variant="secondary">{t('portal.linked')}</Badge>
+            )}
+            {/* C6 round-10 ui-design-specialist — inline pending-
+                invitation badge replaces "Portal linked" when the
+                user row exists but `consumed_at` is NULL. */}
+            {pendingInvitation && daysUntilExpiry !== null && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
+                title={t('pendingInvitations.expiresAt', {
+                  date: pendingInvitation.expiresAt
+                    .toISOString()
+                    .slice(0, 10),
                 })}
-              </span>
-            </Badge>
-          )}
-        </h3>
+              >
+                <MailWarningIcon
+                  aria-hidden="true"
+                  className="size-3"
+                />
+                <span>
+                  {t('pendingInvitations.expiresInDays', {
+                    days: daysUntilExpiry,
+                  })}
+                </span>
+              </Badge>
+            )}
+          </div>
+        </div>
         {canInvite && (
           <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
         )}

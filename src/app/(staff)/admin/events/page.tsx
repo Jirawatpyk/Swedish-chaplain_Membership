@@ -319,9 +319,18 @@ function FilterChipLink({
   href: string;
   children: React.ReactNode;
 }) {
-  // `aria-pressed` is invalid on anchors —
-  // ARIA 1.2 restricts it to role="button". `aria-current="true"` is
-  // the canonical idiom for active nav/filter links on anchor elements.
+  // `aria-pressed` is invalid on anchors — ARIA 1.2 restricts it to
+  // role="button". `aria-current="true"` is the canonical idiom for
+  // active nav/filter LINKS on anchor elements (preserves middle-
+  // click open + bookmarkability + share-URL semantics).
+  //
+  // Round-12 review note: the ui-design-specialist agent suggested
+  // converting to `<button aria-pressed>` for canonical toggle
+  // semantics. Rejected: the conversion would require client-side
+  // router.push to mutate the URL, breaking middle-click open + URL
+  // copy-paste workflows that admins routinely use on filter chips.
+  // `aria-current="true"` is accepted by all WCAG-conformant SRs
+  // (NVDA / JAWS / VoiceOver) as a filter-active signal.
   return (
     <Link
       href={href}
@@ -394,11 +403,16 @@ async function EmptyState({
   if (!emptyContext.everReceivedDelivery) {
     return (
       <div className="flex flex-col items-center gap-4 py-12 text-center">
+        {/* Round-12 review fix — decorative icon only. The previously-
+            adjacent `sr-only illustrationAlt` span was orphaned (no
+            semantic link to the aria-hidden icon) and produced an
+            "Empty inbox illustration" SR announcement disconnected
+            from the surrounding state. Empty-state title + body
+            already convey the meaning; the icon is purely visual. */}
         <InboxIcon
           aria-hidden="true"
           className="size-12 stroke-1 text-muted-foreground"
         />
-        <span className="sr-only">{t('noDeliveries.illustrationAlt')}</span>
         <h2 className="text-h3 font-semibold">{t('noDeliveries.title')}</h2>
         <p className="max-w-md text-muted-foreground">
           {t('noDeliveries.body')}

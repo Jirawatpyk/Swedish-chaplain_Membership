@@ -127,9 +127,18 @@ export function DirectoryWithBulk({
  */
 function ManagerReadOnlyBanner() {
   const t = useTranslations('admin.members.directory');
+  // Round-12 review fix — `role="note"` (was `role="status"`). The
+  // banner is statically rendered on every manager-role visit, not
+  // updated dynamically; `status` is a live-region role intended for
+  // updates after page load and some SR engines don't reliably
+  // announce statically-rendered status rows on initial paint.
+  // `note` is the canonical "supplemental information" landmark and
+  // matches the actual semantic — admin handoff guidance, not a
+  // status update.
   return (
     <div
-      role="status"
+      role="note"
+      aria-label={t('managerReadOnlyBanner')}
       className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-4 py-3 text-sm"
     >
       <InfoIcon

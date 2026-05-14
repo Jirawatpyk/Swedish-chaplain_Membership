@@ -108,15 +108,19 @@ export function MatchStatusBadge({
   // (attendee-table, events-list-table) so 50-row tables don't spawn
   // 100+ providers per render. Caller MUST wrap the table body in
   // `<TooltipProvider>` for the tooltip to function.
+  //
+  // Round-12 review fix — `tabIndex={0}` REMOVED from the wrapper span.
+  // The badge already carries `aria-label={label}` which conveys the
+  // confidence-level label to screen readers when the surrounding row
+  // / cell is focused. The tooltip is supplementary explanation
+  // (matchTypeTooltip — "Email matched an active member contact…")
+  // — keeping it hover-only matches WCAG 2.1 principle that primary
+  // info must not require hover/tooltip. The previous tabIndex=0
+  // produced 50–100 extra Tab stops on a 50-row attendee table.
   return (
     <Tooltip>
       <TooltipTrigger
-        render={
-          <span
-            tabIndex={0}
-            className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-          />
-        }
+        render={<span className="inline-flex rounded-md" />}
       >
         {badge}
       </TooltipTrigger>
