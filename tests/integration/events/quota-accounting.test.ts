@@ -574,4 +574,229 @@ describe('T084 — F6 benefit quota accounting (new-registration paths)', () => 
       expect(quotaAudits.length).toBe(0);
     });
   });
+
+  describe('US4 AS4 — refund credit-back (FR-018)', () => {
+    let tenant: TestTenant;
+    const corpPlanId = `test-plan-refund-corp-${randomUUID()}`;
+    const partnershipPlanId = `test-plan-refund-partner-${randomUUID()}`;
+    const memberId = randomUUID();
+    const ATTENDEE_EMAIL = 'jane@refund.example';
+    const COMPANY_NAME = 'Refund Test Co';
+    const ATTENDEE_EXTERNAL_ID = `att_refund_${Date.now()}`;
+    const eventExternalId = `event_refund_${Date.now()}`;
+
+    beforeAll(async () => {
+      tenant = await createTestTenant('test-swecham');
+      const user = await createActiveTestUser('admin');
+      await runInTenant(tenant.ctx, async (tx) => {
+        await seedF8MembershipPlan(tx, {
+          tenantSlug: tenant.ctx.slug,
+          planId: corpPlanId,
+          planName: { en: 'Corp Bundle (refund)' },
+          benefitMatrix: premiumCorporateMatrix,
+          planCategory: 'corporate',
+          createdBy: user.userId,
+        });
+        await seedF8MembershipPlan(tx, {
+          tenantSlug: tenant.ctx.slug,
+          planId: partnershipPlanId,
+          planName: { en: 'Diamond Partnership (refund)' },
+          benefitMatrix: diamondPartnershipMatrix,
+          planCategory: 'partnership',
+          includesCorporatePlanId: corpPlanId,
+          createdBy: user.userId,
+        });
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId,
+          companyName: COMPANY_NAME,
+          country: 'TH',
+          planId: partnershipPlanId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId,
+          firstName: 'Jane',
+          lastName: 'Refund',
+          email: ATTENDEE_EMAIL,
+          isPrimary: true,
+        } as unknown as typeof contacts.$inferInsert);
+        await tx.insert(tenantWebhookConfigs).values({
+          tenantId: tenant.ctx.slug,
+          source: 'eventcreate',
+          webhookSecretActive: 'test-secret-' + 'a'.repeat(43),
+          enabled: true,
+        });
+        await tx.insert(events).values({
+          tenantId: tenant.ctx.slug,
+          eventId: randomUUID(),
+          source: 'eventcreate',
+          externalId: eventExternalId,
+          name: 'Refund Test Event',
+          startDate: new Date('2026-06-21T18:00:00+07:00'),
+          isPartnerBenefit: true,
+          isCulturalEvent: false,
+        } as unknown as typeof events.$inferInsert);
+      });
+    });
+
+    afterAll(async () => {
+      await tenant.cleanup();
+    });
+
+    it('paid → refunded re-ingest: row flips counted=false + quota_credit_back_refund audit emitted', async () => {
+      const deps = makeIngestWebhookAttendeeDeps();
+      // (1) Initial paid ingest → counted_against_partnership=true
+      const paidResult = await ingestWebhookAttendee(
+        {
+          tenantId: tenant.ctx.slug,
+          requestId: `req-refund-paid-${Date.now()}`,
+          source: 'eventcreate_webhook',
+          rawPayload: makeWebhookPayload({
+            event: {
+              externalId: eventExternalId,
+              name: 'Refund Test Event',
+              startDate: '2026-06-21T18:00:00+07:00',
+            },
+            attendee: {
+              externalId: ATTENDEE_EXTERNAL_ID,
+              email: ATTENDEE_EMAIL,
+              companyName: COMPANY_NAME,
+              fullName: 'Jane Refund',
+              paymentStatus: 'paid',
+            },
+          }),
+          sourceIp: '127.0.0.1',
+        },
+        deps,
+      );
+      expect(paidResult.ok).toBe(true);
+      // Verify the row is counted
+      const paidRow = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.matchedMemberId, memberId)),
+      );
+      expect(paidRow.length).toBe(1);
+      expect(paidRow[0]!.countedAgainstPartnership).toBe(true);
+      expect(paidRow[0]!.paymentStatus).toBe('paid');
+
+      // (2) Re-ingest SAME attendee with payment_status='refunded' but
+      // a fresh X-Request-ID (Zapier delivers refund as a new event,
+      // not a retry of the original). The ingest detects the
+      // (paid → refunded) transition on the existing row and credit-
+      // backs the quota.
+      const refundResult = await ingestWebhookAttendee(
+        {
+          tenantId: tenant.ctx.slug,
+          requestId: `req-refund-flip-${Date.now()}`,
+          source: 'eventcreate_webhook',
+          rawPayload: makeWebhookPayload({
+            event: {
+              externalId: eventExternalId,
+              name: 'Refund Test Event',
+              startDate: '2026-06-21T18:00:00+07:00',
+            },
+            attendee: {
+              externalId: ATTENDEE_EXTERNAL_ID,
+              email: ATTENDEE_EMAIL,
+              companyName: COMPANY_NAME,
+              fullName: 'Jane Refund',
+              paymentStatus: 'refunded',
+            },
+          }),
+          sourceIp: '127.0.0.1',
+        },
+        deps,
+      );
+      expect(refundResult.ok).toBe(true);
+      if (refundResult.ok) {
+        // The IngestSuccess.quotaEffect surfaces POST-refund state
+        expect(refundResult.value.quotaEffect.countedAgainstPartnership).toBe(false);
+        expect(refundResult.value.quotaEffect.countedAgainstCulturalQuota).toBe(false);
+      }
+
+      // (3) Verify the row state in DB: payment_status='refunded' +
+      // counted_against_partnership=false
+      const refundedRow = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.matchedMemberId, memberId)),
+      );
+      expect(refundedRow.length).toBe(1);
+      expect(refundedRow[0]!.paymentStatus).toBe('refunded');
+      expect(refundedRow[0]!.countedAgainstPartnership).toBe(false);
+      expect(refundedRow[0]!.countedAgainstCulturalQuota).toBe(false);
+
+      // (4) Verify audit trail: exactly 1 quota_credit_back_refund
+      // (scope=partnership), and the original decrement audit is
+      // preserved (NOT retroactively deleted).
+      const allAudits = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenant.ctx.slug));
+      const decrementAudits = allAudits.filter(
+        (r) => String(r.eventType) === 'quota_partnership_decremented',
+      );
+      expect(decrementAudits.length).toBe(1);
+      const creditBackAudits = allAudits.filter(
+        (r) => String(r.eventType) === 'quota_credit_back_refund',
+      );
+      expect(creditBackAudits.length).toBe(1);
+      const cbPayload = creditBackAudits[0]!.payload as Record<string, unknown>;
+      expect(cbPayload.scope).toBe('partnership');
+      // allotmentAfter = allotment 6 - consumed 0 (post-flip) = 6
+      expect(cbPayload.allotmentAfter).toBe(6);
+      expect(cbPayload.memberId).toBe(memberId);
+    });
+
+    it('re-replay refund (already refunded) → idempotent: no second credit_back audit', async () => {
+      const deps = makeIngestWebhookAttendeeDeps();
+      // (Continuing from previous test — the row is already refunded.)
+      // Re-deliver the refund payload with yet another fresh X-Request-ID.
+      const replay = await ingestWebhookAttendee(
+        {
+          tenantId: tenant.ctx.slug,
+          requestId: `req-refund-replay-${Date.now()}`,
+          source: 'eventcreate_webhook',
+          rawPayload: makeWebhookPayload({
+            event: {
+              externalId: eventExternalId,
+              name: 'Refund Test Event',
+              startDate: '2026-06-21T18:00:00+07:00',
+            },
+            attendee: {
+              externalId: ATTENDEE_EXTERNAL_ID,
+              email: ATTENDEE_EMAIL,
+              companyName: COMPANY_NAME,
+              fullName: 'Jane Refund',
+              paymentStatus: 'refunded',
+            },
+          }),
+          sourceIp: '127.0.0.1',
+        },
+        deps,
+      );
+      expect(replay.ok).toBe(true);
+
+      // Audit count for quota_credit_back_refund must remain 1 (not 2)
+      // because the row was already in refunded state before this
+      // delivery — the use-case's `isRefundTransition` guard
+      // (existingPaymentStatus !== 'refunded') correctly skips the
+      // emit.
+      const allAudits = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenant.ctx.slug));
+      const creditBackAudits = allAudits.filter(
+        (r) => String(r.eventType) === 'quota_credit_back_refund',
+      );
+      expect(creditBackAudits.length).toBe(1);
+    });
+  });
 });

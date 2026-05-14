@@ -661,6 +661,138 @@ export async function ingestWebhookAttendee(
         // the row already has both flags = false from the INSERT.
       }
 
+      // 5c. Refund credit-back branch — Phase 6 wave-3 (FR-018 / US4 AS4).
+      // When the SAME (tenant, event, externalId) re-arrives with
+      // `payment_status='refunded'` AND the existing row was previously
+      // counted (`counted_against_*=true` on at least one scope), flip
+      // the row to refunded + zero out counted_against_* + emit one
+      // `quota_credit_back_refund` audit per previously-true scope.
+      //
+      // This runs OUTSIDE the `shouldApplyQuota` block because refund
+      // handling targets the EXISTING-row (`isNewRegistration === false`)
+      // path that `applyQuotaEffect` correctly skipped. Defence-in-
+      // depth checks: matchedMemberId !== null (non-matched rows never
+      // had quota counted), at least one previously-true flag (no
+      // audit noise on already-neutral rows), and `payment_status` is
+      // actually transitioning (re-replaying a refund delivery is a
+      // no-op idempotent path).
+      const existingReg = regInsert.value.registration;
+      const isRefundTransition =
+        !regInsert.value.isNewRegistration &&
+        parsed.data.attendee.paymentStatus === 'refunded' &&
+        existingReg.ticket.paymentStatus !== 'refunded' &&
+        matchedMemberId !== null &&
+        (existingReg.quotaEffect.countedAgainstPartnership ||
+          existingReg.quotaEffect.countedAgainstCulturalQuota);
+      if (isRefundTransition) {
+        failureStage = 'quota_decrement';
+        try {
+          await ports.advisoryLockAcquirer.acquire(
+            // Inline the lock-key derivation rather than importing the
+            // shared helper to keep the use-case's import graph narrow
+            // (apply-quota-effect already imports the helper for its
+            // own call site; the same string format is the canonical
+            // namespace per research.md R5).
+            `eventcreate-quota:${input.tenantId}:${matchedMemberId}:${event.eventId}`,
+          );
+        } catch (e) {
+          throw new TxStageError(
+            'quota_decrement',
+            `refund advisory-lock acquisition failed: ${(e as Error)?.message ?? 'unknown'}`,
+          );
+        }
+
+        const flip = await registrationsRepo.markRefunded(
+          asTenantId(input.tenantId),
+          existingReg.registrationId,
+        );
+        if (!flip.ok) {
+          const e = flip.error;
+          const msg =
+            e.kind === 'db_error'
+              ? e.message
+              : e.kind === 'invariant_violation'
+                ? `markRefunded invariant: ${e.invariant}`
+                : e.kind === 'pseudonymised_row_rejected'
+                  ? `markRefunded on pseudonymised row ${e.registrationId}`
+                  : `markRefunded ${e.kind}`;
+          throw new TxStageError('quota_decrement', msg);
+        }
+
+        // Emit one credit-back audit per previously-true scope. The
+        // `allotmentAfter` carried in the payload is recomputed via
+        // quotaAccountingPort.queryAllotments to surface the new
+        // remaining-quota count for the member as of THIS tx.
+        const prev = flip.value.previousQuotaEffect;
+        let lookupResult:
+          | Awaited<ReturnType<typeof ports.quotaAccountingPort.queryAllotments>>
+          | null = null;
+        if (prev.countedAgainstPartnership || prev.countedAgainstCulturalQuota) {
+          lookupResult = await ports.quotaAccountingPort.queryAllotments({
+            tenantId: asTenantId(input.tenantId),
+            memberId: matchedMemberId,
+            eventId: event.eventId,
+            fiscalYear: deriveFiscalYear(event.startDate.toISOString(), 1),
+          });
+        }
+        const baseRefundAudit = {
+          tenantId: asTenantId(input.tenantId),
+          actorType: 'zapier_webhook' as const,
+          actorUserId: null,
+          occurredAt: new Date(),
+        };
+        if (prev.countedAgainstPartnership) {
+          let allotmentAfter = 0;
+          if (lookupResult?.ok) {
+            const { allotments, consumed } = lookupResult.value;
+            // Post-refund consumed already excludes our row (we just
+            // flipped counted_against_partnership=false) so this is the
+            // canonical remaining count.
+            allotmentAfter =
+              allotments.partnershipPerEvent -
+              consumed.partnershipConsumedForEvent;
+          }
+          await emitOrThrow(audit, {
+            ...baseRefundAudit,
+            eventType: 'quota_credit_back_refund',
+            summary: `partnership credit-back via refund: registration ${existingReg.registrationId} flipped paid→refunded`,
+            payload: {
+              severity: 'info',
+              registrationId: existingReg.registrationId,
+              memberId: matchedMemberId,
+              scope: 'partnership',
+              allotmentAfter,
+            },
+          });
+        }
+        if (prev.countedAgainstCulturalQuota) {
+          let allotmentAfter = 0;
+          if (lookupResult?.ok) {
+            const { allotments, consumed } = lookupResult.value;
+            allotmentAfter =
+              allotments.culturalPerYear - consumed.culturalConsumedForYear;
+          }
+          await emitOrThrow(audit, {
+            ...baseRefundAudit,
+            eventType: 'quota_credit_back_refund',
+            summary: `cultural credit-back via refund: registration ${existingReg.registrationId} flipped paid→refunded`,
+            payload: {
+              severity: 'info',
+              registrationId: existingReg.registrationId,
+              memberId: matchedMemberId,
+              scope: 'cultural',
+              allotmentAfter,
+            },
+          });
+        }
+        // The returned `quotaEffect` to the caller reflects POST-refund
+        // state — both flags false.
+        quotaEffect = {
+          countedAgainstPartnership: false,
+          countedAgainstCulturalQuota: false,
+        };
+      }
+
       // 6. Emit success audit + match-resolution audit
       failureStage = 'audit_emit';
       const ingestLatencyMs = Date.now() - startedAtMs;

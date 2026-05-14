@@ -184,6 +184,37 @@ export interface RegistrationsRepository {
   ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>>;
 
   /**
+   * Atomically flips the row to refunded state (FR-018 / US4 AS4 —
+   * webhook re-ingest with `payment_status='refunded'` on an existing
+   * `(tenant, event, externalId)` triple). Sets:
+   *   - payment_status = 'refunded'
+   *   - counted_against_partnership = false
+   *   - counted_against_cultural_quota = false
+   *
+   * Idempotent — re-running on an already-refunded row updates nothing
+   * material; returns the same aggregate with both `counted_against_*`
+   * flags surfaced for the caller's audit-emission decision (the
+   * `previousQuotaEffect` field tells the caller WHICH scopes need a
+   * `quota_credit_back_refund` audit row — the SCOPES that were
+   * previously true are the scopes that just credited back).
+   *
+   * REJECTS rows where `piiPseudonymisedAt IS NOT NULL` per FR-014.
+   */
+  markRefunded(
+    tenantId: TenantId,
+    registrationId: RegistrationId,
+  ): Promise<
+    Result<
+      {
+        readonly registration: EventRegistrationAggregate;
+        readonly previousQuotaEffect: QuotaEffect;
+        readonly previousPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
+      },
+      RegistrationsRepositoryError
+    >
+  >;
+
+  /**
    * Lists every registration for an event that is eligible for quota
    * re-evaluation (T087 admin toggle, FR-019 + FR-019a archive). Filters:
    *   - matched_member_id IS NOT NULL (non-matched rows never carry

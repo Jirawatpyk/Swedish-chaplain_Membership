@@ -388,6 +388,82 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     async updateMatchAndQuota() {
       return err({ kind: 'not_implemented', method: 'updateMatchAndQuota', futureTask: 'Phase 9 T104' });
     },
+    async markRefunded(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+    ): Promise<
+      Result<
+        {
+          readonly registration: EventRegistrationAggregate;
+          readonly previousQuotaEffect: import('../domain/event-registration').QuotaEffect;
+          readonly previousPaymentStatus: PaymentStatus;
+        },
+        RegistrationsRepositoryError
+      >
+    > {
+      try {
+        // Capture previous state BEFORE the UPDATE so the audit emission
+        // knows which scopes flipped true → false. SELECT + UPDATE in
+        // the same tx + under the caller's advisory lock so a concurrent
+        // ingest cannot interleave.
+        const prevRows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+            ),
+          )
+          .limit(1);
+        if (prevRows.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations.markRefunded: row not found — caller passed a registrationId with no matching row in this tenant',
+          });
+        }
+        const prevRow = prevRows[0]!;
+        if (prevRow.piiPseudonymisedAt !== null) {
+          return err({ kind: 'pseudonymised_row_rejected', registrationId });
+        }
+        const previousQuotaEffect = {
+          countedAgainstPartnership: prevRow.countedAgainstPartnership,
+          countedAgainstCulturalQuota: prevRow.countedAgainstCulturalQuota,
+        };
+        const previousPaymentStatus = prevRow.paymentStatus as PaymentStatus;
+
+        const updated = await executor
+          .update(eventRegistrations)
+          .set({
+            paymentStatus: 'refunded',
+            countedAgainstPartnership: false,
+            countedAgainstCulturalQuota: false,
+          })
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations.markRefunded: row vanished between SELECT and UPDATE — likely a concurrent erasure',
+          });
+        }
+        return ok({
+          registration: toAggregate(updated[0]!),
+          previousQuotaEffect,
+          previousPaymentStatus,
+        });
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
+    },
     async listForRequota(
       tenantId: TenantId,
       eventId: EventId,
