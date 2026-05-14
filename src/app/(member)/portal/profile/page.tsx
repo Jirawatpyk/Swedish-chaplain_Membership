@@ -12,6 +12,8 @@ import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { CopyButton } from '@/components/members/copy-button';
+import { CountryDisplay } from '@/components/members/country-display';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -102,6 +104,28 @@ export default async function PortalProfilePage() {
         </CardHeader>
         <CardContent>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* I6 round-10 ui-design-specialist — surface member_id +
+                copy-to-clipboard. Support staff first question when a
+                member calls is "what's your member ID?"; the admin
+                detail page already had this affordance, the portal
+                side was the gap. `font-mono text-xs` to mirror admin
+                styling; `lg:col-span-3` so the row spans the full
+                grid above the rest of the fields. */}
+            <div className="lg:col-span-3">
+              <dt className="text-caption text-muted-foreground">
+                {t('fields.memberId')}
+              </dt>
+              <dd className="text-body flex items-center gap-2">
+                <span className="font-mono text-xs">{m.memberId}</span>
+                <CopyButton
+                  value={m.memberId}
+                  label={t('fields.memberIdCopy')}
+                />
+                <span className="text-caption text-muted-foreground">
+                  {t('fields.memberIdHelp')}
+                </span>
+              </dd>
+            </div>
             <div>
               <dt className="text-caption text-muted-foreground">
                 {t('fields.companyName')}
@@ -120,7 +144,9 @@ export default async function PortalProfilePage() {
               <dt className="text-caption text-muted-foreground">
                 {t('fields.country')}
               </dt>
-              <dd className="text-body">{m.country}</dd>
+              <dd className="text-body">
+                <CountryDisplay code={m.country} />
+              </dd>
             </div>
             {m.website && (
               <div>
