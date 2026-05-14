@@ -74,6 +74,8 @@ import type {
 import type {
   QuotaAccountingPort,
   QuotaAccountingError,
+  PlanAllotments,
+  ConsumedQuota,
 } from '../ports/quota-accounting-port';
 import type { F6AuditPort, AuditEmitError } from '../ports/audit-port';
 import type {
@@ -270,6 +272,72 @@ export async function toggleEventCategory(
     });
   }
 
+  // **R7 CODE-FR-02 closure** — batched-queryAllotments by unique
+  // memberId for the toggle re-evaluation loop. Mirrors the
+  // archive-event.ts PERF-R6-04 optimisation but extended to handle
+  // toggle's heterogeneous per-row outcomes (decrement / over_quota
+  // / credit_back / no-op).
+  //
+  // **Algorithm**:
+  //   Pre-loop: collect unique `matchedMemberId`s from `requotaList`;
+  //   issue ONE `queryAllotments` per unique member to capture
+  //   `(allotments, initialConsumed)` snapshot. Cache in
+  //   `allotmentsCache`.
+  //
+  //   In-loop: track per-(member, scope) deltas in `toggleDeltas`:
+  //     - `delta += 1` when row flips counted=false → true (toggle-
+  //       ON room available)
+  //     - `delta -= 1` when row flips counted=true → false (toggle-
+  //       OFF credit-back)
+  //     - delta unchanged on no-op + over-quota-with-no-flip paths
+  //
+  //   Live consumed at any point inside the tx:
+  //     `consumed_live = initialConsumed + delta_cumulative`
+  //   The audit's `allotmentAfter` value:
+  //     `allotmentAfter = allotments.<scope> - consumed_live (post-flip)`
+  //
+  // **RTT impact**: was N × 1 queryAllotments (3 RTTs each), now
+  // M × 1 (3 RTTs each), where M = |unique members| ≤ N. Plan
+  // lookup is cached invariant per member; consumed counts are
+  // tracked in-memory by delta + cached initial.
+  //
+  // No port API expansion needed (T154d carry-forward closure —
+  // the cost-analysis prediction in tasks.md that this required a
+  // new `queryConsumedOnly` port method was incorrect; in-memory
+  // delta tracking is sufficient because we control the order of
+  // operations in the loop).
+  type CachedAllotments = {
+    readonly allotments: PlanAllotments;
+    readonly initialConsumed: ConsumedQuota;
+  };
+  const allotmentsCache = new Map<string, CachedAllotments>();
+  const toggleDeltas = new Map<string, { partnership: number; cultural: number }>();
+  const uniqueMembers = new Set<string>();
+  for (const r of requotaList.value) {
+    if (r.match.matchedMemberId !== null) {
+      uniqueMembers.add(String(r.match.matchedMemberId));
+    }
+  }
+  for (const m of uniqueMembers) {
+    const lookup = await deps.quotaAccountingPort.queryAllotments({
+      tenantId: input.tenantId,
+      memberId: m as unknown as Parameters<typeof deps.quotaAccountingPort.queryAllotments>[0]['memberId'],
+      eventId: input.eventId,
+      fiscalYear,
+    });
+    if (!lookup.ok) {
+      return err({
+        kind: 'quota_lookup_failed',
+        message: `pre-loop ${quotaAccountingErrorMessage(lookup.error)}`,
+        cause: lookup.error,
+      });
+    }
+    allotmentsCache.set(m, {
+      allotments: lookup.value.allotments,
+      initialConsumed: lookup.value.consumed,
+    });
+  }
+
   // (5) Per-registration re-evaluation
   let registrationsReevaluated = 0;
   for (const reg of requotaList.value) {
@@ -290,6 +358,27 @@ export async function toggleEventCategory(
     const currentPartnership = reg.quotaEffect.countedAgainstPartnership;
     const currentCultural = reg.quotaEffect.countedAgainstCulturalQuota;
 
+    // R7 CODE-FR-02 — read cached allotments + accumulated deltas
+    // for this member instead of issuing per-row queryAllotments.
+    const memberKey = String(memberId);
+    const cached = allotmentsCache.get(memberKey);
+    if (!cached) {
+      // Programmer error — same defensive guard as archive-event.ts.
+      // uniqueMembers was populated from the same requotaList; cache
+      // MUST contain this member. Throw a plain Error so
+      // runInTenantWithRollbackOnErr rolls back the tx and surfaces
+      // a 500 with full pino stack (matches R7 ERR-FR-04 pattern).
+      throw new Error(
+        `toggle-event-category invariant: memberId ${memberKey} missing ` +
+          `from pre-loop allotmentsCache (programmer error — uniqueMembers ` +
+          `walk dropped a memberId; check requotaList / Set construction)`,
+      );
+    }
+    const deltaSoFar = toggleDeltas.get(memberKey) ?? {
+      partnership: 0,
+      cultural: 0,
+    };
+
     // (5b+c) Decide new flags based on UPDATED event flags + computed
     // consumption. To avoid double-counting the current row in the SUM
     // query, we offset by the row's current `counted_against_*` value.
@@ -302,32 +391,24 @@ export async function toggleEventCategory(
 
     // Partnership scope
     if (input.flag === 'is_partner_benefit') {
+      // Live consumed at this point in tx = initialConsumed + delta
+      // accumulated from prior iterations on same member in THIS loop.
+      const consumedLive =
+        cached.initialConsumed.partnershipConsumedForEvent +
+        deltaSoFar.partnership;
       if (eventAfter.isPartnerBenefit) {
         // Toggle ON: re-decide based on room
-        const lookup = await deps.quotaAccountingPort.queryAllotments({
-          tenantId: input.tenantId,
-          memberId,
-          eventId: input.eventId,
-          fiscalYear,
-        });
-        if (!lookup.ok) {
-          return err({
-            kind: 'quota_lookup_failed',
-            message: quotaAccountingErrorMessage(lookup.error),
-            cause: lookup.error,
-          });
-        }
-        // Subtract the row's own contribution so SUM excludes self
         const consumedExcludingSelf =
-          lookup.value.consumed.partnershipConsumedForEvent -
-          (currentPartnership ? 1 : 0);
+          consumedLive - (currentPartnership ? 1 : 0);
         const room =
-          consumedExcludingSelf < lookup.value.allotments.partnershipPerEvent;
+          consumedExcludingSelf < cached.allotments.partnershipPerEvent;
         nextPartnership = room;
         if (room && !currentPartnership) {
+          // This row flips false → true; consumed will increment.
+          deltaSoFar.partnership += 1;
           auditOnPartnership = 'decremented';
           allotmentAfterPartnership =
-            lookup.value.allotments.partnershipPerEvent - consumedExcludingSelf - 1;
+            cached.allotments.partnershipPerEvent - consumedExcludingSelf - 1;
         } else if (!room && !currentPartnership) {
           auditOnPartnership = 'over_quota';
         } else if (!room && currentPartnership) {
@@ -349,58 +430,35 @@ export async function toggleEventCategory(
         // Toggle OFF: every counted row flips to false
         nextPartnership = false;
         if (currentPartnership) {
+          // This row flips true → false; consumed will decrement.
+          deltaSoFar.partnership -= 1;
           auditOnPartnership = 'credit_back';
-          // After this credit-back, the partnership consumed count for
-          // this (member, event) drops by 1. Recompute allotment-after
-          // via lookup to surface in the audit payload.
-          const lookup = await deps.quotaAccountingPort.queryAllotments({
-            tenantId: input.tenantId,
-            memberId,
-            eventId: input.eventId,
-            fiscalYear,
-          });
-          if (!lookup.ok) {
-            return err({
-            kind: 'quota_lookup_failed',
-            message: quotaAccountingErrorMessage(lookup.error),
-            cause: lookup.error,
-          });
-          }
-          // Consumed BEFORE our credit-back still includes this row.
-          // The allotment-after AFTER our credit-back is allotment - (consumed - 1).
+          // Post-credit-back live consumed:
+          // (consumedLive + deltaIncrement) where deltaIncrement = -1.
           allotmentAfterPartnership =
-            lookup.value.allotments.partnershipPerEvent -
-            (lookup.value.consumed.partnershipConsumedForEvent - 1);
+            cached.allotments.partnershipPerEvent -
+            (cached.initialConsumed.partnershipConsumedForEvent +
+              deltaSoFar.partnership);
         }
       }
     }
 
     // Cultural scope
     if (input.flag === 'is_cultural_event') {
+      const consumedLive =
+        cached.initialConsumed.culturalConsumedForYear +
+        deltaSoFar.cultural;
       if (eventAfter.isCulturalEvent) {
-        const lookup = await deps.quotaAccountingPort.queryAllotments({
-          tenantId: input.tenantId,
-          memberId,
-          eventId: input.eventId,
-          fiscalYear,
-        });
-        if (!lookup.ok) {
-          return err({
-            kind: 'quota_lookup_failed',
-            message: quotaAccountingErrorMessage(lookup.error),
-            cause: lookup.error,
-          });
-        }
         const consumedExcludingSelf =
-          lookup.value.consumed.culturalConsumedForYear -
-          (currentCultural ? 1 : 0);
+          consumedLive - (currentCultural ? 1 : 0);
         const room =
-          consumedExcludingSelf < lookup.value.allotments.culturalPerYear;
+          consumedExcludingSelf < cached.allotments.culturalPerYear;
         nextCultural = room;
         if (room && !currentCultural) {
+          deltaSoFar.cultural += 1;
           auditOnCultural = 'decremented';
           allotmentAfterCultural =
-            lookup.value.allotments.culturalPerYear - consumedExcludingSelf - 1;
+            cached.allotments.culturalPerYear - consumedExcludingSelf - 1;
         } else if (!room && currentCultural) {
           // Same edge case as partnership scope (IMP-1 wave-5). Audit
           // the drift, keep row counted.
@@ -412,26 +470,23 @@ export async function toggleEventCategory(
       } else {
         nextCultural = false;
         if (currentCultural) {
+          deltaSoFar.cultural -= 1;
           auditOnCultural = 'credit_back';
-          const lookup = await deps.quotaAccountingPort.queryAllotments({
-            tenantId: input.tenantId,
-            memberId,
-            eventId: input.eventId,
-            fiscalYear,
-          });
-          if (!lookup.ok) {
-            return err({
-            kind: 'quota_lookup_failed',
-            message: quotaAccountingErrorMessage(lookup.error),
-            cause: lookup.error,
-          });
-          }
           allotmentAfterCultural =
-            lookup.value.allotments.culturalPerYear -
-            (lookup.value.consumed.culturalConsumedForYear - 1);
+            cached.allotments.culturalPerYear -
+            (cached.initialConsumed.culturalConsumedForYear +
+              deltaSoFar.cultural);
         }
       }
     }
+
+    // Persist the delta back to the cache for the next iteration on
+    // this member. Object reference is reused so the `set()` is
+    // technically redundant if `get()` returned a cached ref, but
+    // for the cache-miss path (first iteration on a member) the
+    // `?? {...}` above created a fresh object — the `set()` ensures
+    // subsequent iterations see the same mutations.
+    toggleDeltas.set(memberKey, deltaSoFar);
 
     // (5d) Persist row UPDATE if anything changed
     const changed =
