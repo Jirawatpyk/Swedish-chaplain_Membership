@@ -29,6 +29,8 @@ const perfSuites = [
   'tests/integration/invoicing/seq-number-atomicity.test.ts',
   // F8 Phase 3 verify-run C1 — renewal pipeline p95 < 500ms (SC-003 / FR-046)
   'tests/integration/perf/renewals-pipeline-perf.test.ts',
+  // F6 Phase 7 SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB
+  'tests/integration/perf/csv-import-perf.test.ts',
 ];
 
 const child = spawn(

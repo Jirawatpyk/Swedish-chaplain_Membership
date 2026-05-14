@@ -25,6 +25,10 @@ export default function EventsListLoading() {
       <PageHeader
         title={<span aria-hidden="true" className="block"><Skeleton className="h-7 w-44" /></span>}
         subtitle={<Skeleton className="h-4 w-64" aria-hidden />}
+        // "Import CSV" CTA in PageHeader actions — admin-only button
+        // rendered by the real page. Skeleton placeholder keeps CLS-0
+        // when the page swaps in.
+        actions={<Skeleton className="h-9 w-32 rounded-lg" aria-hidden />}
       />
       <Card aria-hidden>
         <CardContent className="flex flex-col gap-4">

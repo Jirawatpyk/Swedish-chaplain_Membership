@@ -2334,6 +2334,7 @@
         "subtitle": "การลงทะเบียนกิจกรรมที่นำเข้าจาก EventCreate",
         "tableCaption": "กิจกรรมที่นำเข้า เรียงตามวันที่เริ่มต้นจากใหม่ไปเก่า",
         "errorState": "ไม่สามารถโหลดกิจกรรมได้ กรุณารีเฟรชหน้าจอ",
+        "importCsvCta": "นำเข้า CSV",
         "columns": {
           "date": "วันที่",
           "name": "ชื่อ",
@@ -2513,6 +2514,57 @@
         "pending": "รอชำระ",
         "refunded": "คืนเงินแล้ว",
         "free": "ฟรี"
+      },
+      "import": {
+        "pageTitle": "นำเข้าผู้เข้าร่วมจากไฟล์ CSV",
+        "pageSubtitle": "อัปโหลดไฟล์ CSV ที่ส่งออกจาก EventCreate ใช้สำหรับการสำรองข้อมูล การกู้คืนเมื่อ Zapier ขัดข้อง หรือเป็นช่องทางหลักเมื่อไม่ได้ใช้ Zapier",
+        "formTitle": "อัปโหลดไฟล์ CSV",
+        "formDescription": "ระบบจะจับคู่ผู้เข้าร่วมกับสมาชิกที่มีอยู่และคำนวณโควต้าด้วยกฎเดียวกับการส่งผ่าน webhook",
+        "fileInputLabel": "เลือกไฟล์ .csv",
+        "fileInputHelp": "ขนาดไฟล์สูงสุด 5 MiB เข้ารหัส UTF-8 คั่นด้วยเครื่องหมายจุลภาค ใช้ \"\" สำหรับ escape เครื่องหมายอัญประกาศ คอลัมน์ที่จำเป็น: event_external_id, event_name, event_start, attendee_email, attendee_name",
+        "confirmCta": "ยืนยันและนำเข้า",
+        "cancelCta": "ยกเลิก",
+        "submittingCta": "กำลังนำเข้า — กรุณารอ",
+        "uploadInProgressSr": "กำลังนำเข้า CSV กรุณารอสักครู่",
+        "retryCta": "ลองอีกครั้ง",
+        "uploadAnother": "อัปโหลด CSV อีกไฟล์",
+        "preview": {
+          "fileNameLabel": "ไฟล์",
+          "columnMappingTitle": "คอลัมน์ที่ตรวจพบ",
+          "columnMappingLegend": "คอลัมน์ที่จำเป็นแสดงเป็นสีเขียว คอลัมน์เสริมแสดงสีจาง คอลัมน์ที่จำเป็นที่หายไปจะบล็อกการนำเข้า",
+          "optionalColumnTooltip": "ไม่บังคับ — เพิ่มข้อมูลกิจกรรมที่ละเอียดขึ้นหากมี",
+          "previewRowsTitle": "ตัวอย่าง ({count} แถว)",
+          "missingColumnsTitle": "CSV ขาดคอลัมน์ที่จำเป็น",
+          "missingColumnsDescription": "กรุณาส่งออกไฟล์ใหม่หลังเพิ่มคอลัมน์เหล่านี้:"
+        },
+        "result": {
+          "regionLabel": "ผลการนำเข้า CSV",
+          "title": "นำเข้าเสร็จสมบูรณ์",
+          "rowsProcessedLabel": "แถวที่นำเข้า",
+          "rowsAlreadyImportedLabel": "นำเข้าไปแล้วก่อนหน้า",
+          "rowsAlreadyImportedDescription": "แถวเหล่านี้ตรงกับการนำเข้าก่อนหน้าและถูกข้ามอัตโนมัติ (idempotent)",
+          "eventsCreatedLabel": "กิจกรรมที่สร้างใหม่",
+          "eventsUpdatedLabel": "กิจกรรมที่อัปเดต",
+          "durationLabel": "ระยะเวลา",
+          "matchBreakdownTitle": "สรุปผลการจับคู่",
+          "errorRowsTitle": "แถวที่ข้าม ({count})",
+          "errorRowLabel": "แถวที่ {rowNumber}",
+          "noErrorRows": "นำเข้าทุกแถวสำเร็จ — ไม่มีข้อผิดพลาดให้ตรวจสอบ"
+        },
+        "errors": {
+          "networkErrorTitle": "ข้อผิดพลาดเครือข่าย",
+          "headerInvalidTitle": "หัวคอลัมน์ของ CSV ไม่ถูกต้อง",
+          "badRequestTitle": "ไม่สามารถนำเข้าได้",
+          "badRequestDetail": "ระบบไม่สามารถประมวลผล CSV ได้ กรุณาตรวจสอบรูปแบบและลองอีกครั้ง",
+          "fileTooLargeTitle": "ไฟล์ใหญ่เกินไป",
+          "fileTooLargeDetail": "ไฟล์ CSV ต้องมีขนาดไม่เกิน 5 MiB กรุณาแบ่งไฟล์หรือลบแถวเก่าออก",
+          "rateLimitedTitle": "นำเข้าบ่อยเกินไป",
+          "rateLimitedDetail": "คุณนำเข้าครบ 5 ครั้งต่อชั่วโมงแล้ว กรุณาลองอีกครั้งใน {retryAfter} วินาที",
+          "timeoutTitle": "การนำเข้าหมดเวลา",
+          "timeoutDetail": "การนำเข้าบางส่วนเสร็จสิ้นแล้ว กรุณาอัปโหลด CSV เดิมอีกครั้ง — แถวที่ประมวลผลไปแล้วจะถูกข้ามอัตโนมัติ",
+          "unexpectedTitle": "เกิดข้อผิดพลาดบางอย่าง",
+          "unexpectedDetail": "เกิดข้อผิดพลาดที่ไม่คาดคิด ลองอีกครั้ง หากปัญหายังคงอยู่กรุณาติดต่อทีมสนับสนุน"
+        }
       }
     },
     "integrations": {

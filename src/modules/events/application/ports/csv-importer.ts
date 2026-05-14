@@ -59,7 +59,17 @@ export interface CsvParseInput {
 }
 
 export type CsvImporterError =
-  | { readonly kind: 'invalid_header'; readonly reason: string }
+  | {
+      readonly kind: 'invalid_header';
+      readonly reason: string;
+      /**
+       * Canonical names of required columns missing from the header
+       * row. Populated when the rejection reason is "missing required
+       * columns"; empty for other header-level errors (e.g. wrong
+       * separator detected, all-empty first row).
+       */
+      readonly missingColumns: ReadonlyArray<string>;
+    }
   | { readonly kind: 'invalid_utf8'; readonly offset: number }
   | { readonly kind: 'file_too_large'; readonly bytes: number; readonly max: number };
 

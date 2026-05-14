@@ -21,7 +21,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
-import { PlusIcon, InboxIcon, SendIcon } from 'lucide-react';
+import {
+  PlusIcon,
+  InboxIcon,
+  SendIcon,
+  UploadCloudIcon,
+} from 'lucide-react';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
@@ -163,9 +168,31 @@ export default async function AdminEventsListPage({
     );
   }
 
+  // T098 Phase 7 — Surface a discoverable CTA to the CSV import
+  // workflow page (admin-only mutation route). Manager sees the list
+  // but should not see the import button — gating by role keeps the
+  // FR-035 mutation-surface-disclosure invariant intact.
+  // Primary CTA per F4 invoices "New invoice" precedent — admin-only
+  // top-of-page actions use `variant: 'default'` (primary/black) to
+  // match the visual hierarchy across F4/F6/F7/F8 admin pages.
+  const importCsvCta =
+    currentUser.role === 'admin' && env.features.f6EventCreate ? (
+      <Link
+        href="/admin/events/import"
+        className={buttonVariants({ variant: 'default' })}
+      >
+        <UploadCloudIcon className="size-4" aria-hidden="true" />
+        {t('importCsvCta')}
+      </Link>
+    ) : null;
+
   return (
     <TableContainer>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      <PageHeader
+        title={t('title')}
+        subtitle={t('subtitle')}
+        actions={importCsvCta}
+      />
       {/* P4 (round-10) — 120ms fade-in when the loaded content
           replaces the loading.tsx skeleton. `motion-reduce:animate-none`
           honours prefers-reduced-motion (WCAG 2.3.3). Lives on the

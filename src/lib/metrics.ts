@@ -2709,4 +2709,50 @@ export const eventcreateMetrics = {
       ).record(latencyMs, { tenant: tenantId });
     });
   },
+
+  /**
+   * T095 Phase 7 — CSV import completion counter labelled by outcome.
+   * Mirrors webhook receipt counter shape; `outcome` discriminator
+   * captures the four `runImportCsv` result kinds.
+   */
+  csvImportCompleted(
+    tenantId: string,
+    outcome: 'completed' | 'invalid_header' | 'timeout' | 'unexpected_error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_completed_total',
+        'F6 CSV import completion counter by outcome (research.md § F6 OTel inventory)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * T095 Phase 7 — CSV import duration histogram (SC-006: 1k rows < 60s).
+   * Recorded at the route handler boundary so it includes parse +
+   * tx wall-clock for the full import.
+   */
+  csvImportDurationSeconds(tenantId: string, durationSeconds: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_csv_import_duration_seconds',
+        'F6 CSV import end-to-end duration; SC-006 target 1k rows < 60s',
+        's',
+      ).record(durationSeconds, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * T095 Phase 7 — CSV-import Upstash fail-open counter. Emitted when
+   * the rate-limit check falls back to the process-local in-memory
+   * bucket (same fail-open semantics as `rateLimitFallback`).
+   */
+  csvImportRateLimitFallback(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_rate_limit_fallback_total',
+        'F6 CSV-import Upstash fail-open counter',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;

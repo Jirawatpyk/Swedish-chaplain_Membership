@@ -1,0 +1,2 @@
+event_external_id,event_name,event_start,attendee_email,attendee_name
+event_crlf_1,CRLF Test,2026-06-21T18:00:00+07:00,crlf@example.com,CRLF Person

@@ -43,6 +43,10 @@ import type {
   TxScopedPorts,
 } from '../application/use-cases/ingest-webhook-attendee';
 import type {
+  ImportCsvDeps,
+  ImportCsvTxScopedPorts,
+} from '../application/use-cases/import-csv';
+import type {
   F6AuditEntry,
   F6AuditEventType,
   AuditEmitError,
@@ -55,6 +59,7 @@ import { makeDrizzleAttendeeMatcher } from './drizzle-attendee-matcher';
 import { makePinoAuditPort } from './pino-audit-port';
 import { makeDrizzleQuotaAccountingAdapter } from './drizzle-quota-accounting-adapter';
 import { makeDrizzleAdvisoryLockAcquirer } from './drizzle-advisory-lock-acquirer';
+import { streamingCsvImporter } from './streaming-csv-importer';
 
 /**
  * Minimal deps for callers that only need standalone-tx audit
@@ -125,6 +130,83 @@ export function makeIngestWebhookAttendeeDeps(): IngestWebhookAttendeeDeps {
       return port.emitRolledBack(entry);
     },
 
+    emitStandalone: async (entry) => {
+      const port = makeLoudDummyExecutorPort('emitStandalone');
+      return port.emitStandalone(entry);
+    },
+  };
+}
+
+/**
+ * T094/T095 Phase 7 — Full deps for the CSV bulk-import path. Wires:
+ *   - `csvImporter` → singleton `streamingCsvImporter` (hand-rolled
+ *     stateless parser; safe to share across requests).
+ *   - `runInTenantTx` → same factory as the webhook ingest pipeline,
+ *     extended with `idempotencyStore` (FR-029 row-level idempotency
+ *     via `source='eventcreate_csv'`).
+ *   - `emitStandalone` → loud-dummy executor pattern (per-import
+ *     `csv_import_completed` + per-row `csv_import_row_failed` use this).
+ *
+ * Reuses every adapter from the webhook composition root — FR-027
+ * webhook ↔ CSV equivalence is enforced by construction (both paths
+ * call `processAttendeeInTx` with the same tx-scoped port bag).
+ */
+export function makeImportCsvDeps(): ImportCsvDeps {
+  /**
+   * Build a fresh `ImportCsvTxScopedPorts` bundle bound to the
+   * supplied tx/savepoint handle. Used recursively: the outer batch tx
+   * gets `runRowInSavepoint` that opens nested Drizzle tx (SAVEPOINT),
+   * and the savepoint-scoped ports also expose `runRowInSavepoint`
+   * (nested SAVEPOINTs are valid Postgres but unused by the use-case).
+   */
+  function buildBatchPorts(
+    tx: TenantTx,
+    ctx: ReturnType<typeof asTenantContext>,
+    outerTx: TenantTx,
+  ): ImportCsvTxScopedPorts {
+    const registrationsRepo = makeDrizzleRegistrationsRepository(tx);
+    return {
+      eventsRepo: makeDrizzleEventsRepository(tx),
+      registrationsRepo,
+      idempotencyStore: makeDrizzleIdempotencyStore(tx),
+      attendeeMatcher: makeDrizzleAttendeeMatcher(tx),
+      audit: makePinoAuditPort(tx),
+      quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+        tx,
+        ctx,
+        registrationsRepo,
+      ),
+      advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(tx),
+      runRowInSavepoint: async <R>(
+        rowFn: (spPorts: ImportCsvTxScopedPorts) => Promise<R>,
+      ) => {
+        // Drizzle's `tx.transaction(...)` creates a SAVEPOINT when
+        // called inside an existing transaction. SET LOCAL
+        // `app.current_tenant` propagates through savepoints per
+        // Postgres semantics, so RLS continues to enforce tenant
+        // isolation inside the savepoint scope.
+        return outerTx.transaction(async (spTx) => {
+          const spPorts = buildBatchPorts(spTx, ctx, outerTx);
+          return rowFn(spPorts);
+        });
+      },
+    };
+  }
+
+  return {
+    csvImporter: streamingCsvImporter,
+    runInTenantTx: async <T>(
+      tenantId: string,
+      fn: (ports: ImportCsvTxScopedPorts) => Promise<T>,
+    ): Promise<T> => {
+      const ctx = asTenantContext(tenantId);
+      return runInTenant(ctx, async (outerTx) => {
+        // Batch outer-tx ports — `runRowInSavepoint` opens nested
+        // Drizzle tx (SAVEPOINT) per row, scoped to this outer tx.
+        const batchPorts = buildBatchPorts(outerTx, ctx, outerTx);
+        return fn(batchPorts);
+      });
+    },
     emitStandalone: async (entry) => {
       const port = makeLoudDummyExecutorPort('emitStandalone');
       return port.emitStandalone(entry);

@@ -2334,6 +2334,7 @@
         "subtitle": "Importerade evenemangsregistreringar från EventCreate.",
         "tableCaption": "Importerade evenemang sorterade efter startdatum, nyast först.",
         "errorState": "Det gick inte att läsa in evenemangen. Uppdatera sidan.",
+        "importCsvCta": "Importera CSV",
         "columns": {
           "date": "Datum",
           "name": "Namn",
@@ -2513,6 +2514,57 @@
         "pending": "Väntar",
         "refunded": "Återbetald",
         "free": "Gratis"
+      },
+      "import": {
+        "pageTitle": "Importera deltagare från CSV",
+        "pageSubtitle": "Ladda upp en CSV-export av EventCreate-deltagare. Använd detta för backfill, återställning efter Zapier-avbrott eller som primär importväg när Zapier inte är tillgängligt.",
+        "formTitle": "Ladda upp CSV-fil",
+        "formDescription": "Vi matchar deltagare mot dina befintliga medlemmar och tillämpar samma kvotregler som direkta webhook-leveranser.",
+        "fileInputLabel": "Välj en .csv-fil",
+        "fileInputHelp": "Maximal filstorlek 5 MiB. UTF-8-kodad; kommaseparerad; använd \"\" för att escape:a citattecken. Obligatoriska kolumner: event_external_id, event_name, event_start, attendee_email, attendee_name.",
+        "confirmCta": "Bekräfta och importera",
+        "cancelCta": "Avbryt",
+        "submittingCta": "Importerar — vänta",
+        "uploadInProgressSr": "CSV-import pågår. Vänta.",
+        "retryCta": "Försök igen",
+        "uploadAnother": "Ladda upp en till CSV",
+        "preview": {
+          "fileNameLabel": "Fil",
+          "columnMappingTitle": "Identifierade kolumner",
+          "columnMappingLegend": "Obligatoriska kolumner visas i grönt; valfria i dämpad stil. Saknade obligatoriska kolumner blockerar importen.",
+          "optionalColumnTooltip": "Valfri — lägger till mer detaljerad evenemangsinformation om den finns.",
+          "previewRowsTitle": "Förhandsgranskning ({count} rader)",
+          "missingColumnsTitle": "CSV saknar obligatoriska kolumner",
+          "missingColumnsDescription": "Exportera filen på nytt efter att du lagt till dessa kolumner:"
+        },
+        "result": {
+          "regionLabel": "Resultat av CSV-import",
+          "title": "Importen är klar",
+          "rowsProcessedLabel": "Rader importerade",
+          "rowsAlreadyImportedLabel": "Redan importerade",
+          "rowsAlreadyImportedDescription": "Dessa rader matchar en tidigare uppladdning och hoppades över (idempotent).",
+          "eventsCreatedLabel": "Evenemang skapade",
+          "eventsUpdatedLabel": "Evenemang uppdaterade",
+          "durationLabel": "Varaktighet",
+          "matchBreakdownTitle": "Matchningsöversikt",
+          "errorRowsTitle": "Överhoppade rader ({count})",
+          "errorRowLabel": "Rad {rowNumber}",
+          "noErrorRows": "Alla rader importerades utan fel."
+        },
+        "errors": {
+          "networkErrorTitle": "Nätverksfel",
+          "headerInvalidTitle": "CSV-rubriken är ogiltig",
+          "badRequestTitle": "Kunde inte importera",
+          "badRequestDetail": "Din CSV kunde inte bearbetas. Kontrollera formatet och försök igen.",
+          "fileTooLargeTitle": "Filen är för stor",
+          "fileTooLargeDetail": "CSV-filer får vara högst 5 MiB. Dela upp filen eller ta bort äldre rader.",
+          "rateLimitedTitle": "För många importer",
+          "rateLimitedDetail": "Du har nått gränsen på 5 importer per timme. Försök igen om {retryAfter} sekunder.",
+          "timeoutTitle": "Importen tog för lång tid",
+          "timeoutDetail": "En del av importen slutfördes. Ladda upp samma CSV igen — redan bearbetade rader hoppas över automatiskt.",
+          "unexpectedTitle": "Något gick fel",
+          "unexpectedDetail": "Oväntat fel. Försök igen; kvarstår problemet, kontakta support."
+        }
       }
     },
     "integrations": {

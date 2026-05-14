@@ -32,20 +32,24 @@ UTF-8 (BOM tolerated and stripped), `\n` or `\r\n` line endings, comma-separated
 
 ### Optional columns
 
-| Column | Type | Default |
-|--------|------|---------|
-| `event_category` | `'networking'` / `'cultural'` / `'workshop'` / `'conference'` / free text | null |
-| `event_end` | ISO 8601 | null |
-| `event_location` | string ≤ 500 | null |
-| `event_url` | URL | null |
-| `is_partner_benefit` | `'true'` / `'false'` | `'false'` |
-| `is_cultural_event` | `'true'` / `'false'` | `'false'` |
-| `attendee_company` | string ≤ 200 | null |
-| `attendee_external_id` | string | hashed from `(event_external_id, attendee_email_lower, registered_at)` if absent |
-| `ticket_type` | string ≤ 100 | null |
-| `ticket_price_thb` | non-negative integer | null |
-| `payment_status` | `'paid'` / `'pending'` / `'refunded'` / `'free'` | `'paid'` |
-| `registered_at` | ISO 8601 | falls back to `event_start` |
+| Column | Type | Default | v1 status |
+|--------|------|---------|-----------|
+| `event_category` | `'networking'` / `'cultural'` / `'workshop'` / `'conference'` / free text | null | ✅ honoured |
+| `event_end` | ISO 8601 | null | 🟡 **v1.1 backlog** — accepted by parser, dropped at event-upsert (event-end-date is webhook-only metadata in v1) |
+| `event_location` | string ≤ 500 | null | 🟡 **v1.1 backlog** — accepted by parser, dropped at event-upsert |
+| `event_url` | URL | null | 🟡 **v1.1 backlog** — accepted by parser, dropped at event-upsert |
+| `is_partner_benefit` | `'true'` / `'false'` | `'false'` | 🟡 **v1.1 backlog** — intentionally DROPPED in v1 because the field is admin-toggle-controlled via FR-019; surfacing it from CSV would create dual-source-of-truth ambiguity. Use the admin toggle UI after import. |
+| `is_cultural_event` | `'true'` / `'false'` | `'false'` | 🟡 **v1.1 backlog** — same rationale as `is_partner_benefit` |
+| `attendee_company` | string ≤ 200 | null | ✅ honoured |
+| `attendee_external_id` | string | falls back to synthesized `csv_${sha256(event_external_id, attendee_email_lower, registered_at).slice(0,32)}` when absent | ✅ honoured (E1 verification fix 2026-05-14 — preserves webhook-equivalent IDs when CSV is exported from same EventCreate dataset) |
+| `ticket_type` | string ≤ 100 | null | ✅ honoured |
+| `ticket_price_thb` | non-negative integer | null | ✅ honoured |
+| `payment_status` | `'paid'` / `'pending'` / `'refunded'` / `'free'` | `'paid'` | ✅ honoured |
+| `registered_at` | ISO 8601 | falls back to `event_start` | ✅ honoured |
+
+**v1.1 backlog rationale** (5 columns marked 🟡): These columns are documented in the contract for forward-compatibility — tenants exporting CSVs from EventCreate or another source may include them harmlessly without breaking the parser. v1 silently drops the values during use-case mapping. Reasons:
+- `event_end` / `event_location` / `event_url`: webhook payloads carry these in `event.endDate` / `event.location` / `event.eventCreateUrl` and the event-upsert preserves them; CSV v1 doesn't thread these through. A v1.1 sweep can extend `ProcessAttendeeInTxInput.event` if a real tenant ask emerges.
+- `is_partner_benefit` / `is_cultural_event`: admin-toggle-controlled fields per FR-019. Surfacing them from CSV creates a confusing UX where an admin sees "is_partner_benefit=true" in their export but the actual flag is governed by an in-app toggle. Defer until product validates the cross-flow semantics.
 
 ### Example
 

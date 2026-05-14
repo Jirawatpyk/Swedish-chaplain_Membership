@@ -94,12 +94,29 @@ export const CsvRowSchema = z.object({
   attendee_email: z.string().email().max(320),
   attendee_name: z.string().min(1).max(200),
   attendee_company: z.string().max(200).optional(),
+  /**
+   * Optional admin-supplied attendee ID — when present, the use-case
+   * passes it through verbatim to `event_registrations.external_id` so
+   * webhook-equivalent CSVs preserve their EventCreate attendee IDs.
+   * When absent, the use-case derives a synthetic `csv_${rowHash}`
+   * value per contracts/csv-import-api.md § "Optional columns".
+   * Surfaced in v1.1 per the E1 verification finding (was deferred to
+   * F6.1 in the original spec).
+   */
+  attendee_external_id: z.string().min(1).max(200).optional(),
   ticket_type: z.string().max(100).optional(),
   ticket_price_thb: z.coerce.number().int().nonnegative().optional(),
   payment_status: z
     .enum(['paid', 'pending', 'refunded', 'free'])
     .default('paid'),
   registered_at: z.string().datetime().optional(),
+  // NB: `is_partner_benefit` + `is_cultural_event` CSV columns are
+  // intentionally DROPPED in v1 (E2 verification finding deferral).
+  // These fields are admin-toggle-controlled per FR-019 — surfacing
+  // them from CSV would create dual-source-of-truth ambiguity (CSV
+  // value vs. admin toggle state). v1.1 may add a one-time-initial
+  // semantic (apply CSV value ONLY on first event INSERT, never on
+  // ON CONFLICT UPDATE) if a real tenant ask emerges.
 });
 
 export type CsvRow = z.infer<typeof CsvRowSchema>;

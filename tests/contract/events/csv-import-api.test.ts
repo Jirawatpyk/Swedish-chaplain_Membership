@@ -1,0 +1,559 @@
+/**
+ * T090 — Contract test: POST /api/admin/events/import (CSV import)
+ *
+ * Spec authority:
+ *   - specs/012-eventcreate-integration/contracts/csv-import-api.md
+ *   - specs/012-eventcreate-integration/contracts/admin-events-api.md
+ *     § POST /api/admin/events/import (envelope shapes)
+ *   - FR-026 (drag-drop + preview + remap), FR-027 (webhook-equivalence
+ *     same matching + quota), FR-028 (result summary), FR-029 (row-level
+ *     idempotency), FR-035 (RBAC + surface-disclosure 404 + audit),
+ *     SC-006 (1k rows / <60s).
+ *
+ * Exercises every HTTP outcome (200 / 400 header / 400 missing_file_field
+ * / 400 invalid_multipart / 413 file-too-large pre-parse / 413 post-parse
+ * chunked / 415 unsupported-media-type / 429 rate-limited / 504 timeout /
+ * 500 unexpected / 403 manager / 404 member / 404 kill-switch off) with
+ * dependencies mocked at module-boundary so no DB, no Upstash, no
+ * actual CSV parser is hit. Pattern mirrors
+ * `tests/contract/events/admin-integration-eventcreate-api.test.ts`
+ * (Phase 5 T068) + `tests/contract/events/admin-events-api.test.ts`
+ * (Phase 4 T053).
+ *
+ * RED reason: the route file `@/app/api/admin/events/import/route.ts`
+ * and the composition adapter `@/lib/events-csv-import-deps` do NOT
+ * exist yet (T095 GREEN lands them). The dynamic import throws
+ * MODULE_NOT_FOUND so EVERY test FAILS at suite-load. That IS the
+ * [RED — T090] marker.
+ *
+ * Turns GREEN: T093 (parser adapter) + T094 (import-csv use-case) +
+ * T095 (route handler + composition adapter + rate-limit factory).
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
+
+// ---------------------------------------------------------------------------
+// Mock seams — composition adapter (T095) + auth + tenant + standalone audit.
+// ---------------------------------------------------------------------------
+
+const runImportCsvMock = vi.fn();
+const csvImportRateLimitCheckMock = vi.fn();
+const getCurrentSessionMock = vi.fn();
+const resolveTenantFromRequestMock = vi.fn();
+const emitStandaloneMock = vi.fn();
+
+vi.mock('@/lib/events-csv-import-deps', () => ({
+  runImportCsv: (...args: unknown[]) => runImportCsvMock(...args),
+  csvImportRateLimitCheck: (...args: unknown[]) =>
+    csvImportRateLimitCheckMock(...args),
+}));
+
+vi.mock('@/lib/auth-session', () => ({
+  getCurrentSession: (...args: unknown[]) => getCurrentSessionMock(...args),
+}));
+
+vi.mock('@/lib/tenant-context', () => ({
+  resolveTenantFromRequest: (...args: unknown[]) =>
+    resolveTenantFromRequestMock(...args),
+}));
+
+vi.mock('@/modules/events', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/events')>(
+    '@/modules/events',
+  );
+  return {
+    ...actual,
+    makeStandaloneAuditDeps: () => ({
+      emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
+    }),
+  };
+});
+
+// Feature flag: route handler gates on `env.features.f6EventCreate`.
+vi.mock('@/lib/env', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: {
+        ...actual.env.features,
+        f6EventCreate: true,
+      },
+      tenant: { slug: 'test-swecham' },
+    },
+  };
+});
+
+const TENANT_SLUG = 'test-swecham';
+const ADMIN_USER_ID = '00000000-0000-0000-0000-000000000001';
+
+const ADMIN_SESSION = {
+  session: { id: 'sess-admin', userId: ADMIN_USER_ID } as unknown,
+  user: { id: ADMIN_USER_ID, role: 'admin' as const, email: 'admin@test' },
+};
+const MANAGER_SESSION = {
+  session: { id: 'sess-manager', userId: 'mgr' } as unknown,
+  user: { id: 'mgr', role: 'manager' as const, email: 'mgr@test' },
+};
+const MEMBER_SESSION = {
+  session: { id: 'sess-member', userId: 'mem' } as unknown,
+  user: { id: 'mem', role: 'member' as const, email: 'mem@test' },
+};
+
+const VALID_CSV =
+  'event_external_id,event_name,event_start,attendee_email,attendee_name\n' +
+  'event_001,Midsummer 2026,2026-06-21T18:00:00+07:00,jane@example.com,Jane Andersson\n';
+
+beforeEach(() => {
+  resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
+  getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
+  csvImportRateLimitCheckMock.mockResolvedValue({
+    success: true,
+    resetAtUnixMs: Date.now() + 3_600_000,
+  });
+  emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// Dynamic route loader — RED until T095 lands.
+// ---------------------------------------------------------------------------
+
+async function loadImportRoute() {
+  // Plain `await import(...)` per the Phase-3 T036 / Phase-5 F5
+  // precedent (see `tests/contract/events/webhook-eventcreate-v1.test.ts`
+  // comment at line 85+ — project memory's `new Function(...)` bypass
+  // is incompatible with Vitest's module loader on this branch; plain
+  // dynamic import gives the cleaner RED signal). Until T095 lands the
+  // route file, Vite's static-analysis alias transform rejects the
+  // import at suite-load with `Failed to resolve import "@/app/..."`.
+  // That suite-load failure IS the [RED — T090] marker — vitest
+  // reports `0 tests` for the suite with a clear pointer to the
+  // missing module.
+  try {
+    return (await import('@/app/api/admin/events/import/route')) as {
+      POST: (req: NextRequest) => Promise<Response>;
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `[RED — T090] POST /api/admin/events/import route not yet implemented (T095). Import error: ${msg}`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Request builder — multipart with optional file part.
+// ---------------------------------------------------------------------------
+
+interface BuildRequestOpts {
+  /** Defaults to a valid 1-row CSV body. */
+  readonly csvBody?: string;
+  /** Defaults to `multipart/form-data; boundary=---test`. */
+  readonly contentType?: string;
+  /** When provided, sets Content-Length header (used for 413 pre-parse). */
+  readonly contentLengthOverride?: string;
+  /** When true, omit the `file` field entirely (used for missing_file_field). */
+  readonly omitFileField?: boolean;
+  /** When true, replace the entire body with non-multipart garbage. */
+  readonly malformedBody?: boolean;
+}
+
+function buildRequest(opts: BuildRequestOpts = {}): NextRequest {
+  const url = 'http://test/api/admin/events/import';
+  const boundary = `test-boundary-${Math.random().toString(36).slice(2)}`;
+
+  // Malformed-body path: send raw bytes that don't match any
+  // multipart structure. formData() will reject.
+  if (opts.malformedBody === true) {
+    const headers: Record<string, string> = {
+      'Content-Type':
+        opts.contentType ?? `multipart/form-data; boundary=${boundary}`,
+    };
+    if (opts.contentLengthOverride !== undefined) {
+      headers['Content-Length'] = opts.contentLengthOverride;
+    }
+    return new NextRequest(url, {
+      method: 'POST',
+      headers,
+      body: 'this-is-not-valid-multipart',
+    });
+  }
+
+  // Build multipart body as a manually-encoded Uint8Array (CRLF-delimited
+  // per RFC 7578). Node undici's Request.formData() can parse this
+  // reliably when given binary bytes; passing a `FormData` instance
+  // directly to the Request ctor in vitest's Node runtime stalls the
+  // body stream, and passing a `string` body upstream sometimes leaves
+  // the CSV body's `\n` characters mismatched against the multipart
+  // CRLF-strict envelope.
+  //
+  // The CSV content (which contains its own `\n` newlines as data) is
+  // appended VERBATIM as bytes between the multipart CRLF headers —
+  // the multipart parser delimits on `--boundary`, not on newline.
+  const enc = new TextEncoder();
+  const parts: Uint8Array[] = [];
+  if (opts.omitFileField === true) {
+    parts.push(
+      enc.encode(
+        [
+          `--${boundary}`,
+          'Content-Disposition: form-data; name="other_field"',
+          '',
+          'not-a-file',
+          '',
+        ].join('\r\n'),
+      ),
+    );
+  } else {
+    parts.push(
+      enc.encode(
+        [
+          `--${boundary}`,
+          'Content-Disposition: form-data; name="file"; filename="test.csv"',
+          'Content-Type: text/csv',
+          '',
+          '',
+        ].join('\r\n'),
+      ),
+    );
+    parts.push(enc.encode(opts.csvBody ?? VALID_CSV));
+    parts.push(enc.encode('\r\n'));
+  }
+  parts.push(enc.encode(`--${boundary}--\r\n`));
+  const totalLength = parts.reduce((n, p) => n + p.byteLength, 0);
+  const body = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const p of parts) {
+    body.set(p, offset);
+    offset += p.byteLength;
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type':
+      opts.contentType ?? `multipart/form-data; boundary=${boundary}`,
+  };
+  if (opts.contentLengthOverride !== undefined) {
+    headers['Content-Length'] = opts.contentLengthOverride;
+  }
+  return new NextRequest(url, {
+    method: 'POST',
+    headers,
+    body,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Test suite
+// ---------------------------------------------------------------------------
+
+describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
+  describe('200 OK — happy path with full result summary', () => {
+    it('returns rowsProcessed / rowsAlreadyImported / eventsCreated / eventsUpdated / matchCounts / errorRows / durationMs', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'completed',
+        summary: {
+          rowsProcessed: 95,
+          rowsAlreadyImported: 5,
+          eventsCreated: 3,
+          eventsUpdated: 2,
+          matchCounts: {
+            member_contact: 50,
+            member_domain: 20,
+            member_fuzzy: 15,
+            non_member: 8,
+            unmatched: 7,
+          },
+          errorRows: [],
+          durationMs: 12_345,
+        },
+      });
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body['rowsProcessed']).toBe(95);
+      expect(body['rowsAlreadyImported']).toBe(5);
+      expect(body['eventsCreated']).toBe(3);
+      expect(body['eventsUpdated']).toBe(2);
+      expect(body['matchCounts']).toEqual({
+        member_contact: 50,
+        member_domain: 20,
+        member_fuzzy: 15,
+        non_member: 8,
+        unmatched: 7,
+      });
+      expect(body['errorRows']).toEqual([]);
+      expect(body['durationMs']).toBe(12_345);
+    });
+
+    it('still 200 when some rows failed — errorRows[] surfaces row numbers + reasons', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'completed',
+        summary: {
+          rowsProcessed: 47,
+          rowsAlreadyImported: 0,
+          eventsCreated: 1,
+          eventsUpdated: 0,
+          matchCounts: {
+            member_contact: 30,
+            member_domain: 10,
+            member_fuzzy: 5,
+            non_member: 1,
+            unmatched: 1,
+          },
+          errorRows: [
+            { rowNumber: 8, reason: 'attendee_email is not a valid email' },
+            { rowNumber: 23, reason: 'unterminated quoted field at column 3' },
+            { rowNumber: 47, reason: 'event_start is required' },
+          ],
+          durationMs: 4_200,
+        },
+      });
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { errorRows: unknown[] };
+      expect(body.errorRows).toHaveLength(3);
+    });
+  });
+
+  describe('400 — invalid header / missing file / invalid multipart', () => {
+    it('400 csv-header-invalid — RFC 7807 problem with missingColumns[]', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'invalid_header',
+        missingColumns: ['attendee_email', 'event_start'],
+      });
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest({ csvBody: 'event_external_id\nevent_001\n' }));
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body['type']).toMatch(/csv-header-invalid/);
+      expect(body['status']).toBe(400);
+      expect(body['missingColumns']).toEqual([
+        'attendee_email',
+        'event_start',
+      ]);
+    });
+
+    it('400 missing_file_field — multipart without `file` part', async () => {
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest({ omitFileField: true }));
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(
+        /(missing-file|missing_file_field|file-required)/,
+      );
+      // Use-case MUST NOT be called when the file part is missing
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('400 invalid_multipart — formData parse fails', async () => {
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest({ malformedBody: true }));
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(/(invalid-multipart|invalid_multipart)/);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('413 file-too-large', () => {
+    it('413 pre-parse — Content-Length header > 5 MiB rejected before parse', async () => {
+      const { POST } = await loadImportRoute();
+      const sixMiB = String(6 * 1024 * 1024);
+      const res = await POST(
+        buildRequest({ contentLengthOverride: sixMiB }),
+      );
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(/(too-large|file_too_large)/);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('415 unsupported-media-type', () => {
+    it('415 when Content-Type is not multipart/form-data', async () => {
+      const { POST } = await loadImportRoute();
+      const res = await POST(
+        buildRequest({ contentType: 'application/json' }),
+      );
+
+      expect(res.status).toBe(415);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('429 rate-limited', () => {
+    it('429 with Retry-After header when 5/hr limit exhausted', async () => {
+      const resetAt = Date.now() + 1800 * 1000;
+      csvImportRateLimitCheckMock.mockResolvedValue({
+        success: false,
+        resetAtUnixMs: resetAt,
+      });
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(429);
+      const retryAfter = res.headers.get('Retry-After');
+      expect(retryAfter).toBeTruthy();
+      const seconds = Number(retryAfter);
+      expect(seconds).toBeGreaterThan(0);
+      expect(seconds).toBeLessThanOrEqual(1800);
+      // Use-case MUST NOT be invoked when rate-limit denied
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('504 csv-timeout', () => {
+    it('504 when use-case reports time-budget exceeded', async () => {
+      runImportCsvMock.mockResolvedValue({ kind: 'timeout' });
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(504);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(/(csv-timeout|timeout)/);
+    });
+  });
+
+  describe('500 — unexpected use-case error', () => {
+    it('500 when use-case returns unexpected_error', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'unexpected_error',
+        message: 'simulated stage failure',
+      });
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe('FR-035 RBAC — admin-only mutation (manager + member + no-session all → 404 surface-disclosure)', () => {
+    // F6 admin-mutation routes uniformly return 404 for ANY non-admin
+    // (per `adminOnlyGuard` precedent in
+    // src/app/api/admin/integrations/eventcreate/_lib/role-violation-audit.ts).
+    // Distinction from list/detail routes (FR-021 manager-read allowed)
+    // — those return 200; mutations return 404 with no role oracle.
+
+    it('404 — manager attempts CSV import → 404 + role_violation_blocked audit', async () => {
+      getCurrentSessionMock.mockResolvedValue(MANAGER_SESSION);
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(404);
+      // Manager 404 path emits role_violation_blocked
+      expect(emitStandaloneMock).toHaveBeenCalled();
+      const emittedEntry = emitStandaloneMock.mock.calls[0]?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(emittedEntry?.['eventType']).toBe('role_violation_blocked');
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('404 — member attempts CSV import → 404 (surface disclosure)', async () => {
+      getCurrentSessionMock.mockResolvedValue(MEMBER_SESSION);
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(404);
+      // 404 path emits role_violation_blocked too (FR-035)
+      expect(emitStandaloneMock).toHaveBeenCalled();
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+
+    it('404 — no session → 404 (surface disclosure; admin-only route)', async () => {
+      getCurrentSessionMock.mockResolvedValue(null);
+
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+
+      expect(res.status).toBe(404);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('FR-035 kill-switch — 404 when FEATURE_F6_EVENTCREATE is false', () => {
+    it('returns 404 when feature flag is off', async () => {
+      vi.resetModules();
+      vi.doMock('@/lib/env', async () => {
+        const actual = await vi.importActual<typeof import('@/lib/env')>(
+          '@/lib/env',
+        );
+        return {
+          ...actual,
+          env: {
+            ...actual.env,
+            features: {
+              ...actual.env.features,
+              f6EventCreate: false,
+            },
+            tenant: { slug: 'test-swecham' },
+          },
+        };
+      });
+
+      const mod = (await import('@/app/api/admin/events/import/route')) as {
+        POST: (req: NextRequest) => Promise<Response>;
+      };
+      const res = await mod.POST(buildRequest());
+
+      expect(res.status).toBe(404);
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+
+      vi.doUnmock('@/lib/env');
+      vi.resetModules();
+    });
+  });
+
+  describe('Audit emit on success (FR-029 / FR-035)', () => {
+    it('does NOT call standalone audit-emit on the happy 200 path — the use-case emits csv_import_completed inside the tx', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'completed',
+        summary: {
+          rowsProcessed: 1,
+          rowsAlreadyImported: 0,
+          eventsCreated: 1,
+          eventsUpdated: 0,
+          matchCounts: {
+            member_contact: 0,
+            member_domain: 0,
+            member_fuzzy: 0,
+            non_member: 1,
+            unmatched: 0,
+          },
+          errorRows: [],
+          durationMs: 200,
+        },
+      });
+
+      const { POST } = await loadImportRoute();
+      await POST(buildRequest());
+
+      // The csv_import_completed audit is emitted INSIDE the use-case
+      // (tx-scoped). The route's `makeStandaloneAuditDeps` is ONLY used
+      // for RBAC-rejection paths (role_violation_blocked), not happy
+      // path. So emitStandalone MUST stay un-called here.
+      expect(emitStandaloneMock).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -383,12 +383,25 @@ export {
 export {
   makeIngestWebhookAttendeeDeps,
   makeStandaloneAuditDeps,
+  makeImportCsvDeps,
   type StandaloneAuditDeps,
 } from './infrastructure/di';
 export {
   cryptoWebhookSignatureVerifier,
   signWebhookRequest,
 } from './infrastructure/crypto-webhook-signature-verifier';
+
+// Phase 7 T094 — CSV import use-case + result surface. Use-case
+// reuses the `processAttendeeInTx` shared helper so webhook ↔ CSV
+// equivalence (FR-027) is by construction.
+export { importCsv } from './application/use-cases/import-csv';
+export type {
+  ImportCsvDeps,
+  ImportCsvInput,
+  ImportCsvOutcome,
+  ImportCsvTxScopedPorts,
+  ImportSummary,
+} from './application/use-cases/import-csv';
 
 // Phase 5 review-fix S-06 (2026-05-13) — surface the Phase 5
 // composition factories through the barrel so

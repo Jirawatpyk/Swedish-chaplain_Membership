@@ -2334,6 +2334,7 @@
         "subtitle": "Imported event registrations from EventCreate.",
         "tableCaption": "Imported events sorted by start date, most recent first.",
         "errorState": "We couldn't load events. Please refresh the page.",
+        "importCsvCta": "Import CSV",
         "columns": {
           "date": "Date",
           "name": "Name",
@@ -2513,6 +2514,57 @@
         "pending": "Pending",
         "refunded": "Refunded",
         "free": "Free"
+      },
+      "import": {
+        "pageTitle": "Import attendees from CSV",
+        "pageSubtitle": "Upload a CSV export of EventCreate attendees. Use this for backfill, outage recovery, or as the primary ingest path when Zapier isn't available.",
+        "formTitle": "Upload CSV file",
+        "formDescription": "We'll match attendees to your existing members and apply the same quota rules as live webhook deliveries.",
+        "fileInputLabel": "Choose a .csv file",
+        "fileInputHelp": "Maximum file size 5 MiB. UTF-8 encoded; comma-separated; double-quote escape with \"\". Required columns: event_external_id, event_name, event_start, attendee_email, attendee_name.",
+        "confirmCta": "Confirm and import",
+        "cancelCta": "Cancel",
+        "submittingCta": "Importing — please wait",
+        "uploadInProgressSr": "CSV import in progress. Please wait.",
+        "retryCta": "Try again",
+        "uploadAnother": "Upload another CSV",
+        "preview": {
+          "fileNameLabel": "File",
+          "columnMappingTitle": "Detected columns",
+          "columnMappingLegend": "Required columns in green; optional columns in muted style. Missing required columns block the import.",
+          "optionalColumnTooltip": "Optional — adds richer event metadata if present.",
+          "previewRowsTitle": "Preview ({count} rows)",
+          "missingColumnsTitle": "CSV is missing required columns",
+          "missingColumnsDescription": "Re-export the CSV after adding these columns:"
+        },
+        "result": {
+          "regionLabel": "CSV import result",
+          "title": "Import complete",
+          "rowsProcessedLabel": "Rows imported",
+          "rowsAlreadyImportedLabel": "Already imported",
+          "rowsAlreadyImportedDescription": "These rows match a prior upload and were skipped (idempotent).",
+          "eventsCreatedLabel": "Events created",
+          "eventsUpdatedLabel": "Events updated",
+          "durationLabel": "Duration",
+          "matchBreakdownTitle": "Match breakdown",
+          "errorRowsTitle": "Skipped rows ({count})",
+          "errorRowLabel": "Row {rowNumber}",
+          "noErrorRows": "All rows imported cleanly — no errors to review."
+        },
+        "errors": {
+          "networkErrorTitle": "Network error",
+          "headerInvalidTitle": "CSV header is invalid",
+          "badRequestTitle": "Couldn't import",
+          "badRequestDetail": "Your CSV could not be processed. Check the format and try again.",
+          "fileTooLargeTitle": "File too large",
+          "fileTooLargeDetail": "CSV files must be 5 MiB or smaller. Split the file or remove old rows.",
+          "rateLimitedTitle": "Too many imports",
+          "rateLimitedDetail": "You've reached the limit of 5 imports per hour. Try again in {retryAfter} seconds.",
+          "timeoutTitle": "Import timed out",
+          "timeoutDetail": "Part of the import completed. Re-upload the same CSV — already-processed rows will be skipped automatically.",
+          "unexpectedTitle": "Something went wrong",
+          "unexpectedDetail": "Unexpected error. Retry; if it persists, contact support."
+        }
       }
     },
     "integrations": {
