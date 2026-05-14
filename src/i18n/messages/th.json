@@ -665,7 +665,7 @@
           "subtitle": "คำเชิญที่ส่งแล้วแต่ยังไม่ได้ตอบรับ",
           "rowLabel": "เชิญเมื่อ {date}",
           "expiresAt": "หมดอายุ {date}",
-          "expiresInDays": "{days, plural, other {หมดอายุใน # วัน}}",
+          "expiresInDays": "{days, plural, =0 {หมดอายุวันนี้} other {หมดอายุใน # วัน}}",
           "empty": "ไม่มีคำเชิญที่รอดำเนินการ",
           "loadError": "ไม่สามารถโหลดคำเชิญที่รอดำเนินการได้"
         },

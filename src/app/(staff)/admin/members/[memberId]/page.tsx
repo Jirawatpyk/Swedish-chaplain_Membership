@@ -98,7 +98,23 @@ const cachedCompanyNameForTitle = cache(
       tenant,
       memberId as MemberId,
     );
-    return result.ok ? result.value.companyName : null;
+    if (result.ok) return result.value.companyName;
+    // Round-12 final-review fix (Finding 1) — emit an ops-level trace
+    // on the null-fallback so a future audit-log gap or middleware
+    // misconfig that lets unauthenticated traffic reach generateMetadata
+    // leaves a debugging breadcrumb. Intentionally NOT a full
+    // `member_cross_tenant_probe` audit row (that's the page
+    // component's job with the real actor); just an observability
+    // signal for SRE.
+    logger.debug(
+      {
+        event: 'metadata_company_name_lookup_failed',
+        memberId,
+        repoErr: result.error,
+      },
+      '[F3] cachedCompanyNameForTitle — repo returned err (metadata path falls back to generic title)',
+    );
+    return null;
   },
 );
 

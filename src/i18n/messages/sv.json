@@ -665,7 +665,7 @@
           "subtitle": "Inbjudningar skickade men ännu inte inlösta.",
           "rowLabel": "Inbjuden {date}",
           "expiresAt": "Går ut {date}",
-          "expiresInDays": "{days, plural, one {Går ut om # dag} other {Går ut om # dagar}}",
+          "expiresInDays": "{days, plural, =0 {Går ut idag} one {Går ut om # dag} other {Går ut om # dagar}}",
           "empty": "Inga väntande inbjudningar.",
           "loadError": "Kunde inte läsa in väntande inbjudningar."
         },

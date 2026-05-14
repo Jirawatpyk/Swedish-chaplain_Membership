@@ -10,7 +10,11 @@
  *   4. Removed contact — `contacts.removed_at IS NOT NULL` filtered out.
  *
  * Plus 2 additional asserts the round-10 critique highlighted:
- *   5. Multiple pending invitations sort newest-first (createdAt DESC).
+ *   5. Multiple pending invitations sort soonest-to-expire first
+ *      (`expiresAt ASC`). Migration 0017 hides `created_at` from
+ *      chamber_app so `expires_at` is the only stable sort key
+ *      available — soonest-to-expire is the most actionable order
+ *      for admins reviewing the badge cluster.
  *   6. Tenant isolation — invitations linked to contacts in another
  *      tenant don't leak via the cross-schema join.
  *
