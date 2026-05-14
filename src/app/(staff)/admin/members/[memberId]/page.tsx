@@ -17,6 +17,7 @@ import { getTranslations } from 'next-intl/server';
 import {
   ArrowLeftIcon,
   HelpCircleIcon,
+  MailWarningIcon,
   PencilIcon,
   ClockIcon,
 } from 'lucide-react';
@@ -168,18 +169,36 @@ function StatusBadge({ status }: { status: 'active' | 'inactive' | 'archived' })
   );
 }
 
+type PendingInvitation = {
+  readonly invitationId: string;
+  readonly invitedAt: Date;
+  readonly expiresAt: Date;
+};
+
 function ContactBlock({
   contact,
   memberId,
+  pendingInvitation,
   t,
 }: {
   contact: Contact;
   memberId: string;
+  pendingInvitation?: PendingInvitation | undefined;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
 }) {
   // "Invite to portal" is only shown when the contact has an email and
   // is not already linked to an F1 portal account (FR-012 / T056).
   const canInvite = Boolean(contact.email) && !contact.linkedUserId;
+  // C6 round-10 — derive expires-in-days for the inline pending badge.
+  const daysUntilExpiry = pendingInvitation
+    ? Math.max(
+        0,
+        Math.ceil(
+          (pendingInvitation.expiresAt.getTime() - Date.now()) /
+            (1000 * 60 * 60 * 24),
+        ),
+      )
+    : null;
   // Rendered as a plain flat row (no border, no bg) inside the outer
   // Contacts Card. Multiple contacts are separated by <Separator />
   // elements in the parent CardContent — no nested cards, no visual
@@ -194,9 +213,35 @@ function ContactBlock({
               {t('sections.primary')}
             </Badge>
           )}
-          {contact.linkedUserId && (
+          {contact.linkedUserId && !pendingInvitation && (
             <Badge className="ml-2" variant="secondary">
               {t('portal.linked')}
+            </Badge>
+          )}
+          {/* C6 round-10 ui-design-specialist — inline pending-invitation
+              badge on the contact who was invited but hasn't redeemed
+              yet. Shows the remaining days so admins know when a
+              re-invite may be needed. Replaces the "Portal linked"
+              badge when an invitation is still pending (the user row
+              exists but `consumed_at` is NULL — not yet a real portal
+              user). */}
+          {pendingInvitation && daysUntilExpiry !== null && (
+            <Badge
+              variant="outline"
+              className="ml-2 gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
+              title={t('pendingInvitations.expiresAt', {
+                date: pendingInvitation.expiresAt.toISOString().slice(0, 10),
+              })}
+            >
+              <MailWarningIcon
+                aria-hidden="true"
+                className="size-3"
+              />
+              <span>
+                {t('pendingInvitations.expiresInDays', {
+                  days: daysUntilExpiry,
+                })}
+              </span>
             </Badge>
           )}
         </h3>
@@ -303,6 +348,44 @@ export default async function MemberDetailPage({
   const secondary = contacts.filter(
     (c) => !c.isPrimary && c.removedAt === null,
   );
+
+  // C6 round-10 ui-design-specialist — fetch pending portal
+  // invitations and project as a Map<contactId, invitation> so each
+  // ContactBlock can render its own inline badge. Failures downgrade
+  // to an empty Map (no badges shown) — never blocks the page render.
+  let pendingInvitationsByContactId = new Map<string, PendingInvitation>();
+  try {
+    const pendingRes = await deps.memberRepo.findPendingInvitationsForMember(
+      tenant,
+      member.memberId,
+    );
+    if (pendingRes.ok) {
+      pendingInvitationsByContactId = new Map(
+        pendingRes.value.map((row) => [
+          row.contactId,
+          {
+            invitationId: row.invitationId,
+            invitedAt: row.invitedAt,
+            expiresAt: row.expiresAt,
+          },
+        ]),
+      );
+    } else {
+      logger.warn(
+        { event: 'pending_invitations_repo_err', err: pendingRes.error, memberId },
+        '[F3] pending-invitations repo returned err — falling back to empty map',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'pending_invitations_threw',
+        err: e instanceof Error ? e.message : String(e),
+        memberId,
+      },
+      '[F3] pending-invitations fetch threw — falling back to empty map',
+    );
+  }
 
   // Resolve plan display name via PlanLookupPort (single-plan fetch,
   // no listPlans). Falls back to the slug if the plan row is missing
@@ -550,7 +633,14 @@ export default async function MemberDetailPage({
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {primary ? (
-              <ContactBlock contact={primary} memberId={member.memberId} t={t} />
+              <ContactBlock
+                contact={primary}
+                memberId={member.memberId}
+                pendingInvitation={pendingInvitationsByContactId.get(
+                  primary.contactId,
+                )}
+                t={t}
+              />
             ) : null}
 
             {secondary.length > 0 && (
@@ -565,6 +655,9 @@ export default async function MemberDetailPage({
                     <ContactBlock
                       contact={c}
                       memberId={member.memberId}
+                      pendingInvitation={pendingInvitationsByContactId.get(
+                        c.contactId,
+                      )}
                       t={t}
                     />
                   </div>
@@ -604,6 +697,7 @@ export default async function MemberDetailPage({
             actorRole={session.user.role as 'admin' | 'manager' | 'member'}
           />
         </Suspense>
+
     </DetailContainer>
   );
 }

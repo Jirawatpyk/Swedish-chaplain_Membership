@@ -660,6 +660,15 @@
           "viewAll": "View all activity",
           "empty": "No recent activity yet."
         },
+        "pendingInvitations": {
+          "title": "Pending portal invitations",
+          "subtitle": "Invitations sent but not yet redeemed.",
+          "rowLabel": "Invited {date}",
+          "expiresAt": "Expires {date}",
+          "expiresInDays": "{days, plural, one {Expires in # day} other {Expires in # days}}",
+          "empty": "No pending invitations.",
+          "loadError": "Could not load pending invitations."
+        },
         "sections": {
           "company": "Company",
           "contacts": "Contacts",

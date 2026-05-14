@@ -10,13 +10,14 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, ilike, inArray, or, sql, asc } from 'drizzle-orm';
+import { and, eq, gt, ilike, inArray, isNull, or, sql, asc, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
+import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
 import { rowToContact } from './drizzle-contact-repo';
@@ -976,6 +977,66 @@ export const drizzleMemberRepo: MemberRepo = {
       const row = arr[0];
       if (!row || row.changed_at == null) return ok(null);
       return ok(new Date(row.changed_at));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  /**
+   * C6 round-10 ui-design-specialist — pending portal invitations for
+   * this member's contacts. Cross-schema Drizzle join (auth.invitations
+   * × members.contacts via contacts.linked_user_id = invitations.user_id).
+   *
+   * Tenant scope: `contacts` RLS scopes the join under runInTenant +
+   * chamber_app role. `invitations` is cross-tenant by design (a user
+   * holds tenant-agnostic invites), so the join via contacts is what
+   * enforces the boundary. The `contacts.removed_at IS NULL` filter
+   * hides invitations for archived/removed contacts.
+   *
+   * "Pending" = `consumed_at IS NULL AND expires_at > NOW()`. Sort by
+   * createdAt DESC so newest invites surface first. LIMIT 50 caps
+   * pathological cases.
+   */
+  async findPendingInvitationsForMember(ctx, memberId) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) =>
+        tx
+          .select({
+            invitationId: invitations.id,
+            invitedAt: invitations.createdAt,
+            expiresAt: invitations.expiresAt,
+            contactId: contacts.contactId,
+            firstName: contacts.firstName,
+            lastName: contacts.lastName,
+            email: contacts.email,
+          })
+          .from(invitations)
+          .innerJoin(
+            contacts,
+            eq(contacts.linkedUserId, invitations.userId),
+          )
+          .where(
+            and(
+              eq(contacts.memberId, memberId),
+              isNull(contacts.removedAt),
+              isNull(invitations.consumedAt),
+              gt(invitations.expiresAt, sql`NOW()`),
+            ),
+          )
+          .orderBy(desc(invitations.createdAt))
+          .limit(50),
+      );
+      return ok(
+        rows.map((r) => ({
+          invitationId: r.invitationId,
+          contactId: r.contactId as string,
+          contactFirstName: r.firstName,
+          contactLastName: r.lastName,
+          contactEmail: r.email,
+          invitedAt: r.invitedAt,
+          expiresAt: r.expiresAt,
+        })),
+      );
     } catch (e) {
       return err(unexpected(e));
     }

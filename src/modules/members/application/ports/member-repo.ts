@@ -222,6 +222,39 @@ export interface MemberRepo {
     userId: string,
   ): Promise<Result<Member, RepoError>>;
 
+  /**
+   * C6 round-10 ui-design-specialist — list every pending portal
+   * invitation for the member's contacts. "Pending" =
+   * `invitations.consumed_at IS NULL AND invitations.expires_at >
+   * NOW()`. Cross-schema query joining auth `invitations` →
+   * members `contacts` via `contacts.linked_user_id = invitations.user_id`.
+   *
+   * Tenant scope: `contacts.tenant_id` is filtered explicitly in the
+   * adapter; the auth `invitations` table is cross-tenant by design
+   * (a single user can hold a tenant-agnostic invite), so the join
+   * via contacts is what enforces the tenant boundary.
+   *
+   * Returns at most ~10 rows in practice (small contact lists), so no
+   * pagination needed.
+   */
+  findPendingInvitationsForMember(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<
+    Result<
+      ReadonlyArray<{
+        readonly invitationId: string;
+        readonly contactId: string;
+        readonly contactFirstName: string;
+        readonly contactLastName: string;
+        readonly contactEmail: string;
+        readonly invitedAt: Date;
+        readonly expiresAt: Date;
+      }>,
+      RepoError
+    >
+  >;
+
   /** US2 directory search — substring across company, contact name, email. */
   searchDirectory(
     ctx: TenantContext,

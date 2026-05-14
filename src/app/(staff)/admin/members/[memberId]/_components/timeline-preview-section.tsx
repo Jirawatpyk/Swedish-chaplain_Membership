@@ -104,9 +104,9 @@ export async function TimelinePreviewSection({
         <CardTitle className="text-base">{t('sections.audit')}</CardTitle>
         <Link
           href={`/admin/members/${memberId}/timeline`}
-          className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          className={buttonVariants({ variant: 'outline' })}
         >
-          <ClockIcon className="size-3.5" />
+          <ClockIcon className="size-4" />
           {t('timelinePreview.viewAll')}
         </Link>
       </CardHeader>

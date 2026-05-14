@@ -660,6 +660,15 @@
           "viewAll": "Visa all aktivitet",
           "empty": "Ingen aktivitet ännu."
         },
+        "pendingInvitations": {
+          "title": "Väntande portalinbjudningar",
+          "subtitle": "Inbjudningar skickade men ännu inte inlösta.",
+          "rowLabel": "Inbjuden {date}",
+          "expiresAt": "Går ut {date}",
+          "expiresInDays": "{days, plural, one {Går ut om # dag} other {Går ut om # dagar}}",
+          "empty": "Inga väntande inbjudningar.",
+          "loadError": "Kunde inte läsa in väntande inbjudningar."
+        },
         "sections": {
           "company": "Företag",
           "contacts": "Kontakter",
