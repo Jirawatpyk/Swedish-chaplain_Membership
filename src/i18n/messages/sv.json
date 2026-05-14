@@ -2429,6 +2429,11 @@
           "phaseBStep": "Anslut Zapier",
           "phaseCStep": "Testa och hantera",
           "phaseAIntro": "Generera en ny webhook-nyckel för den här kammaren. Värdet visas i klartext endast en gång — spara det i en lösenordshanterare innan du fortsätter.",
+          "tierNotice": {
+            "title": "EventCreate Corporate-plan krävs",
+            "body": "EventCreate-API:et och Zapier-integrationen är endast tillgängliga från Corporate-planen och uppåt. Free- och Pro-planerna visar inte den API-nyckel som behövs nedan.",
+            "csvFallback": "Om din plan inte stöder Zapier, <csvLink>ladda upp deltagare som CSV i stället</csvLink> — samma matchning, kvot och granskningslogik, ingen Zapier behövs."
+          },
           "generateButton": "Generera webhook-nyckel",
           "generating": "Genererar…",
           "generateFailed": "Det gick inte att generera en webhook-nyckel. Försök igen eller kontakta support.",

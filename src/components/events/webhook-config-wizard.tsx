@@ -21,9 +21,11 @@
  * first paint shows the correct state without a client-side fetch.
  */
 import { useEffect, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { InfoIcon } from 'lucide-react';
 import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -203,20 +205,57 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
       <Stepper steps={steps} aria-label={t('stepsLabel')} />
 
       {phase === 'a-generate' && !view.secretConfigured && (
-        <Card>
-          <CardContent className="flex flex-col gap-4">
-            <p className="text-sm">{t('phaseAIntro')}</p>
-            <Button
-              type="button"
-              onClick={() => void handleGenerate()}
-              disabled={generating}
-              aria-busy={generating}
-              className="min-h-11 self-start"
-            >
-              {generating ? t('generating') : t('generateButton')}
-            </Button>
-          </CardContent>
-        </Card>
+        <>
+          {/*
+            Round 9 banner (2026-05-14) — EventCreate API access is
+            gated to Corporate plan and up. Admins on Pro/Free plans
+            cannot complete the Zapier flow even with a perfect
+            wizard. Banner sets expectation upfront + offers CSV
+            import (US5 / T090–T099) as the equivalent ingest path
+            so admins don't waste time generating a secret they
+            cannot use. Limited to Phase A intentionally — admins
+            who already passed Phase A (configured tenants in
+            Phase C) have already cleared the tier gate; showing
+            the same banner there is reminder-noise. CSV affordance
+            stays signal-tight at the exact decision point.
+          */}
+          <Card size="sm" className="border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/40">
+            <CardContent className="flex items-start gap-3 text-sm">
+              <InfoIcon className="size-4 shrink-0 text-blue-600 dark:text-blue-300" aria-hidden />
+              <div className="flex flex-col gap-1">
+                <p className="font-medium">{t('tierNotice.title')}</p>
+                <p className="text-muted-foreground">{t('tierNotice.body')}</p>
+                <p className="text-muted-foreground">
+                  {t.rich('tierNotice.csvFallback', {
+                    csvLink: (chunks) => (
+                      <Link
+                        href="/admin/events/import"
+                        className="font-medium text-primary underline-offset-2 hover:underline"
+                      >
+                        {chunks}
+                      </Link>
+                    ),
+                  })}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="flex flex-col gap-4">
+              <p className="text-sm">{t('phaseAIntro')}</p>
+              <Button
+                type="button"
+                onClick={() => void handleGenerate()}
+                disabled={generating}
+                aria-busy={generating}
+                className="min-h-11 self-start"
+              >
+                {generating ? t('generating') : t('generateButton')}
+              </Button>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       {phase === 'a-reveal' && generated && (

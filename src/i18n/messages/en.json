@@ -2429,6 +2429,11 @@
           "phaseBStep": "Connect Zapier",
           "phaseCStep": "Test & manage",
           "phaseAIntro": "Generate a fresh webhook secret for this chamber. You'll see the plaintext value exactly once — copy it to your password manager before continuing.",
+          "tierNotice": {
+            "title": "EventCreate Corporate plan required",
+            "body": "The EventCreate API and Zapier integration are unlocked on the Corporate plan and up. Free and Pro plans do not expose the API key needed below.",
+            "csvFallback": "If your plan does not support Zapier, <csvLink>upload attendees as CSV instead</csvLink> — same matching, quota, and audit logic, no Zapier required."
+          },
           "generateButton": "Generate webhook secret",
           "generating": "Generating…",
           "generateFailed": "Could not generate a webhook secret. Try again or contact support.",

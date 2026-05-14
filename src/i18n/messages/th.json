@@ -2429,6 +2429,11 @@
           "phaseBStep": "เชื่อมต่อ Zapier",
           "phaseCStep": "ทดสอบและจัดการ",
           "phaseAIntro": "สร้าง webhook secret ใหม่สำหรับหอการค้านี้ คีย์จะแสดงเป็นข้อความครั้งเดียวเท่านั้น โปรดบันทึกในโปรแกรมจัดการรหัสผ่านก่อนดำเนินการต่อ",
+          "tierNotice": {
+            "title": "ต้องใช้แผน EventCreate Corporate ขึ้นไป",
+            "body": "การเชื่อมต่อ EventCreate API และ Zapier เปิดให้ใช้ตั้งแต่แผน Corporate เป็นต้นไป แผน Free และ Pro ยังไม่แสดง API key ที่ต้องใช้ด้านล่าง",
+            "csvFallback": "หากแผนของคุณไม่รองรับ Zapier <csvLink>อัปโหลดผู้เข้าร่วมเป็น CSV แทน</csvLink> — ใช้ตรรกะการจับคู่ โควต้า และบันทึกตรวจสอบเหมือนกัน ไม่ต้องใช้ Zapier"
+          },
           "generateButton": "สร้าง webhook secret",
           "generating": "กำลังสร้าง…",
           "generateFailed": "สร้าง webhook secret ไม่สำเร็จ กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
