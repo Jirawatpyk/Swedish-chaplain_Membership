@@ -57,12 +57,28 @@ export type ProcessingOutcomeLabel =
   | 'non_member'
   | 'unmatched';
 
+/**
+ * Failure categories surfaced from the test-webhook round-trip. Round 11
+ * code-reviewer fix #2 (2026-05-14) dropped the `'timestamp_skew'`
+ * variant: the receiver returns HTTP 401 for ALL signature/timestamp
+ * verification failures (signature mismatch, replay window exceeded,
+ * tampered body — see `signature-verifier.ts` + the webhook route).
+ * `mapFailureCategory()` cannot distinguish skew from a wrong-secret
+ * scenario; both surface as `'signature_mismatch'` with the same
+ * "rotate your secret" recovery hint. Keeping a `'timestamp_skew'`
+ * variant in the type meant the `hintFor` switch reserved a hint
+ * string that no production code path could ever surface — a
+ * misleading lie in the type system. Removed entirely; the recovery
+ * UX for skew is folded into `signature_mismatch`'s hint, which is
+ * accurate enough for the admin to investigate (rotation also re-
+ * syncs the clock-based replay window).
+ */
 export type FailureCategory =
   | 'signature_mismatch'
-  | 'timestamp_skew'
   | 'ingest_disabled'
   | 'rate_limited'
   | 'malformed_payload'
+  | 'client_error'
   | 'server_error'
   | 'network_error'
   | 'invalid_response_body';
@@ -115,8 +131,19 @@ export interface RunTestWebhookDeps {
 }
 
 /**
- * 4xx → mapped to `failureCategory` so the admin sees actionable
- * recovery copy.
+ * HTTP status → `failureCategory` mapping. The mapped category drives
+ * the recovery hint surfaced to the admin in the test-result UI.
+ *
+ * Round 11 code-reviewer fix #4 (2026-05-14) — added the `'client_error'`
+ * bucket for 4xx statuses that are not specifically handled
+ * (404 endpoint-not-found, 405 method-not-allowed, 413 payload-too-
+ * large, 415 unsupported-media-type, etc.). Previously these fell
+ * through to `'server_error'` whose hint blamed Chamber-OS for an
+ * "unexpected error" — misleading because the admin actually needs
+ * to check the webhook URL or content-type configuration on the
+ * caller side. The bucket gives admins an actionable starting point
+ * (check URL + Zapier action config) instead of a stuck "contact
+ * support" loop.
  */
 function mapFailureCategory(status: number): FailureCategory {
   if (status === 401) return 'signature_mismatch';
@@ -124,21 +151,31 @@ function mapFailureCategory(status: number): FailureCategory {
   if (status === 429) return 'rate_limited';
   if (status === 503) return 'ingest_disabled';
   if (status >= 500) return 'server_error';
+  if (status >= 400) return 'client_error';
   return 'server_error';
 }
 
 function hintFor(category: FailureCategory): string {
   switch (category) {
     case 'signature_mismatch':
-      return 'Did you save the secret correctly? Try rotating the secret and reconfiguring Zapier.';
-    case 'timestamp_skew':
-      return 'Server clock may be skewed >5 minutes. Retry; if it persists, contact support.';
+      // Round 11 code-reviewer fix #2 — hint folds in clock-skew
+      // recovery because the receiver returns 401 for both wrong-
+      // secret AND replay-window-exceeded; the admin can't tell
+      // them apart from the test outcome, so the hint addresses
+      // both possibilities.
+      return 'Did you save the secret correctly? Try rotating the secret and reconfiguring Zapier. If the issue persists, check your server clock — replay-window mismatches also surface as signature failures.';
     case 'ingest_disabled':
       return 'Ingest is disabled for this tenant. Enable it from the integration page to retry.';
     case 'rate_limited':
       return 'Too many test requests in the last hour. Wait and retry.';
     case 'malformed_payload':
       return 'The synthetic payload was rejected. Report this bug to support.';
+    case 'client_error':
+      // Round 11 code-reviewer fix #4 — 4xx that is not specifically
+      // mapped (404 endpoint, 405 method, 413 payload-size, 415 media-
+      // type, etc.). Most common cause is a typo in the webhook URL
+      // configured on the Zapier action.
+      return 'Webhook returned a client error. Check that the webhook URL in your Zapier action matches the one shown above and that the Zap is configured to POST as JSON.';
     case 'server_error':
       return 'Chamber-OS returned an unexpected error. Retry; if it persists, contact support.';
     case 'network_error':

@@ -13,7 +13,7 @@
  * before re-enabling so accidental double-clicks don't immediately
  * spam the 10/hr rate limit.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2Icon, SendIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,6 +44,24 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseC.test');
   const [loading, setLoading] = useState(false);
   const [announcement, setAnnouncement] = useState('');
+  // Round 11 code-reviewer fix #1 (2026-05-14) — track the 2s cooldown
+  // timer in a ref so it can be cleared on unmount. Previously the
+  // bare `setTimeout` inside `finally` had no cleanup; if the parent
+  // unmounted this component within the 2s window (e.g. admin opens
+  // RotateSecretDialog or navigates away after pressing Send),
+  // `setLoading(false)` fired on an unmounted component and produced a
+  // React 18 "Can't perform a React state update on an unmounted
+  // component" warning. Same lifecycle pattern as
+  // <WebhookSecretReveal>'s `copied` reset effect.
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current !== null) {
+        clearTimeout(cooldownTimerRef.current);
+      }
+    };
+  }, []);
 
   async function handleClick() {
     setLoading(true);
@@ -101,8 +119,13 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
       setAnnouncement(t('networkError'));
     } finally {
       // 2s cooldown so accidental double-clicks don't immediately
-      // consume the 10/hr quota.
-      setTimeout(() => setLoading(false), 2_000);
+      // consume the 10/hr quota. Timer stored in `cooldownTimerRef`
+      // so the unmount effect can clear it (round 11 code-reviewer
+      // fix #1 — prevent React-18 state-update-on-unmounted warning).
+      cooldownTimerRef.current = setTimeout(() => {
+        cooldownTimerRef.current = null;
+        setLoading(false);
+      }, 2_000);
     }
   }
 

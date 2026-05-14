@@ -210,8 +210,18 @@ export function RecentDeliveriesPanel({
               </tr>
             </thead>
             <tbody className="divide-y">
-              {deliveries.map((row) => (
-                <tr key={`${row.receivedAt}-${row.requestId}`}>
+              {deliveries.map((row, index) => (
+                // Round 11 code-reviewer fix #3 (2026-05-14) — index
+                // suffix prevents key collision on the `no-request-id`
+                // sentinel. Two rows received in the same millisecond
+                // with no `X-Request-ID` header would otherwise share
+                // the same `${receivedAt}-${requestId}` key (sentinel
+                // string is constant). Index disambiguates within the
+                // map() call without harming stable-key semantics
+                // because the list is sorted descending by timestamp +
+                // capped at 10 rows; visual position is the natural
+                // identity.
+                <tr key={`${row.receivedAt}-${row.requestId}-${index}`}>
                   <td className="px-3 py-3 align-top">
                     <RelativeTime
                       iso={row.receivedAt}
