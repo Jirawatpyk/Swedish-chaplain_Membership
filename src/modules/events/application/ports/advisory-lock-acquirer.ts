@@ -48,10 +48,26 @@ export type LockKey = string & { readonly [lockKeyBrand]: true };
 
 /**
  * Smart constructor for `LockKey`. Validates the canonical namespace
- * prefix shape: `<feature>:<tenant-scoped-segment-list>` where the
- * feature prefix MUST contain only `[a-z0-9-]` (rejects underscore
- * typos like `eventcreate_quota:` vs the canonical `eventcreate-quota:`)
- * and at least one `:` separator must follow.
+ * shape:
+ *
+ *   `<feature-prefix>:<segment>(:<segment>){0,3}`
+ *
+ * where:
+ *   - `<feature-prefix>` MUST contain only `[a-z0-9-]` (rejects
+ *     underscore typos like `eventcreate_quota:` vs the canonical
+ *     `eventcreate-quota:`)
+ *   - Each `<segment>` MUST contain only `[A-Za-z0-9._-]` (UUID-safe
+ *     + slug-safe; rejects spaces, control chars, punctuation that
+ *     could split a lock partition on a stray character).
+ *   - Total segments after the feature prefix: 1-4 (allows
+ *     `feature:tenant` through `feature:tenant:scope1:scope2:scope3`).
+ *   - Total length ≤256 chars.
+ *
+ * Tightened in wave-6 batch-3 (TYPE residual A) per Round 2 type-
+ * design-analyzer: the prior `[\x20-\x7e]+` tail allowed spaces,
+ * quotes, semicolons, and other printable ASCII — fine for the
+ * hash-based Postgres call (no SQL injection) but ambiguous against
+ * future segment-shape conventions and noisy in observability logs.
  *
  * Throws `InvalidLockKeyError` on malformed input — callers should
  * surface this as a programmer-error / TxStageError, NOT a user-
@@ -61,7 +77,7 @@ export type LockKey = string & { readonly [lockKeyBrand]: true };
 export function asLockKey(value: string): LockKey {
   if (
     typeof value !== 'string' ||
-    !/^[a-z0-9-]+:[\x20-\x7e]+$/.test(value) ||
+    !/^[a-z0-9-]+(:[A-Za-z0-9._-]+){1,4}$/.test(value) ||
     value.length > 256
   ) {
     throw new InvalidLockKeyError(value);

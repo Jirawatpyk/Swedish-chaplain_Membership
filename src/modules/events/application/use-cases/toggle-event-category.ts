@@ -58,7 +58,7 @@
  * Caller (route handler) owns the tx via `runInTenantTx`.
  */
 import { ok, err, type Result } from '@/lib/result';
-import type { TenantId, MemberId } from '@/modules/members';
+import type { TenantId } from '@/modules/members';
 import type { EventId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
 import type { QuotaEffect } from '../../domain/event-registration';
@@ -75,7 +75,7 @@ import type {
   QuotaAccountingPort,
   QuotaAccountingError,
 } from '../ports/quota-accounting-port';
-import type { F6AuditPort } from '../ports/audit-port';
+import type { F6AuditPort, AuditEmitError } from '../ports/audit-port';
 import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
@@ -84,6 +84,7 @@ import {
   registrationsRepoErrorMessage,
 } from './_helpers/repo-error-message';
 import { emitQuotaScopeAudit } from './_helpers/emit-quota-scope-audit';
+import { auditEmitErrorMessage } from './_helpers/audit-error-message';
 
 export type ToggleFlag = 'is_partner_benefit' | 'is_cultural_event';
 
@@ -137,9 +138,17 @@ export type ToggleEventCategoryError =
       readonly message: string;
       readonly cause: RegistrationsRepositoryError;
     }
-  | { readonly kind: 'lock_acquisition_failed'; readonly message: string }
+  | {
+      readonly kind: 'lock_acquisition_failed';
+      readonly message: string;
+      readonly cause: unknown;
+    }
   | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
-  | { readonly kind: 'audit_emit_failed'; readonly message: string };
+  | {
+      readonly kind: 'audit_emit_failed';
+      readonly message: string;
+      readonly cause: AuditEmitError;
+    };
 
 export interface ToggleEventCategoryDeps {
   readonly eventsRepo: EventsRepository;
@@ -238,6 +247,7 @@ export async function toggleEventCategory(
       return err({
         kind: 'lock_acquisition_failed',
         message: (e as Error)?.message ?? 'unknown',
+        cause: e,
       });
     }
 
@@ -489,10 +499,8 @@ export async function toggleEventCategory(
   if (!macroResult.ok) {
     return err({
       kind: 'audit_emit_failed',
-      message:
-        'message' in macroResult.error
-          ? macroResult.error.message
-          : `audit error ${macroResult.error.kind}`,
+      message: auditEmitErrorMessage(macroResult.error),
+      cause: macroResult.error,
     });
   }
 
@@ -503,10 +511,3 @@ export async function toggleEventCategory(
     nextValue: input.newValue,
   });
 }
-
-/**
- * Memberid-typed re-export so tests referencing `MemberId` through this
- * module's surface don't need a second import line. (Stylistic — F8 / F5
- * follow the same pattern in their use-case barrels.)
- */
-export type { MemberId };

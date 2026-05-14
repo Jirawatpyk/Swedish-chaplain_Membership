@@ -47,9 +47,9 @@ import {
   makeToggleEventCategoryDeps,
 } from '@/lib/events-admin-deps';
 import { asTenantContext } from '@/modules/tenants';
-import { asTenantId, type MemberId } from '@/modules/members';
+import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
-import { ok, err } from '@/lib/result';
+import { err } from '@/lib/result';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createActiveTestUser } from '../helpers/test-users';

@@ -31,12 +31,9 @@ import { ok, err, type Result } from '@/lib/result';
 import type { MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { EventId, RegistrationId } from '../../../domain/branded-types';
-import type {
-  ActorType,
-  F6AuditPort,
-  AuditEmitError,
-} from '../../ports/audit-port';
+import type { ActorType, AuditEmitError, F6AuditPort } from '../../ports/audit-port';
 import type { TenantId } from '@/modules/members';
+import { auditEmitErrorMessage } from './audit-error-message';
 
 export type QuotaScopeAction = 'decremented' | 'over_quota' | 'credit_back';
 
@@ -65,7 +62,11 @@ export interface EmitQuotaScopeAuditParams {
   readonly fiscalYear: number;
 }
 
-export type EmitAuditError = { readonly kind: 'audit_emit_failed'; readonly message: string };
+export type EmitAuditError = {
+  readonly kind: 'audit_emit_failed';
+  readonly message: string;
+  readonly cause: AuditEmitError;
+};
 
 /**
  * Emits one F6 audit row for the (scope, action) pair under the given
@@ -94,18 +95,10 @@ export async function emitQuotaScopeAudit(
     return err({
       kind: 'audit_emit_failed',
       message: auditEmitErrorMessage(result.error),
+      cause: result.error,
     });
   }
   return ok(undefined);
-}
-
-function auditEmitErrorMessage(e: AuditEmitError): string {
-  switch (e.kind) {
-    case 'db_error':
-      return e.message;
-    case 'enum_value_unknown':
-      return `audit enum unknown: ${e.eventType}`;
-  }
 }
 
 async function emitDecremented(

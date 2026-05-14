@@ -43,7 +43,7 @@ import type {
   RegistrationsRepository,
   RegistrationsRepositoryError,
 } from '../ports/registrations-repository';
-import type { F6AuditPort } from '../ports/audit-port';
+import type { F6AuditPort, AuditEmitError } from '../ports/audit-port';
 import type { AdvisoryLockAcquirer } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
@@ -51,6 +51,7 @@ import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
 } from './_helpers/repo-error-message';
+import { auditEmitErrorMessage } from './_helpers/audit-error-message';
 
 export interface ArchiveEventInput {
   readonly tenantId: TenantId;
@@ -85,8 +86,16 @@ export type ArchiveEventError =
       readonly message: string;
       readonly cause: RegistrationsRepositoryError;
     }
-  | { readonly kind: 'lock_acquisition_failed'; readonly message: string }
-  | { readonly kind: 'audit_emit_failed'; readonly message: string };
+  | {
+      readonly kind: 'lock_acquisition_failed';
+      readonly message: string;
+      readonly cause: unknown;
+    }
+  | {
+      readonly kind: 'audit_emit_failed';
+      readonly message: string;
+      readonly cause: AuditEmitError;
+    };
 
 export interface ArchiveEventDeps {
   readonly eventsRepo: EventsRepository;
@@ -169,6 +178,7 @@ export async function archiveEvent(
       return err({
         kind: 'lock_acquisition_failed',
         message: (e as Error)?.message ?? 'unknown',
+        cause: e,
       });
     }
 
@@ -221,8 +231,8 @@ export async function archiveEvent(
       if (!r.ok) {
         return err({
           kind: 'audit_emit_failed',
-          message:
-            'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
+          message: auditEmitErrorMessage(r.error),
+          cause: r.error,
         });
       }
       partnershipReversals += 1;
@@ -244,8 +254,8 @@ export async function archiveEvent(
       if (!r.ok) {
         return err({
           kind: 'audit_emit_failed',
-          message:
-            'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
+          message: auditEmitErrorMessage(r.error),
+          cause: r.error,
         });
       }
       culturalReversals += 1;
@@ -274,10 +284,8 @@ export async function archiveEvent(
   if (!macro.ok) {
     return err({
       kind: 'audit_emit_failed',
-      message:
-        'message' in macro.error
-          ? macro.error.message
-          : `audit error ${macro.error.kind}`,
+      message: auditEmitErrorMessage(macro.error),
+      cause: macro.error,
     });
   }
 

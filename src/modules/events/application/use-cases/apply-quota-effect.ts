@@ -59,13 +59,14 @@ import type {
   QuotaAccountingPort,
   QuotaAccountingError,
 } from '../ports/quota-accounting-port';
-import type { F6AuditPort, ActorType } from '../ports/audit-port';
+import type { F6AuditPort, ActorType, AuditEmitError } from '../ports/audit-port';
 import {
   asLockKey,
   type AdvisoryLockAcquirer,
   type LockKey,
 } from '../ports/advisory-lock-acquirer';
 import type { UserId } from '@/modules/auth';
+import { auditEmitErrorMessage } from './_helpers/audit-error-message';
 
 export interface ApplyQuotaEffectInput {
   readonly tenantId: TenantId;
@@ -109,9 +110,17 @@ export interface ApplyQuotaEffectOutput {
 }
 
 export type ApplyQuotaEffectError =
-  | { readonly kind: 'lock_acquisition_failed'; readonly message: string }
+  | {
+      readonly kind: 'lock_acquisition_failed';
+      readonly message: string;
+      readonly cause: unknown;
+    }
   | { readonly kind: 'quota_lookup_failed'; readonly cause: QuotaAccountingError }
-  | { readonly kind: 'audit_emit_failed'; readonly message: string };
+  | {
+      readonly kind: 'audit_emit_failed';
+      readonly message: string;
+      readonly cause: AuditEmitError;
+    };
 
 export interface ApplyQuotaEffectDeps {
   readonly quotaAccountingPort: QuotaAccountingPort;
@@ -177,6 +186,7 @@ export async function applyQuotaEffect(
     return err({
       kind: 'lock_acquisition_failed',
       message: (e as Error)?.message ?? 'unknown',
+      cause: e,
     });
   }
 
@@ -236,8 +246,8 @@ export async function applyQuotaEffect(
       if (!r.ok) {
         return err({
           kind: 'audit_emit_failed',
-          message:
-            'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
+          message: auditEmitErrorMessage(r.error),
+          cause: r.error,
         });
       }
       emittedAuditEventTypes.push('quota_partnership_decremented');
@@ -261,8 +271,8 @@ export async function applyQuotaEffect(
       if (!r.ok) {
         return err({
           kind: 'audit_emit_failed',
-          message:
-            'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
+          message: auditEmitErrorMessage(r.error),
+          cause: r.error,
         });
       }
       emittedAuditEventTypes.push('quota_over_quota_warning');
@@ -294,8 +304,8 @@ export async function applyQuotaEffect(
       if (!r.ok) {
         return err({
           kind: 'audit_emit_failed',
-          message:
-            'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
+          message: auditEmitErrorMessage(r.error),
+          cause: r.error,
         });
       }
       emittedAuditEventTypes.push('quota_cultural_decremented');
@@ -319,8 +329,8 @@ export async function applyQuotaEffect(
       if (!r.ok) {
         return err({
           kind: 'audit_emit_failed',
-          message:
-            'message' in r.error ? r.error.message : `audit error ${r.error.kind}`,
+          message: auditEmitErrorMessage(r.error),
+          cause: r.error,
         });
       }
       emittedAuditEventTypes.push('quota_over_quota_warning');

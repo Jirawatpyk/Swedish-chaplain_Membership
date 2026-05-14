@@ -31,14 +31,35 @@ describe('asLockKey — Phase 6 wave-6 (CRIT-R2-3)', () => {
       expect(() => asLockKey('a:b')).not.toThrow();
     });
 
-    it('accepts ASCII 0x20-0x7e printable chars in the tail (post-prefix)', () => {
-      // hashtextextended hashes the key before submitting to Postgres
-      // so no SQL injection risk — but printable ASCII boundary verified.
-      expect(() => asLockKey('feature:tail with spaces')).not.toThrow();
-      expect(() => asLockKey("feature:tail-with-symbols!@#$%^&*()")).not.toThrow();
+    it('accepts UUID-safe + slug-safe chars in segments [A-Za-z0-9._-]', () => {
+      // Tightened in wave-6 batch-3: hash-based Postgres call doesn't
+      // need wide ASCII but tighter segment shape eliminates ambiguity
+      // in observability logs + future segment-shape extensions.
+      expect(() =>
+        asLockKey('feature:a1b2c3d4-1234-5678-90ab-cdef01234567:UPPER_lower-mixed.99'),
+      ).not.toThrow();
+      expect(() => asLockKey('feature:tenant_slug.with-dots')).not.toThrow();
     });
 
-    it('accepts exactly 256 chars', () => {
+    it('rejects spaces in segments (wave-6 tighter regex)', () => {
+      expect(() => asLockKey('feature:tail with spaces')).toThrow(
+        InvalidLockKeyError,
+      );
+    });
+
+    it('rejects symbol chars (!@#) in segments (wave-6 tighter regex)', () => {
+      expect(() => asLockKey("feature:tail-with-symbols!@#")).toThrow(
+        InvalidLockKeyError,
+      );
+    });
+
+    it('rejects 5+ segments after the feature prefix', () => {
+      expect(() =>
+        asLockKey('feature:s1:s2:s3:s4:s5'),
+      ).toThrow(InvalidLockKeyError);
+    });
+
+    it('accepts exactly 256 chars (within segment alphabet)', () => {
       const tail = 'x'.repeat(256 - 'feature:'.length);
       const key = `feature:${tail}`;
       expect(key.length).toBe(256);
