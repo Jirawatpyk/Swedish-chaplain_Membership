@@ -2316,14 +2316,21 @@
           "partnerBenefit": "Partnerförmån",
           "culturalEvent": "Kulturevenemang"
         },
+        "matchRateBand": {
+          "high": "Stark matchningsgrad",
+          "medium": "Blandad matchningsgrad",
+          "low": "Låg matchningsgrad",
+          "none": "Inga registreringar"
+        },
+        "matchRateOf": "{matched} av {total}",
         "filters": {
-          "partnerBenefitOnly": "Endast partnerförmånsevenemang",
-          "culturalEventOnly": "Endast kulturevenemang",
+          "partnerBenefitOnly": "Räknas som partnerförmån",
+          "culturalEventOnly": "Räknas som kulturevenemang",
           "showArchived": "Visa arkiverade evenemang",
           "hideArchived": "Dölj arkiverade evenemang",
           "clearAll": "Rensa filter",
-          "partnerBenefitOnlyActive": "Endast partnerförmånsevenemang (aktivt)",
-          "culturalEventOnlyActive": "Endast kulturevenemang (aktivt)"
+          "partnerBenefitOnlyActive": "Räknas som partnerförmån (aktivt)",
+          "culturalEventOnlyActive": "Räknas som kulturevenemang (aktivt)"
         },
         "emptyState": {
           "filteredEmpty": "Inga evenemang matchar dina filter.",
@@ -2342,7 +2349,7 @@
           "allArchived": {
             "title": "Alla evenemang är arkiverade",
             "body": "{count, plural, one {1 evenemang har arkiverats.} other {# evenemang har arkiverats.}}",
-            "cta": "Visa arkiverade evenemang"
+            "cta": "{count, plural, one {Visa 1 arkiverat evenemang} other {Visa # arkiverade evenemang}}"
           }
         }
       },
@@ -2355,13 +2362,20 @@
         "header": {
           "matchRate": "Matchningsgrad",
           "matchRateValue": "{pct}% ({matched} av {total})",
+          "matchRateValueStacked": "{matched} av {total} deltagare matchade",
+          "matchRateNone": "Inga registreringar ännu",
+          "matchRateBandHigh": "Stark — de flesta deltagarna är matchade",
+          "matchRateBandMedium": "Blandad — granska omatchade rader",
+          "matchRateBandLow": "Låg — många deltagare behöver granskas",
           "totalRegistrations": "Registreringar totalt",
           "archived": "Arkiverad",
           "partnerBenefit": "Partnerförmån",
           "culturalEvent": "Kulturevenemang",
           "viewOnEventCreate": "Visa på EventCreate",
           "opensInNewTab": "(öppnas i en ny flik)",
-          "lastUpdatedAt": "Senast uppdaterad"
+          "lastUpdatedAt": "Senast uppdaterad",
+          "lastUpdatedAtTooltip": "Tidpunkt för senaste Zapier-leverans för detta evenemang.",
+          "actionsLabel": "Evenemangsåtgärder"
         },
         "attendees": {
           "heading": "Deltagare",
@@ -2379,7 +2393,11 @@
             "quota": "Kvot",
             "registered": "Registrerad"
           },
-          "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}"
+          "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}",
+          "copyEmail": "Kopiera e-post",
+          "copyEmailAria": "Kopiera {email} till urklipp",
+          "copyEmailSuccess": "E-post kopierad till urklipp",
+          "copyEmailFailed": "Kunde inte kopiera — kopiera manuellt"
         },
         "archive": {
           "archiveCta": "Arkivera evenemang",
@@ -2407,9 +2425,9 @@
         },
         "toggles": {
           "flagPartnerBenefit": "Markera som partnerförmån",
-          "unflagPartnerBenefit": "Ta bort partnerförmånsmarkering",
+          "unflagPartnerBenefit": "Ta bort partnerflagga",
           "flagCulturalEvent": "Markera som kulturevenemang",
-          "unflagCulturalEvent": "Ta bort kulturevenemangsmarkering",
+          "unflagCulturalEvent": "Ta bort kulturflagga",
           "confirmFlagPartnerTitle": "Markera detta evenemang som en partnerförmån?",
           "confirmFlagPartnerBody": "Alla matchade och betalda deltagare omvärderas mot sin partnertiers biljettilldelning. Medlemmar med kvarvarande kvot får en biljett dragen; deltagare utan kvot sparas utan att förbruka kvoten.",
           "confirmUnflagPartnerTitle": "Ta bort partnerförmånsmarkeringen?",
@@ -2429,17 +2447,30 @@
         }
       },
       "matchType": {
-        "member_contact": "Matchad (exakt e-post)",
-        "member_domain": "Matchad (företagsdomän)",
-        "member_fuzzy": "Matchad (ungefärlig)",
+        "member_contact": "Verifierad (e-post)",
+        "member_domain": "Verifierad (domän)",
+        "member_fuzzy": "Trolig matchning",
         "non_member": "Icke-medlem",
-        "unmatched": "Omatchad"
+        "unmatched": "Behöver granskning"
+      },
+      "matchTypeTooltip": {
+        "member_contact": "E-postadressen matchar en aktiv medlemskontakt i din kammare.",
+        "member_domain": "E-postdomänen tillhör ett medlemsföretag.",
+        "member_fuzzy": "Nära en medlemskontakt men inte exakt matchning — granska gärna.",
+        "non_member": "E-post och domän är inte registrerade hos någon medlem.",
+        "unmatched": "Kunde inte matchas automatiskt — koppla manuellt eller markera som icke-medlem."
       },
       "quotaEffect": {
         "partnership": "Partnerförmån",
         "cultural": "Kulturkvot",
         "overQuota": "Över kvot",
         "none": "Ej räknad"
+      },
+      "quotaEffectTooltip": {
+        "partnership": "Denna biljett förbrukade en av medlemmens partnerförmånsbiljetter.",
+        "cultural": "Denna biljett förbrukade en av medlemmens årliga kulturbiljetter.",
+        "overQuota": "Medlemmens tilldelning är slut — biljetten registreras utan att ny kvot förbrukas.",
+        "none": "Ingen kvoteffekt — icke-medlem, gratisbiljett eller evenemanget är inte partnerförmån/kulturevenemang."
       },
       "paymentStatus": {
         "paid": "Betald",

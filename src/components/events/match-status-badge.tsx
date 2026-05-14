@@ -1,37 +1,51 @@
 /**
- * Match-status badge (F6 Phase 4).
+ * Match-status badge (F6 Phase 4 + ui-design-specialist round-10 I3/I6).
  *
  * Visual indicator for the 5-state attendee match cascade
  * (FR-012). Combines shape (filled vs. outline), icon, AND text
  * to satisfy WCAG 2.1 SC 1.4.1 non-colour-alone for status
  * communication.
  *
- * Variants:
- * - member_contact  — filled green check (highest confidence)
- * - member_domain   — outline green check (domain inference)
- * - member_fuzzy    — outline amber tilde (fuzzy match, review-worthy)
- * - non_member      — outline neutral dot (not a member)
- * - unmatched       — filled red warning (ambiguous, review-required)
+ * Variants (rebranded round-10 C3 — "confidence ladder"):
+ * - member_contact  — filled green CheckCircle2 ("Verified contact")
+ * - member_domain   — outline green BadgeCheck ("Verified domain")
+ *                     I6: swapped from `Check` to `BadgeCheck` so the
+ *                     16px icon is visually distinct from member_contact.
+ * - member_fuzzy    — outline amber CircleEqual ("Likely match")
+ * - non_member      — outline neutral Circle ("Non-member")
+ * - unmatched       — filled red AlertTriangle ("Needs review")
  *
- * The label is localised by the caller via next-intl — the badge
- * receives the resolved string. Default `aria-label` falls back
- * to the visible text.
+ * I3 — Tooltip support:
+ *   When the caller passes `tooltip`, the badge becomes a tooltip
+ *   trigger; otherwise renders the bare badge (back-compat — keeps
+ *   the table dense and lets non-attendee surfaces opt-in).
+ *
+ * The label + tooltip strings are localised by the caller via next-intl.
  */
+import type { ReactNode } from 'react';
 import {
   CheckCircle2,
-  Check,
+  BadgeCheck,
   CircleEqual,
   Circle,
   AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { MatchType } from '@/modules/events';
 
 interface MatchStatusBadgeProps {
   readonly matchType: MatchType;
   readonly label: string;
+  /** Optional tooltip body — when present wraps the badge in a tooltip. */
+  readonly tooltip?: ReactNode;
   readonly className?: string;
 }
 
@@ -54,7 +68,7 @@ const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
       'bg-emerald-100 text-emerald-900 dark:bg-emerald-900/30 dark:text-emerald-100 border-emerald-600 dark:border-emerald-500',
   },
   member_domain: {
-    Icon: Check,
+    Icon: BadgeCheck,
     badgeClass:
       'border-emerald-600 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100',
   },
@@ -65,39 +79,47 @@ const VARIANT_MAP: Readonly<Record<MatchType, VariantConfig>> = {
   },
   non_member: {
     Icon: Circle,
-    // R6-B3 staff-review fix (2026-05-13): `text-muted-foreground`
-    // (oklch 0.515) measured ~2:1 against the white card surface
-    // (oklch 1.000) — well below the WCAG 2.1 SC 1.4.3 4.5:1 floor
-    // for normal-weight text. `text-foreground` clears ~18:1 light /
-    // ~14:1 dark. The visual de-emphasis intent is preserved by the
-    // outline-only border + Circle icon vs. the filled green tick on
-    // `member_contact`.
     badgeClass: 'border-border text-foreground',
   },
   unmatched: {
     Icon: AlertTriangle,
-    badgeClass:
-      'bg-destructive/10 text-destructive border-destructive',
+    badgeClass: 'bg-destructive/10 text-destructive border-destructive',
   },
 };
 
 export function MatchStatusBadge({
   matchType,
   label,
+  tooltip,
   className,
 }: MatchStatusBadgeProps) {
   const { Icon, badgeClass } = VARIANT_MAP[matchType];
-  return (
+  const badge = (
     <Badge
       variant="outline"
       className={cn(badgeClass, className)}
-      // Use the localised label as the accessible name so screen
-      // readers announce "Matched (exact email)" etc. rather than
-      // the raw enum value.
       aria-label={label}
     >
       <Icon aria-hidden="true" data-icon="inline-start" />
       <span>{label}</span>
     </Badge>
+  );
+  if (!tooltip) return badge;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              tabIndex={0}
+              className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            />
+          }
+        >
+          {badge}
+        </TooltipTrigger>
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

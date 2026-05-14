@@ -40,6 +40,22 @@ import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { EventId } from '@/modules/events';
 
+type MatchRateBand = 'high' | 'medium' | 'low' | 'none';
+
+function bandForPct(total: number, pct: number): MatchRateBand {
+  if (total <= 0) return 'none';
+  if (pct >= 80) return 'high';
+  if (pct >= 50) return 'medium';
+  return 'low';
+}
+
+const BAND_TEXT_CLASS: Record<MatchRateBand, string> = {
+  high: 'text-emerald-700 dark:text-emerald-300',
+  medium: 'text-amber-700 dark:text-amber-300',
+  low: 'text-destructive',
+  none: 'text-muted-foreground',
+};
+
 export type EventsListTableRow = {
   // brand is compile-only — cheap win;
   // catches accidental ID-swap bugs at the Server→Client prop boundary.
@@ -74,6 +90,7 @@ function formatMatchRate(pct: number, total: number): string {
 
 export function EventsListTable({ rows }: Props) {
   const t = useTranslations('admin.events.list');
+  const tBand = useTranslations('admin.events.list.matchRateBand');
   const locale = useLocale();
 
   return (
@@ -158,14 +175,41 @@ export function EventsListTable({ rows }: Props) {
                 </div>
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                <span className="font-medium">
-                  {formatMatchRate(row.matchRatePct, row.totalRegistrations)}
-                </span>
-                {row.totalRegistrations > 0 && (
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    ({row.matchedRegistrations}/{row.totalRegistrations})
-                  </span>
-                )}
+                {/* I5 (round-10) — stack denominator on a second line so
+                    "%" and "(matched/total)" no longer compete for width;
+                    band colour applies only to the %, denominator stays
+                    muted. Band label is sr-only — the colour + percent
+                    digits already convey the same signal visually. */}
+                {(() => {
+                  const band = bandForPct(
+                    row.totalRegistrations,
+                    row.matchRatePct,
+                  );
+                  return (
+                    <div className="flex flex-col items-end">
+                      <span
+                        className={cn(
+                          'font-semibold',
+                          BAND_TEXT_CLASS[band],
+                        )}
+                      >
+                        {formatMatchRate(
+                          row.matchRatePct,
+                          row.totalRegistrations,
+                        )}
+                      </span>
+                      <span className="sr-only">{tBand(band)}</span>
+                      {row.totalRegistrations > 0 && (
+                        <span className="text-xs text-muted-foreground">
+                          {t('matchRateOf', {
+                            matched: row.matchedRegistrations,
+                            total: row.totalRegistrations,
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </TableCell>
             </TableRow>
           );

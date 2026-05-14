@@ -407,7 +407,7 @@ async function EmptyState({
           href="/admin/events?includeArchived=1"
           className={buttonVariants({ variant: 'outline' })}
         >
-          {t('allArchived.cta')}
+          {t('allArchived.cta', { count: emptyContext.totalArchived })}
         </Link>
       </div>
     );

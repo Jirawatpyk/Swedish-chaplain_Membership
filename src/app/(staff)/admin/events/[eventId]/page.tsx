@@ -238,32 +238,29 @@ export default async function AdminEventDetailPage({
           briefly (typical <100ms). */}
       <DynamicBreadcrumbLabel segment={event.eventId} label={event.name} />
       <PageHeader title={event.name} subtitle={t('subtitle')} />
-      <EventDetailHeader event={event} />
-      {/*
-       * F6 Phase 6 T088 — category-toggle buttons. Admin-only per
-       * FR-035 surface-level access matrix (manager + member do not
-       * see these controls); the API route enforces a server-side
-       * 404 + role_violation_blocked audit on impersonation attempts.
-       * Hidden when the event is archived (FR-019a — archived events
-       * are quota-neutral and cannot be re-flagged).
-       */}
-      {currentUser.role === 'admin' && !event.archivedAt && (
-        <div className="flex flex-wrap items-center gap-3">
-          <EventCategoryToggles
-            eventId={event.eventId}
-            isPartnerBenefit={event.isPartnerBenefit}
-            isCulturalEvent={event.isCulturalEvent}
-          />
-          {/*
-           * FR-019a archive button. Admin-only + only when the event
-           * is not already archived. Archive reverses ALL counted
-           * partnership + cultural quota flags and prevents future
-           * webhook deliveries from re-counting them (apply-quota-
-           * effect short-circuits on event.archivedAt !== null).
-           */}
-          <ArchiveEventButton eventId={event.eventId} />
-        </div>
-      )}
+      {/* C4-lite (round-10) — Phase 6 toggles + archive flow into the
+          EventDetailHeader card as an actions slot. The fragment block
+          that used to render below the header is gone; the buttons now
+          live inside the same card, separated by a top border. Admin-
+          only per FR-035 surface-level access matrix + hidden when
+          archived per FR-019a (archived events are quota-neutral and
+          cannot be re-flagged). The header omits the strip entirely
+          when `actions` is undefined. */}
+      <EventDetailHeader
+        event={event}
+        actions={
+          currentUser.role === 'admin' && !event.archivedAt ? (
+            <>
+              <EventCategoryToggles
+                eventId={event.eventId}
+                isPartnerBenefit={event.isPartnerBenefit}
+                isCulturalEvent={event.isCulturalEvent}
+              />
+              <ArchiveEventButton eventId={event.eventId} />
+            </>
+          ) : undefined
+        }
+      />
       <section
         aria-labelledby="attendees-heading"
         className="flex flex-col gap-4"

@@ -13,28 +13,35 @@ describe('staffNavConfig', () => {
     expect(staffNavConfig.sections).toHaveLength(2);
   });
 
-  it('first section has 7 items: Dashboard, Plans, Members, Invoices, Broadcasts, Renewals, Users (F8 Renewals nav entry added)', () => {
+  it('first section has 8 items: Dashboard, Plans, Members, Invoices, Broadcasts, Events, Renewals, Users (F6 Events nav entry added)', () => {
     const mainSection = staffNavConfig.sections[0]!;
-    expect(mainSection.items).toHaveLength(7);
+    expect(mainSection.items).toHaveLength(8);
     expect(mainSection.items[0]!.titleKey).toBe('nav.staff.dashboard');
     expect(mainSection.items[1]!.titleKey).toBe('nav.staff.plans');
     expect(mainSection.items[2]!.titleKey).toBe('nav.staff.members');
     expect(mainSection.items[3]!.titleKey).toBe('nav.staff.invoices');
     expect(mainSection.items[4]!.titleKey).toBe('nav.staff.broadcasts');
-    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.renewals');
-    expect(mainSection.items[6]!.titleKey).toBe('nav.staff.users');
+    // F6 Phase 4/5 — Events entry inserted between Broadcasts and
+    // Renewals to keep ops-facing surfaces (Broadcasts → Events) above
+    // member-lifecycle surfaces (Renewals → Users).
+    expect(mainSection.items[5]!.titleKey).toBe('nav.staff.events');
+    const eventsItem = mainSection.items[5]! as NavItem;
+    expect(eventsItem.href).toBe('/admin/events');
+    expect(mainSection.items[6]!.titleKey).toBe('nav.staff.renewals');
+    expect(mainSection.items[7]!.titleKey).toBe('nav.staff.users');
   });
 
-  it('second section is Settings with InvoiceSettings + RenewalSchedules (F8 Reminder schedules added)', () => {
+  it('second section is Settings with InvoiceSettings + RenewalSchedules + EventCreate integration (F6 entry added)', () => {
     // R7 consolidation removed the Fee Configuration page. VAT +
     // currency + registration fee all live in Invoice Settings now
     // (tenant_invoice_settings is the authoritative source). F8 then
     // re-introduced a 2nd setting entry — Reminder schedules at
     // /admin/settings/renewals/schedules — under the same Settings
-    // section header.
+    // section header. F6 Phase 5 then added EventCreate integration
+    // setup wizard at /admin/settings/integrations/eventcreate.
     const settingsSection = staffNavConfig.sections[1]!;
     expect(settingsSection.titleKey).toBe('nav.staff.sections.settings');
-    expect(settingsSection.items).toHaveLength(2);
+    expect(settingsSection.items).toHaveLength(3);
     expect(settingsSection.items[0]!.titleKey).toBe('nav.staff.settingsInvoices');
     const invoiceSettingsItem = settingsSection.items[0]! as NavItem;
     expect(invoiceSettingsItem.href).toBe('/admin/settings/invoicing');
@@ -44,6 +51,14 @@ describe('staffNavConfig', () => {
     const renewalSchedulesItem = settingsSection.items[1]! as NavItem;
     expect(renewalSchedulesItem.href).toBe(
       '/admin/settings/renewals/schedules',
+    );
+    // F6 Phase 5 — integration setup wizard entry.
+    expect(settingsSection.items[2]!.titleKey).toBe(
+      'nav.staff.settingsIntegrationEventcreate',
+    );
+    const integrationItem = settingsSection.items[2]! as NavItem;
+    expect(integrationItem.href).toBe(
+      '/admin/settings/integrations/eventcreate',
     );
   });
 

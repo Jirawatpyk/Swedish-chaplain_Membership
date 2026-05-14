@@ -25,7 +25,8 @@
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTransition, useState, useCallback, useEffect } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2 } from 'lucide-react';
+import { Copy, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Table,
   TableBody,
@@ -91,7 +92,9 @@ function formatTicketPrice(thb: number | null, locale: string): string {
 export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
   const t = useTranslations('admin.events.detail.attendees');
   const tMatchType = useTranslations('admin.events.matchType');
+  const tMatchTypeTip = useTranslations('admin.events.matchTypeTooltip');
   const tQuota = useTranslations('admin.events.quotaEffect');
+  const tQuotaTip = useTranslations('admin.events.quotaEffectTooltip');
   const tPay = useTranslations('admin.events.paymentStatus');
   const locale = useLocale();
   const router = useRouter();
@@ -140,6 +143,31 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
       pushUrl(next);
     },
     [searchInput, searchParams, pushUrl],
+  );
+
+  // P5 (round-10 ui-design-specialist) — copy-to-clipboard helper for
+  // attendee emails. mailto: behaviour was unreliable on staff machines
+  // without a default mail client; admins almost always paste into
+  // CRM/spreadsheet anyway. Falls back to a manual-copy toast when the
+  // async Clipboard API is unavailable (insecure context / iOS WebView).
+  const copyEmail = useCallback(
+    async (email: string) => {
+      try {
+        if (
+          typeof navigator !== 'undefined' &&
+          navigator.clipboard &&
+          typeof navigator.clipboard.writeText === 'function'
+        ) {
+          await navigator.clipboard.writeText(email);
+          toast.success(t('copyEmailSuccess'));
+        } else {
+          toast.error(t('copyEmailFailed'));
+        }
+      } catch {
+        toast.error(t('copyEmailFailed'));
+      }
+    },
+    [t],
   );
 
   // R6-W12 staff-review fix (2026-05-13): clear-on-Escape handler.
@@ -242,15 +270,30 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                 <TableCell>
                   <div className="flex flex-col gap-0.5">
                     <span className="font-medium">{r.attendeeName}</span>
-                    {/* L3 (verify-finding): plain <a> for non-route URLs —
-                        next/link emits prefetch hints that are wasted on
-                        mailto: schemes. */}
-                    <a
-                      href={`mailto:${r.attendeeEmail}`}
-                      className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                    {/* P5 (round-10) — email is now a button that copies
+                        to clipboard. Admins reported mailto: rarely
+                        useful; copy-to-CRM is the daily flow. The
+                        button keeps the text-link visual treatment
+                        for back-compat. */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void copyEmail(r.attendeeEmail);
+                      }}
+                      className="group inline-flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded"
+                      aria-label={t('copyEmailAria', {
+                        email: r.attendeeEmail,
+                      })}
+                      title={t('copyEmail')}
                     >
-                      {r.attendeeEmail}
-                    </a>
+                      <span className="underline-offset-2 group-hover:underline">
+                        {r.attendeeEmail}
+                      </span>
+                      <Copy
+                        aria-hidden="true"
+                        className="size-3 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity"
+                      />
+                    </button>
                     {r.attendeeCompany && (
                       <span className="text-xs text-muted-foreground">
                         {r.attendeeCompany}
@@ -262,6 +305,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                   <MatchStatusBadge
                     matchType={r.matchType}
                     label={tMatchType(r.matchType)}
+                    tooltip={tMatchTypeTip(r.matchType)}
                   />
                 </TableCell>
                 <TableCell>
@@ -287,18 +331,21 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                       <QuotaEffectBadge
                         kind="partnership"
                         label={tQuota('partnership')}
+                        tooltip={tQuotaTip('partnership')}
                       />
                     )}
                     {r.countedAgainstCulturalQuota && (
                       <QuotaEffectBadge
                         kind="cultural"
                         label={tQuota('cultural')}
+                        tooltip={tQuotaTip('cultural')}
                       />
                     )}
                     {r.isOverQuota && (
                       <QuotaEffectBadge
                         kind="over_quota"
                         label={tQuota('overQuota')}
+                        tooltip={tQuotaTip('overQuota')}
                       />
                     )}
                     {!r.countedAgainstPartnership &&
@@ -310,7 +357,7 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                         // fail). Default `Badge variant="outline"` text
                         // already clears 4.5:1; outline-only border
                         // preserves the de-emphasis intent.
-                        <Badge variant="outline">
+                        <Badge variant="outline" title={tQuotaTip('none')}>
                           {tQuota('none')}
                         </Badge>
                       )}

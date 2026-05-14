@@ -1,5 +1,5 @@
 /**
- * Quota-effect badge (F6 Phase 4).
+ * Quota-effect badge (F6 Phase 4 + ui-design-specialist round-10 I3).
  *
  * Indicates whether a registration consumed a member's partnership
  * or cultural-quota slot. Three states reflect the data-model
@@ -16,9 +16,20 @@
  * - none          — neither — no badge rendered (returns null)
  *
  * Combines shape + icon + text per WCAG 2.1 SC 1.4.1 non-colour-alone.
+ *
+ * I3 — Tooltip support: optional `tooltip` prop wraps the badge in a
+ * tooltip trigger so admins hovering "Over quota" / "Partner benefit"
+ * get the explanation without leaving the table.
  */
+import type { ReactNode } from 'react';
 import { Award, Sparkles, AlertOctagon, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 export type QuotaEffectKind = 'partnership' | 'cultural' | 'over_quota';
@@ -26,6 +37,7 @@ export type QuotaEffectKind = 'partnership' | 'cultural' | 'over_quota';
 interface QuotaEffectBadgeProps {
   readonly kind: QuotaEffectKind;
   readonly label: string;
+  readonly tooltip?: ReactNode;
   readonly className?: string;
 }
 
@@ -59,10 +71,11 @@ const VARIANT_MAP: Readonly<Record<QuotaEffectKind, VariantConfig>> = {
 export function QuotaEffectBadge({
   kind,
   label,
+  tooltip,
   className,
 }: QuotaEffectBadgeProps) {
   const { Icon, badgeClass } = VARIANT_MAP[kind];
-  return (
+  const badge = (
     <Badge
       variant="outline"
       className={cn(badgeClass, className)}
@@ -71,5 +84,23 @@ export function QuotaEffectBadge({
       <Icon aria-hidden="true" data-icon="inline-start" />
       <span>{label}</span>
     </Badge>
+  );
+  if (!tooltip) return badge;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span
+              tabIndex={0}
+              className="inline-flex rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+            />
+          }
+        >
+          {badge}
+        </TooltipTrigger>
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

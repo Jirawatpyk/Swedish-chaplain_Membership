@@ -2316,14 +2316,21 @@
           "partnerBenefit": "Partner benefit",
           "culturalEvent": "Cultural event"
         },
+        "matchRateBand": {
+          "high": "Strong match rate",
+          "medium": "Mixed match rate",
+          "low": "Low match rate",
+          "none": "No registrations"
+        },
+        "matchRateOf": "{matched} of {total}",
         "filters": {
-          "partnerBenefitOnly": "Partner-benefit events only",
-          "culturalEventOnly": "Cultural events only",
+          "partnerBenefitOnly": "Counted as partner benefit",
+          "culturalEventOnly": "Counted as cultural event",
           "showArchived": "Show archived events",
           "hideArchived": "Hide archived events",
           "clearAll": "Clear filters",
-          "partnerBenefitOnlyActive": "Partner-benefit only (active)",
-          "culturalEventOnlyActive": "Cultural events only (active)"
+          "partnerBenefitOnlyActive": "Counted as partner benefit (active)",
+          "culturalEventOnlyActive": "Counted as cultural event (active)"
         },
         "emptyState": {
           "filteredEmpty": "No events match your filters.",
@@ -2342,7 +2349,7 @@
           "allArchived": {
             "title": "All events are archived",
             "body": "{count, plural, one {# event has been archived.} other {# events have been archived.}}",
-            "cta": "Show archived events"
+            "cta": "{count, plural, one {Show 1 archived event} other {Show # archived events}}"
           }
         }
       },
@@ -2355,13 +2362,20 @@
         "header": {
           "matchRate": "Match rate",
           "matchRateValue": "{pct}% ({matched} of {total})",
+          "matchRateValueStacked": "{matched} of {total} attendees matched",
+          "matchRateNone": "No registrations yet",
+          "matchRateBandHigh": "Strong — most attendees matched",
+          "matchRateBandMedium": "Mixed — review unmatched rows",
+          "matchRateBandLow": "Low — many attendees need review",
           "totalRegistrations": "Total registrations",
           "archived": "Archived",
           "partnerBenefit": "Partner benefit",
           "culturalEvent": "Cultural event",
           "viewOnEventCreate": "View on EventCreate",
           "opensInNewTab": "(opens in a new tab)",
-          "lastUpdatedAt": "Last updated"
+          "lastUpdatedAt": "Last updated",
+          "lastUpdatedAtTooltip": "Time of the last Zapier delivery for this event.",
+          "actionsLabel": "Event actions"
         },
         "attendees": {
           "heading": "Attendees",
@@ -2379,7 +2393,11 @@
             "quota": "Quota",
             "registered": "Registered"
           },
-          "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}"
+          "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}",
+          "copyEmail": "Copy email",
+          "copyEmailAria": "Copy {email} to clipboard",
+          "copyEmailSuccess": "Email copied to clipboard",
+          "copyEmailFailed": "Could not copy — please copy manually"
         },
         "archive": {
           "archiveCta": "Archive event",
@@ -2429,17 +2447,30 @@
         }
       },
       "matchType": {
-        "member_contact": "Matched (exact email)",
-        "member_domain": "Matched (company domain)",
-        "member_fuzzy": "Matched (fuzzy)",
+        "member_contact": "Verified contact",
+        "member_domain": "Verified domain",
+        "member_fuzzy": "Likely match",
         "non_member": "Non-member",
-        "unmatched": "Unmatched"
+        "unmatched": "Needs review"
+      },
+      "matchTypeTooltip": {
+        "member_contact": "Email matched an active member contact in your chamber.",
+        "member_domain": "Email's domain belongs to a member company.",
+        "member_fuzzy": "Close to a member contact but not an exact match — please review.",
+        "non_member": "Email and domain are not registered to any member.",
+        "unmatched": "Could not be matched automatically — please relink or mark as non-member."
       },
       "quotaEffect": {
         "partnership": "Partner benefit",
         "cultural": "Cultural quota",
         "overQuota": "Over quota",
         "none": "Not counted"
+      },
+      "quotaEffectTooltip": {
+        "partnership": "This ticket consumed one of the member's partner-benefit allotment.",
+        "cultural": "This ticket consumed one of the member's annual cultural-event allotment.",
+        "overQuota": "Member's allotment is exhausted — ticket recorded without consuming new quota.",
+        "none": "No quota effect — non-member, free ticket, or event is not a partner benefit / cultural event."
       },
       "paymentStatus": {
         "paid": "Paid",
