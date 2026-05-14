@@ -342,11 +342,67 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
     async setArchived() {
       return err({ kind: 'not_implemented', method: 'setArchived', futureTask: 'Phase 10 T107' });
     },
-    async setPartnerBenefit() {
-      return err({ kind: 'not_implemented', method: 'setPartnerBenefit', futureTask: 'Phase 6 T087' });
+    async setPartnerBenefit(
+      tenantId: TenantId,
+      eventId: EventId,
+      next: boolean,
+    ): Promise<Result<EventAggregate, EventsRepositoryError>> {
+      try {
+        const updated = await executor
+          .update(events)
+          .set({
+            isPartnerBenefit: next,
+            lastUpdatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(events.tenantId, tenantId),
+              eq(events.eventId, eventId),
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'events.setPartnerBenefit: row not found — caller passed an eventId with no matching row in this tenant',
+          });
+        }
+        return ok(toAggregate(updated[0]!));
+      } catch (e) {
+        return err(wrapRepoError('events', e));
+      }
     },
-    async setCulturalEvent() {
-      return err({ kind: 'not_implemented', method: 'setCulturalEvent', futureTask: 'Phase 6 T087' });
+    async setCulturalEvent(
+      tenantId: TenantId,
+      eventId: EventId,
+      next: boolean,
+    ): Promise<Result<EventAggregate, EventsRepositoryError>> {
+      try {
+        const updated = await executor
+          .update(events)
+          .set({
+            isCulturalEvent: next,
+            lastUpdatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(events.tenantId, tenantId),
+              eq(events.eventId, eventId),
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'events.setCulturalEvent: row not found — caller passed an eventId with no matching row in this tenant',
+          });
+        }
+        return ok(toAggregate(updated[0]!));
+      } catch (e) {
+        return err(wrapRepoError('events', e));
+      }
     },
   };
 }

@@ -21,6 +21,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EventDetailHeader } from '@/components/events/event-detail-header';
+import { EventCategoryToggles } from '@/components/events/event-category-toggles';
 import {
   AttendeeTable,
   type AttendeeRow,
@@ -237,6 +238,21 @@ export default async function AdminEventDetailPage({
       <DynamicBreadcrumbLabel segment={event.eventId} label={event.name} />
       <PageHeader title={event.name} subtitle={t('subtitle')} />
       <EventDetailHeader event={event} />
+      {/*
+       * F6 Phase 6 T088 — category-toggle buttons. Admin-only per
+       * FR-035 surface-level access matrix (manager + member do not
+       * see these controls); the API route enforces a server-side
+       * 404 + role_violation_blocked audit on impersonation attempts.
+       * Hidden when the event is archived (FR-019a — archived events
+       * are quota-neutral and cannot be re-flagged).
+       */}
+      {currentUser.role === 'admin' && !event.archivedAt && (
+        <EventCategoryToggles
+          eventId={event.eventId}
+          isPartnerBenefit={event.isPartnerBenefit}
+          isCulturalEvent={event.isCulturalEvent}
+        />
+      )}
       <section
         aria-labelledby="attendees-heading"
         className="flex flex-col gap-4"

@@ -2380,6 +2380,28 @@
             "registered": "Registered"
           },
           "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}"
+        },
+        "toggles": {
+          "flagPartnerBenefit": "Flag as partner benefit",
+          "unflagPartnerBenefit": "Remove partner-benefit flag",
+          "flagCulturalEvent": "Flag as cultural event",
+          "unflagCulturalEvent": "Remove cultural-event flag",
+          "confirmFlagPartnerTitle": "Flag this event as a partner benefit?",
+          "confirmFlagPartnerBody": "All matched paid attendees will be re-evaluated against their Partnership-tier ticket allotment. Members with remaining quota will have one ticket consumed; over-quota attendees will be persisted without consuming quota.",
+          "confirmUnflagPartnerTitle": "Remove partner-benefit flag?",
+          "confirmUnflagPartnerBody": "All counted partnership tickets on this event will be credited back to their members. This action is auditable and reversible by flagging again.",
+          "confirmFlagCulturalTitle": "Flag this event as a cultural event?",
+          "confirmFlagCulturalBody": "All matched paid attendees will be re-evaluated against their Corporate-tier annual cultural allotment. Members with remaining quota will have one ticket consumed; over-quota attendees will be persisted without consuming quota.",
+          "confirmUnflagCulturalTitle": "Remove cultural-event flag?",
+          "confirmUnflagCulturalBody": "All counted cultural tickets on this event will be credited back to their members for the current calendar year.",
+          "cancel": "Cancel",
+          "confirm": "Apply",
+          "successTitle": "Category flag updated",
+          "successDescription": "{count, plural, =0 {No registrations needed re-evaluation.} one {1 registration was re-evaluated.} other {# registrations were re-evaluated.}}",
+          "archivedTitle": "Event archived",
+          "archivedDescription": "Archived events are quota-neutral and cannot be re-flagged.",
+          "errorTitle": "Could not update flag",
+          "errorDescription": "Please try again. If the issue persists, contact support."
         }
       },
       "matchType": {

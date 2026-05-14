@@ -388,6 +388,29 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     async updateMatchAndQuota() {
       return err({ kind: 'not_implemented', method: 'updateMatchAndQuota', futureTask: 'Phase 9 T104' });
     },
+    async listForRequota(
+      tenantId: TenantId,
+      eventId: EventId,
+    ): Promise<Result<ReadonlyArray<EventRegistrationAggregate>, RegistrationsRepositoryError>> {
+      try {
+        const rows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.eventId, eventId),
+              eq(eventRegistrations.paymentStatus, 'paid'),
+              sql`${eventRegistrations.matchedMemberId} IS NOT NULL`,
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+            ),
+          )
+          .orderBy(asc(eventRegistrations.matchedMemberId), asc(eventRegistrations.registrationId));
+        return ok(rows.map(toAggregate));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
+    },
     async setQuotaEffect(
       tenantId: TenantId,
       registrationId: RegistrationId,

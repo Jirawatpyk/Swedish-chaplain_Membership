@@ -286,6 +286,15 @@ export {
 } from './application/use-cases/apply-quota-effect';
 
 export {
+  toggleEventCategory,
+  type ToggleEventCategoryInput,
+  type ToggleEventCategoryOutput,
+  type ToggleEventCategoryError,
+  type ToggleEventCategoryDeps,
+  type ToggleFlag,
+} from './application/use-cases/toggle-event-category';
+
+export {
   forceExpireGraceSecret,
   type ForceExpireGraceSecretInput,
   type ForceExpireGraceSecretOutput,

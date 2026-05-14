@@ -184,6 +184,31 @@ export interface RegistrationsRepository {
   ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>>;
 
   /**
+   * Lists every registration for an event that is eligible for quota
+   * re-evaluation (T087 admin toggle, FR-019 + FR-019a archive). Filters:
+   *   - matched_member_id IS NOT NULL (non-matched rows never carry
+   *     quota)
+   *   - payment_status = 'paid' (refunded rows stay credit-back
+   *     regardless of toggle)
+   *   - pii_pseudonymised_at IS NULL (retention-purged rows skipped per
+   *     FR-014)
+   *
+   * Ordered by `matched_member_id ASC` so callers iterating with per-
+   * (tenant, member, event) advisory locks acquire them in a
+   * deterministic order — eliminates the deadlock class where two
+   * concurrent admin toggles on different events sharing common
+   * members would otherwise lock A→B vs B→A.
+   *
+   * NOT paginated — the worst-case set is bounded by SweCham scale
+   * (~500 attendees per event in the design envelope). If a future
+   * larger tenant blows past that, gate on chunked iteration here.
+   */
+  listForRequota(
+    tenantId: TenantId,
+    eventId: EventId,
+  ): Promise<Result<ReadonlyArray<EventRegistrationAggregate>, RegistrationsRepositoryError>>;
+
+  /**
    * Daily retention sweep eligibility scan per FR-032 / SC-011 (Phase 10
    * T113). Returns rows where match_type IN ('non_member','unmatched')
    * AND piiPseudonymisedAt IS NULL AND registeredAt < (now - 2y).

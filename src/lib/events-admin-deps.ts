@@ -44,6 +44,7 @@ import { asTenantId, type TenantId } from '@/modules/members';
 // validation — both helpers consume the same slug format.
 import { listEvents } from '@/modules/events/application/use-cases/list-events';
 import { loadEventDetail } from '@/modules/events/application/use-cases/load-event-detail';
+import { toggleEventCategory } from '@/modules/events/application/use-cases/toggle-event-category';
 import type {
   ListEventsInput,
   ListEventsOutput,
@@ -54,8 +55,16 @@ import type {
   LoadEventDetailOutput,
   LoadEventDetailError,
 } from '@/modules/events/application/use-cases/load-event-detail';
+import type {
+  ToggleEventCategoryInput,
+  ToggleEventCategoryOutput,
+  ToggleEventCategoryError,
+} from '@/modules/events/application/use-cases/toggle-event-category';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
+import { makeDrizzleQuotaAccountingAdapter } from '@/modules/events/infrastructure/drizzle-quota-accounting-adapter';
+import { makeDrizzleAdvisoryLockAcquirer } from '@/modules/events/infrastructure/drizzle-advisory-lock-acquirer';
+import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
 import type { Result } from '@/lib/result';
 
 /**
@@ -99,5 +108,48 @@ export async function runLoadEventDetail(
   return runInTenant(ctx, async (tx) => {
     const deps = makeLoadEventDetailDeps(tx);
     return loadEventDetail(deps, { ...input, tenantId });
+  });
+}
+
+/**
+ * Phase 6 T088 — composes the full F6 quota-accounting deps bag for
+ * the admin toggle routes. Bundles every port `toggleEventCategory`
+ * consumes: events + registrations repos, the F2/F3 plan-and-member
+ * read bridge (`drizzle-quota-accounting-adapter`), the
+ * `pg_advisory_xact_lock` primitive, and the audit emitter — all
+ * bound to the caller's tx.
+ */
+export function makeToggleEventCategoryDeps(
+  executor: TenantTx,
+  ctx: ReturnType<typeof asTenantContext>,
+) {
+  const registrationsRepo = makeDrizzleRegistrationsRepository(executor);
+  return {
+    eventsRepo: makeDrizzleEventsRepository(executor),
+    registrationsRepo,
+    quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+      executor,
+      ctx,
+      registrationsRepo,
+    ),
+    advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(executor),
+    audit: makePinoAuditPort(executor),
+  };
+}
+
+/**
+ * Convenience for the toggle-{partner-benefit,cultural-event} route
+ * handlers. Wraps `runInTenant` + deps composition so the route is a
+ * thin parser-and-dispatch shell.
+ */
+export async function runToggleEventCategory(
+  tenantSlug: string,
+  input: Omit<ToggleEventCategoryInput, 'tenantId'>,
+): Promise<Result<ToggleEventCategoryOutput, ToggleEventCategoryError>> {
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  return runInTenant(ctx, async (tx) => {
+    const deps = makeToggleEventCategoryDeps(tx, ctx);
+    return toggleEventCategory({ ...input, tenantId }, deps);
   });
 }

@@ -2380,6 +2380,28 @@
             "registered": "Registrerad"
           },
           "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}"
+        },
+        "toggles": {
+          "flagPartnerBenefit": "Markera som partnerförmån",
+          "unflagPartnerBenefit": "Ta bort partnerförmånsmarkering",
+          "flagCulturalEvent": "Markera som kulturevenemang",
+          "unflagCulturalEvent": "Ta bort kulturevenemangsmarkering",
+          "confirmFlagPartnerTitle": "Markera detta evenemang som en partnerförmån?",
+          "confirmFlagPartnerBody": "Alla matchade och betalda deltagare omvärderas mot sin partnertiers biljettilldelning. Medlemmar med kvarvarande kvot får en biljett dragen; deltagare utan kvot sparas utan att förbruka kvoten.",
+          "confirmUnflagPartnerTitle": "Ta bort partnerförmånsmarkeringen?",
+          "confirmUnflagPartnerBody": "Alla räknade partnerbiljetter på detta evenemang krediteras tillbaka till medlemmarna. Åtgärden är spårbar och reversibel genom att markera igen.",
+          "confirmFlagCulturalTitle": "Markera detta evenemang som ett kulturevenemang?",
+          "confirmFlagCulturalBody": "Alla matchade och betalda deltagare omvärderas mot Corporate-medlemskapets årliga kulturbiljettilldelning. Medlemmar med kvarvarande kvot får en biljett dragen; deltagare utan kvot sparas utan att förbruka kvoten.",
+          "confirmUnflagCulturalTitle": "Ta bort kulturevenemangsmarkeringen?",
+          "confirmUnflagCulturalBody": "Alla räknade kulturbiljetter på detta evenemang krediteras tillbaka till medlemmarna för det aktuella kalenderåret.",
+          "cancel": "Avbryt",
+          "confirm": "Bekräfta",
+          "successTitle": "Kategorimarkering uppdaterad",
+          "successDescription": "{count, plural, =0 {Inga registreringar behövde omvärderas.} one {1 registrering omvärderades.} other {# registreringar omvärderades.}}",
+          "archivedTitle": "Evenemang arkiverat",
+          "archivedDescription": "Arkiverade evenemang är kvotneutrala och kan inte återmarkeras.",
+          "errorTitle": "Kunde inte uppdatera markering",
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support."
         }
       },
       "matchType": {
