@@ -10,7 +10,7 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, gt, ilike, inArray, isNull, or, sql, asc, desc } from 'drizzle-orm';
+import { and, eq, gt, ilike, inArray, isNull, or, sql, asc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -993,17 +993,24 @@ export const drizzleMemberRepo: MemberRepo = {
    * enforces the boundary. The `contacts.removed_at IS NULL` filter
    * hides invitations for archived/removed contacts.
    *
-   * "Pending" = `consumed_at IS NULL AND expires_at > NOW()`. Sort by
-   * createdAt DESC so newest invites surface first. LIMIT 50 caps
-   * pathological cases.
+   * Column visibility (migration 0017, staff-review R001):
+   * `chamber_app` sees only `invitations.user_id`,
+   * `invitations.consumed_at`, `invitations.expires_at`. The `id`
+   * (raw 7-day token) and `created_at` are owner-role only — selecting
+   * either returns Postgres 42501 (permission denied). The SELECT
+   * list below sticks to the allowed 3 columns; the UI keys the
+   * inline badge off `contactId` rather than `invitationId`, and
+   * sorts by `expiresAt ASC` (soonest-to-expire first) since we can't
+   * sort by `createdAt`.
+   *
+   * "Pending" = `consumed_at IS NULL AND expires_at > NOW()`. LIMIT 50
+   * caps pathological cases.
    */
   async findPendingInvitationsForMember(ctx, memberId) {
     try {
       const rows = await runInTenant(ctx, async (tx) =>
         tx
           .select({
-            invitationId: invitations.id,
-            invitedAt: invitations.createdAt,
             expiresAt: invitations.expiresAt,
             contactId: contacts.contactId,
             firstName: contacts.firstName,
@@ -1023,17 +1030,15 @@ export const drizzleMemberRepo: MemberRepo = {
               gt(invitations.expiresAt, sql`NOW()`),
             ),
           )
-          .orderBy(desc(invitations.createdAt))
+          .orderBy(asc(invitations.expiresAt))
           .limit(50),
       );
       return ok(
         rows.map((r) => ({
-          invitationId: r.invitationId,
           contactId: r.contactId as string,
           contactFirstName: r.firstName,
           contactLastName: r.lastName,
           contactEmail: r.email,
-          invitedAt: r.invitedAt,
           expiresAt: r.expiresAt,
         })),
       );

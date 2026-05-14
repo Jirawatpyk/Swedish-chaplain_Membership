@@ -170,8 +170,13 @@ function StatusBadge({ status }: { status: 'active' | 'inactive' | 'archived' })
 }
 
 type PendingInvitation = {
-  readonly invitationId: string;
-  readonly invitedAt: Date;
+  /**
+   * Migration 0017 narrowed chamber_app's `invitations` visibility to
+   * just user_id / consumed_at / expires_at (the `id` column is the
+   * raw 7-day token and is owner-role only). The UI therefore knows
+   * only the expiry — sufficient for the inline "Expires in N days"
+   * badge.
+   */
   readonly expiresAt: Date;
 };
 
@@ -363,11 +368,7 @@ export default async function MemberDetailPage({
       pendingInvitationsByContactId = new Map(
         pendingRes.value.map((row) => [
           row.contactId,
-          {
-            invitationId: row.invitationId,
-            invitedAt: row.invitedAt,
-            expiresAt: row.expiresAt,
-          },
+          { expiresAt: row.expiresAt },
         ]),
       );
     } else {

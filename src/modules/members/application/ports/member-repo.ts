@@ -234,6 +234,15 @@ export interface MemberRepo {
    * (a single user can hold a tenant-agnostic invite), so the join
    * via contacts is what enforces the tenant boundary.
    *
+   * Column-level visibility (per migration 0017, staff-review R001):
+   * `chamber_app` can read ONLY `user_id`, `consumed_at`, `expires_at`
+   * from `invitations`. The `id` column (which IS the raw 7-day invite
+   * token) and `created_at` are owner-role only — selecting either
+   * triggers a Postgres `42501` permission denied. Therefore the
+   * return shape projects ONLY the columns chamber_app may read; the
+   * UI keys badges off `contactId` (1 pending invite per user is the
+   * common case), not a separate invitationId.
+   *
    * Returns at most ~10 rows in practice (small contact lists), so no
    * pagination needed.
    */
@@ -243,12 +252,10 @@ export interface MemberRepo {
   ): Promise<
     Result<
       ReadonlyArray<{
-        readonly invitationId: string;
         readonly contactId: string;
         readonly contactFirstName: string;
         readonly contactLastName: string;
         readonly contactEmail: string;
-        readonly invitedAt: Date;
         readonly expiresAt: Date;
       }>,
       RepoError
