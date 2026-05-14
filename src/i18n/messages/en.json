@@ -2381,6 +2381,30 @@
           },
           "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}"
         },
+        "archive": {
+          "archiveCta": "Archive event",
+          "confirmTitle": "Archive this event?",
+          "confirmBody": "Archiving sets the event to a quota-neutral state. Every counted partnership + cultural ticket on this event will be credited back to its member. Future webhook deliveries for this event will be recorded but will not consume any new quota. This action is auditable; there is no in-product un-archive in v1.",
+          "cancel": "Cancel",
+          "confirm": "Archive",
+          "successTitle": "Event archived",
+          "successDescription": "{count, plural, =0 {No quota reversals needed.} one {1 registration was credited back.} other {# registrations were credited back.}}",
+          "alreadyArchivedTitle": "Already archived",
+          "alreadyArchivedDescription": "Another admin archived this event in a concurrent request. The page has been refreshed.",
+          "errorTitle": "Could not archive event",
+          "errorDescription": "Please try again. If the issue persists, contact support."
+        },
+        "ticketsRemaining": "{remaining, plural, one {# ticket remaining} other {# tickets remaining}} of {total}",
+        "auditEvents": {
+          "quota_partnership_decremented": "Partnership ticket consumed",
+          "quota_cultural_decremented": "Cultural ticket consumed",
+          "quota_credit_back_refund": "Quota credited back (refund)",
+          "quota_credit_back_archive": "Quota credited back (archive)",
+          "quota_over_quota_warning": "Over-quota warning",
+          "event_partner_benefit_toggled": "Partner-benefit flag toggled",
+          "event_cultural_event_toggled": "Cultural-event flag toggled",
+          "event_archived": "Event archived"
+        },
         "toggles": {
           "flagPartnerBenefit": "Flag as partner benefit",
           "unflagPartnerBenefit": "Remove partner-benefit flag",

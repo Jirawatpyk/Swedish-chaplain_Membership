@@ -295,6 +295,14 @@ export {
 } from './application/use-cases/toggle-event-category';
 
 export {
+  archiveEvent,
+  type ArchiveEventInput,
+  type ArchiveEventOutput,
+  type ArchiveEventError,
+  type ArchiveEventDeps,
+} from './application/use-cases/archive-event';
+
+export {
   forceExpireGraceSecret,
   type ForceExpireGraceSecretInput,
   type ForceExpireGraceSecretOutput,

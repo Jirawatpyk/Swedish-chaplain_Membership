@@ -339,8 +339,36 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
       }
     },
 
-    async setArchived() {
-      return err({ kind: 'not_implemented', method: 'setArchived', futureTask: 'Phase 10 T107' });
+    async setArchived(
+      tenantId: TenantId,
+      eventId: EventId,
+      archivedAt: Date,
+    ): Promise<Result<EventAggregate, EventsRepositoryError>> {
+      try {
+        const updated = await executor
+          .update(events)
+          .set({
+            archivedAt,
+            lastUpdatedAt: archivedAt,
+          })
+          .where(
+            and(
+              eq(events.tenantId, tenantId),
+              eq(events.eventId, eventId),
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'events.setArchived: row not found — caller passed an eventId with no matching row in this tenant',
+          });
+        }
+        return ok(toAggregate(updated[0]!));
+      } catch (e) {
+        return err(wrapRepoError('events', e));
+      }
     },
     async setPartnerBenefit(
       tenantId: TenantId,

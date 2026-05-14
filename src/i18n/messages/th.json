@@ -2381,6 +2381,30 @@
           },
           "resultCount": "{count, plural, =0 {ไม่พบผู้เข้าร่วม} other {ผู้เข้าร่วม # คน}}"
         },
+        "archive": {
+          "archiveCta": "เก็บถาวรกิจกรรม",
+          "confirmTitle": "เก็บถาวรกิจกรรมนี้หรือไม่?",
+          "confirmBody": "การเก็บถาวรจะตั้งกิจกรรมเป็นสถานะไม่นับโควต้า ตั๋วพาร์ตเนอร์ชิปและตั๋วกิจกรรมวัฒนธรรมที่ถูกนับไว้ทั้งหมดในกิจกรรมนี้จะถูกคืนกลับให้สมาชิก เว็บฮุคที่จะส่งเข้ามาในอนาคตสำหรับกิจกรรมนี้จะถูกบันทึกแต่จะไม่ใช้โควต้าใหม่ การดำเนินการนี้สามารถตรวจสอบได้ ไม่มีปุ่ม Un-archive ในเวอร์ชัน v1",
+          "cancel": "ยกเลิก",
+          "confirm": "เก็บถาวร",
+          "successTitle": "เก็บถาวรกิจกรรมเรียบร้อย",
+          "successDescription": "{count, plural, =0 {ไม่มีโควต้าที่ต้องคืน} other {คืนโควต้าให้ # รายการ}}",
+          "alreadyArchivedTitle": "ถูกเก็บถาวรอยู่แล้ว",
+          "alreadyArchivedDescription": "ผู้ดูแลคนอื่นได้เก็บถาวรกิจกรรมนี้พร้อมกัน รีเฟรชหน้าให้แล้ว",
+          "errorTitle": "ไม่สามารถเก็บถาวรกิจกรรมได้",
+          "errorDescription": "กรุณาลองอีกครั้ง หากปัญหายังคงอยู่ โปรดติดต่อฝ่ายสนับสนุน"
+        },
+        "ticketsRemaining": "{remaining, plural, other {เหลือ # ใบ}} จาก {total}",
+        "auditEvents": {
+          "quota_partnership_decremented": "ใช้ตั๋วพาร์ตเนอร์ชิป",
+          "quota_cultural_decremented": "ใช้ตั๋วกิจกรรมวัฒนธรรม",
+          "quota_credit_back_refund": "คืนโควต้า (การคืนเงิน)",
+          "quota_credit_back_archive": "คืนโควต้า (เก็บถาวร)",
+          "quota_over_quota_warning": "คำเตือนเกินโควต้า",
+          "event_partner_benefit_toggled": "ปรับสถานะสิทธิประโยชน์พาร์ตเนอร์ชิป",
+          "event_cultural_event_toggled": "ปรับสถานะกิจกรรมวัฒนธรรม",
+          "event_archived": "เก็บถาวรกิจกรรม"
+        },
         "toggles": {
           "flagPartnerBenefit": "ตั้งเป็นสิทธิประโยชน์พาร์ตเนอร์ชิป",
           "unflagPartnerBenefit": "ยกเลิกการตั้งเป็นสิทธิประโยชน์พาร์ตเนอร์ชิป",

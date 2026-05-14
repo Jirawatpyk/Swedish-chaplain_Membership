@@ -45,6 +45,7 @@ import { asTenantId, type TenantId } from '@/modules/members';
 import { listEvents } from '@/modules/events/application/use-cases/list-events';
 import { loadEventDetail } from '@/modules/events/application/use-cases/load-event-detail';
 import { toggleEventCategory } from '@/modules/events/application/use-cases/toggle-event-category';
+import { archiveEvent } from '@/modules/events/application/use-cases/archive-event';
 import type {
   ListEventsInput,
   ListEventsOutput,
@@ -60,6 +61,11 @@ import type {
   ToggleEventCategoryOutput,
   ToggleEventCategoryError,
 } from '@/modules/events/application/use-cases/toggle-event-category';
+import type {
+  ArchiveEventInput,
+  ArchiveEventOutput,
+  ArchiveEventError,
+} from '@/modules/events/application/use-cases/archive-event';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
 import { makeDrizzleQuotaAccountingAdapter } from '@/modules/events/infrastructure/drizzle-quota-accounting-adapter';
@@ -151,5 +157,34 @@ export async function runToggleEventCategory(
   return runInTenant(ctx, async (tx) => {
     const deps = makeToggleEventCategoryDeps(tx, ctx);
     return toggleEventCategory({ ...input, tenantId }, deps);
+  });
+}
+
+/**
+ * Phase 6 wave-4 — composes the archive-event deps bag. Archive does
+ * NOT need `quotaAccountingPort` (the use-case directly zeros out
+ * counted_against_* flags without recomputing allotments — the
+ * canonical computed-on-read source remains accurate post-archive
+ * because consumed_count derived from SUM(counted_against=true) will
+ * naturally exclude every archived row).
+ */
+export function makeArchiveEventDeps(executor: TenantTx) {
+  return {
+    eventsRepo: makeDrizzleEventsRepository(executor),
+    registrationsRepo: makeDrizzleRegistrationsRepository(executor),
+    advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(executor),
+    audit: makePinoAuditPort(executor),
+  };
+}
+
+export async function runArchiveEvent(
+  tenantSlug: string,
+  input: Omit<ArchiveEventInput, 'tenantId'>,
+): Promise<Result<ArchiveEventOutput, ArchiveEventError>> {
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  return runInTenant(ctx, async (tx) => {
+    const deps = makeArchiveEventDeps(tx);
+    return archiveEvent({ ...input, tenantId }, deps);
   });
 }

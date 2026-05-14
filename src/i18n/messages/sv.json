@@ -2381,6 +2381,30 @@
           },
           "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}"
         },
+        "archive": {
+          "archiveCta": "Arkivera evenemang",
+          "confirmTitle": "Arkivera detta evenemang?",
+          "confirmBody": "Arkivering försätter evenemanget i ett kvotneutralt läge. Alla räknade partner- och kulturbiljetter på detta evenemang krediteras tillbaka till respektive medlem. Framtida webbhooksleveranser för evenemanget registreras men förbrukar ingen ny kvot. Åtgärden är spårbar; det finns ingen avarkivering i produkten i v1.",
+          "cancel": "Avbryt",
+          "confirm": "Arkivera",
+          "successTitle": "Evenemang arkiverat",
+          "successDescription": "{count, plural, =0 {Inga kvotåterföringar behövdes.} one {1 registrering krediterades tillbaka.} other {# registreringar krediterades tillbaka.}}",
+          "alreadyArchivedTitle": "Redan arkiverat",
+          "alreadyArchivedDescription": "En annan administratör arkiverade detta evenemang i en samtidig begäran. Sidan har uppdaterats.",
+          "errorTitle": "Kunde inte arkivera evenemang",
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support."
+        },
+        "ticketsRemaining": "{remaining, plural, one {# biljett kvar} other {# biljetter kvar}} av {total}",
+        "auditEvents": {
+          "quota_partnership_decremented": "Partnerbiljett förbrukad",
+          "quota_cultural_decremented": "Kulturbiljett förbrukad",
+          "quota_credit_back_refund": "Kvot återförd (återbetalning)",
+          "quota_credit_back_archive": "Kvot återförd (arkivering)",
+          "quota_over_quota_warning": "Varning för överskriden kvot",
+          "event_partner_benefit_toggled": "Partnerförmånsmarkering uppdaterad",
+          "event_cultural_event_toggled": "Kulturevenemangsmarkering uppdaterad",
+          "event_archived": "Evenemang arkiverat"
+        },
         "toggles": {
           "flagPartnerBenefit": "Markera som partnerförmån",
           "unflagPartnerBenefit": "Ta bort partnerförmånsmarkering",

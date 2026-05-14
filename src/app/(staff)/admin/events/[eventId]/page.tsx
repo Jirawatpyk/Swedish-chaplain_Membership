@@ -22,6 +22,7 @@ import { TablePagination } from '@/components/layout/table-pagination';
 import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EventDetailHeader } from '@/components/events/event-detail-header';
 import { EventCategoryToggles } from '@/components/events/event-category-toggles';
+import { ArchiveEventButton } from '@/components/events/archive-event-button';
 import {
   AttendeeTable,
   type AttendeeRow,
@@ -247,11 +248,21 @@ export default async function AdminEventDetailPage({
        * are quota-neutral and cannot be re-flagged).
        */}
       {currentUser.role === 'admin' && !event.archivedAt && (
-        <EventCategoryToggles
-          eventId={event.eventId}
-          isPartnerBenefit={event.isPartnerBenefit}
-          isCulturalEvent={event.isCulturalEvent}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <EventCategoryToggles
+            eventId={event.eventId}
+            isPartnerBenefit={event.isPartnerBenefit}
+            isCulturalEvent={event.isCulturalEvent}
+          />
+          {/*
+           * FR-019a archive button. Admin-only + only when the event
+           * is not already archived. Archive reverses ALL counted
+           * partnership + cultural quota flags and prevents future
+           * webhook deliveries from re-counting them (apply-quota-
+           * effect short-circuits on event.archivedAt !== null).
+           */}
+          <ArchiveEventButton eventId={event.eventId} />
+        </div>
       )}
       <section
         aria-labelledby="attendees-heading"
