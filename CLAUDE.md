@@ -260,6 +260,8 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
   - **Audit event taxonomy**: see `src/modules/broadcasts/application/ports/audit-port.ts:32-97` for canonical 43-event list.
 - TypeScript 5.7+ strict (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) — unchanged from F1+F2+F3+F4+F5+F7 (011-renewal-reminders)
 - TypeScript 5.7+ strict (`strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`) — unchanged from F1+F2+F3+F4+F5+F7+F8 (012-eventcreate-integration)
+- TypeScript 5.7+ strict (unchanged from F1–F8) — `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true` + Next.js 16 App Router · React 19 · Drizzle ORM · `@vercel/blob` (already used by F4 invoice PDF) · existing F6 Phase 7 streaming parser (`src/modules/events/infrastructure/streaming-csv-importer.ts`) · `i18n-iso-countries` (F3) · `react-hook-form` + `zod` for the event-picker form. **Zero new npm dependencies** (Constitution X). (012-eventcreate-integration)
+- Neon Postgres `ap-southeast-1` (Singapore) — 1 new table `csv_import_records` + extension columns on existing `event_registrations` (per row attendee_pdpa_consent_text). Vercel Blob private bucket for error-rows CSV (TTL-swept). No payment data touched (Principle IV n/a). (012-eventcreate-integration)
 
 ## Recent Changes
 
@@ -272,4 +274,4 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - 002-membership-plans: F2 Membership Plans — 6 user stories (US1–US6) shipped across 9 phases. Added `cmdk` command palette, `src/modules/tenants/` + `src/modules/plans/` bounded contexts, Postgres RLS tenant isolation, 2 new DB tables (`membership_plans`, `tenant_fee_config`), migrations 0006 + 0007, 268 i18n keys (EN+TH+SV), 495 unit+contract tests, 163 integration tests on live Neon Singapore. US7 (Inline Edit + Bulk Actions) deferred to F3.
 - 001-auth-rbac: F1 Auth & RBAC shipped via PR #1. 188/191 tasks, 480/480 tests.
 
-Last updated: 2026-05-12 (F8 Renewal Tracking + Smart Reminders SHIPPED via PR #24 squash `482eb9fa`; ships dark behind FEATURE_F8_RENEWALS=false pending 5 pre-flag-flip operator/human gates: T269 manual SR + T270 cross-browser + T277 GPG co-sign + T277b cron-job.org 5 coordinators + T282 staging QA. 33 cumulative review rounds, 0 BLOCKER/CRITICAL at merge.)
+Last updated: 2026-05-15 (F8 Renewal Tracking + Smart Reminders SHIPPED via PR #24 squash `482eb9fa`; ships dark behind FEATURE_F8_RENEWALS=false pending 5 pre-flag-flip operator/human gates: T269 manual SR + T270 cross-browser + T277 GPG co-sign + T277b cron-job.org 5 coordinators + T282 staging QA. 33 cumulative review rounds, 0 BLOCKER/CRITICAL at merge.)
