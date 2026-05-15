@@ -57,23 +57,20 @@ describe('H-10 — time-budget short-circuit semantics', () => {
     'returns timeout AFTER partial commits when timeBudgetMs trips between batches; partial commits persist on live Neon',
     { timeout: 120_000 },
     async () => {
-      // Drive the budget aggressively — `timeBudgetMs: 1` guarantees
-      // the wall-clock check (`Date.now() - startedAtMs > 1ms`) trips
-      // BEFORE any batch can fully complete + commit on any runner,
-      // including intra-region Neon ap-southeast-1 (where the
-      // previous "8s budget" silently passed by completing under
-      // budget). The deterministic guarantee of NEW-L's unit test
-      // covers the scheduler logic; this integration test now
-      // exclusively validates the cross-tx persistence invariant —
-      // committed rows survive even when subsequent batches time out.
-      //
-      // `batchConcurrency: 1` keeps the test serial: batch 0 starts
-      // immediately (worker pulled idx=0 before the 1ms budget check
-      // could fire), commits its 50 rows, then the worker re-enters
-      // the loop, observes `timeBudgetExceeded=true`, returns. Hence
-      // we expect exactly 1 batch worth of rows persisted.
-      const ROW_COUNT = 150;
-      const BATCH_SIZE = 50;
+      // Strategy: `batchSize=1` + large ROW_COUNT + small budget makes
+      // the test deterministic across runner-region tiers:
+      //   - cross-region Neon (~50-100ms/row RTT): budget=400ms allows
+      //     ~3-8 rows before the wall-clock check trips, ROW_COUNT
+      //     stays well above the persist count.
+      //   - intra-region prod (~5-10ms/row RTT): budget=400ms allows
+      //     ~30-50 rows before trip, ROW_COUNT=500 stays well above.
+      // On every runner: SOME rows commit (proves cross-tx persistence
+      // invariant) AND not all rows commit (proves the timeout
+      // short-circuit actually fires). NEW-L unit test pins the
+      // scheduler logic deterministically via mocked `Date.now`; this
+      // test exclusively validates the live-DB persistence contract.
+      const ROW_COUNT = 500;
+      const BATCH_SIZE = 1;
       const csvBytes = buildBudgetCsv(ROW_COUNT);
 
       const deps = makeImportCsvDeps();
@@ -84,14 +81,14 @@ describe('H-10 — time-budget short-circuit semantics', () => {
           bytes: csvBytes,
           batchSize: BATCH_SIZE,
           batchConcurrency: 1,
-          timeBudgetMs: 1,
+          timeBudgetMs: 400,
         },
         deps,
       );
 
       expect(outcome.kind).toBe('timeout');
 
-      // Cross-tx persistence: rows from the in-flight batch survive
+      // Cross-tx persistence: rows from the in-flight batches survive
       // even though the use-case returned `timeout`. This is the
       // contract the unit test cannot verify (needs a real DB).
       const regs = await runInTenant(tenant.ctx, async (tx) =>
