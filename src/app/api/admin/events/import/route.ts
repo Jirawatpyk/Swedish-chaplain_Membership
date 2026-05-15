@@ -259,10 +259,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   //     emit `csv_import_cross_tenant_probe` audit (Constitution
   //     Principle I clause 4 — HIGH severity). The audit emit uses a
   //     standalone tx so the route never blocks on audit DB write.
-  // CR-2 (Round 1 — silent-failure-hunter): wrap `lookupEventByIdTimingSafe`
-  // in try/catch matching the formData/arrayBuffer pattern above. Neon
-  // outage / RLS denial / role-misconfig previously surfaced as an
-  // unbranded Next.js 500 with no requestId, no log, no metric.
+  // Neon outage / RLS denial / role-misconfig must surface as a branded
+  // 500 with requestId + log + metric — not as an unbranded Next.js
+  // crash. The standalone audit emit inside the wrong_tenant branch
+  // uses its own tx so the route never blocks on the audit write.
   let eventLookup: Awaited<ReturnType<typeof lookupEventByIdTimingSafe>>;
   try {
     eventLookup = await lookupEventByIdTimingSafe(tenantSlug, eventIdField);

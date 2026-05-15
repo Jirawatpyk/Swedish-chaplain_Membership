@@ -54,6 +54,7 @@ vi.mock('@/lib/metrics', () => ({
     csvImportDurationSeconds: vi.fn(),
     csvImportRateLimitFallback: vi.fn(),
     csvImportAdapterModeDetected: vi.fn(),
+    csvImportSafetyNetFallback: vi.fn(),
     createEventDurationSeconds: vi.fn(),
     createEventRateLimitFallback: vi.fn(),
   },
@@ -133,6 +134,7 @@ function makeDeps(scenario: RecoveryScenario): ImportCsvDeps {
                 attendee_name: 'Recovery Attendee',
                 payment_status: 'paid' as const,
               },
+              pdpaConsentAcknowledged: null,
             };
           })(),
         ),

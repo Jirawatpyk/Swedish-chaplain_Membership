@@ -48,6 +48,7 @@ vi.mock('@/lib/metrics', () => ({
     csvImportDurationSeconds: vi.fn(),
     csvImportRateLimitFallback: vi.fn(),
     csvImportAdapterModeDetected: vi.fn(),
+    csvImportSafetyNetFallback: vi.fn(),
     createEventDurationSeconds: vi.fn(),
   },
   safeMetric: vi.fn((fn: () => void) => fn()),
@@ -108,6 +109,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
                     attendee_name: cols[4]!,
                     payment_status: 'paid' as const,
                   },
+                  pdpaConsentAcknowledged: null,
                 };
               }
             })(),
@@ -213,6 +215,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
                     attendee_name: cols[4]!,
                     payment_status: 'paid' as const,
                   },
+                  pdpaConsentAcknowledged: null,
                 };
               }
             })(),

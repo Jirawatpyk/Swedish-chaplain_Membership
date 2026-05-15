@@ -115,10 +115,10 @@ export function CsvMappingForm() {
     null,
   );
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  // R2 (Round 2 — code-reviewer #2): hold a callback the EventPicker
-  // registers so we can imperatively push a freshly-created event into
-  // its dropdown state on `onCreated`. Closes the stale-button-label
-  // window between create-success and the next refresh round-trip.
+  // Hold a callback the EventPicker registers so we can imperatively
+  // push a freshly-created event into its dropdown state on `onCreated`
+  // — closes the stale-button-label window between create-success and
+  // the next refresh round-trip.
   const addPickerEventRef = useRef<((event: {
     eventId: string;
     name: string;
@@ -289,13 +289,41 @@ export function CsvMappingForm() {
           });
           return;
         }
-        case 504:
+        case 504: {
+          // Route's 504 extras carry `recordId` + `sourceFormat` +
+          // `historyPersisted` + `summary` per the F6.1 timeout envelope.
+          // When the partial summary is available, surface it as a
+          // result card (with the degraded-history banner when needed)
+          // so admins see WHICH rows committed — re-uploading the same
+          // CSV will skip them via idempotency receipts.
+          const summary = body['summary'];
+          if (summary !== null && typeof summary === 'object') {
+            const partialSummary: CsvImportResultPayload = {
+              ...(summary as Omit<
+                CsvImportResultPayload,
+                'recordId' | 'historyPersisted'
+              >),
+              ...(typeof body['recordId'] === 'string'
+                ? { recordId: body['recordId'] }
+                : {}),
+              ...(typeof body['historyPersisted'] === 'boolean'
+                ? { historyPersisted: body['historyPersisted'] }
+                : {}),
+            };
+            setPhase({ kind: 'completed', summary: partialSummary });
+            setHasPreviouslyCompleted(true);
+            toast.warning(tErrors('timeoutTitle'), {
+              description: tErrors('timeoutDetail'),
+            });
+            return;
+          }
           setPhase({
             kind: 'error',
             title: tErrors('timeoutTitle'),
             detail: tErrors('timeoutDetail'),
           });
           return;
+        }
         default: {
           const detail = await parseProblemDetail(
             new Response(JSON.stringify(body), {

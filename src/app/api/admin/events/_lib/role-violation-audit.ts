@@ -73,11 +73,10 @@ export async function emitEventsRoleViolation(
       : `${input.actorRole} attempted GET ${input.attemptedRoute} (${input.attemptedAction})`;
   try {
     const deps = makeStandaloneAuditDeps();
-    // R2-I1 (Round 2 — silent-failure-hunter): `emitStandalone` returns
-    // `Result<AuditEventId, AuditEmitError>` — the previous code only
-    // caught thrown exceptions, silently dropping `Result.err` paths
-    // (db_error / audit_emit / etc.). A manager probing during a Neon
-    // outage would 404 with no `role_violation_blocked` forensic row
+    // `emitStandalone` returns Result<AuditEventId, AuditEmitError>.
+    // Catching only thrown exceptions would silently drop Result.err
+    // paths (db_error / audit_emit / etc.) — during a Neon outage the
+    // 404 would surface with no `role_violation_blocked` forensic row
     // and zero log signal. Check the Result and log non-ok branches.
     const result = await deps.emitStandalone({
       eventType: 'role_violation_blocked',

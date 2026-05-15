@@ -2657,7 +2657,7 @@
               "validationDetail": "One or more fields are invalid. Review the form and retry.",
               "rateLimitTitle": "Too many attempts",
               "rateLimitDetail": "You have created too many events in the past hour. Wait a minute and retry.",
-              "rateLimitDetailWithSeconds": "Rate-limit reached: 30 events/hour per admin. Retry after {seconds}s.",
+              "rateLimitDetailWithSeconds": "Rate-limit reached: 30 events/hour per admin. Retry after {seconds, plural, one {# second} other {# seconds}}.",
               "unexpectedTitle": "Unexpected error",
               "unexpectedDetail": "Something went wrong on our side. Please retry; if it persists, contact support."
             }

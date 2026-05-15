@@ -241,6 +241,12 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
+  // Generate once at the top so every 500 path can correlate logs ↔
+  // response body via `requestId`. Previously only the outer-catch on
+  // runCreateEvent carried it; tenant-resolve and outcome-mapping 500s
+  // were uncorrelated.
+  const requestId = crypto.randomUUID();
+
   const session = await getCurrentSession();
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
@@ -267,12 +273,13 @@ export async function POST(request: NextRequest) {
     logger.error(
       {
         event: 'admin_events_create_tenant_resolve_failed',
+        requestId,
         err: e instanceof Error ? e.message : String(e),
       },
       '[F6.1] resolveTenantFromRequest threw on create-event route',
     );
     return NextResponse.json(
-      { title: 'Internal Server Error' },
+      { title: 'Internal Server Error', requestId },
       { status: 500 },
     );
   }
@@ -314,13 +321,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Dispatch use-case.
-  // R2-I2 (Round 2 — silent-failure-hunter): wrap runCreateEvent in
-  // try/catch mirroring `import/route.ts` precedent. `runInTenant(...)`
-  // can throw at the `asTenantContext` validation step BEFORE entering
-  // `createEvent`'s internal try/catch — without an outer guard this
-  // would bubble out as a generic Next.js 500 with no requestId, no
-  // structured log, and no admin_events_create_threw event for SRE.
-  const requestId = crypto.randomUUID();
+  // `runInTenant(...)` can throw at the `asTenantContext` validation
+  // step BEFORE entering `createEvent`'s internal try/catch — without
+  // an outer guard the throw would bubble as a generic Next.js 500
+  // with no log line, no requestId, and no SRE event.
   let outcome: Awaited<ReturnType<typeof runCreateEvent>>;
   try {
     outcome = await runCreateEvent({
@@ -393,6 +397,7 @@ export async function POST(request: NextRequest) {
         {
           event: 'admin_events_create_failed',
           tenantSlug: tenantCtx.slug,
+          requestId,
           kind: outcome.kind,
           err: outcome.message,
         },
@@ -403,6 +408,7 @@ export async function POST(request: NextRequest) {
         'internal',
         'Internal Server Error',
         'Failed to create event. Retry; if it persists, contact support.',
+        { extras: { requestId } },
       );
     default: {
       const _exhaustive: never = outcome;
@@ -412,6 +418,7 @@ export async function POST(request: NextRequest) {
         'internal',
         'Internal Server Error',
         'createEvent returned an unrecognised outcome.',
+        { extras: { requestId } },
       );
     }
   }

@@ -167,14 +167,11 @@ export function EventCreateInlineModal(
       return;
     }
 
-    // S5 (Round 1 — code-simplifier): parse body ONCE before branching.
-    // Previously double-parsed via `res.json()` for success path then
-    // again for error path — second call against an already-consumed
-    // body throws TypeError, masked by `catch { body = {} }`, hiding
-    // real malformed-response bugs.
-    // R2-S-3 (Round 2 — silent-failure-hunter): preserve console
-    // diagnostic for dev so "why isn't my form responding?" is
-    // debuggable; matches event-picker's S-1 Round 1 pattern.
+    // Parse body ONCE before branching — double-parse via res.json()
+    // throws TypeError on the second call, and catch-swallow would hide
+    // the underlying malformed-response bug. The console.error in the
+    // catch surfaces malformed proxy responses to dev tooling without
+    // affecting the visible UI fallthrough.
     let body: Record<string, unknown> = {};
     try {
       body = (await res.json()) as Record<string, unknown>;
@@ -209,10 +206,8 @@ export function EventCreateInlineModal(
         ),
       });
     } else if (res.status === 429) {
-      // R2-S-4 (Round 2 — silent-failure-hunter): surface Retry-After
-      // when present so admins see an actionable wait time instead of
-      // a generic "rate-limited" message. Matches the csv-mapping-form
-      // pattern.
+      // Surface Retry-After when present so admins see an actionable
+      // wait time instead of a generic "rate-limited" message.
       const retryAfterHeader = res.headers.get('Retry-After');
       const retryAfter =
         retryAfterHeader && !Number.isNaN(Number(retryAfterHeader))
@@ -258,6 +253,12 @@ export function EventCreateInlineModal(
             </Alert>
           ) : null}
 
+          {/* APG Form Pattern: keep the hint paragraph always-mounted +
+              add the error paragraph as a sibling. `aria-describedby`
+              points to BOTH ids when an error fires so SR users hear
+              the field context (e.g. "1-100 alphanumeric + hyphen")
+              AND the validation message — losing context on error
+              defeats the purpose of the hint. */}
           <div className="flex flex-col gap-2">
             <Label htmlFor={externalIdId}>{t('fields.externalIdLabel')}</Label>
             <Input
@@ -268,10 +269,16 @@ export function EventCreateInlineModal(
               aria-invalid={errors.externalId !== undefined}
               aria-describedby={
                 errors.externalId !== undefined
-                  ? `${externalIdId}-error`
+                  ? `${externalIdHintId} ${externalIdId}-error`
                   : externalIdHintId
               }
             />
+            <p
+              id={externalIdHintId}
+              className="text-caption text-muted-foreground"
+            >
+              {t('fields.externalIdHelp')}
+            </p>
             {errors.externalId ? (
               <p
                 id={`${externalIdId}-error`}
@@ -280,14 +287,7 @@ export function EventCreateInlineModal(
               >
                 {t(`fields.errors.${errors.externalId.message ?? 'externalIdInvalid'}`)}
               </p>
-            ) : (
-              <p
-                id={externalIdHintId}
-                className="text-caption text-muted-foreground"
-              >
-                {t('fields.externalIdHelp')}
-              </p>
-            )}
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -298,9 +298,17 @@ export function EventCreateInlineModal(
               placeholder={t('fields.namePlaceholder')}
               aria-invalid={errors.name !== undefined}
               aria-describedby={
-                errors.name !== undefined ? `${nameId}-error` : nameHintId
+                errors.name !== undefined
+                  ? `${nameHintId} ${nameId}-error`
+                  : nameHintId
               }
             />
+            <p
+              id={nameHintId}
+              className="text-caption text-muted-foreground"
+            >
+              {t('fields.nameHelp')}
+            </p>
             {errors.name ? (
               <p
                 id={`${nameId}-error`}
@@ -309,14 +317,7 @@ export function EventCreateInlineModal(
               >
                 {t(`fields.errors.${errors.name.message ?? 'nameRequired'}`)}
               </p>
-            ) : (
-              <p
-                id={nameHintId}
-                className="text-caption text-muted-foreground"
-              >
-                {t('fields.nameHelp')}
-              </p>
-            )}
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -328,10 +329,16 @@ export function EventCreateInlineModal(
               aria-invalid={errors.startDateLocal !== undefined}
               aria-describedby={
                 errors.startDateLocal !== undefined
-                  ? `${startDateId}-error`
+                  ? `${startDateHintId} ${startDateId}-error`
                   : startDateHintId
               }
             />
+            <p
+              id={startDateHintId}
+              className="text-caption text-muted-foreground"
+            >
+              {t('fields.startDateHelp')}
+            </p>
             {errors.startDateLocal ? (
               <p
                 id={`${startDateId}-error`}
@@ -342,14 +349,7 @@ export function EventCreateInlineModal(
                   `fields.errors.${errors.startDateLocal.message ?? 'startDateRequired'}`,
                 )}
               </p>
-            ) : (
-              <p
-                id={startDateHintId}
-                className="text-caption text-muted-foreground"
-              >
-                {t('fields.startDateHelp')}
-              </p>
-            )}
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -361,10 +361,16 @@ export function EventCreateInlineModal(
               aria-invalid={errors.category !== undefined}
               aria-describedby={
                 errors.category !== undefined
-                  ? `${categoryId}-error`
+                  ? `${categoryHintId} ${categoryId}-error`
                   : categoryHintId
               }
             />
+            <p
+              id={categoryHintId}
+              className="text-caption text-muted-foreground"
+            >
+              {t('fields.categoryHelp')}
+            </p>
             {errors.category ? (
               <p
                 id={`${categoryId}-error`}
@@ -373,14 +379,7 @@ export function EventCreateInlineModal(
               >
                 {t(`fields.errors.${errors.category.message ?? 'categoryTooLong'}`)}
               </p>
-            ) : (
-              <p
-                id={categoryHintId}
-                className="text-caption text-muted-foreground"
-              >
-                {t('fields.categoryHelp')}
-              </p>
-            )}
+            ) : null}
           </div>
 
           <DialogFooter>

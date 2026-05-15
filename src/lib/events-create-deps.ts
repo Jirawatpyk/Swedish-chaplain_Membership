@@ -63,9 +63,9 @@ export async function createEventRateLimitCheck(
       },
       '[F6.1] createEvent rate limit Upstash unreachable — fell open; post-incident: this actor may have exceeded 30/hr cap during outage',
     );
-    // R2-I3 (Round 2 — silent-failure-hunter): pair the warn log with a
-    // dedicated metric so SRE has an alertable signal (log-only is not
-    // enough for a fail-open path that allows arbitrary requests).
+    // Pair the warn log with a metric so SRE has an alertable signal
+    // — log-only is insufficient for a fail-open path that admits
+    // arbitrary requests during the Upstash outage window.
     eventcreateMetrics.createEventRateLimitFallback(tenantSlug);
   }
   return { success: result.success, resetAtUnixMs: result.reset };

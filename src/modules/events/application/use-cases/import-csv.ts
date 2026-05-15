@@ -500,7 +500,7 @@ async function processOneRowInSavepoint(
             // BOOLEAN NULL column added by migration 0140. EventCreate
             // adapter rows carry true/false/null per FR-009 classifier;
             // generic-CSV rows omit (null at the column).
-            pdpaConsentAcknowledged: parsed.pdpaConsentAcknowledged ?? null,
+            pdpaConsentAcknowledged: parsed.pdpaConsentAcknowledged,
             metadata: {},
           },
         },
@@ -906,9 +906,15 @@ export async function importCsv(
             event: 'f6_csv_safety_net_query_failed',
             tenantId: input.tenantId,
             fingerprint: attendeeFingerprint,
+            eventId: input.selectedEvent.eventId,
+            eventExternalId: input.selectedEvent.externalId,
             err: result.error.kind,
           },
           '[F6.1] safety-net fingerprint query failed — proceeding without warning (fail-open)',
+        );
+        eventcreateMetrics.csvImportSafetyNetFallback(
+          input.tenantId,
+          'result_err',
         );
       }
     } catch (e) {
@@ -916,10 +922,13 @@ export async function importCsv(
         {
           event: 'f6_csv_safety_net_query_threw',
           tenantId: input.tenantId,
+          eventId: input.selectedEvent.eventId,
+          eventExternalId: input.selectedEvent.externalId,
           err: e instanceof Error ? e.message : String(e),
         },
         '[F6.1] safety-net fingerprint query threw — fail-open',
       );
+      eventcreateMetrics.csvImportSafetyNetFallback(input.tenantId, 'threw');
     }
   }
 
@@ -1140,22 +1149,19 @@ export async function importCsv(
         }
       : null;
 
-  // F6.1 — Phase 4d: update csv_import_records with final counts +
-  // outcome + fingerprint + metadata.
+  // F6.1 — Phase 4d: update csv_import_records with final counts.
   //
-  // CR-5 (Round 1 — silent-failure-hunter): when the placeholder INSERT
-  // never landed (FK violation, RLS denial, pool exhaustion at Phase 2f),
-  // the UPDATE here would silently affect zero rows and return ok(undefined)
-  // — admins saw success but the import-history row was missing,
-  // breaking FR-019c forensic invariant. Repo now returns
-  // err({kind:'not_found'}) on zero-rows; recovery path: try to INSERT
-  // a fresh row with the final outcome (recovery from a lost placeholder).
+  // When the placeholder INSERT never landed (FK violation, RLS denial,
+  // pool exhaustion at Phase 2f), the UPDATE here affects zero rows.
+  // The repo returns `err({kind:'not_found'})` so we can branch into a
+  // recovery INSERT with the final outcome — without this, admins would
+  // see success in the UI but the import-history row would be missing
+  // and the FR-019c forensic invariant would silently break.
   //
-  // R2-I4 (Round 2 — silent-failure-hunter): the boolean is now
-  // propagated to the outcome as `historyPersisted` so the route + UI
-  // can degrade the recordId surface when the history row is lost.
-  // Admins quoting `recordId` to support will not find a matching row
-  // unless this is `true`.
+  // `historyPersisted` is propagated to the outcome so the route + UI
+  // can degrade the recordId surface when the history row is lost —
+  // admins quoting `recordId` to support will not find a matching row
+  // unless this stays `true` end-to-end.
   let historyPersisted = true;
   try {
     const updateResult = await deps.withImportRecordsTx(

@@ -62,12 +62,10 @@ export interface CreateEventInput {
 }
 
 /**
- * TYPE-D8 (Round 1 — type-design-analyzer): `eventCreated: boolean` was
- * redundant — the `CreateEventOutcome` discriminator (`kind: 'created'`
- * vs `'already_exists'`) already encodes the same information, and a
- * future bug could drift the two (e.g., emit `kind:'already_exists',
- * event:{eventCreated:true}`). Dropping the field eliminates the drift
- * surface entirely.
+ * Public-facing event payload returned by `createEvent` outcomes
+ * (`kind: 'created' | 'already_exists'`). Intentionally omits a
+ * `created` boolean — the discriminator on the outcome encodes that
+ * fact, so carrying both invites drift between the two signals.
  */
 export interface CreateEventOutput {
   readonly eventId: EventId;

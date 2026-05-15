@@ -353,6 +353,40 @@ describe('Round 1 CR-1 / TESTS-C-1 — POST /api/admin/events', () => {
       const res = await POST(jsonRequest(validBody));
 
       expect(res.status).toBe(500);
+      const body = (await res.json()) as Record<string, unknown>;
+      // R3 — requestId now hoisted so every 500 path carries the
+      // correlation token (previously only the outer-catch did).
+      expect(typeof body['requestId']).toBe('string');
+    });
+
+    it('R3 — returns 500 with requestId + admin_events_create_threw log when runCreateEvent throws', async () => {
+      // Exercise the outer try/catch around runCreateEvent for the case
+      // where runInTenant validation (asTenantContext) throws BEFORE
+      // entering the use-case's own catch. Without this test, removing
+      // the outer wrap would let the throw bubble out as an unbranded
+      // Next.js 500 with no requestId, no log.
+      runCreateEventMock.mockRejectedValueOnce(
+        new Error('runInTenant: invalid tenant slug'),
+      );
+      const { logger } = await import('@/lib/logger');
+      const loggerErrorSpy = vi.spyOn(logger, 'error');
+
+      const { POST } = await loadRoute();
+      const res = await POST(jsonRequest(validBody));
+
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(typeof body['requestId']).toBe('string');
+      const loggedEvent = loggerErrorSpy.mock.calls.find(
+        (call) =>
+          call[0] !== null &&
+          typeof call[0] === 'object' &&
+          (call[0] as Record<string, unknown>)['event'] ===
+            'admin_events_create_threw',
+      );
+      expect(loggedEvent).toBeDefined();
+      loggerErrorSpy.mockRestore();
     });
   });
+
 });

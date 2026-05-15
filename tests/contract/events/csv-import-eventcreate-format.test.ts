@@ -235,6 +235,7 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
         recordId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
         sourceFormat: 'eventcreate_csv',
         errorCsvAvailable: false,
+        historyPersisted: true,
         summary: {
           rowsTotal: 84,
           rowsProcessed: 78,
@@ -264,10 +265,47 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
       expect(body['recordId']).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
       expect(body['sourceFormat']).toBe('eventcreate_csv');
       expect(body['errorCsvAvailable']).toBe(false);
+      // R3 (pr-test-analyzer IMP-2): historyPersisted threaded through
+      // the route — a regression dropping this from the response body
+      // would silently disable the UI's degraded-history banner.
+      expect(body['historyPersisted']).toBe(true);
       const summary = body['summary'] as Record<string, unknown>;
       expect(summary['rowsTotal']).toBe(84);
       expect(summary['rowsSkipped']).toBe(6);
       expect(summary['rowsFailed']).toBe(0);
+    });
+
+    it('R3 — returns historyPersisted=false when use-case reports lost history row', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'completed',
+        recordId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        sourceFormat: 'eventcreate_csv',
+        errorCsvAvailable: false,
+        historyPersisted: false,
+        summary: {
+          rowsTotal: 10,
+          rowsProcessed: 10,
+          rowsAlreadyImported: 0,
+          rowsSkipped: 0,
+          rowsFailed: 0,
+          eventsCreated: 0,
+          eventsUpdated: 1,
+          matchCounts: {
+            member_contact: 5,
+            member_domain: 2,
+            member_fuzzy: 1,
+            non_member: 1,
+            unmatched: 1,
+          },
+          errorRows: [],
+          durationMs: 1_234,
+        },
+      });
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body['historyPersisted']).toBe(false);
     });
 
     it('returns sourceFormat="generic_csv" for legacy Phase 7 format', async () => {
@@ -602,25 +640,49 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
     });
   });
 
-  describe('R2 CR-2 — lookupEventByIdTimingSafe throws', () => {
-    it('returns 500 with requestId when the lookup helper throws (Neon outage)', async () => {
-      // R2 (Round 2 — pr-test-analyzer C3): exercise the try/catch wrap
-      // added in Round 1. Without this test, removing the try/catch
-      // would let the throw bubble out as a generic Next.js 500 with
-      // no `requestId` extras and no structured log — undetected by
-      // any contract assertion.
+  describe('lookupEventByIdTimingSafe throws — Neon outage path', () => {
+    it('returns 500 with requestId + rollback-trigger metric + structured log', async () => {
+      // Exercise the route's try/catch wrap. Without this test, removing
+      // the catch would let the throw bubble as a generic Next.js 500 —
+      // no requestId, no log, no SC-008 rollback-trigger metric.
       lookupEventByIdTimingSafeMock.mockRejectedValueOnce(
         new Error('neon: connection reset'),
       );
+      const { eventcreateMetrics } = await import('@/lib/metrics');
+      const csvImportCompletedSpy = vi
+        .spyOn(eventcreateMetrics, 'csvImportCompleted')
+        .mockImplementation(() => {});
+      const { logger } = await import('@/lib/logger');
+      const loggerErrorSpy = vi.spyOn(logger, 'error');
+
       const { POST } = await loadImportRoute();
       const res = await POST(buildRequest());
+
       expect(res.status).toBe(500);
       const body = (await res.json()) as Record<string, unknown>;
       expect(body['type']).toMatch(/internal/);
       expect(typeof body['requestId']).toBe('string');
       expect((body['requestId'] as string).length).toBeGreaterThanOrEqual(8);
-      // Critical: use-case must NOT be dispatched when lookup throws.
+      // Use-case must NOT be dispatched when lookup throws.
       expect(runImportCsvMock).not.toHaveBeenCalled();
+      // SRE rollback-trigger signal — `unexpected_error` outcome on
+      // the csv-import counter is the SC-008 signal.
+      expect(csvImportCompletedSpy).toHaveBeenCalledWith(
+        expect.any(String),
+        'unexpected_error',
+      );
+      // Structured log fires for SRE alert binding.
+      const loggedEvent = loggerErrorSpy.mock.calls.find(
+        (call) =>
+          call[0] !== null &&
+          typeof call[0] === 'object' &&
+          (call[0] as Record<string, unknown>)['event'] ===
+            'f6_csv_import_event_lookup_failed',
+      );
+      expect(loggedEvent).toBeDefined();
+
+      csvImportCompletedSpy.mockRestore();
+      loggerErrorSpy.mockRestore();
     });
   });
 
@@ -630,7 +692,8 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
         kind: 'timeout',
         recordId: 'timeout-record-uuid',
         sourceFormat: 'eventcreate_csv',
-        // TYPE-D4 (Round 1): partial summary now part of timeout shape.
+        // Partial summary on the timeout shape so admins are not blind
+        // to which rows committed before the budget bit.
         summary: {
           rowsTotal: 100,
           rowsProcessed: 40,
@@ -650,6 +713,7 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
           durationMs: 55_000,
         },
         errorCsvAvailable: false,
+        historyPersisted: true,
       });
 
       const { POST } = await loadImportRoute();
@@ -661,12 +725,13 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
       // problem-response spreads `extras` at top-level.
       expect(body['recordId']).toBe('timeout-record-uuid');
       expect(body['sourceFormat']).toBe('eventcreate_csv');
-      // R2 I3 (Round 2 — pr-test-analyzer) — TYPE-D4 summary
-      // forwarded to the 504 response so admins are not blind to
-      // which rows committed before the budget bit.
+      // Partial summary forwarded to the 504 response so admins are
+      // not blind to which rows committed before the budget bit.
       expect(body['summary']).toBeDefined();
       expect((body['summary'] as Record<string, unknown>)['rowsProcessed']).toBe(40);
       expect((body['summary'] as Record<string, unknown>)['rowsTotal']).toBe(100);
+      // historyPersisted threaded through 504 extras as well.
+      expect(body['historyPersisted']).toBe(true);
     });
   });
 

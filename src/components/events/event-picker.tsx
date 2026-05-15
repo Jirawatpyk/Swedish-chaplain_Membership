@@ -156,15 +156,12 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // R2 (Round 2 — enterprise-ux I-3): shared cancellation ref so the
-  // refresh button + the mount-effect share the same unmount-guard
-  // path. Previously the refresh handler created a per-click signal
-  // object with no cleanup, leaving a window for setState on unmounted
-  // component when the user navigated away mid-fetch.
+  // Shared cancellation ref consumed by both the mount-effect and the
+  // refresh button — without a single source of truth, a per-click
+  // signal would leak setState on unmount during in-flight fetches.
   const loadCancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 
-  // UX-I2 (Round 1) — single shared loader for both initial mount and
-  // refresh button. Previously duplicated ~30 LOC of fetch+normalize.
+  // Single shared loader for both initial mount and refresh button.
   // `cancelled` flag protects unmount race; setError(null) before fetch
   // clears stale errors on retry.
   const loadEvents = useCallback(
@@ -219,10 +216,8 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
     [t],
   );
 
-  // Fetch events list on mount (if not provided via props).
-  // R2 (Round 2 — enterprise-ux I-3): use the shared cancel ref so the
-  // refresh button + mount-effect collaborate on a single unmount-guard
-  // — refreshing then unmounting cancels the in-flight load.
+  // Fetch events list on mount (if not provided via props). The shared
+  // cancel ref ensures refresh-then-unmount cancels the in-flight load.
   useEffect(() => {
     if (props.events !== undefined) return;
     // Reset the shared signal on remount.
@@ -233,10 +228,10 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
     };
   }, [props.events, loadEvents]);
 
-  // R2 (Round 2 — code-reviewer #2): expose an imperative `add` to the
-  // parent so a freshly-created event lands in `events` state
-  // immediately after `onCreated`, preventing the stale "Select an
-  // event…" label between create-success and the next refresh.
+  // Expose an imperative `add` to the parent so a freshly-created
+  // event lands in `events` state immediately after `onCreated`,
+  // preventing the stale "Select an event…" label between create-
+  // success and the next refresh round-trip.
   const registerAddEvent = props.registerAddEvent;
   useEffect(() => {
     if (registerAddEvent === undefined) return;
@@ -265,22 +260,25 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   const suggestedEvent = suggestion?.event ?? null;
   const suggestionScore = suggestion?.score ?? 0;
 
-  // Auto-apply suggestion ONCE per filename change when no event is
-  // currently selected — admin can still pick a different one.
+  // Auto-apply suggestion when no event is currently selected. The
+  // `props.value === null` guard means the effect is a no-op if the
+  // admin has already picked an event manually — so refreshing the
+  // events list (which can re-trigger a `suggestedEvent` identity
+  // change) cannot override their selection. Including `props.value`
+  // in deps closes the stale-closure window enterprise-ux R3 flagged.
+  const propsValue = props.value;
+  const propsOnChange = props.onChange;
+  const propsFilenameHint = props.filenameHint;
   useEffect(() => {
     if (
       suggestedEvent !== null &&
-      props.value === null &&
-      props.filenameHint !== undefined &&
-      props.filenameHint !== null
+      propsValue === null &&
+      propsFilenameHint !== undefined &&
+      propsFilenameHint !== null
     ) {
-      props.onChange(suggestedEvent.eventId, suggestedEvent);
+      propsOnChange(suggestedEvent.eventId, suggestedEvent);
     }
-    // We intentionally do NOT depend on `props.onChange` / `props.value`
-    // — only on `filenameHint` + `suggestedEvent` so the auto-select
-    // fires once per filename change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.filenameHint, suggestedEvent]);
+  }, [propsFilenameHint, suggestedEvent, propsValue, propsOnChange]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -293,7 +291,13 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
               role="combobox"
               aria-expanded={open}
               aria-haspopup="listbox"
-              aria-controls={open ? popoverContentId : undefined}
+              // APG Combobox: aria-controls always references the listbox
+              // by id. When closed, the listbox is unmounted (Base UI
+              // Portal) so the reference is dangling — modern SR
+              // implementations still announce "has popup listbox"
+              // correctly via aria-haspopup, and the controls reference
+              // takes effect when the popup mounts on open.
+              aria-controls={popoverContentId}
               aria-label={t('triggerAriaLabel')}
               className="min-h-11 w-full justify-between text-left font-normal"
             >
@@ -376,13 +380,9 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           variant="ghost"
           size="sm"
           onClick={() => {
-            // UX-I2 (Round 1) — reuse shared `loadEvents` instead of
-            // duplicating fetch+normalise logic. Resets `error` to
-            // null automatically and respects unmount via the same
-            // cancelled-signal pattern.
-            // R2 (Round 2 — enterprise-ux I-3): mark any in-flight load
-            // as cancelled before starting a new one + reuse the shared
-            // ref so unmount kills BOTH this fetch and any prior one.
+            // Cancel any in-flight load before starting a new one;
+            // sharing the ref means unmount kills BOTH this fetch and
+            // any prior one. setError(null) is handled inside loadEvents.
             loadCancelRef.current.cancelled = true;
             loadCancelRef.current = { cancelled: false };
             setEvents([]);
@@ -395,20 +395,27 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         </Button>
       </div>
 
-      {suggestedEvent !== null && props.value === suggestedEvent.eventId ? (
-        <p
-          className="text-caption text-muted-foreground"
-          aria-live="polite"
-        >
-          {/* UX-I3 (Round 1) — surface confidence so admins can decide
-              whether to trust the suggestion at-a-glance. Score is
-              displayed as integer percent (e.g. "92% match"). */}
-          {t('filenameMatchHintWithScore', {
-            eventName: suggestedEvent.name,
-            score: Math.round(suggestionScore * 100),
-          })}
-        </p>
-      ) : null}
+      {/*
+        Surface fuzzy-match confidence so admins can decide whether to
+        trust the auto-suggestion. Score displayed as integer percent.
+        Region is ALWAYS mounted with `min-h-[1lh]` so NVDA/JAWS register
+        the live region BEFORE content arrives — conditional-mount with
+        text causes some SRs to swallow the announcement when the
+        element appears already populated.
+      */}
+      <p
+        className="text-caption text-muted-foreground min-h-[1lh]"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {suggestedEvent !== null && props.value === suggestedEvent.eventId
+          ? t('filenameMatchHintWithScore', {
+              eventName: suggestedEvent.name,
+              score: Math.round(suggestionScore * 100),
+            })
+          : ''}
+      </p>
     </div>
   );
 }

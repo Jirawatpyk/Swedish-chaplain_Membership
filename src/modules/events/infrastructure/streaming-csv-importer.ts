@@ -501,6 +501,10 @@ async function* iterateRows(
       rowNumber: lineNumber,
       row: mapped.row,
       rowHash: computeRowHash(mapped.row),
+      // Generic-CSV path has no PDPA classification — port now requires
+      // explicit tri-state, so emit `null` rather than rely on a
+      // boundary coalesce in the use-case.
+      pdpaConsentAcknowledged: null,
     };
   }
 }
@@ -682,6 +686,9 @@ async function* iterateGenericRowsWithEventContext(
       // bound to — prevents the "same row, two events" idempotency
       // collision the FR-019b safety net is designed to flag.
       rowHash: computeRowHash(merged),
+      // Generic-CSV format has no PDPA column — required tri-state at
+      // the port boundary, so emit explicit `null`.
+      pdpaConsentAcknowledged: null,
     };
   }
 }

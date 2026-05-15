@@ -41,12 +41,15 @@ export type ParsedRow =
       readonly rowHash: string;
       /**
        * F6.1 (Feature 013) — PDPA consent classification per FR-009.
-       * Populated by EventCreate-adapter rows; absent (treated as null)
-       * for generic Phase 7 rows. Stored in
-       * `event_registrations.attendee_pdpa_consent_acknowledged` via the
-       * use-case after `processAttendeeInTx` returns.
+       * REQUIRED tri-state `true | false | null` end-to-end:
+       *   - EventCreate-adapter rows classify via `classifyPdpaConsent`.
+       *   - Generic Phase 7 rows emit `null` (no consent captured).
+       * Stored in `event_registrations.attendee_pdpa_consent_acknowledged`
+       * via the use-case after `processAttendeeInTx` returns. The
+       * required-tri-state shape collapses the last `?? null` boundary
+       * between parser and use-case.
        */
-      readonly pdpaConsentAcknowledged?: PdpaConsentAcknowledged;
+      readonly pdpaConsentAcknowledged: PdpaConsentAcknowledged;
     }
   | {
       readonly ok: false;

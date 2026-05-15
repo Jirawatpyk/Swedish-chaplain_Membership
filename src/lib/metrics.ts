@@ -2842,12 +2842,12 @@ export const eventcreateMetrics = {
   },
 
   /**
-   * R2-I3 (Round 2 — silent-failure-hunter): `createEvent` admin-manual
-   * rate-limit fail-open counter. Mirrors `csvImportRateLimitFallback`
-   * — fires when Upstash is unreachable and the 30/hr per-(tenant,actor)
-   * cap could not be enforced. SRE alerts on `rate > 0` because actors
-   * may have created arbitrarily many events during the outage window
-   * (post-incident review reconciles via audit log).
+   * `createEvent` admin-manual rate-limit fail-open counter. Mirrors
+   * `csvImportRateLimitFallback` — fires when Upstash is unreachable
+   * and the 30/hr per-(tenant, actor) cap could not be enforced. SRE
+   * alerts on `rate > 0` because actors may have created arbitrarily
+   * many events during the outage window (post-incident review
+   * reconciles via audit log).
    */
   createEventRateLimitFallback(tenantId: string): void {
     safeMetric(() => {
@@ -2855,6 +2855,30 @@ export const eventcreateMetrics = {
         'eventcreate_create_event_rate_limit_fallback_total',
         'F6.1 createEvent Upstash fail-open counter',
       ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F6.1 safety-net fingerprint-query fail-open counter. The
+   * `findByFingerprintAcrossEvents` call is fail-open by design
+   * (FR-019b prioritises user-perceived success over preventing a
+   * re-upload across events). SRE alerts on `rate > 0` because every
+   * fail-open event means an admin may upload to the WRONG event
+   * without seeing the mismatch warning.
+   *
+   * `reason` discriminates between the Result.err path (`'result_err'`)
+   * and the thrown exception path (`'threw'`) so dashboards can break
+   * down by failure mode.
+   */
+  csvImportSafetyNetFallback(
+    tenantId: string,
+    reason: 'result_err' | 'threw',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_safety_net_fallback_total',
+        'F6.1 safety-net fingerprint-query fail-open counter (FR-019b)',
+      ).add(1, { tenant: tenantId, reason });
     });
   },
 

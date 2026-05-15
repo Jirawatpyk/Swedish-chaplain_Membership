@@ -48,6 +48,7 @@ vi.mock('@/lib/metrics', () => ({
     csvImportDurationSeconds: vi.fn(),
     csvImportRateLimitFallback: vi.fn(),
     csvImportAdapterModeDetected: vi.fn(),
+    csvImportSafetyNetFallback: vi.fn(),
     createEventDurationSeconds: vi.fn(),
   },
   safeMetric: vi.fn((fn: () => void) => fn()),
@@ -107,6 +108,7 @@ function makeConcurrencyTrackingDeps(): {
                   attendee_name: cols[4]!,
                   payment_status: 'paid' as const,
                 },
+                pdpaConsentAcknowledged: null,
               };
             }
           })(),

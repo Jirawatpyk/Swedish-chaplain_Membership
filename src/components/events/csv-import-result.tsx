@@ -26,6 +26,7 @@
  *   - data-testid hooks for the E2E spec (T091).
  */
 import { useTranslations } from 'next-intl';
+import { TriangleAlert } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { MatchStatusBadge } from './match-status-badge';
 import type { MatchType } from '@/modules/events';
@@ -133,16 +134,28 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
           />
         </dl>
 
-        {/* Smart-feature S-02 (Round 1) — record ID quotable for support.
-            Rendered as a small caption row below counters; uses monospace
-            for click-to-copy ergonomics.
-            R2-I4 (Round 2) — when `historyPersisted === false`, the
-            recordId is shown together with an inline "history degraded"
-            warning so admins quoting it to support understand that the
-            DB-side row was lost (rows are still committed, only the
-            audit/history surface is degraded). */}
+        {/* Record ID for support tickets; degraded-history warning when
+            DB-side audit row failed to persist (rows are still committed).
+            Degraded banner sits ABOVE the recordId so admins read the
+            warning first — the recordId is meaningless if support
+            cannot find a matching DB row. */}
         {result.recordId !== undefined ? (
-          <div className="flex flex-col gap-1" data-testid="result-record-id-block">
+          <div className="flex flex-col gap-2" data-testid="result-record-id-block">
+            {result.historyPersisted === false ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+                role="status"
+                data-testid="result-history-degraded"
+              >
+                <TriangleAlert
+                  aria-hidden="true"
+                  className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+                />
+                <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
+                  {t('historyDegraded')}
+                </p>
+              </div>
+            ) : null}
             <p
               className="text-caption text-muted-foreground"
               data-testid="result-record-id"
@@ -150,15 +163,6 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
               {t('recordIdLabel')}:{' '}
               <span className="font-mono select-all">{result.recordId}</span>
             </p>
-            {result.historyPersisted === false ? (
-              <p
-                className="text-caption text-amber-700 dark:text-amber-300"
-                role="status"
-                data-testid="result-history-degraded"
-              >
-                {t('historyDegraded')}
-              </p>
-            ) : null}
           </div>
         ) : null}
 

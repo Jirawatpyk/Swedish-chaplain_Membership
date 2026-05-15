@@ -49,6 +49,7 @@ vi.mock('@/lib/metrics', () => ({
     csvImportDurationSeconds: vi.fn(),
     csvImportRateLimitFallback: vi.fn(),
     csvImportAdapterModeDetected: vi.fn(),
+    csvImportSafetyNetFallback: vi.fn(),
     createEventDurationSeconds: vi.fn(),
   },
   safeMetric: vi.fn((fn: () => void) => fn()),
@@ -110,6 +111,7 @@ function makeFakeDeps(opts: FakeDepsOpts): ImportCsvDeps {
                 attendee_name: 'Audit Attendee',
                 payment_status: 'paid' as const,
               },
+              pdpaConsentAcknowledged: null,
             };
           })(),
         ),
