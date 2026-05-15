@@ -91,7 +91,11 @@ export async function previewInvoiceDraft(
     for (const line of draft.lines) subtotal = subtotal.add(line.total);
     const { vat, total } = calculateVat(subtotal, settings.vatRate);
 
-    const tenantLogo = await loadTenantLogo(deps.blob, settings.identity.logo_blob_key);
+    const tenantLogo = await loadTenantLogo(
+      deps.blob,
+      settings.identity.logo_blob_key,
+      deps.currentTemplateVersion,
+    );
     const rendered = await deps.pdfRender.render({
       kind: 'invoice_preview',
       templateVersion: deps.currentTemplateVersion,

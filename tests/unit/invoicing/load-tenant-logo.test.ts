@@ -125,19 +125,60 @@ describe('loadTenantLogo', () => {
     expect(downloadBytes).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT cache failures — retries on the next call', async () => {
-    const downloadBytes = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('transient'))
-      .mockResolvedValueOnce(new Uint8Array([9]));
+  it('caches failures for 60s — second call returns null without retrying (Round-3 fix R3-SF3)', async () => {
+    // Round-3 behavior change: failures are negatively cached for
+    // 60s so a permanent failure (e.g. 404 blob deleted) doesn't
+    // hammer Blob on every call from an F8 batched-renewal cron.
+    // Real fix (admin re-uploads logo) produces a NEW UUID-suffixed
+    // key, so the old negative-cache entry just expires harmlessly.
+    const downloadBytes = vi.fn().mockRejectedValue(new Error('permanent 404'));
     const blob = makeBlobStub({ downloadBytes });
-    const key = 'invoicing/test-tenant/logos/transient.png';
+    const key = 'invoicing/test-tenant/logos/gone.png';
 
     const first = await loadTenantLogo(blob, key);
     const second = await loadTenantLogo(blob, key);
+    const third = await loadTenantLogo(blob, key);
 
     expect(first).toBeNull();
-    expect(second).toEqual({ bytes: new Uint8Array([9]), format: 'png' });
-    expect(downloadBytes).toHaveBeenCalledTimes(2);
+    expect(second).toBeNull();
+    expect(third).toBeNull();
+    // Only the first call hits the Blob — subsequent calls within
+    // the TTL short-circuit at the negative-cache check.
+    expect(downloadBytes).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null without fetching when pinnedTemplateVersion=1 (Round-3 fix R3-H3)', async () => {
+    // v1 invoices that had logo_blob_key in their tenant snapshot
+    // never rendered the logo (template v1 didn't emit <Image>). Re-
+    // render under v2 code MUST preserve byte-identical output —
+    // passing the pinned v1 makes loadTenantLogo return null even
+    // when the key is set + the blob would otherwise resolve.
+    const bytes = new Uint8Array([0x89, 0x50]);
+    const downloadBytes = vi.fn().mockResolvedValue(bytes);
+    const blob = makeBlobStub({ downloadBytes });
+
+    const result = await loadTenantLogo(
+      blob,
+      'invoicing/test-tenant/logos/abc.png',
+      1, // pinned v1
+    );
+
+    expect(result).toBeNull();
+    expect(downloadBytes).not.toHaveBeenCalled();
+  });
+
+  it('resolves normally when pinnedTemplateVersion=2', async () => {
+    const bytes = new Uint8Array([0x89, 0x50]);
+    const blob = makeBlobStub({
+      downloadBytes: vi.fn().mockResolvedValue(bytes),
+    });
+
+    const result = await loadTenantLogo(
+      blob,
+      'invoicing/test-tenant/logos/v2.png',
+      2,
+    );
+
+    expect(result).toEqual({ bytes, format: 'png' });
   });
 });

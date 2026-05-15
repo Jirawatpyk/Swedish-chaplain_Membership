@@ -119,7 +119,7 @@ export function RefundDialog({
                 {receiptDocumentNumberRaw ?? (
                   <span>
                     {invoiceDocumentNumber}{' '}
-                    <span className="text-[10px]">
+                    <span className="text-xs">
                       ({tDialog('refsCombinedHint')})
                     </span>
                   </span>

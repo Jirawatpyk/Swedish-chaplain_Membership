@@ -1288,6 +1288,7 @@
           "downloadReceipt": "Ladda ner kvitto-PDF",
           "downloadCombined": "Ladda ner faktura/kvitto",
           "downloadReceiptAria": "Ladda ner det officiella kvittots PDF för faktura {number}",
+          "downloadInvoiceAria": "Ladda ner faktura-PDF för faktura {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -1300,7 +1301,12 @@
           "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
           "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
           "receiptForbidden": "Du har inte behörighet till detta kvitto.",
-          "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen."
+          "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen.",
+          "receiptSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+          "receiptRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
+          "invoiceForbidden": "Du har inte behörighet till denna faktura.",
+          "invoiceNotFound": "Faktura hittades inte.",
+          "invoiceUnavailable": "Faktura-PDF är inte tillgänglig just nu. Försök igen."
         },
         "fields": {
           "memberId": "Medlem",

@@ -194,9 +194,13 @@ export async function voidInvoice(
       if (!settings) return err({ code: 'settings_missing' });
 
       // D. Re-render with VOID overlay (pinned template version per FR-016).
+      // Round-3 fix R3-H3 — pass pinned template version so v1 invoices
+      // (rendered before the v2 logo feature) re-render byte-identical
+      // (logo suppressed for v1).
       const tenantLogo = await loadTenantLogo(
         deps.blob,
         loaded.tenantIdentitySnapshot.logo_blob_key,
+        loaded.pdf.templateVersion,
       );
       let rendered;
       try {

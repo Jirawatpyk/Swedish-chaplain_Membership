@@ -131,18 +131,23 @@ export async function updateTenantInvoiceSettings(
     auditPayload.registrationFeeSatang = String(auditPayload.registrationFeeSatang);
   }
 
-  // Read prior settings BEFORE upsert so we can detect §87 prefix
-  // flips and emit the dedicated `tenant_receipt_prefix_changed`
-  // forensic-trail audit (separate from the general
-  // `tenant_invoice_settings_updated` event). Null on first-time
-  // bootstrap — no prior prefix to compare against.
-  const priorSettings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
-
   // N1 (review 2026-04-19 21:19) — upsert + audit MUST share a single
   // transaction so an audit failure rolls back the settings write.
   // Violation would breach Constitution v1.4.0 Principle I clause 4
   // (audit-in-same-tx, NON-NEGOTIABLE).
   await deps.tenantSettingsRepo.withTx(input.tenantId, async (tx) => {
+    // Round-3 fix R3-H1 — read priorSettings INSIDE the tx with
+    // `SELECT … FOR UPDATE` so a concurrent admin save cannot flip
+    // the prefix between read + upsert. Without the lock the §87
+    // forensic-trail audit could record the wrong "old" value (e.g.
+    // P1 reads INV, P2 reads INV, P1 writes AAA, P2 writes BBB →
+    // P2's audit says "old=INV → new=BBB" when on-disk truth was
+    // "INV → AAA → BBB"). Null on first-time bootstrap.
+    const priorSettings = await deps.tenantSettingsRepo.getForUpdateInTx(
+      tx,
+      input.tenantId,
+    );
+
     await deps.tenantSettingsRepo.upsert(input.tenantId, patch, tx);
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
@@ -160,7 +165,10 @@ export async function updateTenantInvoiceSettings(
     // First-time bootstrap (priorSettings === null) is NOT a flip —
     // there's no "old" value to compare against.
     if (priorSettings !== null) {
-      const changedPrefixes: Record<string, { old: string | null; new: string }> = {};
+      const changedPrefixes: Record<
+        string,
+        { old: string | null; new: string | null }
+      > = {};
       if (
         input.invoiceNumberPrefix !== undefined &&
         input.invoiceNumberPrefix !== priorSettings.invoiceNumberPrefix
@@ -183,13 +191,34 @@ export async function updateTenantInvoiceSettings(
         input.receiptNumberPrefix !== undefined &&
         input.receiptNumberPrefix !== (priorSettings.receiptNumberPrefix ?? null)
       ) {
+        // Round-3 fix R3-HIGH1 — preserve null fidelity. Previously
+        // `?? ''` coerced an explicit null (combined-mode = no
+        // separate receipt prefix) to empty string in the audit
+        // payload, breaking the RD auditor's ability to distinguish
+        // "explicit nullification" from "set to empty string".
         changedPrefixes.receipt_number_prefix = {
           old: priorSettings.receiptNumberPrefix ?? null,
-          new: input.receiptNumberPrefix ?? '',
+          new: input.receiptNumberPrefix ?? null,
         };
       }
 
       if (Object.keys(changedPrefixes).length > 0) {
+        // Round-3 fix R3-C1 — payload now matches the migration 0145
+        // contract: includes `last_sequences` (per-doc-type last seq
+        // used under the OLD prefix, derived from
+        // `tenant_document_sequences.next_sequence_number - 1`) so
+        // the RD forensic SELECT can reconstruct "where did the old
+        // prefix stop?" without joining external tables.
+        const sequences = await deps.tenantSettingsRepo.readSequencesInTx(
+          tx,
+          input.tenantId,
+        );
+        const lastSequences = sequences.map((s) => ({
+          document_type: s.documentType,
+          fiscal_year: s.fiscalYear,
+          last_sequence_number: Math.max(0, s.nextSequenceNumber - 1),
+        }));
+
         await deps.audit.emit(tx, {
           tenantId: input.tenantId,
           requestId: input.requestId ?? null,
@@ -200,11 +229,7 @@ export async function updateTenantInvoiceSettings(
             changed_prefixes: changedPrefixes,
             receipt_numbering_mode:
               input.receiptNumberingMode ?? priorSettings.receiptNumberingMode,
-            // Caller can correlate with the sibling
-            // `tenant_invoice_settings_updated` row via requestId; the
-            // last-seq numbers themselves live in
-            // `tenant_document_sequences` and are queryable for the
-            // §87 forensic timeline.
+            last_sequences: lastSequences,
           },
         });
       }

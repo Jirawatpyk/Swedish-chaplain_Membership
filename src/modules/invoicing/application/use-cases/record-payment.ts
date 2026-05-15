@@ -338,7 +338,11 @@ export async function recordPayment(
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
     const tenantLogo = deps.asyncReceiptPdf
       ? null
-      : await loadTenantLogo(deps.blob, loaded.tenantIdentitySnapshot.logo_blob_key);
+      : await loadTenantLogo(
+          deps.blob,
+          loaded.tenantIdentitySnapshot.logo_blob_key,
+          deps.currentTemplateVersion,
+        );
     const rendered =
       deps.asyncReceiptPdf
         ? null

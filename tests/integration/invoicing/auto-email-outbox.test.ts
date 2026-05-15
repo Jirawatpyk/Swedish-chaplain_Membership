@@ -210,6 +210,8 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
       getForIssue: vi.fn(async () => settingsView),
       upsert: vi.fn(),
       withTx: vi.fn(async (_t, fn) => fn({})),
+      getForUpdateInTx: vi.fn(),
+      readSequencesInTx: vi.fn(async () => []),
     },
     memberIdentity: {
       getForIssue: vi.fn(async (_tx, _t, memberId) => ({

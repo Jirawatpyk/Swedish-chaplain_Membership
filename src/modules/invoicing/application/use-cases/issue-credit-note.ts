@@ -310,6 +310,7 @@ export async function issueCreditNote(
       const tenantLogo = await loadTenantLogo(
         deps.blob,
         loaded.tenantIdentitySnapshot.logo_blob_key,
+        deps.currentTemplateVersion,
       );
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
@@ -441,6 +442,16 @@ export async function issueCreditNote(
         // (adds the credit-annotation overlay) so DB pdf_sha256
         // diverges from the original; without allowOverwrite the
         // adapter silently treats already-exists as success.
+        //
+        // Round-3 fix R3-H3 — re-load tenantLogo with the invoice's
+        // PINNED template version (could be v1). For v1 the helper
+        // returns null → logo suppressed → bytes stay byte-equivalent
+        // to the original (modulo the CREDITED overlay).
+        const annotationTenantLogo = await loadTenantLogo(
+          deps.blob,
+          loaded.tenantIdentitySnapshot.logo_blob_key,
+          loaded.pdf.templateVersion,
+        );
         pendingRenderKind = 'annotation';
         const rerendered = await renderAndUploadPdf(
           { pdfRender: deps.pdfRender, blob: deps.blob },
@@ -452,7 +463,7 @@ export async function issueCreditNote(
               issueDate: loaded.issueDate,
               dueDate: loaded.dueDate,
               tenant: loaded.tenantIdentitySnapshot,
-              tenantLogo,
+              tenantLogo: annotationTenantLogo,
               member: loaded.memberIdentitySnapshot,
               lines: loaded.lines,
               subtotal: loaded.subtotal,

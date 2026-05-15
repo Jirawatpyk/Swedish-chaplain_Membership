@@ -162,12 +162,15 @@ export async function getReceiptPdfSignedUrl(
     ? `${invoice.documentNumber?.raw ?? 'receipt'}-receipt.pdf`
     : `${invoice.receiptDocumentNumberRaw}.pdf`;
 
-  const url = await deps.blob.signDownloadUrl(blobKey);
-
-  // Audit the successful download. `member_id` is on the row even
-  // though `receipt_pdf_downloaded` is NOT in the member-timeline
-  // event union (it would surface as a probe-like event, which we
-  // already exclude per audit-port.ts:117-122 commentary).
+  // Round-3 fix R3-N1 — emit audit BEFORE signing the URL. The audit
+  // is the durable §87 forensic trail; if it fails (Neon transient,
+  // retention column constraint) we MUST fail the read entirely
+  // rather than serve a download whose access record cannot be
+  // reconstructed. Reversing the order also avoids a wasted signed
+  // URL whose tokenized window would tick down even though the
+  // caller never receives it. Audit-before-success matches the F4
+  // pattern for tx-bound mutations (Constitution Principle I clause
+  // 4); read-path probes use the same ordering for consistency.
   await deps.audit.emit(null, {
     tenantId: input.tenantId,
     requestId: input.requestId ?? null,
@@ -186,5 +189,6 @@ export async function getReceiptPdfSignedUrl(
     },
   });
 
+  const url = await deps.blob.signDownloadUrl(blobKey);
   return ok({ url, filename });
 }

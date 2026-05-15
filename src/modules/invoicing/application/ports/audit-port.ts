@@ -183,10 +183,19 @@ export type F4AuditEvent =
  *   - **Read-path probe** (e.g., cross-tenant-probe emitted by
  *     `getInvoice` / `getInvoicePdfSignedUrl` / `listInvoices`): pass
  *     `null`. The use case has no open transaction (read-only) so
- *     the audit row writes on an auto-commit connection. Probe audit
- *     failure is logged by the adapter but does NOT fail the read
- *     (probe logging is best-effort — losing a probe row is less bad
- *     than a legitimate read returning 500).
+ *     the audit row writes on an auto-commit connection via the
+ *     OWNER role (BYPASSRLS) — tenantId is supplied explicitly in
+ *     the INSERT so cross-tenant isolation is preserved by data not
+ *     by role.
+ *
+ * Round-3 contract correction: the previous docstring claimed probe
+ * failures are "best-effort logged but don't fail the read". The
+ * adapter does NOT wrap the INSERT in a try/catch — probe failures
+ * DO propagate to the caller. Route layers wrap the use-case call
+ * (per H-7 fix Round-2) so a probe-emit throw surfaces as a
+ * structured 500. If a future use-case needs swallow-on-emit
+ * semantics it must add its own try/catch around `audit.emit(null,
+ * ...)`; the adapter contract is "INSERT or throw".
  *
  * Adapters MUST handle both cases. See `f4AuditAdapter` for the
  * canonical implementation.

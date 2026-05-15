@@ -13,12 +13,39 @@ import type {
   TenantSettingsRepo,
   TenantInvoiceSettingsView,
   TenantInvoiceSettingsPatch,
+  TenantDocumentSequenceRow,
 } from '../../application/ports/tenant-settings-repo';
 import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { tenantInvoiceSettings } from '../db';
+import { tenantDocumentSequences } from '../db/schema-tenant-document-sequences';
+
+function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoiceSettingsView {
+  return {
+    tenantId: row.tenantId,
+    currencyCode: row.currencyCode,
+    vatRate: VatRate.ofUnsafe(row.vatRate),
+    registrationFeeSatang: BigInt(row.registrationFeeSatang as unknown as string),
+    invoiceNumberPrefix: row.invoiceNumberPrefix,
+    creditNoteNumberPrefix: row.creditNoteNumberPrefix,
+    receiptNumberingMode: row.receiptNumberingMode === 'separate' ? 'separate' : 'combined',
+    receiptNumberPrefix: row.receiptNumberPrefix ?? null,
+    fiscalYearStartMonth: row.fiscalYearStartMonth,
+    defaultNetDays: row.defaultNetDays,
+    proRatePolicy: asProRatePolicyUnsafe(row.proRatePolicy),
+    autoEmailEnabled: row.autoEmailEnabled,
+    identity: Object.freeze({
+      legal_name_th: row.legalNameTh,
+      legal_name_en: row.legalNameEn,
+      tax_id: row.taxId,
+      address_th: row.registeredAddressTh,
+      address_en: row.registeredAddressEn,
+      logo_blob_key: row.logoBlobKey,
+    }),
+  };
+}
 
 export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
   async getForIssue(tenantId: string): Promise<TenantInvoiceSettingsView | null> {
@@ -28,29 +55,51 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     );
     const row = rows[0];
     if (!row) return null;
+    return rowToView(row);
+  },
 
-    return {
-      tenantId: row.tenantId,
-      currencyCode: row.currencyCode,
-      vatRate: VatRate.ofUnsafe(row.vatRate),
-      registrationFeeSatang: BigInt(row.registrationFeeSatang as unknown as string),
-      invoiceNumberPrefix: row.invoiceNumberPrefix,
-      creditNoteNumberPrefix: row.creditNoteNumberPrefix,
-      receiptNumberingMode: row.receiptNumberingMode === 'separate' ? 'separate' : 'combined',
-      receiptNumberPrefix: row.receiptNumberPrefix ?? null,
-      fiscalYearStartMonth: row.fiscalYearStartMonth,
-      defaultNetDays: row.defaultNetDays,
-      proRatePolicy: asProRatePolicyUnsafe(row.proRatePolicy),
-      autoEmailEnabled: row.autoEmailEnabled,
-      identity: Object.freeze({
-        legal_name_th: row.legalNameTh,
-        legal_name_en: row.legalNameEn,
-        tax_id: row.taxId,
-        address_th: row.registeredAddressTh,
-        address_en: row.registeredAddressEn,
-        logo_blob_key: row.logoBlobKey,
-      }),
-    };
+  async getForUpdateInTx(
+    txUnknown: unknown,
+    tenantId: string,
+  ): Promise<TenantInvoiceSettingsView | null> {
+    // Round-3 fix R3-H1 — `SELECT … FOR UPDATE` on the tenant's
+    // settings row so a concurrent admin save can't slip in between
+    // the read + the subsequent upsert. Caller MUST already be inside
+    // `runInTenant` (RLS context set), passing the same `tx` handle
+    // here that they'll feed to `upsert(..., tx)`.
+    const tx = txUnknown as TenantTx;
+    const rows = await tx
+      .select()
+      .from(tenantInvoiceSettings)
+      .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+      .for('update')
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return rowToView(row);
+  },
+
+  async readSequencesInTx(
+    txUnknown: unknown,
+    tenantId: string,
+  ): Promise<readonly TenantDocumentSequenceRow[]> {
+    // Round-3 fix R3-C1 — surface every `tenant_document_sequences`
+    // row for the §87 forensic-trail audit emit. Returns [] if the
+    // tenant hasn't issued any documents yet.
+    const tx = txUnknown as TenantTx;
+    const rows = await tx
+      .select({
+        documentType: tenantDocumentSequences.documentType,
+        fiscalYear: tenantDocumentSequences.fiscalYear,
+        nextSequenceNumber: tenantDocumentSequences.nextSequenceNumber,
+      })
+      .from(tenantDocumentSequences)
+      .where(eq(tenantDocumentSequences.tenantId, tenantId));
+    return rows.map((r) => ({
+      documentType: r.documentType as 'invoice' | 'receipt' | 'credit_note',
+      fiscalYear: r.fiscalYear,
+      nextSequenceNumber: r.nextSequenceNumber,
+    }));
   },
 
   async withTx<T>(tenantId: string, fn: (tx: unknown) => Promise<T>): Promise<T> {

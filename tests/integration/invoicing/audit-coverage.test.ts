@@ -381,6 +381,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         getForIssue: vi.fn(async () => settingsView),
         upsert: vi.fn(),
         withTx: vi.fn(async (_t, fn) => fn({})),
+      getForUpdateInTx: vi.fn(),
+      readSequencesInTx: vi.fn(async () => []),
       },
       memberIdentity: {
         getForIssue: vi.fn(async (_tx, _t, mid) => ({

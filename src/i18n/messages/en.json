@@ -1288,6 +1288,7 @@
           "downloadReceipt": "Download receipt PDF",
           "downloadCombined": "Download invoice/receipt",
           "downloadReceiptAria": "Download the official tax receipt PDF for invoice {number}",
+          "downloadInvoiceAria": "Download the tax invoice PDF for invoice {number}",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -1300,7 +1301,12 @@
           "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
           "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
           "receiptForbidden": "You do not have access to this receipt.",
-          "receiptUnavailable": "Receipt PDF is not available right now. Please try again."
+          "receiptUnavailable": "Receipt PDF is not available right now. Please try again.",
+          "receiptSessionExpired": "Your session has expired. Please sign in again to download.",
+          "receiptRateLimited": "Too many download requests. Please wait a moment and try again.",
+          "invoiceForbidden": "You do not have access to this invoice.",
+          "invoiceNotFound": "Invoice not found.",
+          "invoiceUnavailable": "Invoice PDF is not available right now. Please try again."
         },
         "fields": {
           "memberId": "Member",

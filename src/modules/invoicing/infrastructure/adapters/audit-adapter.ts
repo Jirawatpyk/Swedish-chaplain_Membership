@@ -19,8 +19,17 @@ export const f4AuditAdapter: AuditPort = {
     event: F4AuditEvent & { tenantId: string; requestId: string | null },
   ): Promise<void> {
     // Null-tx means "emit standalone" — used by read-path cross-tenant
-    // probe audit where the outer path is read-only and we just want
-    // the trail. We still write with the app role, not BYPASSRLS.
+    // probe audit + receipt-download audit where the outer path is
+    // read-only and we just want the forensic trail. Falls back to
+    // the Drizzle root pool client (`db`), which runs as the Neon
+    // OWNER role (BYPASSRLS) — RLS does NOT apply on this code path.
+    // That's intentional: the tenantId is passed explicitly in the
+    // INSERT below, the audit_log table is append-only at the trigger
+    // level, and probe-audits MUST land regardless of session role
+    // (a hostile tenantless caller still needs their attempt logged).
+    // Tx-bound emits (mutation path) inherit `SET LOCAL ROLE
+    // chamber_app` from the caller's runInTenant so RLS applies there
+    // as Constitution Principle I clause 4 requires.
     const tx = (txUnknown as TenantTx | null) ?? db;
 
     const requestId = event.requestId ?? 'no-request-id';

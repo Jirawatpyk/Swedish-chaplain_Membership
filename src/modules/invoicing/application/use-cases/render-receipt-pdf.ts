@@ -203,9 +203,13 @@ export async function renderReceiptPdf(
       }
 
       const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${input.templateVersion}.pdf`;
+      // Round-3 fix R3-H3 — pass the input.templateVersion so v1
+      // receipt renders stay logo-free (byte-identical with whatever
+      // the v1 template would have produced).
       const tenantLogo = await loadTenantLogo(
         deps.blob,
         loaded.tenantIdentitySnapshot.logo_blob_key,
+        input.templateVersion,
       );
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
@@ -309,7 +313,15 @@ export async function renderReceiptPdf(
         // fails. Under sustained DB issues this can stack up beyond
         // the 3-retry budget without surfacing as
         // `pdf_render_permanently_failed`. Alert on any non-zero rate.
-        invoicingMetrics.receiptFailureMarkSuppressed();
+        // Round-3 fix R3-SF5 — guard the counter call; if the OTel
+        // exporter throws (cardinality bug, async dispatcher error)
+        // we MUST NOT mask the original render failure with a
+        // telemetry-side error. Best-effort only.
+        try {
+          invoicingMetrics.receiptFailureMarkSuppressed();
+        } catch {
+          /* OTel emit is best-effort; do not mask render error */
+        }
       }
       const code: RenderReceiptPdfError['code'] =
         e.error.kind === 'pdf_render_failed'

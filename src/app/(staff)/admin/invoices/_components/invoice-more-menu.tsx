@@ -36,6 +36,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
 
 export interface InvoiceMoreMenuProps {
   readonly invoiceId: string;
@@ -77,6 +78,7 @@ export function InvoiceMoreMenu({
   const [pendingVariant, setPendingVariant] = useState<
     'invoice' | 'receipt' | null
   >(null);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   const [downloadingReceipt, setDownloadingReceipt] = useState(false);
   const [recentlySent, setRecentlySent] = useState<{
     invoice: boolean;
@@ -109,48 +111,41 @@ export function InvoiceMoreMenu({
    * user sees `{"error":{...}}` text and has no path forward. The
    * fetch+blob pattern keeps the UI in control of the failure shape.
    */
+  const handleDownloadInvoice = async () => {
+    setDownloadingInvoice(true);
+    await downloadInvoice({
+      invoiceId,
+      fallbackFilename: `${documentNumber}.pdf`,
+      toasts: {
+        forbidden: t('toast.invoiceForbidden'),
+        notFound: t('toast.invoiceNotFound'),
+        unavailable: t('toast.invoiceUnavailable'),
+        sessionExpired: t('toast.receiptSessionExpired'),
+        rateLimited: t('toast.receiptRateLimited'),
+      },
+      toastWarning: (msg) => toast.warning(msg),
+      toastError: (msg) => toast.error(msg),
+    });
+    setDownloadingInvoice(false);
+  };
+
   const handleDownloadReceipt = async () => {
     setDownloadingReceipt(true);
-    try {
-      const res = await fetch(`/api/invoices/${invoiceId}/receipt/pdf`);
-      if (res.status === 200) {
-        const blob = await res.blob();
-        const cd = res.headers.get('Content-Disposition') ?? '';
-        // Extract filename from `attachment; filename="…"; filename*=UTF-8''…`
-        // — falls back to `${documentNumber}-receipt.pdf` if parsing fails.
-        const match = /filename="?([^"]+)"?/.exec(cd);
-        const filename = match?.[1] ?? `${documentNumber}-receipt.pdf`;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } else if (res.status === 425) {
-        toast.warning(t('toast.receiptPending'));
-      } else if (res.status === 502) {
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string; reason?: string };
-        };
-        if (body.error?.code === 'receipt_pdf_failed') {
-          toast.error(
-            t('toast.receiptFailed', { reason: body.error.reason ?? '' }),
-          );
-        } else {
-          toast.error(t('toast.receiptUnavailable'));
-        }
-      } else if (res.status === 403) {
-        toast.error(t('toast.receiptForbidden'));
-      } else {
-        toast.error(t('toast.receiptUnavailable'));
-      }
-    } catch {
-      toast.error(t('toast.receiptUnavailable'));
-    } finally {
-      setDownloadingReceipt(false);
-    }
+    await downloadReceipt({
+      invoiceId,
+      fallbackFilename: `${documentNumber}-receipt.pdf`,
+      toasts: {
+        pending: t('toast.receiptPending'),
+        failed: (reason) => t('toast.receiptFailed', { reason }),
+        forbidden: t('toast.receiptForbidden'),
+        unavailable: t('toast.receiptUnavailable'),
+        sessionExpired: t('toast.receiptSessionExpired'),
+        rateLimited: t('toast.receiptRateLimited'),
+      },
+      toastWarning: (msg) => toast.warning(msg),
+      toastError: (msg) => toast.error(msg),
+    });
+    setDownloadingReceipt(false);
   };
 
   const handleResend = (variant: 'invoice' | 'receipt') => {
@@ -232,19 +227,21 @@ export function InvoiceMoreMenu({
       <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
         {showDownload && (
           <DropdownMenuItem
-            render={(props) => (
-              <a
-                {...props}
-                href={`/api/invoices/${invoiceId}/pdf`}
-                target="_blank"
-                rel="noopener noreferrer"
-                download
-              >
-                <Download aria-hidden="true" />
-                {t('actions.download')}
-              </a>
+            disabled={downloadingInvoice}
+            onClick={handleDownloadInvoice}
+            data-testid="download-invoice-trigger"
+            aria-label={t('actions.downloadInvoiceAria', { number: documentNumber })}
+          >
+            {downloadingInvoice ? (
+              <Loader2
+                className="size-4 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Download aria-hidden="true" />
             )}
-          />
+            {t('actions.download')}
+          </DropdownMenuItem>
         )}
         {showDownloadReceipt && (
           <DropdownMenuItem

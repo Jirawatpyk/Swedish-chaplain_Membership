@@ -261,7 +261,11 @@ export async function issueInvoice(
     // Throws via `IssueInvoiceInternalError` on either failure so
     // `withTx` rolls back — sequence allocation is NOT consumed.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
-    const tenantLogo = await loadTenantLogo(deps.blob, tenantSnap.logo_blob_key);
+    const tenantLogo = await loadTenantLogo(
+      deps.blob,
+      tenantSnap.logo_blob_key,
+      deps.currentTemplateVersion,
+    );
     const rendered = await renderAndUploadPdf(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {

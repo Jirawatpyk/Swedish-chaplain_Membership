@@ -167,6 +167,8 @@ function makeDeps(
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
       withTx: vi.fn(async (_t, fn) => fn({})),
+      getForUpdateInTx: vi.fn(),
+      readSequencesInTx: vi.fn(async () => []),
     },
     pdfRender: {
       render: vi.fn(async () => ({

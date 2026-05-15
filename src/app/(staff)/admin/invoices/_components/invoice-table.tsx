@@ -26,9 +26,11 @@
  */
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
+import { toast } from 'sonner';
+import { AlertCircleIcon, InfoIcon, Loader2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -46,6 +48,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
 
 export type InvoicesTableRow = {
   readonly invoiceId: string;
@@ -166,6 +169,54 @@ export function InvoicesTable({
   showMethodColumn?: boolean;
 }) {
   const t = useTranslations('admin.invoices.list');
+  const tDetail = useTranslations('admin.invoices.detail');
+  // Track which row is currently downloading (invoice OR receipt) so
+  // we can show a per-row spinner. Single state bounds memory + avoids
+  // Map-as-state churn pattern. Format: `${variant}:${invoiceId}`.
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+
+  const handleRowDownloadInvoice = async (
+    invoiceId: string,
+    fallbackFilename: string,
+  ) => {
+    setDownloadingKey(`invoice:${invoiceId}`);
+    await downloadInvoice({
+      invoiceId,
+      fallbackFilename,
+      toasts: {
+        forbidden: tDetail('toast.invoiceForbidden'),
+        notFound: tDetail('toast.invoiceNotFound'),
+        unavailable: tDetail('toast.invoiceUnavailable'),
+        sessionExpired: tDetail('toast.receiptSessionExpired'),
+        rateLimited: tDetail('toast.receiptRateLimited'),
+      },
+      toastWarning: (msg) => toast.warning(msg),
+      toastError: (msg) => toast.error(msg),
+    });
+    setDownloadingKey(null);
+  };
+
+  const handleRowDownloadReceipt = async (
+    invoiceId: string,
+    fallbackFilename: string,
+  ) => {
+    setDownloadingKey(`receipt:${invoiceId}`);
+    await downloadReceipt({
+      invoiceId,
+      fallbackFilename,
+      toasts: {
+        pending: tDetail('toast.receiptPending'),
+        failed: (reason) => tDetail('toast.receiptFailed', { reason }),
+        forbidden: tDetail('toast.receiptForbidden'),
+        unavailable: tDetail('toast.receiptUnavailable'),
+        sessionExpired: tDetail('toast.receiptSessionExpired'),
+        rateLimited: tDetail('toast.receiptRateLimited'),
+      },
+      toastWarning: (msg) => toast.warning(msg),
+      toastError: (msg) => toast.error(msg),
+    });
+    setDownloadingKey(null);
+  };
   return (
     // Verify-fix U-I4 (2026-04-26): inset shadow on the right edge gives
     // mobile users a visual cue that the table scrolls horizontally
@@ -234,19 +285,24 @@ export function InvoicesTable({
                   </span>
                 ) : r.status === 'paid' ? (
                   // Paid + null = combined-mode (receipt reuses invoice
-                  // number). Show em-dash with a tooltip explaining
-                  // the legitimate reason so admin doesn't worry that
-                  // the receipt render failed.
+                  // number). Em-dash + Info icon → admin sees the
+                  // affordance on touch (no hover state needed) and
+                  // can long-press / focus to see the tooltip
+                  // explanation. Round-3 fix M-R2-05.
                   <TooltipProvider delay={200}>
                     <Tooltip>
                       <TooltipTrigger
                         render={(props) => (
                           <span
                             {...props}
-                            className="text-sm text-muted-foreground cursor-help"
+                            className="inline-flex items-center gap-1 text-sm text-muted-foreground cursor-help"
                             aria-label={t('receiptNumberCombinedAria')}
                           >
                             —
+                            <InfoIcon
+                              className="size-3 opacity-70"
+                              aria-hidden="true"
+                            />
                           </span>
                         )}
                       />
@@ -339,35 +395,65 @@ export function InvoicesTable({
                   return (
                     <div className="flex items-center justify-end gap-1">
                       {showInvoice && (
-                        <a
-                          href={`/api/invoices/${r.invoiceId}/pdf`}
+                        // Round-3 follow-up — invoice download now also
+                        // a button (parity with Receipt). Plain `<a>`
+                        // would leak 401/403/404/5xx as JSON-in-new-tab.
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRowDownloadInvoice(
+                              r.invoiceId,
+                              `${r.documentNumber ?? r.invoiceId}.pdf`,
+                            )
+                          }
+                          disabled={downloadingKey === `invoice:${r.invoiceId}`}
                           aria-label={`${t('actions.download')} — ${r.documentNumber ?? r.invoiceId}`}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),
-                            'min-h-11 px-3',
+                            'min-h-11 px-3 gap-1',
                           )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download
+                          data-testid="row-download-invoice"
                         >
+                          {downloadingKey === `invoice:${r.invoiceId}` && (
+                            <Loader2
+                              className="size-3 motion-safe:animate-spin"
+                              aria-hidden="true"
+                            />
+                          )}
                           {t('actions.download')}
-                        </a>
+                        </button>
                       )}
                       {r.hasReceiptPdf && (
-                        <a
-                          href={`/api/invoices/${r.invoiceId}/receipt/pdf`}
+                        // Round-3 fix R3-BUG1 — converted plain
+                        // `<a download>` to a button that uses the
+                        // shared fetch+blob helper. Plain anchor
+                        // would leak `{ "error": { "code": ... } }`
+                        // JSON into a new tab on 425 Too Early / 502
+                        // failed-render / 401 expired-session, etc.
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRowDownloadReceipt(
+                              r.invoiceId,
+                              `${r.receiptDocumentNumberRaw ?? r.documentNumber ?? r.invoiceId}-receipt.pdf`,
+                            )
+                          }
+                          disabled={downloadingKey === `receipt:${r.invoiceId}`}
                           aria-label={`${t('actions.downloadReceipt')} — ${r.receiptDocumentNumberRaw ?? r.documentNumber ?? r.invoiceId}`}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),
-                            'min-h-11 px-3',
+                            'min-h-11 px-3 gap-1',
                           )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          download
                           data-testid="row-download-receipt"
                         >
+                          {downloadingKey === `receipt:${r.invoiceId}` && (
+                            <Loader2
+                              className="size-3 motion-safe:animate-spin"
+                              aria-hidden="true"
+                            />
+                          )}
                           {t('actions.downloadReceipt')}
-                        </a>
+                        </button>
                       )}
                     </div>
                   );
