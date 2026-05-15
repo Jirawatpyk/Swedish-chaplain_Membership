@@ -282,8 +282,37 @@ async function confirmPaymentBody(
           invoiceId: payment.invoiceId,
         });
       }
-      // forbidden won't happen webhook-side (no actor); not_payable →
-      // handled by stale-invoice branch below (we re-derive via status).
+      // F5R1-E3 — explicit `forbidden` early-return.
+      // Pre-fix the comment said "forbidden won't happen webhook-side"
+      // and control fell through to the stale-refund branch where
+      // `invoiceStatus` resolved to `undefined` → auto-refund fired
+      // on a payment whose invoice we should not even know about.
+      // If F4 ever surfaces `forbidden` to a webhook-side caller (e.g.
+      // future F11 SaaS multi-tenant Connect events resolving an actor
+      // role into bridge calls), the fall-through would trigger an
+      // unrequested customer refund. Belt-and-suspenders: ack the
+      // webhook + log forensic, never auto-refund on a forbidden read.
+      if (invoiceResult.error.code === 'forbidden') {
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'payment_invoice_not_found',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Webhook arrived for invoice ${payment.invoiceId} that F4 refused (forbidden) — unexpected on webhook side; PI ${input.paymentIntentId}`,
+          payload: {
+            payment_intent_id: input.paymentIntentId,
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+          },
+          retentionYears: retentionFor('payment_invoice_not_found'),
+        });
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'invoice_not_found',
+          invoiceId: payment.invoiceId,
+        });
+      }
+      // not_payable → handled by stale-invoice branch below (we
+      // re-derive via status).
     }
 
     // Step 3 — stale invoice auto-refund.

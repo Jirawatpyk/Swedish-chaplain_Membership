@@ -16,7 +16,19 @@
  */
 
 export class WebhookSignatureError extends Error {
-  readonly kind: 'missing_header' | 'malformed' | 'bad_signature' | 'tampered_body';
+  readonly kind:
+    | 'missing_header'
+    | 'malformed'
+    | 'bad_signature'
+    | 'tampered_body'
+    /**
+     * F5R1-TY8 — Stripe webhook ≥5-min clock-skew rejection
+     * (data-model.md § 5.3). The Infrastructure class
+     * (`infrastructure/stripe/errors.ts`) has carried this variant
+     * for a while; aligning the Application port closes the declared-
+     * vs-thrown drift the F5R1 review flagged.
+     */
+    | 'clock_skew';
   constructor(kind: WebhookSignatureError['kind'], message: string) {
     super(message);
     this.name = 'WebhookSignatureError';
