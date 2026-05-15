@@ -19,6 +19,7 @@ import type { Metadata } from 'next';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 import {
   listInvoicesPaged,
   makeListInvoicesDeps,
@@ -159,8 +160,35 @@ export default async function PortalInvoicesPage({
       status: statusFilter,
     },
   );
-  const rawRows = invoicesResult.ok ? invoicesResult.value.rows : [];
-  const total = invoicesResult.ok ? invoicesResult.value.total : 0;
+
+  // R7-M3 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
+  // Empty fallback is indistinguishable from "no invoices" — members
+  // saw a clean empty state on backend failures (DB outage, RLS misconfig,
+  // repo bug). Now we log the error AND render an explicit error card
+  // with a retry affordance so operators see the diagnostic AND members
+  // know to retry instead of assuming their account is empty.
+  if (!invoicesResult.ok) {
+    logger.warn(
+      {
+        tenantId: tenantCtx.slug,
+        memberId: member.memberId,
+        err: invoicesResult.error,
+      },
+      '[portal-invoices-list] listInvoicesPaged failed — rendering error state',
+    );
+    return (
+      <TableContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">{t('loadFailed')}</p>
+          </CardContent>
+        </Card>
+      </TableContainer>
+    );
+  }
+  const rawRows = invoicesResult.value.rows;
+  const total = invoicesResult.value.total;
   // T109 — presentation-only overdue derivation (FR-028). Each row
   // carries a `displayStatus` that swaps `'issued'` for `'overdue'`
   // when Bangkok-today has passed dueDate. Audit emit is NOT done on
@@ -305,7 +333,19 @@ export default async function PortalInvoicesPage({
                             const showReceipt =
                               r.status === 'paid' &&
                               r.receiptPdfStatus === 'rendered';
-                            if (!showInvoice && !showReceipt && r.pdf === null) {
+                            // R7-M5 — async receipt-PDF gate. When the
+                            // receipt is mid-render (status pending/failed
+                            // /null on a paid invoice), surface a compact
+                            // "preparing" affordance alongside any visible
+                            // download button. Detail page already does
+                            // this; the list page previously showed only
+                            // the invoice button with no signal that the
+                            // legal §105ทวิ receipt is on its way.
+                            const receiptPending =
+                              r.status === 'paid' &&
+                              r.receiptPdfStatus !== null &&
+                              r.receiptPdfStatus !== 'rendered';
+                            if (!showInvoice && !showReceipt && !receiptPending && r.pdf === null) {
                               return <span className="text-sm text-muted-foreground">—</span>;
                             }
                             return (
@@ -357,6 +397,19 @@ export default async function PortalInvoicesPage({
                                       'min-h-11 px-3',
                                     )}
                                   />
+                                )}
+                                {receiptPending && (
+                                  <span
+                                    role="status"
+                                    aria-live="polite"
+                                    aria-busy="true"
+                                    className={cn(
+                                      buttonVariants({ variant: 'outline', size: 'sm' }),
+                                      'min-h-11 px-3 cursor-progress',
+                                    )}
+                                  >
+                                    {t('actions.receiptPreparing')}
+                                  </span>
                                 )}
                               </div>
                             );

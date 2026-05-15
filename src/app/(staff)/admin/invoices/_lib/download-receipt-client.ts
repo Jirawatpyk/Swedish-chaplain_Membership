@@ -31,7 +31,6 @@ export type ReceiptDownloadDeps = {
   readonly toasts: ReceiptDownloadToasts;
   readonly toastWarning: (msg: string) => void;
   readonly toastError: (msg: string) => void;
-  readonly toastSuccess?: () => void;
 };
 
 export type InvoiceDownloadToasts = {
@@ -48,7 +47,6 @@ export type InvoiceDownloadDeps = {
   readonly toasts: InvoiceDownloadToasts;
   readonly toastWarning: (msg: string) => void;
   readonly toastError: (msg: string) => void;
-  readonly toastSuccess?: () => void;
 };
 
 /** Admin invoice PDF download (`/api/invoices/[id]/pdf`). */
@@ -59,7 +57,6 @@ export function downloadInvoice(deps: InvoiceDownloadDeps): Promise<void> {
     toasts: deps.toasts,
     toastWarning: deps.toastWarning,
     toastError: deps.toastError,
-    ...(deps.toastSuccess !== undefined && { toastSuccess: deps.toastSuccess }),
   });
 }
 
@@ -71,6 +68,5 @@ export function downloadReceipt(deps: ReceiptDownloadDeps): Promise<void> {
     toasts: deps.toasts,
     toastWarning: deps.toastWarning,
     toastError: deps.toastError,
-    ...(deps.toastSuccess !== undefined && { toastSuccess: deps.toastSuccess }),
   });
 }

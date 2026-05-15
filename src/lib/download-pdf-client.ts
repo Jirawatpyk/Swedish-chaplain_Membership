@@ -58,13 +58,6 @@ export type PdfDownloadDeps = {
   readonly toasts: PdfDownloadToasts;
   readonly toastWarning: (msg: string) => void;
   readonly toastError: (msg: string) => void;
-  /**
-   * Optional happy-path callback. Fire if no `toast.loading` was shown
-   * upstream — guarantees the user sees a "Downloaded" feedback even
-   * on fast-cache hits where the loading toast (if any) would dismiss
-   * within sonner's animation window. R5-UX-M1.
-   */
-  readonly toastSuccess?: () => void;
 };
 
 /** RFC 5987-aware Content-Disposition filename parser. */
@@ -105,7 +98,6 @@ export async function downloadPdf(deps: PdfDownloadDeps): Promise<void> {
     toasts,
     toastWarning,
     toastError,
-    toastSuccess,
   } = deps;
   try {
     const res = await fetch(url);
@@ -125,7 +117,6 @@ export async function downloadPdf(deps: PdfDownloadDeps): Promise<void> {
       // R3-UX1 — defer revoke so iOS Safari + Android Chrome don't
       // cancel the download from synchronous revocation.
       setTimeout(() => URL.revokeObjectURL(objectUrl), 100);
-      toastSuccess?.();
       return;
     }
     if (res.status === 425 && toasts.pending) {

@@ -182,6 +182,16 @@ export async function getReceiptPdfSignedUrl(
     payload: {
       invoice_id: invoiceId,
       member_id: invoice.memberId,
+      // R7-L5 — surface actor_member_id for member-actor downloads so
+      // the F3 timeline filter / RD forensic SELECT can JOIN actor →
+      // members without re-resolving from actor_user_id. Symmetric
+      // with the cross-tenant probe emit shape. `null` for non-member
+      // actors (admin/manager) so the column stays opt-in for the
+      // member-timeline query.
+      actor_member_id:
+        input.actorRole === 'member'
+          ? (input.actorMemberId ?? null)
+          : null,
       receipt_document_number_raw: invoice.receiptDocumentNumberRaw,
       receipt_numbering_mode: combinedMode ? 'combined' : 'separate',
       // Round-4 fix R4-RD-H2 — surface the template version that

@@ -19,8 +19,24 @@ import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { tenantInvoiceSettings } from '../db';
 import { tenantDocumentSequences } from '../db/schema-tenant-document-sequences';
+
+/**
+ * Postgres lock-timeout-exceeded SQLSTATE. When `SET LOCAL
+ * lock_timeout` is in effect and a row/lock acquisition exceeds the
+ * window, PG raises this error code which propagates through Drizzle
+ * as a thrown exception with `.code === '55P03'`.
+ */
+const POSTGRES_LOCK_NOT_AVAILABLE = '55P03';
+
+/** Best-effort check for the Postgres lock-not-available SQLSTATE. */
+function isLockNotAvailable(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const maybeCode = (err as { code?: unknown }).code;
+  return maybeCode === POSTGRES_LOCK_NOT_AVAILABLE;
+}
 
 function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoiceSettingsView {
   return {
@@ -67,16 +83,39 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     // the read + the subsequent upsert. Caller MUST already be inside
     // `runInTenant` (RLS context set), passing the same `tx` handle
     // here that they'll feed to `upsert(..., tx)`.
+    //
+    // R7-M7 — added `SET LOCAL lock_timeout` parity with
+    // `readSequencesInTx`. Two admins editing settings concurrently
+    // serialise on this FOR UPDATE; without the timeout, a stuck
+    // first admin (slow PDF preview or browser tab paused) would
+    // block the second admin's save until Vercel's function-timeout
+    // window. 5s matches the sequences read; an exceeded budget
+    // raises `LockNotAvailable` so `withTx` rolls back atomically.
     const tx = txUnknown as TenantTx;
-    const rows = await tx
-      .select()
-      .from(tenantInvoiceSettings)
-      .where(eq(tenantInvoiceSettings.tenantId, tenantId))
-      .for('update')
-      .limit(1);
-    const row = rows[0];
-    if (!row) return null;
-    return rowToView(row);
+    await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
+    try {
+      const rows = await tx
+        .select()
+        .from(tenantInvoiceSettings)
+        .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+        .for('update')
+        .limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      return rowToView(row);
+    } catch (err) {
+      // R7-M2 — surface the stuck-lock signal to operators. Without
+      // this log, a LockNotAvailable would propagate up as a generic
+      // Result.err / 500 toast and we'd lose the "concurrent save
+      // contention" diagnostic.
+      if (isLockNotAvailable(err)) {
+        logger.warn(
+          { tenantId, op: 'getForUpdateInTx', timeoutMs: 5000 },
+          '[tenant-invoice-settings] lock_timeout exceeded on FOR UPDATE — rolling back tx',
+        );
+      }
+      throw err;
+    }
   },
 
   async readSequencesInTx(
@@ -115,21 +154,36 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     // `LockNotAvailable` exception that the surrounding `withTx`
     // rolls back atomically.
     await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
-    const rows = await tx
-      .select({
-        documentType: tenantDocumentSequences.documentType,
-        fiscalYear: tenantDocumentSequences.fiscalYear,
-        nextSequenceNumber: tenantDocumentSequences.nextSequenceNumber,
-      })
-      .from(tenantDocumentSequences)
-      .where(eq(tenantDocumentSequences.tenantId, tenantId))
-      .orderBy(tenantDocumentSequences.documentType, tenantDocumentSequences.fiscalYear)
-      .for('share');
-    return rows.map((r) => ({
-      documentType: r.documentType as 'invoice' | 'receipt' | 'credit_note',
-      fiscalYear: r.fiscalYear,
-      nextSequenceNumber: r.nextSequenceNumber,
-    }));
+    try {
+      const rows = await tx
+        .select({
+          documentType: tenantDocumentSequences.documentType,
+          fiscalYear: tenantDocumentSequences.fiscalYear,
+          nextSequenceNumber: tenantDocumentSequences.nextSequenceNumber,
+        })
+        .from(tenantDocumentSequences)
+        .where(eq(tenantDocumentSequences.tenantId, tenantId))
+        .orderBy(tenantDocumentSequences.documentType, tenantDocumentSequences.fiscalYear)
+        .for('share');
+      return rows.map((r) => ({
+        documentType: r.documentType as 'invoice' | 'receipt' | 'credit_note',
+        fiscalYear: r.fiscalYear,
+        nextSequenceNumber: r.nextSequenceNumber,
+      }));
+    } catch (err) {
+      // R7-M2 — surface the "stuck allocator" signal so operators can
+      // diagnose §87 prefix-flip contention against concurrent
+      // issuance. Without this log a `LockNotAvailable` would
+      // propagate up as a generic Result.err / 500 toast and we'd
+      // lose the operational fingerprint.
+      if (isLockNotAvailable(err)) {
+        logger.warn(
+          { tenantId, op: 'readSequencesInTx', timeoutMs: 5000 },
+          '[tenant-document-sequences] lock_timeout exceeded on FOR SHARE — allocator still holds FOR UPDATE; rolling back prefix-flip tx',
+        );
+      }
+      throw err;
+    }
   },
 
   async withTx<T>(tenantId: string, fn: (tx: unknown) => Promise<T>): Promise<T> {

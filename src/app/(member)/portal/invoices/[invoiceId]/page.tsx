@@ -274,6 +274,19 @@ export default async function PortalInvoiceDetailPage({
                 // Separate-mode + paid: surface BOTH — invoice (Tax
                 // Invoice) and receipt (Official Receipt) are distinct
                 // legal docs.
+                //
+                // R7-L4 — `receiptDocumentNumberRaw === null` is the
+                // canonical proxy for combined-mode on paid invoices.
+                // The numbering mode lives on `tenant_invoice_settings`
+                // (mutable per-tenant config); it is NOT mirrored onto
+                // the invoice row at issuance time. For PAID invoices,
+                // however, the proxy is unambiguous: separate-mode
+                // allocates the RC- number at `recordPayment`, so a
+                // paid invoice with NULL receipt-number can only be a
+                // combined-mode invoice. Adding a redundant
+                // `receiptNumberingMode` column would violate
+                // Principle X — the proxy is correct, just
+                // documented here.
                 const isCombinedPaid =
                   invoice.status === 'paid' &&
                   invoice.receiptDocumentNumberRaw === null;

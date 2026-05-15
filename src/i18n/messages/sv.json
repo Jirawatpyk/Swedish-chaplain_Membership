@@ -2580,7 +2580,8 @@
           "matchBreakdownTitle": "Matchningsöversikt",
           "errorRowsTitle": "Överhoppade rader ({count})",
           "errorRowLabel": "Rad {rowNumber}",
-          "noErrorRows": "Alla rader importerades utan fel."
+          "noErrorRows": "Alla rader importerades utan fel.",
+          "recordIdLabel": "Referens-ID"
         },
         "errors": {
           "networkErrorTitle": "Nätverksfel",
@@ -2970,6 +2971,7 @@
       "title": "Fakturor",
       "subtitle": "Ditt företags fakturor och skattekvitton.",
       "empty": "Inga fakturor ännu. Fakturor visas här när de utfärdas.",
+      "loadFailed": "Vi kunde inte ladda dina fakturor just nu. Uppdatera sidan eller försök igen om en stund.",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
       "loaded": "Fakturalistan laddad.",
       "columns": {
@@ -2987,6 +2989,7 @@
         "downloadReceipt": "Kvitto",
         "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
         "downloadCombined": "Faktura / kvitto",
+        "receiptPreparing": "Förbereder kvitto…",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
@@ -3556,6 +3559,8 @@
         },
         "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
         "downloadReceipt": "Ladda ner kvitto (PDF)",
+        "downloadInvoice": "Ladda ner faktura (PDF)",
+        "receiptPreparing": "Förbereder kvitto…",
         "viewAllInvoices": "Visa alla fakturor",
         "backToPortal": "Tillbaka till portalens startsida"
       }

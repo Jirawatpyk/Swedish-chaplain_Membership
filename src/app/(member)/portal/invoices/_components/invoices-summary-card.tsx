@@ -27,6 +27,7 @@ import Link from 'next/link';
 import { getTranslations, getLocale } from 'next-intl/server';
 import type { UserAccount } from '@/modules/auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import {
@@ -124,7 +125,32 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
     },
   );
 
-  const rows = invoicesResult.ok ? invoicesResult.value.rows : [];
+  // R7-M4 — was: `invoicesResult.ok ? value.rows : []` (silent fallback).
+  // Card showed "no invoices" copy on backend failures, identical to
+  // a member who actually had zero invoices. Now we log + render a
+  // distinct error variant so operators see the diagnostic.
+  if (!invoicesResult.ok) {
+    logger.warn(
+      {
+        tenantId: tenantCtx.slug,
+        memberId: member.memberId,
+        err: invoicesResult.error,
+      },
+      '[portal-invoices-summary] listInvoicesPaged failed — rendering error variant',
+    );
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('summary.heading')}</CardTitle>
+          <CardDescription>{t('summary.description')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-caption text-muted-foreground">{t('loadFailed')}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  const rows = invoicesResult.value.rows;
 
   return (
     <Card>

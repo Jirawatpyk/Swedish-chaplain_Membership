@@ -26,13 +26,12 @@ import { downloadPdf, type PdfDownloadDeps } from '@/lib/download-pdf-client';
 type Capture = {
   warnings: string[];
   errors: string[];
-  successes: number;
 };
 
 function makeDeps(
   overrides?: Partial<PdfDownloadDeps>,
 ): { deps: PdfDownloadDeps; capture: Capture } {
-  const capture: Capture = { warnings: [], errors: [], successes: 0 };
+  const capture: Capture = { warnings: [], errors: [] };
   const deps: PdfDownloadDeps = {
     url: 'https://example.test/api/invoices/inv-1/pdf',
     fallbackFilename: 'fallback.pdf',
@@ -47,9 +46,6 @@ function makeDeps(
     },
     toastWarning: (msg) => capture.warnings.push(msg),
     toastError: (msg) => capture.errors.push(msg),
-    toastSuccess: () => {
-      capture.successes++;
-    },
     ...overrides,
   };
   return { deps, capture };
@@ -128,7 +124,7 @@ describe('downloadPdf — happy path', () => {
     vi.restoreAllMocks();
   });
 
-  it('200 → blob URL, click anchor, defer revoke 100ms, fire toastSuccess', async () => {
+  it('200 → blob URL, click anchor, defer revoke 100ms', async () => {
     const blob = new Blob(['fake pdf bytes'], { type: 'application/pdf' });
     fetchSpy.mockResolvedValue(makeResponse(200, { body: blob }));
     const { deps, capture } = makeDeps();
@@ -143,8 +139,6 @@ describe('downloadPdf — happy path', () => {
     vi.advanceTimersByTime(100);
     expect(revokeObjectUrlSpy).toHaveBeenCalledTimes(1);
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith(FAKE_BLOB_URL);
-    // R5-UX-M1 — success callback fires on happy path.
-    expect(capture.successes).toBe(1);
     expect(capture.warnings).toEqual([]);
     expect(capture.errors).toEqual([]);
   });
@@ -222,7 +216,6 @@ describe('downloadPdf — error branches', () => {
     await downloadPdf(deps);
     expect(capture.warnings).toEqual(['pending-msg']);
     expect(capture.errors).toEqual([]);
-    expect(capture.successes).toBe(0);
   });
 
   it('425 → falls through to unavailable when toasts.pending is undefined (invoice variant)', async () => {

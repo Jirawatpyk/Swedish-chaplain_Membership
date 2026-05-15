@@ -1201,8 +1201,8 @@
           "new": "New invoice",
           "download": "Invoice",
           "downloadReceipt": "Receipt",
-          "downloadInvoiceAria": "Download tax invoice PDF for {number}",
-          "downloadReceiptAria": "Download tax receipt PDF for {number}",
+          "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
+          "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
@@ -2580,7 +2580,8 @@
           "matchBreakdownTitle": "Match breakdown",
           "errorRowsTitle": "Skipped rows ({count})",
           "errorRowLabel": "Row {rowNumber}",
-          "noErrorRows": "All rows imported cleanly — no errors to review."
+          "noErrorRows": "All rows imported cleanly — no errors to review.",
+          "recordIdLabel": "Reference ID"
         },
         "errors": {
           "networkErrorTitle": "Network error",
@@ -2970,6 +2971,7 @@
       "title": "Invoices",
       "subtitle": "Your company's invoices and tax receipts.",
       "empty": "No invoices yet. Invoices will appear here once issued.",
+      "loadFailed": "We couldn't load your invoices right now. Please refresh the page or try again in a moment.",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loaded": "Invoices list loaded.",
       "columns": {
@@ -2983,10 +2985,11 @@
       },
       "actions": {
         "download": "PDF",
-        "downloadInvoiceAria": "Download tax invoice PDF for {number}",
+        "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
         "downloadReceipt": "Receipt",
-        "downloadReceiptAria": "Download tax receipt PDF for {number}",
+        "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
         "downloadCombined": "Tax Invoice / Receipt",
+        "receiptPreparing": "Receipt preparing…",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
@@ -3556,6 +3559,8 @@
         },
         "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
         "downloadReceipt": "Download receipt PDF",
+        "downloadInvoice": "Download invoice PDF",
+        "receiptPreparing": "Receipt preparing…",
         "viewAllInvoices": "View all invoices",
         "backToPortal": "Back to portal home"
       }
