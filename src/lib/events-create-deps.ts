@@ -118,7 +118,10 @@ export async function runCreateEvent(
       deps,
     );
   } finally {
-    eventcreateMetrics.csvImportDurationSeconds(
+    // I1 (Round 1 — code-reviewer): use dedicated createEvent histogram
+    // so ~100ms admin-manual samples don't pollute the CSV-import SLO
+    // (SC-006 1k rows < 60s).
+    eventcreateMetrics.createEventDurationSeconds(
       input.tenantSlug,
       (Date.now() - startedAtMs) / 1000,
     );

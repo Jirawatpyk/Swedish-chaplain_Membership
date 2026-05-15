@@ -178,16 +178,16 @@ export interface ProcessAttendeeInTxInput {
      * F6.1 (Feature 013 · FR-009 dedicated-column population) — PDPA
      * consent classification per attendee. Populates the
      * `event_registrations.attendee_pdpa_consent_acknowledged` BOOLEAN
-     * column added by migration 0140. Tri-state:
-     *   - `true`  → admin/attendee acknowledged consent
-     *   - `false` → admin/attendee explicitly withdrew consent
-     *   - `null`  → unknown / not captured (default for webhook ingest +
-     *               generic-CSV rows that omit the consent column)
+     * column added by migration 0140.
      *
-     * Optional on the helper input to preserve backward-compat for the
-     * webhook ingest path (which does not yet carry PDPA consent).
+     * TYPE-D2 (Round 1 — type-design-analyzer): required + tri-state
+     * (no `undefined`). Callers explicitly pass `null` for "unknown"
+     * — webhook ingest, generic-CSV. `true`/`false` from EventCreate
+     * adapter's `classifyPdpaConsent`. Three states preserved end-
+     * to-end; the prior optional 4-state cardinality (undefined / null
+     * / true / false) was eliminated by `exactOptionalPropertyTypes`.
      */
-    readonly pdpaConsentAcknowledged?: boolean | null;
+    readonly pdpaConsentAcknowledged: boolean | null;
   };
 }
 

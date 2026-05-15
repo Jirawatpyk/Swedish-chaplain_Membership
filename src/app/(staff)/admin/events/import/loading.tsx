@@ -27,11 +27,26 @@ export default function CsvImportLoading() {
           <Skeleton className="h-6 w-40" />
           <Skeleton className="h-4 w-72" />
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex flex-col gap-6">
+          {/* UX-C-4 (Round 1) — EventPicker block renders ABOVE the
+              file input in CsvMappingForm. CLS-0 requires the
+              skeleton to match: label + combobox trigger (h-11) +
+              help text + refresh button row. */}
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-11 w-full rounded-md" />
+            <Skeleton className="h-3 w-80" />
+            <div className="flex flex-row gap-2">
+              <Skeleton className="h-9 w-36 rounded-md" />
+              <Skeleton className="h-9 w-9 rounded-md" />
+            </div>
+          </div>
           {/* File-input area shimmer */}
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-3 w-64" />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-3 w-64" />
+          </div>
           {/* Primary + secondary CTA pair — mirrors PreviewPanel
               `<Button>` layout (min-h-11 for WCAG 2.5.8 tap target)
               so CLS-0 holds when the loading state swaps for the

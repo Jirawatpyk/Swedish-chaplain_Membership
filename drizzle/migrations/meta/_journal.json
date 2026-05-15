@@ -1030,6 +1030,13 @@
 			"when": 1795075200000,
 			"tag": "0146_tenant_invoice_settings_receipt_prefix_constraints",
 			"breakpoints": true
+		},
+		{
+			"idx": 145,
+			"version": "7",
+			"when": 1795161600000,
+			"tag": "0145_events_source_allow_admin_manual",
+			"breakpoints": true
 		}
 	]
 }

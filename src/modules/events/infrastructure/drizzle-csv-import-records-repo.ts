@@ -74,7 +74,15 @@ export function makeDrizzleCsvImportRecordsRepository(
 
     async updateOutcome(input) {
       try {
-        await executor
+        // CR-5 (Round 1 — silent-failure-hunter): use `.returning()`
+        // to detect zero-rows-affected, which means the placeholder
+        // INSERT never landed (constraint violation, RLS denial, etc.).
+        // Previously the UPDATE silently returned `ok(undefined)`
+        // even when no row existed — admin saw a successful import
+        // but the import-history row was missing, breaking the
+        // FR-019c forensic invariant. Now: caller can distinguish
+        // updated-row from no-row-existed and decide on degradation.
+        const updated = await executor
           .update(csvImportRecords)
           .set({
             rowsTotal: input.rowsTotal,
@@ -92,7 +100,13 @@ export function makeDrizzleCsvImportRecordsRepository(
               eq(csvImportRecords.tenantId, input.tenantId),
               eq(csvImportRecords.recordId, input.recordId),
             ),
-          );
+          )
+          .returning({ recordId: csvImportRecords.recordId });
+        if (updated.length === 0) {
+          return err({
+            kind: 'not_found',
+          });
+        }
         return ok(undefined);
       } catch (e) {
         return err(wrapDbError(e));
@@ -134,9 +148,14 @@ export function makeDrizzleCsvImportRecordsRepository(
               eq(csvImportRecords.attendeeFingerprint, input.fingerprint),
               ne(csvImportRecords.eventId, input.currentEventId),
               gt(csvImportRecords.uploadedAt, input.since),
-              // Only surface imports that actually committed — drop
-              // placeholder rows or never-finalised rows.
-              sql`${csvImportRecords.outcome} = 'completed'`,
+              // I4 (Round 1 — silent-failure-hunter): include
+              // 'partial_failure' AND 'timeout' priors because both
+              // outcomes COMMIT rows (only the placeholder default
+              // 'unexpected_error' is the truly-never-ran sentinel
+              // to exclude). Previously dropping partial_failure +
+              // timeout silently made the FR-019b safety net miss
+              // the most common partial-commit scenario.
+              sql`${csvImportRecords.outcome} IN ('completed', 'partial_failure', 'timeout')`,
             ),
           )
           .orderBy(desc(csvImportRecords.uploadedAt));

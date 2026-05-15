@@ -2656,7 +2656,8 @@
               "unexpectedTitle": "Oväntat fel",
               "unexpectedDetail": "Något gick fel på vår sida. Försök igen; om det kvarstår, kontakta support."
             }
-          }
+          },
+          "filenameMatchHintWithScore": "Auto-föreslagen från filnamnet: {eventName} — {score}% matchning"
         },
         "eventMismatch": {
           "title": "Denna CSV kan tillhöra ett annat evenemang",

@@ -138,6 +138,32 @@ describe('T016 — Real EventCreate fixture integration on live Neon', () => {
     );
     expect(regs.length).toBe(result.summary.rowsProcessed);
 
+    // I6 (Round 1 — pr-test-analyzer): FR-009 end-to-end persistence
+    // verification. The Grant Thornton fixture has EventCreate format
+    // with "Personal Data Protection Consent" column, so at least
+    // some rows should have a non-NULL classification (true/false)
+    // per the F6.1 dedicated-column design (migration 0140 + T022).
+    // Generic-CSV rows would all be NULL — but this fixture is
+    // EventCreate format, so the column MUST surface tri-state data.
+    const pdpaTrue = regs.filter(
+      (r) => r.attendeePdpaConsentAcknowledged === true,
+    );
+    const pdpaFalse = regs.filter(
+      (r) => r.attendeePdpaConsentAcknowledged === false,
+    );
+    const pdpaNull = regs.filter(
+      (r) => r.attendeePdpaConsentAcknowledged === null,
+    );
+    // Sum equals total — every row classified into exactly one bucket.
+    expect(pdpaTrue.length + pdpaFalse.length + pdpaNull.length).toBe(
+      regs.length,
+    );
+    // F7 broadcast filter (WHERE attendee_pdpa_consent_acknowledged
+    // = true) MUST resolve to non-zero — otherwise compliance-
+    // marketing-opt-in is broken. The Grant Thornton fixture
+    // contains "I hereby acknowledge" rows.
+    expect(pdpaTrue.length).toBeGreaterThan(0);
+
     // csv_import_records finalised — outcome != 'unexpected_error' (placeholder default).
     const records = await db
       .select()

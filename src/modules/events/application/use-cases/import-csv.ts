@@ -156,6 +156,16 @@ export type ImportCsvOutcome =
       /** F6.1 — partial-import record still committed; admins can re-upload idempotently. */
       readonly recordId: CsvImportRecordId;
       readonly sourceFormat: CsvAdapterMode;
+      /**
+       * TYPE-D4 (Round 1 — type-design-analyzer): carry partial summary
+       * + errorCsvAvailable on the timeout path so admins are not blind
+       * to which rows committed. The DB-side `csv_import_records` row
+       * IS updated with `outcome='timeout'` + partial counts; this
+       * field exposes the same data to the route handler before US5
+       * history page ships.
+       */
+      readonly summary: ImportSummary;
+      readonly errorCsvAvailable: boolean;
     }
   | {
       /**
@@ -696,7 +706,12 @@ async function processBatch(
  */
 function recordAuditEmitFailure(
   tenantId: TenantId,
-  eventType: 'csv_import_row_failed' | 'csv_import_completed',
+  // CR-4 (Round 1) — widened union to include FR-019c override path
+  // so the metric label routes alerts correctly.
+  eventType:
+    | 'csv_import_row_failed'
+    | 'csv_import_completed'
+    | 'csv_import_event_mismatch_overridden',
   logEvent: string,
   logMessage: string,
   context: Readonly<Record<string, unknown>>,
@@ -847,6 +862,17 @@ export async function importCsv(
 
   const sourceFormat: CsvAdapterMode = parsed.value.format;
   const unknownColumns = parsed.value.unknownColumns;
+
+  // I2 (Round 1 — code-reviewer): emit the rollback-trigger signal
+  // per spec § Rollback Plan + SC-008. SRE watches:
+  //   rate(eventcreate_csv_adapter_mode_detected_total{format="generic_csv"})
+  // unexpectedly spike → EventCreate capitalization drifted, adapter
+  // silently falling through. Conversely an `eventcreate_csv` rate
+  // drop signals time to flip FEATURE_F6_EVENTCREATE_ADAPTER=false.
+  eventcreateMetrics.csvImportAdapterModeDetected(
+    input.tenantId,
+    sourceFormat,
+  );
 
   // F6.1 — Phase 2: collect rows from the async stream into an array.
   // SC-006 envelope is 1,000 rows; bench at 5,000 rows shows peak heap
@@ -1128,6 +1154,15 @@ export async function importCsv(
 
   // F6.1 — Phase 4d: update csv_import_records with final counts +
   // outcome + fingerprint + metadata.
+  //
+  // CR-5 (Round 1 — silent-failure-hunter): when the placeholder INSERT
+  // never landed (FK violation, RLS denial, pool exhaustion at Phase 2f),
+  // the UPDATE here would silently affect zero rows and return ok(undefined)
+  // — admins saw success but the import-history row was missing,
+  // breaking FR-019c forensic invariant. Repo now returns
+  // err({kind:'not_found'}) on zero-rows; recovery path: try to INSERT
+  // a fresh row with the final outcome (recovery from a lost placeholder).
+  let recordPersisted = true;
   try {
     const updateResult = await deps.withImportRecordsTx(
       input.tenantId,
@@ -1160,17 +1195,88 @@ export async function importCsv(
       },
     );
     if (!updateResult.ok) {
-      logger.error(
-        {
-          event: 'f6_csv_import_records_update_failed',
-          tenantId: input.tenantId,
-          recordId,
-          err: updateResult.error.kind,
-        },
-        '[F6.1] csv_import_records final-outcome update failed — placeholder row persists with stale unexpected_error outcome',
-      );
+      recordPersisted = false;
+      if (updateResult.error.kind === 'not_found') {
+        // CR-5 recovery — placeholder never landed; try a single
+        // INSERT with final counts. If THAT fails too the history row
+        // is permanently lost (admin still got their import; only
+        // the audit/history is degraded).
+        try {
+          const recoveryResult = await deps.withImportRecordsTx(
+            input.tenantId,
+            async (repo) => {
+              const ins = await repo.insert({
+                recordId,
+                tenantId: input.tenantId,
+                actorUserId: input.actorUserId,
+                eventId: input.selectedEvent.eventId,
+                sourceFormat,
+                originalFilename,
+                originalSizeBytes,
+              });
+              if (!ins.ok) return ins;
+              const upd = await repo.updateOutcome({
+                recordId,
+                tenantId: input.tenantId,
+                rowsTotal,
+                rowsProcessed: summary.rowsProcessed,
+                rowsAlreadyImported: summary.rowsAlreadyImported,
+                rowsSkipped: summary.rowsSkipped,
+                rowsFailed,
+                outcome: recordOutcome,
+                durationMs,
+                attendeeFingerprint,
+                eventcreateAdapterMetadata,
+              });
+              return upd;
+            },
+          );
+          if (recoveryResult.ok) {
+            recordPersisted = true;
+            logger.warn(
+              {
+                event: 'f6_csv_import_records_recovery_succeeded',
+                tenantId: input.tenantId,
+                recordId,
+              },
+              '[F6.1] csv_import_records placeholder was lost; recovery INSERT succeeded — history row now reflects final outcome',
+            );
+          } else {
+            logger.error(
+              {
+                event: 'f6_csv_import_records_recovery_failed',
+                tenantId: input.tenantId,
+                recordId,
+                err: recoveryResult.error.kind,
+              },
+              '[F6.1] csv_import_records recovery INSERT also failed — import-history row permanently lost; rows committed are still safe',
+            );
+          }
+        } catch (recoveryErr) {
+          logger.error(
+            {
+              event: 'f6_csv_import_records_recovery_threw',
+              tenantId: input.tenantId,
+              recordId,
+              err: recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr),
+            },
+            '[F6.1] csv_import_records recovery INSERT threw',
+          );
+        }
+      } else {
+        logger.error(
+          {
+            event: 'f6_csv_import_records_update_failed',
+            tenantId: input.tenantId,
+            recordId,
+            err: updateResult.error.kind,
+          },
+          '[F6.1] csv_import_records final-outcome update failed — placeholder row persists with stale unexpected_error outcome',
+        );
+      }
     }
   } catch (e) {
+    recordPersisted = false;
     logger.error(
       {
         event: 'f6_csv_import_records_update_threw',
@@ -1181,6 +1287,7 @@ export async function importCsv(
       '[F6.1] csv_import_records final-outcome update threw',
     );
   }
+  void recordPersisted; // CR-5 informational flag; future US5 history
 
   // F6.1 — Phase 4e: emit per-import `csv_import_completed` audit on
   // both completed AND timeout paths with `sourceFormat` extension.
@@ -1201,7 +1308,26 @@ export async function importCsv(
   });
 
   if (timeBudgetExceeded) {
-    return { kind: 'timeout', recordId, sourceFormat };
+    return {
+      kind: 'timeout',
+      recordId,
+      sourceFormat,
+      // TYPE-D4 (Round 1) — partial summary surfaced so admins +
+      // route handler aren't blind to which rows committed.
+      summary: {
+        rowsTotal,
+        rowsProcessed: summary.rowsProcessed,
+        rowsAlreadyImported: summary.rowsAlreadyImported,
+        rowsSkipped: summary.rowsSkipped,
+        rowsFailed,
+        eventsCreated: summary.eventsCreated,
+        eventsUpdated: summary.eventsUpdated,
+        matchCounts: summary.matchCounts,
+        errorRows: summary.errorRows,
+        durationMs,
+      },
+      errorCsvAvailable,
+    };
   }
 
   return {
@@ -1279,33 +1405,33 @@ async function safeEmitMismatchOverride(
       },
     });
     if (!result.ok) {
-      eventcreateMetrics.csvImportAuditEmitFailed(
+      // CR-4 (Round 1 — silent-failure-hunter): tag the metric with
+      // the actual failing audit type so SRE dashboards alert on
+      // FR-019c override-emit failures separately from per-import +
+      // per-row emit failures.
+      recordAuditEmitFailure(
         input.tenantId,
-        'csv_import_completed',
-      );
-      logger.error(
+        'csv_import_event_mismatch_overridden',
+        'f6_csv_mismatch_override_audit_emit_failed',
+        '[F6.1] csv_import_event_mismatch_overridden audit emit failed — proceeding with import; override forensic trail at risk',
         {
-          event: 'f6_csv_mismatch_override_audit_emit_failed',
-          tenantId: input.tenantId,
           recordId,
-          err: result.error.kind,
+          priorImportsCount: priorImports.length,
+          auditErrKind: result.error.kind,
         },
-        '[F6.1] csv_import_event_mismatch_overridden audit emit failed — proceeding with import; override is logged via stderr',
       );
     }
   } catch (e) {
-    eventcreateMetrics.csvImportAuditEmitFailed(
+    recordAuditEmitFailure(
       input.tenantId,
-      'csv_import_completed',
-    );
-    logger.error(
+      'csv_import_event_mismatch_overridden',
+      'f6_csv_mismatch_override_audit_emit_threw',
+      '[F6.1] csv_import_event_mismatch_overridden audit emitter threw',
       {
-        event: 'f6_csv_mismatch_override_audit_emit_threw',
-        tenantId: input.tenantId,
         recordId,
+        priorImportsCount: priorImports.length,
         err: e instanceof Error ? e.message : String(e),
       },
-      '[F6.1] csv_import_event_mismatch_overridden audit emitter threw',
     );
   }
 }

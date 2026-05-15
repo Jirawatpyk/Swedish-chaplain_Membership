@@ -2656,7 +2656,8 @@
               "unexpectedTitle": "เกิดข้อผิดพลาด",
               "unexpectedDetail": "เกิดความผิดพลาดขึ้นทางเซิร์ฟเวอร์ กรุณาลองใหม่ หากยังพบให้แจ้งทีมสนับสนุน"
             }
-          }
+          },
+          "filenameMatchHintWithScore": "เสนอจากชื่อไฟล์: {eventName} — ตรง {score}%"
         },
         "eventMismatch": {
           "title": "CSV นี้อาจเป็นของอีเวนต์อื่น",

@@ -2656,7 +2656,8 @@
               "unexpectedTitle": "Unexpected error",
               "unexpectedDetail": "Something went wrong on our side. Please retry; if it persists, contact support."
             }
-          }
+          },
+          "filenameMatchHintWithScore": "Auto-suggested from filename: {eventName} — {score}% match"
         },
         "eventMismatch": {
           "title": "This CSV may belong to a different event",

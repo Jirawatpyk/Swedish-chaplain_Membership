@@ -139,7 +139,9 @@ export const F6_AUDIT_EVENT_TYPES = [
   // F6.1 (Feature 013 · T026 full impl) — admin-manual event creation
   // event. Emitted by `createEvent` use-case when an admin uses the
   // inline-create modal on /admin/events/import. Backed by migration
-  // 0143 enum extension. Severity: 'info' — accountability trail for
+  // 0144 enum extension (I7 Round 1 fix — was incorrectly cited as
+  // 0143 which is the unrelated F4 receipt_pdf_downloaded migration).
+  // Severity: 'info' — accountability trail for
   // who seeded which event manually (webhook ingest cannot fire this
   // because the upsert path emits no such event — manual creation is
   // the ONLY surface that fires `event_created`).

@@ -2787,6 +2787,47 @@ export const eventcreateMetrics = {
   },
 
   /**
+   * I1 (Round 1 — code-reviewer): dedicated histogram for the admin-
+   * manual createEvent path so its ~100ms samples don't pollute the
+   * CSV-import SLO histogram (SC-006 1k rows < 60s). Separate metric
+   * keeps p95 alerts on each path independent.
+   */
+  createEventDurationSeconds(tenantId: string, durationSeconds: number): void {
+    safeMetric(() => {
+      histogram(
+        'f6_create_event_duration_seconds',
+        'F6.1 admin-manual createEvent route end-to-end duration (T026)',
+        's',
+      ).record(durationSeconds, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * I2 (Round 1 — code-reviewer): rollback-trigger signal per spec
+   * § Rollback Plan + SC-008. Emitted ONCE per CSV import at parse-
+   * time after `parseStreamWithFormat` resolves the adapter mode.
+   * SRE alerts on:
+   *   `rate(eventcreate_csv_adapter_mode_detected_total{format="generic_csv"})`
+   * unexpectedly spiking — signal that EventCreate capitalization
+   * drifted and the adapter is silently falling through.
+   *
+   * Conversely an unexpected `eventcreate_csv` rate drop signals the
+   * feature flag should flip OFF (or EventCreate's export schema
+   * broke the header-presence check).
+   */
+  csvImportAdapterModeDetected(
+    tenantId: string,
+    format: 'eventcreate_csv' | 'generic_csv',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_adapter_mode_detected_total',
+        'F6.1 CSV adapter format detection counter by mode (FR-001 / Spec § Rollback Plan)',
+      ).add(1, { tenant: tenantId, format });
+    });
+  },
+
+  /**
    * T095 Phase 7 — CSV-import Upstash fail-open counter. Emitted when
    * the rate-limit check falls back to the process-local in-memory
    * bucket (same fail-open semantics as `rateLimitFallback`).
@@ -2808,7 +2849,19 @@ export const eventcreateMetrics = {
    * level (or per-import) audit gap that no other surface can
    * reconstruct.
    */
-  csvImportAuditEmitFailed(tenantId: string, eventType: string): void {
+  csvImportAuditEmitFailed(
+    tenantId: string,
+    // CR-4 (Round 1 — silent-failure-hunter): extended label union so
+    // SRE dashboards distinguish per-import / per-row / FR-019c
+    // override / event_created audit-emit failures. Previously a
+    // mismatch-override emit failure was mislabelled as
+    // 'csv_import_completed', misrouting alerts.
+    eventType:
+      | 'csv_import_completed'
+      | 'csv_import_row_failed'
+      | 'csv_import_event_mismatch_overridden'
+      | 'event_created',
+  ): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_import_audit_emit_failed_total',

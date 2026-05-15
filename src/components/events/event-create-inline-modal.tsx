@@ -163,38 +163,36 @@ export function EventCreateInlineModal(
       return;
     }
 
-    if (res.status === 201 || res.status === 200) {
-      let body: { event?: CreatedEvent; kind?: string };
-      try {
-        body = (await res.json()) as { event?: CreatedEvent; kind?: string };
-      } catch {
-        body = {};
-      }
-      if (body.event) {
-        if (body.kind === 'already_exists') {
-          toast.info(t('alreadyExistsToast'), {
-            description: t('alreadyExistsToastDesc', {
-              externalId: body.event.externalId,
-            }),
-          });
-        } else {
-          toast.success(t('createdToast'), {
-            description: t('createdToastDesc', { name: body.event.name }),
-          });
-        }
-        props.onCreated?.(body.event);
-        handleClose();
-        return;
-      }
-    }
-
-    // Error paths.
-    let body: Record<string, unknown>;
+    // S5 (Round 1 — code-simplifier): parse body ONCE before branching.
+    // Previously double-parsed via `res.json()` for success path then
+    // again for error path — second call against an already-consumed
+    // body throws TypeError, masked by `catch { body = {} }`, hiding
+    // real malformed-response bugs.
+    let body: Record<string, unknown> = {};
     try {
       body = (await res.json()) as Record<string, unknown>;
     } catch {
       body = {};
     }
+    const created = body['event'] as CreatedEvent | undefined;
+    if ((res.status === 201 || res.status === 200) && created) {
+      if (body['kind'] === 'already_exists') {
+        toast.info(t('alreadyExistsToast'), {
+          // UX-I4 (Round 1) — show event name (user-friendly) rather
+          // than `externalId` (technical DB concept) per ux-standards
+          // § 14 plain-language requirement.
+          description: t('alreadyExistsToastDesc', { name: created.name }),
+        });
+      } else {
+        toast.success(t('createdToast'), {
+          description: t('createdToastDesc', { name: created.name }),
+        });
+      }
+      props.onCreated?.(created);
+      handleClose();
+      return;
+    }
+
     if (res.status === 400) {
       setServerError({
         title: t('errors.validationTitle'),
@@ -326,9 +324,15 @@ export function EventCreateInlineModal(
               {...register('category')}
               placeholder={t('fields.categoryPlaceholder')}
               aria-invalid={errors.category !== undefined}
+              aria-describedby={
+                errors.category !== undefined
+                  ? `${categoryId}-error`
+                  : undefined
+              }
             />
             {errors.category ? (
               <p
+                id={`${categoryId}-error`}
                 className="text-caption text-destructive"
                 aria-live="polite"
               >

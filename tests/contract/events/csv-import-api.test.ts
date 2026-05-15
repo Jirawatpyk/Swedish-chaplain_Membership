@@ -28,6 +28,7 @@ import { NextRequest } from 'next/server';
 
 const runImportCsvMock = vi.fn();
 const csvImportRateLimitCheckMock = vi.fn();
+const lookupEventByIdTimingSafeMock = vi.fn();
 const getCurrentSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
 const emitStandaloneMock = vi.fn();
@@ -36,6 +37,10 @@ vi.mock('@/lib/events-csv-import-deps', () => ({
   runImportCsv: (...args: unknown[]) => runImportCsvMock(...args),
   csvImportRateLimitCheck: (...args: unknown[]) =>
     csvImportRateLimitCheckMock(...args),
+  // F6.1 (Round 1 Phase B): added by T023 — route now performs a
+  // timing-safe event lookup BEFORE dispatch.
+  lookupEventByIdTimingSafe: (...args: unknown[]) =>
+    lookupEventByIdTimingSafeMock(...args),
 }));
 
 vi.mock('@/lib/auth-session', () => ({
@@ -103,6 +108,19 @@ beforeEach(() => {
     resetAtUnixMs: Date.now() + 3_600_000,
   });
   emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
+  // F6.1 (Round 1 Phase B): default mock returns 'found' so Phase 7
+  // outcome tests reach the use-case dispatch path. Individual tests
+  // override for not_found / wrong_tenant scenarios.
+  lookupEventByIdTimingSafeMock.mockResolvedValue({
+    kind: 'found',
+    event: {
+      eventId: '11111111-2222-4333-8444-555555555555',
+      externalId: 'event-iso',
+      name: 'Phase 7 Test Event',
+      startDate: new Date('2026-06-21T18:00:00+07:00'),
+      category: null,
+    },
+  });
 });
 
 afterEach(() => {
@@ -202,6 +220,20 @@ function buildRequest(opts: BuildRequestOpts = {}): NextRequest {
     parts.push(enc.encode(opts.csvBody ?? VALID_CSV));
     parts.push(enc.encode('\r\n'));
   }
+  // F6.1 (Round 1 Phase B): route now requires `event_id` form field.
+  // Phase 7 tests must include a valid UUID + a successful
+  // `lookupEventByIdTimingSafe` mock for the use-case mocks to run.
+  parts.push(
+    enc.encode(
+      [
+        `--${boundary}`,
+        'Content-Disposition: form-data; name="event_id"',
+        '',
+        '11111111-2222-4333-8444-555555555555',
+        '',
+      ].join('\r\n'),
+    ),
+  );
   parts.push(enc.encode(`--${boundary}--\r\n`));
   const totalLength = parts.reduce((n, p) => n + p.byteLength, 0);
   const body = new Uint8Array(totalLength);
@@ -256,19 +288,21 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
 
       expect(res.status).toBe(200);
       const body = (await res.json()) as Record<string, unknown>;
-      expect(body['rowsProcessed']).toBe(95);
-      expect(body['rowsAlreadyImported']).toBe(5);
-      expect(body['eventsCreated']).toBe(3);
-      expect(body['eventsUpdated']).toBe(2);
-      expect(body['matchCounts']).toEqual({
+      // F6.1 envelope wraps summary under `body.summary`.
+      const summary = body['summary'] as Record<string, unknown>;
+      expect(summary['rowsProcessed']).toBe(95);
+      expect(summary['rowsAlreadyImported']).toBe(5);
+      expect(summary['eventsCreated']).toBe(3);
+      expect(summary['eventsUpdated']).toBe(2);
+      expect(summary['matchCounts']).toEqual({
         member_contact: 50,
         member_domain: 20,
         member_fuzzy: 15,
         non_member: 8,
         unmatched: 7,
       });
-      expect(body['errorRows']).toEqual([]);
-      expect(body['durationMs']).toBe(12_345);
+      expect(summary['errorRows']).toEqual([]);
+      expect(summary['durationMs']).toBe(12_345);
     });
 
     it('still 200 when some rows failed — errorRows[] surfaces row numbers + reasons', async () => {
@@ -299,8 +333,11 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       const res = await POST(buildRequest());
 
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { errorRows: unknown[] };
-      expect(body.errorRows).toHaveLength(3);
+      // F6.1 envelope wraps summary under `body.summary`.
+      const body = (await res.json()) as {
+        summary: { errorRows: unknown[] };
+      };
+      expect(body.summary.errorRows).toHaveLength(3);
     });
   });
 

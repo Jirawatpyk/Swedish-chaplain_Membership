@@ -61,18 +61,20 @@ export interface CreateEventInput {
   readonly category: string | null;
 }
 
+/**
+ * TYPE-D8 (Round 1 — type-design-analyzer): `eventCreated: boolean` was
+ * redundant — the `CreateEventOutcome` discriminator (`kind: 'created'`
+ * vs `'already_exists'`) already encodes the same information, and a
+ * future bug could drift the two (e.g., emit `kind:'already_exists',
+ * event:{eventCreated:true}`). Dropping the field eliminates the drift
+ * surface entirely.
+ */
 export interface CreateEventOutput {
   readonly eventId: EventId;
   readonly externalId: string;
   readonly name: string;
   readonly startDate: Date;
   readonly category: string | null;
-  /**
-   * TRUE if a fresh row was inserted; FALSE on idempotent retry.
-   * The route handler maps both to 201 / 200 respectively (200 OK on
-   * dedupe gives admin clear "already exists" signal).
-   */
-  readonly eventCreated: boolean;
 }
 
 export type CreateEventOutcome =
@@ -216,11 +218,17 @@ export async function createEvent(
         }
       }
       return ok({
-        eventId: event.eventId,
-        externalId: trimmedExternalId,
-        name: trimmedName,
-        startDate: event.startDate,
-        category: event.category,
+        // TYPE-D8: discriminator carries the created/exists info; the
+        // boolean is computed once here, attached to a private tuple
+        // so the caller can switch on it without polluting the public
+        // `CreateEventOutput` shape.
+        event: {
+          eventId: event.eventId,
+          externalId: trimmedExternalId,
+          name: trimmedName,
+          startDate: event.startDate,
+          category: event.category,
+        },
         eventCreated: upsert.value.eventCreated,
       });
     });
@@ -235,8 +243,8 @@ export async function createEvent(
             : `events.upsert rejected: ${e.kind}`;
       return { kind: 'db_error', message };
     }
-    const output = result.value;
-    return output.eventCreated
+    const { event: output, eventCreated } = result.value;
+    return eventCreated
       ? { kind: 'created', event: output }
       : { kind: 'already_exists', event: output };
   } catch (e) {

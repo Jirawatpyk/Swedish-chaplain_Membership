@@ -18,8 +18,8 @@
  *   - Keyboard nav: ArrowUp/Down/Enter/Escape inherited from `cmdk`.
  *   - aria-live announces the fuzzy-match hint when filename changes.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslations, useFormatter } from 'next-intl';
 import { Check, ChevronsUpDown, Plus, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -94,14 +94,24 @@ function sorensenDice(a: string, b: string): number {
 }
 
 /**
- * Returns the eventId of the best-matching event for the given filename,
- * or null if no event scores ≥0.65 (FR-004 threshold). The filename is
- * normalised (extension stripped, hyphens → spaces) before matching.
+ * Returns the best-matching event + its similarity score for the given
+ * filename, or null if no event scores ≥0.65 (FR-004 threshold). The
+ * filename is normalised (extension stripped, hyphens → spaces) before
+ * matching.
+ *
+ * UX-I3 (Round 1): score now surfaced so the UI can render confidence
+ * ("Auto-suggested from filename — 92% match") and admins can decide
+ * whether to trust the suggestion at-a-glance.
  */
+export interface FilenameSuggestion {
+  readonly event: EventPickerOption;
+  readonly score: number; // 0..1
+}
+
 export function suggestEventFromFilename(
   filename: string,
   events: ReadonlyArray<EventPickerOption>,
-): EventPickerOption | null {
+): FilenameSuggestion | null {
   const stripped = filename
     .replace(/\.[^.]+$/, '')
     .replace(/[_-]+/g, ' ')
@@ -115,7 +125,7 @@ export function suggestEventFromFilename(
       bestEvent = event;
     }
   }
-  return bestEvent;
+  return bestEvent === null ? null : { event: bestEvent, score: bestScore };
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +134,12 @@ export function suggestEventFromFilename(
 
 export function EventPicker(props: EventPickerProps): React.JSX.Element {
   const t = useTranslations('admin.events.import.eventPicker');
+  // UX-C-2 (Round 1 — enterprise-ux-designer): use next-intl
+  // `useFormatter` so dates render in the user's session locale, not
+  // the browser locale. Avoids the th-TH (BE) vs en-US (CE) mix on
+  // pages where some surfaces use locale-aware formatters and others
+  // don't.
+  const formatter = useFormatter();
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<ReadonlyArray<EventPickerOption>>(
     props.events ?? [],
@@ -131,20 +147,21 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch events list on mount (if not provided via props).
-  useEffect(() => {
-    if (props.events !== undefined) return;
-    let cancelled = false;
-    const load = async () => {
+  // UX-I2 (Round 1) — single shared loader for both initial mount and
+  // refresh button. Previously duplicated ~30 LOC of fetch+normalize.
+  // `cancelled` flag protects unmount race; setError(null) before fetch
+  // clears stale errors on retry.
+  const loadEvents = useCallback(
+    async (signal: { cancelled: boolean }): Promise<void> => {
       setLoading(true);
       setError(null);
       try {
-        // Page size 100 covers SweCham's typical ~12-event-per-year cadence
-        // with headroom. Pagination affordance is deferred to v1.x —
-        // chambers with >100 events need a search query upstream.
+        // Page size 100 covers SweCham's typical ~12-event-per-year
+        // cadence with headroom. Pagination affordance is deferred to
+        // v1.x — chambers with >100 events need a search query upstream.
         const res = await fetch('/api/admin/events?pageSize=100');
         if (!res.ok) {
-          setError(t('loadErrorDetail'));
+          if (!signal.cancelled) setError(t('loadErrorDetail'));
           return;
         }
         const body = (await res.json()) as {
@@ -166,19 +183,30 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             name: e.name,
             startDate: e.startDate,
           }));
-        if (!cancelled) setEvents(normalised);
-      } catch {
-        if (!cancelled) setError(t('loadErrorDetail'));
+        if (!signal.cancelled) setEvents(normalised);
+      } catch (e) {
+        // S-1 (Round 1 — silent-failure-hunter): preserve console
+        // diagnostic for dev so "why isn't my picker loading?" is
+        // debuggable without breakpoints.
+        // eslint-disable-next-line no-console
+        console.error('[F6.1] event-picker fetch failed', e);
+        if (!signal.cancelled) setError(t('loadErrorDetail'));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!signal.cancelled) setLoading(false);
       }
-    };
-    void load();
+    },
+    [t],
+  );
+
+  // Fetch events list on mount (if not provided via props).
+  useEffect(() => {
+    if (props.events !== undefined) return;
+    const signal = { cancelled: false };
+    void loadEvents(signal);
     return () => {
-      cancelled = true;
+      signal.cancelled = true;
     };
-    // `t` is from `useTranslations` — stable across renders by next-intl.
-  }, [props.events, t]);
+  }, [props.events, loadEvents]);
 
   const selected = useMemo(
     () => events.find((e) => e.eventId === props.value) ?? null,
@@ -186,13 +214,15 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   );
 
   // Compute filename-hint suggestion when the upload's filename changes.
-  const suggestedEvent = useMemo(
+  const suggestion = useMemo(
     () =>
       props.filenameHint
         ? suggestEventFromFilename(props.filenameHint, events)
         : null,
     [props.filenameHint, events],
   );
+  const suggestedEvent = suggestion?.event ?? null;
+  const suggestionScore = suggestion?.score ?? 0;
 
   // Auto-apply suggestion ONCE per filename change when no event is
   // currently selected — admin can still pick a different one.
@@ -226,7 +256,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             >
               <span className="truncate">
                 {selected !== null
-                  ? `${selected.name} — ${new Date(selected.startDate).toLocaleDateString()}`
+                  ? `${selected.name} — ${formatter.dateTime(new Date(selected.startDate), { dateStyle: 'medium' })}`
                   : loading
                     ? t('loading')
                     : t('placeholder')}
@@ -273,7 +303,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                     <div className="flex flex-col">
                       <span>{event.name}</span>
                       <span className="text-caption text-muted-foreground">
-                        {new Date(event.startDate).toLocaleDateString()}
+                        {formatter.dateTime(new Date(event.startDate), { dateStyle: 'medium' })}
                       </span>
                     </div>
                   </CommandItem>
@@ -302,39 +332,13 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           variant="ghost"
           size="sm"
           onClick={() => {
-            // Force a refetch by clearing + re-fetching. The useEffect
-            // reads `props.events`; if absent, it fetches.
+            // UX-I2 (Round 1) — reuse shared `loadEvents` instead of
+            // duplicating fetch+normalise logic. Resets `error` to
+            // null automatically and respects unmount via the same
+            // cancelled-signal pattern.
+            const signal = { cancelled: false };
             setEvents([]);
-            setLoading(true);
-            void fetch('/api/admin/events?pageSize=100')
-              .then(async (res) => {
-                if (!res.ok) {
-                  setError(t('loadErrorDetail'));
-                  return;
-                }
-                const body = (await res.json()) as {
-                  events?: ReadonlyArray<{
-                    eventId?: string;
-                    name?: string;
-                    startDate?: string;
-                  }>;
-                };
-                const normalised = (body.events ?? [])
-                  .filter(
-                    (e): e is EventPickerOption =>
-                      typeof e.eventId === 'string' &&
-                      typeof e.name === 'string' &&
-                      typeof e.startDate === 'string',
-                  )
-                  .map((e) => ({
-                    eventId: e.eventId,
-                    name: e.name,
-                    startDate: e.startDate,
-                  }));
-                setEvents(normalised);
-              })
-              .catch(() => setError(t('loadErrorDetail')))
-              .finally(() => setLoading(false));
+            void loadEvents(signal);
           }}
           className="min-h-9"
           aria-label={t('refreshAriaLabel')}
@@ -348,7 +352,13 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           className="text-caption text-muted-foreground"
           aria-live="polite"
         >
-          {t('filenameMatchHint', { eventName: suggestedEvent.name })}
+          {/* UX-I3 (Round 1) — surface confidence so admins can decide
+              whether to trust the suggestion at-a-glance. Score is
+              displayed as integer percent (e.g. "92% match"). */}
+          {t('filenameMatchHintWithScore', {
+            eventName: suggestedEvent.name,
+            score: Math.round(suggestionScore * 100),
+          })}
         </p>
       ) : null}
     </div>

@@ -18,7 +18,7 @@
  *   - WCAG 2.5.8 target size: buttons inherit `min-h-11` from primitives.
  */
 import { useId } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useFormatter } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
 import {
   AlertDialog,
@@ -57,6 +57,9 @@ export function EventMismatchWarningDialog(
   props: EventMismatchWarningDialogProps,
 ): React.JSX.Element {
   const t = useTranslations('admin.events.import.eventMismatch');
+  // UX-C-2 (Round 1) — locale-aware date/time via next-intl, not
+  // `Date.prototype.toLocaleString()` which uses browser locale.
+  const formatter = useFormatter();
   const describedById = useId();
   return (
     <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
@@ -90,7 +93,10 @@ export function EventMismatchWarningDialog(
                   </span>
                   <span className="text-caption text-muted-foreground">
                     {t('priorImportRow', {
-                      uploadedAt: new Date(p.uploadedAt).toLocaleString(),
+                      uploadedAt: formatter.dateTime(new Date(p.uploadedAt), {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }),
                     })}
                   </span>
                 </li>
@@ -100,7 +106,7 @@ export function EventMismatchWarningDialog(
         ) : null}
 
         <AlertDialogFooter>
-          <AlertDialogCancel className="min-h-11">
+          <AlertDialogCancel autoFocus className="min-h-11">
             {t('cancelCta')}
           </AlertDialogCancel>
           <AlertDialogAction

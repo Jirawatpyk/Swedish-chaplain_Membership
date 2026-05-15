@@ -149,11 +149,13 @@ export function CsvMappingForm() {
     [tErrors],
   );
 
+  // S2 + UX-I6 (Round 1): inline `processImportResponse` into
+  // `submitImport`. Previously a single-call helper with stale-closure
+  // smell (`_fakePhase = phase` to "satisfy closure" + eslint-disable
+  // react-hooks/exhaustive-deps). Merged + truthful deps array.
   const submitImport = useCallback(
     async (file: File, forceProceed: boolean): Promise<void> => {
       if (selectedEventId === null) {
-        // Defensive — submit button is gated below but the type
-        // checker can't prove the gate.
         setPhase({
           kind: 'error',
           title: tErrors('eventNotSelectedTitle'),
@@ -166,6 +168,7 @@ export function CsvMappingForm() {
       fd.append('file', file);
       fd.append('event_id', selectedEventId);
       if (forceProceed) fd.append('force_proceed', 'true');
+
       let res: Response;
       try {
         res = await fetch('/api/admin/events/import', {
@@ -180,59 +183,41 @@ export function CsvMappingForm() {
         });
         return;
       }
-      // F6.1 — handle 200 event_mismatch_warning specifically before
-      // delegating to the generic 200 handler below.
-      if (res.status === 200) {
-        let body: Record<string, unknown>;
-        try {
-          body = (await res.clone().json()) as Record<string, unknown>;
-        } catch {
-          body = {};
-        }
-        if (body['kind'] === 'event_mismatch_warning') {
-          const priorImports = Array.isArray(body['priorImports'])
-            ? (body['priorImports'] as PriorImportEntry[])
-            : [];
-          setMismatchDialog({ open: true, priorImports });
-          // Keep the preview file around so Continue can re-submit.
-          setPhase({ kind: 'preview', file, preview: { detectedColumns: [], rows: [], missingRequired: [] } });
-          return;
-        }
-      }
-      await processImportResponse(res, file);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedEventId, tErrors],
-  );
 
-  const processImportResponse = useCallback(
-    async (res: Response, _file: File): Promise<void> => {
-      // (delegated below — pulled out of inline so submitImport can call
-      // it from both the initial submit + the mismatch-override
-      // re-submit). The original Phase 7 switch follows verbatim.
-      void _file;
-      const _fakePhase = phase; // satisfy closure
-      void _fakePhase;
-      // Reuse the original logic by simulating phase==='preview' →
-      // delegate to the existing inline path. But because we already
-      // POSTed, we just translate the response to phase transitions.
+      // S5 + UX-I6 (Round 1): parse the body once + branch on
+      // discriminator. Previously double-parsed via `res.clone().json()`
+      // for the warning short-circuit AND again for the generic 200,
+      // which would TypeError on the second `await res.json()` against
+      // an already-consumed body — silently swallowed by `catch { body
+      // = {} }` and hiding the real bug.
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        body = {};
+      }
+
       switch (res.status) {
         case 200: {
-          let payload: Record<string, unknown>;
-          try {
-            payload = (await res.json()) as Record<string, unknown>;
-          } catch (e) {
+          if (body['kind'] === 'event_mismatch_warning') {
+            const priorImports = Array.isArray(body['priorImports'])
+              ? (body['priorImports'] as PriorImportEntry[])
+              : [];
+            setMismatchDialog({ open: true, priorImports });
             setPhase({
-              kind: 'error',
-              title: tErrors('unexpectedTitle'),
-              detail:
-                e instanceof Error ? e.message : tErrors('unexpectedDetail'),
+              kind: 'preview',
+              file,
+              preview: {
+                detectedColumns: [],
+                rows: [],
+                missingRequired: [],
+              },
             });
             return;
           }
-          // F6.1 — `completed` envelope wraps summary at top-level vs Phase 7's flat shape.
-          const summary = (payload['summary'] ??
-            payload) as CsvImportResultPayload;
+          // F6.1 `completed` envelope wraps summary at top-level.
+          const summary = (body['summary'] ??
+            body) as CsvImportResultPayload;
           setPhase({ kind: 'completed', summary });
           setHasPreviouslyCompleted(true);
           toast.success(t('importSuccessToast'), {
@@ -243,10 +228,6 @@ export function CsvMappingForm() {
           return;
         }
         case 400: {
-          const body = (await res.json().catch(() => ({}))) as Record<
-            string,
-            unknown
-          >;
           const missingColumns = Array.isArray(body['missingColumns'])
             ? (body['missingColumns'] as string[])
             : undefined;
@@ -290,16 +271,24 @@ export function CsvMappingForm() {
             detail: tErrors('timeoutDetail'),
           });
           return;
+        default: {
+          const detail = await parseProblemDetail(
+            new Response(JSON.stringify(body), {
+              status: res.status,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+            tErrors('unexpectedDetail'),
+          );
+          setPhase({
+            kind: 'error',
+            title: tErrors('unexpectedTitle'),
+            detail,
+          });
+          return;
+        }
       }
-      const detail = await parseProblemDetail(res, tErrors('unexpectedDetail'));
-      setPhase({
-        kind: 'error',
-        title: tErrors('unexpectedTitle'),
-        detail,
-      });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, tErrors],
+    [selectedEventId, t, tErrors],
   );
 
   // Mismatch override — re-submit current preview with force_proceed=true.

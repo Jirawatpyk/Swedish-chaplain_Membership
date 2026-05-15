@@ -536,6 +536,26 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
         kind: 'timeout',
         recordId: 'timeout-record-uuid',
         sourceFormat: 'eventcreate_csv',
+        // TYPE-D4 (Round 1): partial summary now part of timeout shape.
+        summary: {
+          rowsTotal: 100,
+          rowsProcessed: 40,
+          rowsAlreadyImported: 0,
+          rowsSkipped: 0,
+          rowsFailed: 0,
+          eventsCreated: 0,
+          eventsUpdated: 1,
+          matchCounts: {
+            member_contact: 30,
+            member_domain: 5,
+            member_fuzzy: 2,
+            non_member: 3,
+            unmatched: 0,
+          },
+          errorRows: [],
+          durationMs: 55_000,
+        },
+        errorCsvAvailable: false,
       });
 
       const { POST } = await loadImportRoute();

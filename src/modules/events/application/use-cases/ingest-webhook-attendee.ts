@@ -335,6 +335,9 @@ export async function ingestWebhookAttendee(
             paymentStatus: parsed.data.attendee.paymentStatus,
             registeredAt: new Date(parsed.data.attendee.registeredAt),
             metadata: extractMetadata(parsed.data.attendee, ATTENDEE_CANONICAL_KEYS),
+            // TYPE-D2 (Round 1 F6.1): webhook ingest does not capture
+            // PDPA consent upstream — pass null explicitly for tri-state.
+            pdpaConsentAcknowledged: null,
           },
         },
         ports,

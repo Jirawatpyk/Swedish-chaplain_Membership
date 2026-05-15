@@ -259,7 +259,34 @@ export async function POST(request: NextRequest): Promise<Response> {
   //     emit `csv_import_cross_tenant_probe` audit (Constitution
   //     Principle I clause 4 — HIGH severity). The audit emit uses a
   //     standalone tx so the route never blocks on audit DB write.
-  const eventLookup = await lookupEventByIdTimingSafe(tenantSlug, eventIdField);
+  // CR-2 (Round 1 — silent-failure-hunter): wrap `lookupEventByIdTimingSafe`
+  // in try/catch matching the formData/arrayBuffer pattern above. Neon
+  // outage / RLS denial / role-misconfig previously surfaced as an
+  // unbranded Next.js 500 with no requestId, no log, no metric.
+  let eventLookup: Awaited<ReturnType<typeof lookupEventByIdTimingSafe>>;
+  try {
+    eventLookup = await lookupEventByIdTimingSafe(tenantSlug, eventIdField);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(
+      {
+        event: 'f6_csv_import_event_lookup_failed',
+        tenantSlug,
+        eventId: eventIdField,
+        requestId,
+        err: message,
+      },
+      '[F6.1] lookupEventByIdTimingSafe threw — likely Neon outage / RLS denial / pool exhaustion',
+    );
+    eventcreateMetrics.csvImportCompleted(tenantSlug, 'unexpected_error');
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Event lookup failed. Retry; if it persists, contact support with this request ID.',
+      { extras: { requestId } },
+    );
+  }
   if (eventLookup.kind === 'not_found') {
     eventcreateMetrics.csvImportCompleted(tenantSlug, 'event_not_found');
     return problemResponse(
@@ -271,19 +298,35 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
   if (eventLookup.kind === 'wrong_tenant') {
-    // FR-035 surface disclosure — 404 with the same body as not_found.
+    // FR-035 surface disclosure — 400 with the same body as not_found.
     // The cross-tenant probe is audit-logged at HIGH severity for SRE
     // investigation (Principle I clause 4).
+    //
+    // CR-3 + I5 (Round 1) balance — fire-and-forget via queueMicrotask
+    // so both `not_found` and `wrong_tenant` paths return SAME wall-
+    // clock (timing-safe — closes I5). Brand-as throws inside the
+    // helper's try/catch (the helper accepts plain strings + brands
+    // internally), so synchronous-work cardinality on both branches
+    // matches (1 metric increment + 1 problem-response build). The
+    // audit DB write happens asynchronously after the 400 returns —
+    // forensic durability is preserved because the audit emitter
+    // dual-writes pino.fatal on standalone-tx failure, so even Neon
+    // outages leave a stderr trail.
     eventcreateMetrics.csvImportCompleted(
       tenantSlug,
       'event_not_owned_by_tenant',
     );
-    void emitCrossTenantProbeAudit({
-      tenantSlug,
-      actorUserId: guard.actorUserId,
-      probedEventId: eventIdField,
-      sourceIp: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown',
-      requestId,
+    const sourceIp =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+      'unknown';
+    queueMicrotask(() => {
+      void emitCrossTenantProbeAudit({
+        tenantSlug,
+        actorUserId: guard.actorUserId,
+        probedEventId: eventIdField,
+        sourceIp,
+        requestId,
+      });
     });
     return problemResponse(
       400,
