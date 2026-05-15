@@ -59,7 +59,15 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
   }, 60_000);
 
   afterAll(async () => {
-    await tenant.cleanup().catch(() => {});
+    // R5-SF-M1 — log cleanup errors so CI surfaces leaked test
+    // data instead of swallowing FK violations / RLS drift silently.
+    await tenant.cleanup().catch((err) => {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[receipt-prefix-change-audit] tenant cleanup failed',
+        { tenantSlug: tenant?.ctx?.slug, err },
+      );
+    });
   });
 
   it('first-time bootstrap does NOT emit tenant_receipt_prefix_changed', async () => {
@@ -230,7 +238,14 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
       // update-tenant-invoice-settings.ts JSDoc.
       expect(payload.last_sequences).toEqual([]);
     } finally {
-      await freshTenant.cleanup().catch(() => {});
+      // R5-SF-M1 — log cleanup errors instead of swallowing.
+      await freshTenant.cleanup().catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[receipt-prefix-change-audit] freshTenant cleanup failed',
+          { tenantSlug: freshTenant?.ctx?.slug, err },
+        );
+      });
     }
   }, 60_000);
 });

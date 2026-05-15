@@ -2602,7 +2602,7 @@
           "fieldLabel": "Event",
           "fieldHelp": "Choose the F6 event this CSV should reconcile to. The dropdown selection is authoritative — any event columns in the CSV are overridden.",
           "selectedPrefix": "Selected",
-          "submitGatedHint": "Choose an event from the dropdown above before uploading.",
+          "submitGatedHint": "Select an event from the dropdown above to continue.",
           "triggerAriaLabel": "Choose event for CSV import",
           "loading": "Loading events…",
           "placeholder": "Choose an event…",
@@ -2622,7 +2622,7 @@
             "createdToast": "Event created",
             "createdToastDesc": "{name} is now available in the events list.",
             "alreadyExistsToast": "Event already exists",
-            "alreadyExistsToastDesc": "An event with externalId \"{externalId}\" was found and selected.",
+            "alreadyExistsToastDesc": "The event \"{name}\" already exists and was selected.",
             "fields": {
               "externalIdLabel": "External ID",
               "externalIdPlaceholder": "e.g. agm-2026",
@@ -2973,6 +2973,7 @@
       "loaded": "Invoices list loaded.",
       "columns": {
         "documentNumber": "Number",
+        "receiptNumber": "Receipt No.",
         "status": "Status",
         "issueDate": "Issued",
         "dueDate": "Due",
@@ -2981,6 +2982,10 @@
       },
       "actions": {
         "download": "PDF",
+        "downloadInvoiceAria": "Download tax invoice PDF for {number}",
+        "downloadReceipt": "Receipt",
+        "downloadReceiptAria": "Download tax receipt PDF for {number}",
+        "downloadCombined": "Tax Invoice / Receipt",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
@@ -2988,10 +2993,24 @@
       "filters": {
         "noMatch": "No invoices match your filters."
       },
+      "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
+      "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
       "toast": {
         "resendSuccess": "Copy queued — check your inbox shortly.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
-        "resendFailed": "Could not queue a fresh copy. Please try again."
+        "resendFailed": "Could not queue a fresh copy. Please try again.",
+        "downloadInProgress": "Preparing your download…",
+        "invoiceForbidden": "You do not have access to this invoice.",
+        "invoiceNotFound": "Invoice not found.",
+        "invoiceUnavailable": "Invoice PDF is not available right now. Please try again.",
+        "invoiceSessionExpired": "Your session has expired. Please sign in again to download.",
+        "invoiceRateLimited": "Too many download requests. Please wait a moment and try again.",
+        "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
+        "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
+        "receiptForbidden": "You do not have access to this receipt.",
+        "receiptUnavailable": "Receipt PDF is not available right now. Please try again.",
+        "receiptSessionExpired": "Your session has expired. Please sign in again to download.",
+        "receiptRateLimited": "Too many download requests. Please wait a moment and try again."
       },
       "summary": {
         "heading": "Recent invoices",
@@ -3014,6 +3033,7 @@
           "issueDate": "Issued",
           "dueDate": "Due",
           "paidDate": "Paid",
+          "receiptNumber": "Receipt No.",
           "planYear": "Plan year"
         },
         "lines": {

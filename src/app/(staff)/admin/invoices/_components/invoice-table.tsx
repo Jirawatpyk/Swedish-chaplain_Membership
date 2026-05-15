@@ -326,18 +326,18 @@ export function InvoicesTable({
                         render={(props) => (
                           <span
                             {...props}
-                            className="inline-flex items-center gap-1 text-sm text-muted-foreground cursor-help"
+                            className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground cursor-help"
                             aria-label={t('receiptNumberCombinedAria')}
                           >
                             —
-                            {/* Round-4 fix R4-UX-H3 — removed `opacity-70`.
-                                At the icon's size-3.5 the muted-foreground
-                                stroke colour was failing WCAG SC 1.4.11
-                                Non-text Contrast (3:1) with the opacity
-                                multiplier compressing the already-muted
-                                token. Full opacity + size-3.5 stays on
-                                the small-affordance side while keeping
-                                contrast headroom. */}
+                            {/* R4-UX-H3 — removed `opacity-70`; size-3.5
+                                preserves the affordance with full
+                                contrast against muted-foreground.
+                                R5-UX-M2 — added `min-h-6` so the
+                                TooltipTrigger surface meets WCAG 2.2
+                                SC 2.5.8 (≥24×24px touch target) on
+                                mobile (line-height of text-sm only
+                                resolves to ~20px otherwise). */}
                             <InfoIcon
                               className="size-3.5"
                               aria-hidden="true"

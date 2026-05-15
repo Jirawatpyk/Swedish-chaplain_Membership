@@ -2602,7 +2602,7 @@
           "fieldLabel": "อีเวนต์",
           "fieldHelp": "เลือกอีเวนต์ F6 ที่ CSV นี้จะถูกบันทึก ค่าที่เลือกจากดรอปดาวน์เป็นค่าหลัก คอลัมน์อีเวนต์ในไฟล์ CSV จะถูกแทนที่ทั้งหมด",
           "selectedPrefix": "เลือกแล้ว",
-          "submitGatedHint": "กรุณาเลือกอีเวนต์จากดรอปดาวน์ด้านบนก่อนอัปโหลด",
+          "submitGatedHint": "กรุณาเลือกอีเวนต์จากดรอปดาวน์ด้านบนเพื่อดำเนินการต่อ",
           "triggerAriaLabel": "เลือกอีเวนต์สำหรับนำเข้า CSV",
           "loading": "กำลังโหลดรายการอีเวนต์…",
           "placeholder": "เลือกอีเวนต์…",
@@ -2622,7 +2622,7 @@
             "createdToast": "สร้างอีเวนต์เรียบร้อย",
             "createdToastDesc": "{name} พร้อมให้ใช้งานในรายการอีเวนต์แล้ว",
             "alreadyExistsToast": "อีเวนต์มีอยู่แล้ว",
-            "alreadyExistsToastDesc": "พบอีเวนต์ที่มี externalId \"{externalId}\" และถูกเลือกให้แล้ว",
+            "alreadyExistsToastDesc": "อีเวนต์ \"{name}\" มีอยู่แล้ว และถูกเลือกให้คุณแล้ว",
             "fields": {
               "externalIdLabel": "รหัสอ้างอิง (External ID)",
               "externalIdPlaceholder": "เช่น agm-2026",
@@ -2973,6 +2973,7 @@
       "loaded": "โหลดรายการใบแจ้งหนี้เสร็จแล้ว",
       "columns": {
         "documentNumber": "เลขที่",
+        "receiptNumber": "เลขใบเสร็จ",
         "status": "สถานะ",
         "issueDate": "วันที่ออก",
         "dueDate": "ครบกำหนด",
@@ -2981,6 +2982,10 @@
       },
       "actions": {
         "download": "PDF",
+        "downloadInvoiceAria": "ดาวน์โหลดไฟล์ PDF ใบกำกับภาษี {number}",
+        "downloadReceipt": "ใบเสร็จ",
+        "downloadReceiptAria": "ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงิน {number}",
+        "downloadCombined": "ใบกำกับภาษี / ใบเสร็จ",
         "viewDetail": "ดูใบแจ้งหนี้",
         "emailCopy": "ส่งสำเนาไปที่อีเมล",
         "emailCopyAria": "ส่งสำเนาใบแจ้งหนี้ {number} ไปที่อีเมลที่บันทึกไว้"
@@ -2988,10 +2993,24 @@
       "filters": {
         "noMatch": "ไม่พบใบแจ้งหนี้ตามตัวกรอง"
       },
+      "receiptNumberCombinedTooltip": "โหมดรวมเอกสาร — ใบเสร็จใช้เลขเดียวกับใบแจ้งหนี้",
+      "receiptNumberCombinedAria": "ใบเสร็จใช้เลขที่ใบแจ้งหนี้ (โหมดรวมเอกสาร)",
       "toast": {
         "resendSuccess": "เข้าคิวแล้ว — ระบบจะส่งสำเนาไปที่อีเมลของท่านในอีกสักครู่",
         "resendRateLimited": "เพิ่งขอสำเนาไปเมื่อครู่นี้ กรุณารออีกสักครู่แล้วลองใหม่",
-        "resendFailed": "ไม่สามารถส่งสำเนาได้ กรุณาลองอีกครั้ง"
+        "resendFailed": "ไม่สามารถส่งสำเนาได้ กรุณาลองอีกครั้ง",
+        "downloadInProgress": "กำลังเตรียมดาวน์โหลด…",
+        "invoiceForbidden": "คุณไม่มีสิทธิ์เข้าถึงใบกำกับภาษีนี้",
+        "invoiceNotFound": "ไม่พบใบกำกับภาษี",
+        "invoiceUnavailable": "ไม่สามารถดาวน์โหลด PDF ใบกำกับภาษีได้ในขณะนี้ กรุณาลองใหม่",
+        "invoiceSessionExpired": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่เพื่อดาวน์โหลด",
+        "invoiceRateLimited": "ดาวน์โหลดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+        "receiptPending": "PDF ใบเสร็จกำลังเตรียม กรุณาลองใหม่อีกครั้ง",
+        "receiptFailed": "สร้าง PDF ใบเสร็จไม่สำเร็จ: {reason} ติดต่อฝ่ายสนับสนุนหากเกิดซ้ำ",
+        "receiptForbidden": "คุณไม่มีสิทธิ์เข้าถึงใบเสร็จนี้",
+        "receiptUnavailable": "ไม่สามารถดาวน์โหลด PDF ใบเสร็จได้ในขณะนี้ กรุณาลองใหม่",
+        "receiptSessionExpired": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่เพื่อดาวน์โหลด",
+        "receiptRateLimited": "ดาวน์โหลดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่"
       },
       "summary": {
         "heading": "ใบแจ้งหนี้ล่าสุด",
@@ -3014,6 +3033,7 @@
           "issueDate": "วันที่ออก",
           "dueDate": "วันครบกำหนด",
           "paidDate": "วันที่ชำระ",
+          "receiptNumber": "เลขใบเสร็จ",
           "planYear": "ปีแพ็กเกจ"
         },
         "lines": {

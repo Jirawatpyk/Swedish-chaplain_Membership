@@ -11,6 +11,20 @@
  * Retry (amended 2026-04-19): deadlock retry belongs at the caller's
  * `withTx` scope, not inside this function. See the inline comment
  * below for the rationale.
+ *
+ * R5-DRZ-M1 — **Lock-order discipline**: this allocator MUST NOT touch
+ * `tenant_invoice_settings` (no SELECT/UPDATE/lock of that table inside
+ * the same transaction). The §87 prefix-flip path in
+ * `updateTenantInvoiceSettings` takes `FOR UPDATE` on
+ * `tenant_invoice_settings` BEFORE taking `FOR SHARE` on
+ * `tenant_document_sequences`. The allocator takes only `FOR UPDATE` on
+ * `tenant_document_sequences`. The single-direction lock order
+ * (settings → sequences) keeps the two transactions in a non-cyclic
+ * dependency graph — no deadlock possible. If a future contributor
+ * adds a settings read to this allocator (e.g. to look up the prefix
+ * inline instead of via a separate query), they MUST first refactor
+ * the prefix-flip path to acquire locks in the same forward order, or
+ * deadlock will be reintroduced.
  */
 import { sql } from 'drizzle-orm';
 import type {

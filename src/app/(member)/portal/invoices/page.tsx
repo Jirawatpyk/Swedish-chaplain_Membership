@@ -58,6 +58,17 @@ import {
 } from './_utils/format';
 import { InvoiceFilters } from '@/app/(staff)/admin/invoices/_components/invoice-filters';
 import { ResendInvoiceButton } from './_components/resend-invoice-button';
+import {
+  PortalInvoiceDownloadButton,
+  PortalReceiptDownloadButton,
+} from './_components/portal-pdf-download-button';
+import { InfoIcon } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 const PAGE_SIZE = 20;
 
@@ -189,6 +200,9 @@ export default async function PortalInvoicesPage({
                       <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                         {t('columns.documentNumber')}
                       </TableHead>
+                      <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                        {t('columns.receiptNumber')}
+                      </TableHead>
                       <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                         {t('columns.status')}
                       </TableHead>
@@ -218,6 +232,41 @@ export default async function PortalInvoicesPage({
                             {r.documentNumber?.raw ?? '—'}
                           </Link>
                         </TableCell>
+                        <TableCell className="align-middle whitespace-nowrap">
+                          {r.receiptDocumentNumberRaw ? (
+                            <span className="font-mono text-sm tabular-nums">
+                              {r.receiptDocumentNumberRaw}
+                            </span>
+                          ) : r.status === 'paid' ? (
+                            // Combined-mode = receipt reuses invoice number.
+                            // Em-dash + InfoIcon affordance with min-h-6 hit
+                            // area for WCAG 2.2 SC 2.5.8 (R5-UX-M2).
+                            <TooltipProvider delay={200}>
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={(props) => (
+                                    <span
+                                      {...props}
+                                      className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground cursor-help"
+                                      aria-label={t('receiptNumberCombinedAria')}
+                                    >
+                                      —
+                                      <InfoIcon
+                                        className="size-3.5"
+                                        aria-hidden="true"
+                                      />
+                                    </span>
+                                  )}
+                                />
+                                <TooltipContent>
+                                  {t('receiptNumberCombinedTooltip')}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="align-middle">
                           {(() => {
                             const Icon = STATUS_ICON_MAP[statusIconName(displayStatus)];
@@ -242,36 +291,76 @@ export default async function PortalInvoicesPage({
                           {formatSatangThb(r.total?.satang ?? null, userLocale)}
                         </TableCell>
                         <TableCell className="align-middle text-right">
-                          {r.pdf ? (
-                            <div className="flex items-center justify-end gap-1">
-                              {/* Compact (icon-only) resend — screen-
-                                  reader label already names the invoice
-                                  number; `title` attr on the Button
-                                  primitive is handled by aria-label. */}
-                              {r.status !== 'void' ? (
-                                <ResendInvoiceButton
-                                  invoiceId={r.invoiceId}
-                                  documentNumber={r.documentNumber?.raw ?? r.invoiceId}
-                                  variant="ghost"
-                                  layout="compact"
-                                  className="min-h-11 min-w-11"
-                                />
-                              ) : null}
-                              <a
-                                href={`/api/portal/invoices/${r.invoiceId}/pdf`}
-                                aria-label={`${t('actions.download')} — ${r.documentNumber?.raw ?? r.invoiceId}`}
-                                className={cn(
-                                  buttonVariants({ variant: 'ghost', size: 'sm' }),
-                                  'min-h-11 px-3',
+                          {(() => {
+                            // Combined-paid rows: the invoice PDF *is*
+                            // the receipt — hide the (now-stale) invoice
+                            // anchor + show only "Receipt" so the legal
+                            // §86/4+§105ทวิ document is what the member
+                            // grabs. Separate-paid: show both.
+                            const isCombinedPaid =
+                              r.status === 'paid' &&
+                              r.receiptDocumentNumberRaw === null &&
+                              r.receiptPdfStatus === 'rendered';
+                            const showInvoice = r.pdf !== null && !isCombinedPaid;
+                            const showReceipt =
+                              r.status === 'paid' &&
+                              r.receiptPdfStatus === 'rendered';
+                            if (!showInvoice && !showReceipt && r.pdf === null) {
+                              return <span className="text-sm text-muted-foreground">—</span>;
+                            }
+                            return (
+                              <div className="flex items-center justify-end gap-1">
+                                {r.status !== 'void' && r.pdf !== null ? (
+                                  <ResendInvoiceButton
+                                    invoiceId={r.invoiceId}
+                                    documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                                    variant="ghost"
+                                    layout="compact"
+                                    className="min-h-11 min-w-11"
+                                  />
+                                ) : null}
+                                {showInvoice && (
+                                  <PortalInvoiceDownloadButton
+                                    invoiceId={r.invoiceId}
+                                    documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                                    label={t('actions.download')}
+                                    ariaLabel={t('actions.downloadInvoiceAria', {
+                                      number: r.documentNumber?.raw ?? r.invoiceId,
+                                    })}
+                                    className={cn(
+                                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                                      'min-h-11 px-3',
+                                    )}
+                                  />
                                 )}
-                                download
-                              >
-                                {t('actions.download')}
-                              </a>
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
-                          )}
+                                {showReceipt && (
+                                  <PortalReceiptDownloadButton
+                                    invoiceId={r.invoiceId}
+                                    documentNumber={
+                                      r.receiptDocumentNumberRaw ??
+                                      r.documentNumber?.raw ??
+                                      r.invoiceId
+                                    }
+                                    label={
+                                      isCombinedPaid
+                                        ? t('actions.downloadCombined')
+                                        : t('actions.downloadReceipt')
+                                    }
+                                    ariaLabel={t('actions.downloadReceiptAria', {
+                                      number:
+                                        r.receiptDocumentNumberRaw ??
+                                        r.documentNumber?.raw ??
+                                        r.invoiceId,
+                                    })}
+                                    className={cn(
+                                      buttonVariants({ variant: 'ghost', size: 'sm' }),
+                                      'min-h-11 px-3',
+                                    )}
+                                  />
+                                )}
+                              </div>
+                            );
+                          })()}
                         </TableCell>
                       </TableRow>
                     ))}

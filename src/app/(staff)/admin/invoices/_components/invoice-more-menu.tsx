@@ -176,7 +176,16 @@ export function InvoiceMoreMenu({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ variant }),
         });
-      } catch {
+      } catch (err) {
+        // R5-SF-L1 — log the network error before swallowing into a
+        // user-friendly toast. Operators get DNS/CORS/offline/TLS
+        // diagnostic; user still sees the generic "resendFailed" toast.
+        // eslint-disable-next-line no-console
+        console.error('[invoice-more-menu] resend network error', {
+          variant,
+          invoiceId,
+          err,
+        });
         toast.error(t('toast.resendFailed'));
         setPendingVariant(null);
         return;

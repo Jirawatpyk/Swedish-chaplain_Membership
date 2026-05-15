@@ -1289,7 +1289,7 @@
           "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
           "downloadReceipt": "Ladda ner kvitto-PDF",
           "downloadCombined": "Ladda ner faktura/kvitto",
-          "downloadReceiptAria": "Ladda ner det officiella kvittots PDF för faktura {number}",
+          "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
           "downloadInvoiceAria": "Ladda ner faktura-PDF för faktura {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
@@ -2602,7 +2602,7 @@
           "fieldLabel": "Evenemang",
           "fieldHelp": "Välj F6-evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
           "selectedPrefix": "Valt",
-          "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan innan du laddar upp.",
+          "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan för att fortsätta.",
           "triggerAriaLabel": "Välj evenemang för CSV-import",
           "loading": "Hämtar evenemang…",
           "placeholder": "Välj ett evenemang…",
@@ -2622,7 +2622,7 @@
             "createdToast": "Evenemang skapat",
             "createdToastDesc": "{name} är nu tillgängligt i evenemangslistan.",
             "alreadyExistsToast": "Evenemang finns redan",
-            "alreadyExistsToastDesc": "Ett evenemang med externalId \"{externalId}\" hittades och valdes.",
+            "alreadyExistsToastDesc": "Evenemanget \"{name}\" finns redan och valdes.",
             "fields": {
               "externalIdLabel": "Externt ID",
               "externalIdPlaceholder": "t.ex. agm-2026",
@@ -2973,6 +2973,7 @@
       "loaded": "Fakturalistan laddad.",
       "columns": {
         "documentNumber": "Nr",
+        "receiptNumber": "Kvittonr.",
         "status": "Status",
         "issueDate": "Utfärdad",
         "dueDate": "Förfaller",
@@ -2981,6 +2982,10 @@
       },
       "actions": {
         "download": "PDF",
+        "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+        "downloadReceipt": "Kvitto",
+        "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
+        "downloadCombined": "Faktura / kvitto",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
@@ -2988,10 +2993,24 @@
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
       },
+      "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
+      "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
       "toast": {
         "resendSuccess": "Köad — du får en ny kopia inom kort.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
-        "resendFailed": "Kunde inte köa en ny kopia. Försök igen."
+        "resendFailed": "Kunde inte köa en ny kopia. Försök igen.",
+        "downloadInProgress": "Förbereder nedladdning…",
+        "invoiceForbidden": "Du har inte behörighet till denna faktura.",
+        "invoiceNotFound": "Faktura hittades inte.",
+        "invoiceUnavailable": "Faktura-PDF är inte tillgänglig just nu. Försök igen.",
+        "invoiceSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+        "invoiceRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
+        "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
+        "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
+        "receiptForbidden": "Du har inte behörighet till detta kvitto.",
+        "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen.",
+        "receiptSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+        "receiptRateLimited": "För många nedladdningar. Vänta en stund och försök igen."
       },
       "summary": {
         "heading": "Senaste fakturor",
@@ -3014,6 +3033,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "paidDate": "Betald",
+          "receiptNumber": "Kvittonr.",
           "planYear": "Paketår"
         },
         "lines": {

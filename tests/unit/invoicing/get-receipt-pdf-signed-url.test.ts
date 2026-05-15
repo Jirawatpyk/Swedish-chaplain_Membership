@@ -189,6 +189,11 @@ describe('getReceiptPdfSignedUrl — happy paths', () => {
     const payload = auditCall.payload as Record<string, unknown>;
     expect(payload.receipt_numbering_mode).toBe('combined');
     expect(payload.receipt_document_number_raw).toBeNull();
+    // R5-CONST-M1 — template_version snapshot makes RD forensic
+    // reviewers able to distinguish v=1 (no logo) vs v=2 historical
+    // downloads when reconciling re-rendered PDFs. Fixture defaults
+    // to templateVersion=1 (see makeBaseInvoice).
+    expect(payload.receipt_pdf_template_version).toBe(1);
   });
 
   it('separate-mode rendered → returns receiptPdf.blobKey + RC filename + audit', async () => {
@@ -212,6 +217,9 @@ describe('getReceiptPdfSignedUrl — happy paths', () => {
     const payload = auditCall.payload as Record<string, unknown>;
     expect(payload.receipt_numbering_mode).toBe('separate');
     expect(payload.receipt_document_number_raw).toBe('RC-2026-000001');
+    // R5-CONST-M1 — separate-mode receipt also carries the template
+    // version snapshot.
+    expect(payload.receipt_pdf_template_version).toBe(1);
   });
 
   it('member with matching memberId can download the receipt', async () => {

@@ -106,6 +106,15 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     // see spurious changes when comparing two audit rows that
     // logically carry the same sequence snapshot.
     const tx = txUnknown as TenantTx;
+    // R5-REL-M1 — bound the FOR SHARE wait to 5 seconds so a stuck
+    // allocator (e.g. abnormally slow PDF render holding the FOR
+    // UPDATE) does not hang this connection indefinitely on Vercel
+    // Serverless (function-timeout would otherwise drop the
+    // connection without a clean rollback). 5s comfortably exceeds
+    // normal allocator contention (≤2-3s end-to-end) and raises a
+    // `LockNotAvailable` exception that the surrounding `withTx`
+    // rolls back atomically.
+    await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
     const rows = await tx
       .select({
         documentType: tenantDocumentSequences.documentType,

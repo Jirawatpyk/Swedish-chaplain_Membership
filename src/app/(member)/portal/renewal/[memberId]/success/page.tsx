@@ -19,6 +19,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makeRenewalsDeps } from '@/modules/renewals';
+import { PortalInvoiceDownloadButton } from '@/app/(member)/portal/invoices/_components/portal-pdf-download-button';
 
 export default async function RenewalSuccessPage({
   params,
@@ -152,13 +153,13 @@ export default async function RenewalSuccessPage({
           reachable — empty action row is worse than indirect path. */}
       <div className="flex flex-wrap items-center gap-3">
         {invoiceId ? (
-          <Link
-            href={`/portal/invoices/${invoiceId}/pdf`}
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+          <PortalInvoiceDownloadButton
+            invoiceId={invoiceId}
+            documentNumber={invoiceId}
+            label={t('downloadReceipt')}
             data-testid="receipt-download-link"
-          >
-            {t('downloadReceipt')}
-          </Link>
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+          />
         ) : (
           <Link
             href="/portal/invoices"

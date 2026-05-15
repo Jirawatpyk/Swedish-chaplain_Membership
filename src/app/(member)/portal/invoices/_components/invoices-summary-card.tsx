@@ -54,6 +54,7 @@ import {
   statusIconName,
   type InvoiceStatusIconName,
 } from '../_utils/format';
+import { PortalInvoiceDownloadButton } from './portal-pdf-download-button';
 
 const SUMMARY_LIMIT = 3;
 
@@ -185,17 +186,18 @@ export async function InvoicesSummaryCard({ user }: InvoicesSummaryCardProps) {
                     {formatSatangThb(r.total?.satang ?? null, userLocale)}
                   </span>
                   {r.pdf ? (
-                    <a
-                      href={`/api/portal/invoices/${r.invoiceId}/pdf`}
-                      aria-label={`${t('actions.download')} — ${r.documentNumber?.raw ?? r.invoiceId}`}
+                    <PortalInvoiceDownloadButton
+                      invoiceId={r.invoiceId}
+                      documentNumber={r.documentNumber?.raw ?? r.invoiceId}
+                      label={t('actions.download')}
+                      ariaLabel={t('actions.downloadInvoiceAria', {
+                        number: r.documentNumber?.raw ?? r.invoiceId,
+                      })}
                       className={cn(
                         buttonVariants({ variant: 'ghost', size: 'sm' }),
                         'min-h-11 px-3',
                       )}
-                      download
-                    >
-                      {t('actions.download')}
-                    </a>
+                    />
                   ) : null}
                 </div>
               </li>

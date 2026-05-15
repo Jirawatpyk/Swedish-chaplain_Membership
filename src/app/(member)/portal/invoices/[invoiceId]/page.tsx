@@ -93,6 +93,10 @@ import {
   type InvoiceStatusIconName,
 } from '../_utils/format';
 import { ResendInvoiceButton } from '../_components/resend-invoice-button';
+import {
+  PortalInvoiceDownloadButton,
+  PortalReceiptDownloadButton,
+} from '../_components/portal-pdf-download-button';
 import { PayNowButton } from './_components/pay-sheet/pay-now-button';
 import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled-card';
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
@@ -262,51 +266,94 @@ export default async function PortalInvoiceDetailPage({
                 />
               ) : null}
               {(() => {
-                // T166-10 — async receipt PDF gate. When the receipt is
-                // still being rendered by the cron worker (status !==
-                // 'rendered'), surface a polite "preparing…" affordance
-                // instead of a download link. `aria-busy="true"` +
-                // `role="status"` makes assistive tech announce the
-                // transition without stealing focus.
+                // Round 6 portal-harden — combined-mode + paid: the
+                // invoice PDF *is* the receipt (Thai RD §86/4 + §105ทวิ),
+                // so the only legal document the member should grab is
+                // the receipt-rendered combined PDF. Hide the pre-payment
+                // invoice PDF in that case (it has no receipt fields).
+                // Separate-mode + paid: surface BOTH — invoice (Tax
+                // Invoice) and receipt (Official Receipt) are distinct
+                // legal docs.
+                const isCombinedPaid =
+                  invoice.status === 'paid' &&
+                  invoice.receiptDocumentNumberRaw === null;
+                const showInvoicePdf =
+                  invoice.pdf !== null && !isCombinedPaid;
+                const showReceiptPdf =
+                  invoice.status === 'paid' &&
+                  invoice.receiptPdfStatus === 'rendered';
+                // T166-10 — async receipt PDF gate. When the receipt
+                // is still being rendered by the cron worker, surface
+                // a polite "preparing…" affordance ALONGSIDE the
+                // invoice button (separate-mode the member still gets
+                // the invoice; combined-mode the receipt IS the only
+                // doc so we show the preparing state on its own).
                 const receiptPending =
                   invoice.status === 'paid' &&
                   invoice.receiptPdfStatus !== null &&
                   invoice.receiptPdfStatus !== 'rendered';
-                if (receiptPending) {
-                  return (
-                    <span
-                      role="status"
-                      aria-live="polite"
-                      aria-busy="true"
-                      data-pay-focus-target="download-pdf"
-                      className={cn(
-                        buttonVariants({ variant: 'outline', size: 'sm' }),
-                        'min-h-11 px-4 cursor-progress',
-                      )}
-                    >
-                      {t('pdf.preparing')}
-                    </span>
-                  );
-                }
                 return (
-                  <a
-                    data-pay-focus-target="download-pdf"
-                    href={`/api/portal/invoices/${invoice.invoiceId}/pdf`}
-                    aria-label={`${
-                      invoice.status === 'void'
-                        ? t('void.downloadVoidedPdf')
-                        : tList('actions.download')
-                    } — ${documentNumber}`}
-                    className={cn(
-                      buttonVariants({ variant: 'default', size: 'sm' }),
-                      'min-h-11 px-4',
+                  <>
+                    {showInvoicePdf && (
+                      <PortalInvoiceDownloadButton
+                        invoiceId={invoice.invoiceId}
+                        documentNumber={documentNumber}
+                        label={
+                          invoice.status === 'void'
+                            ? t('void.downloadVoidedPdf')
+                            : tList('actions.download')
+                        }
+                        ariaLabel={`${
+                          invoice.status === 'void'
+                            ? t('void.downloadVoidedPdf')
+                            : tList('actions.downloadInvoiceAria', { number: documentNumber })
+                        }`}
+                        className={cn(
+                          buttonVariants({ variant: 'default', size: 'sm' }),
+                          'min-h-11 px-4',
+                        )}
+                        data-testid="portal-download-invoice"
+                      />
                     )}
-                    download
-                  >
-                    {invoice.status === 'void'
-                      ? t('void.downloadVoidedPdf')
-                      : tList('actions.download')}
-                  </a>
+                    {showReceiptPdf && (
+                      <PortalReceiptDownloadButton
+                        invoiceId={invoice.invoiceId}
+                        documentNumber={
+                          invoice.receiptDocumentNumberRaw ?? documentNumber
+                        }
+                        label={
+                          isCombinedPaid
+                            ? tList('actions.downloadCombined')
+                            : tList('actions.downloadReceipt')
+                        }
+                        ariaLabel={tList('actions.downloadReceiptAria', {
+                          number:
+                            invoice.receiptDocumentNumberRaw ?? documentNumber,
+                        })}
+                        className={cn(
+                          buttonVariants({
+                            variant: isCombinedPaid ? 'default' : 'outline',
+                            size: 'sm',
+                          }),
+                          'min-h-11 px-4',
+                        )}
+                        data-testid="portal-download-receipt"
+                      />
+                    )}
+                    {receiptPending && (
+                      <span
+                        role="status"
+                        aria-live="polite"
+                        aria-busy="true"
+                        className={cn(
+                          buttonVariants({ variant: 'outline', size: 'sm' }),
+                          'min-h-11 px-4 cursor-progress',
+                        )}
+                      >
+                        {t('pdf.preparing')}
+                      </span>
+                    )}
+                  </>
                 );
               })()}
             </>
@@ -417,6 +464,21 @@ export default async function PortalInvoiceDetailPage({
               {invoice.paidAt ? formatDate(invoice.paidAt, userLocale) : '—'}
             </p>
           </div>
+          {/* Round 6 portal-harden — surface receipt document number to
+              members in separate-mode + paid. Thai RD requires receipt
+              holders to keep the document; admins see this on the admin
+              detail page (added Round 1). Combined-mode hides this
+              because the invoice number IS the receipt number. */}
+          {invoice.status === 'paid' && invoice.receiptDocumentNumberRaw && (
+            <div>
+              <p className="text-caption uppercase tracking-wide text-muted-foreground">
+                {t('fields.receiptNumber')}
+              </p>
+              <p className="text-body font-mono tabular-nums">
+                {invoice.receiptDocumentNumberRaw}
+              </p>
+            </div>
+          )}
           <div>
             <p className="text-caption uppercase tracking-wide text-muted-foreground">
               {t('fields.planYear')}
