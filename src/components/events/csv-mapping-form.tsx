@@ -103,15 +103,14 @@ export function CsvMappingForm() {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const fileInputId = useId();
   const liveRegionId = useId();
-  // H-12 + M-2 fix (2026-05-15): track whether a previous completed
-  // phase happened so the idle re-entry announcement only fires on
-  // intentional reset (not on first mount). Derived from
-  // `phase.kind` history — set in the same `onSubmit` transition that
-  // fires `setPhase({kind:'completed'})` so the flag is updated
-  // alongside the phase, NOT in a `useEffect` (which would either
-  // (a) trigger an extra render via setState-during-effect, or
-  // (b) require a ref read during render to gate the live-region
-  // copy — both ESLint react-hooks rules flag those patterns).
+  // Tracks whether a previous completed phase happened so the idle
+  // re-entry announcement only fires on intentional reset (not first
+  // mount). Updated alongside the `setPhase({kind:'completed'})`
+  // transition rather than in a `useEffect`: setting state in an
+  // effect would cause an extra render before the live-region content
+  // stabilises, and reading a ref during render to gate that re-
+  // render would violate the "render is a pure function of
+  // props+state" invariant.
   const [hasPreviouslyCompleted, setHasPreviouslyCompleted] =
     useState(false);
 
@@ -243,13 +242,15 @@ export function CsvMappingForm() {
 
   const resetToUpload = useCallback(() => setPhase({ kind: 'idle' }), []);
 
-  // H-12 + M-2 fix (2026-05-15): top-level aria-live region announces
-  // phase transitions across BOTH render branches (completed-result
-  // card AND form Card). Dynamically-mounted live regions are not
-  // reliably announced by NVDA/JAWS — the observer registers at DOM
-  // insertion time and content arriving WITH the node is often
-  // swallowed. Keeping the region at component root makes it
-  // pre-existing for every transition:
+  // Top-level aria-live region announces phase transitions across all
+  // render branches. NVDA/JAWS register the observer at DOM-insertion
+  // time, and content arriving WITH the node is often swallowed —
+  // dynamically-mounted live regions are unreliable. Hoisting the
+  // region into a single stable outer `<div>` that wraps BOTH the
+  // completed-result branch AND the form Card branch guarantees the
+  // region itself is pre-existing across the type-changing inner
+  // reconcile (Card → CsvImportResult subtree), so the transition
+  // text actually reaches the SR queue:
   //   - submitting → "Import in progress"
   //   - completed  → "Import complete. Review the summary."
   //   - idle (post-completed) → "Form reset. Upload a new CSV."
@@ -268,86 +269,84 @@ export function CsvMappingForm() {
     </div>
   );
 
-  if (phase.kind === 'completed') {
-    return (
-      <div className="flex flex-col gap-4">
-        {liveRegion}
-        <CsvImportResult result={phase.summary} />
-        <div>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={resetToUpload}
-            className="min-h-11"
-          >
-            {t('uploadAnother')}
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('formTitle')}</CardTitle>
-        <CardDescription>{t('formDescription')}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
-        {liveRegion}
-
-        {phase.kind === 'error' ? (
-          <ErrorPanel phase={phase} onRetry={resetToUpload} />
-        ) : null}
-
-        {(phase.kind === 'idle' || phase.kind === 'error') && (
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={fileInputId}>{t('fileInputLabel')}</Label>
-            <input
-              id={fileInputId}
-              type="file"
-              accept=".csv,text/csv,application/vnd.ms-excel"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  void handleFile(file);
-                }
-              }}
-              className="text-body block w-full cursor-pointer rounded-md border border-input bg-background p-2 file:mr-3 file:rounded file:border-0 file:bg-primary file:px-3 file:py-1 file:text-primary-foreground hover:file:bg-primary/90"
-            />
-            <p className="text-caption text-muted-foreground">
-              {t('fileInputHelp')}
-            </p>
+    <div className="flex flex-col gap-4">
+      {liveRegion}
+      {phase.kind === 'completed' ? (
+        <>
+          <CsvImportResult result={phase.summary} />
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={resetToUpload}
+              className="min-h-11"
+            >
+              {t('uploadAnother')}
+            </Button>
           </div>
-        )}
+        </>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('formTitle')}</CardTitle>
+            <CardDescription>{t('formDescription')}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-6">
+            {phase.kind === 'error' ? (
+              <ErrorPanel phase={phase} onRetry={resetToUpload} />
+            ) : null}
 
-        {phase.kind === 'preview' && (
-          <PreviewPanel
-            preview={phase.preview}
-            fileName={phase.file.name}
-            onSubmit={onSubmit}
-            onCancel={resetToUpload}
-            submitLabel={t('confirmCta')}
-            cancelLabel={t('cancelCta')}
-          />
-        )}
+            {(phase.kind === 'idle' || phase.kind === 'error') && (
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={fileInputId}>{t('fileInputLabel')}</Label>
+                <input
+                  id={fileInputId}
+                  type="file"
+                  accept=".csv,text/csv,application/vnd.ms-excel"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      void handleFile(file);
+                    }
+                  }}
+                  className="text-body block w-full cursor-pointer rounded-md border border-input bg-background p-2 file:mr-3 file:rounded file:border-0 file:bg-primary file:px-3 file:py-1 file:text-primary-foreground hover:file:bg-primary/90"
+                />
+                <p className="text-caption text-muted-foreground">
+                  {t('fileInputHelp')}
+                </p>
+              </div>
+            )}
 
-        {phase.kind === 'submitting' && (
-          <Button
-            type="button"
-            disabled
-            aria-busy="true"
-            className="min-h-11 self-start"
-          >
-            <Loader2
-              aria-hidden="true"
-              className="mr-2 size-4 animate-spin motion-reduce:animate-none"
-            />
-            {t('submittingCta')}
-          </Button>
-        )}
-      </CardContent>
-    </Card>
+            {phase.kind === 'preview' && (
+              <PreviewPanel
+                preview={phase.preview}
+                fileName={phase.file.name}
+                onSubmit={onSubmit}
+                onCancel={resetToUpload}
+                submitLabel={t('confirmCta')}
+                cancelLabel={t('cancelCta')}
+              />
+            )}
+
+            {phase.kind === 'submitting' && (
+              <Button
+                type="button"
+                disabled
+                aria-busy="true"
+                className="min-h-11 self-start"
+              >
+                <Loader2
+                  aria-hidden="true"
+                  className="mr-2 size-4 animate-spin motion-reduce:animate-none"
+                />
+                {t('submittingCta')}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 

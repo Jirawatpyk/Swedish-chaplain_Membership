@@ -19,8 +19,10 @@
  * Accessibility:
  *   - WCAG 2.5.8 tap target (≥24×24px) on the `<summary>` toggle via
  *     `min-h-6 + py-1`, mirroring Phase 5 round-6 H-04 fix.
- *   - aria-live="polite" on the result card region for screen-reader
- *     announcement when the result first appears.
+ *   - `role="region"` + `aria-label` on the Card so SR users can
+ *     navigate INTO the result via region-jump shortcuts. The
+ *     phase-transition announcement is owned by the persistent
+ *     live region in `csv-mapping-form.tsx`.
  *   - data-testid hooks for the E2E spec (T091).
  */
 import { useTranslations } from 'next-intl';
@@ -67,16 +69,12 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
   const tMatch = useTranslations('admin.events.matchType');
 
   return (
-    // NEW-B fix (Round-2 review, 2026-05-15): dropped `aria-live="polite"`
-    // from the Card — the result-card mounts SIMULTANEOUSLY with content
-    // (when `phase.kind === 'completed'`), so SR-side `aria-live`
-    // observers swallow the announcement on first mount + cascade-read
-    // the full Card content when the live region IS registered. The
-    // component-root liveRegion in `csv-mapping-form.tsx` (line 253)
-    // pre-existing in the DOM handles the transition announcement
-    // (`importCompleteSr` i18n key) reliably across all phase changes.
-    // Card retains `role="region"` + `aria-label` so SR users can still
-    // navigate INTO the result on demand via region-jump shortcuts.
+    // No `aria-live` on the Card — it mounts SIMULTANEOUSLY with its
+    // content, so SR-side live-region observers register too late and
+    // either swallow the announcement or cascade-read the full Card.
+    // The persistent live region in `csv-mapping-form.tsx` handles the
+    // phase-transition announcement reliably. `role="region"` +
+    // `aria-label` keep the Card navigable via SR region-jump shortcuts.
     <Card
       role="region"
       aria-label={t('regionLabel')}

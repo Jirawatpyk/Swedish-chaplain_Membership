@@ -11,9 +11,10 @@
  *
  * This unit test fixes the coverage gap by mocking `runInTenantTx` to
  * advance a CONTROLLED clock past the time budget BEFORE the next
- * batch picks up. The scheduler's check at `importCsv` line 662
- * (`if (Date.now() - startedAtMs > timeBudgetMs) ...`) then trips
- * deterministically regardless of bench-machine speed.
+ * batch picks up. The scheduler's `if (Date.now() - startedAtMs >
+ * timeBudgetMs) { timeBudgetExceeded = true; return; }` check inside
+ * the worker loop then trips deterministically regardless of bench-
+ * machine speed.
  *
  * Approach (instead of `vi.useFakeTimers()` which would freeze the
  * await-resolve scheduler):
@@ -69,17 +70,15 @@ function buildCsv(rows: number): Uint8Array {
 }
 
 describe('NEW-L — deterministic time-budget short-circuit (no flaky env-dependent fallback)', () => {
-  let originalDateNow: () => number;
   let mockedClock: number;
 
   beforeEach(() => {
-    originalDateNow = Date.now;
     mockedClock = 1_000_000;
-    Date.now = () => mockedClock;
+    vi.spyOn(Date, 'now').mockImplementation(() => mockedClock);
   });
 
   afterEach(() => {
-    Date.now = originalDateNow;
+    vi.restoreAllMocks();
   });
 
   it('advances clock past timeBudgetMs between batches → returns {kind:"timeout"}', async () => {

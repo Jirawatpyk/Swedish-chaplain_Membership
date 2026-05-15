@@ -49,9 +49,11 @@
  *      committed rows persist (idempotency makes re-upload safe).
  *   5. After all batches commit: emit `csv_import_completed` audit
  *      (one per import, standalone-tx) with the full summary payload.
- *      Audit-emit failure logs to stderr via
- *      `eventcreateMetrics.csvImportAuditEmitFailed` (C-2 fix) so
- *      operators alert on forensic gaps.
+ *      Audit-emit failure is observable via two channels — `logger.error`
+ *      writes a stderr line (Vercel Fluid Compute captures it) AND
+ *      `eventcreateMetrics.csvImportAuditEmitFailed` increments an
+ *      OTel counter so SREs alert on `rate > 0`. The route returns 200
+ *      regardless ("DB committed" invariant — rows already persisted).
  *
  * Pure Application — no framework imports (Constitution Principle III).
  * Tx + tenant boundary is owned by Infrastructure via the injected
@@ -119,11 +121,8 @@ export type ImportCsvOutcome =
 
 export interface ImportCsvInput {
   /**
-   * NEW-H fix (Round-2 review, 2026-05-15): branded `TenantId` at the
-   * use-case boundary instead of `string` with internal `asTenantId(...)`
-   * casts at 6 call sites. Matches the H-15 branding fix for
-   * `actorUserId`. The route handler brands via composition adapter
-   * (`runImportCsv` in events-csv-import-deps.ts).
+   * Branded at the use-case boundary; route handler brands via
+   * composition adapter (`runImportCsv` in events-csv-import-deps.ts).
    */
   readonly tenantId: TenantId;
   readonly actorUserId: UserId;
@@ -219,13 +218,11 @@ type RowOutcome =
       readonly rowNumber: number;
       readonly reason: string;
       /**
-       * H-3 fix (2026-05-15): preserve `TxStageError.stage` from the
-       * shared `processAttendeeInTx` helper so dashboards can alert
-       * on `audit_emit` failures (security-critical) separately from
-       * routine `event_upsert` / `registration_insert` / `quota_decrement`
-       * row-level validation failures. `'unknown'` reserved for non-
-       * TxStageError throws (e.g., plain Error propagated past the
-       * helper's Result-check guards).
+       * `TxStageError.stage` from the shared `processAttendeeInTx`
+       * helper so dashboards can alert on `audit_emit` failures
+       * (security-critical) separately from routine validation /
+       * event-upsert / quota / registration-insert paths. `'unknown'`
+       * for non-TxStageError throws.
        */
       readonly failureStage: FailureStage;
     };
@@ -270,23 +267,16 @@ function resolveAttendeeExternalId(
 // tasks.md T094 spec).
 // ---------------------------------------------------------------------------
 
+// `processBatch` filters out parser-rejected rows before reaching this
+// helper, so `parsed.ok` is guaranteed true on entry.
+type ParsedOkRow = Extract<ParsedRow, { ok: true }>;
+
 async function processOneRowInSavepoint(
-  parsed: ParsedRow,
+  parsed: ParsedOkRow,
   input: ImportCsvInput,
   batchPorts: ImportCsvTxScopedPorts,
   deps: ImportCsvDeps,
 ): Promise<RowOutcome> {
-  if (!parsed.ok) {
-    // Parser-rejected row — emit `csv_import_row_failed` audit + bubble
-    // up. No savepoint needed (no DB work for parser-failed rows).
-    await safeEmitRowFailed(deps, input, parsed.rowNumber, parsed.reason, parsed.rawExcerpt);
-    return {
-      kind: 'parse_failed',
-      rowNumber: parsed.rowNumber,
-      reason: parsed.reason,
-    };
-  }
-
   try {
     return await batchPorts.runRowInSavepoint(async (ports) => {
       // (a) Idempotency receipt — silent skip on duplicate per round-2
@@ -297,7 +287,16 @@ async function processOneRowInSavepoint(
         requestId: parsed.rowHash,
       });
       if (!receipt.ok) {
-        throw new Error(`idempotency receipt insert failed: ${receipt.error.message}`);
+        // Surface the precise stage to dashboards via TxStageError so
+        // SREs alerting on `failureStage='idempotency_receipt'` see
+        // the idempotency-store outage as its own class — not folded
+        // into the catch-all `'unknown'` bucket. Closes the audit-port
+        // taxonomy gap where the CSV path never actually exercised
+        // the `'idempotency_receipt'` stage despite it being declared.
+        throw new TxStageError(
+          'idempotency_receipt',
+          `idempotency receipt insert failed: ${receipt.error.message}`,
+        );
       }
       if (!receipt.value.wasFresh) {
         return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
@@ -356,11 +355,10 @@ async function processOneRowInSavepoint(
       };
     });
   } catch (e) {
-    // Savepoint rolled back. Outer tx + other rows preserved.
-    // H-3 + NEW-D fix: preserve TxStageError.stage taxonomy via
-    // BOTH the `RowOutcome.row_failed` field AND the
-    // `csv_import_row_failed` audit payload — dashboard alerting on
-    // `audit_emit` failures (security-critical) now works.
+    // Savepoint rolled back; outer tx + other rows preserved. Preserve
+    // `TxStageError.stage` taxonomy on BOTH the `RowOutcome.row_failed`
+    // field AND the `csv_import_row_failed` audit payload so dashboards
+    // can alert on `audit_emit` failures (security-critical).
     const reason = e instanceof Error ? e.message : String(e);
     const failureStage: FailureStage =
       e instanceof TxStageError ? e.stage : 'unknown';
@@ -394,7 +392,7 @@ async function processBatch(
   // (these don't need DB work). This also reduces tx wall-clock by
   // avoiding the savepoint overhead for parser-failed rows.
   const outcomes: RowOutcome[] = new Array(batch.length);
-  const dbRows: Array<{ index: number; row: ParsedRow }> = [];
+  const dbRows: Array<{ index: number; row: ParsedOkRow }> = [];
   for (let i = 0; i < batch.length; i++) {
     const row = batch[i] as ParsedRow;
     if (!row.ok) {
@@ -413,22 +411,18 @@ async function processBatch(
     return outcomes;
   }
 
-  // Open ONE outer tx for the whole batch's DB work. Inside the tx,
-  // each row runs in its own SAVEPOINT (via `runRowInSavepoint`) so
-  // per-row failures don't poison the batch.
+  // Open ONE outer tx for the whole batch. Each row runs in its own
+  // SAVEPOINT via `runRowInSavepoint` so per-row failures don't poison
+  // the batch.
   //
-  // NEW-A fix (Round-2 review, 2026-05-15): collect per-row outcomes
-  // into a TENTATIVE buffer inside the tx callback. Only assign to the
-  // returned `outcomes` array AFTER `runInTenantTx` resolves successfully
-  // (i.e., the outer Postgres COMMIT acknowledged). If the tx throws —
-  // whether at row-time, savepoint-time, OR at final COMMIT time
-  // (deferred constraint, network drop between final COMMIT byte and
-  // server ack, serialisation conflict) — the tentative buffer is
-  // discarded and the catch block unconditionally marks ALL dbRows as
-  // row_failed. Previous H-1 fix only checked `outcomes[index] ===
-  // undefined`, which left already-`inserted` outcomes intact even
-  // when the COMMIT itself failed — a ghost-row reporting bug where
-  // the summary claimed 100 success while Postgres rolled all 100 back.
+  // Collect outcomes into a TENTATIVE buffer inside the tx callback;
+  // promote to the returned `outcomes` array only AFTER `runInTenantTx`
+  // resolves successfully (outer COMMIT acknowledged). If the tx
+  // throws at any point — row, savepoint, or final-COMMIT (deferred
+  // constraint, network drop, serialisation conflict) — Postgres
+  // rolls back ALL row effects and the catch block marks every dbRow
+  // as `row_failed`. This prevents the ghost-row reporting bug where
+  // the summary claimed success for rows the COMMIT later discarded.
   const tentativeOutcomes: RowOutcome[] = new Array(dbRows.length);
   try {
     await deps.runInTenantTx(input.tenantId, async (batchPorts) => {
@@ -442,19 +436,27 @@ async function processBatch(
         );
       }
     });
-    // Tx committed — promote tentative outcomes to the returned array.
     for (let i = 0; i < dbRows.length; i++) {
       const { index } = dbRows[i]!;
       outcomes[index] = tentativeOutcomes[i]!;
     }
   } catch (e) {
-    // H-1 + NEW-A fix: batch-level catastrophic failure (tx-open
-    // failed, RLS denial — Constitution Principle I bug signal —
-    // connection-pool exhaustion, deadlock, deferred-constraint COMMIT
-    // failure, network drop mid-COMMIT). Whatever side effects rows
-    // produced via savepoints are AUTOMATICALLY rolled back by Postgres
-    // when the outer tx aborts; the tentative buffer is therefore
-    // discarded and ALL dbRows are marked row_failed unconditionally.
+    // Batch-level catastrophic failure (tx-open failed, RLS denial —
+    // Constitution Principle I bug signal — pool exhaustion, deadlock,
+    // deferred-constraint COMMIT failure, network drop mid-COMMIT).
+    // Postgres rolls back ALL row effects in the batch (inserted +
+    // duplicate-receipt inserts alike). Mark every dbRow as failed in
+    // the returned outcomes — but preserve savepoint-thrown rows'
+    // original `failureStage` taxonomy (event_upsert / etc.) so SRE
+    // dashboards keep the root-cause signal intact.
+    //
+    // Duplicate-audit guard: rows whose savepoint already emitted
+    // `csv_import_row_failed` via `processOneRowInSavepoint`'s catch
+    // (i.e., `tentativeOutcomes[i].kind === 'row_failed'`) must NOT
+    // get a second fan-out audit emit. Otherwise SRE rate alerts
+    // double-count and forensic reviewers see contradictory
+    // narratives (`event_upsert` vs `batch_tx_aborted`) for the same
+    // rowNumber.
     const reason = e instanceof Error ? e.message : String(e);
     logger.error(
       {
@@ -467,28 +469,41 @@ async function processBatch(
       },
       '[F6] CSV batch tx aborted — all rows in batch failed; investigate RLS / pool / deadlock / commit signals',
     );
-    // NEW-G fix: parallel fan-out via Promise.allSettled. Audit-emit
-    // failure on one row no longer aborts fan-out for siblings, and
-    // serial connect-timeouts no longer stack into multi-minute
-    // hangs when the pool was the failure mode.
+    // Parallel fan-out (vs serial `await` loop) — 100x faster forensic
+    // emit on N=100-row batches. `safeEmitRowFailed` swallows internal
+    // errors so `Promise.allSettled` is defensive; `Promise.all` would
+    // also work today, kept as `allSettled` in case the internal
+    // swallow is later refactored away.
     await Promise.allSettled(
-      dbRows.map(({ row }) =>
-        safeEmitRowFailed(
-          deps,
-          input,
-          row.rowNumber,
-          `batch tx aborted: ${reason}`,
-          '',
+      dbRows
+        .filter(({ index: _i }, i) => tentativeOutcomes[i]?.kind !== 'row_failed')
+        .map(({ row }) =>
+          safeEmitRowFailed(
+            deps,
+            input,
+            row.rowNumber,
+            `batch tx aborted: ${reason}`,
+            '',
+          ),
         ),
-      ),
     );
-    for (const { index, row } of dbRows) {
-      outcomes[index] = {
-        kind: 'row_failed',
-        rowNumber: row.rowNumber,
-        reason: `batch tx aborted: ${reason}`,
-        failureStage: 'unknown',
-      };
+    for (let i = 0; i < dbRows.length; i++) {
+      const { index, row } = dbRows[i]!;
+      const tentative = tentativeOutcomes[i];
+      // Preserve the savepoint-catch'd outcome for rows that already
+      // resolved as row_failed — they carry the precise `failureStage`
+      // taxonomy from `processAttendeeInTx.TxStageError`, which is
+      // strictly more informative than the catch-all batch reason.
+      if (tentative?.kind === 'row_failed') {
+        outcomes[index] = tentative;
+      } else {
+        outcomes[index] = {
+          kind: 'row_failed',
+          rowNumber: row.rowNumber,
+          reason: `batch tx aborted: ${reason}`,
+          failureStage: 'unknown',
+        };
+      }
     }
   }
 
@@ -496,17 +511,28 @@ async function processBatch(
 }
 
 /**
- * Wrap `csv_import_row_failed` emit in a try/catch — an audit failure
- * on a row-failure path should not cascade into a use-case-level
- * exception. **Phase 7 review C-1 fix (2026-05-15)**: previous "swallow
- * + best-effort" pattern lost the forensic trail when the audit emitter
- * itself failed (composition-root bugs in `makeLoudDummyExecutorPort`
- * + audit-port DB outages + enum drift all swallowed silently). Now
- * logs via `logger.error` + emits the dedicated `csvImportAuditEmitFailed`
- * counter so SREs can alert on `rate > 0`. The row's outcome is still
- * captured by `errorRowCount` on `csv_import_completed`, but the
- * detailed `rowNumber + reason + rawRowExcerpt` forensic trio is now
- * preserved in stderr when the DB write fails.
+ * Record an audit-emit failure (either `Result.err` or thrown exception)
+ * to the dedicated `csvImportAuditEmitFailed` counter + a structured
+ * `logger.error`. Centralises observability for the C-1/C-2 forensic-gap
+ * paths so SREs can alert on `rate > 0` consistently across all four
+ * emit sites (row-failed × {err, throw}, completed × {err, throw}).
+ */
+function recordAuditEmitFailure(
+  tenantId: TenantId,
+  eventType: 'csv_import_row_failed' | 'csv_import_completed',
+  logEvent: string,
+  logMessage: string,
+  context: Readonly<Record<string, unknown>>,
+): void {
+  eventcreateMetrics.csvImportAuditEmitFailed(tenantId, eventType);
+  logger.error({ event: logEvent, tenantId, ...context }, logMessage);
+}
+
+/**
+ * Emit `csv_import_row_failed` audit; never throws. Audit-emit failure
+ * is recorded via `recordAuditEmitFailure` so the row's forensic trio
+ * (rowNumber + reason + rawRowExcerpt) survives in stderr even when
+ * the DB write fails.
  */
 async function safeEmitRowFailed(
   deps: ImportCsvDeps,
@@ -514,9 +540,6 @@ async function safeEmitRowFailed(
   rowNumber: number,
   reason: string,
   rawExcerpt: string,
-  // NEW-D fix (Round-2 review, 2026-05-15): caller threads the
-  // `FailureStage` taxonomy from `processAttendeeInTx.TxStageError`
-  // when known; parser-fail + batch-tx-abort paths use 'unknown'.
   failureStage: FailureStage = 'unknown',
 ): Promise<void> {
   try {
@@ -537,38 +560,21 @@ async function safeEmitRowFailed(
       },
     });
     if (!result.ok) {
-      eventcreateMetrics.csvImportAuditEmitFailed(
+      recordAuditEmitFailure(
         input.tenantId,
         'csv_import_row_failed',
-      );
-      logger.error(
-        {
-          event: 'f6_csv_row_failed_audit_emit_failed',
-          tenantId: input.tenantId,
-          rowNumber,
-          reason: reason.slice(0, 500),
-          auditErrKind: result.error.kind,
-        },
+        'f6_csv_row_failed_audit_emit_failed',
         '[F6] csv_import_row_failed audit emit failed — forensic trail loss; row outcome still tracked in summary counter',
+        { rowNumber, reason: reason.slice(0, 500), auditErrKind: result.error.kind },
       );
     }
   } catch (e) {
-    // Catastrophic emit-throw (composition-root bug, transport down,
-    // OOM mid-serialise). Surface to stderr so the forensic gap is
-    // visible even though the DB write was never attempted.
-    eventcreateMetrics.csvImportAuditEmitFailed(
+    recordAuditEmitFailure(
       input.tenantId,
       'csv_import_row_failed',
-    );
-    logger.error(
-      {
-        event: 'f6_csv_row_failed_audit_emit_threw',
-        tenantId: input.tenantId,
-        rowNumber,
-        reason: reason.slice(0, 500),
-        err: e instanceof Error ? e.message : String(e),
-      },
+      'f6_csv_row_failed_audit_emit_threw',
       '[F6] csv_import_row_failed audit emitter threw — forensic trail loss',
+      { rowNumber, reason: reason.slice(0, 500), err: e instanceof Error ? e.message : String(e) },
     );
   }
 }
@@ -608,12 +614,9 @@ export async function importCsv(
         missingColumns: parsed.error.missingColumns,
       };
     }
-    // NEW-C fix (Round-2 review, 2026-05-15): surface the parser's
-    // real `reason` field (when present — currently invalid_utf8 only,
-    // per H-2 fix in csv-importer.ts) into the route's response
-    // detail. Admin who uploaded a UTF-16 / wrong-encoding CSV now
-    // sees an actionable hint ("re-save as UTF-8 without BOM") instead
-    // of a generic 500. file_too_large path has no `reason` field.
+    // Surface the parser's `reason` field (invalid_utf8 only — the
+    // file_too_large variant has no `reason`) so admins uploading a
+    // wrong-encoding CSV see an actionable hint instead of a generic 500.
     const parserReason =
       'reason' in parsed.error && typeof parsed.error.reason === 'string'
         ? parsed.error.reason
@@ -712,16 +715,16 @@ export async function importCsv(
 
   const durationMs = Date.now() - startedAtMs;
 
-  // Phase 4: emit per-import `csv_import_completed` audit.
-  // **Phase 7 review C-2 + NEW-E fix (2026-05-15)**: previous swallow
-  // lost the entire-import forensic record (matchCounts + eventsCreated
-  // + errorRowCount + durationMs all canonical here, no other recovery
-  // surface). Now logs + counters so SREs alert on forensic gaps even
-  // when the route still returns 200 + the dashboard counter increments.
-  // NEW-E dropped the `completedAuditOk` dead-flag pattern — the route
-  // returns 200 regardless of audit-emit outcome per the "DB
-  // committed" invariant; the logger.error + metric counter together
-  // ARE the observability signal, no need for an unused local.
+  // Phase 4: emit per-import `csv_import_completed` audit. Audit-emit
+  // failure is observable via `recordAuditEmitFailure` (C-2 fix); the
+  // route still returns 200 per the "DB committed" invariant — the
+  // logger.error + metric counter together ARE the observability signal.
+  const completedAuditContext = {
+    rowsProcessed: summary.rowsProcessed,
+    rowsAlreadyImported: summary.rowsAlreadyImported,
+    errorRowCount: summary.errorRows.length,
+    durationMs,
+  };
   try {
     const result = await deps.emitStandalone({
       eventType: 'csv_import_completed',
@@ -743,39 +746,21 @@ export async function importCsv(
       },
     });
     if (!result.ok) {
-      eventcreateMetrics.csvImportAuditEmitFailed(
+      recordAuditEmitFailure(
         input.tenantId,
         'csv_import_completed',
-      );
-      logger.error(
-        {
-          event: 'f6_csv_import_completed_audit_emit_failed',
-          tenantId: input.tenantId,
-          rowsProcessed: summary.rowsProcessed,
-          rowsAlreadyImported: summary.rowsAlreadyImported,
-          errorRowCount: summary.errorRows.length,
-          durationMs,
-          auditErrKind: result.error.kind,
-        },
+        'f6_csv_import_completed_audit_emit_failed',
         '[F6] csv_import_completed audit emit failed — entire-import forensic record lost; DB side effects committed but no audit row exists',
+        { ...completedAuditContext, auditErrKind: result.error.kind },
       );
     }
   } catch (e) {
-    eventcreateMetrics.csvImportAuditEmitFailed(
+    recordAuditEmitFailure(
       input.tenantId,
       'csv_import_completed',
-    );
-    logger.error(
-      {
-        event: 'f6_csv_import_completed_audit_emit_threw',
-        tenantId: input.tenantId,
-        rowsProcessed: summary.rowsProcessed,
-        rowsAlreadyImported: summary.rowsAlreadyImported,
-        errorRowCount: summary.errorRows.length,
-        durationMs,
-        err: e instanceof Error ? e.message : String(e),
-      },
+      'f6_csv_import_completed_audit_emit_threw',
       '[F6] csv_import_completed audit emitter threw — entire-import forensic record lost',
+      { ...completedAuditContext, err: e instanceof Error ? e.message : String(e) },
     );
   }
 

@@ -116,9 +116,8 @@ export async function runImportCsv(
   const deps = makeImportCsvDeps();
   const outcome = await importCsv(
     {
-      // NEW-H fix (Round-2 review, 2026-05-15): brand the slug at the
-      // composition boundary so the use-case never sees an unbranded
-      // string. Matches the H-15 pattern for actorUserId.
+      // Brand at the composition boundary so the use-case never sees
+      // an unbranded string (matches the H-15 pattern for actorUserId).
       tenantId: asTenantId(input.tenantSlug),
       actorUserId: input.actorUserId,
       bytes: input.bytes,

@@ -132,23 +132,16 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
   });
 
   /**
-   * H-13 fix (2026-05-15) — F6 Phase 7 CSV import surface axe-core
-   * scan. Three visual states render distinct DOM trees; each renders
-   * different roles + ARIA + colour-contrast surfaces, so each needs
-   * its own scan:
-   *   1. idle state — empty file input + drop zone (most-frequently
-   *      visited; every admin click on "Import CSV" lands here first)
-   *   2. preview-error state — malformed-header inline Alert with
-   *      missing-columns list + disabled Confirm CTA
-   *   3. completed-with-result state — result card with headline
-   *      counters + per-match-type breakdown + (collapsible) error rows
+   * F6 Phase 7 CSV import surface axe-core scans. The three visual
+   * states render distinct DOM trees (different roles + ARIA +
+   * colour-contrast surfaces), so each needs its own scan:
+   *   1. idle — empty file input + drop zone
+   *   2. preview-error — malformed-header inline Alert + disabled CTA
+   *   3. completed-with-result — result card + counters + breakdown
    *
-   * NEW-M fix (Round-2 review, 2026-05-15): extended from just the
-   * idle scan to all three visual states. T091 covers the functional
-   * spec for (2) + (3); only this file catches WCAG 2.1 AA defects
-   * (colour contrast on the Alert banner, label-input pairing on the
-   * remap selects, focusable-without-visible-focus on disabled CTAs,
-   * landmark hierarchy on the result card).
+   * T091 covers the functional spec for (2)+(3); only these scans
+   * catch WCAG 2.1 AA defects (Alert contrast, remap-select labels,
+   * disabled-CTA focus rings, result-card landmark hierarchy).
    */
   test('admin CSV import — idle state (/admin/events/import) @a11y', async ({ page }) => {
     await signInAsAdmin(page);
@@ -243,6 +236,67 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     await expectNoAxeViolations(
       page,
       '/admin/events/import (completed-with-result state)',
+    );
+  });
+
+  test('admin CSV import — completed-with-errors expanded state @a11y', async ({
+    page,
+  }) => {
+    // The result card has two distinct error-row DOM branches:
+    //   - `<p>` empty-state when errorRows.length === 0
+    //   - `<details>/<summary>` collapsible when errorRows.length > 0
+    // The previous test scans the empty-state path; this one upload
+    // CSV with malformed-email rows so the per-row insert fails inside
+    // the savepoint, surfaces in errorRows[], and the disclosure
+    // becomes interactive — then we expand it and re-scan. Catches
+    // WCAG defects unique to the `<summary>` + text-destructive
+    // contrast surface (WCAG 1.4.3 contrast + 2.5.8 tap target).
+    test.setTimeout(120_000);
+
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // 3 valid rows + 2 rows with invalid emails (zod email-validator
+    // rejects in attendee path → row_failed). Mix proves the result
+    // card renders BOTH the headline counters AND the error rows.
+    const ts = Date.now();
+    const lines = [
+      'event_external_id,event_name,event_start,attendee_email,attendee_name',
+      `event_a11y_err_${ts}_0,A11y Err Test,2026-06-21T18:00:00+07:00,valid_${ts}_0@example.com,Valid Attendee 0`,
+      `event_a11y_err_${ts}_1,A11y Err Test,2026-06-21T18:00:00+07:00,not-an-email-${ts},Invalid Attendee 1`,
+      `event_a11y_err_${ts}_2,A11y Err Test,2026-06-21T18:00:00+07:00,valid_${ts}_2@example.com,Valid Attendee 2`,
+      `event_a11y_err_${ts}_3,A11y Err Test,2026-06-21T18:00:00+07:00,also@bad@nope.com,Invalid Attendee 3`,
+      `event_a11y_err_${ts}_4,A11y Err Test,2026-06-21T18:00:00+07:00,valid_${ts}_4@example.com,Valid Attendee 4`,
+    ];
+    const csvBytes = Buffer.from(lines.join('\n'), 'utf8');
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'a11y-with-errors.csv',
+      mimeType: 'text/csv',
+      buffer: csvBytes,
+    });
+    await page
+      .getByRole('button', { name: /import|confirm|upload/i })
+      .click();
+
+    await expect(
+      page.locator('[data-testid="csv-import-result"]'),
+    ).toBeVisible({ timeout: 90_000 });
+
+    // Expand the error-rows disclosure so axe sees the open state.
+    // The `<summary>` carries `min-h-6 + py-1` (WCAG 2.5.8) and
+    // expanded content renders inside a `text-destructive bg-
+    // destructive/5` panel (WCAG 1.4.3 contrast). Both must pass.
+    const summary = page.locator('[data-testid="csv-import-result"] summary');
+    if ((await summary.count()) > 0) {
+      await summary.first().click();
+    }
+
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (completed-with-errors expanded state)',
     );
   });
 });

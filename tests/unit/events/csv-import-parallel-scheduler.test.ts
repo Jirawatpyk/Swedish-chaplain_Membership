@@ -162,9 +162,38 @@ describe('NEW-K — parallel batch scheduler', () => {
     // healthy implementation. Allow ≥ 2 to tolerate scheduler-jitter
     // edge cases while still ruling out the serial=1 regression.
     expect(callTracker.peakInFlight).toBeGreaterThanOrEqual(2);
+    // Upper bound: rule out a "no-cap" regression where someone
+    // refactors the worker pool into `Promise.all(batches.map(...))`
+    // and silently saturates the connection pool. peakInFlight must
+    // never exceed batchConcurrency=3.
+    expect(callTracker.peakInFlight).toBeLessThanOrEqual(3);
     if (outcome.kind === 'completed') {
       expect(outcome.summary.rowsAlreadyImported).toBe(6);
     }
+  });
+
+  it('batchConcurrency=2 caps peak at 2 (disambiguates cap value)', async () => {
+    const { deps, callTracker } = makeConcurrencyTrackingDeps();
+    const csvBytes = buildCsv(6);
+
+    const outcome = await importCsv(
+      {
+        tenantId: asTenantId('test-chamber-par-2'),
+        actorUserId: asUserId('00000000-0000-0000-0000-000000000203'),
+        bytes: csvBytes,
+        batchSize: 1,
+        batchConcurrency: 2,
+      },
+      deps,
+    );
+
+    expect(outcome.kind).toBe('completed');
+    expect(callTracker.totalCalls).toBe(6);
+    // Strict equality — at batchConcurrency=2 with 6 batches and
+    // microtask-yield mocks, the pool MUST peak at exactly 2. This
+    // disambiguates "≥ 2" from "= 3" in the headline test above and
+    // proves the cap value actually drives the scheduler.
+    expect(callTracker.peakInFlight).toBe(2);
   });
 
   it('batchConcurrency=1 produces strictly serial execution (control path)', async () => {

@@ -68,20 +68,12 @@ import { applyQuotaEffect, buildQuotaLockKey } from '../apply-quota-effect';
 // TxStageError — shared between helper and webhook/CSV callers
 // ---------------------------------------------------------------------------
 
-/**
- * Closed enum of failure stages emitted as the `failureStage` payload
- * field on `webhook_rolled_back` / `csv_import_row_failed` audits.
- * `match_attendee` failures roll up to `event_upsert` because the audit
- * taxonomy has 6 enum values; surfacing the same closed set keeps the
- * audit payload type-safe.
- */
-export type FailureStage =
-  | 'event_upsert'
-  | 'registration_insert'
-  | 'idempotency_receipt'
-  | 'quota_decrement'
-  | 'audit_emit'
-  | 'unknown';
+import type { FailureStage } from '../../ports/audit-port';
+
+// Re-export so callers in `application/use-cases/*` can import the
+// taxonomy from either the helper or the audit-port — both names refer
+// to the SAME type declared once in audit-port.ts (H5 deduplication).
+export type { FailureStage };
 
 export class TxStageError extends Error {
   constructor(
@@ -499,14 +491,9 @@ export async function processAttendeeInTx(
       ) {
         detail = qe.message;
       } else {
-        // quota_lookup_failed — simplify (2026-05-15): switch over the
-        // nested cause kind instead of the prior triple-nested ternary
-        // (CLAUDE.md explicit rule against nested ternaries).
-        // NEW-F fix (Round-2 review, 2026-05-15): explicit case for
-        // every variant + `default: never` exhaustiveness assertion.
-        // A future 4th variant of `QuotaAccountingError.cause.kind`
-        // would compile-error here instead of silently mislabelling
-        // as `plan_not_found`.
+        // quota_lookup_failed — switch on the nested cause with an
+        // explicit case per variant + `default: never` exhaustiveness
+        // assertion so a future 4th variant compile-errors here.
         const c = qe.cause;
         switch (c.kind) {
           case 'db_error':

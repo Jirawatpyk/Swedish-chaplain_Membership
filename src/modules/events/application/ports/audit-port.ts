@@ -47,6 +47,27 @@ import type { ProcessingOutcome } from '../../domain/value-objects/webhook-outco
 import type { SecretLastFour } from '../../domain/secret-last-four';
 import type { RequestId } from '../../domain/branded-types';
 
+/**
+ * Failure-stage taxonomy emitted as the `failureStage` payload field on
+ * `webhook_rolled_back` + `csv_import_row_failed` audits. Canonical source
+ * for both audit payloads AND `process-attendee-in-tx.TxStageError.stage`
+ * — single declaration prevents drift when a 7th stage is added.
+ *
+ * `match_attendee` failures roll up to `event_upsert` rather than getting
+ * a dedicated stage — match is read-only against F3 and conceptually part
+ * of the same atomic ingest boundary as the upsert.
+ *
+ * `'unknown'` reserved for non-TxStageError throws + batch-tx-abort
+ * fan-out where the stage is opaque to the catch site.
+ */
+export type FailureStage =
+  | 'event_upsert'
+  | 'registration_insert'
+  | 'idempotency_receipt'
+  | 'quota_decrement'
+  | 'audit_emit'
+  | 'unknown';
+
 // --- Canonical event-type list (37 events; migrations 0132 + 0137; 0138 ---
 // added `wizard_privacy_notice_acknowledged` enum value retired from TS
 // during round-10 staff review, retained harmlessly in Postgres)
@@ -188,13 +209,7 @@ export interface AuditPayloads {
     readonly severity: Severity;
     readonly requestId: string;
     readonly source: 'eventcreate' | 'eventcreate_csv';
-    readonly failureStage:
-      | 'event_upsert'
-      | 'registration_insert'
-      | 'idempotency_receipt'
-      | 'quota_decrement'
-      | 'audit_emit'
-      | 'unknown';
+    readonly failureStage: FailureStage;
     readonly errorMessage: string;
     readonly errorStack: string | null;
     readonly audit_secondary_tx_failure?: boolean;
@@ -419,24 +434,12 @@ export interface AuditPayloads {
     readonly reason: string;
     readonly rawRowExcerpt: string;
     /**
-     * NEW-D fix (Round-2 review, 2026-05-15): surface the `FailureStage`
-     * taxonomy from `processAttendeeInTx` (mirrors the webhook's
-     * `webhook_rolled_back.failureStage` field). Lets SRE dashboards
-     * alert on `audit_emit` failures (security-critical — forensic
-     * gap) separately from routine `event_upsert` /
-     * `registration_insert` / `quota_decrement` row-level validation
-     * failures. Closed value-set: 'event_upsert' / 'registration_insert'
-     * / 'idempotency_receipt' / 'quota_decrement' / 'audit_emit' /
-     * 'unknown' (last for non-TxStageError throws + batch-tx-abort
-     * fan-out where the stage is opaque).
+     * Failure-stage taxonomy from `processAttendeeInTx` — same canonical
+     * union as `webhook_rolled_back.failureStage`. SRE dashboards alert
+     * on `audit_emit` failures (security-critical forensic gap)
+     * separately from routine validation paths.
      */
-    readonly failureStage:
-      | 'event_upsert'
-      | 'registration_insert'
-      | 'idempotency_receipt'
-      | 'quota_decrement'
-      | 'audit_emit'
-      | 'unknown';
+    readonly failureStage: FailureStage;
   };
 
   // --- Privacy + compliance (4) -----------------------------------------

@@ -280,6 +280,22 @@ export async function POST(request: NextRequest): Promise<Response> {
         },
         '[F6] CSV import use-case returned unexpected_error',
       );
+      // Surface parser-class messages (UTF-8 BOM / encoding hints) as
+      // the response detail so admin sees actionable remediation
+      // ("re-save as UTF-8 without BOM") instead of the generic 500.
+      // The use-case prefixes parser errors with "parser error:" — the
+      // discriminator is intentional + grep-able. Other unexpected
+      // errors (DB pool exhaustion, internal bugs) keep the generic
+      // detail since their messages could leak implementation specifics.
+      if (outcome.message.startsWith('parser error:')) {
+        return problemResponse(
+          400,
+          'csv-parser-error',
+          'CSV file could not be parsed',
+          outcome.message,
+          { extras: { requestId } },
+        );
+      }
       return problemResponse(
         500,
         'internal',

@@ -54,13 +54,26 @@ describe('H-10 — time-budget short-circuit semantics', () => {
   });
 
   it(
-    'returns timeout when batches exceed timeBudgetMs; partial commits persist',
+    'returns timeout AFTER partial commits when timeBudgetMs trips between batches; partial commits persist on live Neon',
     { timeout: 120_000 },
     async () => {
-      // 300 rows / batchSize=50 = 6 batches with concurrency=1 (serial)
-      // → at ~273ms/row cross-region, 1 batch = ~14s. Budget 8s trips
-      // after the first batch completes but before the 2nd starts.
-      const ROW_COUNT = 300;
+      // Drive the budget aggressively — `timeBudgetMs: 1` guarantees
+      // the wall-clock check (`Date.now() - startedAtMs > 1ms`) trips
+      // BEFORE any batch can fully complete + commit on any runner,
+      // including intra-region Neon ap-southeast-1 (where the
+      // previous "8s budget" silently passed by completing under
+      // budget). The deterministic guarantee of NEW-L's unit test
+      // covers the scheduler logic; this integration test now
+      // exclusively validates the cross-tx persistence invariant —
+      // committed rows survive even when subsequent batches time out.
+      //
+      // `batchConcurrency: 1` keeps the test serial: batch 0 starts
+      // immediately (worker pulled idx=0 before the 1ms budget check
+      // could fire), commits its 50 rows, then the worker re-enters
+      // the loop, observes `timeBudgetExceeded=true`, returns. Hence
+      // we expect exactly 1 batch worth of rows persisted.
+      const ROW_COUNT = 150;
+      const BATCH_SIZE = 50;
       const csvBytes = buildBudgetCsv(ROW_COUNT);
 
       const deps = makeImportCsvDeps();
@@ -69,33 +82,26 @@ describe('H-10 — time-budget short-circuit semantics', () => {
           tenantId: asTenantId(tenant.ctx.slug),
           actorUserId: asUserId('00000000-0000-0000-0000-000000000077'),
           bytes: csvBytes,
-          batchSize: 50,
-          batchConcurrency: 1, // serial so the budget bites cleanly
-          timeBudgetMs: 8_000,
+          batchSize: BATCH_SIZE,
+          batchConcurrency: 1,
+          timeBudgetMs: 1,
         },
         deps,
       );
 
-      // On cross-region this reliably trips timeout. On prod-region it
-      // may complete before budget — guard against that by accepting
-      // either timeout or completed-but-NOT-all-rows-processed.
-      if (outcome.kind === 'timeout') {
-        // Verify partial commits persisted (at least one batch
-        // completed before the budget bit).
-        const regs = await runInTenant(tenant.ctx, async (tx) =>
-          tx
-            .select()
-            .from(eventRegistrations)
-            .where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
-        );
-        expect(regs.length).toBeGreaterThan(0);
-        expect(regs.length).toBeLessThan(ROW_COUNT);
-        return;
-      }
-      // Fallback: if the bench machine completed under 8s, the budget
-      // didn't bite. That's environment-dependent, not a code bug —
-      // skip the strict assertion. Test still passes.
-      expect(outcome.kind).toBe('completed');
+      expect(outcome.kind).toBe('timeout');
+
+      // Cross-tx persistence: rows from the in-flight batch survive
+      // even though the use-case returned `timeout`. This is the
+      // contract the unit test cannot verify (needs a real DB).
+      const regs = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.tenantId, tenant.ctx.slug)),
+      );
+      expect(regs.length).toBeGreaterThan(0);
+      expect(regs.length).toBeLessThan(ROW_COUNT);
     },
   );
 });
