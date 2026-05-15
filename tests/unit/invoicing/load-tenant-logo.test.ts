@@ -8,9 +8,19 @@
  *   4. blob fetch throws     → null (logged) — never propagates so the
  *                              tax-document render survives a Blob outage
  */
-import { describe, expect, it, vi } from 'vitest';
-import { loadTenantLogo } from '@/modules/invoicing/application/lib/load-tenant-logo';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  loadTenantLogo,
+  _resetLogoCacheForTesting,
+} from '@/modules/invoicing/application/lib/load-tenant-logo';
 import type { BlobStoragePort } from '@/modules/invoicing/application/ports/blob-storage-port';
+
+beforeEach(() => {
+  // Clear the in-process logo cache between tests so each case starts
+  // from a known empty-cache state. Cache hits would otherwise mask
+  // changes in blob.downloadBytes call counts.
+  _resetLogoCacheForTesting();
+});
 
 function makeBlobStub(
   overrides: Partial<BlobStoragePort> = {},
@@ -98,5 +108,36 @@ describe('loadTenantLogo', () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  it('caches successful loads — second call for same key does not re-fetch', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const downloadBytes = vi.fn().mockResolvedValue(bytes);
+    const blob = makeBlobStub({ downloadBytes });
+    const key = 'invoicing/test-tenant/logos/cached.png';
+
+    const first = await loadTenantLogo(blob, key);
+    const second = await loadTenantLogo(blob, key);
+
+    expect(first).toEqual({ bytes, format: 'png' });
+    expect(second).toEqual({ bytes, format: 'png' });
+    // Cache hit on second call — blob.downloadBytes only invoked once.
+    expect(downloadBytes).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT cache failures — retries on the next call', async () => {
+    const downloadBytes = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('transient'))
+      .mockResolvedValueOnce(new Uint8Array([9]));
+    const blob = makeBlobStub({ downloadBytes });
+    const key = 'invoicing/test-tenant/logos/transient.png';
+
+    const first = await loadTenantLogo(blob, key);
+    const second = await loadTenantLogo(blob, key);
+
+    expect(first).toBeNull();
+    expect(second).toEqual({ bytes: new Uint8Array([9]), format: 'png' });
+    expect(downloadBytes).toHaveBeenCalledTimes(2);
   });
 });

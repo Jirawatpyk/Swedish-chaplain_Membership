@@ -38,16 +38,34 @@ export async function GET(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  const result = await getReceiptPdfSignedUrl(
-    makeGetReceiptPdfSignedUrlDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role,
-      requestId,
-      invoiceId,
-    },
-  );
+  // Wrap the use-case call so an audit-emit failure (Neon transient,
+  // retention column constraint, etc.) surfaces as a structured 500
+  // with stable error code instead of a bare Next.js framework 500.
+  // The signed URL is already returned by the use-case on the success
+  // path — losing the audit emit is regulatorily worse than failing
+  // the download, hence we let the error propagate to the caller.
+  let result: Awaited<ReturnType<typeof getReceiptPdfSignedUrl>>;
+  try {
+    result = await getReceiptPdfSignedUrl(
+      makeGetReceiptPdfSignedUrlDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: ctx.current.user.role,
+        requestId,
+        invoiceId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      'GET /api/invoices/[id]/receipt/pdf — use-case threw (likely audit-emit failure)',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
 
   if (!result.ok) {
     logger.warn(

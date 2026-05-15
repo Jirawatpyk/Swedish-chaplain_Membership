@@ -262,6 +262,9 @@ export default async function AdminInvoicesPage({
         // Receipt No. column — null on non-paid + paid-combined-mode.
         // Paid-separate-mode rows carry the §87 RC sequence number.
         receiptDocumentNumberRaw: r.receiptDocumentNumberRaw ?? null,
+        // Receipt PDF availability for the Actions cell download link
+        // — paid + worker has rendered the receipt-stamped bytes.
+        hasReceiptPdf: r.status === 'paid' && r.receiptPdf !== null,
       }))
     : [];
 
@@ -269,6 +272,11 @@ export default async function AdminInvoicesPage({
 
   return (
     <TableContainer>
+      {/* TODO(phase-3): CSV export of paid invoices for Thai VAT
+          monthly filing (ภพ.30 prep workflow). Approved scope deferred
+          2026-05-15 — see `.claude/plans/jolly-shimmying-sundae.md`
+          § "Phase 3 — CSV Export of paid invoices" for column shape +
+          UTF-8 BOM + audit event `invoices_csv_exported` design. */}
       <PageHeader
         title={t('list.title')}
         subtitle={t('list.description')}

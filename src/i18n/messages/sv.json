@@ -1199,7 +1199,8 @@
         "setupRequired": "Slutför fakturakonfiguration för att börja fakturera.",
         "actions": {
           "new": "Ny faktura",
-          "download": "PDF",
+          "download": "Faktura",
+          "downloadReceipt": "Kvitto",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
         },
@@ -1233,7 +1234,9 @@
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
-        "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat"
+        "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
+        "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
+        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)"
       },
       "new": {
         "title": "Nytt fakturautkast",
@@ -1293,7 +1296,11 @@
           "resendRateLimited": "Dokumentet skickades nyligen igen. Vänta några minuter och försök igen.",
           "resendNoReceipt": "Det finns inget kvitto att skicka (kombinerat läge eller obetald).",
           "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
-          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
+          "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
+          "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
+          "receiptForbidden": "Du har inte behörighet till detta kvitto.",
+          "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen."
         },
         "fields": {
           "memberId": "Medlem",
@@ -2242,7 +2249,10 @@
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
-        "processing": "Bearbetar återbetalning…"
+        "processing": "Bearbetar återbetalning…",
+        "refsInvoice": "Faktura-nr",
+        "refsReceipt": "Kvitto-nr",
+        "refsCombinedHint": "kombinerat"
       },
       "form": {
         "amount": {
@@ -2594,9 +2604,47 @@
           "refreshAriaLabel": "Uppdatera evenemangslistan",
           "inlineCreateModal": {
             "title": "Skapa nytt evenemang",
-            "deferredDescription": "Inline-skapande av evenemang kommer i en uppföljande release. För nu skapar du evenemanget via EventCreate-webbhookens testslutpunkt eller Neon-konsolen, och uppdaterar sedan evenemangslistan.",
-            "workaroundHint": "Tips: Kör EventCreate-webbhooktestet från integrationssidan för att seeda ett nytt evenemang inklusive granskningsspår.",
-            "dismissCta": "OK"
+            "description": "Skapa ett nytt kammarevenemang så att denna CSV-import kan riktas till det. Efter skapande väljs evenemanget automatiskt i rullgardinsmenyn ovan.",
+            "submitCta": "Skapa evenemang",
+            "submittingCta": "Skapar…",
+            "cancelCta": "Avbryt",
+            "createdToast": "Evenemang skapat",
+            "createdToastDesc": "{name} är nu tillgängligt i evenemangslistan.",
+            "alreadyExistsToast": "Evenemang finns redan",
+            "alreadyExistsToastDesc": "Ett evenemang med externalId \"{externalId}\" hittades och valdes.",
+            "fields": {
+              "externalIdLabel": "Externt ID",
+              "externalIdPlaceholder": "t.ex. agm-2026",
+              "externalIdHelp": "Unik kodad slug (1-100 alfanumeriska tecken + bindestreck). Samma värde som CSV använder för event_external_id.",
+              "nameLabel": "Evenemangsnamn",
+              "namePlaceholder": "t.ex. SweCham AGM 2026",
+              "startDateLabel": "Startdatum och tid",
+              "startDateHelp": "Lokal tid i kammarens primära tidszon — lagras som UTC.",
+              "categoryLabel": "Kategori (valfri)",
+              "categoryPlaceholder": "t.ex. AGM, Nätverk, Verkstad",
+              "categoryHelp": "Fri text som används för filtrering i evenemangslistan.",
+              "errors": {
+                "externalIdRequired": "Externt ID krävs.",
+                "externalIdTooLong": "Externt ID får vara högst 100 tecken.",
+                "externalIdInvalid": "Använd endast alfanumeriska tecken och bindestreck (t.ex. agm-2026).",
+                "nameRequired": "Evenemangsnamn krävs.",
+                "nameTooLong": "Evenemangsnamn får vara högst 500 tecken.",
+                "startDateRequired": "Startdatum och tid krävs.",
+                "categoryTooLong": "Kategori får vara högst 100 tecken."
+              }
+            },
+            "errors": {
+              "invalidStartDateTitle": "Ogiltigt startdatum",
+              "invalidStartDateDetail": "Välj ett giltigt datum och tid innan du skickar.",
+              "networkErrorTitle": "Nätverksfel",
+              "networkErrorDetail": "Kunde inte nå servern. Kontrollera din anslutning och försök igen.",
+              "validationTitle": "Validering misslyckades",
+              "validationDetail": "Ett eller flera fält är ogiltiga. Granska formuläret och försök igen.",
+              "rateLimitTitle": "För många försök",
+              "rateLimitDetail": "Du har skapat för många evenemang den senaste timmen. Vänta en stund och försök igen.",
+              "unexpectedTitle": "Oväntat fel",
+              "unexpectedDetail": "Något gick fel på vår sida. Försök igen; om det kvarstår, kontakta support."
+            }
           }
         },
         "eventMismatch": {
@@ -3589,7 +3637,9 @@
       "pdf_render_failed": "PDF-rendering misslyckades",
       "pdf_render_permanently_failed": "PDF-rendering misslyckades permanent",
       "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
-      "receipt_rendered": "Kvitto renderat"
+      "receipt_rendered": "Kvitto renderat",
+      "receipt_pdf_downloaded": "Kvitto-PDF nedladdat",
+      "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat"
     },
     "eventcreate": {
       "_bootstrap": "EventCreate granskningshändelser"

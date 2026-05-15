@@ -86,7 +86,7 @@ export function DeleteDraftDialog({ invoiceId }: Props) {
             className={buttonVariants({ variant: 'destructive' })}
           >
             {pending && (
-              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
             )}
             {pending ? t('deleting') : t('deleteButton')}
           </AlertDialogAction>

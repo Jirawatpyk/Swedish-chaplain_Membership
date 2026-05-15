@@ -39,6 +39,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 
 import type { AuditPort } from '../ports/audit-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
@@ -304,6 +305,11 @@ export async function renderReceiptPdf(
           },
           'renderReceiptPdf: failed to mark row as failed (suppressed)',
         );
+        // OTel counter — fires when the failure-mark write itself
+        // fails. Under sustained DB issues this can stack up beyond
+        // the 3-retry budget without surfacing as
+        // `pdf_render_permanently_failed`. Alert on any non-zero rate.
+        invoicingMetrics.receiptFailureMarkSuppressed();
       }
       const code: RenderReceiptPdfError['code'] =
         e.error.kind === 'pdf_render_failed'

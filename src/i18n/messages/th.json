@@ -1199,7 +1199,8 @@
         "setupRequired": "ตั้งค่าการออกใบแจ้งหนี้ให้เสร็จก่อนเริ่มใช้งาน",
         "actions": {
           "new": "สร้างใหม่",
-          "download": "PDF",
+          "download": "ใบกำกับ",
+          "downloadReceipt": "ใบเสร็จ",
           "clearFilters": "ล้างตัวกรอง",
           "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้"
         },
@@ -1233,7 +1234,9 @@
         },
         "creditedSuffix": "+{count} ใบลดหนี้",
         "creditedTooltip": "ใบลดหนี้ {count} ฉบับ · ลดหนี้ไปแล้ว {amount} บาท",
-        "creditedAria": "ใบแจ้งหนี้นี้มีการออกใบลดหนี้ {count} ฉบับ ลดหนี้ไปแล้ว {amount} บาท"
+        "creditedAria": "ใบแจ้งหนี้นี้มีการออกใบลดหนี้ {count} ฉบับ ลดหนี้ไปแล้ว {amount} บาท",
+        "receiptNumberCombinedTooltip": "โหมดรวมเอกสาร — ใบเสร็จใช้เลขเดียวกับใบแจ้งหนี้",
+        "receiptNumberCombinedAria": "ใบเสร็จใช้เลขที่ใบแจ้งหนี้ (โหมดรวมเอกสาร)"
       },
       "new": {
         "title": "สร้างใบแจ้งหนี้ฉบับร่าง",
@@ -1293,7 +1296,11 @@
           "resendRateLimited": "เอกสารนี้เพิ่งถูกส่งซ้ำไปเมื่อครู่ กรุณารอสักครู่แล้วลองใหม่",
           "resendNoReceipt": "ไม่มีใบเสร็จให้ส่ง (โหมดรวมเอกสาร หรือยังไม่ได้ชำระ)",
           "resendNotIssued": "ใบแจ้งหนี้ยังเป็นฉบับร่าง กรุณาออกใบแจ้งหนี้ก่อนจึงจะส่งสำเนาได้",
-          "resendFailed": "ไม่สามารถส่งซ้ำได้ กรุณาลองอีกครั้ง"
+          "resendFailed": "ไม่สามารถส่งซ้ำได้ กรุณาลองอีกครั้ง",
+          "receiptPending": "ใบเสร็จกำลังถูกเตรียมไฟล์ PDF กรุณาลองใหม่อีกครั้งในอีกสักครู่",
+          "receiptFailed": "สร้างไฟล์ PDF ใบเสร็จไม่สำเร็จ: {reason} ติดต่อฝ่ายสนับสนุนหากเกิดซ้ำ",
+          "receiptForbidden": "คุณไม่มีสิทธิ์เข้าถึงใบเสร็จนี้",
+          "receiptUnavailable": "ไม่สามารถดาวน์โหลดไฟล์ PDF ใบเสร็จได้ในขณะนี้ กรุณาลองใหม่"
         },
         "fields": {
           "memberId": "สมาชิก",
@@ -2242,7 +2249,10 @@
         "description": "คืนเงินทั้งหมดหรือบางส่วนของรายการชำระเงินนี้ ระบบจะออกใบลดหนี้และส่งอีเมลให้สมาชิกโดยอัตโนมัติ",
         "cancel": "ยกเลิก",
         "confirm": "ยืนยันการคืนเงิน",
-        "processing": "กำลังดำเนินการคืนเงิน…"
+        "processing": "กำลังดำเนินการคืนเงิน…",
+        "refsInvoice": "เลขใบกำกับ",
+        "refsReceipt": "เลขใบเสร็จ",
+        "refsCombinedHint": "รวมเอกสาร"
       },
       "form": {
         "amount": {
@@ -2594,9 +2604,47 @@
           "refreshAriaLabel": "รีเฟรชรายการอีเวนต์",
           "inlineCreateModal": {
             "title": "สร้างอีเวนต์ใหม่",
-            "deferredDescription": "การสร้างอีเวนต์แบบในหน้าจอนี้จะมาในรอบถัดไป สำหรับตอนนี้กรุณาสร้างอีเวนต์ผ่านการทดสอบ EventCreate Webhook หรือ Neon Console จากนั้นรีเฟรชรายการอีเวนต์",
-            "workaroundHint": "เคล็ดลับ: เรียกใช้การทดสอบ EventCreate webhook จากหน้าตั้งค่าการเชื่อมต่อเพื่อสร้างอีเวนต์ใหม่พร้อม audit trail",
-            "dismissCta": "ตกลง"
+            "description": "สร้างอีเวนต์ใหม่ของหอการค้าเพื่อให้ CSV นี้สามารถนำเข้าได้ หลังสร้างเสร็จ ระบบจะเลือกอีเวนต์นี้ในดรอปดาวน์ด้านบนให้อัตโนมัติ",
+            "submitCta": "สร้างอีเวนต์",
+            "submittingCta": "กำลังสร้าง…",
+            "cancelCta": "ยกเลิก",
+            "createdToast": "สร้างอีเวนต์เรียบร้อย",
+            "createdToastDesc": "{name} พร้อมให้ใช้งานในรายการอีเวนต์แล้ว",
+            "alreadyExistsToast": "อีเวนต์มีอยู่แล้ว",
+            "alreadyExistsToastDesc": "พบอีเวนต์ที่มี externalId \"{externalId}\" และถูกเลือกให้แล้ว",
+            "fields": {
+              "externalIdLabel": "รหัสอ้างอิง (External ID)",
+              "externalIdPlaceholder": "เช่น agm-2026",
+              "externalIdHelp": "รหัสเฉพาะ (1-100 ตัวอักษร a-z, 0-9, ยัติภังค์) ใช้ค่าเดียวกับคอลัมน์ event_external_id ใน CSV",
+              "nameLabel": "ชื่ออีเวนต์",
+              "namePlaceholder": "เช่น SweCham AGM 2026",
+              "startDateLabel": "วันที่และเวลาเริ่ม",
+              "startDateHelp": "เวลาตามเขตเวลาหลักของหอการค้า ระบบจะบันทึกเป็น UTC",
+              "categoryLabel": "หมวดหมู่ (ไม่จำเป็น)",
+              "categoryPlaceholder": "เช่น AGM, Networking, Workshop",
+              "categoryHelp": "ข้อความอิสระสำหรับกรองในรายการอีเวนต์",
+              "errors": {
+                "externalIdRequired": "ต้องระบุรหัสอ้างอิง",
+                "externalIdTooLong": "รหัสอ้างอิงต้องมีความยาวไม่เกิน 100 ตัวอักษร",
+                "externalIdInvalid": "ใช้ได้เฉพาะตัวอักษร a-z, ตัวเลข และยัติภังค์เท่านั้น (เช่น agm-2026)",
+                "nameRequired": "ต้องระบุชื่ออีเวนต์",
+                "nameTooLong": "ชื่ออีเวนต์ต้องมีความยาวไม่เกิน 500 ตัวอักษร",
+                "startDateRequired": "ต้องระบุวันที่และเวลาเริ่ม",
+                "categoryTooLong": "หมวดหมู่ต้องมีความยาวไม่เกิน 100 ตัวอักษร"
+              }
+            },
+            "errors": {
+              "invalidStartDateTitle": "วันที่และเวลาไม่ถูกต้อง",
+              "invalidStartDateDetail": "เลือกวันที่และเวลาที่ถูกต้องก่อนส่ง",
+              "networkErrorTitle": "เครือข่ายผิดพลาด",
+              "networkErrorDetail": "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ตรวจสอบการเชื่อมต่อแล้วลองใหม่",
+              "validationTitle": "ข้อมูลไม่ถูกต้อง",
+              "validationDetail": "มีฟิลด์ไม่ถูกต้องอย่างน้อยหนึ่งช่อง ตรวจสอบฟอร์มแล้วลองใหม่",
+              "rateLimitTitle": "พยายามมากเกินไป",
+              "rateLimitDetail": "คุณได้สร้างอีเวนต์มากเกินไปในช่วงชั่วโมงที่ผ่านมา รอสักครู่แล้วลองใหม่",
+              "unexpectedTitle": "เกิดข้อผิดพลาด",
+              "unexpectedDetail": "เกิดความผิดพลาดขึ้นทางเซิร์ฟเวอร์ กรุณาลองใหม่ หากยังพบให้แจ้งทีมสนับสนุน"
+            }
           }
         },
         "eventMismatch": {
@@ -3589,7 +3637,9 @@
       "pdf_render_failed": "สร้าง PDF ไม่สำเร็จ",
       "pdf_render_permanently_failed": "สร้าง PDF ล้มเหลวถาวร",
       "auto_email_delivery_failed": "ส่งอีเมลอัตโนมัติไม่สำเร็จ",
-      "receipt_rendered": "สร้างใบเสร็จรับเงินแล้ว"
+      "receipt_rendered": "สร้างใบเสร็จรับเงินแล้ว",
+      "receipt_pdf_downloaded": "ดาวน์โหลดใบเสร็จรับเงินแล้ว",
+      "tenant_receipt_prefix_changed": "เปลี่ยน prefix เลขเอกสาร"
     },
     "eventcreate": {
       "_bootstrap": "เหตุการณ์ตรวจสอบ EventCreate"

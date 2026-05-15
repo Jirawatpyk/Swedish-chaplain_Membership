@@ -50,14 +50,6 @@ export interface InvoiceMoreMenuProps {
    * roles (Thai RD §86/4 allows one combined document).
    */
   readonly showDownloadReceipt?: boolean;
-  /**
-   * When true (paid + combined-mode), the Download Receipt item's
-   * label changes from "Download Receipt" to "Download Tax Invoice /
-   * Receipt" so the admin sees the dual-role wording. The pre-payment
-   * invoice PDF (`showDownload`) is expected to be FALSE in this state
-   * — see comment block at the top of this file.
-   */
-  readonly combinedModeReceipt?: boolean;
 }
 
 export function InvoiceMoreMenu({
@@ -67,8 +59,13 @@ export function InvoiceMoreMenu({
   showResendInvoice,
   showResendReceipt,
   showDownloadReceipt = false,
-  combinedModeReceipt = false,
 }: InvoiceMoreMenuProps) {
+  // Derive combined-mode receipt label state from the existing prop
+  // matrix instead of exposing a separate `combinedModeReceipt` prop —
+  // they were perfectly correlated (combined-mode hides the pre-payment
+  // invoice PDF, so `showDownload === false && showDownloadReceipt`
+  // uniquely identifies the combined-paid state).
+  const combinedModeReceipt = showDownloadReceipt && !showDownload;
   const t = useTranslations('admin.invoices.detail');
 
   const visibleCount =
@@ -80,6 +77,7 @@ export function InvoiceMoreMenu({
   const [pendingVariant, setPendingVariant] = useState<
     'invoice' | 'receipt' | null
   >(null);
+  const [downloadingReceipt, setDownloadingReceipt] = useState(false);
   const [recentlySent, setRecentlySent] = useState<{
     invoice: boolean;
     receipt: boolean;
@@ -99,6 +97,61 @@ export function InvoiceMoreMenu({
     },
     [],
   );
+
+  /**
+   * Download Receipt PDF — fetch + blob-URL programmatic download so
+   * we can intercept 425 Too Early (async render in flight) and 502
+   * receipt_pdf_failed (worker retry-budget exhausted) with structured
+   * toasts instead of leaking a raw JSON error into a new tab.
+   *
+   * Why fetch instead of `<a download>`: a plain anchor opens the
+   * server response directly in a new tab — on a non-200 response the
+   * user sees `{"error":{...}}` text and has no path forward. The
+   * fetch+blob pattern keeps the UI in control of the failure shape.
+   */
+  const handleDownloadReceipt = async () => {
+    setDownloadingReceipt(true);
+    try {
+      const res = await fetch(`/api/invoices/${invoiceId}/receipt/pdf`);
+      if (res.status === 200) {
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') ?? '';
+        // Extract filename from `attachment; filename="…"; filename*=UTF-8''…`
+        // — falls back to `${documentNumber}-receipt.pdf` if parsing fails.
+        const match = /filename="?([^"]+)"?/.exec(cd);
+        const filename = match?.[1] ?? `${documentNumber}-receipt.pdf`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else if (res.status === 425) {
+        toast.warning(t('toast.receiptPending'));
+      } else if (res.status === 502) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: { code?: string; reason?: string };
+        };
+        if (body.error?.code === 'receipt_pdf_failed') {
+          toast.error(
+            t('toast.receiptFailed', { reason: body.error.reason ?? '' }),
+          );
+        } else {
+          toast.error(t('toast.receiptUnavailable'));
+        }
+      } else if (res.status === 403) {
+        toast.error(t('toast.receiptForbidden'));
+      } else {
+        toast.error(t('toast.receiptUnavailable'));
+      }
+    } catch {
+      toast.error(t('toast.receiptUnavailable'));
+    } finally {
+      setDownloadingReceipt(false);
+    }
+  };
 
   const handleResend = (variant: 'invoice' | 'receipt') => {
     setPendingVariant(variant);
@@ -195,27 +248,27 @@ export function InvoiceMoreMenu({
         )}
         {showDownloadReceipt && (
           <DropdownMenuItem
-            render={(props) => (
-              <a
-                {...props}
-                href={`/api/invoices/${invoiceId}/receipt/pdf`}
-                target="_blank"
-                rel="noopener noreferrer"
-                download
-                data-testid="download-receipt-trigger"
-                aria-label={t('actions.downloadReceiptAria', { number: documentNumber })}
-              >
-                <Download aria-hidden="true" />
-                {/* Combined mode → label highlights the dual role of
-                    the single legal document (Thai RD §86/4 + §105ทวิ).
-                    Separate mode keeps the plain "Download Receipt"
-                    label. */}
-                {combinedModeReceipt
-                  ? t('actions.downloadCombined')
-                  : t('actions.downloadReceipt')}
-              </a>
+            disabled={downloadingReceipt}
+            onClick={handleDownloadReceipt}
+            data-testid="download-receipt-trigger"
+            aria-label={t('actions.downloadReceiptAria', { number: documentNumber })}
+          >
+            {downloadingReceipt ? (
+              <Loader2
+                className="size-4 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Download aria-hidden="true" />
             )}
-          />
+            {/* Combined mode → label highlights the dual role of the
+                single legal document (Thai RD §86/4 + §105ทวิ).
+                Separate mode keeps the plain "Download Receipt"
+                label. */}
+            {combinedModeReceipt
+              ? t('actions.downloadCombined')
+              : t('actions.downloadReceipt')}
+          </DropdownMenuItem>
         )}
         {showResendInvoice && (
           <DropdownMenuItem
@@ -226,7 +279,7 @@ export function InvoiceMoreMenu({
             })}
           >
             {pendingVariant === 'invoice' ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
             ) : (
               <Mail aria-hidden="true" />
             )}
@@ -243,7 +296,7 @@ export function InvoiceMoreMenu({
             })}
           >
             {pendingVariant === 'receipt' ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
             ) : (
               <Mail aria-hidden="true" />
             )}

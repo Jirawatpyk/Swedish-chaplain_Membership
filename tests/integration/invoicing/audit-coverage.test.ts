@@ -88,6 +88,8 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'pdf_render_permanently_failed',
   // Receipt-PDF download surface (2026-05-15).
   'receipt_pdf_downloaded',
+  // §87 prefix-change forensic trail (2026-05-15).
+  'tenant_receipt_prefix_changed',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -249,8 +251,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'receipt_rendered',
       'pdf_render_permanently_failed',
       'receipt_pdf_downloaded',
+      'tenant_receipt_prefix_changed',
     ] as const;
-    expect(allF4Types).toHaveLength(21);
+    expect(allF4Types).toHaveLength(22);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -608,6 +611,13 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts (audit-emit assertions on combined + separate happy paths) + this file (MVP_AUDIT_TYPES_EMITTED enum probe + audit_log insert probe)',
         since: '2026-05-15',
       },
+      // §87 prefix-change forensic trail (2026-05-15).
+      tenant_receipt_prefix_changed: {
+        status: 'covered',
+        where:
+          'update-tenant-invoice-settings.ts emit on prefix flip + this file (enum probe + insert probe)',
+        since: '2026-05-15',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -636,6 +646,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'pdf_render_permanently_failed',
       // Receipt-PDF download surface (added 2026-05-15).
       'receipt_pdf_downloaded',
+      // §87 prefix-change forensic trail (added 2026-05-15).
+      'tenant_receipt_prefix_changed',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a

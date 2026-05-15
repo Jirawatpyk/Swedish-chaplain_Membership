@@ -212,7 +212,7 @@ export function CreditNoteForm({
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={!canSubmit} aria-busy={pending}>
           {pending && (
-            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
           )}
           {pending ? t('submitting') : t('submit')}
         </Button>

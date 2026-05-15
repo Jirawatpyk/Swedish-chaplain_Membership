@@ -203,6 +203,14 @@ export function InvoiceTemplate(input: PdfRenderInput) {
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
             {input.tenantLogo && (
+              // @react-pdf/renderer v4 TYPES require `Buffer` for
+              // `Image.src.data` (the RUNTIME accepts Uint8Array fine
+              // but the .d.ts is narrower than the implementation).
+              // `Buffer.from(uint8array)` is zero-copy in Node — it
+              // creates a Buffer VIEW over the same underlying memory
+              // rather than allocating, so the overhead is just an
+              // object wrapper. Future-Edge port: replace with `bytes`
+              // directly once react-pdf widens its src typing.
               <Image
                 src={{
                   data: Buffer.from(input.tenantLogo.bytes),

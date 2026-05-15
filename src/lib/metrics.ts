@@ -474,6 +474,37 @@ export const invoicingMetrics = {
       'F4 cross-tenant probe audit emissions — alert on any non-zero rate',
     ).add(1, { probe_type: probeType });
   },
+
+  /**
+   * Receipt-PDF failure-mark suppression — fires when the async
+   * `renderReceiptPdf` worker fails AND the subsequent
+   * `applyReceiptPdfFailure` write ALSO fails (Neon outage, etc.).
+   * The invoice stays in `receipt_pdf_status='pending'` and the
+   * dispatcher will retry, but the per-attempt counter doesn't
+   * advance — under sustained DB issues the row can spin past 3
+   * retries without ever surfacing as `pdf_render_permanently_failed`.
+   * Alert: any non-zero rate.
+   */
+  receiptFailureMarkSuppressed(): void {
+    counter(
+      'invoicing_receipt_failure_mark_suppressed_total',
+      'Async-render failure-mark write itself failed — invoice stuck pending without attempt-counter increment',
+    ).add(1);
+  },
+
+  /**
+   * Tenant logo fetch failures — fires when `loadTenantLogo` catches
+   * a Blob outage / 404. The render path falls through to no-logo
+   * (intentional, Thai-RD compliance — issuance must not block on
+   * cosmetic logo). Alert: sustained non-zero rate per tenant
+   * indicates expired blob key or misconfigured logo upload.
+   */
+  logoLoadFailed(): void {
+    counter(
+      'invoicing_logo_load_failed_total',
+      'Tenant logo Blob fetch failures — render falls through to no-logo',
+    ).add(1);
+  },
 } as const;
 
 // --- F5 payments metrics -----------------------------------------------------
@@ -2717,7 +2748,20 @@ export const eventcreateMetrics = {
    */
   csvImportCompleted(
     tenantId: string,
-    outcome: 'completed' | 'invalid_header' | 'timeout' | 'unexpected_error',
+    // F6.1 (Feature 013 · T023) — extended discriminator includes the
+    // FR-019b safety-net outcome `event_mismatch_warning`, plus the
+    // pre-route-layer `event_not_selected` / `event_not_found` /
+    // `event_not_owned_by_tenant` (the route counts those before
+    // dispatch to the use-case for full outcome observability).
+    outcome:
+      | 'completed'
+      | 'invalid_header'
+      | 'timeout'
+      | 'unexpected_error'
+      | 'event_mismatch_warning'
+      | 'event_not_selected'
+      | 'event_not_found'
+      | 'event_not_owned_by_tenant',
   ): void {
     safeMetric(() => {
       counter(

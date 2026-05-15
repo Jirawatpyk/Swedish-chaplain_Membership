@@ -129,7 +129,7 @@ export function CreditNoteMoreMenu({
           aria-label={t('actions.resendAria', { number: documentNumber })}
         >
           {isPending ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
           ) : (
             <Mail aria-hidden="true" />
           )}

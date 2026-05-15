@@ -166,7 +166,7 @@ export function PaymentForm({
       <div className="flex justify-end">
         <Button type="submit" disabled={pending} aria-busy={pending}>
           {pending && (
-            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
           )}
           {pending ? t('submitting') : t('submit')}
         </Button>

@@ -26,17 +26,31 @@ export async function GET(
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
 
-  const result = await getReceiptPdfSignedUrl(
-    makeGetReceiptPdfSignedUrlDeps(ctx.tenant.slug),
-    {
-      tenantId: ctx.tenant.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: 'member',
-      actorMemberId: ctx.memberId,
-      requestId: ctx.requestId,
-      invoiceId,
-    },
-  );
+  // Same try/catch pattern as the admin route — audit-emit throws
+  // must not surface as bare framework 500s.
+  let result: Awaited<ReturnType<typeof getReceiptPdfSignedUrl>>;
+  try {
+    result = await getReceiptPdfSignedUrl(
+      makeGetReceiptPdfSignedUrlDeps(ctx.tenant.slug),
+      {
+        tenantId: ctx.tenant.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: 'member',
+        actorMemberId: ctx.memberId,
+        requestId: ctx.requestId,
+        invoiceId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, err },
+      'GET /api/portal/invoices/[id]/receipt/pdf — use-case threw',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
 
   if (!result.ok) {
     logger.warn(
@@ -88,6 +102,18 @@ export async function GET(
     );
   }
   if (!blobResponse.ok || !blobResponse.body) {
+    // Logging parity with admin route — surface upstream Blob 5xx for
+    // ops triage (H-10 review-fix Round 2). Member route previously
+    // returned 502 silently → incidents took longer to root-cause.
+    logger.error(
+      {
+        requestId: ctx.requestId,
+        tenantId: ctx.tenant.slug,
+        invoiceId,
+        blobStatus: blobResponse.status,
+      },
+      'GET /api/portal/invoices/[id]/receipt/pdf — blob upstream non-OK',
+    );
     return NextResponse.json(
       { error: { code: 'blob_fetch_failed' } },
       { status: 502 },

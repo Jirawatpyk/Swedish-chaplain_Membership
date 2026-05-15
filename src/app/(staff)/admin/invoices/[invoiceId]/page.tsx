@@ -398,6 +398,8 @@ export default async function InvoiceDetailPage({
                     (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
                       ?.currency_code ?? 'THB'
                   }
+                  receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
+                  invoiceDocumentNumber={invoice.documentNumber?.raw ?? null}
                 />
               </Suspense>
             )}
@@ -434,7 +436,8 @@ export default async function InvoiceDetailPage({
                   }
                   showResendReceipt={isAdmin && hasReceiptPdf}
                   showDownloadReceipt={hasReceiptPdf}
-                  combinedModeReceipt={isPaidCombined}
+                  // combinedModeReceipt is derived inside the menu
+                  // component from (showDownloadReceipt && !showDownload).
                 />
               );
             })()}

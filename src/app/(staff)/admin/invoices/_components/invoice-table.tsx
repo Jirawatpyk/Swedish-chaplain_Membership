@@ -39,6 +39,12 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
 export type InvoicesTableRow = {
@@ -74,6 +80,13 @@ export type InvoicesTableRow = {
    * (receipt reuses invoice number) and for any non-paid status.
    */
   readonly receiptDocumentNumberRaw: string | null;
+  /**
+   * Whether the row has a rendered receipt PDF available for download.
+   * True when paid + receiptPdf is non-null + status='rendered'. The
+   * Actions cell uses this flag to decide whether to render the
+   * "Receipt" download link.
+   */
+  readonly hasReceiptPdf: boolean;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -219,6 +232,29 @@ export function InvoicesTable({
                   <span className="font-mono text-sm tabular-nums">
                     {r.receiptDocumentNumberRaw}
                   </span>
+                ) : r.status === 'paid' ? (
+                  // Paid + null = combined-mode (receipt reuses invoice
+                  // number). Show em-dash with a tooltip explaining
+                  // the legitimate reason so admin doesn't worry that
+                  // the receipt render failed.
+                  <TooltipProvider delay={200}>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={(props) => (
+                          <span
+                            {...props}
+                            className="text-sm text-muted-foreground cursor-help"
+                            aria-label={t('receiptNumberCombinedAria')}
+                          >
+                            —
+                          </span>
+                        )}
+                      />
+                      <TooltipContent>
+                        {t('receiptNumberCombinedTooltip')}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 ) : (
                   <span className="text-sm text-muted-foreground">—</span>
                 )}
@@ -236,25 +272,35 @@ export function InvoicesTable({
                   <StatusBadge status={r.status} />
                   {r.creditNoteCount > 0 && (
                     // G-2 — CN indicator chip. Shows only when ≥1 CN
-                    // exists on the row. Tooltip (title) + aria-label
-                    // carry both the count AND the credited amount so
-                    // admins can answer 'how much is still outstanding?'
-                    // at a glance. Not clickable — the row itself links
-                    // to the invoice detail which has the full CN section.
-                    <Badge
-                      variant="outline"
-                      className="font-mono text-[10px] tabular-nums"
-                      title={t('creditedTooltip', {
-                        count: r.creditNoteCount,
-                        amount: formatSatang(r.creditedTotalSatang),
-                      })}
-                      aria-label={t('creditedAria', {
-                        count: r.creditNoteCount,
-                        amount: formatSatang(r.creditedTotalSatang),
-                      })}
-                    >
-                      {t('creditedSuffix', { count: r.creditNoteCount })}
-                    </Badge>
+                    // exists on the row. shadcn Tooltip (not the legacy
+                    // `title` attribute) so the hint surfaces on
+                    // mobile/touch + keyboard focus + screen-reader
+                    // accessible tree.
+                    <TooltipProvider delay={200}>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={(props) => (
+                            <Badge
+                              {...props}
+                              variant="outline"
+                              className="font-mono text-[10px] tabular-nums"
+                              aria-label={t('creditedAria', {
+                                count: r.creditNoteCount,
+                                amount: formatSatang(r.creditedTotalSatang),
+                              })}
+                            >
+                              {t('creditedSuffix', { count: r.creditNoteCount })}
+                            </Badge>
+                          )}
+                        />
+                        <TooltipContent>
+                          {t('creditedTooltip', {
+                            count: r.creditNoteCount,
+                            amount: formatSatang(r.creditedTotalSatang),
+                          })}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
                 </div>
               </TableCell>
@@ -273,28 +319,59 @@ export function InvoicesTable({
                 {formatSatang(r.totalSatang)} THB
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap text-right">
-                {r.hasPdf ? (
-                  // Plain <a> — PDF endpoint returns binary bytes;
-                  // Next.js <Link> would misinterpret the response as
-                  // an RSC payload and fail the fetch. Styled as a
-                  // ghost button so the touch target meets WCAG 2.5.5
-                  // (≥44×44 px) on mobile (L4).
-                  <a
-                    href={`/api/invoices/${r.invoiceId}/pdf`}
-                    aria-label={`${t('actions.download')} — ${r.documentNumber ?? r.invoiceId}`}
-                    className={cn(
-                      buttonVariants({ variant: 'ghost', size: 'sm' }),
-                      'min-h-11 px-3',
-                    )}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    download
-                  >
-                    {t('actions.download')}
-                  </a>
-                ) : (
-                  <span className="text-sm text-muted-foreground">—</span>
-                )}
+                {/* Action mix mirrors the invoice-detail "⋯" menu
+                    (Thai RD §86/4 + §105ทวิ combined-mode rule):
+                      - paid + combined  → Receipt only (the dual-role
+                        PDF; pre-payment invoice is a stale draft)
+                      - paid + separate  → Invoice + Receipt (two
+                        distinct §87 legal docs)
+                      - issued / void    → Invoice only
+                    Plain <a download> — PDF endpoint returns binary
+                    bytes; Next.js <Link> would misinterpret as RSC
+                    payload. */}
+                {(() => {
+                  const isCombinedPaid =
+                    r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
+                  const showInvoice = r.hasPdf && !isCombinedPaid;
+                  if (!showInvoice && !r.hasReceiptPdf) {
+                    return <span className="text-sm text-muted-foreground">—</span>;
+                  }
+                  return (
+                    <div className="flex items-center justify-end gap-1">
+                      {showInvoice && (
+                        <a
+                          href={`/api/invoices/${r.invoiceId}/pdf`}
+                          aria-label={`${t('actions.download')} — ${r.documentNumber ?? r.invoiceId}`}
+                          className={cn(
+                            buttonVariants({ variant: 'ghost', size: 'sm' }),
+                            'min-h-11 px-3',
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                        >
+                          {t('actions.download')}
+                        </a>
+                      )}
+                      {r.hasReceiptPdf && (
+                        <a
+                          href={`/api/invoices/${r.invoiceId}/receipt/pdf`}
+                          aria-label={`${t('actions.downloadReceipt')} — ${r.receiptDocumentNumberRaw ?? r.documentNumber ?? r.invoiceId}`}
+                          className={cn(
+                            buttonVariants({ variant: 'ghost', size: 'sm' }),
+                            'min-h-11 px-3',
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          download
+                          data-testid="row-download-receipt"
+                        >
+                          {t('actions.downloadReceipt')}
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
               </TableCell>
             </TableRow>
           ))}

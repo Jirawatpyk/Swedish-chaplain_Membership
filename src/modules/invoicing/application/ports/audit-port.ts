@@ -56,7 +56,18 @@ export type F4AuditEventType =
    * carries `receipt_document_number_raw` (null for combined-mode
    * where receipt PDF = invoice PDF) + `actor_role`.
    */
-  | 'receipt_pdf_downloaded';
+  | 'receipt_pdf_downloaded'
+  /**
+   * Emitted by `updateTenantInvoiceSettings` when an admin flips any
+   * §87 document-number prefix (invoice / credit-note / receipt) on
+   * an already-active tenant. Thai RD §87 verifies continuity by full
+   * document number (prefix + year + seq); a prefix flip mid-year
+   * looks like a sequence gap from the outside even though the seq
+   * counter is intact. Forensic trail captures: old/new prefix per
+   * type, last seq used under each old prefix, fiscal year. 10y
+   * retention — surface in forensic SELECT on a future RD audit.
+   */
+  | 'tenant_receipt_prefix_changed';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -98,6 +109,9 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   pdf_render_permanently_failed: 5,
   // Tax-document touch (receipt PDF bytes accessed); 10y per Thai RD §87/3.
   receipt_pdf_downloaded: 10,
+  // §87 forensic trail — surface on RD audit; 10y to match other
+  // tax-document audit events.
+  tenant_receipt_prefix_changed: 10,
 };
 
 /** Single-source helper — call at every F4 emit site. */

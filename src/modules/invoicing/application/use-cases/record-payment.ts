@@ -305,6 +305,36 @@ export async function recordPayment(
     // `receipt_pdf_render` outbox row enqueued below drives async
     // render via the F4 dispatcher. Sequential numbering stays atomic
     // with the `paid` flip (Thai Revenue Code §86/§87 invariant).
+    //
+    // Combined-mode 2-file design (Thai RD §86/4 + §105ทวิ):
+    // ------------------------------------------------------------------
+    // The system persists TWO physical PDFs per paid invoice on
+    // BOTH combined and separate numbering modes:
+    //   - `invoice.pdf` — rendered at issue time, header "ใบกำกับภาษี
+    //     / Tax Invoice". This is the pre-payment document.
+    //   - `invoice.receiptPdf` — rendered at payment time, header
+    //     "ใบกำกับภาษี / ใบเสร็จรับเงิน" (combined mode) OR
+    //     "ใบเสร็จรับเงิน / Official Receipt" (separate mode). This
+    //     is the post-payment authoritative document.
+    //
+    // Why two files when combined-mode is "one legal document":
+    //   - Pre-payment: customer needs a tax invoice with no receipt
+    //     marking yet (per RD §86/4 issuance trigger = sale event).
+    //   - Post-payment: the SAME document number is re-rendered with
+    //     the dual-role header so it now ALSO functions as a receipt
+    //     (§105ทวิ). Thai bookkeeping treats the LATEST version as
+    //     the official record.
+    //   - This matches the upstream RD interpretation of "one document
+    //     doing dual function" — they're versions of the same logical
+    //     document at different points in time, not two distinct
+    //     §87 sequence allocations.
+    //
+    // UI surfaces enforce the convention:
+    //   - Admin invoice-detail menu HIDES "Download Invoice" when
+    //     `isPaidCombined` (the pre-payment version is a stale draft);
+    //     only the combined-receipt PDF is exposed for download.
+    //   - Separate-mode keeps BOTH downloads because the two docs
+    //     have distinct §87 sequence numbers and must be filed apart.
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
     const tenantLogo = deps.asyncReceiptPdf
       ? null

@@ -131,6 +131,13 @@ export async function updateTenantInvoiceSettings(
     auditPayload.registrationFeeSatang = String(auditPayload.registrationFeeSatang);
   }
 
+  // Read prior settings BEFORE upsert so we can detect §87 prefix
+  // flips and emit the dedicated `tenant_receipt_prefix_changed`
+  // forensic-trail audit (separate from the general
+  // `tenant_invoice_settings_updated` event). Null on first-time
+  // bootstrap — no prior prefix to compare against.
+  const priorSettings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+
   // N1 (review 2026-04-19 21:19) — upsert + audit MUST share a single
   // transaction so an audit failure rolls back the settings write.
   // Violation would breach Constitution v1.4.0 Principle I clause 4
@@ -147,6 +154,61 @@ export async function updateTenantInvoiceSettings(
       })`,
       payload: auditPayload,
     });
+
+    // §87 forensic trail — emit a SEPARATE event when any document-
+    // number prefix flips on a tenant that already has prior settings.
+    // First-time bootstrap (priorSettings === null) is NOT a flip —
+    // there's no "old" value to compare against.
+    if (priorSettings !== null) {
+      const changedPrefixes: Record<string, { old: string | null; new: string }> = {};
+      if (
+        input.invoiceNumberPrefix !== undefined &&
+        input.invoiceNumberPrefix !== priorSettings.invoiceNumberPrefix
+      ) {
+        changedPrefixes.invoice_number_prefix = {
+          old: priorSettings.invoiceNumberPrefix,
+          new: input.invoiceNumberPrefix,
+        };
+      }
+      if (
+        input.creditNoteNumberPrefix !== undefined &&
+        input.creditNoteNumberPrefix !== priorSettings.creditNoteNumberPrefix
+      ) {
+        changedPrefixes.credit_note_number_prefix = {
+          old: priorSettings.creditNoteNumberPrefix,
+          new: input.creditNoteNumberPrefix,
+        };
+      }
+      if (
+        input.receiptNumberPrefix !== undefined &&
+        input.receiptNumberPrefix !== (priorSettings.receiptNumberPrefix ?? null)
+      ) {
+        changedPrefixes.receipt_number_prefix = {
+          old: priorSettings.receiptNumberPrefix ?? null,
+          new: input.receiptNumberPrefix ?? '',
+        };
+      }
+
+      if (Object.keys(changedPrefixes).length > 0) {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'tenant_receipt_prefix_changed',
+          actorUserId: input.actorUserId,
+          summary: `Tenant document-number prefix(es) changed: ${Object.keys(changedPrefixes).join(', ')}`,
+          payload: {
+            changed_prefixes: changedPrefixes,
+            receipt_numbering_mode:
+              input.receiptNumberingMode ?? priorSettings.receiptNumberingMode,
+            // Caller can correlate with the sibling
+            // `tenant_invoice_settings_updated` row via requestId; the
+            // last-seq numbers themselves live in
+            // `tenant_document_sequences` and are queryable for the
+            // §87 forensic timeline.
+          },
+        });
+      }
+    }
   });
 
   return ok(undefined);

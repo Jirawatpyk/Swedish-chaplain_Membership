@@ -1199,7 +1199,8 @@
         "setupRequired": "Finish invoice setup to start billing.",
         "actions": {
           "new": "New invoice",
-          "download": "PDF",
+          "download": "Invoice",
+          "downloadReceipt": "Receipt",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
@@ -1233,7 +1234,9 @@
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
-        "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited"
+        "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
+        "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
+        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)"
       },
       "new": {
         "title": "New invoice draft",
@@ -1293,7 +1296,11 @@
           "resendRateLimited": "This document was resent recently. Please wait a few minutes before retrying.",
           "resendNoReceipt": "No receipt PDF is available for this invoice (combined mode or unpaid).",
           "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
-          "resendFailed": "Could not queue a resend. Please try again."
+          "resendFailed": "Could not queue a resend. Please try again.",
+          "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
+          "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
+          "receiptForbidden": "You do not have access to this receipt.",
+          "receiptUnavailable": "Receipt PDF is not available right now. Please try again."
         },
         "fields": {
           "memberId": "Member",
@@ -2242,7 +2249,10 @@
         "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
         "cancel": "Cancel",
         "confirm": "Issue refund",
-        "processing": "Processing refund…"
+        "processing": "Processing refund…",
+        "refsInvoice": "Invoice no.",
+        "refsReceipt": "Receipt no.",
+        "refsCombinedHint": "combined"
       },
       "form": {
         "amount": {
@@ -2594,9 +2604,47 @@
           "refreshAriaLabel": "Refresh events list",
           "inlineCreateModal": {
             "title": "Create new event",
-            "deferredDescription": "Inline event creation is part of a follow-up release. For now, create the event through the EventCreate webhook test endpoint or the Neon console, then refresh the events list.",
-            "workaroundHint": "Tip: Run the EventCreate webhook test from the integration page to seed a new event end-to-end, including audit trail.",
-            "dismissCta": "OK"
+            "description": "Seed a new chamber event so this CSV import can target it. After creation, the event is automatically selected in the dropdown above.",
+            "submitCta": "Create event",
+            "submittingCta": "Creating…",
+            "cancelCta": "Cancel",
+            "createdToast": "Event created",
+            "createdToastDesc": "{name} is now available in the events list.",
+            "alreadyExistsToast": "Event already exists",
+            "alreadyExistsToastDesc": "An event with externalId \"{externalId}\" was found and selected.",
+            "fields": {
+              "externalIdLabel": "External ID",
+              "externalIdPlaceholder": "e.g. agm-2026",
+              "externalIdHelp": "Unique typed slug (1-100 alphanumeric + hyphen). Same value the CSV uses for event_external_id.",
+              "nameLabel": "Event name",
+              "namePlaceholder": "e.g. SweCham AGM 2026",
+              "startDateLabel": "Start date & time",
+              "startDateHelp": "Local time in your tenant's primary timezone — stored as UTC.",
+              "categoryLabel": "Category (optional)",
+              "categoryPlaceholder": "e.g. AGM, Networking, Workshop",
+              "categoryHelp": "Free-text label used for filtering on the events list.",
+              "errors": {
+                "externalIdRequired": "External ID is required.",
+                "externalIdTooLong": "External ID must be at most 100 characters.",
+                "externalIdInvalid": "Use alphanumeric characters and hyphens only (e.g. agm-2026).",
+                "nameRequired": "Event name is required.",
+                "nameTooLong": "Event name must be at most 500 characters.",
+                "startDateRequired": "Start date & time is required.",
+                "categoryTooLong": "Category must be at most 100 characters."
+              }
+            },
+            "errors": {
+              "invalidStartDateTitle": "Invalid start date",
+              "invalidStartDateDetail": "Choose a valid date and time before submitting.",
+              "networkErrorTitle": "Network error",
+              "networkErrorDetail": "Could not reach the server. Check your connection and retry.",
+              "validationTitle": "Validation failed",
+              "validationDetail": "One or more fields are invalid. Review the form and retry.",
+              "rateLimitTitle": "Too many attempts",
+              "rateLimitDetail": "You have created too many events in the past hour. Wait a minute and retry.",
+              "unexpectedTitle": "Unexpected error",
+              "unexpectedDetail": "Something went wrong on our side. Please retry; if it persists, contact support."
+            }
           }
         },
         "eventMismatch": {
@@ -3589,7 +3637,9 @@
       "pdf_render_failed": "PDF render failed",
       "pdf_render_permanently_failed": "PDF render permanently failed",
       "auto_email_delivery_failed": "Auto email delivery failed",
-      "receipt_rendered": "Receipt rendered"
+      "receipt_rendered": "Receipt rendered",
+      "receipt_pdf_downloaded": "Receipt PDF downloaded",
+      "tenant_receipt_prefix_changed": "Document-number prefix changed"
     },
     "eventcreate": {
       "_bootstrap": "EventCreate audit events"

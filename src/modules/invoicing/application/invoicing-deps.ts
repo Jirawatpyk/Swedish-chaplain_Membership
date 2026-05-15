@@ -302,6 +302,17 @@ export function makeRecordPaymentDeps(
     ) => Promise<void>
   >,
 ): RecordPaymentDeps {
+  // Async-receipt-PDF feature flag → enqueue port MUST be wired or the
+  // use-case will flip invoices to `receipt_pdf_status='pending'` and
+  // never enqueue the render task → invoice stuck in pending forever
+  // with no audit event surfacing the failure. Fail loudly at deps
+  // construction so an env-flag mistake never reaches production.
+  if (env.features.f5AsyncReceiptPdf && !receiptPdfRenderEnqueueAdapter) {
+    throw new Error(
+      'makeRecordPaymentDeps: asyncReceiptPdf=true requires receiptPdfRenderEnqueue adapter to be wired',
+    );
+  }
+
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

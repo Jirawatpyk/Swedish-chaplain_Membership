@@ -241,6 +241,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     emitted by `getReceiptPdfSignedUrl` after successful ownership
   //     check + signed-URL issuance. 10y retention (tax-doc touch). ---
   'receipt_pdf_downloaded',
+  // --- F4 §87 prefix-change forensic trail (migration 0144, 2026-05-15) —
+  //     emitted by `updateTenantInvoiceSettings` when an admin flips
+  //     any document-number prefix mid-fiscal-year. 10y retention. ---
+  'tenant_receipt_prefix_changed',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

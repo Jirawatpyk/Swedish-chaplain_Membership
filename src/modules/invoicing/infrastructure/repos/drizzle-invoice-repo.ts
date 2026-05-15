@@ -631,6 +631,13 @@ export function makeDrizzleInvoiceRepo(
      */
     async applyReceiptPdf(txUnknown, input): Promise<Invoice> {
       const tx = txUnknown as TenantTx;
+      // DO NOT SET `receiptDocumentNumberRaw` in this UPDATE — it is
+      // stamped atomically in `applyPayment` (both sync + async paths
+      // since the Bug 3 fix in commit 44c1af8b) and any write here
+      // would risk overwriting it to NULL on a worker re-arm, breaking
+      // the UI "Receipt No." surface that reads this field. Drizzle's
+      // partial `.set({...})` omits unmentioned columns from the SQL
+      // UPDATE entirely so the existing value is preserved.
       await tx
         .update(invoices)
         .set({
