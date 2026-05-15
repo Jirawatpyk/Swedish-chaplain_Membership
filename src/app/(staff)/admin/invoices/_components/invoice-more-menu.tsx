@@ -111,41 +111,59 @@ export function InvoiceMoreMenu({
    * user sees `{"error":{...}}` text and has no path forward. The
    * fetch+blob pattern keeps the UI in control of the failure shape.
    */
+  // Round-4 fixes C-2 + UX-H2 + B-1 — DropdownMenuItem closes
+  // synchronously on click, so the inline Loader2 spinner is invisible
+  // to the user for the entire fetch window. Fire `toast.loading` BEFORE
+  // the await so the SR + visual feedback is continuous from click →
+  // download. The loader toast is auto-dismissed in `finally` regardless
+  // of throw vs return, and the helper's own toast (success/warning/
+  // error) layers on top. try/finally also guarantees the boolean
+  // spinner state never sticks if the fetch throws unexpectedly.
   const handleDownloadInvoice = async () => {
     setDownloadingInvoice(true);
-    await downloadInvoice({
-      invoiceId,
-      fallbackFilename: `${documentNumber}.pdf`,
-      toasts: {
-        forbidden: t('toast.invoiceForbidden'),
-        notFound: t('toast.invoiceNotFound'),
-        unavailable: t('toast.invoiceUnavailable'),
-        sessionExpired: t('toast.receiptSessionExpired'),
-        rateLimited: t('toast.receiptRateLimited'),
-      },
-      toastWarning: (msg) => toast.warning(msg),
-      toastError: (msg) => toast.error(msg),
-    });
-    setDownloadingInvoice(false);
+    const loadingId = toast.loading(t('toast.downloadInProgress'));
+    try {
+      await downloadInvoice({
+        invoiceId,
+        fallbackFilename: `${documentNumber}.pdf`,
+        toasts: {
+          forbidden: t('toast.invoiceForbidden'),
+          notFound: t('toast.invoiceNotFound'),
+          unavailable: t('toast.invoiceUnavailable'),
+          sessionExpired: t('toast.invoiceSessionExpired'),
+          rateLimited: t('toast.invoiceRateLimited'),
+        },
+        toastWarning: (msg) => toast.warning(msg),
+        toastError: (msg) => toast.error(msg),
+      });
+    } finally {
+      toast.dismiss(loadingId);
+      setDownloadingInvoice(false);
+    }
   };
 
   const handleDownloadReceipt = async () => {
     setDownloadingReceipt(true);
-    await downloadReceipt({
-      invoiceId,
-      fallbackFilename: `${documentNumber}-receipt.pdf`,
-      toasts: {
-        pending: t('toast.receiptPending'),
-        failed: (reason) => t('toast.receiptFailed', { reason }),
-        forbidden: t('toast.receiptForbidden'),
-        unavailable: t('toast.receiptUnavailable'),
-        sessionExpired: t('toast.receiptSessionExpired'),
-        rateLimited: t('toast.receiptRateLimited'),
-      },
-      toastWarning: (msg) => toast.warning(msg),
-      toastError: (msg) => toast.error(msg),
-    });
-    setDownloadingReceipt(false);
+    const loadingId = toast.loading(t('toast.downloadInProgress'));
+    try {
+      await downloadReceipt({
+        invoiceId,
+        fallbackFilename: `${documentNumber}-receipt.pdf`,
+        toasts: {
+          pending: t('toast.receiptPending'),
+          failed: (reason) => t('toast.receiptFailed', { reason }),
+          forbidden: t('toast.receiptForbidden'),
+          unavailable: t('toast.receiptUnavailable'),
+          sessionExpired: t('toast.receiptSessionExpired'),
+          rateLimited: t('toast.receiptRateLimited'),
+        },
+        toastWarning: (msg) => toast.warning(msg),
+        toastError: (msg) => toast.error(msg),
+      });
+    } finally {
+      toast.dismiss(loadingId);
+      setDownloadingReceipt(false);
+    }
   };
 
   const handleResend = (variant: 'invoice' | 'receipt') => {

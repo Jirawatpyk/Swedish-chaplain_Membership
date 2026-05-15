@@ -35,7 +35,6 @@ export type ReceiptDownloadDeps = {
   /** Fallback filename when Content-Disposition parsing fails. */
   readonly fallbackFilename: string;
   readonly toasts: ReceiptDownloadToasts;
-  readonly toastSuccess?: () => void;
   readonly toastWarning: (msg: string) => void;
   readonly toastError: (msg: string) => void;
 };
@@ -71,8 +70,18 @@ function parseContentDispositionFilename(
   if (ext?.[1]) {
     try {
       return decodeURIComponent(ext[1]);
-    } catch {
-      // fall through
+    } catch (err) {
+      // Round-4 fix R4-SF-H-B — malformed RFC 5987 percent-encoding
+      // is rare but real (e.g. a stray `%` in the filename header).
+      // Previously we swallowed the throw silently and fell through
+      // to plain-filename parsing, hiding the parser bug from
+      // observability. Always-log so server-side header bugs
+      // surface in browser DevTools / client error trackers.
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[download-pdf] RFC 5987 filename decode failed; falling back to plain filename',
+        { encoded: ext[1], err },
+      );
     }
   }
   const plain = /filename="([^"]+)"|filename=([^;\s]+)/i.exec(header);
@@ -125,16 +134,20 @@ export async function downloadInvoice(deps: InvoiceDownloadDeps): Promise<void> 
       toastWarning(toasts.rateLimited);
       return;
     }
-    if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.warn('[download-invoice] unmapped status', res.status);
-    }
+    // Round-4 fix R4-SF-H-A — log in production too, not just dev.
+    // The previous `NODE_ENV !== 'production'` gate created a
+    // telemetry blackhole: every unmapped-status path was silenced
+    // for the actual users we care about. Browser-side console.warn
+    // is captured by any frontend error monitor (Sentry/Datadog RUM/
+    // LogRocket) and at minimum lands in DevTools when the support
+    // team asks the user to share a screen.
+    // eslint-disable-next-line no-console
+    console.warn('[download-invoice] unmapped status', res.status);
     toastError(toasts.unavailable);
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.error('[download-invoice] unexpected client error', err);
-    }
+    // Round-4 fix R4-SF-H-A — always log, including production.
+    // eslint-disable-next-line no-console
+    console.error('[download-invoice] unexpected client error', err);
     toastError(toasts.unavailable);
   }
 }
@@ -186,16 +199,14 @@ export async function downloadReceipt(deps: ReceiptDownloadDeps): Promise<void> 
       toastWarning(toasts.rateLimited);
       return;
     }
-    if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.warn('[download-receipt] unmapped status', res.status);
-    }
+    // Round-4 fix R4-SF-H-A — log in production too. See downloadInvoice for rationale.
+    // eslint-disable-next-line no-console
+    console.warn('[download-receipt] unmapped status', res.status);
     toastError(toasts.unavailable);
   } catch (err) {
-    if (process.env.NODE_ENV !== 'production') {
-      // eslint-disable-next-line no-console
-      console.error('[download-receipt] unexpected client error', err);
-    }
+    // Round-4 fix R4-SF-H-A — always log, including production.
+    // eslint-disable-next-line no-console
+    console.error('[download-receipt] unexpected client error', err);
     toastError(toasts.unavailable);
   }
 }

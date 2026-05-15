@@ -209,6 +209,25 @@ export async function updateTenantInvoiceSettings(
         // `tenant_document_sequences.next_sequence_number - 1`) so
         // the RD forensic SELECT can reconstruct "where did the old
         // prefix stop?" without joining external tables.
+        //
+        // Round-4 fix R4-RD-H1 — `last_sequences` semantics:
+        //   - [] (empty array) ⇒ tenant has NEVER issued any document
+        //     under the old prefix (pre-issue tenant). The prefix-
+        //     change audit row is still emitted so the §87 forensic
+        //     trail captures the rename, but there is no "where did
+        //     the old prefix stop?" anchor because nothing was issued
+        //     yet.
+        //   - [{ last_sequence_number: 0, ... }] ⇒ the row exists in
+        //     `tenant_document_sequences` (lazy-allocated by the
+        //     fiscal-year init path) but no INSERT has consumed it
+        //     yet. Treat the same as "no documents issued" for the
+        //     given (document_type, fiscal_year).
+        //   - [{ last_sequence_number: N>0, ... }] ⇒ N documents have
+        //     been issued under the OLD prefix; the next document
+        //     under the NEW prefix will be sequence N+1.
+        // RD auditor SQL should LEFT JOIN this array against
+        // `audit_log` rows of type `invoice_issued` / `credit_note_issued`
+        // / `invoice_paid` to verify the boundary.
         const sequences = await deps.tenantSettingsRepo.readSequencesInTx(
           tx,
           input.tenantId,

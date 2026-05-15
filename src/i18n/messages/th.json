@@ -1201,6 +1201,8 @@
           "new": "สร้างใหม่",
           "download": "ใบกำกับภาษี",
           "downloadReceipt": "ใบเสร็จ",
+          "downloadInvoiceAria": "ดาวน์โหลดไฟล์ PDF ใบกำกับภาษี {number}",
+          "downloadReceiptAria": "ดาวน์โหลดไฟล์ PDF ใบเสร็จรับเงิน {number}",
           "clearFilters": "ล้างตัวกรอง",
           "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้"
         },
@@ -1306,7 +1308,10 @@
           "receiptRateLimited": "ดาวน์โหลดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
           "invoiceForbidden": "คุณไม่มีสิทธิ์เข้าถึงใบกำกับภาษีนี้",
           "invoiceNotFound": "ไม่พบใบกำกับภาษี",
-          "invoiceUnavailable": "ไม่สามารถดาวน์โหลด PDF ใบกำกับภาษีได้ในขณะนี้ กรุณาลองใหม่"
+          "invoiceUnavailable": "ไม่สามารถดาวน์โหลด PDF ใบกำกับภาษีได้ในขณะนี้ กรุณาลองใหม่",
+          "invoiceSessionExpired": "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่เพื่อดาวน์โหลด",
+          "invoiceRateLimited": "ดาวน์โหลดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่",
+          "downloadInProgress": "กำลังเตรียมดาวน์โหลด…"
         },
         "fields": {
           "memberId": "สมาชิก",

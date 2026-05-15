@@ -86,6 +86,25 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     // Round-3 fix R3-C1 — surface every `tenant_document_sequences`
     // row for the §87 forensic-trail audit emit. Returns [] if the
     // tenant hasn't issued any documents yet.
+    //
+    // Round-4 fix R4-rel-H1 — add `.for('share')` so this read
+    // coordinates with the concurrent `SequentialNumberAllocator`
+    // path (which takes `FOR UPDATE` on the same rows inside its own
+    // tx). Without the SHARE lock, a settings prefix-flip happening
+    // mid-issuance could snapshot a stale `next_sequence_number` and
+    // write an audit row whose `last_sequence_number` does not match
+    // the final on-disk value once the allocator commits. SHARE +
+    // UPDATE block each other but do not block SHARE + SHARE — so
+    // two prefix flips can still race against each other (and that
+    // is fine; the outer settings-row `FOR UPDATE` (getForUpdateInTx)
+    // already serialises them).
+    //
+    // Round-4 fix R4-drizzle-M2 — explicit `ORDER BY (documentType,
+    // fiscalYear)` so the audit payload `last_sequences` array is
+    // deterministic across runs. Without it, Postgres can hand back
+    // rows in heap order — which causes RD forensic-diff tooling to
+    // see spurious changes when comparing two audit rows that
+    // logically carry the same sequence snapshot.
     const tx = txUnknown as TenantTx;
     const rows = await tx
       .select({
@@ -94,7 +113,9 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
         nextSequenceNumber: tenantDocumentSequences.nextSequenceNumber,
       })
       .from(tenantDocumentSequences)
-      .where(eq(tenantDocumentSequences.tenantId, tenantId));
+      .where(eq(tenantDocumentSequences.tenantId, tenantId))
+      .orderBy(tenantDocumentSequences.documentType, tenantDocumentSequences.fiscalYear)
+      .for('share');
     return rows.map((r) => ({
       documentType: r.documentType as 'invoice' | 'receipt' | 'credit_note',
       fiscalYear: r.fiscalYear,

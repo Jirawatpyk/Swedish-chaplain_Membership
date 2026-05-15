@@ -170,52 +170,83 @@ export function InvoicesTable({
 }) {
   const t = useTranslations('admin.invoices.list');
   const tDetail = useTranslations('admin.invoices.detail');
-  // Track which row is currently downloading (invoice OR receipt) so
-  // we can show a per-row spinner. Single state bounds memory + avoids
-  // Map-as-state churn pattern. Format: `${variant}:${invoiceId}`.
-  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  // Round-4 fix R4-UX-H1 — Set<string> instead of a single string slot.
+  // The previous design hosted ONE in-flight download identifier
+  // (`${variant}:${invoiceId}`). Pressing "Receipt" on row B while
+  // row A's "Invoice" was still mid-fetch overwrote row A's spinner
+  // key → row A's loader vanished and the user thought it failed. The
+  // Set permits N concurrent row downloads with their own spinner state
+  // and only adds bounded memory (max N pending requests).
+  const [downloadingKeys, setDownloadingKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const addDownloading = (key: string) =>
+    setDownloadingKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  const removeDownloading = (key: string) =>
+    setDownloadingKeys((prev) => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
 
+  // Round-4 fix R4-code-B2 — wrap each row download in try/finally so a
+  // throw inside `downloadInvoice/downloadReceipt` cannot leak a stuck
+  // spinner state. The helpers already swallow errors via their own
+  // catch, but a defensive finally costs nothing and matches the menu's
+  // own pattern (parity with `invoice-more-menu.tsx`).
   const handleRowDownloadInvoice = async (
     invoiceId: string,
     fallbackFilename: string,
   ) => {
-    setDownloadingKey(`invoice:${invoiceId}`);
-    await downloadInvoice({
-      invoiceId,
-      fallbackFilename,
-      toasts: {
-        forbidden: tDetail('toast.invoiceForbidden'),
-        notFound: tDetail('toast.invoiceNotFound'),
-        unavailable: tDetail('toast.invoiceUnavailable'),
-        sessionExpired: tDetail('toast.receiptSessionExpired'),
-        rateLimited: tDetail('toast.receiptRateLimited'),
-      },
-      toastWarning: (msg) => toast.warning(msg),
-      toastError: (msg) => toast.error(msg),
-    });
-    setDownloadingKey(null);
+    const key = `invoice:${invoiceId}`;
+    addDownloading(key);
+    try {
+      await downloadInvoice({
+        invoiceId,
+        fallbackFilename,
+        toasts: {
+          forbidden: tDetail('toast.invoiceForbidden'),
+          notFound: tDetail('toast.invoiceNotFound'),
+          unavailable: tDetail('toast.invoiceUnavailable'),
+          sessionExpired: tDetail('toast.invoiceSessionExpired'),
+          rateLimited: tDetail('toast.invoiceRateLimited'),
+        },
+        toastWarning: (msg) => toast.warning(msg),
+        toastError: (msg) => toast.error(msg),
+      });
+    } finally {
+      removeDownloading(key);
+    }
   };
 
   const handleRowDownloadReceipt = async (
     invoiceId: string,
     fallbackFilename: string,
   ) => {
-    setDownloadingKey(`receipt:${invoiceId}`);
-    await downloadReceipt({
-      invoiceId,
-      fallbackFilename,
-      toasts: {
-        pending: tDetail('toast.receiptPending'),
-        failed: (reason) => tDetail('toast.receiptFailed', { reason }),
-        forbidden: tDetail('toast.receiptForbidden'),
-        unavailable: tDetail('toast.receiptUnavailable'),
-        sessionExpired: tDetail('toast.receiptSessionExpired'),
-        rateLimited: tDetail('toast.receiptRateLimited'),
-      },
-      toastWarning: (msg) => toast.warning(msg),
-      toastError: (msg) => toast.error(msg),
-    });
-    setDownloadingKey(null);
+    const key = `receipt:${invoiceId}`;
+    addDownloading(key);
+    try {
+      await downloadReceipt({
+        invoiceId,
+        fallbackFilename,
+        toasts: {
+          pending: tDetail('toast.receiptPending'),
+          failed: (reason) => tDetail('toast.receiptFailed', { reason }),
+          forbidden: tDetail('toast.receiptForbidden'),
+          unavailable: tDetail('toast.receiptUnavailable'),
+          sessionExpired: tDetail('toast.receiptSessionExpired'),
+          rateLimited: tDetail('toast.receiptRateLimited'),
+        },
+        toastWarning: (msg) => toast.warning(msg),
+        toastError: (msg) => toast.error(msg),
+      });
+    } finally {
+      removeDownloading(key);
+    }
   };
   return (
     // Verify-fix U-I4 (2026-04-26): inset shadow on the right edge gives
@@ -299,8 +330,16 @@ export function InvoicesTable({
                             aria-label={t('receiptNumberCombinedAria')}
                           >
                             —
+                            {/* Round-4 fix R4-UX-H3 — removed `opacity-70`.
+                                At the icon's size-3.5 the muted-foreground
+                                stroke colour was failing WCAG SC 1.4.11
+                                Non-text Contrast (3:1) with the opacity
+                                multiplier compressing the already-muted
+                                token. Full opacity + size-3.5 stays on
+                                the small-affordance side while keeping
+                                contrast headroom. */}
                             <InfoIcon
-                              className="size-3 opacity-70"
+                              className="size-3.5"
                               aria-hidden="true"
                             />
                           </span>
@@ -386,6 +425,16 @@ export function InvoicesTable({
                     bytes; Next.js <Link> would misinterpret as RSC
                     payload. */}
                 {(() => {
+                  // Round-4 fix R4-doc — clarify combined-mode detection
+                  // intent: `receiptDocumentNumberRaw === null` is the
+                  // single source of truth for "this paid invoice uses
+                  // the same legal document as both invoice + receipt"
+                  // (Thai RD §86/4 + §105ทวิ). It is NOT inferred from
+                  // `tenant_invoice_settings.receipt_numbering_mode`
+                  // because that flag describes the tenant's CURRENT
+                  // mode — an invoice paid before a mode-flip keeps its
+                  // own immutable snapshot here. Use the row, not the
+                  // tenant setting.
                   const isCombinedPaid =
                     r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
                   const showInvoice = r.hasPdf && !isCombinedPaid;
@@ -398,6 +447,11 @@ export function InvoicesTable({
                         // Round-3 follow-up — invoice download now also
                         // a button (parity with Receipt). Plain `<a>`
                         // would leak 401/403/404/5xx as JSON-in-new-tab.
+                        // Round-4 fix R4-UX-NB2 — aria-label via t()
+                        // interpolation instead of string-concat so the
+                        // dash separator is locale-controlled and SR
+                        // text reads naturally in TH/SV not "Invoice —
+                        // INV-2026-0001" literal English.
                         <button
                           type="button"
                           onClick={() =>
@@ -406,17 +460,22 @@ export function InvoicesTable({
                               `${r.documentNumber ?? r.invoiceId}.pdf`,
                             )
                           }
-                          disabled={downloadingKey === `invoice:${r.invoiceId}`}
-                          aria-label={`${t('actions.download')} — ${r.documentNumber ?? r.invoiceId}`}
+                          disabled={downloadingKeys.has(`invoice:${r.invoiceId}`)}
+                          aria-label={t('actions.downloadInvoiceAria', {
+                            number: r.documentNumber ?? r.invoiceId,
+                          })}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),
                             'min-h-11 px-3 gap-1',
                           )}
                           data-testid="row-download-invoice"
                         >
-                          {downloadingKey === `invoice:${r.invoiceId}` && (
+                          {downloadingKeys.has(`invoice:${r.invoiceId}`) && (
+                            // Round-4 fix R4-UX-M1 — size-4 parity with
+                            // the InvoiceMoreMenu spinner; was size-3
+                            // which read as visually inconsistent.
                             <Loader2
-                              className="size-3 motion-safe:animate-spin"
+                              className="size-4 motion-safe:animate-spin"
                               aria-hidden="true"
                             />
                           )}
@@ -438,17 +497,22 @@ export function InvoicesTable({
                               `${r.receiptDocumentNumberRaw ?? r.documentNumber ?? r.invoiceId}-receipt.pdf`,
                             )
                           }
-                          disabled={downloadingKey === `receipt:${r.invoiceId}`}
-                          aria-label={`${t('actions.downloadReceipt')} — ${r.receiptDocumentNumberRaw ?? r.documentNumber ?? r.invoiceId}`}
+                          disabled={downloadingKeys.has(`receipt:${r.invoiceId}`)}
+                          aria-label={t('actions.downloadReceiptAria', {
+                            number:
+                              r.receiptDocumentNumberRaw ??
+                              r.documentNumber ??
+                              r.invoiceId,
+                          })}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),
                             'min-h-11 px-3 gap-1',
                           )}
                           data-testid="row-download-receipt"
                         >
-                          {downloadingKey === `receipt:${r.invoiceId}` && (
+                          {downloadingKeys.has(`receipt:${r.invoiceId}`) && (
                             <Loader2
-                              className="size-3 motion-safe:animate-spin"
+                              className="size-4 motion-safe:animate-spin"
                               aria-hidden="true"
                             />
                           )}

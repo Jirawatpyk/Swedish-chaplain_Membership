@@ -1201,6 +1201,8 @@
           "new": "New invoice",
           "download": "Invoice",
           "downloadReceipt": "Receipt",
+          "downloadInvoiceAria": "Download tax invoice PDF for {number}",
+          "downloadReceiptAria": "Download tax receipt PDF for {number}",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
@@ -1306,7 +1308,10 @@
           "receiptRateLimited": "Too many download requests. Please wait a moment and try again.",
           "invoiceForbidden": "You do not have access to this invoice.",
           "invoiceNotFound": "Invoice not found.",
-          "invoiceUnavailable": "Invoice PDF is not available right now. Please try again."
+          "invoiceUnavailable": "Invoice PDF is not available right now. Please try again.",
+          "invoiceSessionExpired": "Your session has expired. Please sign in again to download.",
+          "invoiceRateLimited": "Too many download requests. Please wait a moment and try again.",
+          "downloadInProgress": "Preparing your download…"
         },
         "fields": {
           "memberId": "Member",

@@ -1201,6 +1201,8 @@
           "new": "Ny faktura",
           "download": "Faktura",
           "downloadReceipt": "Kvitto",
+          "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+          "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
         },
@@ -1306,7 +1308,10 @@
           "receiptRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
           "invoiceForbidden": "Du har inte behörighet till denna faktura.",
           "invoiceNotFound": "Faktura hittades inte.",
-          "invoiceUnavailable": "Faktura-PDF är inte tillgänglig just nu. Försök igen."
+          "invoiceUnavailable": "Faktura-PDF är inte tillgänglig just nu. Försök igen.",
+          "invoiceSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+          "invoiceRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
+          "downloadInProgress": "Förbereder nedladdning…"
         },
         "fields": {
           "memberId": "Medlem",

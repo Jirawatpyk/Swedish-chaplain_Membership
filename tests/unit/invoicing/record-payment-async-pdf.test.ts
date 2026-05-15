@@ -156,7 +156,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
       withTx: vi.fn(async (_t, fn) => fn({})),
-      getForUpdateInTx: vi.fn(),
+      getForUpdateInTx: vi.fn(async () => null),
       readSequencesInTx: vi.fn(async () => []),
     },
     sequenceAllocator: {

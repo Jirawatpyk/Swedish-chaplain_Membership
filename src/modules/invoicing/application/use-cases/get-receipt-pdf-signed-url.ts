@@ -184,6 +184,14 @@ export async function getReceiptPdfSignedUrl(
       member_id: invoice.memberId,
       receipt_document_number_raw: invoice.receiptDocumentNumberRaw,
       receipt_numbering_mode: combinedMode ? 'combined' : 'separate',
+      // Round-4 fix R4-RD-H2 — surface the template version that
+      // rendered the bytes. RD audit + forensic reviewers need to
+      // distinguish v=1 (no logo) vs v=2 (logo-bearing) receipts when
+      // reconciling a re-rendered PDF against the originally-downloaded
+      // one. Pulled from the persisted snapshot on the row (not
+      // CURRENT_TEMPLATE_VERSION) so historical downloads of an old
+      // template stay attributable.
+      receipt_pdf_template_version: invoice.receiptPdf.templateVersion,
       actor_role: input.actorRole,
       route: 'get-receipt-pdf-signed-url',
     },
