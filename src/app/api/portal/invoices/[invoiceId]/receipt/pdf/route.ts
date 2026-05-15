@@ -59,6 +59,16 @@ export async function GET(
         tenantId: ctx.tenant.slug,
         invoiceId,
         errorCode: result.error.code,
+        // R9-E2/E3 — surface key + reason server-side so operators
+        // see the internal diagnostic that the member surface
+        // deliberately strips. The 502 response to the member still
+        // omits `reason` (privacy), but the pino log captures it.
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
+        ...(result.error.code === 'receipt_pdf_failed'
+          ? { reason: result.error.reason }
+          : {}),
       },
       'GET /api/portal/invoices/[id]/receipt/pdf failed',
     );

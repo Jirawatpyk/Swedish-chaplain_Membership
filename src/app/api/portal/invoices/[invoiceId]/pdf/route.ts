@@ -66,6 +66,12 @@ export async function GET(
         tenantId: ctx.tenant.slug,
         invoiceId,
         errorCode: result.error.code,
+        // R9-E2 — surface the missing blob key so operators triaging
+        // "Invoice PDF unavailable" toasts can locate the orphaned
+        // object in Vercel Blob without joining back to the invoice row.
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
       },
       'GET /api/portal/invoices/[id]/pdf failed',
     );

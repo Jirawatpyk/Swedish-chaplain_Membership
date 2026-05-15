@@ -6,11 +6,16 @@
  * admin/manager: probe = cross-tenant (different `tenant_id`). For
  * member: probe = different `member_id`.
  *
- * Auto-rerender on Blob-miss: if the stored key is 404 on Blob, we
- * re-render with the PINNED `pdf_template_version` from the invoice
- * row (not CURRENT) so the sha256 stays byte-identical (FR-016 / R3-E4).
+ * Blob-miss handling: R9-E1 added try/catch around `signDownloadUrl`
+ * that maps `BlobNotFoundError` to a typed `blob_missing` Result with
+ * the stored key — route handler surfaces 502 + the key for operator
+ * triage, instead of letting the throw fall to the route-level catch
+ * and serving a generic 500. Auto-rerender on Blob-miss (re-render
+ * with the PINNED `pdf_template_version` for byte-identical recovery)
+ * remains deferred — see TODO below + T113a in the retrospective.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
@@ -110,18 +115,11 @@ export async function getInvoicePdfSignedUrl(
     return err({ code: 'receipt_pdf_pending', retryAfterSeconds: 30 });
   }
 
-  // TODO(F4-R3-E4): when auto-rerender on Blob-miss lands, wrap this
-  // branch in try/catch on the signed-URL issuance (or a HEAD probe
-  // on the blob key) and, on miss, (a) re-render with the PINNED
-  // `pdf_template_version` from `invoice.pdf.templateVersion`,
-  // (b) compute the regenerated sha256, (c) emit audit event
-  // `invoice_pdf_regenerated` with payload `{ invoice_id,
-  // invoice_number (raw), tenant_id, original_sha256, new_sha256,
-  // reason: 'blob_missing' }`, (d) return the freshly-signed URL.
-  // See specs/007-invoices-receipts/retrospective.md §
-  // "PDF Reproducibility — Best Practice Decision" for the 4-layer
-  // reproducibility rationale + the `invoice_pdf_regenerated` event
-  // contract registered in 0030_audit_invoice_pdf_regenerated.sql.
+  // TODO(F4-T113a): auto-rerender on Blob-miss. Today we return
+  // `blob_missing` (the route maps to 502); future enhancement is to
+  // re-render with the PINNED `pdf_template_version` for byte-identical
+  // recovery + emit `invoice_pdf_regenerated`. See migration 0030
+  // + retrospective § "PDF Reproducibility — Best Practice Decision".
 
   // R8-M1-code — audit emit BEFORE signing the URL. The audit is the
   // durable §87 forensic trail; if it fails (Neon transient, retention
@@ -149,7 +147,32 @@ export async function getInvoicePdfSignedUrl(
     },
   });
 
-  const url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey);
+  // R9-E1 — wrap signDownloadUrl in try/catch parity with the CN
+  // sibling (`get-credit-note-pdf-signed-url.ts:99-115`). Vercel Blob
+  // SDK throws `BlobNotFoundError` when the key is gone (orphan
+  // sweeper, deleted bucket, half-committed past tx). Map to the typed
+  // `blob_missing` Result so the route handler surfaces 502 with the
+  // operator-actionable key, instead of a generic 500 that buries the
+  // root cause beneath the route-level try/catch.
+  let url: string;
+  try {
+    url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    logger.error(
+      {
+        err: msg,
+        invoiceId,
+        tenantId: input.tenantId,
+        blobKey: invoice.pdf.blobKey,
+        notFound,
+      },
+      'getInvoicePdfSignedUrl: blob sign failed',
+    );
+    if (notFound) return err({ code: 'blob_missing', key: invoice.pdf.blobKey });
+    throw e;
+  }
   const filename = `${invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
   return ok({ url, filename });
 }

@@ -34,6 +34,7 @@
  * `receipt_pdf_downloaded` (10-year retention per Thai RD §87/3).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
@@ -207,6 +208,29 @@ export async function getReceiptPdfSignedUrl(
     },
   });
 
-  const url = await deps.blob.signDownloadUrl(blobKey);
+  // R9-E1 — wrap signDownloadUrl in try/catch parity with the CN +
+  // invoice siblings. BlobNotFoundError → typed `blob_missing` Result
+  // so the route handler can surface 502 + the operator-actionable
+  // key instead of letting the throw fall into the route-level catch
+  // and serve a generic 500 that obscures the root cause.
+  let url: string;
+  try {
+    url = await deps.blob.signDownloadUrl(blobKey);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const notFound = /not found|404|BlobNotFoundError/i.test(msg);
+    logger.error(
+      {
+        err: msg,
+        invoiceId,
+        tenantId: input.tenantId,
+        blobKey,
+        notFound,
+      },
+      'getReceiptPdfSignedUrl: blob sign failed',
+    );
+    if (notFound) return err({ code: 'blob_missing', key: blobKey });
+    throw e;
+  }
   return ok({ url, filename });
 }

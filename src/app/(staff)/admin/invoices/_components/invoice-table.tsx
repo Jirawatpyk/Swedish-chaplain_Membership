@@ -49,11 +49,24 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
+import type { InvoiceStatus } from '@/modules/invoicing/domain/invoice';
+
+/**
+ * R9-TY1 — `'overdue'` is a presentation-only derived status (T109,
+ * FR-028) layered on top of the canonical `InvoiceStatus` domain
+ * enum. The list page replaces `'issued'` with `'overdue'` when the
+ * Bangkok-today read-time rule fires. Keeping the union here (rather
+ * than widening to `string`) means a new domain status (e.g.
+ * `'refunded'`) will fail typecheck on `statusVariant`/`StatusBadge`
+ * exhaustiveness, surfacing the gap at compile time instead of
+ * silently falling into the `default: outline` branch.
+ */
+type RowStatus = InvoiceStatus | 'overdue';
 
 export type InvoicesTableRow = {
   readonly invoiceId: string;
   readonly documentNumber: string;
-  readonly status: string;
+  readonly status: RowStatus;
   readonly memberId: string;
   readonly memberName: string;
   readonly issueDate: string | null;
@@ -102,7 +115,7 @@ export type InvoicesTableRow = {
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
 
-function statusVariant(status: string): BadgeVariant {
+function statusVariant(status: RowStatus): BadgeVariant {
   switch (status) {
     case 'paid':
       return 'default';
@@ -114,12 +127,11 @@ function statusVariant(status: string): BadgeVariant {
     case 'credited':
     case 'partially_credited':
     case 'draft':
-    default:
       return 'outline';
   }
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status }: { status: RowStatus }) {
   const t = useTranslations('admin.invoices.list.statuses');
   return (
     <Badge variant={statusVariant(status)}>
@@ -488,12 +500,12 @@ export function InvoicesTable({
                           onClick={() =>
                             handleRowDownloadInvoice(
                               r.invoiceId,
-                              `${r.documentNumber ?? r.invoiceId}.pdf`,
+                              `${r.documentNumber}.pdf`,
                             )
                           }
                           disabled={downloadingKeys.has(`invoice:${r.invoiceId}`)}
                           aria-label={t('actions.downloadInvoiceAria', {
-                            number: r.documentNumber ?? r.invoiceId,
+                            number: r.documentNumber,
                           })}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),
@@ -525,15 +537,13 @@ export function InvoicesTable({
                           onClick={() =>
                             handleRowDownloadReceipt(
                               r.invoiceId,
-                              `${r.receiptDocumentNumberRaw ?? r.documentNumber ?? r.invoiceId}-receipt.pdf`,
+                              `${r.receiptDocumentNumberRaw ?? r.documentNumber}-receipt.pdf`,
                             )
                           }
                           disabled={downloadingKeys.has(`receipt:${r.invoiceId}`)}
                           aria-label={t('actions.downloadReceiptAria', {
                             number:
-                              r.receiptDocumentNumberRaw ??
-                              r.documentNumber ??
-                              r.invoiceId,
+                              r.receiptDocumentNumberRaw ?? r.documentNumber,
                           })}
                           className={cn(
                             buttonVariants({ variant: 'ghost', size: 'sm' }),

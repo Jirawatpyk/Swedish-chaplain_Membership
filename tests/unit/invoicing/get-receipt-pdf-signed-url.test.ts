@@ -224,7 +224,7 @@ describe('getReceiptPdfSignedUrl — happy paths', () => {
 
   it('member with matching memberId can download the receipt', async () => {
     const invoice = separateRenderedInvoice();
-    const { deps, callsKeys } = makeDeps(invoice);
+    const { deps, callsKeys, audit } = makeDeps(invoice);
 
     const result = await getReceiptPdfSignedUrl(deps, {
       tenantId: 't',
@@ -236,6 +236,70 @@ describe('getReceiptPdfSignedUrl — happy paths', () => {
 
     expect(result.ok).toBe(true);
     expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+    // R9-T4 — symmetric audit-payload assertions with the invoice
+    // sibling (`get-invoice-pdf-signed-url.test.ts:304-322`). Pin
+    // actor_member_id populated for member-actors + actor_role +
+    // route field so future refactors can't silently drop the
+    // forensic discriminator that distinguishes admin-actor probes
+    // from same-tenant member self-downloads.
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    const payload = auditCall.payload as Record<string, unknown>;
+    expect(payload.actor_member_id).toBe('m-owner');
+    expect(payload.actor_role).toBe('member');
+    expect(payload.route).toBe('get-receipt-pdf-signed-url');
+  });
+
+  // R9-T4 — admin actor_member_id MUST be null (vs populated for member).
+  // Currently the combined-mode + separate-mode happy paths assert
+  // receipt_numbering_mode + template_version but do NOT pin the actor
+  // discriminator. Without this pin, a refactor could accidentally
+  // leak admin/manager user_id into actor_member_id and break the
+  // probe-detection query that filters by `actor_member_id IS NOT NULL`.
+  it('admin success → actor_member_id is null + actor_role + route in payload', async () => {
+    const invoice = separateRenderedInvoice();
+    const { deps, audit } = makeDeps(invoice);
+
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    const payload = auditCall.payload as Record<string, unknown>;
+    expect(payload.actor_member_id).toBeNull();
+    expect(payload.actor_role).toBe('admin');
+    expect(payload.route).toBe('get-receipt-pdf-signed-url');
+  });
+
+  // R9-T3 mirror — pin the audit-BEFORE-blob ordering contract for
+  // the receipt sibling. If audit.emit throws (the exact class of bug
+  // that surfaced as the 2026-05-15 migration 0147 gap), the use-case
+  // MUST reject WITHOUT issuing a signed URL.
+  it('audit emit throws → blob.signDownloadUrl NOT called (forensic safety)', async () => {
+    const invoice = separateRenderedInvoice();
+    const { deps, callsKeys } = makeDeps(invoice);
+    const throwingAudit = vi.fn(async () => {
+      throw new Error('Neon transient: 22P02 invalid enum');
+    });
+    const depsWithThrow = {
+      ...deps,
+      audit: { emit: throwingAudit } as Parameters<typeof getReceiptPdfSignedUrl>[0]['audit'],
+    };
+    await expect(
+      getReceiptPdfSignedUrl(depsWithThrow, {
+        tenantId: 't',
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        invoiceId: 'i',
+      }),
+    ).rejects.toThrow(/Neon transient/);
+    expect(throwingAudit).toHaveBeenCalledTimes(1);
+    expect(callsKeys).toHaveLength(0);
   });
 });
 

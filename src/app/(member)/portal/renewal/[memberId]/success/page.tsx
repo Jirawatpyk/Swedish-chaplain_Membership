@@ -263,7 +263,7 @@ export default async function RenewalSuccessPage({
                   ariaLabel={tInvoiceActions('downloadInvoiceAria', {
                     number: docNum,
                   })}
-                  data-testid="receipt-download-link"
+                  data-testid="invoice-download-link"
                   className={sharedClassName}
                 />
                 <span
@@ -293,7 +293,7 @@ export default async function RenewalSuccessPage({
                 ariaLabel={tInvoiceActions('downloadInvoiceAria', {
                   number: docNum,
                 })}
-                data-testid="receipt-download-link"
+                data-testid="invoice-download-link"
                 className={sharedClassName}
               />
             );

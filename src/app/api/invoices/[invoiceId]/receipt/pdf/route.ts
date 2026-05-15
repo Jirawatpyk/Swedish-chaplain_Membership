@@ -74,6 +74,15 @@ export async function GET(
         tenantId: tenantCtx.slug,
         invoiceId,
         errorCode: result.error.code,
+        // R9-E2 — surface the failing blob key / failure reason so
+        // operators can immediately locate the offending blob or the
+        // worker-side render error without joining back to invoices.
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
+        ...(result.error.code === 'receipt_pdf_failed'
+          ? { reason: result.error.reason }
+          : {}),
       },
       'GET /api/invoices/[id]/receipt/pdf failed',
     );

@@ -75,6 +75,12 @@ function makeIssuedInvoice(): Invoice {
       generatedByUserId: 'u',
     } as unknown as Invoice['pdf'],
     receiptPdf: null,
+    // R9-T10 — explicit fixture default. The use-case branches on
+    // `receiptPdfStatus !== null && !== 'rendered'` (member 425 gate);
+    // null short-circuits to "no async work pending". Spell it out so
+    // a future Invoice domain change to a non-null default surfaces
+    // in this fixture instead of silently breaking 9 assertions.
+    receiptPdfStatus: null,
     lines: [],
     createdAt: '2026-04-20T00:00:00Z',
     updatedAt: '2026-04-20T00:00:00Z',
@@ -109,7 +115,10 @@ function makeDeps(invoice: Invoice | null) {
         deleteDraft: vi.fn(),
         applyPayment: vi.fn(),
         applyDraftUpdate: vi.fn(),
-        lockForUpdate: vi.fn(async () => 'issued' as const),
+        // R9-T9 — read-only use-case never calls `lockForUpdate`; stub
+        // with bare `vi.fn()` to avoid the misleading "returns 'issued'"
+        // appearance and match the receipt-sibling fixture shape.
+        lockForUpdate: vi.fn(),
         applyCreditNoteRollup: vi.fn(),
         applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
@@ -332,6 +341,35 @@ describe('getInvoicePdfSignedUrl — invoice_pdf_downloaded audit (R8-M1)', () =
     });
     expect(result.ok).toBe(false);
     expect(audit).not.toHaveBeenCalled();
+  });
+
+  // R9-T3 — pin the audit-BEFORE-blob ordering contract. If audit.emit
+  // throws (Neon transient, retention column constraint, enum drift —
+  // the exact class of bug that surfaced as the 2026-05-15 migration
+  // 0147 gap), the use-case MUST reject WITHOUT issuing a signed URL.
+  // The forensic §87 trail is durable + load-bearing: we'd rather
+  // surface a 500 than serve a download whose access cannot be
+  // reconstructed from audit_log.
+  it('audit emit throws → blob.signDownloadUrl NOT called (forensic safety)', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, blob } = makeDeps(invoice);
+    const throwingAudit = vi.fn(async () => {
+      throw new Error('Neon transient: 22P02 invalid enum');
+    });
+    const depsWithThrow = {
+      ...deps,
+      audit: { emit: throwingAudit } as Parameters<typeof getInvoicePdfSignedUrl>[0]['audit'],
+    };
+    await expect(
+      getInvoicePdfSignedUrl(depsWithThrow, {
+        tenantId: 't',
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        invoiceId: 'i',
+      }),
+    ).rejects.toThrow(/Neon transient/);
+    expect(throwingAudit).toHaveBeenCalledTimes(1);
+    expect(blob.callsKeys).toHaveLength(0);
   });
 });
 
