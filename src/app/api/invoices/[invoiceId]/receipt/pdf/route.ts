@@ -23,7 +23,8 @@ import {
   makeGetReceiptPdfSignedUrlDeps,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
-import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
+import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
 export async function GET(
   request: NextRequest,
@@ -104,55 +105,16 @@ export async function GET(
         { status: 502 },
       );
     }
-    const status =
-      result.error.code === 'invoice_not_found'
-        ? 404
-        : result.error.code === 'blob_missing'
-          ? 502
-          : 403;
-    return NextResponse.json({ error: { code: result.error.code } }, { status });
-  }
-
-  let blobResponse: Response;
-  try {
-    blobResponse = await fetch(result.value.url);
-  } catch (err) {
-    logger.error(
-      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
-      'GET /api/invoices/[id]/receipt/pdf — blob fetch failed',
-    );
     return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
-    );
-  }
-  if (!blobResponse.ok || !blobResponse.body) {
-    logger.error(
-      {
-        requestId,
-        tenantId: tenantCtx.slug,
-        invoiceId,
-        blobStatus: blobResponse.status,
-      },
-      'GET /api/invoices/[id]/receipt/pdf — blob upstream non-OK',
-    );
-    return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
+      { error: { code: result.error.code } },
+      { status: pdfRouteErrorStatus(result.error.code) },
     );
   }
 
-  const raw = result.value.filename;
-  const contentDisposition = buildAttachmentContentDisposition(raw);
-  const contentLength = blobResponse.headers.get('content-length');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': contentDisposition,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  };
-  if (contentLength) headers['Content-Length'] = contentLength;
-
-  return new NextResponse(blobResponse.body, { status: 200, headers });
+  return streamPdfFromBlob({
+    url: result.value.url,
+    filename: result.value.filename,
+    logContext: { requestId, tenantId: tenantCtx.slug, invoiceId },
+    route: '/api/invoices/[id]/receipt/pdf',
+  });
 }

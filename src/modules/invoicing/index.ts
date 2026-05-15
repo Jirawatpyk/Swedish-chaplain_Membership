@@ -348,3 +348,29 @@ export {
 // load-cycle-detail → @/modules/invoicing). The single
 // `/api/tenant-invoice-settings/logo` route handler deep-imports
 // directly from `./application/make-upload-tenant-logo-deps`.
+
+// --- R10-TY1: Infrastructure factories + adapters --------------------
+//
+// Re-export the F4 infrastructure factories + adapters so page-level
+// wiring + cron routes + cross-module callers (F7 broadcasts, F8
+// renewals) can compose F4 use-cases through this barrel instead of
+// deep-importing `@/modules/invoicing/infrastructure/**`. Closes the
+// R10 review-flagged Principle III barrel-leakage on 8+ call sites.
+//
+// `vercelBlobAdapter` re-exports the F4-owned Vercel Blob wrapper for
+// any tenant-aware blob operation (PDF reads, logo uploads).
+// `f4AuditAdapter` is the F4-side audit emitter (writes to
+// `audit_log` with `retention_years` map). `receiptPdfRenderEnqueueAdapter`
+// is the cron-trigger adapter for the async receipt-PDF worker.
+export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant-settings-repo';
+export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
+export { makeDrizzleInvoiceRepo } from './infrastructure/repos/drizzle-invoice-repo';
+export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
+export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
+export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
+// Invoice-auto-email — referenced by the cron outbox dispatcher to
+// render bilingual invoice/CN/receipt issued+resend notifications.
+export {
+  buildInvoiceAutoEmail,
+  type InvoiceAutoEmailEventType,
+} from './infrastructure/email/invoice-auto-email';

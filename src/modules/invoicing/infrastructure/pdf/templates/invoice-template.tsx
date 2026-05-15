@@ -211,6 +211,13 @@ export function InvoiceTemplate(input: PdfRenderInput) {
               // rather than allocating, so the overhead is just an
               // object wrapper. Future-Edge port: replace with `bytes`
               // directly once react-pdf widens its src typing.
+              //
+              // a11y note: no `alt` prop — react-pdf renders to PDF
+              // coordinate space (no DOM / no SR tree) and the
+              // `ImageProps` type does not accept one. The legal
+              // name is rendered alongside in `styles.identityName`
+              // so a decorative annotation would be moot regardless.
+              // eslint-disable-next-line jsx-a11y/alt-text
               <Image
                 src={{
                   data: Buffer.from(input.tenantLogo.bytes),

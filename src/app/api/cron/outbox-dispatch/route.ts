@@ -53,21 +53,23 @@ import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 /* eslint-disable no-restricted-imports --
  * Cron dispatcher is operational infrastructure — the same escape
- * hatch /api/cron/lockout-cleanup uses. */
+ * hatch /api/cron/lockout-cleanup uses. Auth + members infra are
+ * not yet exposed through their barrels. */
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { buildEmailVerificationEmail } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/email/email-change-revert-email';
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
+/* eslint-enable no-restricted-imports */
 import {
   buildInvoiceAutoEmail,
   type InvoiceAutoEmailEventType,
-} from '@/modules/invoicing/infrastructure/email/invoice-auto-email';
-import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
-import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
-/* eslint-enable no-restricted-imports */
-import { renderReceiptPdf, makeRenderReceiptPdfDeps } from '@/modules/invoicing';
+  vercelBlobAdapter,
+  f4AuditAdapter,
+  renderReceiptPdf,
+  makeRenderReceiptPdfDeps,
+} from '@/modules/invoicing';
 import {
   buildBroadcastDeliveredEmail,
   buildBroadcastFailedToDispatchEmail,

@@ -62,7 +62,6 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
     // R5-SF-M1 — log cleanup errors so CI surfaces leaked test
     // data instead of swallowing FK violations / RLS drift silently.
     await tenant.cleanup().catch((err) => {
-      // eslint-disable-next-line no-console
       console.warn(
         '[receipt-prefix-change-audit] tenant cleanup failed',
         { tenantSlug: tenant?.ctx?.slug, err },
@@ -116,6 +115,27 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
   }, 30_000);
 
   it('prefix flip after issuing documents captures correct last_sequences', async () => {
+    // R10-T3 — explicit bootstrap inside the test body (not relying on
+    // the previous bootstrap test's side effect). With Vitest
+    // `--shuffle` or worker-split, Test 1 may not have run yet — the
+    // prior cross-test dependency made this case fail silently.
+    const bootstrapRequestId = `r4-prefix-flip-bootstrap-${randomUUID()}`;
+    const bootstrapResult = await updateTenantInvoiceSettings(
+      {
+        tenantSettingsRepo: drizzleTenantSettingsRepo,
+        audit: f4AuditAdapter,
+      },
+      {
+        tenantId: tenant.ctx.slug,
+        actorUserId: user.userId,
+        requestId: bootstrapRequestId,
+        ...BASE_REQUIRED,
+        invoiceNumberPrefix: 'INV',
+        receiptNumberingMode: 'combined',
+      },
+    );
+    expect(bootstrapResult.ok).toBe(true);
+
     // 1) Allocate seq 1, 2, 3 under the OLD invoice prefix (INV) for FY 2026.
     const ctx = asTenantContext(tenant.ctx.slug);
     const fy = 2026 as FiscalYear;
@@ -129,9 +149,8 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
       );
     }
 
-    // 2) Flip the invoice prefix INV → TX. priorSettings is now non-null
-    //    (bootstrap test landed earlier), so the prefix-change audit
-    //    SHOULD emit.
+    // 2) Flip the invoice prefix INV → TX. Bootstrap above guarantees
+    //    priorSettings is non-null regardless of test ordering.
     const requestId = `r4-prefix-flip-${randomUUID()}`;
     const result = await updateTenantInvoiceSettings(
       {
@@ -240,7 +259,140 @@ describe('Round-4 — tenant_receipt_prefix_changed audit emit (live Neon)', () 
     } finally {
       // R5-SF-M1 — log cleanup errors instead of swallowing.
       await freshTenant.cleanup().catch((err) => {
-        // eslint-disable-next-line no-console
+        console.warn(
+          '[receipt-prefix-change-audit] freshTenant cleanup failed',
+          { tenantSlug: freshTenant?.ctx?.slug, err },
+        );
+      });
+    }
+  }, 60_000);
+
+  // R10-T5 — coverage for credit-note + receipt prefix flip branches.
+  // The use-case builds `changed_prefixes` from three sibling
+  // computations; prior integration coverage exercised only the
+  // invoice-prefix path. A regression dropping emit on cn/receipt
+  // prefix flip would not have been caught.
+  it('credit-note prefix flip emits with changed_prefixes.credit_note_number_prefix', async () => {
+    const freshTenant = await createTestTenant('test-swecham');
+    try {
+      const bootstrapResult = await updateTenantInvoiceSettings(
+        {
+          tenantSettingsRepo: drizzleTenantSettingsRepo,
+          audit: f4AuditAdapter,
+        },
+        {
+          tenantId: freshTenant.ctx.slug,
+          actorUserId: user.userId,
+          ...BASE_REQUIRED,
+          invoiceNumberPrefix: 'INV',
+          receiptNumberingMode: 'combined',
+        },
+      );
+      expect(bootstrapResult.ok).toBe(true);
+
+      const requestId = `r10-t5-cn-flip-${randomUUID()}`;
+      const result = await updateTenantInvoiceSettings(
+        {
+          tenantSettingsRepo: drizzleTenantSettingsRepo,
+          audit: f4AuditAdapter,
+        },
+        {
+          tenantId: freshTenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId,
+          creditNoteNumberPrefix: 'CRED',
+        },
+      );
+      expect(result.ok).toBe(true);
+
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, freshTenant.ctx.slug),
+            eq(auditLog.eventType, 'tenant_receipt_prefix_changed'),
+            eq(auditLog.requestId, requestId),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+      const payload = rows[0]!.payload as {
+        changed_prefixes: Record<string, { old: string | null; new: string | null }>;
+      };
+      expect(payload.changed_prefixes.credit_note_number_prefix).toEqual({
+        old: 'CN',
+        new: 'CRED',
+      });
+      // Only the CN prefix changed — invoice prefix must NOT be in the
+      // changed-set (otherwise the use-case is over-emitting).
+      expect(payload.changed_prefixes.invoice_number_prefix).toBeUndefined();
+    } finally {
+      await freshTenant.cleanup().catch((err) => {
+        console.warn(
+          '[receipt-prefix-change-audit] freshTenant cleanup failed',
+          { tenantSlug: freshTenant?.ctx?.slug, err },
+        );
+      });
+    }
+  }, 60_000);
+
+  it('receipt prefix flip emits with changed_prefixes.receipt_number_prefix', async () => {
+    const freshTenant = await createTestTenant('test-swecham');
+    try {
+      await updateTenantInvoiceSettings(
+        {
+          tenantSettingsRepo: drizzleTenantSettingsRepo,
+          audit: f4AuditAdapter,
+        },
+        {
+          tenantId: freshTenant.ctx.slug,
+          actorUserId: user.userId,
+          ...BASE_REQUIRED,
+          invoiceNumberPrefix: 'INV',
+          // Bootstrap with explicit receipt prefix RE under separate mode
+          // so the next flip from RE → RC is observable.
+          receiptNumberingMode: 'separate',
+          receiptNumberPrefix: 'RE',
+        },
+      );
+
+      const requestId = `r10-t5-receipt-flip-${randomUUID()}`;
+      const result = await updateTenantInvoiceSettings(
+        {
+          tenantSettingsRepo: drizzleTenantSettingsRepo,
+          audit: f4AuditAdapter,
+        },
+        {
+          tenantId: freshTenant.ctx.slug,
+          actorUserId: user.userId,
+          requestId,
+          receiptNumberPrefix: 'RC',
+        },
+      );
+      expect(result.ok).toBe(true);
+
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, freshTenant.ctx.slug),
+            eq(auditLog.eventType, 'tenant_receipt_prefix_changed'),
+            eq(auditLog.requestId, requestId),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+      const payload = rows[0]!.payload as {
+        changed_prefixes: Record<string, { old: string | null; new: string | null }>;
+      };
+      expect(payload.changed_prefixes.receipt_number_prefix).toEqual({
+        old: 'RE',
+        new: 'RC',
+      });
+      expect(payload.changed_prefixes.invoice_number_prefix).toBeUndefined();
+      expect(payload.changed_prefixes.credit_note_number_prefix).toBeUndefined();
+    } finally {
+      await freshTenant.cleanup().catch((err) => {
         console.warn(
           '[receipt-prefix-change-audit] freshTenant cleanup failed',
           { tenantSlug: freshTenant?.ctx?.slug, err },

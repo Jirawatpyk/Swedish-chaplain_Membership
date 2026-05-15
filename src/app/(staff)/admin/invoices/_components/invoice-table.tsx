@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { downloadInvoice, downloadReceipt } from '../_lib/download-receipt-client';
-import type { InvoiceStatus } from '@/modules/invoicing/domain/invoice';
+import type { InvoiceStatus } from '@/modules/invoicing';
 
 /**
  * R9-TY1 — `'overdue'` is a presentation-only derived status (T109,
@@ -74,20 +74,19 @@ export type InvoicesTableRow = {
   readonly totalSatang: string;
   readonly hasPdf: boolean;
   /**
-   * G-2 — count of credit notes issued against this invoice.
-   * Zero on 99% of invoices (paid/void/etc. rarely credited).
-   * Rendered as a small outline chip beside the status badge so
-   * admins can spot partially/fully credited rows without drilling
-   * into detail.
+   * Count of credit notes issued against this invoice. Zero on 99%
+   * of invoices (paid/void rarely credited). Rendered as an outline
+   * chip beside the status badge so admins can spot partially/fully
+   * credited rows without drilling into detail.
    */
   readonly creditNoteCount: number;
-  /** G-2 — cumulative credited amount in satang (stringified bigint). */
+  /** Cumulative credited amount in satang (stringified bigint). */
   readonly creditedTotalSatang: string;
   /**
-   * F5 Phase 5 (T096) — succeeded online payment method, or null when
-   * the invoice has no F5 succeeded payment. Surfaces as a Method-column
-   * badge ONLY when `showMethodColumn` is true on the table (currently
-   * the `?paidOnline=1` admin reconciliation view).
+   * Succeeded online payment method, or null when the invoice has no
+   * F5 succeeded payment. Surfaces as a Method-column badge ONLY when
+   * `showMethodColumn` is true (driven by `?paidOnline=1` admin
+   * reconciliation view).
    */
   readonly onlinePaymentMethod: 'card' | 'promptpay' | null;
   /**
@@ -104,11 +103,11 @@ export type InvoicesTableRow = {
    */
   readonly hasReceiptPdf: boolean;
   /**
-   * R8-H2-UX — raw `receiptPdfStatus` so the action cell can render
-   * a "preparing…" affordance when paid + pending/failed/null (the
-   * receipt is async-rendering but not yet downloadable). Without
-   * this, bookkeepers saw a row with only an Invoice download and
-   * no signal that the §86/4 + §105ทวิ legal doc is on its way.
+   * Raw `receiptPdfStatus` so the action cell can render a
+   * "preparing…" affordance when paid + pending/failed/null (receipt
+   * is async-rendering but not yet downloadable). Without this,
+   * bookkeepers saw a paid row with only an Invoice download and no
+   * signal that the §86/4 + §105ทวิ legal doc is on its way.
    */
   readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
 };
@@ -135,9 +134,9 @@ function StatusBadge({ status }: { status: RowStatus }) {
   const t = useTranslations('admin.invoices.list.statuses');
   return (
     <Badge variant={statusVariant(status)}>
-      {/* R7-S7 — icon on overdue so WCAG 1.4.1 "Use of Color" is
-          satisfied: the state is not conveyed by color alone. Text
-          label stays canonical; icon is aria-hidden. */}
+      {/* Icon on overdue so WCAG 1.4.1 "Use of Color" is satisfied:
+          state is not conveyed by color alone. Icon aria-hidden;
+          text label is canonical. */}
       {status === 'overdue' && (
         <AlertCircleIcon className="mr-1 size-3" aria-hidden="true" />
       )}
@@ -152,7 +151,8 @@ function formatSatang(satang: string): string {
   const whole = abs / 100n;
   const rem = abs % 100n;
   const sign = n < 0n ? '-' : '';
-  // N11 — explicit 'en-US' pins thousand-separator output. FR-005.
+  // Explicit 'en-US' pins thousand-separator output (FR-005); SSR/CSR
+  // locale drift would otherwise hydrate-mismatch on currency display.
   return `${sign}${whole.toLocaleString('en-US')}.${rem.toString().padStart(2, '0')}`;
 }
 
@@ -166,9 +166,9 @@ function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
       variant="secondary"
       data-testid={`method-badge-${method}`}
       className="font-normal"
-      // S3 verify-fix (2026-04-26): SR users hearing only "Card" without
-      // column context get an ambiguous label. The aria-label adds the
-      // column name so readers row-by-row get "Method: Card" / "Method: PromptPay".
+      // SR users hearing only "Card" without column context get an
+      // ambiguous label. aria-label prepends the column name so
+      // row-by-row reading produces "Method: Card" / "Method: PromptPay".
       aria-label={`${tCol('method')}: ${t(method)}`}
     >
       {t(method)}
@@ -190,13 +190,10 @@ export function InvoicesTable({
 }) {
   const t = useTranslations('admin.invoices.list');
   const tDetail = useTranslations('admin.invoices.detail');
-  // Round-4 fix R4-UX-H1 — Set<string> instead of a single string slot.
-  // The previous design hosted ONE in-flight download identifier
-  // (`${variant}:${invoiceId}`). Pressing "Receipt" on row B while
-  // row A's "Invoice" was still mid-fetch overwrote row A's spinner
-  // key → row A's loader vanished and the user thought it failed. The
-  // Set permits N concurrent row downloads with their own spinner state
-  // and only adds bounded memory (max N pending requests).
+  // Per-row spinner state keyed by `${variant}:${invoiceId}` so two
+  // downloads on different rows don't overwrite each other's loader.
+  // (Single-slot state would lose row-A's spinner when row-B's
+  // download starts; the Set permits unlimited concurrent rows.)
   const [downloadingKeys, setDownloadingKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -213,80 +210,63 @@ export function InvoicesTable({
       return next;
     });
 
-  // Round-4 fix R4-code-B2 — wrap each row download in try/finally so a
-  // throw inside `downloadInvoice/downloadReceipt` cannot leak a stuck
-  // spinner state. The helpers already swallow errors via their own
-  // catch, but a defensive finally costs nothing and matches the menu's
-  // own pattern (parity with `invoice-more-menu.tsx`).
-  //
-  // R8-H1-UX — fire `toast.loading` BEFORE the await so SR + visual
-  // feedback is continuous from click → completion. Parity with the
-  // detail-page menu (`invoice-more-menu.tsx`) and portal button.
-  // Without this, the row's per-cell Loader2 spinner was the only
-  // visible affordance — and on rows scrolled off-screen, SR users
-  // had no audio cue at all during the fetch window.
-  const handleRowDownloadInvoice = async (
+  // Unified row-download dispatcher. `toast.loading` fires BEFORE the
+  // await so SR + visual feedback is continuous click → completion
+  // (rows scrolled off-screen otherwise had no audio cue during the
+  // fetch window). `try/finally` guards against a throw inside the
+  // helpers leaking a stuck spinner — the helpers themselves swallow
+  // documented 4xx/5xx via their own catch, but defensive cleanup
+  // matches the invoice-more-menu pattern.
+  const handleRowDownload = async (
+    variant: 'invoice' | 'receipt',
     invoiceId: string,
     fallbackFilename: string,
   ) => {
-    const key = `invoice:${invoiceId}`;
+    const key = `${variant}:${invoiceId}`;
     addDownloading(key);
     const loadingId = toast.loading(tDetail('toast.downloadInProgress'));
     try {
-      await downloadInvoice({
-        invoiceId,
-        fallbackFilename,
-        toasts: {
-          forbidden: tDetail('toast.invoiceForbidden'),
-          notFound: tDetail('toast.invoiceNotFound'),
-          unavailable: tDetail('toast.invoiceUnavailable'),
-          sessionExpired: tDetail('toast.invoiceSessionExpired'),
-          rateLimited: tDetail('toast.invoiceRateLimited'),
-        },
-        toastWarning: (msg) => toast.warning(msg),
-        toastError: (msg) => toast.error(msg),
-      });
-    } finally {
-      toast.dismiss(loadingId);
-      removeDownloading(key);
-    }
-  };
-
-  const handleRowDownloadReceipt = async (
-    invoiceId: string,
-    fallbackFilename: string,
-  ) => {
-    const key = `receipt:${invoiceId}`;
-    addDownloading(key);
-    const loadingId = toast.loading(tDetail('toast.downloadInProgress'));
-    try {
-      await downloadReceipt({
-        invoiceId,
-        fallbackFilename,
-        toasts: {
-          pending: tDetail('toast.receiptPending'),
-          failed: (reason) => tDetail('toast.receiptFailed', { reason }),
-          forbidden: tDetail('toast.receiptForbidden'),
-          unavailable: tDetail('toast.receiptUnavailable'),
-          sessionExpired: tDetail('toast.receiptSessionExpired'),
-          rateLimited: tDetail('toast.receiptRateLimited'),
-        },
-        toastWarning: (msg) => toast.warning(msg),
-        toastError: (msg) => toast.error(msg),
-      });
+      if (variant === 'invoice') {
+        await downloadInvoice({
+          invoiceId,
+          fallbackFilename,
+          toasts: {
+            forbidden: tDetail('toast.invoiceForbidden'),
+            notFound: tDetail('toast.invoiceNotFound'),
+            unavailable: tDetail('toast.invoiceUnavailable'),
+            sessionExpired: tDetail('toast.invoiceSessionExpired'),
+            rateLimited: tDetail('toast.invoiceRateLimited'),
+          },
+          toastWarning: (msg) => toast.warning(msg),
+          toastError: (msg) => toast.error(msg),
+        });
+      } else {
+        await downloadReceipt({
+          invoiceId,
+          fallbackFilename,
+          toasts: {
+            pending: tDetail('toast.receiptPending'),
+            failed: (reason) => tDetail('toast.receiptFailed', { reason }),
+            forbidden: tDetail('toast.receiptForbidden'),
+            unavailable: tDetail('toast.receiptUnavailable'),
+            sessionExpired: tDetail('toast.receiptSessionExpired'),
+            rateLimited: tDetail('toast.receiptRateLimited'),
+          },
+          toastWarning: (msg) => toast.warning(msg),
+          toastError: (msg) => toast.error(msg),
+        });
+      }
     } finally {
       toast.dismiss(loadingId);
       removeDownloading(key);
     }
   };
   return (
-    // Verify-fix U-I4 (2026-04-26): inset shadow on the right edge gives
-    // mobile users a visual cue that the table scrolls horizontally
-    // (8 cols when the Method column is on; 7 otherwise). Without the
-    // cue the overflow was invisible and admins missed columns to the
-    // right. R2-fix Q1 (2026-04-26): dual-tone shadow so the cue is
-    // visible in both light AND dark mode (the rgba(0,0,0,0.08) ink
-    // disappeared on `bg-card` dark surfaces).
+    // Inset shadow on the right edge cues mobile users that the table
+    // scrolls horizontally (8 cols with Method on; 7 otherwise);
+    // without it the overflow was invisible. Dual-tone (light + dark)
+    // so the cue stays visible — the rgba(0,0,0,0.08) ink disappears
+    // on `bg-card` dark surfaces alone.
     <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
       <Table>
         <TableHeader>
@@ -349,8 +329,7 @@ export function InvoicesTable({
                   // Paid + null = combined-mode (receipt reuses invoice
                   // number). Em-dash + Info icon → admin sees the
                   // affordance on touch (no hover state needed) and
-                  // can long-press / focus to see the tooltip
-                  // explanation. Round-3 fix M-R2-05.
+                  // can long-press / focus to read the explanation.
                   <TooltipProvider delay={200}>
                     <Tooltip>
                       <TooltipTrigger
@@ -361,14 +340,10 @@ export function InvoicesTable({
                             aria-label={t('receiptNumberCombinedAria')}
                           >
                             —
-                            {/* R4-UX-H3 — removed `opacity-70`; size-3.5
-                                preserves the affordance with full
-                                contrast against muted-foreground.
-                                R5-UX-M2 — added `min-h-6` so the
-                                TooltipTrigger surface meets WCAG 2.2
-                                SC 2.5.8 (≥24×24px touch target) on
-                                mobile (line-height of text-sm only
-                                resolves to ~20px otherwise). */}
+                            {/* `min-h-6` brings the TooltipTrigger
+                                surface to WCAG 2.2 SC 2.5.8 (≥24×24px
+                                touch target); text-sm line-height alone
+                                resolves to only ~20px on mobile. */}
                             <InfoIcon
                               className="size-3.5"
                               aria-hidden="true"
@@ -397,11 +372,10 @@ export function InvoicesTable({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <StatusBadge status={r.status} />
                   {r.creditNoteCount > 0 && (
-                    // G-2 — CN indicator chip. Shows only when ≥1 CN
-                    // exists on the row. shadcn Tooltip (not the legacy
-                    // `title` attribute) so the hint surfaces on
-                    // mobile/touch + keyboard focus + screen-reader
-                    // accessible tree.
+                    // CN indicator chip. Shows only when ≥1 CN exists
+                    // on the row. shadcn Tooltip (not the legacy
+                    // `title` attribute) so the hint reaches mobile/
+                    // touch + keyboard focus + SR accessibility tree.
                     <TooltipProvider delay={200}>
                       <Tooltip>
                         <TooltipTrigger
@@ -456,27 +430,23 @@ export function InvoicesTable({
                     bytes; Next.js <Link> would misinterpret as RSC
                     payload. */}
                 {(() => {
-                  // Round-4 fix R4-doc — clarify combined-mode detection
-                  // intent: `receiptDocumentNumberRaw === null` is the
-                  // single source of truth for "this paid invoice uses
-                  // the same legal document as both invoice + receipt"
-                  // (Thai RD §86/4 + §105ทวิ). It is NOT inferred from
+                  // `receiptDocumentNumberRaw === null` is the SINGLE
+                  // source of truth for "this paid invoice uses one
+                  // legal document for both invoice + receipt" (Thai
+                  // RD §86/4 + §105ทวิ). Do NOT infer from
                   // `tenant_invoice_settings.receipt_numbering_mode`
-                  // because that flag describes the tenant's CURRENT
-                  // mode — an invoice paid before a mode-flip keeps its
-                  // own immutable snapshot here. Use the row, not the
-                  // tenant setting.
+                  // — that flag describes the tenant's CURRENT mode;
+                  // an invoice paid before a mode flip keeps its own
+                  // immutable snapshot. Read the row, not the setting.
                   const isCombinedPaid =
                     r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
                   const showInvoice = r.hasPdf && !isCombinedPaid;
-                  // R8-H2-UX — async receipt-PDF gate. When paid +
-                  // receiptPdfStatus is pending/failed/null AND the
-                  // receipt PDF isn't yet rendered, surface a
-                  // "preparing…" affordance alongside any visible
-                  // Invoice button. Without this, bookkeepers saw a
-                  // paid row with only the Invoice download and no
-                  // signal that the §86/4+§105ทวิ legal doc is on its
-                  // way. Mirrors the portal list pattern.
+                  // Async receipt-PDF gate. Paid + receiptPdfStatus
+                  // pending/failed/null surfaces a "preparing…"
+                  // affordance alongside the Invoice button.
+                  // Bookkeepers otherwise saw a paid row with only
+                  // an Invoice download and no signal that the
+                  // §86/4+§105ทวิ legal doc is on its way.
                   const receiptPending =
                     r.status === 'paid' &&
                     r.receiptPdfStatus !== null &&
@@ -487,18 +457,19 @@ export function InvoicesTable({
                   return (
                     <div className="flex items-center justify-end gap-1">
                       {showInvoice && (
-                        // Round-3 follow-up — invoice download now also
-                        // a button (parity with Receipt). Plain `<a>`
-                        // would leak 401/403/404/5xx as JSON-in-new-tab.
-                        // Round-4 fix R4-UX-NB2 — aria-label via t()
-                        // interpolation instead of string-concat so the
-                        // dash separator is locale-controlled and SR
-                        // text reads naturally in TH/SV not "Invoice —
-                        // INV-2026-0001" literal English.
+                        // Button (not <a download>) routes through
+                        // the shared fetch+blob helper so 4xx/5xx
+                        // surface as toasts instead of JSON in a new
+                        // tab. aria-label via t() interpolation so
+                        // the dash separator is locale-controlled
+                        // (TH/SV read naturally; English string-concat
+                        // would force "Invoice — INV-2026-0001"
+                        // literally).
                         <button
                           type="button"
                           onClick={() =>
-                            handleRowDownloadInvoice(
+                            handleRowDownload(
+                              'invoice',
                               r.invoiceId,
                               `${r.documentNumber}.pdf`,
                             )
@@ -514,9 +485,6 @@ export function InvoicesTable({
                           data-testid="row-download-invoice"
                         >
                           {downloadingKeys.has(`invoice:${r.invoiceId}`) && (
-                            // Round-4 fix R4-UX-M1 — size-4 parity with
-                            // the InvoiceMoreMenu spinner; was size-3
-                            // which read as visually inconsistent.
                             <Loader2
                               className="size-4 motion-safe:animate-spin"
                               aria-hidden="true"
@@ -526,16 +494,11 @@ export function InvoicesTable({
                         </button>
                       )}
                       {r.hasReceiptPdf && (
-                        // Round-3 fix R3-BUG1 — converted plain
-                        // `<a download>` to a button that uses the
-                        // shared fetch+blob helper. Plain anchor
-                        // would leak `{ "error": { "code": ... } }`
-                        // JSON into a new tab on 425 Too Early / 502
-                        // failed-render / 401 expired-session, etc.
                         <button
                           type="button"
                           onClick={() =>
-                            handleRowDownloadReceipt(
+                            handleRowDownload(
+                              'receipt',
                               r.invoiceId,
                               `${r.receiptDocumentNumberRaw ?? r.documentNumber}-receipt.pdf`,
                             )
@@ -561,11 +524,10 @@ export function InvoicesTable({
                         </button>
                       )}
                       {receiptPending && (
-                        // R8-H2-UX — paid + receipt-render in flight.
-                        // `role="status" aria-live="polite"` so SR
-                        // users hear the async state when the bookkeeper
-                        // scans the table. Style matches portal list
-                        // for visual consistency.
+                        // Paid + receipt-render in flight. `role=status
+                        // aria-live=polite` so SR users hear the async
+                        // state when the bookkeeper scans the table.
+                        // Style matches portal list for visual parity.
                         <span
                           role="status"
                           aria-live="polite"

@@ -79,7 +79,6 @@ export function ResendInvoiceButton({
         // so the user-facing toast still shows but operators retain
         // the underlying cause (DNS / CORS / offline / TLS) for
         // diagnosis. Bare catch swallowed this previously.
-        // eslint-disable-next-line no-console
         console.error('[portal-resend-invoice] network error', {
           invoiceId,
           err,

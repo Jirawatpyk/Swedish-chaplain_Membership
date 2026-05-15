@@ -1,12 +1,15 @@
 /**
- * T051 — Drizzle tenant_invoice_settings repo (F4).
+ * Drizzle tenant_invoice_settings repo (F4).
  *
  * Read path — `getForIssue` loads a snapshot for invoice issuance.
+ * `getForUpdateInTx` reads with SELECT FOR UPDATE for the settings
+ * mutation flow.
  *
- * Write path — R7-B2 adds `upsert` backing the US4 settings UI
- * (PATCH /api/tenant-invoice-settings). A single INSERT … ON CONFLICT
- * DO UPDATE patches only the columns explicitly present in the patch,
- * so partial edits don't overwrite unrelated fields with stale values.
+ * Write path — `upsert` backs the US4 settings UI
+ * (PATCH /api/tenant-invoice-settings). Branches on row existence:
+ * first-time bootstrap → plain INSERT (requires complete required
+ * fields); subsequent partial patch → plain UPDATE of only the
+ * caller-provided columns so unrelated fields stay stable.
  */
 import { eq, sql } from 'drizzle-orm';
 import type {
@@ -78,26 +81,23 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     txUnknown: unknown,
     tenantId: string,
   ): Promise<TenantInvoiceSettingsView | null> {
-    // Round-3 fix R3-H1 — `SELECT … FOR UPDATE` on the tenant's
-    // settings row so a concurrent admin save can't slip in between
-    // the read + the subsequent upsert. Caller MUST already be inside
-    // `runInTenant` (RLS context set), passing the same `tx` handle
-    // here that they'll feed to `upsert(..., tx)`.
+    // `SELECT … FOR UPDATE` on the tenant settings row serialises
+    // concurrent admin saves against the subsequent upsert (two
+    // admins flipping a prefix simultaneously would otherwise write
+    // inconsistent §87 forensic audits — P1 reads INV, P2 reads INV,
+    // P1 writes AAA, P2 writes BBB → P2's "old=INV → new=BBB" audit
+    // misses the intermediate state). Caller MUST already be inside
+    // `runInTenant` (RLS context set) + pass the same `tx` handle
+    // they'll feed to `upsert(..., tx)`.
     //
-    // R7-M7 — added `SET LOCAL lock_timeout` parity with
-    // `readSequencesInTx`. Two admins editing settings concurrently
-    // serialise on this FOR UPDATE; without the timeout, a stuck
-    // first admin (slow PDF preview or browser tab paused) would
-    // block the second admin's save until Vercel's function-timeout
-    // window. 5s matches the sequences read; an exceeded budget
-    // raises `LockNotAvailable` so `withTx` rolls back atomically.
+    // `SET LOCAL lock_timeout = 5000` bounds the FOR UPDATE wait so
+    // a stuck holder (slow PDF preview, paused tab) doesn't block
+    // the second admin until Vercel function-timeout drops the
+    // connection uncleanly. The `SET LOCAL` is intentionally an
+    // override — this is a security-critical section + 5s is the
+    // engineered budget; whatever value an upstream caller set, ours
+    // wins so the timeout is predictable.
     const tx = txUnknown as TenantTx;
-    // R8-M-rel-2 — `SET LOCAL` overrides any prior `lock_timeout`
-    // setting in the same tx. The override is intentional here: this
-    // is a security-critical section (settings prefix flip + §87
-    // forensic audit emit) and 5s is the engineered budget. If a
-    // caller has already SET a different value upstream, our budget
-    // wins so the timeout behaviour is predictable.
     await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
     try {
       const rows = await tx
@@ -110,10 +110,9 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
       if (!row) return null;
       return rowToView(row);
     } catch (err) {
-      // R7-M2 — surface the stuck-lock signal to operators. Without
-      // this log, a LockNotAvailable would propagate up as a generic
-      // Result.err / 500 toast and we'd lose the "concurrent save
-      // contention" diagnostic.
+      // Surface stuck-lock to operators — without this, LockNotAvailable
+      // would propagate up as a generic 500 toast and we'd lose the
+      // "concurrent save contention" diagnostic.
       if (isLockNotAvailable(err)) {
         logger.warn(
           { tenantId, op: 'getForUpdateInTx', timeoutMs: 5000 },
@@ -128,35 +127,31 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     txUnknown: unknown,
     tenantId: string,
   ): Promise<readonly TenantDocumentSequenceRow[]> {
-    // Round-3 fix R3-C1 — surface every `tenant_document_sequences`
-    // row for the §87 forensic-trail audit emit. Returns [] if the
-    // tenant hasn't issued any documents yet.
+    // Surface every `tenant_document_sequences` row for the §87
+    // forensic-trail audit emit. Returns [] for a tenant that has
+    // never issued any document.
     //
-    // Round-4 fix R4-rel-H1 — add `.for('share')` so this read
-    // coordinates with the concurrent `SequentialNumberAllocator`
-    // path (which takes `FOR UPDATE` on the same rows inside its own
-    // tx). Without the SHARE lock, a settings prefix-flip happening
-    // mid-issuance could snapshot a stale `next_sequence_number` and
-    // write an audit row whose `last_sequence_number` does not match
-    // the final on-disk value once the allocator commits. SHARE +
-    // UPDATE block each other but do not block SHARE + SHARE — so
-    // two prefix flips can still race against each other (and that
-    // is fine; the outer settings-row `FOR UPDATE` (getForUpdateInTx)
-    // already serialises them).
+    // `.for('share')` coordinates with `SequentialNumberAllocator`
+    // (FOR UPDATE on the same rows inside its own tx). Without
+    // SHARE, a settings prefix-flip happening mid-issuance could
+    // snapshot a stale `next_sequence_number` and write an audit row
+    // whose `last_sequence_number` does not match the final on-disk
+    // value once the allocator commits. SHARE+UPDATE block each
+    // other but SHARE+SHARE do not — two prefix flips can still race
+    // against each other (acceptable; the outer settings-row FOR
+    // UPDATE (getForUpdateInTx) already serialises them).
     //
-    // Round-4 fix R4-drizzle-M2 — explicit `ORDER BY (documentType,
-    // fiscalYear)` so the audit payload `last_sequences` array is
-    // deterministic across runs. Without it, Postgres can hand back
-    // rows in heap order — which causes RD forensic-diff tooling to
-    // see spurious changes when comparing two audit rows that
-    // logically carry the same sequence snapshot.
+    // Explicit `ORDER BY (documentType, fiscalYear)` makes the audit
+    // payload's `last_sequences` array deterministic across runs.
+    // Heap order would cause RD forensic-diff tooling to see spurious
+    // changes when comparing two logically-equivalent audit rows.
     const tx = txUnknown as TenantTx;
-    // R5-REL-M1 — bound the FOR SHARE wait to 5 seconds so a stuck
-    // allocator (e.g. abnormally slow PDF render holding the FOR
-    // UPDATE) does not hang this connection indefinitely on Vercel
-    // Serverless (function-timeout would otherwise drop the
-    // connection without a clean rollback). 5s comfortably exceeds
-    // normal allocator contention (≤2-3s end-to-end) and raises a
+    // Bound the FOR SHARE wait to 5s so a stuck allocator (abnormally
+    // slow PDF render holding FOR UPDATE) does not hang this
+    // connection indefinitely on Vercel Serverless — function-timeout
+    // would otherwise drop the connection without a clean rollback.
+    // 5s comfortably exceeds normal allocator contention (≤2-3s
+    // end-to-end) and raises a
     // `LockNotAvailable` exception that the surrounding `withTx`
     // rolls back atomically.
     await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
@@ -177,11 +172,10 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
         nextSequenceNumber: r.nextSequenceNumber,
       }));
     } catch (err) {
-      // R7-M2 — surface the "stuck allocator" signal so operators can
-      // diagnose §87 prefix-flip contention against concurrent
-      // issuance. Without this log a `LockNotAvailable` would
-      // propagate up as a generic Result.err / 500 toast and we'd
-      // lose the operational fingerprint.
+      // Surface "stuck allocator" so operators can diagnose §87
+      // prefix-flip contention against concurrent issuance. Without
+      // this log a LockNotAvailable propagates up as a generic 500
+      // toast and the operational fingerprint is lost.
       if (isLockNotAvailable(err)) {
         logger.warn(
           { tenantId, op: 'readSequencesInTx', timeoutMs: 5000 },
@@ -206,13 +200,21 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     tx?: unknown,
   ): Promise<void> {
     const ctx = asTenantContext(tenantId);
-    // Build the patch row — only caller-provided fields are included in
-    // the UPDATE SET. Required fields for INSERT are supplied only if
-    // the caller provided them; on first-time insert, missing required
-    // fields surface as a DB NOT NULL violation (caller validates
-    // upstream).
+    // R10-BUG-1 fix — when a row already exists for this tenant, do a
+    // plain UPDATE (not INSERT … ON CONFLICT DO UPDATE). Postgres
+    // evaluates the proposed INSERT-side row BEFORE the ON CONFLICT
+    // branch fires, so a partial-patch upsert (caller provides only a
+    // few columns) generated SQL `INSERT (…, vat_rate, …) VALUES (…,
+    // DEFAULT, …) ON CONFLICT DO UPDATE …` failed NOT NULL on
+    // vat_rate (NOT NULL with no DEFAULT) before reaching the ON
+    // CONFLICT clause. The pattern only succeeded on first-time
+    // bootstrap where the caller supplies every required field;
+    // subsequent partial updates (a prefix flip, an autoEmailEnabled
+    // toggle) hit the bug. Fix: SELECT-then-branch — if the row
+    // exists, UPDATE only the patched columns; if not, INSERT
+    // (requires complete required fields, as before).
+    const updateSet: Record<string, unknown> = { updatedAt: sql`now()` };
     const insertValues: Record<string, unknown> = { tenantId };
-    const updateValues: Record<string, unknown> = { updatedAt: sql`now()` };
     const copyFields: Array<[keyof TenantInvoiceSettingsPatch, string]> = [
       ['currencyCode', 'currencyCode'],
       ['vatRate', 'vatRate'],
@@ -235,26 +237,42 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     for (const [src, dst] of copyFields) {
       if (patch[src] !== undefined) {
         insertValues[dst] = patch[src];
-        updateValues[dst] = patch[src];
+        updateSet[dst] = patch[src];
       }
     }
 
-    // If caller passed a `tx`, reuse it (opened via `withTx` which
-    // already set `app.current_tenant` via `runInTenant`). Only open a
-    // fresh scope when no tx was provided.
-    const doInsert = (txHandle: TenantTx) =>
-      txHandle
+    const doWrite = async (txHandle: TenantTx) => {
+      // Probe for existing row. Caller MAY have already done a
+      // `getForUpdateInTx` upstream (within the same tx) — repeating
+      // the read is idempotent + cheap, and keeps the repo API
+      // independent of caller ordering.
+      const existing = await txHandle
+        .select({ tenantId: tenantInvoiceSettings.tenantId })
+        .from(tenantInvoiceSettings)
+        .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+        .limit(1);
+
+      if (existing.length > 0) {
+        // Row exists — plain UPDATE of patched columns only.
+        await txHandle
+          .update(tenantInvoiceSettings)
+          .set(updateSet)
+          .where(eq(tenantInvoiceSettings.tenantId, tenantId));
+        return;
+      }
+
+      // First-time bootstrap — INSERT requires full required fields;
+      // missing NOT NULL columns surface as a DB constraint violation
+      // (caller validates upstream).
+      await txHandle
         .insert(tenantInvoiceSettings)
-        .values(insertValues as typeof tenantInvoiceSettings.$inferInsert)
-        .onConflictDoUpdate({
-          target: tenantInvoiceSettings.tenantId,
-          set: updateValues,
-        });
+        .values(insertValues as typeof tenantInvoiceSettings.$inferInsert);
+    };
 
     if (tx !== undefined) {
-      await doInsert(tx as TenantTx);
+      await doWrite(tx as TenantTx);
       return;
     }
-    await runInTenant(ctx, doInsert);
+    await runInTenant(ctx, doWrite);
   },
 };

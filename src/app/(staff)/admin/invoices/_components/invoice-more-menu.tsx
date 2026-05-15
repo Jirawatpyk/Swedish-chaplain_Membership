@@ -180,7 +180,6 @@ export function InvoiceMoreMenu({
         // R5-SF-L1 — log the network error before swallowing into a
         // user-friendly toast. Operators get DNS/CORS/offline/TLS
         // diagnostic; user still sees the generic "resendFailed" toast.
-        // eslint-disable-next-line no-console
         console.error('[invoice-more-menu] resend network error', {
           variant,
           invoiceId,

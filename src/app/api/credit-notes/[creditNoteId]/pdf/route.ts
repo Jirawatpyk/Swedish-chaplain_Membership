@@ -14,7 +14,8 @@ import {
   makeGetCreditNotePdfSignedUrlDeps,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
-import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
+import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
 export async function GET(
   request: NextRequest,
@@ -60,42 +61,16 @@ export async function GET(
       { requestId, tenantId: tenantCtx.slug, creditNoteId, errorCode: result.error.code },
       'GET /api/credit-notes/[id]/pdf failed',
     );
-    const status =
-      result.error.code === 'credit_note_not_found' ? 404
-      : result.error.code === 'blob_missing' ? 502
-      : 500;
-    return NextResponse.json({ error: { code: result.error.code } }, { status });
-  }
-
-  let blobResponse: Response;
-  try {
-    blobResponse = await fetch(result.value.url);
-  } catch (err) {
-    logger.error(
-      { requestId, tenantId: tenantCtx.slug, creditNoteId, err },
-      'GET /api/credit-notes/[id]/pdf — blob fetch failed',
+    return NextResponse.json(
+      { error: { code: result.error.code } },
+      { status: pdfRouteErrorStatus(result.error.code) },
     );
-    return NextResponse.json({ error: { code: 'blob_fetch_failed' } }, { status: 502 });
-  }
-  if (!blobResponse.ok || !blobResponse.body) {
-    logger.error(
-      { requestId, tenantId: tenantCtx.slug, creditNoteId, blobStatus: blobResponse.status },
-      'GET /api/credit-notes/[id]/pdf — blob upstream non-OK',
-    );
-    return NextResponse.json({ error: { code: 'blob_fetch_failed' } }, { status: 502 });
   }
 
-  const raw = result.value.filename;
-  const contentDisposition = buildAttachmentContentDisposition(raw);
-  const contentLength = blobResponse.headers.get('content-length');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': contentDisposition,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  };
-  if (contentLength) headers['Content-Length'] = contentLength;
-
-  return new NextResponse(blobResponse.body, { status: 200, headers });
+  return streamPdfFromBlob({
+    url: result.value.url,
+    filename: result.value.filename,
+    logContext: { requestId, tenantId: tenantCtx.slug, creditNoteId },
+    route: '/api/credit-notes/[id]/pdf',
+  });
 }

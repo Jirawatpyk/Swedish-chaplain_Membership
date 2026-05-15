@@ -11,7 +11,6 @@
  * R5-UX-M1 success-callback for fast-cache feedback.
  */
 import {
-  afterAll,
   afterEach,
   beforeAll,
   beforeEach,
@@ -149,6 +148,11 @@ describe('downloadPdf — happy path', () => {
       makeResponse(200, {
         body: blob,
         // Thai filename URL-encoded per RFC 5987.
+        // Hand-construct intentional: this test exercises the
+        // client-side parser against synthetic header strings the
+        // `buildAttachmentContentDisposition()` helper would reject
+        // (it only emits well-formed values).
+        // eslint-disable-next-line no-restricted-syntax
         contentDisposition: `attachment; filename*=UTF-8''%E0%B9%83%E0%B8%9A%E0%B9%80%E0%B8%AA%E0%B8%A3%E0%B9%87%E0%B8%88.pdf`,
       }),
     );
@@ -167,6 +171,10 @@ describe('downloadPdf — happy path', () => {
       makeResponse(200, {
         body: blob,
         // Truncated percent-escape → decodeURIComponent throws.
+        // Hand-construct intentional: helper rejects malformed input;
+        // we need the malformed input here to exercise the parser's
+        // fallback to the plain `filename=` parameter.
+        // eslint-disable-next-line no-restricted-syntax
         contentDisposition: `attachment; filename*=UTF-8''bad%E0; filename="plain.pdf"`,
       }),
     );

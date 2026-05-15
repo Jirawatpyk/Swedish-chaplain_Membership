@@ -25,7 +25,8 @@ import {
   getCreditNotePdfSignedUrl,
   makeGetCreditNotePdfSignedUrlDeps,
 } from '@/modules/invoicing';
-import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
+import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 import { logger } from '@/lib/logger';
 
 export async function GET(
@@ -57,53 +58,16 @@ export async function GET(
       },
       'GET /api/portal/credit-notes/[id]/pdf failed',
     );
-    const status =
-      result.error.code === 'credit_note_not_found'
-        ? 404
-        : result.error.code === 'blob_missing'
-          ? 502
-          : 403;
-    return NextResponse.json({ error: { code: result.error.code } }, { status });
-  }
-
-  // Server-side fetch — client never sees the Blob URL (R7-B1 pattern
-  // mirrored from portal invoice PDF route).
-  let blobResponse: Response;
-  try {
-    blobResponse = await fetch(result.value.url);
-  } catch (err) {
-    logger.error(
-      { requestId: ctx.requestId, creditNoteId, err },
-      'portal CN PDF — blob fetch failed',
-    );
     return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
-    );
-  }
-  if (!blobResponse.ok || !blobResponse.body) {
-    return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
+      { error: { code: result.error.code } },
+      { status: pdfRouteErrorStatus(result.error.code) },
     );
   }
 
-  // T121 — route through the shared helper so CR/LF header-injection
-  // defense stays uniform across all 4 PDF routes. Inline versions
-  // have drifted in the past and lost the \r\n strip.
-  const contentDisposition = buildAttachmentContentDisposition(
-    result.value.filename,
-    { logger, context: 'portal-credit-note-pdf' },
-  );
-  const contentLength = blobResponse.headers.get('content-length');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': contentDisposition,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  };
-  if (contentLength) headers['Content-Length'] = contentLength;
-
-  return new NextResponse(blobResponse.body, { status: 200, headers });
+  return streamPdfFromBlob({
+    url: result.value.url,
+    filename: result.value.filename,
+    logContext: { requestId: ctx.requestId, tenantId: ctx.tenant.slug, creditNoteId },
+    route: '/api/portal/credit-notes/[id]/pdf',
+  });
 }

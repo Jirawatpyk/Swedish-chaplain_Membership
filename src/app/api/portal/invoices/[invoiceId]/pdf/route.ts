@@ -22,7 +22,8 @@ import {
   makeGetInvoicePdfSignedUrlDeps,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
-import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
+import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
 export async function GET(
   request: NextRequest,
@@ -88,47 +89,16 @@ export async function GET(
         },
       );
     }
-    const status =
-      result.error.code === 'invoice_not_found'
-        ? 404
-        : result.error.code === 'blob_missing'
-          ? 502
-          : 403;
-    return NextResponse.json({ error: { code: result.error.code } }, { status });
-  }
-
-  // Server-side fetch — client never sees the Blob URL (R7-B1 pattern).
-  let blobResponse: Response;
-  try {
-    blobResponse = await fetch(result.value.url);
-  } catch (err) {
-    logger.error(
-      { requestId: ctx.requestId, invoiceId, err },
-      'portal PDF — blob fetch failed',
-    );
     return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
-    );
-  }
-  if (!blobResponse.ok || !blobResponse.body) {
-    return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
+      { error: { code: result.error.code } },
+      { status: pdfRouteErrorStatus(result.error.code) },
     );
   }
 
-  const raw = result.value.filename;
-  const contentDisposition = buildAttachmentContentDisposition(raw);
-  const contentLength = blobResponse.headers.get('content-length');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': contentDisposition,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  };
-  if (contentLength) headers['Content-Length'] = contentLength;
-
-  return new NextResponse(blobResponse.body, { status: 200, headers });
+  return streamPdfFromBlob({
+    url: result.value.url,
+    filename: result.value.filename,
+    logContext: { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId },
+    route: '/api/portal/invoices/[id]/pdf',
+  });
 }

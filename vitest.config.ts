@@ -177,6 +177,38 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F4: Invoicing Application — security-critical use cases require
+        // 100% branch coverage per Constitution Principle II. The 5 paths
+        // below directly gate PII/financial-doc read (PDF signed-URL
+        // siblings + CN sibling), tax-document mutation (issue/payment),
+        // and async render-state transitions (R10-T2 added these blocks
+        // after R9-blob_missing branches landed without coverage and the
+        // global 80% threshold swallowed the drift).
+        'src/modules/invoicing/application/use-cases/get-invoice-pdf-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/get-receipt-pdf-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/get-credit-note-pdf-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/issue-invoice.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/record-payment.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
         // F5: Payments Application — security-critical use cases require
         // 100% branch coverage per Constitution Principle II. The three
         // paths below are the PCI-adjacent entry points whose branches

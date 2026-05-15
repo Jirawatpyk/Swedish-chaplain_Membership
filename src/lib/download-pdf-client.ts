@@ -71,9 +71,8 @@ function parseContentDispositionFilename(
     try {
       return decodeURIComponent(ext[1]);
     } catch (err) {
-      // R4-SF-H-B — log instead of silently swallowing. Malformed
-      // RFC 5987 encoding is a server-side header bug we want visible.
-      // eslint-disable-next-line no-console
+      // Log instead of silently swallowing. Malformed RFC 5987
+      // encoding is a server-side header bug we want visible.
       console.warn(
         '[download-pdf] RFC 5987 filename decode failed; falling back to plain filename',
         { encoded: ext[1], err },
@@ -150,13 +149,11 @@ export async function downloadPdf(deps: PdfDownloadDeps): Promise<void> {
       toastWarning(toasts.rateLimited);
       return;
     }
-    // R4-SF-H-A — always-on logging (no NODE_ENV gate).
-    // eslint-disable-next-line no-console
+    // Always-on logging (no NODE_ENV gate) for unmapped-status
+    // telemetry — production binding for Sentry/Vercel Analytics.
     console.warn('[download-pdf] unmapped status', { url, status: res.status });
     toastError(toasts.unavailable);
   } catch (err) {
-    // R4-SF-H-A — production telemetry binding.
-    // eslint-disable-next-line no-console
     console.error('[download-pdf] unexpected client error', { url, err });
     toastError(toasts.unavailable);
   }
