@@ -12,6 +12,18 @@
  * Resend logic is inlined here (copy of the former resend-admin-button
  * handler) so T107's 5-minute client-side re-enable + keyed error
  * toasts behave 1:1 with the previous standalone buttons.
+ *
+ * F4 receipt-surface — additions for the new receipt-PDF download path
+ * (best-practice rule: combined mode = 1 download, separate mode = 2):
+ *   - `showDownloadReceipt` — paid + receiptPdf rendered. In combined
+ *     mode this is THE only download (one legal doc per Thai RD §86/4
+ *     + §105ทวิ). In separate mode it sits alongside `showDownload`.
+ *   - `combinedModeReceipt` — paid + combined-mode. Flips the label of
+ *     the Download Receipt item from "Download Receipt" → "Download
+ *     Tax Invoice / Receipt" so the admin sees the dual-role wording.
+ *     The pre-payment invoice PDF (`showDownload`) is hidden in this
+ *     state because it's a stale draft (header "ใบกำกับภาษี" only); the
+ *     final combined PDF is what the customer + auditor should see.
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
@@ -31,6 +43,21 @@ export interface InvoiceMoreMenuProps {
   readonly showDownload: boolean;
   readonly showResendInvoice: boolean;
   readonly showResendReceipt: boolean;
+  /**
+   * Receipt-PDF download visibility. Separate-mode + paid +
+   * `receiptPdfStatus === 'rendered'`. Combined-mode keeps this false
+   * because the existing "Download Invoice" file already serves both
+   * roles (Thai RD §86/4 allows one combined document).
+   */
+  readonly showDownloadReceipt?: boolean;
+  /**
+   * When true (paid + combined-mode), the Download Receipt item's
+   * label changes from "Download Receipt" to "Download Tax Invoice /
+   * Receipt" so the admin sees the dual-role wording. The pre-payment
+   * invoice PDF (`showDownload`) is expected to be FALSE in this state
+   * — see comment block at the top of this file.
+   */
+  readonly combinedModeReceipt?: boolean;
 }
 
 export function InvoiceMoreMenu({
@@ -39,11 +66,14 @@ export function InvoiceMoreMenu({
   showDownload,
   showResendInvoice,
   showResendReceipt,
+  showDownloadReceipt = false,
+  combinedModeReceipt = false,
 }: InvoiceMoreMenuProps) {
   const t = useTranslations('admin.invoices.detail');
 
   const visibleCount =
     (showDownload ? 1 : 0) +
+    (showDownloadReceipt ? 1 : 0) +
     (showResendInvoice ? 1 : 0) +
     (showResendReceipt ? 1 : 0);
 
@@ -159,6 +189,30 @@ export function InvoiceMoreMenu({
               >
                 <Download aria-hidden="true" />
                 {t('actions.download')}
+              </a>
+            )}
+          />
+        )}
+        {showDownloadReceipt && (
+          <DropdownMenuItem
+            render={(props) => (
+              <a
+                {...props}
+                href={`/api/invoices/${invoiceId}/receipt/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                download
+                data-testid="download-receipt-trigger"
+                aria-label={t('actions.downloadReceiptAria', { number: documentNumber })}
+              >
+                <Download aria-hidden="true" />
+                {/* Combined mode → label highlights the dual role of
+                    the single legal document (Thai RD §86/4 + §105ทวิ).
+                    Separate mode keeps the plain "Download Receipt"
+                    label. */}
+                {combinedModeReceipt
+                  ? t('actions.downloadCombined')
+                  : t('actions.downloadReceipt')}
               </a>
             )}
           />

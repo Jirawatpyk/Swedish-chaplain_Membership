@@ -406,21 +406,38 @@ export default async function InvoiceDetailPage({
                 action row exposes only primary/destructive CTAs as
                 standalone buttons. Menu returns null when nothing to
                 show. T107 visibility rules preserved inside the menu. */}
-            {!isDraft && (
-              <InvoiceMoreMenu
-                invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
-                showDownload={Boolean(invoice.pdf)}
-                showResendInvoice={
-                  isAdmin && invoice.status !== 'void' && Boolean(invoice.pdf)
-                }
-                showResendReceipt={
-                  isAdmin &&
-                  invoice.status === 'paid' &&
-                  Boolean(invoice.receiptPdf)
-                }
-              />
-            )}
+            {!isDraft && (() => {
+              // Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE
+              // legal document with dual function. Best-practice menu:
+              //   - paid+combined → hide the pre-payment invoice PDF +
+              //     pre-payment resend (both are stale drafts); show
+              //     only the final combined receipt PDF + resend.
+              //   - paid+separate → show all 4 items (2 distinct
+              //     legal documents, each with its own §87 number).
+              //   - issued / void → show invoice PDF only.
+              const isPaidCombined =
+                invoice.status === 'paid' &&
+                invoice.receiptDocumentNumberRaw === null;
+              const hasReceiptPdf =
+                invoice.status === 'paid' && Boolean(invoice.receiptPdf);
+
+              return (
+                <InvoiceMoreMenu
+                  invoiceId={invoice.invoiceId}
+                  documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                  showDownload={Boolean(invoice.pdf) && !isPaidCombined}
+                  showResendInvoice={
+                    isAdmin &&
+                    invoice.status !== 'void' &&
+                    Boolean(invoice.pdf) &&
+                    !isPaidCombined
+                  }
+                  showResendReceipt={isAdmin && hasReceiptPdf}
+                  showDownloadReceipt={hasReceiptPdf}
+                  combinedModeReceipt={isPaidCombined}
+                />
+              );
+            })()}
           </>
         }
       />
@@ -452,6 +469,21 @@ export default async function InvoiceDetailPage({
               <dt className="text-muted-foreground">{t('fields.dueDate')}</dt>
               <dd>{formatDate(invoice.dueDate, userLocale)}</dd>
             </div>
+            {/* Receipt No. — visible only on paid invoices issued under
+                separate-mode numbering (the receipt has its own §87
+                sequence). Combined-mode rows reuse invoice doc number
+                and intentionally render nothing here. */}
+            {invoice.status === 'paid' && invoice.receiptDocumentNumberRaw && (
+              <div>
+                <dt className="text-muted-foreground">{t('fields.receiptNumber')}</dt>
+                <dd
+                  className="font-mono"
+                  data-testid="invoice-receipt-number"
+                >
+                  {invoice.receiptDocumentNumberRaw}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">{t('fields.subtotal')}</dt>
               <dd>{formatSatang(displaySubtotalSatang)} THB</dd>

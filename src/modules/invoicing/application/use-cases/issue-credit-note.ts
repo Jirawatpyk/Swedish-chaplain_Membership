@@ -67,6 +67,7 @@ import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const issueCreditNoteSchema = z.object({
   tenantId: z.string().min(1),
@@ -306,6 +307,10 @@ export async function issueCreditNote(
       // G+H. Render CN PDF + upload to Blob (T126 shared helper).
       pendingRenderKind = 'credit_note';
       const blobKey = `invoicing/${input.tenantId}/${fy}/credit-note_${creditNoteId}_v${deps.currentTemplateVersion}.pdf`;
+      const tenantLogo = await loadTenantLogo(
+        deps.blob,
+        loaded.tenantIdentitySnapshot.logo_blob_key,
+      );
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
@@ -316,6 +321,7 @@ export async function issueCreditNote(
             issueDate,
             dueDate: null,
             tenant: loaded.tenantIdentitySnapshot,
+            tenantLogo,
             member: loaded.memberIdentitySnapshot,
             lines: [syntheticLine],
             // Money fields carry the credit-note's own amounts — the
@@ -446,6 +452,7 @@ export async function issueCreditNote(
               issueDate: loaded.issueDate,
               dueDate: loaded.dueDate,
               tenant: loaded.tenantIdentitySnapshot,
+              tenantLogo,
               member: loaded.memberIdentitySnapshot,
               lines: loaded.lines,
               subtotal: loaded.subtotal,

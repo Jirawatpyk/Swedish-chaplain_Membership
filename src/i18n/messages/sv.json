@@ -1211,7 +1211,8 @@
           "total": "Totalt",
           "actions": "",
           "member": "Medlem",
-          "method": "Metod"
+          "method": "Metod",
+          "receiptNumber": "Kvittonr."
         },
         "statuses": {
           "draft": "Utkast",
@@ -1273,7 +1274,7 @@
         "actions": {
           "preview": "Förhandsgranska",
           "issue": "Utfärda…",
-          "download": "Ladda ner PDF",
+          "download": "Ladda ner faktura-PDF",
           "pay": "Registrera betalning",
           "void": "Annullera…",
           "issueCreditNote": "Utfärda kreditnota",
@@ -1281,6 +1282,9 @@
           "resendReceipt": "Skicka kvitto-mejl igen",
           "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
           "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
+          "downloadReceipt": "Ladda ner kvitto-PDF",
+          "downloadCombined": "Ladda ner faktura/kvitto",
+          "downloadReceiptAria": "Ladda ner det officiella kvittots PDF för faktura {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -1296,6 +1300,7 @@
           "plan": "Paket / år",
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
+          "receiptNumber": "Kvittonummer",
           "subtotal": "Delsumma",
           "vat": "Moms",
           "total": "Totalt"
@@ -2568,7 +2573,39 @@
           "timeoutTitle": "Importen tog för lång tid",
           "timeoutDetail": "En del av importen slutfördes. Ladda upp samma CSV igen — redan bearbetade rader hoppas över automatiskt.",
           "unexpectedTitle": "Något gick fel",
-          "unexpectedDetail": "Oväntat fel. Försök igen; kvarstår problemet, kontakta support."
+          "unexpectedDetail": "Oväntat fel. Försök igen; kvarstår problemet, kontakta support.",
+          "eventNotSelectedTitle": "Inget evenemang valt",
+          "eventNotSelectedDetail": "Välj ett evenemang från rullgardinsmenyn innan du laddar upp."
+        },
+        "eventPicker": {
+          "fieldLabel": "Evenemang",
+          "fieldHelp": "Välj F6-evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
+          "selectedPrefix": "Valt",
+          "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan innan du laddar upp.",
+          "triggerAriaLabel": "Välj evenemang för CSV-import",
+          "loading": "Hämtar evenemang…",
+          "placeholder": "Välj ett evenemang…",
+          "searchPlaceholder": "Sök efter evenemang efter namn…",
+          "searchAriaLabel": "Sök efter evenemang",
+          "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
+          "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
+          "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
+          "createNewCta": "Skapa nytt evenemang",
+          "refreshAriaLabel": "Uppdatera evenemangslistan",
+          "inlineCreateModal": {
+            "title": "Skapa nytt evenemang",
+            "deferredDescription": "Inline-skapande av evenemang kommer i en uppföljande release. För nu skapar du evenemanget via EventCreate-webbhookens testslutpunkt eller Neon-konsolen, och uppdaterar sedan evenemangslistan.",
+            "workaroundHint": "Tips: Kör EventCreate-webbhooktestet från integrationssidan för att seeda ett nytt evenemang inklusive granskningsspår.",
+            "dismissCta": "OK"
+          }
+        },
+        "eventMismatch": {
+          "title": "Denna CSV kan tillhöra ett annat evenemang",
+          "description": "Vi hittade {count} tidigare import(er) inom de senaste 30 dagarna med samma deltagare som riktades till ett annat evenemang. Bekräfta att du menade att importera till det valda evenemanget.",
+          "priorImportsHeading": "Tidigare importer med samma deltagare:",
+          "priorImportRow": "Uppladdat {uploadedAt}",
+          "cancelCta": "Avbryt",
+          "continueCta": "Fortsätt ändå"
         }
       }
     },

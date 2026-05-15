@@ -49,6 +49,7 @@ import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -305,6 +306,9 @@ export async function recordPayment(
     // render via the F4 dispatcher. Sequential numbering stays atomic
     // with the `paid` flip (Thai Revenue Code §86/§87 invariant).
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
+    const tenantLogo = deps.asyncReceiptPdf
+      ? null
+      : await loadTenantLogo(deps.blob, loaded.tenantIdentitySnapshot.logo_blob_key);
     const rendered =
       deps.asyncReceiptPdf
         ? null
@@ -322,6 +326,7 @@ export async function recordPayment(
                 issueDate: loaded.issueDate,
                 dueDate: loaded.dueDate,
                 tenant: loaded.tenantIdentitySnapshot,
+                tenantLogo,
                 member: loaded.memberIdentitySnapshot,
                 lines: loaded.lines,
                 subtotal: loaded.subtotal,
@@ -358,6 +363,16 @@ export async function recordPayment(
                 blobKey: receiptBlobKey,
                 sha256: rendered.sha256,
                 templateVersion: deps.currentTemplateVersion,
+                // Persist the receipt doc number on the SYNC path too so
+                // the detail page + list column can read it back without
+                // re-parsing the PDF bytes. Previously only the async
+                // (pending) branch wrote this — sync invoices ended up
+                // with NULL on the row even when separate-mode allocated
+                // a real RC sequence number into the rendered PDF.
+                // NULL for combined-mode (receipt reuses invoice number).
+                receiptDocumentNumberRaw: combinedMode
+                  ? null
+                  : receiptDocNumRaw,
               }
             : {
                 kind: 'pending',

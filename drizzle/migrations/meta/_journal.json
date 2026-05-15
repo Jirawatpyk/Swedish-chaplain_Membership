@@ -974,6 +974,20 @@
       "when": 1794384000000,
       "tag": "0138_f6_wizard_privacy_notice_acknowledged_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1794729600000,
+      "tag": "0142_tenant_invoice_settings_receipt_number_prefix",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1794816000000,
+      "tag": "0143_audit_receipt_pdf_downloaded",
+      "breakpoints": true
     }
   ]
 }

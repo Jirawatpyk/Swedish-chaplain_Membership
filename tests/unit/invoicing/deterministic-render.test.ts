@@ -125,4 +125,65 @@ describe('withSeededRandom', () => {
     const b = await captureSeq();
     expect(b).toEqual(a);
   });
+
+  it('same Uint8Array bytes (e.g. tenant logo) → same Math.random sequence', async () => {
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x42, 0x43]);
+    const captureSeq = async (): Promise<number[]> => {
+      const seq: number[] = [];
+      await withSeededRandom(
+        {
+          issueDate: '2026-04-20',
+          tenantLogo: { bytes, format: 'png' as const },
+        },
+        async () => {
+          for (let i = 0; i < 8; i++) seq.push(Math.random());
+        },
+      );
+      return seq;
+    };
+    const a = await captureSeq();
+    const b = await captureSeq();
+    expect(b).toEqual(a);
+  });
+
+  it('different Uint8Array bytes → different Math.random seed (digest contributes to hash)', async () => {
+    const captureFirst = async (bytes: Uint8Array): Promise<number> => {
+      let first = 0;
+      await withSeededRandom(
+        {
+          issueDate: '2026-04-20',
+          tenantLogo: { bytes, format: 'png' as const },
+        },
+        async () => {
+          first = Math.random();
+        },
+      );
+      return first;
+    };
+    const seqA = await captureFirst(new Uint8Array([1, 2, 3, 4, 5]));
+    const seqB = await captureFirst(new Uint8Array([5, 4, 3, 2, 1]));
+    expect(seqA).not.toBe(seqB);
+  });
+
+  it('handles a 1 MB Uint8Array without timing out (replacer short-circuits)', async () => {
+    // If the replacer regressed to JSON-walking every byte (a 1 MB
+    // Uint8Array → ~7 MB of indexed JSON keys), this would take
+    // seconds; the digest-replacer keeps it bounded to a single
+    // sha256 pass (~10 ms on commodity hardware).
+    const bigBytes = new Uint8Array(1_048_576).fill(0xab);
+    const start = performance.now();
+    await withSeededRandom(
+      {
+        issueDate: '2026-04-20',
+        tenantLogo: { bytes: bigBytes, format: 'png' as const },
+      },
+      async () => {
+        Math.random();
+      },
+    );
+    const elapsed = performance.now() - start;
+    // Generous bound — even 1 GB/s sha256 is ~1ms here; allow 500ms
+    // so slow CI runners pass.
+    expect(elapsed).toBeLessThan(500);
+  });
 });

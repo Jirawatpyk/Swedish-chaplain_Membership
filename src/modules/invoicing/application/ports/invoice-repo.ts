@@ -153,6 +153,14 @@ export interface InvoiceRepo {
             readonly blobKey: string;
             readonly sha256: Sha256Hex;
             readonly templateVersion: number;
+            /**
+             * Receipt document number raw — persisted on BOTH sync and
+             * async paths so the UI ("Receipt No." field/column) +
+             * audit trail can read the number back without re-parsing
+             * the PDF bytes. `null` for combined-mode (receipt reuses
+             * the invoice document number).
+             */
+            readonly receiptDocumentNumberRaw: string | null;
           }
         | {
             readonly kind: 'pending';

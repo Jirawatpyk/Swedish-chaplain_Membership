@@ -585,15 +585,15 @@ export function makeDrizzleInvoiceRepo(
             ? input.receiptPdf.templateVersion
             : null,
           receiptPdfStatus: isRendered ? 'rendered' : 'pending',
-          // T166 R1-C1 — persist pre-allocated receipt doc number on
-          // the row when async + separate-mode. Worker reads it back
-          // via `findByIdInTx` instead of re-allocating (which would
-          // create a §87 sequence gap on every retry). Sync 'rendered'
-          // path leaves this NULL — the doc num is already baked into
-          // the rendered PDF bytes + audit row, no need to duplicate.
-          receiptDocumentNumberRaw: isRendered
-            ? null
-            : input.receiptPdf.receiptDocumentNumberRaw,
+          // Persist the pre-allocated receipt doc number on BOTH paths
+          // (sync + async) so the UI ("Receipt No." field/column) +
+          // audit reader can read it back without re-parsing the PDF
+          // bytes. Previously the sync 'rendered' path left this NULL
+          // assuming the doc num was "baked into the PDF bytes", but
+          // that meant the detail page + list column showed nothing
+          // for separate-mode invoices paid synchronously.
+          // NULL in combined-mode (receipt reuses the invoice doc num).
+          receiptDocumentNumberRaw: input.receiptPdf.receiptDocumentNumberRaw,
           updatedAt: sql`now()`,
         })
         .where(

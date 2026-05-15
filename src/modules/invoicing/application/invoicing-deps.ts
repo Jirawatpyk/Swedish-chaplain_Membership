@@ -35,6 +35,7 @@ import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
 import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
+import type { GetReceiptPdfSignedUrlDeps } from './use-cases/get-receipt-pdf-signed-url';
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
@@ -90,6 +91,14 @@ export function makeGetInvoicePdfSignedUrlDeps(tenantId: string): GetInvoicePdfS
   };
 }
 
+export function makeGetReceiptPdfSignedUrlDeps(tenantId: string): GetReceiptPdfSignedUrlDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    blob: vercelBlobAdapter,
+    audit: f4AuditAdapter,
+  };
+}
+
 export function makeUpdateTenantInvoiceSettingsDeps(): {
   tenantSettingsRepo: typeof drizzleTenantSettingsRepo;
   audit: typeof f4AuditAdapter;
@@ -138,6 +147,7 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     memberIdentity: memberIdentityAdapter,
     pdfRender: reactPdfRenderAdapter,
+    blob: vercelBlobAdapter,
     clock: systemClock,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     // R7-W1 — wire audit so the preview route can emit

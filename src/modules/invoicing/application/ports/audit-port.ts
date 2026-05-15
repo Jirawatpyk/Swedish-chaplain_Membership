@@ -47,7 +47,16 @@ export type F4AuditEventType =
    * exhausts its retry budget (3 attempts). Pages on-call per
    * `docs/runbooks/receipt-pdf-permanently-failed.md`.
    */
-  | 'pdf_render_permanently_failed';
+  | 'pdf_render_permanently_failed'
+  /**
+   * Emitted by `getReceiptPdfSignedUrl` after a successful ownership
+   * check + signed-URL issuance. Tax-document touch (the bytes belong
+   * to a Thai-RD-compliant tax receipt) so retention bucket is 10y
+   * mirroring `receipt_rendered` + `receipt_pdf_resent`. Payload
+   * carries `receipt_document_number_raw` (null for combined-mode
+   * where receipt PDF = invoice PDF) + `actor_role`.
+   */
+  | 'receipt_pdf_downloaded';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -87,6 +96,8 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   receipt_rendered: 10,
   // T166: ops/reliability event; 5y.
   pdf_render_permanently_failed: 5,
+  // Tax-document touch (receipt PDF bytes accessed); 10y per Thai RD §87/3.
+  receipt_pdf_downloaded: 10,
 };
 
 /** Single-source helper — call at every F4 emit site. */

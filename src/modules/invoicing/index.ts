@@ -147,6 +147,12 @@ export {
 } from './application/use-cases/get-invoice-pdf-signed-url';
 
 export {
+  getReceiptPdfSignedUrl,
+  type GetReceiptPdfSignedUrlInput,
+  type GetReceiptPdfSignedUrlError,
+} from './application/use-cases/get-receipt-pdf-signed-url';
+
+export {
   previewInvoiceDraft,
   type PreviewInvoiceDraftInput,
   type PreviewInvoiceDraftError,
@@ -314,6 +320,7 @@ export {
   makeListInvoicesDeps,
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
+  makeGetReceiptPdfSignedUrlDeps,
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,

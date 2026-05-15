@@ -1211,7 +1211,8 @@
           "total": "Total",
           "actions": "Actions",
           "member": "Member",
-          "method": "Method"
+          "method": "Method",
+          "receiptNumber": "Receipt No."
         },
         "statuses": {
           "draft": "Draft",
@@ -1273,7 +1274,7 @@
         "actions": {
           "preview": "Preview",
           "issue": "Issue…",
-          "download": "Download PDF",
+          "download": "Download invoice PDF",
           "pay": "Record payment",
           "void": "Void…",
           "issueCreditNote": "Issue credit note",
@@ -1281,6 +1282,9 @@
           "resendReceipt": "Resend receipt email",
           "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
           "resendReceiptAria": "Email a fresh copy of receipt {number} to the member's primary contact",
+          "downloadReceipt": "Download receipt PDF",
+          "downloadCombined": "Download invoice/receipt",
+          "downloadReceiptAria": "Download the official tax receipt PDF for invoice {number}",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -1296,6 +1300,7 @@
           "plan": "Plan / Year",
           "issueDate": "Issue date",
           "dueDate": "Due date",
+          "receiptNumber": "Receipt No.",
           "subtotal": "Subtotal",
           "vat": "VAT",
           "total": "Total"
@@ -2568,7 +2573,39 @@
           "timeoutTitle": "Import timed out",
           "timeoutDetail": "Part of the import completed. Re-upload the same CSV — already-processed rows will be skipped automatically.",
           "unexpectedTitle": "Something went wrong",
-          "unexpectedDetail": "Unexpected error. Retry; if it persists, contact support."
+          "unexpectedDetail": "Unexpected error. Retry; if it persists, contact support.",
+          "eventNotSelectedTitle": "Event not selected",
+          "eventNotSelectedDetail": "Select an event from the dropdown before uploading."
+        },
+        "eventPicker": {
+          "fieldLabel": "Event",
+          "fieldHelp": "Choose the F6 event this CSV should reconcile to. The dropdown selection is authoritative — any event columns in the CSV are overridden.",
+          "selectedPrefix": "Selected",
+          "submitGatedHint": "Choose an event from the dropdown above before uploading.",
+          "triggerAriaLabel": "Choose event for CSV import",
+          "loading": "Loading events…",
+          "placeholder": "Choose an event…",
+          "searchPlaceholder": "Search events by name…",
+          "searchAriaLabel": "Search events",
+          "emptyState": "No events match. Create one first or refine the search.",
+          "loadErrorDetail": "Could not load events. Refresh and try again.",
+          "filenameMatchHint": "Auto-suggested from filename: {eventName}",
+          "createNewCta": "Create new event",
+          "refreshAriaLabel": "Refresh events list",
+          "inlineCreateModal": {
+            "title": "Create new event",
+            "deferredDescription": "Inline event creation is part of a follow-up release. For now, create the event through the EventCreate webhook test endpoint or the Neon console, then refresh the events list.",
+            "workaroundHint": "Tip: Run the EventCreate webhook test from the integration page to seed a new event end-to-end, including audit trail.",
+            "dismissCta": "OK"
+          }
+        },
+        "eventMismatch": {
+          "title": "This CSV may belong to a different event",
+          "description": "We found {count} earlier import(s) in the last 30 days with the same attendees that targeted a different event. Confirm you meant to import to the selected event.",
+          "priorImportsHeading": "Earlier imports with the same attendees:",
+          "priorImportRow": "Uploaded {uploadedAt}",
+          "cancelCta": "Cancel",
+          "continueCta": "Continue anyway"
         }
       }
     },

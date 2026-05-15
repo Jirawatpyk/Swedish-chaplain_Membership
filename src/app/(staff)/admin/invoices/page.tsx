@@ -259,6 +259,9 @@ export default async function AdminInvoicesPage({
         creditNoteCount: creditNoteCountById.get(r.invoiceId) ?? 0,
         creditedTotalSatang: r.creditedTotal.satang.toString(),
         onlinePaymentMethod: onlineMethodById.get(r.invoiceId) ?? null,
+        // Receipt No. column — null on non-paid + paid-combined-mode.
+        // Paid-separate-mode rows carry the §87 RC sequence number.
+        receiptDocumentNumberRaw: r.receiptDocumentNumberRaw ?? null,
       }))
     : [];
 

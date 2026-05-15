@@ -11,8 +11,10 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
+import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { AuditPort } from '../ports/audit-port';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { calculateVat } from '@/modules/invoicing/domain/policies/calculate-vat';
 import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
@@ -39,6 +41,7 @@ export interface PreviewInvoiceDraftDeps {
   readonly tenantSettingsRepo: TenantSettingsRepo;
   readonly memberIdentity: MemberIdentityPort;
   readonly pdfRender: PdfRenderPort;
+  readonly blob: BlobStoragePort;
   readonly clock: ClockPort;
   readonly currentTemplateVersion: number;
   /**
@@ -88,6 +91,7 @@ export async function previewInvoiceDraft(
     for (const line of draft.lines) subtotal = subtotal.add(line.total);
     const { vat, total } = calculateVat(subtotal, settings.vatRate);
 
+    const tenantLogo = await loadTenantLogo(deps.blob, settings.identity.logo_blob_key);
     const rendered = await deps.pdfRender.render({
       kind: 'invoice_preview',
       templateVersion: deps.currentTemplateVersion,
@@ -95,6 +99,7 @@ export async function previewInvoiceDraft(
       issueDate: null,
       dueDate: null,
       tenant: settings.identity,
+      tenantLogo,
       member: member.snapshot,
       lines: draft.lines,
       subtotal,

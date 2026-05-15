@@ -86,6 +86,8 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   // T166 async receipt PDF (2026-04-28).
   'receipt_rendered',
   'pdf_render_permanently_failed',
+  // Receipt-PDF download surface (2026-05-15).
+  'receipt_pdf_downloaded',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -246,8 +248,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'auto_email_delivery_failed',
       'receipt_rendered',
       'pdf_render_permanently_failed',
+      'receipt_pdf_downloaded',
     ] as const;
-    expect(allF4Types).toHaveLength(20);
+    expect(allF4Types).toHaveLength(21);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -598,6 +601,13 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'T166-11 reconciliation cron — fires after 3 retry attempts; integration coverage lands with the cron handler',
         since: '2026-04-28',
       },
+      // Receipt-PDF download audit (2026-05-15).
+      receipt_pdf_downloaded: {
+        status: 'covered',
+        where:
+          'tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts (audit-emit assertions on combined + separate happy paths) + this file (MVP_AUDIT_TYPES_EMITTED enum probe + audit_log insert probe)',
+        since: '2026-05-15',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -624,6 +634,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // T166 async receipt PDF (added 2026-04-28).
       'receipt_rendered',
       'pdf_render_permanently_failed',
+      // Receipt-PDF download surface (added 2026-05-15).
+      'receipt_pdf_downloaded',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a

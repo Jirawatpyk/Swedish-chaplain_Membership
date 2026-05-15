@@ -237,6 +237,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     SUG-6 apply-post-paid-failed (F4 committed; F8 apply threw)
   'tier_upgrade_catalogue_row_dropped',
   'tier_upgrade_apply_post_invoice_paid_failed',
+  // --- F4 receipt-PDF download surface (migration 0143, 2026-05-15) —
+  //     emitted by `getReceiptPdfSignedUrl` after successful ownership
+  //     check + signed-URL issuance. 10y retention (tax-doc touch). ---
+  'receipt_pdf_downloaded',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

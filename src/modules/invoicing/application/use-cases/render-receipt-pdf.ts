@@ -47,6 +47,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { TxAbort } from '../lib/tx-abort';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
@@ -201,6 +202,10 @@ export async function renderReceiptPdf(
       }
 
       const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${input.templateVersion}.pdf`;
+      const tenantLogo = await loadTenantLogo(
+        deps.blob,
+        loaded.tenantIdentitySnapshot.logo_blob_key,
+      );
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
@@ -211,6 +216,7 @@ export async function renderReceiptPdf(
             issueDate: loaded.issueDate,
             dueDate: loaded.dueDate,
             tenant: loaded.tenantIdentitySnapshot,
+            tenantLogo,
             member: loaded.memberIdentitySnapshot,
             lines: loaded.lines,
             subtotal: loaded.subtotal,

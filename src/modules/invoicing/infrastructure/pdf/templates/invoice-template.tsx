@@ -14,7 +14,7 @@
  * Deterministic rendering: no Date.now(), no Math.random(), no remote
  * resources. Font registration pinned via registerSarabun().
  */
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Image, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
 import type { PdfRenderInput } from '../../../application/ports/pdf-render-port';
 import { amountToThaiWords } from '../amount-to-thai';
 import { amountToEnglishWords } from '../amount-to-english';
@@ -32,6 +32,11 @@ const styles = StyleSheet.create({
   // Left column (tenant identity): flex-shrink enabled so a long
   // address wraps instead of pushing into the right column.
   headerLeft: { flex: 1, minWidth: 0 },
+  // Tenant logo — bounded so a tall logo cannot push the header text
+  // off the page. `objectFit: 'contain'` preserves aspect ratio inside
+  // the box. Dimensions roughly match the upload bounds (200-2000 ×
+  // 100-500 px) re-scaled into the PDF coordinate space.
+  logo: { maxWidth: 160, maxHeight: 60, marginBottom: 6, objectFit: 'contain' },
   // Right column (title + doc number + dates): stays intrinsic-sized,
   // never shrinks below content, never overlaps left column.
   headerRight: { alignItems: 'flex-end', flexShrink: 0, maxWidth: '40%' },
@@ -197,6 +202,15 @@ export function InvoiceTemplate(input: PdfRenderInput) {
 
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
+            {input.tenantLogo && (
+              <Image
+                src={{
+                  data: Buffer.from(input.tenantLogo.bytes),
+                  format: input.tenantLogo.format,
+                }}
+                style={styles.logo}
+              />
+            )}
             <Text style={styles.h1}>{shapeThai(input.tenant.legal_name_th)}</Text>
             <Text style={styles.h2}>{input.tenant.legal_name_en}</Text>
             <Text style={styles.value}>{shapeThai(input.tenant.address_th)}</Text>

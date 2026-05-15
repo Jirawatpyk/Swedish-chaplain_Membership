@@ -82,6 +82,7 @@ import { invoicingMetrics } from '@/lib/metrics';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -260,6 +261,7 @@ export async function issueInvoice(
     // Throws via `IssueInvoiceInternalError` on either failure so
     // `withTx` rolls back — sequence allocation is NOT consumed.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
+    const tenantLogo = await loadTenantLogo(deps.blob, tenantSnap.logo_blob_key);
     const rendered = await renderAndUploadPdf(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {
@@ -270,6 +272,7 @@ export async function issueInvoice(
           issueDate,
           dueDate,
           tenant: tenantSnap,
+          tenantLogo,
           member: memberSnap,
           lines: draft.lines,
           subtotal,

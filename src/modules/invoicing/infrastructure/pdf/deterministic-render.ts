@@ -87,6 +87,13 @@ function seedFromInput(stableInput: unknown): number {
 function replacer(_key: string, value: unknown): unknown {
   if (typeof value === 'bigint') return `${value}n`;
   if (value instanceof Date) return value.toISOString();
+  // Binary payloads (e.g. tenant logo bytes) — short-circuit with a
+  // stable digest so JSON.stringify does not walk every byte index
+  // (a 1 MB Uint8Array would serialise to ~7 MB of indexed keys).
+  // Same bytes → same digest → same seed → byte-identical re-render.
+  if (value instanceof Uint8Array) {
+    return `Uint8Array<${value.byteLength}b>:${createHash('sha256').update(value).digest('hex')}`;
+  }
   return value;
 }
 

@@ -7,7 +7,21 @@
  * (no TanStack/selection) for MVP — SweCham has < 200 active invoices
  * per year; sort/selection arrive in a later polish pass.
  *
- * Columns: Number · Member · Status · Issued · Due · Total · Actions.
+ * Columns (identity-first per AccRevo / Thai bookkeeper workflow):
+ *   Number · Receipt No. · Member · Status · [Method?] · Issued ·
+ *   Due · Total · Actions
+ *
+ *   - Receipt No. sits right after Number so the bookkeeper can scan
+ *     both §87 document numbers (invoice + receipt) without crossing
+ *     the Member column. Shows `receiptDocumentNumberRaw` for paid+
+ *     separate-mode rows; em-dash for combined-mode (reuses invoice
+ *     number) and for unpaid rows.
+ *   - All columns use `whitespace-nowrap` so dates / numbers / badges
+ *     stay on one line. Column widths rely on auto-layout (no w-px)
+ *     so slack distributes proportionally across columns instead of
+ *     piling into the only flex column.
+ *   - Method column is opt-in via `?paidOnline=1` (F5 reconciliation
+ *     filter).
  * Download link is suppressed on drafts (no PDF yet) to avoid 404s.
  */
 'use client';
@@ -54,6 +68,12 @@ export type InvoicesTableRow = {
    * the `?paidOnline=1` admin reconciliation view).
    */
   readonly onlinePaymentMethod: 'card' | 'promptpay' | null;
+  /**
+   * Receipt document number (e.g. `RC-2026-0001`) for paid invoices
+   * issued under separate-mode numbering. `null` for combined-mode
+   * (receipt reuses invoice number) and for any non-paid status.
+   */
+  readonly receiptDocumentNumberRaw: string | null;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -145,34 +165,37 @@ export function InvoicesTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead scope="col" className={headCls}>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
               {t('columns.documentNumber')}
+            </TableHead>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
+              {t('columns.receiptNumber')}
             </TableHead>
             <TableHead scope="col" className={headCls}>
               {t('columns.member')}
             </TableHead>
-            <TableHead scope="col" className={headCls}>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
               {t('columns.status')}
             </TableHead>
             {showMethodColumn && (
               <TableHead
                 scope="col"
-                className={headCls}
+                className={`${headCls} whitespace-nowrap`}
                 data-testid="column-header-method"
               >
                 {t('columns.method')}
               </TableHead>
             )}
-            <TableHead scope="col" className={headCls}>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
               {t('columns.issueDate')}
             </TableHead>
-            <TableHead scope="col" className={headCls}>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap`}>
               {t('columns.dueDate')}
             </TableHead>
-            <TableHead scope="col" className={`${headCls} text-right`}>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap text-right`}>
               {t('columns.total')}
             </TableHead>
-            <TableHead scope="col" className={`${headCls} text-right`}>
+            <TableHead scope="col" className={`${headCls} whitespace-nowrap text-right`}>
               {t('columns.actions')}
             </TableHead>
           </TableRow>
@@ -183,13 +206,22 @@ export function InvoicesTable({
               key={r.invoiceId}
               className="hover:bg-accent/40 focus-within:bg-accent/40"
             >
-              <TableCell className="align-middle">
+              <TableCell className="align-middle whitespace-nowrap">
                 <Link
                   href={`/admin/invoices/${r.invoiceId}`}
                   className="cursor-pointer font-medium hover:underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                 >
                   {r.documentNumber}
                 </Link>
+              </TableCell>
+              <TableCell className="align-middle whitespace-nowrap">
+                {r.receiptDocumentNumberRaw ? (
+                  <span className="font-mono text-sm tabular-nums">
+                    {r.receiptDocumentNumberRaw}
+                  </span>
+                ) : (
+                  <span className="text-sm text-muted-foreground">—</span>
+                )}
               </TableCell>
               <TableCell className="align-middle">
                 <Link
@@ -199,7 +231,7 @@ export function InvoicesTable({
                   {r.memberName}
                 </Link>
               </TableCell>
-              <TableCell className="align-middle">
+              <TableCell className="align-middle whitespace-nowrap">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <StatusBadge status={r.status} />
                   {r.creditNoteCount > 0 && (
@@ -227,7 +259,7 @@ export function InvoicesTable({
                 </div>
               </TableCell>
               {showMethodColumn && (
-                <TableCell className="align-middle">
+                <TableCell className="align-middle whitespace-nowrap">
                   {r.onlinePaymentMethod ? (
                     <MethodBadge method={r.onlinePaymentMethod} />
                   ) : (
@@ -235,12 +267,12 @@ export function InvoicesTable({
                   )}
                 </TableCell>
               )}
-              <TableCell className="align-middle">{r.issueDate ?? '—'}</TableCell>
-              <TableCell className="align-middle">{r.dueDate ?? '—'}</TableCell>
-              <TableCell className="align-middle text-right tabular-nums">
+              <TableCell className="align-middle whitespace-nowrap">{r.issueDate ?? '—'}</TableCell>
+              <TableCell className="align-middle whitespace-nowrap">{r.dueDate ?? '—'}</TableCell>
+              <TableCell className="align-middle whitespace-nowrap text-right tabular-nums">
                 {formatSatang(r.totalSatang)} THB
               </TableCell>
-              <TableCell className="align-middle text-right">
+              <TableCell className="align-middle whitespace-nowrap text-right">
                 {r.hasPdf ? (
                   // Plain <a> — PDF endpoint returns binary bytes;
                   // Next.js <Link> would misinterpret the response as
