@@ -426,6 +426,15 @@ export interface AuditPayloads {
     readonly matchCounts: Readonly<Record<MatchType, number>>;
     readonly errorRowCount: number;
     readonly durationMs: number;
+    /**
+     * True when the import returned `{kind:'timeout'}` — partial commit
+     * was preserved (idempotency makes re-upload safe) but the budget
+     * tripped before all batches drained. Counters reflect only the
+     * partial work. Default false on full-completion imports keeps the
+     * field optional in the existing audit log so existing rows are
+     * forward-compatible.
+     */
+    readonly timedOut?: boolean;
   };
   csv_import_row_failed: {
     readonly severity: Severity;

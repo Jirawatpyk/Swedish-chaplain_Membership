@@ -361,6 +361,52 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       expect(String(body['type'])).toMatch(/(too-large|file_too_large)/);
       expect(runImportCsvMock).not.toHaveBeenCalled();
     });
+
+    it('413 post-parse — chunked-transfer upload exceeding 5 MiB rejected after multipart parse (R-S03 defence-in-depth)', async () => {
+      // Simulate chunked-transfer upload: client omits Content-Length
+      // (HTTP/1.1 chunked encoding) so the pre-parse check at
+      // route.ts:Content-Length never fires. The post-parse guard at
+      // route.ts inspects `arrayBuffer.byteLength > MAX_BYTES` and
+      // must reject the oversized body BEFORE invoking the use-case.
+      //
+      // Implementation note: in undici, omitting Content-Length on a
+      // body sized > 5 MiB is the natural chunked-transfer code path.
+      // We construct a multipart body whose CSV part exceeds the limit
+      // by padding with valid-ascii data rows (so the multipart
+      // parser succeeds; the size check is the only gate that should
+      // fail). The Content-Length header is intentionally NOT set
+      // via `contentLengthOverride`.
+      const { POST } = await loadImportRoute();
+
+      // Build a CSV body > 5 MiB. Each row is ~90 bytes; ~58000 rows
+      // ≈ 5.2 MiB. CSV is structurally valid so parser would accept it
+      // — only size check should reject.
+      const header =
+        'event_external_id,event_name,event_start,attendee_email,attendee_name\n';
+      const rowTemplate =
+        'event_big_NNN,Big Test,2026-06-21T18:00:00+07:00,big_NNN@example.com,Big Attendee NNN\n';
+      const ROWS = 60_000;
+      const csvParts: string[] = [header];
+      for (let i = 0; i < ROWS; i++) {
+        csvParts.push(rowTemplate.replace(/NNN/g, String(i)));
+      }
+      const csvBody = csvParts.join('');
+      // Sanity: ensure the test fixture is genuinely > 5 MiB so the
+      // assertion isn't a false negative if the row template ever
+      // changes size.
+      expect(new TextEncoder().encode(csvBody).byteLength).toBeGreaterThan(
+        5 * 1024 * 1024,
+      );
+
+      const res = await POST(buildRequest({ csvBody }));
+
+      expect(res.status).toBe(413);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(String(body['type'])).toMatch(/(too-large|file_too_large)/);
+      // Use-case MUST NOT be invoked — post-parse guard fires before
+      // dispatch.
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
   });
 
   describe('415 unsupported-media-type', () => {

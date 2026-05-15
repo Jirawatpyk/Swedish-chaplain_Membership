@@ -310,4 +310,90 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
       expect(probeAudit).toBeDefined();
     });
   });
+
+  describe('CSV import path — cross-tenant integration probe (staff-review R-S01)', () => {
+    it('runImportCsv invoked with tenantB.slug writes 0 rows to tenantA tables', async () => {
+      // Constitution v1.4.0 Principle I sub-clause 3 requires a path-
+      // level cross-tenant probe for every ingest surface. The webhook
+      // path is covered above; this test closes the equivalent gap for
+      // the CSV path. The shared `runInTenantTx` + branded `TenantId`
+      // boundary should prevent any rows from landing in Tenant A's
+      // tables when the use-case is invoked with Tenant B's slug.
+
+      const { runImportCsv } = await import('@/lib/events-csv-import-deps');
+      const { asUserId } = await import('@/modules/auth');
+
+      // Snapshot Tenant A's row counts BEFORE the CSV import to detect
+      // any cross-tenant leak. Use direct `runInTenant` reads (bypasses
+      // application-layer guards — proves DB-layer isolation too).
+      const snapshotTenantA = async () => ({
+        events: (
+          await runInTenant(tenantA.ctx, async (tx) =>
+            tx.select().from(events).where(eq(events.tenantId, tenantA.ctx.slug)),
+          )
+        ).length,
+        registrations: (
+          await runInTenant(tenantA.ctx, async (tx) =>
+            tx
+              .select()
+              .from(eventRegistrations)
+              .where(eq(eventRegistrations.tenantId, tenantA.ctx.slug)),
+          )
+        ).length,
+        idempotency: (
+          await runInTenant(tenantA.ctx, async (tx) =>
+            tx
+              .select()
+              .from(eventcreateIdempotencyReceipts)
+              .where(
+                eq(eventcreateIdempotencyReceipts.tenantId, tenantA.ctx.slug),
+              ),
+          )
+        ).length,
+      });
+
+      const before = await snapshotTenantA();
+
+      // 3-row valid CSV targeting Tenant B. The fixture uses unique IDs
+      // so any accidental leak into Tenant A would be detected.
+      const ts = Date.now();
+      const csvBytes = new TextEncoder().encode(
+        [
+          'event_external_id,event_name,event_start,attendee_email,attendee_name',
+          `cross_t_event_${ts}_0,Cross-Tenant Probe,2026-06-21T18:00:00+07:00,cross_${ts}_0@example.com,Attendee 0`,
+          `cross_t_event_${ts}_1,Cross-Tenant Probe,2026-06-21T18:00:00+07:00,cross_${ts}_1@example.com,Attendee 1`,
+          `cross_t_event_${ts}_2,Cross-Tenant Probe,2026-06-21T18:00:00+07:00,cross_${ts}_2@example.com,Attendee 2`,
+        ].join('\n'),
+      );
+
+      const outcome = await runImportCsv({
+        tenantSlug: tenantB.ctx.slug,
+        actorUserId: asUserId('00000000-0000-0000-0000-000000000999'),
+        bytes: csvBytes,
+      });
+
+      // The import should succeed for Tenant B — proves the use-case
+      // ran end-to-end and the cross-tenant guard is not just blocking
+      // both tenants.
+      expect(outcome.kind).toBe('completed');
+
+      // Tenant A's table counts MUST be unchanged.
+      const after = await snapshotTenantA();
+      expect(after.events).toBe(before.events);
+      expect(after.registrations).toBe(before.registrations);
+      expect(after.idempotency).toBe(before.idempotency);
+
+      // Tenant B should now have the 3 rows.
+      const tenantBEvents = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select()
+          .from(events)
+          .where(eq(events.tenantId, tenantB.ctx.slug)),
+      );
+      const probeEvents = tenantBEvents.filter((e) =>
+        e.externalId.startsWith(`cross_t_event_${ts}_`),
+      );
+      expect(probeEvents.length).toBe(3);
+    });
+  });
 });

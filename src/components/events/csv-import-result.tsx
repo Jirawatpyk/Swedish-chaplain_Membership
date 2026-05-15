@@ -12,7 +12,7 @@
  *      listing `{rowNumber, reason}`. Empty when zero errors.
  *
  * Distinct `rowsProcessed` vs `rowsAlreadyImported` labels per
- * contracts/csv-import-api.md round-2 R3 — admins must clearly see
+ * contracts/csv-import-api.md csv-import-api contracts R3 — admins must clearly see
  * the difference between "0 actually delivered" and "100 idempotency-
  * skipped".
  *

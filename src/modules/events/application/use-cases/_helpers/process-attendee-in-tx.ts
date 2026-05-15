@@ -25,7 +25,7 @@
  *   1. Payload validation (zod EventCreatePayloadV1 vs CsvRowSchema)
  *   1b. Idempotency receipt INSERT + duplicate-path audit decision
  *      (webhook emits `webhook_duplicate_rejected`; CSV silent-skip
- *      per contracts/csv-import-api.md § 4c round-2 R3)
+ *      per contracts/csv-import-api.md § 4c csv-import-api contracts R3)
  *   8. Verb-level success audit (`webhook_receipt_verified` for the
  *      webhook caller; `csv_import_completed` is per-import not per-row
  *      so the CSV caller emits it after all batches)
@@ -189,7 +189,7 @@ export interface ProcessAttendeeInTxOutput {
    * hit the second idempotency layer at `event_registrations` —
    * FR-011). CSV callers use this to drive
    * `rowsProcessed` vs `rowsAlreadyImported` counter increments per
-   * contracts/csv-import-api.md round-2 R3.
+   * contracts/csv-import-api.md csv-import-api contracts R3.
    */
   readonly isNewRegistration: boolean;
 }
@@ -366,9 +366,10 @@ export async function processAttendeeInTx(
 
   // 3. Attendee match (read-only against F3 — runs inside tx for
   //    consistent snapshot). Failures roll up to `event_upsert` stage
+  //    via the explicit `TxStageError('event_upsert', ...)` below
   //    because the audit taxonomy doesn't expose a `match_attendee`
-  //    enum value.
-  reportStage('event_upsert');
+  //    enum value. No redundant `reportStage` here — the stage is
+  //    still `event_upsert` from line 323.
   const matchResult = await attendeeMatcher.match({
     tenantId: input.tenantId,
     attendeeEmail: asAttendeeEmail(input.attendee.email),

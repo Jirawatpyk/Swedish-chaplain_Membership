@@ -30,7 +30,7 @@
  *      c. Per-row sequence inside the savepoint:
  *           - Idempotency receipt INSERT with `source='eventcreate_csv'`
  *             + `request_id=parsed.rowHash`. ON CONFLICT → return
- *             `duplicate` outcome (NO audit per round-2 R3).
+ *             `duplicate` outcome (NO audit per csv-import-api contracts R3).
  *           - Map `CsvRow` → `ProcessAttendeeInTxInput` + call shared
  *             helper → event upsert + match + registration insert +
  *             quota + refund + match-resolution audit.
@@ -474,9 +474,16 @@ async function processBatch(
     // errors so `Promise.allSettled` is defensive; `Promise.all` would
     // also work today, kept as `allSettled` in case the internal
     // swallow is later refactored away.
+    // The filter callback's positional index `i` is the position in
+    // `dbRows` — which is ALSO the index into `tentativeOutcomes` by
+    // construction (filled in the inner loop at line ~420:
+    // `tentativeOutcomes[i] = await processOneRowInSavepoint(dbRows[i]...)`).
+    // Skip emit when a row already emitted via its savepoint catch —
+    // otherwise SRE dashboards over-count and forensic reviewers see
+    // contradictory failureStage narratives for the same rowNumber.
     await Promise.allSettled(
       dbRows
-        .filter(({ index: _i }, i) => tentativeOutcomes[i]?.kind !== 'row_failed')
+        .filter((_dbRow, i) => tentativeOutcomes[i]?.kind !== 'row_failed')
         .map(({ row }) =>
           safeEmitRowFailed(
             deps,
@@ -707,24 +714,63 @@ export async function importCsv(
   );
   await Promise.all(workers);
 
+  const durationMs = Date.now() - startedAtMs;
+
+  // Phase 4: emit per-import `csv_import_completed` audit on BOTH the
+  // completed AND timeout paths. The timeout path uses `timedOut:true`
+  // + `severity:'warn'` so SREs can alert separately, and the forensic
+  // trail is preserved for partial imports (committed rows persist;
+  // re-upload is idempotent). Audit-emit failure is observable via
+  // `recordAuditEmitFailure` — route still returns 200 / 504 per the
+  // "DB committed" invariant; the logger + counter together ARE the
+  // observability signal.
+  await emitImportCompletedAudit({
+    deps,
+    input,
+    summary,
+    durationMs,
+    timedOut: timeBudgetExceeded,
+  });
+
   if (timeBudgetExceeded) {
-    // Rows already committed in completed batches persist; re-upload
-    // is idempotent (rowHash matches → silent skip).
     return { kind: 'timeout' };
   }
 
-  const durationMs = Date.now() - startedAtMs;
+  return {
+    kind: 'completed',
+    summary: { ...summary, durationMs },
+  };
+}
 
-  // Phase 4: emit per-import `csv_import_completed` audit. Audit-emit
-  // failure is observable via `recordAuditEmitFailure` (C-2 fix); the
-  // route still returns 200 per the "DB committed" invariant — the
-  // logger.error + metric counter together ARE the observability signal.
+interface EmitImportCompletedAuditArgs {
+  readonly deps: ImportCsvDeps;
+  readonly input: ImportCsvInput;
+  readonly summary: {
+    readonly rowsProcessed: number;
+    readonly rowsAlreadyImported: number;
+    readonly eventsCreated: number;
+    readonly eventsUpdated: number;
+    readonly matchCounts: Record<MatchType, number>;
+    readonly errorRows: ReadonlyArray<{ readonly rowNumber: number; readonly reason: string }>;
+  };
+  readonly durationMs: number;
+  readonly timedOut: boolean;
+}
+
+async function emitImportCompletedAudit(
+  args: EmitImportCompletedAuditArgs,
+): Promise<void> {
+  const { deps, input, summary, durationMs, timedOut } = args;
   const completedAuditContext = {
     rowsProcessed: summary.rowsProcessed,
     rowsAlreadyImported: summary.rowsAlreadyImported,
     errorRowCount: summary.errorRows.length,
     durationMs,
+    timedOut,
   };
+  const summaryText = timedOut
+    ? `CSV import TIMED OUT after ${durationMs}ms: ${summary.rowsProcessed} processed, ${summary.rowsAlreadyImported} idempotency-skipped, ${summary.errorRows.length} errors (partial commit preserved; re-upload is idempotent)`
+    : `CSV import completed: ${summary.rowsProcessed} processed, ${summary.rowsAlreadyImported} idempotency-skipped, ${summary.errorRows.length} errors in ${durationMs}ms`;
   try {
     const result = await deps.emitStandalone({
       eventType: 'csv_import_completed',
@@ -732,9 +778,9 @@ export async function importCsv(
       actorType: 'csv_import',
       actorUserId: input.actorUserId,
       occurredAt: new Date(),
-      summary: `CSV import completed: ${summary.rowsProcessed} processed, ${summary.rowsAlreadyImported} idempotency-skipped, ${summary.errorRows.length} errors in ${durationMs}ms`,
+      summary: summaryText,
       payload: {
-        severity: 'info',
+        severity: timedOut ? 'warn' : 'info',
         actorUserId: input.actorUserId,
         rowsProcessed: summary.rowsProcessed,
         rowsAlreadyImported: summary.rowsAlreadyImported,
@@ -743,6 +789,7 @@ export async function importCsv(
         matchCounts: summary.matchCounts,
         errorRowCount: summary.errorRows.length,
         durationMs,
+        timedOut,
       },
     });
     if (!result.ok) {
@@ -763,9 +810,4 @@ export async function importCsv(
       { ...completedAuditContext, err: e instanceof Error ? e.message : String(e) },
     );
   }
-
-  return {
-    kind: 'completed',
-    summary: { ...summary, durationMs },
-  };
 }
