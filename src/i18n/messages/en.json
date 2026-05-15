@@ -2349,6 +2349,10 @@
           "title": "No online payment activity",
           "body": "Online payments via card or PromptPay will appear here once a member completes one. Manually-recorded payments are shown in the Payment details section above.",
           "recordManualLink": "Record a payment manually"
+        },
+        "emptyPaidManual": {
+          "title": "Paid via manual record",
+          "body": "This invoice was marked paid through the Record Payment dialog (cash, bank transfer, cheque, or other). Manually-recorded payment details are shown in the Payment details section above; the timeline tracks online payment events only."
         }
       }
     },

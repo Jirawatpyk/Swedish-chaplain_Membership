@@ -777,11 +777,19 @@ export function PaySheetInternal({
   // implies content is loaded (T082 UX feedback 2026-04-24).
   const showFooter = showSummary && cardFormVisible;
 
-  // In terminal / transitional states (success / processing / 3DS /
-  // failure), the MethodTabs chrome adds noise — the user is no longer
-  // choosing a method. Render the branch panel directly so the
-  // ConfirmationPanel etc. get the full drawer body.
-  const showChrome = showSummary; // same gate as OrderSummary
+  // In terminal / transitional states (success / processing / 3DS)
+  // the MethodTabs chrome adds noise — user is no longer choosing a
+  // method. Render the branch panel directly so the ConfirmationPanel
+  // etc. get the full drawer body.
+  //
+  // F5R1-UX1 — `showSummary` is defined as `kind !== success && kind
+  // !== processing && kind !== requires-action`, which evaluates true
+  // for both `idle` and `failure` already. So showSummary already
+  // keeps MethodTabs visible on `failure` — the previously-stated
+  // concern ("MethodTabs hidden during failure") was a misread of
+  // the gate. Documenting here so future readers don't re-add a
+  // redundant `|| payState.kind === 'failure'`.
+  const showChrome = showSummary;
 
   // Single persistent live region — per-panel aria-live mounts are
   // unreliable across NVDA/VoiceOver/TalkBack when one region replaces

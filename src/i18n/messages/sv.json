@@ -2349,6 +2349,10 @@
           "title": "Inga onlinebetalningar ännu",
           "body": "Onlinebetalningar via kort eller PromptPay visas här när en medlem genomför en. Manuellt registrerade betalningar visas i avsnittet Betalningsdetaljer ovan.",
           "recordManualLink": "Registrera en betalning manuellt"
+        },
+        "emptyPaidManual": {
+          "title": "Betald via manuell registrering",
+          "body": "Denna faktura markerades som betald via dialogen Registrera betalning (kontant, banköverföring, check eller annat). Manuellt registrerade betalningsuppgifter visas i avsnittet Betalningsdetaljer ovan — tidslinjen följer endast onlinebetalningshändelser."
         }
       }
     },

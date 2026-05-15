@@ -156,6 +156,45 @@ export async function processChargeRefunded(
         // a concurrent writer that already finalised the row to
         // `succeeded`/`failed` is left alone (idempotent webhook).
         if (existing && existing.status === 'pending') {
+          // F5R1-E13 (partial fix) — sanity-check the DB refund amount
+          // against the Stripe charge's TOTAL refunded amount. If the
+          // DB row's amount exceeds the total Stripe-confirmed on this
+          // charge, the DB and Stripe have diverged (e.g. admin edited
+          // the refund via Stripe Dashboard, or partial-update bug).
+          // Flag it loudly and SKIP the flip so an admin can reconcile.
+          //
+          // FULL per-refund amount invariance requires extending the
+          // webhook-verifier projection to emit `refunds.data[i].amount`
+          // per refund id (currently only `refundIds: string[]` + total
+          // `amountSatang`). Tracked as R2 follow-up — see
+          // `specs/009-online-payment/r10-carryover-from-f4.md` and
+          // F5R1 review report.
+          if (existing.amountSatang > input.amountSatang) {
+            // The audit payload schema for out_of_band_refund_detected
+            // takes a single amount; record DB-side here and the
+            // forensic detail (mismatch vs Stripe total) goes into the
+            // summary string + structured log line below. New audit
+            // event type for amount-mismatch is the R2 follow-up.
+            await deps.audit.emit(tx, {
+              tenantId: input.tenantId,
+              requestId: input.requestId,
+              eventType: 'out_of_band_refund_detected',
+              actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+              summary: `Refund amount mismatch: DB row ${existing.id} amount ${existing.amountSatang} satang exceeds Stripe charge total refunded ${input.amountSatang} satang — admin must reconcile`,
+              payload: {
+                processor_refund_id: refundId,
+                processor_charge_id: input.chargeId,
+                amount_satang: existing.amountSatang.toString(),
+                runbook_url: RUNBOOK_URL,
+              },
+              retentionYears: retentionFor('out_of_band_refund_detected'),
+            });
+            paymentsMetrics.outOfBandRefundRejected(
+              input.tenantId,
+              input.processorEnv,
+            );
+            continue;
+          }
           await deps.refundsRepo.updateStatus(tx, {
             refundId: existing.id,
             tenantId: input.tenantId,

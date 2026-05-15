@@ -2,14 +2,21 @@
 
 /**
  * Shared failure-panel primitive used by both the card-payment and
- * PromptPay branches of the PaySheet drawer. Centralises the WCAG /
- * AT contract (`role="alert"` + `aria-live="assertive"` +
- * `aria-atomic`) so both rails announce identically and any future
- * a11y change lands in one place.
+ * PromptPay branches of the PaySheet drawer.
  *
- * The CTA copy varies between rails (Card uses `retry.cta`,
- * PromptPay uses `promptpay.refresh`) so the label is passed in,
- * not hard-coded.
+ * F5R1-UX12 — visual styling stays `tone="destructive"` for affordance,
+ * but the live-region role/aria-live attributes are intentionally
+ * OMITTED here. The parent `<pay-sheet-internal>` already mounts a
+ * persistent `<div aria-live="polite" role="status" class="sr-only">`
+ * announcer (line 793) whose announcement string is derived from
+ * `payState.kind` — when state transitions to `failure`, the
+ * announcer fires. Mounting a SECOND `role="alert" + assertive`
+ * region here would announce the same failure twice on NVDA/VoiceOver
+ * (the parent says it via the live region; the alert role re-fires
+ * via the inserted-node-with-alert-role semantic).
+ *
+ * The CTA copy varies between rails (Card uses `retry.cta`, PromptPay
+ * uses `promptpay.refresh`) so the label is passed in.
  */
 import { useTranslations } from 'next-intl';
 
@@ -45,9 +52,6 @@ export function PaymentFailurePanel({
       tone="destructive"
       data-testid={testId}
       className="space-y-4"
-      role="alert"
-      aria-live="assertive"
-      aria-atomic="true"
     >
       <InlineAlertTitle>{t('title')}</InlineAlertTitle>
       <InlineAlertDescription>{t('body', { reason })}</InlineAlertDescription>

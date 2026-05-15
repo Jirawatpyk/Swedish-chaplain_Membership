@@ -322,17 +322,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const evLivemode = Boolean(rawEvent['livemode']);
   let evAccount = String(rawEvent['account'] ?? '');
 
-  // Direct-event fallback (T082 empirical webhook test 2026-04-24):
-  // when SweCham (or any tenant whose processor_account_id matches
-  // `env.stripe.accountIdSwecham`) creates a PaymentIntent, the
-  // Stripe gateway skips the `Stripe-Account` header (see
-  // `connectOptions()` in stripe-gateway.ts) so the event fires on
-  // the platform account itself with `event.account === ''`. Default
-  // to the platform owner tenant's account id so tenant resolution
-  // succeeds for single-tenant / platform-owner deployments. Multi-
-  // tenant Connect events carry their own `account` field and bypass
-  // this fallback entirely.
-  if (!evAccount && env.stripe.accountIdSwecham) {
+  // Direct-event fallback — when SweCham (the platform-owner tenant)
+  // creates a PaymentIntent, the gateway skips the `Stripe-Account`
+  // header (see `connectOptions` in stripe-gateway.ts) so the event
+  // fires on the platform account with `event.account === ''`.
+  //
+  // F5R1-IMP4 fix — gate the fallback on `env.tenant.slug ===
+  // 'swecham'`. On a multi-tenant deploy (F11), an empty `event.account`
+  // is NOT a missing-account-header signal — it is a malformed event
+  // or a platform-owner event from a non-SweCham deployment. Falling
+  // back to SweCham's account id would mis-route F11 tenant webhooks
+  // to the SweCham tenant context. Multi-tenant deploys land here
+  // with an empty account → tenant resolution returns null →
+  // acknowledged_only path emits + 200-acks Stripe without state change.
+  if (
+    !evAccount &&
+    env.stripe.accountIdSwecham &&
+    env.tenant.slug === 'swecham'
+  ) {
     evAccount = env.stripe.accountIdSwecham;
   }
 
@@ -627,12 +634,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     if ((result as { ok?: boolean }).ok === false) {
-      // R5 S006 — pipe `kind` discriminator into pino so ops dashboards
-      // can filter dispatch failures by class (sub_use_case_error vs
+      // Pipe `kind` discriminator into pino so ops dashboards can
+      // filter dispatch failures by class (sub_use_case_error vs
       // dispatch_threw vs unknown_event_type_threw) without re-parsing
       // log lines.
-      const errorObj = (result as { error?: { kind?: string; detail?: string } })
-        .error;
+      const errorObj = (result as {
+        error?: {
+          kind?: string;
+          detail?: string;
+          permanence?: 'transient' | 'permanent';
+        };
+      }).error;
+      const permanence = errorObj?.permanence ?? 'transient';
       logger.error(
         {
           eventId: evId,
@@ -642,9 +655,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           requestId,
           dispatchFailureKind: errorObj?.kind ?? 'unknown',
           dispatchFailureDetail: errorObj?.detail ?? 'unknown',
+          permanence,
         },
         'stripe-webhook.dispatch_failed',
       );
+
+      // F5R1-IMP2 — permanent errors must NOT cause Stripe retries
+      // (72h retry storm + audit-log pollution). 200-ack with a
+      // forensic flag in the response body so ops dashboards can
+      // distinguish these from successful dispatches when scanning
+      // Stripe's webhook delivery log. Transient errors stay 500 so
+      // Stripe retries through the outage window.
+      if (permanence === 'permanent') {
+        return NextResponse.json(
+          {
+            ok: true,
+            dispatched: false,
+            reason: 'permanent_failure_acknowledged',
+            detail: errorObj?.detail,
+          },
+          { status: 200, headers: { 'X-Correlation-Id': correlationId } },
+        );
+      }
       return jsonInternalError('dispatch_failed', correlationId);
     }
     return jsonOk(correlationId);

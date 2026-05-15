@@ -27,6 +27,7 @@ export function PaymentForm({
   documentNumber,
   issueDate,
   onSuccess,
+  onCancel,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -43,6 +44,14 @@ export function PaymentForm({
    * fall back to the previous navigate-and-refresh behaviour.
    */
   onSuccess?: () => void;
+  /**
+   * F5R1-UX5 — optional cancel callback for the RecordPaymentDialog
+   * overlay. When provided, renders a Cancel button next to Submit
+   * (financial-action heuristic: every form modifying money state
+   * should offer an explicit Cancel affordance, not rely solely on
+   * Esc / outside-click). Legacy full-page callers omit it.
+   */
+  onCancel?: () => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
@@ -163,7 +172,17 @@ export function PaymentForm({
           rows={3}
         />
       </div>
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {onCancel && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={pending}
+          >
+            {t('cancel')}
+          </Button>
+        )}
         <Button type="submit" disabled={pending} aria-busy={pending}>
           {pending && (
             <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />

@@ -58,18 +58,14 @@ const DEFAULT_OLDER_THAN_HOURS = 24;
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  const authHeader = request.headers.get('authorization');
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    if (!verifyCronBearer(authHeader, expected)) {
-      logger.warn({ requestId }, 'cron.sweep_stale_pending_refunds.unauthorized');
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  } else if (!env.isDevelopment) {
-    logger.error(
-      { requestId },
-      'cron.sweep_stale_pending_refunds.no_secret_configured',
-    );
+  // F5R1-E10 fix — use the zod-validated `env.cron.secret` instead of
+  // raw `process.env.CRON_SECRET`. The validated env refuses to boot
+  // when the var is unset (zod `.min(16)` on line 198 of env.ts), so
+  // the previous `else if (!env.isDevelopment)` dev-mode fallback that
+  // allowed unauthenticated access on a misconfigured deploy is no
+  // longer reachable — the app would not have started.
+  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
+    logger.warn({ requestId }, 'cron.sweep_stale_pending_refunds.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

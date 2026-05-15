@@ -42,21 +42,13 @@ interface StaleRow extends Record<string, unknown> {
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  const authHeader = request.headers.get('authorization');
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    if (!verifyCronBearer(authHeader, expected)) {
-      logger.warn(
-        { requestId },
-        'cron.stale_pending_count.unauthorized',
-      );
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  } else if (!env.isDevelopment) {
-    logger.error(
-      { requestId },
-      'cron.stale_pending_count.no_secret_configured',
-    );
+  // F5R1-E10 — use validated `env.cron.secret` (zod-required min 16
+  // chars). Removed the `else if (!env.isDevelopment)` dev-mode unauth
+  // fallback: env.ts refuses to boot without CRON_SECRET so the
+  // fallback path was unreachable on a properly-configured deploy
+  // but represented a footgun if env validation were ever relaxed.
+  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
+    logger.warn({ requestId }, 'cron.stale_pending_count.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

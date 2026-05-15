@@ -111,6 +111,32 @@ export type ProcessWebhookEventOutcome =
  *   - `unknown_event_type_threw` → default-branch withTx threw while
  *                                acknowledging an unrecognised event type
  */
+/**
+ * F5R1-IMP2 — set of sub-use-case error codes that the dispatcher
+ * classifies as `permanent`. Driven by code (not kind) because each
+ * sub-use-case Result.err encodes the recoverable/non-recoverable
+ * distinction in its code:
+ *   - `tenant_settings_missing` — admin must configure F5 in settings
+ *   - `bridge_error` — F4 invoice in unexpected state (admin fix)
+ *   - `invoice_not_found` — invoice deleted while payment was in flight
+ *   - `invoice_shape_invalid` — F4 schema drift (post-deploy fix)
+ *   - `invariant_*` — code bug that won't self-heal
+ *   - `payment_method_unsupported` — caller passed a method we don't accept
+ * Stripe will stop retrying on these (200 from webhook).
+ *
+ * Everything else (e.g. `processor_unavailable` for Stripe outage, db
+ * transient, generic dispatch_threw) stays `transient` — 500 from
+ * webhook → Stripe retries → eventual recovery when the outage clears.
+ */
+export const PERMANENT_SUB_USE_CASE_DETAILS: ReadonlySet<string> = new Set([
+  'tenant_settings_missing',
+  'bridge_error',
+  'invoice_not_found',
+  'invoice_shape_invalid',
+  'payment_method_unsupported',
+  'invariant_auto_refunded_missing_invoice_id',
+]);
+
 export type ProcessWebhookEventError = {
   readonly code: 'dispatch_failed';
   readonly kind:
@@ -119,7 +145,38 @@ export type ProcessWebhookEventError = {
     | 'unknown_event_type_threw';
   readonly eventType: string;
   readonly detail: string;
+  /**
+   * F5R1-IMP2 — retry semantics discriminator.
+   *
+   * `'transient'` → route returns 500; Stripe retries (up to 72h).
+   *   Use for: DB outage (Neon down), Stripe API outage (gateway
+   *   `retryable`), tenant-resolution-failed (rare race during
+   *   onboarding), generic dispatch throw.
+   *
+   * `'permanent'` → route returns 200 + emits a forensic
+   *   `webhook_dispatch_permanent_failure` audit row; Stripe stops
+   *   retrying. Use for: F4 bridge errors that cannot self-heal
+   *   (`tenant_settings_missing`, `invoice_shape_invalid`, F4
+   *   schema-drift errors), `unknown_event_type_threw` on an event
+   *   type we explicitly do not handle.
+   *
+   * Without this discriminator, every error returned 500 → Stripe
+   * retried for 72h on permanent classes → retry-storm and audit-log
+   * pollution. The retry queue draining cost is the same as
+   * webhook-signature-rejected drained: 4xx (or 2xx with forensic
+   * trail) tells Stripe to stop.
+   */
+  readonly permanence: 'transient' | 'permanent';
 };
+
+/**
+ * F5R1-IMP2 — classify a sub-use-case error code as permanent or
+ * transient for retry semantics. See `PERMANENT_SUB_USE_CASE_DETAILS`
+ * above for the permanent list.
+ */
+function categorisePermanence(detail: string): 'transient' | 'permanent' {
+  return PERMANENT_SUB_USE_CASE_DETAILS.has(detail) ? 'permanent' : 'transient';
+}
 
 export interface ProcessWebhookEventDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -294,6 +351,19 @@ async function processWebhookEventBody(
     // markProcessed at the tail will set processed_at. The dispatch
     // sub-use-cases are idempotent (lockForUpdate + canTransition
     // guards), so re-running them on the same payment row is safe.
+    //
+    // F5R1-E8 — emit a recovery-replay metric so SRE can detect
+    // chronic mid-flight crash patterns (Vercel function timeout
+    // mid-dispatch, OOM, OTel exporter back-pressure). The recovery
+    // is correct + safe, but pino logs alone do not surface to alert
+    // rules; this counter does.
+    //
+    // For `charge.refunded` events, the recovery replay will re-emit
+    // the audit row (out_of_band_refund_detected or refund_succeeded
+    // depending on branch) — forensic queries that aggregate these
+    // MUST group by `payload->>'processor_refund_id'` to dedupe
+    // (contract parity with the confirm-payment Phase B docstring).
+    paymentsMetrics.webhookDispatchRecoveryReplay(tenantId, event.type);
   }
 
   // Step 9 — dispatch. Structured allow-list ONLY (PCI guardian).
@@ -350,6 +420,7 @@ async function processWebhookEventBody(
           kind: 'sub_use_case_error',
           eventType: event.type,
           detail: result.error.code,
+          permanence: categorisePermanence(result.error.code),
         });
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` from the
@@ -384,6 +455,7 @@ async function processWebhookEventBody(
             kind: 'sub_use_case_error',
             eventType: event.type,
             detail: 'invariant_auto_refunded_missing_invoice_id',
+            permanence: 'permanent',
           });
         }
         /* v8 ignore stop */
@@ -444,6 +516,7 @@ async function processWebhookEventBody(
           kind: 'sub_use_case_error',
           eventType: event.type,
           detail: result.error.code,
+          permanence: categorisePermanence(result.error.code),
         });
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
@@ -488,6 +561,7 @@ async function processWebhookEventBody(
           kind: 'sub_use_case_error',
           eventType: event.type,
           detail: result.error.code,
+          permanence: categorisePermanence(result.error.code),
         });
       }
       /* v8 ignore stop */
@@ -547,6 +621,10 @@ async function processWebhookEventBody(
           // internal ids. Use the class name only — caller logs it into
           // pino + audit downstream where leak risk is real.
           detail: formatDispatchErrorDetail(refundResult.error.cause),
+          // Default to transient: Stripe-side or DB-side throw on
+          // charge.refunded should retry. The categorise helper would
+          // catch the rare permanent-class detail string if needed.
+          permanence: 'transient',
         });
       }
       outcome = {
@@ -589,6 +667,11 @@ async function processWebhookEventBody(
           // fragments / internal ids. Use the class name only — caller
           // logs it into pino + audit downstream where leak risk is real.
           detail: formatDispatchErrorDetail(e),
+          // Default to transient: a dispatch-tx throw is most likely
+          // a Neon transient or OTel back-pressure. The route layer
+          // can override after inspecting `detail` if a permanent
+          // pattern emerges.
+          permanence: 'transient',
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
@@ -617,6 +700,11 @@ async function processWebhookEventBody(
           kind: 'unknown_event_type_threw',
           eventType: event.type,
           detail: formatDispatchErrorDetail(e),
+          // Transient — the default-branch throw is most likely a DB
+          // transient on the markProcessed tx (we don't dispatch any
+          // business logic for unknown event types). Stripe should
+          // retry; the next attempt will succeed cleanly.
+          permanence: 'transient',
         });
       }
       outcome = { kind: 'acknowledged_only' };

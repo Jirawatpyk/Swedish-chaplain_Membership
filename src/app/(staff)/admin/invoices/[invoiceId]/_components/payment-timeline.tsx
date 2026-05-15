@@ -437,18 +437,42 @@ export async function PaymentTimeline({
               className="size-12 text-muted-foreground"
               aria-hidden="true"
             />
-            <p className="text-sm font-medium">{t('empty.title')}</p>
-            <p className="text-xs text-muted-foreground max-w-md">
-              {t('empty.body')}
-            </p>
-            {isAdmin && invoiceStatus === 'issued' && (
-              <a
-                href={`/admin/invoices/${invoiceId}#record-payment`}
-                data-testid="empty-state-record-payment-link"
-                className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-              >
-                {t('empty.recordManualLink')}
-              </a>
+            {/* F5R1-UX4 — distinguish two empty-state semantics:
+                  (a) Invoice not paid yet (issued/overdue) — current
+                      copy "no online payment activity yet" + record-
+                      manually CTA. Bookkeeper expects this when they
+                      first issue an invoice.
+                  (b) Invoice paid via manual record (cash, bank xfer,
+                      cheque) — no F5 events were emitted (manual
+                      record-payment bypasses the F5 webhook pipeline).
+                      Previously the timeline showed the "no online
+                      payment activity yet" copy here, suggesting the
+                      record-payment action had silently failed. Show
+                      a paid-manually copy instead so the bookkeeper
+                      sees the action took effect. */}
+            {invoicePaidAt !== null ? (
+              <>
+                <p className="text-sm font-medium">{t('emptyPaidManual.title')}</p>
+                <p className="text-xs text-muted-foreground max-w-md">
+                  {t('emptyPaidManual.body')}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">{t('empty.title')}</p>
+                <p className="text-xs text-muted-foreground max-w-md">
+                  {t('empty.body')}
+                </p>
+                {isAdmin && invoiceStatus === 'issued' && (
+                  <a
+                    href={`/admin/invoices/${invoiceId}#record-payment`}
+                    data-testid="empty-state-record-payment-link"
+                    className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+                  >
+                    {t('empty.recordManualLink')}
+                  </a>
+                )}
+              </>
             )}
           </div>
         ) : (

@@ -77,6 +77,7 @@ export function RecordPaymentDialog({ invoiceId, documentNumber, issueDate }: Pr
           documentNumber={documentNumber}
           issueDate={issueDate}
           onSuccess={() => setOpen(false)}
+          onCancel={() => setOpen(false)}
         />
       </DialogContent>
     </Dialog>

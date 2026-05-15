@@ -705,6 +705,24 @@ export const paymentsMetrics = {
   },
 
   /**
+   * F5R1-E8 — `webhook.dispatch_recovery_replay_total{tenant, eventType}`
+   * — fires when the webhook dispatcher's step-6 idempotency upsert
+   * detects an existing processor_events row whose `processed_at` is
+   * still NULL (i.e. the previous attempt committed step 6 but the
+   * function process died before the dispatch tx committed). The
+   * recovery path is safe (sub-use-cases are idempotent), but a
+   * sustained non-zero rate signals chronic mid-flight crashes
+   * (Vercel function timeouts, OOM, OTel exporter back-pressure)
+   * that pino logs alone cannot surface to alert rules.
+   */
+  webhookDispatchRecoveryReplay(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_dispatch_recovery_replay_total',
+      'Webhook dispatcher recovered from a mid-flight crash (processor_events row existed but processedAt was NULL)',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
    * `out_of_band_refund_rejected_total{tenant, processor_env}` — FR-011a
    * leading indicator. Admin used Stripe Dashboard refund instead of
    * in-app refund flow.
