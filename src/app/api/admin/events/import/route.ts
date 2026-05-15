@@ -40,9 +40,22 @@ import { problemResponse } from '@/lib/http/problem-response';
 import {
   runImportCsv,
   csvImportRateLimitCheck,
+  lookupEventByIdTimingSafe,
 } from '@/lib/events-csv-import-deps';
 import { asUserId } from '@/modules/auth';
+import { asTenantId } from '@/modules/members';
+import { makeStandaloneAuditDeps } from '@/modules/events';
 import { adminOnlyGuard } from '../../integrations/eventcreate/_lib/role-violation-audit';
+
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const FORCE_PROCEED_TRUTHY = new Set(['true', '1', 'yes']);
+
+function parseForceProceed(value: FormDataEntryValue | null): boolean {
+  if (typeof value !== 'string') return false;
+  return FORCE_PROCEED_TRUTHY.has(value.trim().toLowerCase());
+}
 
 const ROUTE = '/api/admin/events/import';
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MiB per contracts § Processing semantics step 1
@@ -150,6 +163,37 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
+  // 6b. F6.1 — parse `event_id` form field (UUID required) +
+  //     `force_proceed` form field. event_id is shape-validated as UUID;
+  //     event ownership + existence are checked AFTER bytes-read so the
+  //     413 / 415 / multipart guards continue to short-circuit early.
+  const eventIdField = formData.get('event_id');
+  const forceProceed = parseForceProceed(formData.get('force_proceed'));
+  if (typeof eventIdField !== 'string' || eventIdField.length === 0) {
+    eventcreateMetrics.csvImportCompleted(tenantSlug, 'event_not_selected');
+    return problemResponse(
+      400,
+      'csv-event-not-selected',
+      'Event not selected',
+      "The 'event_id' field is required. Select an event from the dropdown before uploading.",
+      { extras: { requestId } },
+    );
+  }
+  if (!UUID_V4_PATTERN.test(eventIdField)) {
+    // Treat shape-invalid eventIds as "not_found" (a UUID-shaped probe
+    // would never have matched anyway — no need to fan out to the DB
+    // for a confirmed-invalid input). Returns the same shape as
+    // post-DB `event_not_found`.
+    eventcreateMetrics.csvImportCompleted(tenantSlug, 'event_not_found');
+    return problemResponse(
+      400,
+      'csv-event-not-found',
+      'Event not found',
+      `Event '${eventIdField.slice(0, 80)}' was not found in your chamber. Was it deleted?`,
+      { extras: { eventId: eventIdField, requestId } },
+    );
+  }
+
   // 7. Pull `file` field + bytes. Duck-type check on `arrayBuffer`
   // method to avoid cross-realm `instanceof File` mismatches (undici's
   // File class is distinct from Vitest's global File polyfill); a
@@ -210,6 +254,46 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
   const bytes = new Uint8Array(arrayBuffer);
 
+  // 7b. F6.1 (T023) — timing-safe event lookup. ONE unscoped query →
+  //     branch on tenant ownership in app code. Cross-tenant probes
+  //     emit `csv_import_cross_tenant_probe` audit (Constitution
+  //     Principle I clause 4 — HIGH severity). The audit emit uses a
+  //     standalone tx so the route never blocks on audit DB write.
+  const eventLookup = await lookupEventByIdTimingSafe(tenantSlug, eventIdField);
+  if (eventLookup.kind === 'not_found') {
+    eventcreateMetrics.csvImportCompleted(tenantSlug, 'event_not_found');
+    return problemResponse(
+      400,
+      'csv-event-not-found',
+      'Event not found',
+      `Event '${eventIdField}' was not found in your chamber. Was it deleted?`,
+      { extras: { eventId: eventIdField, requestId } },
+    );
+  }
+  if (eventLookup.kind === 'wrong_tenant') {
+    // FR-035 surface disclosure — 404 with the same body as not_found.
+    // The cross-tenant probe is audit-logged at HIGH severity for SRE
+    // investigation (Principle I clause 4).
+    eventcreateMetrics.csvImportCompleted(
+      tenantSlug,
+      'event_not_owned_by_tenant',
+    );
+    void emitCrossTenantProbeAudit({
+      tenantSlug,
+      actorUserId: guard.actorUserId,
+      probedEventId: eventIdField,
+      sourceIp: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown',
+      requestId,
+    });
+    return problemResponse(
+      400,
+      'csv-event-not-found',
+      'Event not found',
+      `Event '${eventIdField}' was not found in your chamber. Was it deleted?`,
+      { extras: { eventId: eventIdField, requestId } },
+    );
+  }
+
   // 8. Dispatch use-case.
   let outcome: Awaited<ReturnType<typeof runImportCsv>>;
   try {
@@ -219,6 +303,11 @@ export async function POST(request: NextRequest): Promise<Response> {
       // boundary; runImportCsv input now requires UserId, not string.
       actorUserId: asUserId(guard.actorUserId),
       bytes,
+      selectedEvent: eventLookup.event,
+      forceProceed,
+      ...(typeof file.name === 'string' && file.name.length > 0 && {
+        originalFilename: file.name,
+      }),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
@@ -252,7 +341,30 @@ export async function POST(request: NextRequest): Promise<Response> {
   // 9. Map outcome.
   switch (outcome.kind) {
     case 'completed':
-      return NextResponse.json(outcome.summary, { status: 200 });
+      return NextResponse.json(
+        {
+          kind: 'completed',
+          recordId: outcome.recordId,
+          sourceFormat: outcome.sourceFormat,
+          errorCsvAvailable: outcome.errorCsvAvailable,
+          summary: outcome.summary,
+        },
+        { status: 200 },
+      );
+    case 'event_mismatch_warning':
+      // F6.1 (FR-019b) — ZERO side effects; admin must re-submit with
+      // `force_proceed=true` to bypass. Body shape mirrors contract.
+      return NextResponse.json(
+        {
+          kind: 'event_mismatch_warning',
+          priorImports: outcome.priorImports.map((p) => ({
+            recordId: p.recordId,
+            eventId: p.eventId,
+            uploadedAt: p.uploadedAt.toISOString(),
+          })),
+        },
+        { status: 200 },
+      );
     case 'invalid_header':
       return NextResponse.json(
         {
@@ -269,6 +381,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         'csv-timeout',
         'CSV import exceeded time budget',
         'Import partially completed. Re-upload the same CSV — already-processed rows are idempotent and will be skipped.',
+        { extras: { recordId: outcome.recordId, sourceFormat: outcome.sourceFormat } },
       );
     case 'unexpected_error':
       logger.error(
@@ -303,5 +416,82 @@ export async function POST(request: NextRequest): Promise<Response> {
         'CSV import failed. Retry; if it persists, contact support with this request ID.',
         { extras: { requestId } },
       );
+    default: {
+      // Exhaustiveness — adding a 6th variant to ImportCsvOutcome
+      // surfaces as a compile error here.
+      const _exhaustive: never = outcome;
+      void _exhaustive;
+      return problemResponse(
+        500,
+        'internal',
+        'Internal Server Error',
+        'CSV import returned an unrecognised outcome.',
+        { extras: { requestId } },
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 (Feature 013 · T023) — Cross-tenant probe audit emit
+// ---------------------------------------------------------------------------
+
+interface CrossTenantProbeAuditInput {
+  readonly tenantSlug: string;
+  readonly actorUserId: string;
+  readonly probedEventId: string;
+  readonly sourceIp: string;
+  readonly requestId: string;
+}
+
+/**
+ * Emit `csv_import_cross_tenant_probe` via a standalone audit tx.
+ * Fire-and-forget — the route NEVER blocks waiting for the audit DB
+ * write. Failures log + drop; SREs alert on `rate > 0` for the
+ * cross-tenant counter (which fires from the metrics call site, not
+ * from the audit-emit success).
+ */
+async function emitCrossTenantProbeAudit(
+  input: CrossTenantProbeAuditInput,
+): Promise<void> {
+  try {
+    const auditDeps = makeStandaloneAuditDeps();
+    const result = await auditDeps.emitStandalone({
+      eventType: 'csv_import_cross_tenant_probe',
+      tenantId: asTenantId(input.tenantSlug),
+      actorType: 'admin',
+      actorUserId: asUserId(input.actorUserId),
+      occurredAt: new Date(),
+      summary: `Cross-tenant probe on POST /api/admin/events/import (event_id=${input.probedEventId.slice(0, 80)})`,
+      payload: {
+        severity: 'critical',
+        actorUserId: asUserId(input.actorUserId),
+        probedId: input.probedEventId,
+        probeSurface: 'import_event_id',
+        sourceIp: input.sourceIp,
+        probedAt: new Date(),
+      },
+    });
+    if (!result.ok) {
+      logger.error(
+        {
+          event: 'f6_csv_cross_tenant_probe_audit_emit_failed',
+          tenantSlug: input.tenantSlug,
+          probedEventId: input.probedEventId,
+          err: result.error.kind,
+        },
+        '[F6.1] csv_import_cross_tenant_probe audit emit failed — security event lost from audit table; SRE counter still fires',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_csv_cross_tenant_probe_audit_emit_threw',
+        tenantSlug: input.tenantSlug,
+        probedEventId: input.probedEventId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] csv_import_cross_tenant_probe audit emitter threw',
+    );
   }
 }

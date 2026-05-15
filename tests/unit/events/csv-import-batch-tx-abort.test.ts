@@ -29,6 +29,7 @@ import {
 } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
+import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -79,7 +80,10 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
           ok({ wasFresh: false, originalProcessedAt: null }),
         ),
       } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
-    } as unknown as ImportCsvTxScopedPorts;
+        advisoryLockAcquirer: {
+      acquire: vi.fn(async () => {}),
+    } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
+  } as unknown as ImportCsvTxScopedPorts;
 
     const deps = {
       csvImporter: {
@@ -134,6 +138,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
         tenantId: asTenantId('test-chamber-commit-abort'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000201'),
         bytes: buildCsv(ROW_COUNT),
+        selectedEvent: f6CsvTestSelectedEventStub,
       },
       deps,
     );
@@ -182,7 +187,10 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
           ok({ wasFresh: true, originalProcessedAt: null }),
         ),
       } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
-    } as unknown as ImportCsvTxScopedPorts;
+        advisoryLockAcquirer: {
+      acquire: vi.fn(async () => {}),
+    } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
+  } as unknown as ImportCsvTxScopedPorts;
 
     const deps = {
       csvImporter: {
@@ -233,6 +241,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
         tenantId: asTenantId('test-chamber-dedup-guard'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000202'),
         bytes: buildCsv(ROW_COUNT),
+        selectedEvent: f6CsvTestSelectedEventStub,
       },
       deps,
     );

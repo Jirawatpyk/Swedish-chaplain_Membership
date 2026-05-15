@@ -60,6 +60,8 @@ import { makePinoAuditPort } from './pino-audit-port';
 import { makeDrizzleQuotaAccountingAdapter } from './drizzle-quota-accounting-adapter';
 import { makeDrizzleAdvisoryLockAcquirer } from './drizzle-advisory-lock-acquirer';
 import { streamingCsvImporter } from './streaming-csv-importer';
+import { makeDrizzleCsvImportRecordsRepository } from './drizzle-csv-import-records-repo';
+import { vercelBlobErrorCsvStore } from './vercel-blob-error-csv-store';
 
 /**
  * Minimal deps for callers that only need standalone-tx audit
@@ -211,6 +213,23 @@ export function makeImportCsvDeps(): ImportCsvDeps {
       const port = makeLoudDummyExecutorPort('emitStandalone');
       return port.emitStandalone(entry);
     },
+    // F6.1 (Feature 013 · T024) — fresh tenant-scoped tx for
+    // `csv_import_records` DML. Independent of the batch tx so a failed
+    // batch doesn't roll back the placeholder import-record.
+    withImportRecordsTx: async <T>(
+      tenantId: string,
+      fn: (repo: ReturnType<typeof makeDrizzleCsvImportRecordsRepository>) => Promise<T>,
+    ): Promise<T> => {
+      const ctx = asTenantContext(tenantId);
+      return runInTenant(ctx, async (tx) => {
+        const repo = makeDrizzleCsvImportRecordsRepository(tx);
+        return fn(repo);
+      });
+    },
+    // F6.1 (Feature 013 · T021) — Vercel Blob error-CSV store. The MVP
+    // adapter implements only `put`; `generateSignedUrl` + `delete`
+    // are deferred to US5.
+    errorCsvStore: vercelBlobErrorCsvStore,
   };
 }
 

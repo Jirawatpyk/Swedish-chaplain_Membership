@@ -20,6 +20,7 @@
  */
 import type { Result } from '@/lib/result';
 import type { CsvRow } from '../../domain/eventcreate-payload';
+import type { PdpaConsentAcknowledged } from '../../domain/eventcreate-csv-format';
 
 /**
  * Parse outcome for a single row. The importer wraps every row in this
@@ -38,6 +39,14 @@ export type ParsedRow =
        * (eventcreate_idempotency_receipts source = 'eventcreate_csv').
        */
       readonly rowHash: string;
+      /**
+       * F6.1 (Feature 013) — PDPA consent classification per FR-009.
+       * Populated by EventCreate-adapter rows; absent (treated as null)
+       * for generic Phase 7 rows. Stored in
+       * `event_registrations.attendee_pdpa_consent_acknowledged` via the
+       * use-case after `processAttendeeInTx` returns.
+       */
+      readonly pdpaConsentAcknowledged?: PdpaConsentAcknowledged;
     }
   | {
       readonly ok: false;
@@ -83,6 +92,47 @@ export type CsvImporterError =
     }
   | { readonly kind: 'file_too_large'; readonly bytes: number; readonly max: number };
 
+/**
+ * F6.1 (Feature 013) — Selected event context that the admin chose at
+ * upload time. The use-case merges this into every row before zod
+ * validation, overriding any event_*-prefixed columns in the CSV.
+ *
+ * For EventCreate-format CSVs (which have NO event_* columns at all),
+ * this is the SOLE source of event metadata.
+ * For generic-format CSVs, the dropdown selection is AUTHORITATIVE
+ * (Phase 7 trusted the CSV; F6.1 makes the dropdown win).
+ */
+export interface SelectedEventContext {
+  readonly externalId: string;
+  readonly name: string;
+  readonly startDate: Date;
+  readonly category: string | null;
+}
+
+/**
+ * F6.1 (Feature 013) — Extended parse input that binds the upload to
+ * one F6 event.
+ */
+export interface ParseStreamFormattedInput extends CsvParseInput {
+  readonly eventContext: SelectedEventContext;
+}
+
+/**
+ * F6.1 (Feature 013) — Successful parse outcome with format metadata
+ * for the `csv_import_records.source_format` column +
+ * `eventcreate_csv_adapter_mode_detected_total` counter.
+ */
+export interface ParseStreamFormatted {
+  readonly format: 'eventcreate_csv' | 'generic_csv';
+  readonly rows: AsyncIterable<ParsedRow>;
+  /**
+   * Unknown columns observed on EventCreate-format uploads, per FR-012.
+   * Empty for generic format (Phase 7 schema is strict — unknowns
+   * silently dropped).
+   */
+  readonly unknownColumns: ReadonlyArray<string>;
+}
+
 export interface CsvImporter {
   /**
    * Async-iterator over parsed rows. The caller iterates with
@@ -97,4 +147,29 @@ export interface CsvImporter {
   parseStream(
     input: CsvParseInput,
   ): Promise<Result<AsyncIterable<ParsedRow>, CsvImporterError>>;
+
+  /**
+   * F6.1 (Feature 013 · T022/T009/T010) — Detect EventCreate vs generic
+   * format, then parse + (for EventCreate) translate via the T010
+   * adapter, merging `eventContext` into every row before zod
+   * validation.
+   *
+   * The output `rows` AsyncIterable yields the SAME `ParsedRow` shape
+   * regardless of source format — the use-case is format-agnostic
+   * downstream of this method (FR-027 webhook↔CSV equivalence is
+   * preserved because every row still ends up matching `CsvRow` shape
+   * before `processAttendeeInTx`).
+   *
+   * EventCreate-format rows additionally carry `pdpaConsentAcknowledged`
+   * for FR-009 storage; generic rows omit the field.
+   *
+   * **Optional pin** — Phase 7 mocks predate this method. The F6.1
+   * use-case falls back to `parseStream` + a synthetic `generic_csv`
+   * envelope when this method is undefined, preserving back-compat
+   * for legacy `vi.fn` mocks without forcing a wide test refactor.
+   * Production adapters MUST implement this method.
+   */
+  parseStreamWithFormat?(
+    input: ParseStreamFormattedInput,
+  ): Promise<Result<ParseStreamFormatted, CsvImporterError>>;
 }

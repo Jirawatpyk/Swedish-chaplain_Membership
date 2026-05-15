@@ -186,7 +186,9 @@ src/
 
 drizzle/migrations/
 ├── 0139_csv_import_records.sql                        # NEW: table + indexes + RLS+FORCE policies
-└── 0140_event_registrations_attendee_pdpa_consent.sql # NEW: ALTER TABLE add column + backfill NULL
+├── 0140_event_registrations_attendee_pdpa_consent.sql # NEW: ALTER TABLE add column + backfill NULL
+├── 0141_f6_csv_import_audit_event_types.sql           # NEW (T-extra, discovered at T008): audit_event_type enum ADD VALUE for 3 F6.1 events (csv_import_error_csv_downloaded / csv_import_cross_tenant_probe / csv_import_event_mismatch_overridden)
+└── 0144_f6_event_created_audit_type.sql               # NEW (T026 full-impl): audit_event_type enum ADD VALUE 'event_created' for admin-manual event creation surface (closes the "no way to seed events" gap left by EventCreate API gating per project_eventcreate_api_gated memory)
 
 tests/
 ├── contract/events/csv-import-eventcreate-format.test.ts       # NEW

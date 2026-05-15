@@ -1,0 +1,31 @@
+-- ---------------------------------------------------------------------------
+-- F6.1 — event_registrations.attendee_pdpa_consent_acknowledged
+-- (Feature 013 · T004 · Phase 2 Foundational)
+--
+-- Captures EventCreate's "Personal Data Protection Consent" cell at import
+-- time as a CLASSIFIED BOOLEAN per FR-009 + Clarifications Session
+-- 2026-05-15 post-critique Q1.
+--
+--   true  — cell contains "hereby acknowledge"  (case-insensitive)
+--   false — cell contains "do not consent"       (case-insensitive)
+--   null  — missing / unrecognized / generic-CSV imports
+--
+-- Raw consent text is NOT stored — PDPA Article 5(1)(c) data
+-- minimization. The classifier `classifyPdpaConsent` lives in
+-- src/modules/events/domain/eventcreate-csv-format.ts (T006).
+--
+-- F7 broadcast filter will consume `WHERE attendee_pdpa_consent_acknowledged
+-- = true` to gate marketing dispatch (future F7.1 — column is preparatory
+-- in this feature; not yet consumed).
+--
+-- Backfill: NULL for all historical F6 Phase 7 rows (no consent captured
+-- at the time). Future re-uploads of those events populate via FR-018
+-- update path.
+--
+-- Zero-downtime safe: PostgreSQL ALTER TABLE ADD COLUMN BOOLEAN NULL is
+-- instant — no row rewrite, no lock escalation.
+-- Rollback: DROP COLUMN — column is additive, no FK breakage.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "event_registrations"
+  ADD COLUMN "attendee_pdpa_consent_acknowledged" boolean;--> statement-breakpoint

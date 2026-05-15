@@ -29,6 +29,7 @@ import {
 } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
+import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -77,6 +78,9 @@ function makeConcurrencyTrackingDeps(): {
         ok({ wasFresh: false, originalProcessedAt: null }),
       ),
     } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
+      advisoryLockAcquirer: {
+      acquire: vi.fn(async () => {}),
+    } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
   } as unknown as ImportCsvTxScopedPorts;
 
   const deps = {
@@ -150,6 +154,7 @@ describe('NEW-K — parallel batch scheduler', () => {
         tenantId: asTenantId('test-chamber-par'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000201'),
         bytes: csvBytes,
+        selectedEvent: f6CsvTestSelectedEventStub,
         batchSize: 1, // every row = its own batch
         batchConcurrency: 3,
       },
@@ -181,6 +186,7 @@ describe('NEW-K — parallel batch scheduler', () => {
         tenantId: asTenantId('test-chamber-par-2'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000203'),
         bytes: csvBytes,
+        selectedEvent: f6CsvTestSelectedEventStub,
         batchSize: 1,
         batchConcurrency: 2,
       },
@@ -205,6 +211,7 @@ describe('NEW-K — parallel batch scheduler', () => {
         tenantId: asTenantId('test-chamber-par-serial'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000202'),
         bytes: csvBytes,
+        selectedEvent: f6CsvTestSelectedEventStub,
         batchSize: 1,
         batchConcurrency: 1,
       },

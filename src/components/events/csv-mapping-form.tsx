@@ -42,6 +42,12 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 import { CsvImportResult, type CsvImportResultPayload } from './csv-import-result';
+import { EventPicker } from './event-picker';
+import { EventCreateInlineModal } from './event-create-inline-modal';
+import {
+  EventMismatchWarningDialog,
+  type PriorImportEntry,
+} from './event-mismatch-warning-dialog';
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const REQUIRED_COLUMNS = [
@@ -101,6 +107,18 @@ export function CsvMappingForm() {
   const t = useTranslations('admin.events.import');
   const tErrors = useTranslations('admin.events.import.errors');
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
+  // F6.1 (T028) — event selection state lives OUTSIDE the phase machine
+  // so the admin can change the dropdown between Cancel/Continue cycles
+  // without losing the preview file.
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedEventLabel, setSelectedEventLabel] = useState<string | null>(
+    null,
+  );
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [mismatchDialog, setMismatchDialog] = useState<{
+    open: boolean;
+    priorImports: ReadonlyArray<PriorImportEntry>;
+  }>({ open: false, priorImports: [] });
   const fileInputId = useId();
   const liveRegionId = useId();
   // Tracks whether a previous completed phase happened so the idle
@@ -131,114 +149,171 @@ export function CsvMappingForm() {
     [tErrors],
   );
 
-  const onSubmit = useCallback(async () => {
-    if (phase.kind !== 'preview') return;
-    setPhase({ kind: 'submitting', file: phase.file });
-    const fd = new FormData();
-    fd.append('file', phase.file);
-    let res: Response;
-    try {
-      res = await fetch('/api/admin/events/import', {
-        method: 'POST',
-        body: fd,
-      });
-    } catch (e) {
-      setPhase({
-        kind: 'error',
-        title: tErrors('networkErrorTitle'),
-        detail: e instanceof Error ? e.message : tErrors('unexpectedDetail'),
-      });
-      return;
-    }
-    // H-5 + simplify #8 fix (2026-05-15): switch dispatch on res.status
-    // + wrap res.json() parse to catch truncated/non-JSON server
-    // responses (proxy interposition, mid-flight reset). L-2 fix:
-    // Retry-After header may be either delta-seconds or HTTP-date; we
-    // parse defensively + fall back to 60s if non-numeric.
-    switch (res.status) {
-      case 200: {
-        let summary: CsvImportResultPayload;
+  const submitImport = useCallback(
+    async (file: File, forceProceed: boolean): Promise<void> => {
+      if (selectedEventId === null) {
+        // Defensive — submit button is gated below but the type
+        // checker can't prove the gate.
+        setPhase({
+          kind: 'error',
+          title: tErrors('eventNotSelectedTitle'),
+          detail: tErrors('eventNotSelectedDetail'),
+        });
+        return;
+      }
+      setPhase({ kind: 'submitting', file });
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('event_id', selectedEventId);
+      if (forceProceed) fd.append('force_proceed', 'true');
+      let res: Response;
+      try {
+        res = await fetch('/api/admin/events/import', {
+          method: 'POST',
+          body: fd,
+        });
+      } catch (e) {
+        setPhase({
+          kind: 'error',
+          title: tErrors('networkErrorTitle'),
+          detail: e instanceof Error ? e.message : tErrors('unexpectedDetail'),
+        });
+        return;
+      }
+      // F6.1 — handle 200 event_mismatch_warning specifically before
+      // delegating to the generic 200 handler below.
+      if (res.status === 200) {
+        let body: Record<string, unknown>;
         try {
-          summary = (await res.json()) as CsvImportResultPayload;
-        } catch (e) {
-          setPhase({
-            kind: 'error',
-            title: tErrors('unexpectedTitle'),
-            detail:
-              e instanceof Error ? e.message : tErrors('unexpectedDetail'),
+          body = (await res.clone().json()) as Record<string, unknown>;
+        } catch {
+          body = {};
+        }
+        if (body['kind'] === 'event_mismatch_warning') {
+          const priorImports = Array.isArray(body['priorImports'])
+            ? (body['priorImports'] as PriorImportEntry[])
+            : [];
+          setMismatchDialog({ open: true, priorImports });
+          // Keep the preview file around so Continue can re-submit.
+          setPhase({ kind: 'preview', file, preview: { detectedColumns: [], rows: [], missingRequired: [] } });
+          return;
+        }
+      }
+      await processImportResponse(res, file);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedEventId, tErrors],
+  );
+
+  const processImportResponse = useCallback(
+    async (res: Response, _file: File): Promise<void> => {
+      // (delegated below — pulled out of inline so submitImport can call
+      // it from both the initial submit + the mismatch-override
+      // re-submit). The original Phase 7 switch follows verbatim.
+      void _file;
+      const _fakePhase = phase; // satisfy closure
+      void _fakePhase;
+      // Reuse the original logic by simulating phase==='preview' →
+      // delegate to the existing inline path. But because we already
+      // POSTed, we just translate the response to phase transitions.
+      switch (res.status) {
+        case 200: {
+          let payload: Record<string, unknown>;
+          try {
+            payload = (await res.json()) as Record<string, unknown>;
+          } catch (e) {
+            setPhase({
+              kind: 'error',
+              title: tErrors('unexpectedTitle'),
+              detail:
+                e instanceof Error ? e.message : tErrors('unexpectedDetail'),
+            });
+            return;
+          }
+          // F6.1 — `completed` envelope wraps summary at top-level vs Phase 7's flat shape.
+          const summary = (payload['summary'] ??
+            payload) as CsvImportResultPayload;
+          setPhase({ kind: 'completed', summary });
+          setHasPreviouslyCompleted(true);
+          toast.success(t('importSuccessToast'), {
+            description: t('importSuccessToastDesc', {
+              count: summary.rowsProcessed ?? 0,
+            }),
           });
           return;
         }
-        setPhase({ kind: 'completed', summary });
-        setHasPreviouslyCompleted(true);
-        // M-1 fix: sonner success toast — esp. needed for the
-        // idempotency case where rowsProcessed=0 reads like a failure
-        // without the toast framing the situation.
-        toast.success(t('importSuccessToast'), {
-          description: t('importSuccessToastDesc', {
-            count: summary.rowsProcessed,
-          }),
-        });
-        return;
+        case 400: {
+          const body = (await res.json().catch(() => ({}))) as Record<
+            string,
+            unknown
+          >;
+          const missingColumns = Array.isArray(body['missingColumns'])
+            ? (body['missingColumns'] as string[])
+            : undefined;
+          setPhase({
+            kind: 'error',
+            title: missingColumns
+              ? tErrors('headerInvalidTitle')
+              : tErrors('badRequestTitle'),
+            detail: String(
+              body['detail'] ?? body['title'] ?? tErrors('badRequestDetail'),
+            ),
+            ...(missingColumns ? { missingColumns } : {}),
+          });
+          return;
+        }
+        case 413:
+          setPhase({
+            kind: 'error',
+            title: tErrors('fileTooLargeTitle'),
+            detail: tErrors('fileTooLargeDetail'),
+          });
+          return;
+        case 429: {
+          const retryAfterRaw = res.headers.get('Retry-After') ?? '';
+          const retryAfterSeconds = Number.isFinite(Number(retryAfterRaw))
+            ? retryAfterRaw
+            : '60';
+          setPhase({
+            kind: 'error',
+            title: tErrors('rateLimitedTitle'),
+            detail: tErrors('rateLimitedDetail', {
+              retryAfter: retryAfterSeconds,
+            }),
+          });
+          return;
+        }
+        case 504:
+          setPhase({
+            kind: 'error',
+            title: tErrors('timeoutTitle'),
+            detail: tErrors('timeoutDetail'),
+          });
+          return;
       }
-      case 400: {
-        const body = (await res.json().catch(() => ({}))) as Record<
-          string,
-          unknown
-        >;
-        const missingColumns = Array.isArray(body['missingColumns'])
-          ? (body['missingColumns'] as string[])
-          : undefined;
-        setPhase({
-          kind: 'error',
-          title: missingColumns
-            ? tErrors('headerInvalidTitle')
-            : tErrors('badRequestTitle'),
-          detail: String(
-            body['detail'] ?? body['title'] ?? tErrors('badRequestDetail'),
-          ),
-          ...(missingColumns ? { missingColumns } : {}),
-        });
-        return;
-      }
-      case 413:
-        setPhase({
-          kind: 'error',
-          title: tErrors('fileTooLargeTitle'),
-          detail: tErrors('fileTooLargeDetail'),
-        });
-        return;
-      case 429: {
-        // L-2: parse Retry-After defensively — header spec allows
-        // delta-seconds OR HTTP-date. Non-numeric → fall back to "60".
-        const retryAfterRaw = res.headers.get('Retry-After') ?? '';
-        const retryAfterSeconds = Number.isFinite(Number(retryAfterRaw))
-          ? retryAfterRaw
-          : '60';
-        setPhase({
-          kind: 'error',
-          title: tErrors('rateLimitedTitle'),
-          detail: tErrors('rateLimitedDetail', {
-            retryAfter: retryAfterSeconds,
-          }),
-        });
-        return;
-      }
-      case 504:
-        setPhase({
-          kind: 'error',
-          title: tErrors('timeoutTitle'),
-          detail: tErrors('timeoutDetail'),
-        });
-        return;
+      const detail = await parseProblemDetail(res, tErrors('unexpectedDetail'));
+      setPhase({
+        kind: 'error',
+        title: tErrors('unexpectedTitle'),
+        detail,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, tErrors],
+  );
+
+  // Mismatch override — re-submit current preview with force_proceed=true.
+  const onContinueDespiteMismatch = useCallback(() => {
+    setMismatchDialog({ open: false, priorImports: [] });
+    if (phase.kind === 'preview') {
+      void submitImport(phase.file, true);
     }
-    const detail = await parseProblemDetail(res, tErrors('unexpectedDetail'));
-    setPhase({
-      kind: 'error',
-      title: tErrors('unexpectedTitle'),
-      detail,
-    });
-  }, [phase, t, tErrors]);
+  }, [phase, submitImport]);
+
+  const onSubmit = useCallback(async () => {
+    if (phase.kind !== 'preview') return;
+    await submitImport(phase.file, false);
+  }, [phase, submitImport]);
 
   const resetToUpload = useCallback(() => setPhase({ kind: 'idle' }), []);
 
@@ -272,6 +347,29 @@ export function CsvMappingForm() {
   return (
     <div className="flex flex-col gap-4">
       {liveRegion}
+      {/* F6.1 (T026) — inline event-create modal (MVP placeholder). */}
+      <EventCreateInlineModal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+        onCreated={(event) => {
+          // Auto-select the new event so the admin can immediately
+          // proceed to upload the CSV. The EventPicker's refresh path
+          // re-fetches the events list on next focus; we set the
+          // selectedEventId directly here so the dropdown updates
+          // without a round-trip.
+          setSelectedEventId(event.eventId);
+          setSelectedEventLabel(event.name);
+        }}
+      />
+      {/* F6.1 (T027) — FR-019b event-mismatch warning. */}
+      <EventMismatchWarningDialog
+        open={mismatchDialog.open}
+        onOpenChange={(open) =>
+          setMismatchDialog((prev) => ({ ...prev, open }))
+        }
+        priorImports={mismatchDialog.priorImports}
+        onContinue={onContinueDespiteMismatch}
+      />
       {phase.kind === 'completed' ? (
         <>
           <CsvImportResult result={phase.summary} />
@@ -293,6 +391,34 @@ export function CsvMappingForm() {
             <CardDescription>{t('formDescription')}</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
+            {/* F6.1 (T028 · 4-phase wizard) — EventPicker rendered ABOVE
+                the file input across every non-completed phase. Admin
+                can change selection between attempts; the picker is the
+                authoritative event binding. */}
+            <div className="flex flex-col gap-2">
+              <Label>{t('eventPicker.fieldLabel')}</Label>
+              <EventPicker
+                value={selectedEventId}
+                onChange={(eventId, event) => {
+                  setSelectedEventId(eventId);
+                  setSelectedEventLabel(event?.name ?? null);
+                }}
+                filenameHint={
+                  phase.kind === 'preview' ? phase.file.name : null
+                }
+                onCreateNew={() => setCreateModalOpen(true)}
+              />
+              <p className="text-caption text-muted-foreground">
+                {t('eventPicker.fieldHelp')}
+              </p>
+              {selectedEventLabel !== null && (
+                <p className="text-caption text-muted-foreground">
+                  <strong>{t('eventPicker.selectedPrefix')}:</strong>{' '}
+                  {selectedEventLabel}
+                </p>
+              )}
+            </div>
+
             {phase.kind === 'error' ? (
               <ErrorPanel phase={phase} onRetry={resetToUpload} />
             ) : null}
@@ -326,6 +452,12 @@ export function CsvMappingForm() {
                 onCancel={resetToUpload}
                 submitLabel={t('confirmCta')}
                 cancelLabel={t('cancelCta')}
+                submitDisabled={selectedEventId === null}
+                submitDisabledReason={
+                  selectedEventId === null
+                    ? t('eventPicker.submitGatedHint')
+                    : null
+                }
               />
             )}
 
@@ -391,6 +523,9 @@ interface PreviewPanelProps {
   readonly onCancel: () => void;
   readonly submitLabel: string;
   readonly cancelLabel: string;
+  /** F6.1 — gate submit when no event picked. */
+  readonly submitDisabled?: boolean;
+  readonly submitDisabledReason?: string | null;
 }
 
 function PreviewPanel({
@@ -400,6 +535,8 @@ function PreviewPanel({
   onCancel,
   submitLabel,
   cancelLabel,
+  submitDisabled = false,
+  submitDisabledReason = null,
 }: PreviewPanelProps) {
   const t = useTranslations('admin.events.import.preview');
   const hasMissing = preview.missingRequired.length > 0;
@@ -507,24 +644,31 @@ function PreviewPanel({
         </div>
       </section>
 
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          onClick={onSubmit}
-          disabled={hasMissing}
-          className="min-h-11"
-        >
-          <UploadCloud aria-hidden="true" className="mr-2 size-4" />
-          {submitLabel}
-        </Button>
-        <Button
-          type="button"
-          onClick={onCancel}
-          variant="outline"
-          className="min-h-11"
-        >
-          {cancelLabel}
-        </Button>
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            onClick={onSubmit}
+            disabled={hasMissing || submitDisabled}
+            className="min-h-11"
+          >
+            <UploadCloud aria-hidden="true" className="mr-2 size-4" />
+            {submitLabel}
+          </Button>
+          <Button
+            type="button"
+            onClick={onCancel}
+            variant="outline"
+            className="min-h-11"
+          >
+            {cancelLabel}
+          </Button>
+        </div>
+        {submitDisabled && submitDisabledReason !== null ? (
+          <p className="text-caption text-muted-foreground" aria-live="polite">
+            {submitDisabledReason}
+          </p>
+        ) : null}
       </div>
     </div>
   );

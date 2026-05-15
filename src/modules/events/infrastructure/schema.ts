@@ -167,6 +167,14 @@ export const eventRegistrations = pgTable(
     piiPseudonymisedAt: timestamp('pii_pseudonymised_at', {
       withTimezone: true,
     }),
+    // F6.1 (Feature 013 · migration 0140) — PDPA consent acknowledgement
+    // classification per attendee. Tri-state BOOLEAN NULL: true (granted)
+    // / false (withdrawn) / null (unknown — default for webhook ingest +
+    // generic-CSV rows without consent column). Populated by F6.1 CSV-
+    // import path; webhook ingest leaves it NULL until F6.2.
+    attendeePdpaConsentAcknowledged: boolean(
+      'attendee_pdpa_consent_acknowledged',
+    ),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.tenantId, t.registrationId] }),
@@ -268,3 +276,72 @@ export type EventcreateIdempotencyReceiptRow =
   typeof eventcreateIdempotencyReceipts.$inferSelect;
 export type NewEventcreateIdempotencyReceiptRow =
   typeof eventcreateIdempotencyReceipts.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// 5. csv_import_records  (migration 0139 — F6.1 / Feature 013)
+// ---------------------------------------------------------------------------
+
+export const csvImportRecords = pgTable(
+  'csv_import_records',
+  {
+    recordId: uuid('record_id').notNull().defaultRandom(),
+    tenantId: text('tenant_id').notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    eventId: uuid('event_id').notNull(),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+
+    sourceFormat: text('source_format').notNull(),
+    originalFilename: text('original_filename').notNull(),
+    originalSizeBytes: integer('original_size_bytes').notNull(),
+
+    rowsTotal: integer('rows_total').notNull(),
+    rowsProcessed: integer('rows_processed').notNull(),
+    rowsAlreadyImported: integer('rows_already_imported').notNull(),
+    rowsSkipped: integer('rows_skipped').notNull(),
+    rowsFailed: integer('rows_failed').notNull(),
+
+    outcome: text('outcome').notNull(),
+    durationMs: integer('duration_ms').notNull(),
+
+    errorCsvBlobUrl: text('error_csv_blob_url'),
+    errorCsvExpiresAt: timestamp('error_csv_expires_at', {
+      withTimezone: true,
+    }),
+
+    eventcreateAdapterMetadata: jsonb('eventcreate_adapter_metadata').$type<
+      Record<string, unknown>
+    >(),
+
+    /** FR-019a — SHA-256 truncated to 16 hex chars over Attending email list. */
+    attendeeFingerprint: text('attendee_fingerprint'),
+
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.tenantId, t.recordId] }),
+    tenantUploadedAtDescIdx: index(
+      'idx_csv_import_records_tenant_uploaded_at_desc',
+    ).on(t.tenantId, t.uploadedAt.desc()),
+    tenantEventIdIdx: index('idx_csv_import_records_tenant_event_id').on(
+      t.tenantId,
+      t.eventId,
+    ),
+    // Note: partial indexes (WHERE clauses) declared in migration SQL but
+    // omitted from drizzle-kit hint here — drizzle-kit `index()` does not
+    // currently support `where:` in 0.31.x. Schema introspection accuracy
+    // is sufficient for the use-case query planner.
+    actorUploadedAtDescIdx: index(
+      'idx_csv_import_records_actor_uploaded_at_desc',
+    ).on(t.tenantId, t.actorUserId, t.uploadedAt.desc()),
+  }),
+);
+
+export type CsvImportRecordRow = typeof csvImportRecords.$inferSelect;
+export type NewCsvImportRecordRow = typeof csvImportRecords.$inferInsert;

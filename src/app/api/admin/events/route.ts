@@ -24,8 +24,29 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { runListEvents } from '@/lib/events-admin-deps';
+import {
+  runCreateEvent,
+  createEventRateLimitCheck,
+} from '@/lib/events-create-deps';
+import { asUserId } from '@/modules/auth';
+import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
+import { problemResponse } from '@/lib/http/problem-response';
 import { clampPageSize, coerceBoolean } from './_lib/query-helpers';
 import { emitEventsRoleViolation } from './_lib/role-violation-audit';
+
+const CreateEventBodySchema = z.object({
+  externalId: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9][a-z0-9-]{0,99}$/i, {
+      message:
+        'externalId must be 1-100 chars, alphanumeric + hyphen only (start with alphanumeric)',
+    }),
+  name: z.string().min(1).max(500),
+  startDate: z.string().datetime({ offset: true }),
+  category: z.string().min(1).max(100).nullable().optional().default(null),
+});
 
 const ListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
@@ -201,4 +222,170 @@ export async function GET(request: NextRequest) {
     status: 200,
     headers: responseHeaders,
   });
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/events — F6.1 (T026 full impl) admin-manual event creation
+// ---------------------------------------------------------------------------
+//
+// Closes the "no way to seed events" gap that EventCreate's Enterprise-
+// tier API gating opened (project_eventcreate_api_gated memory). Admin
+// uses this surface from the /admin/events/import page's inline-create
+// modal to seed events before CSV upload can target them.
+//
+// Authz: admin ONLY (manager/member → 404 + audit). Rate-limit 30/hr
+// per (tenant, actor) for tenant-onboarding burst tolerance.
+
+export async function POST(request: NextRequest) {
+  if (!env.features.f6EventCreate) {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  const session = await getCurrentSession();
+  if (!session) return new NextResponse(null, { status: 404 });
+  const role = session.user.role;
+  if (role !== 'admin') {
+    // manager + member → 404 + role_violation_blocked audit. The
+    // helper accepts only `'member'` for the actorRole field — pass
+    // through role narrowing.
+    if (role === 'manager' || role === 'member') {
+      await emitEventsRoleViolation(request, {
+        actorUserId: session.user.id,
+        actorRole: role,
+        attemptedRoute: '/api/admin/events',
+        attemptedAction: 'create_event',
+        eventId: null,
+      });
+    }
+    return new NextResponse(null, { status: 404 });
+  }
+
+  let tenantCtx: ReturnType<typeof resolveTenantFromRequest>;
+  try {
+    tenantCtx = resolveTenantFromRequest(request);
+  } catch (e) {
+    logger.error(
+      {
+        event: 'admin_events_create_tenant_resolve_failed',
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] resolveTenantFromRequest threw on create-event route',
+    );
+    return NextResponse.json(
+      { title: 'Internal Server Error' },
+      { status: 500 },
+    );
+  }
+
+  // Rate-limit (30/hr per tenant+actor).
+  const rl = await createEventRateLimitCheck(tenantCtx.slug, session.user.id);
+  if (!rl.success) {
+    const retryAfter = retryAfterSecondsFromRl({ reset: rl.resetAtUnixMs });
+    return problemResponse(
+      429,
+      'rate-limited',
+      'Too many requests',
+      `Create-event rate limit (30/hour per admin) exceeded. Retry after ${retryAfter}s.`,
+      { headers: { 'Retry-After': retryAfter.toString() } },
+    );
+  }
+
+  // Parse + validate JSON body.
+  let rawBody: unknown;
+  try {
+    rawBody = await request.json();
+  } catch {
+    return problemResponse(
+      400,
+      'invalid-json',
+      'Bad Request',
+      'Request body must be valid JSON.',
+    );
+  }
+  const parsed = CreateEventBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return problemResponse(
+      400,
+      'validation-error',
+      'Validation failed',
+      parsed.error.issues[0]?.message ?? 'Invalid input',
+      { extras: { issues: parsed.error.issues } },
+    );
+  }
+
+  // Dispatch use-case.
+  const outcome = await runCreateEvent({
+    tenantSlug: tenantCtx.slug,
+    actorUserId: asUserId(session.user.id),
+    externalId: parsed.data.externalId,
+    name: parsed.data.name,
+    startDate: new Date(parsed.data.startDate),
+    category: parsed.data.category ?? null,
+  });
+
+  switch (outcome.kind) {
+    case 'created':
+      return NextResponse.json(
+        {
+          kind: 'created',
+          event: {
+            eventId: outcome.event.eventId,
+            externalId: outcome.event.externalId,
+            name: outcome.event.name,
+            startDate: outcome.event.startDate.toISOString(),
+            category: outcome.event.category,
+          },
+        },
+        { status: 201 },
+      );
+    case 'already_exists':
+      return NextResponse.json(
+        {
+          kind: 'already_exists',
+          event: {
+            eventId: outcome.event.eventId,
+            externalId: outcome.event.externalId,
+            name: outcome.event.name,
+            startDate: outcome.event.startDate.toISOString(),
+            category: outcome.event.category,
+          },
+        },
+        { status: 200 },
+      );
+    case 'invalid_input':
+      return problemResponse(
+        400,
+        'validation-error',
+        'Validation failed',
+        outcome.reason,
+        { extras: { field: outcome.field } },
+      );
+    case 'db_error':
+    case 'unexpected_error':
+      logger.error(
+        {
+          event: 'admin_events_create_failed',
+          tenantSlug: tenantCtx.slug,
+          kind: outcome.kind,
+          err: outcome.message,
+        },
+        '[F6.1] createEvent use-case returned error outcome',
+      );
+      return problemResponse(
+        500,
+        'internal',
+        'Internal Server Error',
+        'Failed to create event. Retry; if it persists, contact support.',
+      );
+    default: {
+      const _exhaustive: never = outcome;
+      void _exhaustive;
+      return problemResponse(
+        500,
+        'internal',
+        'Internal Server Error',
+        'createEvent returned an unrecognised outcome.',
+      );
+    }
+  }
 }

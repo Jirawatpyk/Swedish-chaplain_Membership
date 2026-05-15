@@ -64,6 +64,7 @@ import {
   eventRegistrations,
   tenantWebhookConfigs,
   eventcreateIdempotencyReceipts,
+  csvImportRecords,
 } from '@/modules/events/infrastructure/schema';
 
 export interface TestTenant {
@@ -174,12 +175,17 @@ export async function createTestTenant(
       .delete(consumedLinkTokens)
       .where(eq(consumedLinkTokens.tenantId, slug));
     // F6 cleanup (Phase 3) — delete in FK order: event_registrations
-    // (FK to events on composite tenant_id+event_id) → events. The
-    // tenant_webhook_configs + eventcreate_idempotency_receipts tables
-    // have no outbound FK; cleanup order is independent.
+    // (FK to events on composite tenant_id+event_id) → csv_import_records
+    // (F6.1 FK to events on composite tenant_id+event_id ON DELETE
+    // RESTRICT) → events. The tenant_webhook_configs +
+    // eventcreate_idempotency_receipts tables have no outbound FK;
+    // cleanup order is independent.
     await db
       .delete(eventRegistrations)
       .where(eq(eventRegistrations.tenantId, slug));
+    await db
+      .delete(csvImportRecords)
+      .where(eq(csvImportRecords.tenantId, slug));
     await db.delete(events).where(eq(events.tenantId, slug));
     await db
       .delete(tenantWebhookConfigs)

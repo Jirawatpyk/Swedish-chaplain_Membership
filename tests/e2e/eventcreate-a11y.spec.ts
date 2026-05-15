@@ -46,8 +46,18 @@ async function expectNoAxeViolations(
   await page.waitForFunction(() => document.title.length > 0, undefined, {
     timeout: 15_000,
   });
+  // Exclude Base UI's internal focus-guard spans. Base UI (the Radix
+  // successor used by shadcn/ui v3) injects invisible
+  // `<span role="button" data-base-ui-focus-guard>` sentinels around
+  // every Dialog / AlertDialog to redirect Tab/Shift-Tab inside the
+  // modal. axe flags them under `aria-command-name` on WebKit because
+  // they carry `role="button"` without an accessible name; they are
+  // **intentionally invisible** (clip-path inset(50%), 1×1 px) and
+  // not user-interactive. The exemption mirrors the documented
+  // pattern in `tests/e2e/idle-warning-a11y.spec.ts:64-67`.
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .exclude('[data-base-ui-focus-guard]')
     .analyze();
   const seriousOrWorse = results.violations.filter(
     (v) => v.impact === 'serious' || v.impact === 'critical',
@@ -297,6 +307,164 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
     await expectNoAxeViolations(
       page,
       '/admin/events/import (completed-with-errors expanded state)',
+    );
+  });
+
+  /**
+   * T019 (Feature 013 · F6.1) — three new CSV-import visual states added by F6.1:
+   *   - EventPicker dropdown (idle) — combobox role + min-h-11 trigger
+   *   - EventCreate inline-create modal (open) — Radix Dialog placeholder
+   *   - Event-mismatch warning dialog (open) — Radix AlertDialog
+   *
+   * Each state introduces distinct ARIA + colour-contrast surfaces that
+   * Phase 7's three scans (idle / preview-error / completed) do not
+   * cover. Verifies the F6.1 wizard upgrade keeps WCAG 2.1 AA parity.
+   */
+  test('admin CSV import F6.1 — event-picker visible @a11y', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    // EventPicker renders as a combobox above the file input.
+    await expect(
+      page.getByRole('combobox').first(),
+    ).toBeVisible({ timeout: 10_000 });
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (event-picker idle state)',
+    );
+  });
+
+  test('admin CSV import F6.1 — inline create modal open @a11y', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Trigger "Create new event" → opens the placeholder Dialog.
+    const createBtn = page.getByRole('button', {
+      name: /create new event|สร้างอีเวนต์ใหม่|skapa nytt evenemang/i,
+    });
+    await expect(createBtn).toBeVisible({ timeout: 10_000 });
+    await createBtn.click();
+    // Dialog mounted — role=dialog with aria-modal=true.
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (inline-create modal open)',
+    );
+  });
+
+  test('admin CSV import F6.1 — event-mismatch warning dialog open @a11y', async ({
+    page,
+  }) => {
+    // Drive the FR-019b safety-net dialog into view via the SAME flow
+    // a real admin would trigger:
+    //   1. Use the inline-create modal (POST /api/admin/events) to seed
+    //      two distinct events under unique externalIds.
+    //   2. Upload a tiny EventCreate-format CSV against eventA → completes
+    //      and persists `csv_import_records.attendee_fingerprint`.
+    //   3. Re-select eventB in the picker + upload SAME CSV → safety-net
+    //      query returns prior import → AlertDialog opens with priorImports.
+    //   4. Run axe scan against the AlertDialog DOM (different ARIA +
+    //      colour-contrast surface than the inline-create Dialog).
+    //
+    // Timeouts: each CSV upload hits live Neon → 60s ceiling per page
+    // is generous (mirrors completed-with-result test budget).
+    test.setTimeout(180_000);
+
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Build a tiny 2-row EventCreate CSV — minimum needed for the
+    // safety-net fingerprint to be non-null (≥1 Attending email).
+    const ts = Date.now();
+    const eventCreateCsv = [
+      'Basic Info,Status,First Name,Last Name,Email,Attendee ID,Notes,Personal Data Protection Consent',
+      `evt,Attending,Anna,Andersson,a11y-mismatch-anna-${ts}@example.com,att-${ts}-1,Paid,I hereby acknowledge`,
+      `evt,Attending,Björn,Berg,a11y-mismatch-bjorn-${ts}@example.com,att-${ts}-2,Paid,I hereby acknowledge`,
+    ].join('\n');
+
+    // Helper: seed an event via the POST /api/admin/events route.
+    const seedEvent = async (
+      externalId: string,
+      name: string,
+    ): Promise<string> => {
+      const res = await page.request.post('/api/admin/events', {
+        data: {
+          externalId,
+          name,
+          startDate: new Date(ts + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          category: null,
+        },
+      });
+      if (![200, 201].includes(res.status())) {
+        throw new Error(
+          `seedEvent ${externalId} failed: ${res.status()} ${await res.text()}`,
+        );
+      }
+      const body = (await res.json()) as {
+        event: { eventId: string };
+      };
+      return body.event.eventId;
+    };
+
+    const eventAExternalId = `a11y-mismatch-a-${ts}`;
+    const eventBExternalId = `a11y-mismatch-b-${ts}`;
+    await seedEvent(eventAExternalId, `A11y Mismatch A ${ts}`);
+    await seedEvent(eventBExternalId, `A11y Mismatch B ${ts}`);
+
+    // Force-reload the page so the EventPicker re-fetches events.
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Step 1 — first upload targets eventA. Select via combobox.
+    await page.getByRole('combobox').first().click();
+    await page
+      .getByRole('option', { name: new RegExp(`A11y Mismatch A ${ts}`) })
+      .click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'a11y-mismatch.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(eventCreateCsv, 'utf8'),
+    });
+    await page
+      .getByRole('button', { name: /import|confirm|upload/i })
+      .click();
+    // Wait for result card → confirms first import committed +
+    // persisted attendee_fingerprint for the safety-net query.
+    await expect(
+      page.locator('[data-testid="csv-import-result"]'),
+    ).toBeVisible({ timeout: 90_000 });
+
+    // Reset back to upload phase + select eventB.
+    await page.getByRole('button', { name: /upload another|new/i }).click();
+    await page.getByRole('combobox').first().click();
+    await page
+      .getByRole('option', { name: new RegExp(`A11y Mismatch B ${ts}`) })
+      .click();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'a11y-mismatch.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(eventCreateCsv, 'utf8'),
+    });
+    await page
+      .getByRole('button', { name: /import|confirm|upload/i })
+      .click();
+
+    // Step 2 — safety net fires → AlertDialog visible.
+    await expect(page.getByRole('alertdialog')).toBeVisible({
+      timeout: 60_000,
+    });
+
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (event-mismatch warning dialog open)',
     );
   });
 });

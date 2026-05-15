@@ -36,6 +36,7 @@ import {
 } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
+import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -91,7 +92,10 @@ describe('NEW-L — deterministic time-budget short-circuit (no flaky env-depend
           ok({ wasFresh: false, originalProcessedAt: null }),
         ),
       } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
-    } as unknown as ImportCsvTxScopedPorts;
+        advisoryLockAcquirer: {
+      acquire: vi.fn(async () => {}),
+    } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
+  } as unknown as ImportCsvTxScopedPorts;
 
     const deps = {
       csvImporter: {
@@ -145,6 +149,7 @@ describe('NEW-L — deterministic time-budget short-circuit (no flaky env-depend
         tenantId: asTenantId('test-chamber-tb'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000301'),
         bytes: buildCsv(3),
+        selectedEvent: f6CsvTestSelectedEventStub,
         batchSize: 1,
         batchConcurrency: 1,
         timeBudgetMs: 8_000,
@@ -172,7 +177,10 @@ describe('NEW-L — deterministic time-budget short-circuit (no flaky env-depend
           ok({ wasFresh: false, originalProcessedAt: null }),
         ),
       } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
-    } as unknown as ImportCsvTxScopedPorts;
+        advisoryLockAcquirer: {
+      acquire: vi.fn(async () => {}),
+    } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
+  } as unknown as ImportCsvTxScopedPorts;
 
     const deps = {
       csvImporter: {
@@ -219,6 +227,7 @@ describe('NEW-L — deterministic time-budget short-circuit (no flaky env-depend
         tenantId: asTenantId('test-chamber-tb-ok'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000302'),
         bytes: buildCsv(3),
+        selectedEvent: f6CsvTestSelectedEventStub,
         batchSize: 1,
         batchConcurrency: 1,
         timeBudgetMs: 10_000,

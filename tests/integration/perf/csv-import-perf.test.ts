@@ -36,6 +36,7 @@ import { importCsv, makeImportCsvDeps } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 const RUN_PERF = process.env['RUN_PERF'] === '1';
 
@@ -140,6 +141,7 @@ describe('SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB', () => {
           tenantId: asTenantId(tenant.ctx.slug),
           actorUserId: asUserId('00000000-0000-0000-0000-000000000099'),
           bytes: csvBytes,
+          selectedEvent: f6CsvTestSelectedEventStub,
           // Override the use-case's default 55s safety margin to match
           // the bench's explicit duration budget (parameterised so
           // dev vs prod-region runs can tune).

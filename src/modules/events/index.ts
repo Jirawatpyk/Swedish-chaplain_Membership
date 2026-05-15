@@ -401,7 +401,26 @@ export type {
   ImportCsvOutcome,
   ImportCsvTxScopedPorts,
   ImportSummary,
+  ImportSummaryErrorRow,
+  SelectedEventForImport,
 } from './application/use-cases/import-csv';
+
+// F6.1 (Feature 013 · T026 full impl) — admin-manual event creation.
+// Closes the "no way to seed events" gap that EventCreate API-gating
+// opened (project_eventcreate_api_gated memory).
+export { createEvent } from './application/use-cases/create-event';
+export type {
+  CreateEventInput,
+  CreateEventOutput,
+  CreateEventOutcome,
+  CreateEventDeps,
+  CreateEventTxScopedPorts,
+} from './application/use-cases/create-event';
+
+// Re-export auth helpers that composition adapters need without
+// reaching deep into the auth barrel.
+export { asUserId, type UserId } from '@/modules/auth';
+export { asTenantId } from '@/modules/members';
 
 // Phase 5 review-fix S-06 (2026-05-13) — surface the Phase 5
 // composition factories through the barrel so

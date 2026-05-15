@@ -16,8 +16,16 @@
  * Pure TypeScript — Constitution Principle III.
  */
 
-export const SOURCES = ['eventcreate'] as const;
+export const SOURCES = ['eventcreate', 'admin_manual'] as const;
 export type Source = (typeof SOURCES)[number];
+
+// F6.1 (Feature 013 · T026 full impl): `'admin_manual'` denotes events
+// the admin created via the inline-create modal on /admin/events/import.
+// Webhook ingest cannot create events because EventCreate's native API
+// is behind their Enterprise tier (project_eventcreate_api_gated memory)
+// — making CSV import the primary path AND requiring admins to seed
+// events manually. The CSV import path still uses `'eventcreate'` source
+// because the CSV file IS an EventCreate-format export.
 
 export function isSource(value: unknown): value is Source {
   return (

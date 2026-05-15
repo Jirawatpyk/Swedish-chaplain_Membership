@@ -25,6 +25,7 @@ import { importCsv, makeImportCsvDeps } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 function buildBudgetCsv(rows: number): Uint8Array {
   const header =
@@ -79,6 +80,7 @@ describe('H-10 — time-budget short-circuit semantics', () => {
           tenantId: asTenantId(tenant.ctx.slug),
           actorUserId: asUserId('00000000-0000-0000-0000-000000000077'),
           bytes: csvBytes,
+          selectedEvent: f6CsvTestSelectedEventStub,
           batchSize: BATCH_SIZE,
           batchConcurrency: 1,
           timeBudgetMs: 400,

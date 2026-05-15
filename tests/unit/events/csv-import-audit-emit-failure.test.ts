@@ -30,6 +30,7 @@ import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
+import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -86,6 +87,9 @@ function makeFakeDeps(opts: FakeDepsOpts): ImportCsvDeps {
         return ok({ wasFresh: false, originalProcessedAt: null });
       }),
     } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
+      advisoryLockAcquirer: {
+      acquire: vi.fn(async () => {}),
+    } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
   } as unknown as ImportCsvTxScopedPorts;
 
   return {
@@ -133,6 +137,7 @@ describe('NEW-J — C-1 + C-2 audit-emit failure observability', () => {
         tenantId: asTenantId('test-chamber-audit'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000111'),
         bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
       },
       deps,
     );
@@ -180,6 +185,7 @@ describe('NEW-J — C-1 + C-2 audit-emit failure observability', () => {
         tenantId: asTenantId('test-chamber-row-fail'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000113'),
         bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
       },
       deps,
     );
@@ -227,6 +233,7 @@ describe('NEW-J — C-1 + C-2 audit-emit failure observability', () => {
         tenantId: asTenantId('test-chamber-failurestage'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000114'),
         bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
       },
       deps,
     );
@@ -277,6 +284,7 @@ describe('NEW-J — C-1 + C-2 audit-emit failure observability', () => {
         tenantId: asTenantId('test-chamber-audit-ok'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000112'),
         bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
       },
       deps,
     );

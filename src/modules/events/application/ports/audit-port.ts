@@ -123,6 +123,27 @@ export const F6_AUDIT_EVENT_TYPES = [
   // rollback bucket, polluting incident triage. Backed by migration
   // 0137 enum extension.
   'webhook_ingest_precondition_failed',
+  // F6.1 (Feature 013 · T008) — CSV-import audit event types added in
+  // migration 0141. `csv_import_error_csv_downloaded` is wired by the
+  // signed-URL route in US5 (deferred post-MVP). `csv_import_cross_tenant_probe`
+  // is HIGH-severity per Constitution Principle I clause 4 — emitted by
+  // the timing-safe event lookup in route.ts when `event_id` belongs to
+  // another tenant + by the signed-URL route's cross-tenant probe path.
+  // `csv_import_event_mismatch_overridden` is WARN — emitted by
+  // `importCsv` when admin re-submits with `force_proceed=true` to
+  // bypass the FR-019b safety net (gives operators visibility into how
+  // often the safety net fires + how often admin overrides).
+  'csv_import_error_csv_downloaded',
+  'csv_import_cross_tenant_probe',
+  'csv_import_event_mismatch_overridden',
+  // F6.1 (Feature 013 · T026 full impl) — admin-manual event creation
+  // event. Emitted by `createEvent` use-case when an admin uses the
+  // inline-create modal on /admin/events/import. Backed by migration
+  // 0143 enum extension. Severity: 'info' — accountability trail for
+  // who seeded which event manually (webhook ingest cannot fire this
+  // because the upsert path emits no such event — manual creation is
+  // the ONLY surface that fires `event_created`).
+  'event_created',
   // NB: migration `0138_f6_wizard_privacy_notice_acknowledged_audit.sql`
   // added a `wizard_privacy_notice_acknowledged` value to the Postgres
   // `audit_event_type` enum during round 9. The TS surface for that
@@ -435,6 +456,13 @@ export interface AuditPayloads {
      * forward-compatible.
      */
     readonly timedOut?: boolean;
+    /**
+     * F6.1 (Feature 013 · Q5/R2) — adapter detection result. Optional
+     * for backward-compatibility with Phase 7 audit rows (interpreted as
+     * `generic_csv` for analytics purposes when absent — Phase 7 did
+     * not have an EventCreate adapter).
+     */
+    readonly sourceFormat?: 'eventcreate_csv' | 'generic_csv';
   };
   csv_import_row_failed: {
     readonly severity: Severity;
@@ -535,6 +563,104 @@ export interface AuditPayloads {
      */
     readonly stage: 'config_load_failed';
     readonly errorName: string;
+  };
+
+  // --- F6.1 (Feature 013) CSV-import audit events (3) -------------------
+  //
+  // Source-of-truth contract: specs/013-csv-import-eventcreate-format/
+  // contracts/audit-port.md. Postgres enum extended in migration 0141.
+  // All 3 use the F6 default 5-year retention (no tax-document overlap).
+
+  /**
+   * Emitted on every successful signed-URL generation in
+   * `GET /api/admin/events/import/{recordId}/error-csv` (US5 route,
+   * deferred post-MVP). PDPA / GDPR audit trail for any PII access —
+   * the error CSV contains attendee emails + names + companies, even
+   * though admin already had access via the original upload. The
+   * re-download is a discrete access event auditors expect to see.
+   *
+   * Severity: `info` — logged for accountability, not alerting.
+   */
+  csv_import_error_csv_downloaded: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    readonly recordId: string;
+    readonly downloadedAt: Date;
+    /** First hop from X-Forwarded-For. */
+    readonly sourceIp: string;
+  };
+
+  /**
+   * Emitted when an admin probes a `csv_import_records.record_id` or an
+   * `events.event_id` that belongs to a different tenant. Constitution
+   * Principle I clause 4 — HIGH-severity security event. SRE alerts on
+   * `rate > 0`. The audit row enables the security team to trace which
+   * admin / which IP / which timestamps, basis for further investigation
+   * if a pattern emerges.
+   *
+   * Two probe surfaces share this event type:
+   *   - POST /api/admin/events/import — `event_id` form field belongs
+   *     to another tenant (route handler T023 emits via standalone tx).
+   *   - GET /api/admin/events/import/{recordId}/error-csv — `recordId`
+   *     belongs to another tenant (US5 deferred surface).
+   */
+  csv_import_cross_tenant_probe: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    /**
+     * The probed identifier that belongs to another tenant. May be
+     * either a `record_id` (signed-URL surface) or an `event_id`
+     * (import surface) depending on which probe path fired.
+     */
+    readonly probedId: string;
+    /** Which surface caught the probe — for SRE dashboard filtering. */
+    readonly probeSurface: 'import_event_id' | 'error_csv_record_id';
+    readonly sourceIp: string;
+    readonly probedAt: Date;
+  };
+
+  /**
+   * Emitted when an admin overrides the FR-019b event-mismatch warning
+   * by re-submitting the upload form with `force_proceed=true`. Provides
+   * forensic trail for the case where the safety net was triggered but
+   * the admin proceeded anyway. Feeds the tuning decision on whether to
+   * tighten the 30-day window, raise warning prominence, or relax.
+   *
+   * Severity: `warn` — admin override of a safety prompt, not a
+   * security event but worth elevated visibility for post-launch tuning.
+   */
+  csv_import_event_mismatch_overridden: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    /** The new import record just committed after override. */
+    readonly recordId: string;
+    /** Event the admin chose to import to. */
+    readonly currentEventId: EventId;
+    /** Prior matching imports that triggered the warning. */
+    readonly priorRecordIds: ReadonlyArray<string>;
+    /** Events those prior imports targeted (parallel to priorRecordIds). */
+    readonly priorEventIds: ReadonlyArray<EventId>;
+    readonly overriddenAt: Date;
+  };
+
+  /**
+   * F6.1 (Feature 013 · T026 full impl) — admin manually created an
+   * event via the /admin/events/import inline-create modal. Closes the
+   * "no way to seed events" gap that EventCreate API-gating opened
+   * (project_eventcreate_api_gated memory).
+   *
+   * Severity: 'info' — operational accountability, not security.
+   * Emitted AFTER `eventsRepo.upsert` returns eventCreated=true.
+   */
+  event_created: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    readonly eventId: EventId;
+    readonly externalId: string;
+    readonly source: 'admin_manual';
+    readonly name: string;
+    readonly startDate: Date;
+    readonly category: string | null;
   };
 
 }

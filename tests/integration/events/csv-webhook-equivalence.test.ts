@@ -56,6 +56,7 @@ import {
 import { makeIngestWebhookAttendeeDeps } from '@/lib/events-webhook-deps';
 import { asUserId } from '@/modules/auth';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 // ---------------------------------------------------------------------------
 // Fixture builder — 100 attendees × 5 events × diverse match types.
@@ -359,6 +360,7 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
       tenantSlug: tenantB.ctx.slug,
       actorUserId: asUserId('00000000-0000-0000-0000-000000000099'),
       bytes: csvBytes,
+      selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: f6CsvTestSelectedEventStub.eventId as string },
     });
     expect(csvResult.kind).toBe('completed');
     if (csvResult.kind === 'completed') {

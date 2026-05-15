@@ -67,11 +67,22 @@
  *   - tasks.md T094 line 225: "batched 100 rows per tx; per-row
  *     failure isolation".
  */
+import { randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
+import { asLockKey } from '../ports/advisory-lock-acquirer';
 import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { MatchType } from '../../domain/value-objects/match-type';
+import type { EventId } from '../../domain/branded-types';
+import {
+  asCsvImportRecordId,
+  type CsvImportRecordId,
+} from '../../domain/csv-import-record-id';
+import {
+  computeAttendeeFingerprintFromEmails,
+  type CsvAdapterMode,
+} from '../../domain/eventcreate-csv-format';
 import {
   TxStageError,
   type FailureStage,
@@ -86,6 +97,11 @@ import type {
   AuditEmitError,
 } from '../ports/audit-port';
 import type { IdempotencyStore } from '../ports/idempotency-store';
+import type {
+  CsvImportRecordsRepository,
+  PriorImportMatch,
+} from '../ports/csv-import-records-repo';
+import type { ErrorCsvStore } from '../ports/error-csv-store';
 import type { Result } from '@/lib/result';
 import type { AuditEventId } from '@/modules/auth';
 import {
@@ -97,27 +113,70 @@ import {
 // Result + summary types
 // ---------------------------------------------------------------------------
 
+export interface ImportSummaryErrorRow {
+  readonly rowNumber: number;
+  readonly reason: string;
+  /** Present only when the row failed inside a savepoint via TxStageError. */
+  readonly failureStage?: FailureStage;
+}
+
 export interface ImportSummary {
+  /** F6.1 — total body rows the parser examined (Skipped + Processed + Failed + Already-imported). */
+  readonly rowsTotal: number;
   readonly rowsProcessed: number;
   readonly rowsAlreadyImported: number;
+  /** F6.1 — rows the parser rejected via the FR-007 Status filter (EventCreate format). */
+  readonly rowsSkipped: number;
+  /** F6.1 — explicit count = `errorRows.length` minus skipped (parser failures + savepoint failures). */
+  readonly rowsFailed: number;
   readonly eventsCreated: number;
   readonly eventsUpdated: number;
   readonly matchCounts: Readonly<Record<MatchType, number>>;
-  readonly errorRows: ReadonlyArray<{
-    readonly rowNumber: number;
-    readonly reason: string;
-  }>;
+  readonly errorRows: ReadonlyArray<ImportSummaryErrorRow>;
   readonly durationMs: number;
 }
 
 export type ImportCsvOutcome =
-  | { readonly kind: 'completed'; readonly summary: ImportSummary }
+  | {
+      readonly kind: 'completed';
+      /** F6.1 — `csv_import_records.record_id` for history page deep-link + signed-URL download. */
+      readonly recordId: CsvImportRecordId;
+      /** F6.1 — adapter mode detected at parse time (FR-001 / R2). */
+      readonly sourceFormat: CsvAdapterMode;
+      /** F6.1 — true iff `rowsFailed > 0` AND blob upload succeeded. */
+      readonly errorCsvAvailable: boolean;
+      readonly summary: ImportSummary;
+    }
   | {
       readonly kind: 'invalid_header';
       readonly missingColumns: ReadonlyArray<string>;
     }
-  | { readonly kind: 'timeout' }
+  | {
+      readonly kind: 'timeout';
+      /** F6.1 — partial-import record still committed; admins can re-upload idempotently. */
+      readonly recordId: CsvImportRecordId;
+      readonly sourceFormat: CsvAdapterMode;
+    }
+  | {
+      /**
+       * F6.1 (FR-019b) — the safety net detected an import within the
+       * last 30 days targeting a DIFFERENT event with the same attendee
+       * fingerprint. ZERO side effects (no csv_import_records row, no
+       * audit, no rows written). Admin re-submits with
+       * `forceProceed: true` to bypass.
+       */
+      readonly kind: 'event_mismatch_warning';
+      readonly priorImports: ReadonlyArray<PriorImportMatch>;
+    }
   | { readonly kind: 'unexpected_error'; readonly message: string };
+
+export interface SelectedEventForImport {
+  readonly eventId: EventId;
+  readonly externalId: string;
+  readonly name: string;
+  readonly startDate: Date;
+  readonly category: string | null;
+}
 
 export interface ImportCsvInput {
   /**
@@ -128,6 +187,38 @@ export interface ImportCsvInput {
   readonly actorUserId: UserId;
   readonly bytes: Uint8Array;
   readonly columnMapping?: ReadonlyMap<string, string>;
+  /**
+   * F6.1 (Feature 013 · T022) — Admin-selected F6 event from the
+   * upload-page dropdown. The composition layer (route → deps wrapper)
+   * fetches the event row from `EventsRepository.findById` AFTER the
+   * timing-safe ownership check + brand wraps the eventId. This payload
+   * is merged into every row before `processAttendeeInTx`, overriding
+   * any `event_*` columns in the CSV. The dropdown selection is
+   * authoritative — generic-CSV `event_*` columns are ignored at the
+   * importer-iteration layer.
+   */
+  readonly selectedEvent: SelectedEventForImport;
+  /**
+   * F6.1 (FR-019b/c) — admin bypass of the event-mismatch safety net.
+   * When `true` AND the safety net would have triggered, emit
+   * `csv_import_event_mismatch_overridden` audit (WARN severity) BEFORE
+   * proceeding with the normal commit flow. When `false`/absent + the
+   * safety net triggers, the use-case returns `event_mismatch_warning`
+   * with ZERO side effects.
+   */
+  readonly forceProceed?: boolean;
+  /**
+   * F6.1 — original CSV filename from the multipart upload. Persisted
+   * in `csv_import_records.original_filename` for the US5 history-page
+   * display (audit trail). Truncated to 512 chars defensively.
+   */
+  readonly originalFilename?: string;
+  /**
+   * F6.1 — opaque CSV-import record id. If omitted, the use-case
+   * generates a fresh UUID via `randomUUID()`. Exposed for test seams
+   * (deterministic recordId in fixture-based integration tests).
+   */
+  readonly recordId?: CsvImportRecordId;
   /**
    * Time budget in ms; default 55_000. **Soft guarantee**: gates "may
    * a worker start the NEXT batch?" — does NOT cancel a running batch
@@ -198,6 +289,24 @@ export interface ImportCsvDeps {
   readonly emitStandalone: <T extends F6AuditEventType>(
     entry: F6AuditEntry<T>,
   ) => Promise<Result<AuditEventId, AuditEmitError>>;
+  /**
+   * F6.1 (Feature 013 · T022) — Open a fresh tenant-scoped tx with
+   * `app.current_tenant` GUC set, and invoke `fn` with a Drizzle-backed
+   * `CsvImportRecordsRepository`. Each call opens its OWN tx so a failed
+   * batch tx (later in the use-case) doesn't roll back the placeholder
+   * import-record. The composition layer (deps factory) wires this to
+   * `runInTenant` + `makeDrizzleCsvImportRecordsRepository`.
+   */
+  readonly withImportRecordsTx: <T>(
+    tenantId: string,
+    fn: (repo: CsvImportRecordsRepository) => Promise<T>,
+  ) => Promise<T>;
+  /**
+   * F6.1 (Feature 013 · T021) — Tenant-scoped error-CSV blob storage.
+   * The use-case calls `put` when `rowsFailed > 0` so US5's download
+   * route can later issue a signed URL over the persisted bytes.
+   */
+  readonly errorCsvStore: ErrorCsvStore;
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +315,18 @@ export interface ImportCsvDeps {
 
 type RowOutcome =
   | { readonly kind: 'parse_failed'; readonly rowNumber: number; readonly reason: string }
+  | {
+      /**
+       * F6.1 (FR-007) — parser rejected the row via the EventCreate
+       * Status filter (`Status !== 'Attending'`). Counted in
+       * `rowsSkipped` (NOT `rowsFailed`); not written to the error-CSV
+       * blob and no `csv_import_row_failed` audit emitted (route maps
+       * these to a separate `errorRows` entry with a "Skipped:" prefix).
+       */
+      readonly kind: 'skipped';
+      readonly rowNumber: number;
+      readonly reason: string;
+    }
   | { readonly kind: 'duplicate'; readonly rowNumber: number }
   | {
       readonly kind: 'inserted';
@@ -226,6 +347,15 @@ type RowOutcome =
        */
       readonly failureStage: FailureStage;
     };
+
+/**
+ * F6.1 (Feature 013 · T022) — classify a parser-rejected row.
+ * `iterateEventCreateRows` yields `Skipped: Status=…` reasons for the
+ * FR-007 Status filter; everything else is a real parse failure.
+ */
+function isSkippedParserRow(reason: string): boolean {
+  return reason.startsWith('Skipped:');
+}
 
 function zeroMatchCounts(): Record<MatchType, number> {
   return {
@@ -341,6 +471,13 @@ async function processOneRowInSavepoint(
             ticketPricePaid: csvRow.ticket_price_thb ?? null,
             paymentStatus: csvRow.payment_status,
             registeredAt,
+            // F6.1 (FR-009 dedicated column) — `pdpaConsentAcknowledged`
+            // threaded through processAttendeeInTx → registrations repo
+            // → `event_registrations.attendee_pdpa_consent_acknowledged`
+            // BOOLEAN NULL column added by migration 0140. EventCreate
+            // adapter rows carry true/false/null per FR-009 classifier;
+            // generic-CSV rows omit (null at the column).
+            pdpaConsentAcknowledged: parsed.pdpaConsentAcknowledged ?? null,
             metadata: {},
           },
         },
@@ -396,12 +533,24 @@ async function processBatch(
   for (let i = 0; i < batch.length; i++) {
     const row = batch[i] as ParsedRow;
     if (!row.ok) {
-      await safeEmitRowFailed(deps, input, row.rowNumber, row.reason, row.rawExcerpt);
-      outcomes[i] = {
-        kind: 'parse_failed',
-        rowNumber: row.rowNumber,
-        reason: row.reason,
-      };
+      // F6.1 — `Skipped:` rows (EventCreate FR-007 Status filter) flow
+      // into the `rowsSkipped` counter and DO NOT emit
+      // `csv_import_row_failed` audit (they're EXPECTED non-attending
+      // statuses, not security/availability events worth alerting on).
+      if (isSkippedParserRow(row.reason)) {
+        outcomes[i] = {
+          kind: 'skipped',
+          rowNumber: row.rowNumber,
+          reason: row.reason,
+        };
+      } else {
+        await safeEmitRowFailed(deps, input, row.rowNumber, row.reason, row.rawExcerpt);
+        outcomes[i] = {
+          kind: 'parse_failed',
+          rowNumber: row.rowNumber,
+          reason: row.reason,
+        };
+      }
     } else {
       dbRows.push({ index: i, row });
     }
@@ -426,6 +575,27 @@ async function processBatch(
   const tentativeOutcomes: RowOutcome[] = new Array(dbRows.length);
   try {
     await deps.runInTenantTx(input.tenantId, async (batchPorts) => {
+      // F6.1 (Feature 013 · plan checkpoint) — per-(tenant, event)
+      // advisory lock at outer-batch-tx start. Namespace `csv-import:`
+      // is disjoint from F4 `invoicing:`, F5 `payments:`, F7
+      // `broadcasts:`, F8 `renewals:` per advisory-lock-namespacing
+      // convention. Serialises concurrent imports targeting the SAME
+      // (tenant, event) — second admin's batch waits until the first
+      // admin's batch commits (or rolls back).
+      //
+      // Trade-off: within a single import, the 3 batch-workers also
+      // serialise (each acquires the same lock). At SC-006 1k-row
+      // envelope this is ~10s wall-clock (10 batches × ~1s each) vs
+      // ~3.3s parallel; acceptable for correctness over throughput
+      // when correctness means "two concurrent admins can't both
+      // commit half-overlapping registrations and confuse the
+      // idempotency-receipt PK".
+      //
+      // pg_advisory_xact_lock auto-releases at tx-end (commit OR
+      // rollback) — no need for explicit unlock.
+      await batchPorts.advisoryLockAcquirer.acquire(
+        asLockKey(`csv-import:${input.tenantId}:${input.selectedEvent.eventId}`),
+      );
       for (let i = 0; i < dbRows.length; i++) {
         const { row } = dbRows[i]!;
         tentativeOutcomes[i] = await processOneRowInSavepoint(
@@ -598,16 +768,58 @@ export async function importCsv(
   const timeBudgetMs = input.timeBudgetMs ?? 55_000;
   const batchSize = Math.max(1, input.batchSize ?? 100);
   const batchConcurrency = Math.max(1, input.batchConcurrency ?? 3);
+  const recordId = input.recordId ?? asCsvImportRecordId(randomUUID());
 
-  // Phase 1: parse the CSV stream.
-  let parsed: Awaited<ReturnType<CsvImporter['parseStream']>>;
+  // F6.1 — Phase 1: parse the CSV stream with format detection.
+  // The new `parseStreamWithFormat` method detects EventCreate vs
+  // generic format from the header, translates EventCreate rows via
+  // the T010 adapter, and merges `selectedEvent` into every row.
+  const eventContext = {
+    externalId: input.selectedEvent.externalId,
+    name: input.selectedEvent.name,
+    startDate: input.selectedEvent.startDate,
+    category: input.selectedEvent.category,
+  };
+
+  type FormatParseResult = Awaited<
+    ReturnType<NonNullable<CsvImporter['parseStreamWithFormat']>>
+  >;
+  let parsed: FormatParseResult;
+  const parseStreamWithFormat =
+    deps.csvImporter.parseStreamWithFormat?.bind(deps.csvImporter);
   try {
-    parsed = await deps.csvImporter.parseStream({
-      bytes: input.bytes,
-      ...(input.columnMapping !== undefined && {
-        columnMapping: input.columnMapping,
-      }),
-    });
+    if (parseStreamWithFormat) {
+      parsed = await parseStreamWithFormat({
+        bytes: input.bytes,
+        eventContext,
+        ...(input.columnMapping !== undefined && {
+          columnMapping: input.columnMapping,
+        }),
+      });
+    } else {
+      // Legacy mock path — `parseStream` only. Synthesize a `generic_csv`
+      // envelope so the rest of the use-case is format-agnostic. The
+      // event-context override is NOT applied in this path (legacy
+      // tests build their own rows already in CsvRow shape).
+      const legacy = await deps.csvImporter.parseStream({
+        bytes: input.bytes,
+        ...(input.columnMapping !== undefined && {
+          columnMapping: input.columnMapping,
+        }),
+      });
+      if (!legacy.ok) {
+        parsed = legacy;
+      } else {
+        parsed = {
+          ok: true as const,
+          value: {
+            format: 'generic_csv' as const,
+            rows: legacy.value,
+            unknownColumns: [],
+          },
+        };
+      }
+    }
   } catch (e) {
     return {
       kind: 'unexpected_error',
@@ -621,9 +833,6 @@ export async function importCsv(
         missingColumns: parsed.error.missingColumns,
       };
     }
-    // Surface the parser's `reason` field (invalid_utf8 only — the
-    // file_too_large variant has no `reason`) so admins uploading a
-    // wrong-encoding CSV see an actionable hint instead of a generic 500.
     const parserReason =
       'reason' in parsed.error && typeof parsed.error.reason === 'string'
         ? parsed.error.reason
@@ -636,26 +845,144 @@ export async function importCsv(
     };
   }
 
-  // Phase 2: collect rows from the async stream into an array (the
-  // SC-006 design envelope is 1,000 rows; per the streaming-parser
-  // bench T138 at 5,000 rows peak heap stays <500 MiB so a single
-  // collect is safe at this scale).
+  const sourceFormat: CsvAdapterMode = parsed.value.format;
+  const unknownColumns = parsed.value.unknownColumns;
+
+  // F6.1 — Phase 2: collect rows from the async stream into an array.
+  // SC-006 envelope is 1,000 rows; bench at 5,000 rows shows peak heap
+  // <500 MiB so a single collect is safe.
   const rows: ParsedRow[] = [];
-  for await (const r of parsed.value) {
+  for await (const r of parsed.value.rows) {
     rows.push(r);
   }
+  const rowsTotal = rows.length;
 
-  // Phase 3: split into batches of `batchSize`, process `batchConcurrency`
-  // batches in parallel via a sliding-window scheduler. Each batch
-  // opens 1 outer tx + iterates rows via SAVEPOINTs (tasks.md T094
-  // "batched 100 rows per tx; per-row failure isolation").
+  // F6.1 — Phase 2b: compute attendee fingerprint over ok===true rows
+  // (the EventCreate adapter already applied the FR-007 Status filter
+  // upstream — non-attending rows are ok:false). Generic-format rows
+  // also use email-only fingerprinting per FR-019a.
+  const attendingEmails = rows
+    .filter((r): r is Extract<ParsedRow, { ok: true }> => r.ok)
+    .map((r) => r.row.attendee_email);
+  const attendeeFingerprint = computeAttendeeFingerprintFromEmails(
+    attendingEmails,
+  );
+
+  // F6.1 — Phase 2c: FR-019b safety-net query. Skip if fingerprint is
+  // null (zero attending rows — nothing to match).
+  let priorImports: ReadonlyArray<PriorImportMatch> = [];
+  if (attendeeFingerprint !== null) {
+    const since = new Date(startedAtMs - 30 * 24 * 60 * 60 * 1000);
+    try {
+      const result = await deps.withImportRecordsTx(
+        input.tenantId,
+        async (repo) =>
+          repo.findByFingerprintAcrossEvents({
+            tenantId: input.tenantId,
+            fingerprint: attendeeFingerprint,
+            currentEventId: input.selectedEvent.eventId,
+            since,
+          }),
+      );
+      if (result.ok) {
+        priorImports = result.value;
+      } else {
+        logger.warn(
+          {
+            event: 'f6_csv_safety_net_query_failed',
+            tenantId: input.tenantId,
+            fingerprint: attendeeFingerprint,
+            err: result.error.kind,
+          },
+          '[F6.1] safety-net fingerprint query failed — proceeding without warning (fail-open)',
+        );
+      }
+    } catch (e) {
+      logger.warn(
+        {
+          event: 'f6_csv_safety_net_query_threw',
+          tenantId: input.tenantId,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        '[F6.1] safety-net fingerprint query threw — fail-open',
+      );
+    }
+  }
+
+  // F6.1 — Phase 2d: branch on safety-net result.
+  if (priorImports.length > 0 && !input.forceProceed) {
+    // Return event_mismatch_warning — ZERO side effects per FR-019b.
+    // No csv_import_records insert, no audit emit, no batches.
+    return {
+      kind: 'event_mismatch_warning',
+      priorImports,
+    };
+  }
+
+  // F6.1 — Phase 2e: if forceProceed bypasses a real safety-net hit,
+  // emit `csv_import_event_mismatch_overridden` audit BEFORE batches
+  // commit (so the override is auditable even if the import fails).
+  if (priorImports.length > 0 && input.forceProceed) {
+    await safeEmitMismatchOverride(deps, input, recordId, priorImports);
+  }
+
+  // F6.1 — Phase 2f: insert placeholder csv_import_records row. Uses
+  // its OWN tenant-scoped tx (separate from the batch txs) so a failed
+  // batch doesn't roll back the import-record itself.
+  const originalFilename = (input.originalFilename ?? 'upload.csv').slice(
+    0,
+    512,
+  );
+  const originalSizeBytes = input.bytes.byteLength;
+  try {
+    const insertResult = await deps.withImportRecordsTx(
+      input.tenantId,
+      async (repo) =>
+        repo.insert({
+          recordId,
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          eventId: input.selectedEvent.eventId,
+          sourceFormat,
+          originalFilename,
+          originalSizeBytes,
+        }),
+    );
+    if (!insertResult.ok) {
+      logger.error(
+        {
+          event: 'f6_csv_import_records_insert_failed',
+          tenantId: input.tenantId,
+          recordId,
+          err: insertResult.error.kind,
+        },
+        '[F6.1] csv_import_records placeholder insert failed — proceeding with import; final-outcome update will surface the error',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_csv_import_records_insert_threw',
+        tenantId: input.tenantId,
+        recordId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] csv_import_records placeholder insert threw — proceeding with import',
+    );
+  }
+
+  // F6.1 — Phase 3: split into batches of `batchSize`, process
+  // `batchConcurrency` batches in parallel via a sliding-window
+  // scheduler. Each batch opens 1 outer tx + iterates rows via
+  // SAVEPOINTs (tasks.md T094).
   const summary = {
     rowsProcessed: 0,
     rowsAlreadyImported: 0,
+    rowsSkipped: 0,
     eventsCreated: 0,
     eventsUpdated: 0,
     matchCounts: zeroMatchCounts(),
-    errorRows: [] as Array<{ rowNumber: number; reason: string }>,
+    errorRows: [] as ImportSummaryErrorRow[],
   };
 
   const batches: Array<ReadonlyArray<ParsedRow>> = [];
@@ -685,6 +1012,13 @@ export async function importCsv(
               reason: outcome.reason,
             });
             break;
+          case 'skipped':
+            summary.rowsSkipped += 1;
+            summary.errorRows.push({
+              rowNumber: outcome.rowNumber,
+              reason: outcome.reason,
+            });
+            break;
           case 'duplicate':
             summary.rowsAlreadyImported += 1;
             break;
@@ -701,6 +1035,7 @@ export async function importCsv(
             summary.errorRows.push({
               rowNumber: outcome.rowNumber,
               reason: outcome.reason,
+              failureStage: outcome.failureStage,
             });
             break;
         }
@@ -715,31 +1050,264 @@ export async function importCsv(
   await Promise.all(workers);
 
   const durationMs = Date.now() - startedAtMs;
+  // F6.1 — `rowsFailed` excludes Status-filter skipped rows (those flow
+  // into rowsSkipped). errorRows still includes both for the response
+  // body so the admin sees a complete picture; the count semantics are
+  // documented in the contract response shape.
+  const rowsFailed = Math.max(
+    0,
+    summary.errorRows.length - summary.rowsSkipped,
+  );
 
-  // Phase 4: emit per-import `csv_import_completed` audit on BOTH the
-  // completed AND timeout paths. The timeout path uses `timedOut:true`
-  // + `severity:'warn'` so SREs can alert separately, and the forensic
-  // trail is preserved for partial imports (committed rows persist;
-  // re-upload is idempotent). Audit-emit failure is observable via
-  // `recordAuditEmitFailure` — route still returns 200 / 504 per the
-  // "DB committed" invariant; the logger + counter together ARE the
-  // observability signal.
+  // F6.1 — Phase 4a: write error-CSV blob if there are failures.
+  // (Skipped rows are part of `errorRows` but US5 admins typically want
+  // to see them too for a complete error report — write all errorRows
+  // when ANY failure exists.) Failures here are observability events,
+  // not request-failure events — admin still sees the row-by-row
+  // result.
+  let errorCsvAvailable = false;
+  let errorCsvBlobUrl: string | null = null;
+  if (rowsFailed > 0 && summary.errorRows.length > 0) {
+    const csvBytes = serializeErrorRowsToCsv(summary.errorRows);
+    try {
+      const putResult = await deps.errorCsvStore.put({
+        tenantId: input.tenantId,
+        recordId,
+        csvBytes,
+        // 30-day TTL per data-model.md § 1 lifecycle step 3.
+        expiresAt: new Date(startedAtMs + 30 * 24 * 60 * 60 * 1000),
+      });
+      if (putResult.ok) {
+        errorCsvAvailable = true;
+        errorCsvBlobUrl = putResult.value.blobUrl;
+      } else {
+        logger.warn(
+          {
+            event: 'f6_csv_error_csv_blob_put_failed',
+            tenantId: input.tenantId,
+            recordId,
+            rowsFailed,
+            err: putResult.error.kind,
+          },
+          '[F6.1] error-CSV blob upload failed — US5 download will be unavailable; admin sees errorRows inline only',
+        );
+      }
+    } catch (e) {
+      logger.warn(
+        {
+          event: 'f6_csv_error_csv_blob_put_threw',
+          tenantId: input.tenantId,
+          recordId,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        '[F6.1] error-CSV blob put threw — US5 download unavailable',
+      );
+    }
+  }
+
+  // F6.1 — Phase 4b: classify the FINAL outcome that the
+  // csv_import_records.outcome column should carry. `completed` =
+  // no failures; `partial_failure` = at least one row failed but the
+  // budget held; `timeout` = budget tripped before all batches drained.
+  const recordOutcome: 'completed' | 'partial_failure' | 'timeout' =
+    timeBudgetExceeded
+      ? 'timeout'
+      : rowsFailed > 0
+      ? 'partial_failure'
+      : 'completed';
+
+  // F6.1 — Phase 4c: build adapter metadata for the column (FR-012
+  // unknown columns + sourceFormat).
+  const eventcreateAdapterMetadata: Record<string, unknown> | null =
+    sourceFormat === 'eventcreate_csv'
+      ? {
+          sourceFormat,
+          unknownColumns: unknownColumns.slice(0, 50),
+        }
+      : null;
+
+  // F6.1 — Phase 4d: update csv_import_records with final counts +
+  // outcome + fingerprint + metadata.
+  try {
+    const updateResult = await deps.withImportRecordsTx(
+      input.tenantId,
+      async (repo) => {
+        const r = await repo.updateOutcome({
+          recordId,
+          tenantId: input.tenantId,
+          rowsTotal,
+          rowsProcessed: summary.rowsProcessed,
+          rowsAlreadyImported: summary.rowsAlreadyImported,
+          rowsSkipped: summary.rowsSkipped,
+          rowsFailed,
+          outcome: recordOutcome,
+          durationMs,
+          attendeeFingerprint,
+          eventcreateAdapterMetadata,
+        });
+        if (!r.ok) return r;
+        // Persist the error-CSV blob URL when available.
+        if (errorCsvBlobUrl !== null) {
+          const expiresAt = new Date(startedAtMs + 30 * 24 * 60 * 60 * 1000);
+          return repo.setErrorCsvBlob({
+            recordId,
+            tenantId: input.tenantId,
+            errorCsvBlobUrl,
+            errorCsvExpiresAt: expiresAt,
+          });
+        }
+        return r;
+      },
+    );
+    if (!updateResult.ok) {
+      logger.error(
+        {
+          event: 'f6_csv_import_records_update_failed',
+          tenantId: input.tenantId,
+          recordId,
+          err: updateResult.error.kind,
+        },
+        '[F6.1] csv_import_records final-outcome update failed — placeholder row persists with stale unexpected_error outcome',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_csv_import_records_update_threw',
+        tenantId: input.tenantId,
+        recordId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] csv_import_records final-outcome update threw',
+    );
+  }
+
+  // F6.1 — Phase 4e: emit per-import `csv_import_completed` audit on
+  // both completed AND timeout paths with `sourceFormat` extension.
   await emitImportCompletedAudit({
     deps,
     input,
-    summary,
+    summary: {
+      rowsProcessed: summary.rowsProcessed,
+      rowsAlreadyImported: summary.rowsAlreadyImported,
+      eventsCreated: summary.eventsCreated,
+      eventsUpdated: summary.eventsUpdated,
+      matchCounts: summary.matchCounts,
+      errorRows: summary.errorRows,
+    },
     durationMs,
     timedOut: timeBudgetExceeded,
+    sourceFormat,
   });
 
   if (timeBudgetExceeded) {
-    return { kind: 'timeout' };
+    return { kind: 'timeout', recordId, sourceFormat };
   }
 
   return {
     kind: 'completed',
-    summary: { ...summary, durationMs },
+    recordId,
+    sourceFormat,
+    errorCsvAvailable,
+    summary: {
+      rowsTotal,
+      rowsProcessed: summary.rowsProcessed,
+      rowsAlreadyImported: summary.rowsAlreadyImported,
+      rowsSkipped: summary.rowsSkipped,
+      rowsFailed,
+      eventsCreated: summary.eventsCreated,
+      eventsUpdated: summary.eventsUpdated,
+      matchCounts: summary.matchCounts,
+      errorRows: summary.errorRows,
+      durationMs,
+    },
   };
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 — helper: serialize errorRows to CSV bytes
+// ---------------------------------------------------------------------------
+
+function serializeErrorRowsToCsv(
+  errorRows: ReadonlyArray<ImportSummaryErrorRow>,
+): Uint8Array {
+  const lines: string[] = ['row_number,reason,failure_stage'];
+  for (const row of errorRows) {
+    const reason = csvEscape(row.reason);
+    const stage = row.failureStage ?? '';
+    lines.push(`${row.rowNumber},${reason},${stage}`);
+  }
+  const text = lines.join('\r\n') + '\r\n';
+  return new TextEncoder().encode(text);
+}
+
+function csvEscape(s: string): string {
+  // RFC 4180 — double-quote-wrap if the cell contains comma, quote, CR,
+  // or LF; escape internal quotes by doubling.
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 — helper: emit mismatch-override audit (never throws)
+// ---------------------------------------------------------------------------
+
+async function safeEmitMismatchOverride(
+  deps: ImportCsvDeps,
+  input: ImportCsvInput,
+  recordId: CsvImportRecordId,
+  priorImports: ReadonlyArray<PriorImportMatch>,
+): Promise<void> {
+  try {
+    const result = await deps.emitStandalone({
+      eventType: 'csv_import_event_mismatch_overridden',
+      tenantId: input.tenantId,
+      actorType: 'csv_import',
+      actorUserId: input.actorUserId,
+      occurredAt: new Date(),
+      summary: `Admin overrode FR-019b event-mismatch safety net via force_proceed=true; ${priorImports.length} prior import(s) matched`,
+      payload: {
+        severity: 'warn',
+        actorUserId: input.actorUserId,
+        recordId,
+        currentEventId: input.selectedEvent.eventId,
+        priorRecordIds: priorImports.map((p) => p.recordId as string),
+        priorEventIds: priorImports.map((p) => p.eventId),
+        overriddenAt: new Date(),
+      },
+    });
+    if (!result.ok) {
+      eventcreateMetrics.csvImportAuditEmitFailed(
+        input.tenantId,
+        'csv_import_completed',
+      );
+      logger.error(
+        {
+          event: 'f6_csv_mismatch_override_audit_emit_failed',
+          tenantId: input.tenantId,
+          recordId,
+          err: result.error.kind,
+        },
+        '[F6.1] csv_import_event_mismatch_overridden audit emit failed — proceeding with import; override is logged via stderr',
+      );
+    }
+  } catch (e) {
+    eventcreateMetrics.csvImportAuditEmitFailed(
+      input.tenantId,
+      'csv_import_completed',
+    );
+    logger.error(
+      {
+        event: 'f6_csv_mismatch_override_audit_emit_threw',
+        tenantId: input.tenantId,
+        recordId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] csv_import_event_mismatch_overridden audit emitter threw',
+    );
+  }
 }
 
 interface EmitImportCompletedAuditArgs {
@@ -751,16 +1319,18 @@ interface EmitImportCompletedAuditArgs {
     readonly eventsCreated: number;
     readonly eventsUpdated: number;
     readonly matchCounts: Record<MatchType, number>;
-    readonly errorRows: ReadonlyArray<{ readonly rowNumber: number; readonly reason: string }>;
+    readonly errorRows: ReadonlyArray<ImportSummaryErrorRow>;
   };
   readonly durationMs: number;
   readonly timedOut: boolean;
+  /** F6.1 — adapter mode detected at parse time. */
+  readonly sourceFormat: CsvAdapterMode;
 }
 
 async function emitImportCompletedAudit(
   args: EmitImportCompletedAuditArgs,
 ): Promise<void> {
-  const { deps, input, summary, durationMs, timedOut } = args;
+  const { deps, input, summary, durationMs, timedOut, sourceFormat } = args;
   const completedAuditContext = {
     rowsProcessed: summary.rowsProcessed,
     rowsAlreadyImported: summary.rowsAlreadyImported,
@@ -790,6 +1360,7 @@ async function emitImportCompletedAudit(
         errorRowCount: summary.errorRows.length,
         durationMs,
         timedOut,
+        sourceFormat,
       },
     });
     if (!result.ok) {

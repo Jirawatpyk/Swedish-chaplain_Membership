@@ -44,6 +44,21 @@ export interface InsertRegistrationInput {
   readonly quotaEffect: QuotaEffect;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly registeredAt: Date;
+  /**
+   * F6.1 (Feature 013 · FR-009 dedicated-column population) — PDPA
+   * consent classification, persisted to
+   * `event_registrations.attendee_pdpa_consent_acknowledged` (BOOLEAN
+   * NULL, added by migration 0140). Optional for backward-compat with
+   * the webhook ingest path that does not yet carry consent state;
+   * webhook rows store NULL until F6.2 or a future Phase adds upstream
+   * consent capture.
+   *
+   * Tri-state semantics:
+   *   - `true`  → consent explicitly granted (EventCreate "I hereby acknowledge")
+   *   - `false` → consent explicitly withdrawn (EventCreate "I do not consent")
+   *   - `null`  → unknown / not captured / generic-CSV (default)
+   */
+  readonly pdpaConsentAcknowledged?: boolean | null;
 }
 
 export interface InsertRegistrationResult {

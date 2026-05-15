@@ -427,6 +427,23 @@ const schema = z.object({
   // accidentally producing non-deterministic / collidable pseudonyms.
   FEATURE_F6_EVENTCREATE: booleanFromString.default(false),
 
+  // F6.1 sub-flag — controls the EventCreate-format CSV adapter at
+  // `src/modules/events/infrastructure/eventcreate-csv-adapter.ts`. When
+  // TRUE (default), the adapter detects EventCreate-format uploads via
+  // the presence-of-6-required-columns heuristic (FR-001 / R2) and
+  // routes them through the EventCreate column-mapping path. When
+  // FALSE, the route forces the generic-CSV path even if EventCreate
+  // signature is detected — rollback safety net per Spec § Rollback
+  // Plan (>5 admin support issues attributable to F6.1 in first 7 days
+  // post-launch triggers a flag-flip).
+  //
+  // Asymmetry note: this env-var follows the project-wide
+  // `booleanFromString` helper (accepts `"true"`/`"1"` case-insensitive
+  // trimmed). The form-field `force_proceed` in
+  // `csv-import-eventcreate-api.md` accepts a wider set (`"true"`/`"1"`
+  // /`"yes"`) for admin friendliness — intentional, do NOT harmonize.
+  FEATURE_F6_EVENTCREATE_ADAPTER: booleanFromString.default(true),
+
   // Deterministic per-tenant pseudonymisation salt for the F6 non-member
   // PII retention sweep (FR-032 / SC-011). The cron emits sha256(salt ||
   // tenant_id || external_attendee_id) as the pseudonym, replacing the
@@ -668,6 +685,7 @@ export const env = {
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
+    f6EventCreateAdapter: raw.FEATURE_F6_EVENTCREATE_ADAPTER,
   },
 
   // F4 Invoicing

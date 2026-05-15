@@ -45,6 +45,7 @@ import {
 } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Principle I clause 3)', () => {
   let tenantA: TestTenant;
@@ -370,6 +371,7 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
         tenantSlug: tenantB.ctx.slug,
         actorUserId: asUserId('00000000-0000-0000-0000-000000000999'),
         bytes: csvBytes,
+        selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: f6CsvTestSelectedEventStub.eventId as string },
       });
 
       // The import should succeed for Tenant B — proves the use-case

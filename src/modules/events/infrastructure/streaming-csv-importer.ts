@@ -4,17 +4,21 @@
  * Hand-rolled UTF-8 CSV parser implementing the `CsvImporter`
  * Application port (`src/modules/events/application/ports/csv-importer.ts`).
  *
- * Format support per research.md R8 / E20 (tightly-specified subset of
- * RFC 4180):
+ * Format support per research.md R8 / E20 + F6.1 research.md R1 update
+ * (RFC 4180 § 2.6 — embedded newlines inside quoted cells):
  *   - UTF-8 input; BOM tolerated and stripped.
  *   - LF (`\n`) or CRLF (`\r\n`) row terminators.
  *   - Comma `,` field separator only.
  *   - Optional double-quoted fields with `""` escape for an embedded
  *     quote/comma.
+ *   - Embedded `\r` / `\n` / `\r\n` INSIDE quoted cells — the row
+ *     spans multiple physical lines. Required by real EventCreate
+ *     "Guestlist" exports (Grant Thornton fixture row 2 spans 5
+ *     physical lines in the address cell). Implemented via the
+ *     `joinMultilineQuotedRows` preprocessing pass below; `tokeniseLine`
+ *     itself is unchanged.
  *
  * Rejected explicitly per R8 / E20:
- *   - Embedded newlines INSIDE quoted fields (Excel "wrap-in-cell"
- *     mode) — surface as "unterminated quoted field" row failure.
  *   - Non-comma separators (semicolon, tab) — header detection
  *     pre-checks and returns `invalid_header`.
  *   - Trailing commas on a row (column count mismatch).
@@ -57,7 +61,15 @@ import type {
   CsvImporterError,
   CsvParseInput,
   ParsedRow,
+  ParseStreamFormatted,
+  ParseStreamFormattedInput,
+  SelectedEventContext,
 } from '../application/ports/csv-importer';
+import {
+  detectEventCreateFormat,
+  translateEventCreateRow,
+  collectUnknownEventCreateColumns,
+} from './eventcreate-csv-adapter';
 
 // ---------------------------------------------------------------------------
 // Canonical column-set constants
@@ -124,6 +136,99 @@ function decodeUtf8(bytes: Uint8Array): Result<string, CsvImporterError> {
           : 'UTF-8 decode failed (re-save the CSV as UTF-8 without BOM)',
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Line dispatcher — RFC 4180 § 2.6 (F6.1 / Feature 013 · T009 · R1)
+// ---------------------------------------------------------------------------
+//
+// Splits decoded text into logical CSV rows while respecting cross-physical-
+// line quoted cells. A naïve `text.split(/\r?\n/)` would split inside quoted
+// cells too — `tokeniseLine` would then receive a single physical line that
+// ends inside an open quote and return `unterminated quoted field`.
+//
+// The state machine here walks the input once, tracking whether the cursor
+// is inside a quoted field. While inside a quote, `\r` / `\n` / `\r\n`
+// are appended to the current logical-row buffer (preserved verbatim per
+// RFC 4180 § 2.6). Outside a quote, those same characters terminate the
+// logical row.
+//
+// `""` (escaped double-quote inside a quote) is preserved in the buffer
+// untouched and does NOT toggle the inQuote state — `tokeniseLine` is
+// the canonical source-of-truth for `""` → `"` collapse semantics.
+//
+// Output array semantics match the previous `text.split(/\r?\n/)` shape:
+//   - `""` (empty input) → `[""]`
+//   - `"a"` (no trailing newline) → `["a"]`
+//   - `"a\nb"` → `["a", "b"]`
+//   - `"a\n"` → `["a", ""]` (matches split's trailing-empty behaviour)
+//
+// Genuinely-unterminated quoted cells at EOF still surface as
+// `unterminated quoted field` via `tokeniseLine` (the buffer is fed to
+// the tokeniser as-is, the tokeniser exits with `inQuote === true`).
+
+function joinMultilineQuotedRows(text: string): string[] {
+  const result: string[] = [];
+  let buffer = '';
+  let inQuote = false;
+  let i = 0;
+  const n = text.length;
+
+  while (i < n) {
+    const ch = text[i] as string;
+
+    if (inQuote) {
+      if (ch === '"') {
+        // `""` escape — keep both chars in the buffer for tokeniseLine to
+        // collapse later; do NOT toggle inQuote.
+        if (text[i + 1] === '"') {
+          buffer += '""';
+          i += 2;
+          continue;
+        }
+        // Single `"` closes the quoted cell.
+        buffer += '"';
+        inQuote = false;
+        i++;
+        continue;
+      }
+      // Any other char (including \r / \n) inside a quote is part of
+      // the cell content.
+      buffer += ch;
+      i++;
+      continue;
+    }
+
+    // Outside a quoted cell.
+    if (ch === '"') {
+      buffer += '"';
+      inQuote = true;
+      i++;
+      continue;
+    }
+    if (ch === '\r') {
+      // Treat \r\n as a single row terminator; lone \r also terminates
+      // (matches the previous /\r?\n/ regex split).
+      result.push(buffer);
+      buffer = '';
+      i += text[i + 1] === '\n' ? 2 : 1;
+      continue;
+    }
+    if (ch === '\n') {
+      result.push(buffer);
+      buffer = '';
+      i++;
+      continue;
+    }
+    buffer += ch;
+    i++;
+  }
+
+  // Always push the trailing segment — matches `String.prototype.split`
+  // semantics where a trailing newline produces an extra empty element
+  // and a missing trailing newline still emits the last row.
+  result.push(buffer);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +504,183 @@ async function* iterateRows(
 // Main parser entry — implements `CsvImporter.parseStream`
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// F6.1 (Feature 013 · T022) — EventCreate-format row iterator
+// ---------------------------------------------------------------------------
+//
+// Iterates body lines parsed in EventCreate format. Each row is translated
+// via the T010 adapter (Status filter + name normalization + mailto strip
+// + payment-status inference + PDPA classification), then merged with the
+// admin-selected `eventContext` to form a `CsvRow`-compatible record that
+// passes the strict `CsvRowSchema`.
+//
+// Status filter (FR-007): rows with Status != 'Attending' are surfaced as
+// `{ok:false, reason:'Skipped: Status=…'}` so they flow into the use-case's
+// `rowsSkipped` counter (distinct from `rowsFailed` — see contract response
+// shape).
+//
+// Output rows additionally carry `pdpaConsentAcknowledged` for FR-009 storage.
+
+async function* iterateEventCreateRows(
+  bodyLines: ReadonlyArray<string>,
+  headerCells: ReadonlyArray<string>,
+  eventContext: SelectedEventContext,
+  startLineNumber: number,
+): AsyncIterable<ParsedRow> {
+  // Build header-name → cell-index map ONCE (avoids per-row Map rebuild).
+  const headerIndex = new Map<string, number>();
+  for (let i = 0; i < headerCells.length; i++) {
+    const name = headerCells[i] ?? '';
+    if (name.length > 0) headerIndex.set(name, i);
+  }
+  const expectedCellCount = headerCells.length;
+  const eventStartIso = eventContext.startDate.toISOString();
+
+  for (let i = 0; i < bodyLines.length; i++) {
+    const lineNumber = startLineNumber + i;
+    const line = bodyLines[i] as string;
+    if (line.length === 0 || line.trim().length === 0) continue;
+
+    const tok = tokeniseLine(line);
+    if (!tok.ok) {
+      yield {
+        ok: false,
+        rowNumber: lineNumber,
+        reason: tok.reason,
+        rawExcerpt: line.slice(0, 200),
+      };
+      continue;
+    }
+    if (tok.cells.length !== expectedCellCount) {
+      yield {
+        ok: false,
+        rowNumber: lineNumber,
+        reason: `column count mismatch — row has ${tok.cells.length} cells, expected ${expectedCellCount}`,
+        rawExcerpt: line.slice(0, 200),
+      };
+      continue;
+    }
+
+    // Build header→cell map for translateEventCreateRow.
+    const cells = new Map<string, string>();
+    for (const [name, idx] of headerIndex) {
+      const value = tok.cells[idx] ?? '';
+      cells.set(name, value);
+    }
+
+    const translated = translateEventCreateRow(cells);
+
+    // FR-007 Status filter — non-Attending rows skipped (not failed).
+    if (!translated.isAttending) {
+      yield {
+        ok: false,
+        rowNumber: lineNumber,
+        reason: `Skipped: Status=${translated.rawStatus} (not a recognized attending status)`,
+        rawExcerpt: line.slice(0, 200),
+      };
+      continue;
+    }
+
+    // Build CsvRow-compatible raw with eventContext substituted in for
+    // event_* columns. payment_status mapped from the T010 inference
+    // ('paid' | 'pending' | 'unknown'); the schema only allows
+    // ['paid','pending','refunded','free'] — `unknown` maps to 'paid'
+    // default (Phase 7 schema default) to keep the row valid; a later
+    // pass can re-classify via metadata if needed.
+    const paymentStatus =
+      translated.inferredPaymentStatus === 'unknown'
+        ? undefined
+        : translated.inferredPaymentStatus;
+
+    const raw: Record<string, unknown> = {
+      event_external_id: eventContext.externalId,
+      event_name: eventContext.name,
+      event_start: eventStartIso,
+      event_category: eventContext.category ?? undefined,
+      attendee_email: translated.attendeeEmail,
+      attendee_name: translated.attendeeName,
+      attendee_company: translated.attendeeCompany,
+      attendee_external_id: translated.attendeeExternalId,
+      ticket_type: translated.ticketType,
+      payment_status: paymentStatus,
+    };
+    for (const k of Object.keys(raw)) {
+      if (raw[k] === undefined) delete raw[k];
+    }
+
+    const parsed = CsvRowSchema.safeParse(raw);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      const path = first?.path.join('.') ?? '?';
+      const msg = first?.message ?? 'validation failed';
+      yield {
+        ok: false,
+        rowNumber: lineNumber,
+        reason: `${path}: ${msg}`,
+        rawExcerpt: line.slice(0, 200),
+      };
+      continue;
+    }
+
+    yield {
+      ok: true,
+      rowNumber: lineNumber,
+      row: parsed.data,
+      rowHash: computeRowHash(parsed.data),
+      pdpaConsentAcknowledged: translated.pdpaConsentAcknowledged,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 (Feature 013 · T022) — Generic-format row iterator with event-context
+// override
+// ---------------------------------------------------------------------------
+//
+// Identical to the Phase 7 `iterateRows` body, except the resulting
+// CsvRow has its event_* fields OVERRIDDEN with the admin-selected
+// eventContext after schema validation. The admin dropdown is now the
+// authority for the event binding (FR-019b safety-net premise).
+
+async function* iterateGenericRowsWithEventContext(
+  bodyLines: ReadonlyArray<string>,
+  columnIndex: ReadonlyMap<CanonicalKey, number>,
+  expectedCellCount: number,
+  startLineNumber: number,
+  eventContext: SelectedEventContext,
+): AsyncIterable<ParsedRow> {
+  const eventStartIso = eventContext.startDate.toISOString();
+  for await (const row of iterateRows(
+    bodyLines,
+    columnIndex,
+    expectedCellCount,
+    startLineNumber,
+  )) {
+    if (!row.ok) {
+      yield row;
+      continue;
+    }
+    // Override event_* with the admin-selected event metadata.
+    const merged: CsvRow = {
+      ...row.row,
+      event_external_id: eventContext.externalId,
+      event_name: eventContext.name,
+      event_start: eventStartIso,
+      event_category: eventContext.category ?? row.row.event_category,
+    };
+    yield {
+      ok: true,
+      rowNumber: row.rowNumber,
+      row: merged,
+      // Rehash with the new (post-override) event_* fields so the
+      // idempotency key reflects the event the import is actually
+      // bound to — prevents the "same row, two events" idempotency
+      // collision the FR-019b safety net is designed to flag.
+      rowHash: computeRowHash(merged),
+    };
+  }
+}
+
 export const streamingCsvImporter: CsvImporter = {
   async parseStream(
     input: CsvParseInput,
@@ -413,8 +695,11 @@ export const streamingCsvImporter: CsvImporter = {
         missingColumns: [...REQUIRED_COLUMNS],
       });
     }
-    // Split on LF / CRLF.
-    const rawLines = text.split(/\r?\n/);
+    // Split on LF / CRLF, respecting RFC 4180 § 2.6 embedded-newline-in-
+    // quoted-cell semantics (F6.1 · T009 / R1). Physical lines that fall
+    // inside an open quoted cell get joined into a single logical row;
+    // the embedded `\r` / `\n` is preserved in the cell content.
+    const rawLines = joinMultilineQuotedRows(text);
     const headerLine = rawLines[0] ?? '';
     if (headerLine.trim().length === 0) {
       return err({
@@ -444,6 +729,83 @@ export const streamingCsvImporter: CsvImporter = {
       iterateRows(bodyLines, headerResult.value.columnIndex, expectedCellCount, 2),
     );
   },
+
+  // -------------------------------------------------------------------------
+  // F6.1 (Feature 013 · T022) — parseStreamWithFormat
+  // -------------------------------------------------------------------------
+
+  async parseStreamWithFormat(
+    input: ParseStreamFormattedInput,
+  ): Promise<Result<ParseStreamFormatted, CsvImporterError>> {
+    const decoded = decodeUtf8(input.bytes);
+    if (!decoded.ok) return decoded;
+    const text = decoded.value;
+    if (text.length === 0) {
+      return err({
+        kind: 'invalid_header',
+        reason: 'empty file',
+        missingColumns: [...REQUIRED_COLUMNS],
+      });
+    }
+
+    const rawLines = joinMultilineQuotedRows(text);
+    const headerLine = rawLines[0] ?? '';
+    if (headerLine.trim().length === 0) {
+      return err({
+        kind: 'invalid_header',
+        reason: 'empty header row',
+        missingColumns: [...REQUIRED_COLUMNS],
+      });
+    }
+
+    const headerTokens = tokeniseLine(headerLine);
+    if (!headerTokens.ok) {
+      return err({
+        kind: 'invalid_header',
+        reason: `header tokenise failed: ${headerTokens.reason}`,
+        missingColumns: [],
+      });
+    }
+
+    // Detect EventCreate format FIRST (presence-of-6 case-sensitive per
+    // FR-001 / R2). If detected, route through the EventCreate adapter
+    // path; otherwise fall through to the generic Phase 7 path with
+    // event-context override applied post-validation.
+    const headerCells = headerTokens.cells;
+    if (detectEventCreateFormat(headerCells)) {
+      const unknownColumns = collectUnknownEventCreateColumns(headerCells);
+      const bodyLines = rawLines.slice(1);
+      return ok({
+        format: 'eventcreate_csv',
+        rows: iterateEventCreateRows(
+          bodyLines,
+          headerCells,
+          input.eventContext,
+          2,
+        ),
+        unknownColumns,
+      });
+    }
+
+    // Generic Phase 7 path — header must satisfy `parseHeader` strict
+    // validation. The eventContext is then merged into each row AFTER
+    // schema validation so the dropdown selection wins.
+    const headerResult = parseHeader(headerLine, input.columnMapping);
+    if (!headerResult.ok) return headerResult;
+    const expectedCellCount = headerCells.length;
+    const bodyLines = rawLines.slice(1);
+    return ok({
+      format: 'generic_csv',
+      rows: iterateGenericRowsWithEventContext(
+        bodyLines,
+        headerResult.value.columnIndex,
+        expectedCellCount,
+        2,
+        input.eventContext,
+      ),
+      unknownColumns: [],
+    });
+  },
 };
 
 // Test-only helper exports for the unit suite (T093). Underscore prefix
@@ -454,6 +816,7 @@ export const _internals = {
   parseHeader,
   computeRowHash,
   mapCellsToRow,
+  joinMultilineQuotedRows,
   REQUIRED_COLUMNS,
   OPTIONAL_COLUMNS,
 } as const;

@@ -27,6 +27,7 @@ import { eventRegistrations } from '@/modules/events/infrastructure/schema';
 import { runImportCsv } from '@/lib/events-csv-import-deps';
 import { asUserId } from '@/modules/auth';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 const CSV_WITH_BAD_ROW = [
   'event_external_id,event_name,event_start,attendee_email,attendee_name',
@@ -58,6 +59,7 @@ describe('H-8 — savepoint isolation (1 bad row of 5 must not poison 4 good row
       tenantSlug: tenant.ctx.slug,
       actorUserId: asUserId('00000000-0000-0000-0000-000000000088'),
       bytes: new TextEncoder().encode(CSV_WITH_BAD_ROW),
+      selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: f6CsvTestSelectedEventStub.eventId as string },
     });
 
     expect(result.kind).toBe('completed');

@@ -190,21 +190,26 @@ describe('streamingCsvImporter — header-level rejections', () => {
 });
 
 describe('streamingCsvImporter — per-row rejections', () => {
-  it('rejects embedded newline as unterminated quoted field (malformed-embedded-newline.csv)', async () => {
+  it('accepts embedded newlines inside quoted cells (RFC 4180 § 2.6, F6.1 / Feature 013 · T009)', async () => {
+    // F6.1 update — Phase 7 strictly REJECTED this fixture (R8 / E20);
+    // F6.1 relaxes to RFC 4180 § 2.6 to support real EventCreate
+    // "Guestlist" exports whose address cells routinely span multiple
+    // physical lines (e.g. Grant Thornton workshop fixture row 2).
+    // The fixture's row 1 has attendee_company = "Acme\nMulti-line Co"
+    // — should parse SUCCESSFULLY, NOT as "unterminated quoted field".
     const bytes = readFixture('malformed-embedded-newline.csv');
     const result = await collectRows(bytes);
 
     expect(result.ok).toBe(true);
-    // The malformed row produces a "unterminated quoted field" failure
-    // ParsedRow with ok=false; the line continuation is treated as a
-    // new physical line that then fails column-count.
+    // BOTH rows should now parse successfully — no failures from
+    // embedded newline. (Genuine unterminated quotes at EOF still
+    // surface as `unterminated quoted field` via tokeniseLine.)
     const failRows = result.rows.filter((r) => !r.ok);
-    expect(failRows.length).toBeGreaterThan(0);
-    const firstFail = failRows[0];
-    if (firstFail && !firstFail.ok) {
-      expect(firstFail.reason.toLowerCase()).toMatch(
-        /unterminated|quoted/,
-      );
+    expect(failRows).toHaveLength(0);
+    expect(result.rows).toHaveLength(2);
+    const firstOk = result.rows[0];
+    if (firstOk && firstOk.ok) {
+      expect(firstOk.row.attendee_company).toBe('Acme\nMulti-line Co');
     }
   });
 

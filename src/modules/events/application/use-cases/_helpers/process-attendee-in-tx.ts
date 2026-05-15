@@ -174,6 +174,20 @@ export interface ProcessAttendeeInTxInput {
     readonly paymentStatus: PaymentStatus;
     readonly registeredAt: Date;
     readonly metadata: Readonly<Record<string, unknown>>;
+    /**
+     * F6.1 (Feature 013 · FR-009 dedicated-column population) — PDPA
+     * consent classification per attendee. Populates the
+     * `event_registrations.attendee_pdpa_consent_acknowledged` BOOLEAN
+     * column added by migration 0140. Tri-state:
+     *   - `true`  → admin/attendee acknowledged consent
+     *   - `false` → admin/attendee explicitly withdrew consent
+     *   - `null`  → unknown / not captured (default for webhook ingest +
+     *               generic-CSV rows that omit the consent column)
+     *
+     * Optional on the helper input to preserve backward-compat for the
+     * webhook ingest path (which does not yet carry PDPA consent).
+     */
+    readonly pdpaConsentAcknowledged?: boolean | null;
   };
 }
 
@@ -407,6 +421,12 @@ export async function processAttendeeInTx(
     quotaEffect,
     metadata: input.attendee.metadata,
     registeredAt: input.attendee.registeredAt,
+    // F6.1 (FR-009 column population) — thread PDPA consent through
+    // to the dedicated `event_registrations.attendee_pdpa_consent_acknowledged`
+    // column. `undefined` from webhook ingest passes through as `null`
+    // at the repo boundary (no consent captured upstream); CSV-import
+    // path sets the literal true/false/null from `classifyPdpaConsent`.
+    pdpaConsentAcknowledged: input.attendee.pdpaConsentAcknowledged ?? null,
   });
   if (!regInsert.ok) {
     const e = regInsert.error;

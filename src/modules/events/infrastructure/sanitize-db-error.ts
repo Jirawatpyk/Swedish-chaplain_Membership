@@ -62,7 +62,8 @@ export function wrapRepoError(
     | 'registrations'
     | 'idempotency'
     | 'matcher'
-    | 'tenantWebhookConfig',
+    | 'tenantWebhookConfig'
+    | 'csvImportRecords',
   e: unknown,
 ): { readonly kind: 'db_error'; readonly message: string } {
   logger.error(
