@@ -1203,6 +1203,7 @@
           "downloadReceipt": "Kvitto",
           "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
           "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
+          "receiptPreparing": "Förbereder kvitto…",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
         },
@@ -2988,7 +2989,8 @@
         "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
         "downloadReceipt": "Kvitto",
         "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
-        "downloadCombined": "Faktura / kvitto",
+        "downloadCombined": "Ladda ner faktura / kvitto",
+        "downloadCombinedAria": "Ladda ner kombinerat dokument (faktura / kvitto) för {number}",
         "receiptPreparing": "Förbereder kvitto…",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
@@ -3037,7 +3039,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "paidDate": "Betald",
-          "receiptNumber": "Kvittonr.",
+          "receiptNumber": "Kvittonummer",
           "planYear": "Paketår"
         },
         "lines": {

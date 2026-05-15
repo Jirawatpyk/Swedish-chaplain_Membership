@@ -67,7 +67,20 @@ export type F4AuditEventType =
    * type, last seq used under each old prefix, fiscal year. 10y
    * retention — surface in forensic SELECT on a future RD audit.
    */
-  | 'tenant_receipt_prefix_changed';
+  | 'tenant_receipt_prefix_changed'
+  /**
+   * R8-M1-code — emitted by `getInvoicePdfSignedUrl` after a successful
+   * ownership check + signed-URL issuance. Closes the audit-coverage
+   * asymmetry where receipts logged downloads but invoices did not.
+   * Tax-document touch (invoice PDF is the §86/4 tax document) so
+   * retention is 10y, parity with `invoice_pdf_resent` + receipt
+   * peers. Payload: `invoice_id`, `member_id`, `actor_member_id`
+   * (null for non-member actors), `invoice_pdf_template_version`,
+   * `actor_role`, `route`. The member_id makes the event surface in
+   * the F3 timeline filter; actor_member_id enables a JOIN to the
+   * members table without re-resolving the actor.
+   */
+  | 'invoice_pdf_downloaded';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -112,6 +125,9 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   // §87 forensic trail — surface on RD audit; 10y to match other
   // tax-document audit events.
   tenant_receipt_prefix_changed: 10,
+  // R8-M1-code — tax-document touch (invoice PDF bytes accessed); 10y
+  // per Thai RD §86/4 + §87/3, parity with peers.
+  invoice_pdf_downloaded: 10,
 };
 
 /** Single-source helper — call at every F4 emit site. */

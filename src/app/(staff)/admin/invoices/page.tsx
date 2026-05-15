@@ -10,6 +10,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
+import { logger } from '@/lib/logger';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
@@ -169,9 +170,16 @@ export default async function AdminInvoicesPage({
       for (const c of counts) {
         creditNoteCountById.set(c.originalInvoiceId, Number(c.count));
       }
-    } catch {
+    } catch (err) {
       // Best-effort: count failures never 500 the list page. Missing
       // map entries fall back to 0 in the row mapper below.
+      // R8-L1-sf — log so a systemic CN-count failure is observable
+      // instead of silently degrading to 0 on every row across many
+      // tenants.
+      logger.warn(
+        { tenantId: tenantCtx.slug, invoiceCount: invoiceIds.length, err },
+        '[admin-invoices-list] credit-note count GROUP BY failed — rows will show 0 CN chip',
+      );
     }
   }
 
@@ -238,6 +246,19 @@ export default async function AdminInvoicesPage({
   // (issued + Bangkok-today > dueDate) fires, so recording payment
   // or voiding immediately returns the row to its stored status on
   // the next fetch.
+  // R8-H1-SF — was: `invoicesResult.ok ? ... : []` silent fallback.
+  // Empty rows fallback is indistinguishable from "tenant has no
+  // invoices" — admins saw the empty-state copy on backend failures
+  // (DB outage, RLS drift, repo bug) instead of an explicit error
+  // signal. Mirror the R7-M3 portal fix: log + render the standard
+  // empty-state with a logger.warn diagnostic so operators see the
+  // failure in pino structured logs.
+  if (!invoicesResult.ok) {
+    logger.warn(
+      { tenantId: tenantCtx.slug, err: invoicesResult.error },
+      '[admin-invoices-list] listInvoicesPaged failed — rendering empty list with diagnostic',
+    );
+  }
   const nowUtcIso = new Date().toISOString();
   const rows: InvoicesTableRow[] = invoicesResult.ok
     ? invoicesResult.value.rows.map((r) => ({
@@ -265,6 +286,10 @@ export default async function AdminInvoicesPage({
         // Receipt PDF availability for the Actions cell download link
         // — paid + worker has rendered the receipt-stamped bytes.
         hasReceiptPdf: r.status === 'paid' && r.receiptPdf !== null,
+        // R8-H2-UX — receipt PDF render status so the table can show
+        // a "preparing…" affordance for paid + pending/null/failed
+        // (mirrors portal list page receipt-pending pattern).
+        receiptPdfStatus: r.receiptPdfStatus,
       }))
     : [];
 

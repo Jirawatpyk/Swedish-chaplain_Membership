@@ -273,3 +273,65 @@ describe('getInvoicePdfSignedUrl — T166 receipt_pdf_pending gate', () => {
   });
 });
 
+// R8-M1-code — invoice_pdf_downloaded audit emit on successful download.
+// Closes the audit-coverage asymmetry where receipts logged downloads
+// but invoices didn't. 10y retention (tax-doc touch parity).
+describe('getInvoicePdfSignedUrl — invoice_pdf_downloaded audit (R8-M1)', () => {
+  it('admin success → emits invoice_pdf_downloaded with template_version + null actor_member_id', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, audit } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(auditCall?.eventType).toBe('invoice_pdf_downloaded');
+    const payload = auditCall?.payload as Record<string, unknown>;
+    expect(payload.invoice_id).toBe('i');
+    expect(payload.member_id).toBe('m-owner');
+    expect(payload.actor_member_id).toBeNull();
+    expect(payload.invoice_pdf_template_version).toBe(1);
+    expect(payload.actor_role).toBe('admin');
+    expect(payload.route).toBe('get-invoice-pdf-signed-url');
+  });
+
+  it('member success → emits invoice_pdf_downloaded with actor_member_id populated', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, audit } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const payload = auditCall?.payload as Record<string, unknown>;
+    expect(payload.actor_member_id).toBe('m-owner');
+    expect(payload.actor_role).toBe('member');
+  });
+
+  it('drafts (no pdf, forbidden) → NO invoice_pdf_downloaded emitted', async () => {
+    const draft = { ...makeIssuedInvoice(), status: 'draft', pdf: null } as Invoice;
+    const { deps, audit } = makeDeps(draft);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+});
+

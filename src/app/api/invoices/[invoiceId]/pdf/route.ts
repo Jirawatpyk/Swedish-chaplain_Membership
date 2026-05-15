@@ -28,16 +28,34 @@ export async function GET(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  const result = await getInvoicePdfSignedUrl(
-    makeGetInvoicePdfSignedUrlDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role,
-      requestId,
-      invoiceId,
-    },
-  );
+  // R8-L2-code — wrap the use-case call in try/catch parity with the
+  // receipt-PDF route. The use-case now (R8-M1-code) emits an audit
+  // event on success; if `audit.emit` throws (Neon transient, RLS
+  // constraint), the use-case rejects, and we MUST map that to a
+  // structured 500 instead of letting the route handler crash the
+  // Next.js worker. Same shape as `/receipt/pdf/route.ts` try/catch.
+  let result: Awaited<ReturnType<typeof getInvoicePdfSignedUrl>>;
+  try {
+    result = await getInvoicePdfSignedUrl(
+      makeGetInvoicePdfSignedUrlDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: ctx.current.user.role,
+        requestId,
+        invoiceId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      'GET /api/invoices/[id]/pdf — getInvoicePdfSignedUrl threw',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     logger.warn(
       {

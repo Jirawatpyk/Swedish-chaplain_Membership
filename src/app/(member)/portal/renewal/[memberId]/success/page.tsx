@@ -40,6 +40,10 @@ export default async function RenewalSuccessPage({
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('portal.renewal.success');
   const tStatus = await getTranslations('portal.renewal.success.cycleStatusValue');
+  // R8-M2-ux — separate translator for invoice-action ariaLabels so SR
+  // users hear "Download tax receipt PDF for invoice RC-2026-0001" not
+  // the generic button label "Download receipt PDF" (no number).
+  const tInvoiceActions = await getTranslations('portal.invoices.actions');
   // I16 review-fix: use next-intl formatter for locale-aware date
   // display (TH applies Buddhist Era; SV/EN use Gregorian) instead of
   // raw `.slice(0, 10)` ISO truncation.
@@ -87,15 +91,23 @@ export default async function RenewalSuccessPage({
           requestId: requestId ?? null,
           memberId: memberLookup.value.memberId,
         },
-      }).catch((err) => {
-        logger.warn(
+      }).catch((err: unknown) => {
+        // R8-M-rel-1 — `getInvoice` returns Result<>, never throws under
+        // normal operation. A throw landing here means an unexpected
+        // infra failure (Drizzle connection drop, RLS panic, Neon
+        // timeout). Use `logger.error` so alert rules fire — `warn` is
+        // for expected alternative paths (Result.err is one), but this
+        // catch covers ONLY the unexpected-throw case (the legitimate
+        // not-found / forbidden path returns Result.err without going
+        // through `.catch`).
+        logger.error(
           {
             tenantId: tenant.slug,
             memberId: memberLookup.value.memberId,
             invoiceId,
             err,
           },
-          '[renewal-success-page] getInvoice failed — falling back to invoice variant',
+          '[renewal-success-page] getInvoice threw unexpectedly — falling back to View All Invoices link',
         );
         return null;
       })
@@ -227,6 +239,11 @@ export default async function RenewalSuccessPage({
                 invoiceId={invoiceId}
                 documentNumber={documentNumber}
                 label={t('downloadReceipt')}
+                // R8-M2-ux — surface the document number to SR users so
+                // they know WHICH receipt they're about to download.
+                ariaLabel={tInvoiceActions('downloadReceiptAria', {
+                  number: documentNumber,
+                })}
                 data-testid="receipt-download-link"
                 className={sharedClassName}
               />
@@ -236,12 +253,16 @@ export default async function RenewalSuccessPage({
             // Paid but receipt PDF still rendering — give the member
             // the invoice (immediately available) + an explicit "your
             // receipt is being prepared" affordance.
+            const docNum = invoice.documentNumber?.raw ?? invoiceId;
             return (
               <>
                 <PortalInvoiceDownloadButton
                   invoiceId={invoiceId}
-                  documentNumber={invoice.documentNumber?.raw ?? invoiceId}
+                  documentNumber={docNum}
                   label={t('downloadInvoice')}
+                  ariaLabel={tInvoiceActions('downloadInvoiceAria', {
+                    number: docNum,
+                  })}
                   data-testid="receipt-download-link"
                   className={sharedClassName}
                 />
@@ -256,17 +277,39 @@ export default async function RenewalSuccessPage({
               </>
             );
           }
-          // Invoice fetch failed or not-paid — keep the legacy variant
-          // (invoice download). Document number falls back to UUID only
-          // if the catch path triggered; defensive but correct.
+          // R8-C1 — invoice exists but not paid (e.g. issued state where
+          // member somehow reached this URL pre-payment). Show the
+          // INVOICE button with the correct "Download invoice" label
+          // (previous code used `t('downloadReceipt')` label — a real
+          // user-confusion bug: members saw "Download receipt PDF" but
+          // got an invoice).
+          if (invoice) {
+            const docNum = invoice.documentNumber?.raw ?? invoiceId;
+            return (
+              <PortalInvoiceDownloadButton
+                invoiceId={invoiceId}
+                documentNumber={docNum}
+                label={t('downloadInvoice')}
+                ariaLabel={tInvoiceActions('downloadInvoiceAria', {
+                  number: docNum,
+                })}
+                data-testid="receipt-download-link"
+                className={sharedClassName}
+              />
+            );
+          }
+          // Invoice fetch FAILED entirely (catch path → null) OR member
+          // does not own it (Result.err forbidden/not-found). Don't
+          // dead-end with a broken button; surface the list page so the
+          // member can still reach their other invoices.
           return (
-            <PortalInvoiceDownloadButton
-              invoiceId={invoiceId}
-              documentNumber={invoice?.documentNumber?.raw ?? invoiceId}
-              label={t('downloadReceipt')}
-              data-testid="receipt-download-link"
+            <Link
+              href="/portal/invoices"
               className={sharedClassName}
-            />
+              data-testid="view-invoices-fallback"
+            >
+              {t('viewAllInvoices')}
+            </Link>
           );
         })()}
         <Link

@@ -1037,6 +1037,13 @@
 			"when": 1795161600000,
 			"tag": "0145_events_source_allow_admin_manual",
 			"breakpoints": true
+		},
+		{
+			"idx": 147,
+			"version": "7",
+			"when": 1795248000000,
+			"tag": "0147_audit_invoice_pdf_downloaded",
+			"breakpoints": true
 		}
 	]
 }

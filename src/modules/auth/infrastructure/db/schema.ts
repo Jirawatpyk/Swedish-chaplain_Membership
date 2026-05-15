@@ -245,6 +245,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     emitted by `updateTenantInvoiceSettings` when an admin flips
   //     any document-number prefix mid-fiscal-year. 10y retention. ---
   'tenant_receipt_prefix_changed',
+  // --- F4 invoice-PDF download surface (migration 0147, R8-M1-code) —
+  //     emitted by `getInvoicePdfSignedUrl` after successful ownership
+  //     check + signed-URL issuance. Closes the audit-coverage
+  //     asymmetry: receipts already logged downloads; invoices didn't.
+  //     10y retention (tax-doc touch, parity with peers). ---
+  'invoice_pdf_downloaded',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

@@ -76,7 +76,17 @@ function PortalPdfDownloadButton({
     variant === 'receipt'
       ? {
           pending: t('receiptPending'),
-          failed: (reason: string) => t('receiptFailed', { reason }),
+          // R8-M-i18n-verify — the portal receipt-PDF route deliberately
+          // strips `reason` from 502 responses (to avoid leaking
+          // internal error reason to members). When the helper receives
+          // an empty reason, the `{reason}` interpolation in
+          // `receiptFailed` would render as awkward whitespace (e.g.
+          // "Kvitto-PDF kunde inte genereras: . Kontakta…"). Fall back
+          // to the generic `unavailable` toast in that case — member
+          // gets a clean message, operator still sees the underlying
+          // error in the server logs.
+          failed: (reason: string) =>
+            reason ? t('receiptFailed', { reason }) : t('receiptUnavailable'),
           forbidden: t('receiptForbidden'),
           unavailable: t('receiptUnavailable'),
           sessionExpired: t('receiptSessionExpired'),

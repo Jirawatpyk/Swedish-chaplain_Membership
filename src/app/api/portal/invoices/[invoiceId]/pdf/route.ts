@@ -32,17 +32,33 @@ export async function GET(
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
 
-  const result = await getInvoicePdfSignedUrl(
-    makeGetInvoicePdfSignedUrlDeps(ctx.tenant.slug),
-    {
-      tenantId: ctx.tenant.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: 'member',
-      actorMemberId: ctx.memberId,
-      requestId: ctx.requestId,
-      invoiceId,
-    },
-  );
+  // R8-L2-code — wrap the use-case call in try/catch parity. The
+  // use-case now (R8-M1-code) emits `invoice_pdf_downloaded` on
+  // success; if `audit.emit` throws (Neon transient, retention
+  // constraint), surface as a 500 instead of letting the worker crash.
+  let result: Awaited<ReturnType<typeof getInvoicePdfSignedUrl>>;
+  try {
+    result = await getInvoicePdfSignedUrl(
+      makeGetInvoicePdfSignedUrlDeps(ctx.tenant.slug),
+      {
+        tenantId: ctx.tenant.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: 'member',
+        actorMemberId: ctx.memberId,
+        requestId: ctx.requestId,
+        invoiceId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, err },
+      'GET /api/portal/invoices/[id]/pdf — getInvoicePdfSignedUrl threw',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     logger.warn(
       {

@@ -1203,6 +1203,7 @@
           "downloadReceipt": "Receipt",
           "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
           "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
+          "receiptPreparing": "Receipt preparing…",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
@@ -2988,7 +2989,8 @@
         "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
         "downloadReceipt": "Receipt",
         "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
-        "downloadCombined": "Tax Invoice / Receipt",
+        "downloadCombined": "Download Tax Invoice / Receipt",
+        "downloadCombinedAria": "Download combined Tax Invoice / Official Receipt PDF for {number}",
         "receiptPreparing": "Receipt preparing…",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",

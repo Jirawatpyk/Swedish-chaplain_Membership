@@ -122,6 +122,33 @@ export async function getInvoicePdfSignedUrl(
   // "PDF Reproducibility — Best Practice Decision" for the 4-layer
   // reproducibility rationale + the `invoice_pdf_regenerated` event
   // contract registered in 0030_audit_invoice_pdf_regenerated.sql.
+
+  // R8-M1-code — audit emit BEFORE signing the URL. The audit is the
+  // durable §87 forensic trail; if it fails (Neon transient, retention
+  // column constraint) we MUST fail the read entirely rather than
+  // serve a download whose access record cannot be reconstructed.
+  // Closes the audit-coverage asymmetry: receipts already logged
+  // downloads via `receipt_pdf_downloaded`; invoices previously had
+  // no equivalent on the success path.
+  await deps.audit.emit(null, {
+    tenantId: input.tenantId,
+    requestId: input.requestId ?? null,
+    eventType: 'invoice_pdf_downloaded',
+    actorUserId: input.actorUserId,
+    summary: `Invoice PDF downloaded — ${invoice.documentNumber?.raw ?? invoiceId}`,
+    payload: {
+      invoice_id: invoiceId,
+      member_id: invoice.memberId,
+      actor_member_id:
+        input.actorRole === 'member'
+          ? (input.actorMemberId ?? null)
+          : null,
+      invoice_pdf_template_version: invoice.pdf.templateVersion,
+      actor_role: input.actorRole,
+      route: 'get-invoice-pdf-signed-url',
+    },
+  });
+
   const url = await deps.blob.signDownloadUrl(invoice.pdf.blobKey);
   const filename = `${invoice.documentNumber?.raw ?? 'invoice'}.pdf`;
   return ok({ url, filename });

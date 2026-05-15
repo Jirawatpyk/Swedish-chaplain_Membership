@@ -92,6 +92,12 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     // window. 5s matches the sequences read; an exceeded budget
     // raises `LockNotAvailable` so `withTx` rolls back atomically.
     const tx = txUnknown as TenantTx;
+    // R8-M-rel-2 — `SET LOCAL` overrides any prior `lock_timeout`
+    // setting in the same tx. The override is intentional here: this
+    // is a security-critical section (settings prefix flip + §87
+    // forensic audit emit) and 5s is the engineered budget. If a
+    // caller has already SET a different value upstream, our budget
+    // wins so the timeout behaviour is predictable.
     await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
     try {
       const rows = await tx

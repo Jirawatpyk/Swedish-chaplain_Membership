@@ -90,6 +90,14 @@ export type InvoicesTableRow = {
    * "Receipt" download link.
    */
   readonly hasReceiptPdf: boolean;
+  /**
+   * R8-H2-UX — raw `receiptPdfStatus` so the action cell can render
+   * a "preparing…" affordance when paid + pending/failed/null (the
+   * receipt is async-rendering but not yet downloadable). Without
+   * this, bookkeepers saw a row with only an Invoice download and
+   * no signal that the §86/4 + §105ทวิ legal doc is on its way.
+   */
+  readonly receiptPdfStatus: 'pending' | 'rendered' | 'failed' | null;
 };
 
 type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive';
@@ -198,12 +206,20 @@ export function InvoicesTable({
   // spinner state. The helpers already swallow errors via their own
   // catch, but a defensive finally costs nothing and matches the menu's
   // own pattern (parity with `invoice-more-menu.tsx`).
+  //
+  // R8-H1-UX — fire `toast.loading` BEFORE the await so SR + visual
+  // feedback is continuous from click → completion. Parity with the
+  // detail-page menu (`invoice-more-menu.tsx`) and portal button.
+  // Without this, the row's per-cell Loader2 spinner was the only
+  // visible affordance — and on rows scrolled off-screen, SR users
+  // had no audio cue at all during the fetch window.
   const handleRowDownloadInvoice = async (
     invoiceId: string,
     fallbackFilename: string,
   ) => {
     const key = `invoice:${invoiceId}`;
     addDownloading(key);
+    const loadingId = toast.loading(tDetail('toast.downloadInProgress'));
     try {
       await downloadInvoice({
         invoiceId,
@@ -219,6 +235,7 @@ export function InvoicesTable({
         toastError: (msg) => toast.error(msg),
       });
     } finally {
+      toast.dismiss(loadingId);
       removeDownloading(key);
     }
   };
@@ -229,6 +246,7 @@ export function InvoicesTable({
   ) => {
     const key = `receipt:${invoiceId}`;
     addDownloading(key);
+    const loadingId = toast.loading(tDetail('toast.downloadInProgress'));
     try {
       await downloadReceipt({
         invoiceId,
@@ -245,6 +263,7 @@ export function InvoicesTable({
         toastError: (msg) => toast.error(msg),
       });
     } finally {
+      toast.dismiss(loadingId);
       removeDownloading(key);
     }
   };
@@ -438,7 +457,19 @@ export function InvoicesTable({
                   const isCombinedPaid =
                     r.hasReceiptPdf && r.status === 'paid' && !r.receiptDocumentNumberRaw;
                   const showInvoice = r.hasPdf && !isCombinedPaid;
-                  if (!showInvoice && !r.hasReceiptPdf) {
+                  // R8-H2-UX — async receipt-PDF gate. When paid +
+                  // receiptPdfStatus is pending/failed/null AND the
+                  // receipt PDF isn't yet rendered, surface a
+                  // "preparing…" affordance alongside any visible
+                  // Invoice button. Without this, bookkeepers saw a
+                  // paid row with only the Invoice download and no
+                  // signal that the §86/4+§105ทวิ legal doc is on its
+                  // way. Mirrors the portal list pattern.
+                  const receiptPending =
+                    r.status === 'paid' &&
+                    r.receiptPdfStatus !== null &&
+                    r.receiptPdfStatus !== 'rendered';
+                  if (!showInvoice && !r.hasReceiptPdf && !receiptPending) {
                     return <span className="text-sm text-muted-foreground">—</span>;
                   }
                   return (
@@ -518,6 +549,25 @@ export function InvoicesTable({
                           )}
                           {t('actions.downloadReceipt')}
                         </button>
+                      )}
+                      {receiptPending && (
+                        // R8-H2-UX — paid + receipt-render in flight.
+                        // `role="status" aria-live="polite"` so SR
+                        // users hear the async state when the bookkeeper
+                        // scans the table. Style matches portal list
+                        // for visual consistency.
+                        <span
+                          role="status"
+                          aria-live="polite"
+                          aria-busy="true"
+                          className={cn(
+                            buttonVariants({ variant: 'outline', size: 'sm' }),
+                            'min-h-11 px-3 cursor-progress',
+                          )}
+                          data-testid="row-receipt-pending"
+                        >
+                          {t('actions.receiptPreparing')}
+                        </span>
                       )}
                     </div>
                   );

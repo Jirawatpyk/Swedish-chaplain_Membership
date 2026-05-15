@@ -90,6 +90,8 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'receipt_pdf_downloaded',
   // §87 prefix-change forensic trail (2026-05-15).
   'tenant_receipt_prefix_changed',
+  // R8-M1-code — invoice-PDF download surface (closes asymmetry with receipt).
+  'invoice_pdf_downloaded',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -252,8 +254,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'pdf_render_permanently_failed',
       'receipt_pdf_downloaded',
       'tenant_receipt_prefix_changed',
+      'invoice_pdf_downloaded',
     ] as const;
-    expect(allF4Types).toHaveLength(22);
+    expect(allF4Types).toHaveLength(23);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -620,6 +623,13 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'update-tenant-invoice-settings.ts emit on prefix flip + this file (enum probe + insert probe)',
         since: '2026-05-15',
       },
+      // R8-M1-code — invoice-PDF download surface (closes asymmetry).
+      invoice_pdf_downloaded: {
+        status: 'covered',
+        where:
+          'tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts (audit-emit assertions on admin + member success paths + drafts negative path) + this file (MVP_AUDIT_TYPES_EMITTED enum probe)',
+        since: '2026-05-15',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -650,6 +660,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'receipt_pdf_downloaded',
       // §87 prefix-change forensic trail (added 2026-05-15).
       'tenant_receipt_prefix_changed',
+      // R8-M1-code — invoice-PDF download surface (closes asymmetry).
+      'invoice_pdf_downloaded',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a

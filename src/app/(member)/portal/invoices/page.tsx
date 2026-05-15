@@ -221,7 +221,11 @@ export default async function PortalInvoicesPage({
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              {/* R8-M1-ux — dual-tone inset shadow signals horizontal
+                  scroll on mobile (parity with admin table U-I4). The
+                  portal list has 7 columns; without the cue, members
+                  on phones miss the right-edge Total + Actions silently. */}
+              <div className="overflow-x-auto shadow-[inset_-12px_0_8px_-12px_rgba(0,0,0,0.08)] dark:shadow-[inset_-12px_0_8px_-12px_rgba(255,255,255,0.10)]">
                 <Table>
                   <TableHeader>
                     <TableRow>
