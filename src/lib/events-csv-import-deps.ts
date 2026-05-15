@@ -28,6 +28,7 @@ import {
   type ImportSummary,
 } from '@/modules/events';
 import type { UserId } from '@/modules/auth';
+import { asTenantId } from '@/modules/members';
 
 // ---------------------------------------------------------------------------
 // Rate-limit
@@ -115,7 +116,10 @@ export async function runImportCsv(
   const deps = makeImportCsvDeps();
   const outcome = await importCsv(
     {
-      tenantId: input.tenantSlug,
+      // NEW-H fix (Round-2 review, 2026-05-15): brand the slug at the
+      // composition boundary so the use-case never sees an unbranded
+      // string. Matches the H-15 pattern for actorUserId.
+      tenantId: asTenantId(input.tenantSlug),
       actorUserId: input.actorUserId,
       bytes: input.bytes,
       ...(input.columnMapping !== undefined && {

@@ -418,6 +418,25 @@ export interface AuditPayloads {
     readonly rowNumber: number;
     readonly reason: string;
     readonly rawRowExcerpt: string;
+    /**
+     * NEW-D fix (Round-2 review, 2026-05-15): surface the `FailureStage`
+     * taxonomy from `processAttendeeInTx` (mirrors the webhook's
+     * `webhook_rolled_back.failureStage` field). Lets SRE dashboards
+     * alert on `audit_emit` failures (security-critical — forensic
+     * gap) separately from routine `event_upsert` /
+     * `registration_insert` / `quota_decrement` row-level validation
+     * failures. Closed value-set: 'event_upsert' / 'registration_insert'
+     * / 'idempotency_receipt' / 'quota_decrement' / 'audit_emit' /
+     * 'unknown' (last for non-TxStageError throws + batch-tx-abort
+     * fan-out where the stage is opaque).
+     */
+    readonly failureStage:
+      | 'event_upsert'
+      | 'registration_insert'
+      | 'idempotency_receipt'
+      | 'quota_decrement'
+      | 'audit_emit'
+      | 'unknown';
   };
 
   // --- Privacy + compliance (4) -----------------------------------------

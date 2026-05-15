@@ -67,9 +67,18 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
   const tMatch = useTranslations('admin.events.matchType');
 
   return (
+    // NEW-B fix (Round-2 review, 2026-05-15): dropped `aria-live="polite"`
+    // from the Card — the result-card mounts SIMULTANEOUSLY with content
+    // (when `phase.kind === 'completed'`), so SR-side `aria-live`
+    // observers swallow the announcement on first mount + cascade-read
+    // the full Card content when the live region IS registered. The
+    // component-root liveRegion in `csv-mapping-form.tsx` (line 253)
+    // pre-existing in the DOM handles the transition announcement
+    // (`importCompleteSr` i18n key) reliably across all phase changes.
+    // Card retains `role="region"` + `aria-label` so SR users can still
+    // navigate INTO the result on demand via region-jump shortcuts.
     <Card
       role="region"
-      aria-live="polite"
       aria-label={t('regionLabel')}
       data-testid="csv-import-result"
     >

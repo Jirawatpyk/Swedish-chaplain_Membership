@@ -34,6 +34,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { importCsv, makeImportCsvDeps } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
+import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
 const RUN_PERF = process.env['RUN_PERF'] === '1';
@@ -136,7 +137,7 @@ describe('SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB', () => {
       const deps = makeImportCsvDeps();
       const outcome = await importCsv(
         {
-          tenantId: tenant.ctx.slug,
+          tenantId: asTenantId(tenant.ctx.slug),
           actorUserId: asUserId('00000000-0000-0000-0000-000000000099'),
           bytes: csvBytes,
           // Override the use-case's default 55s safety margin to match

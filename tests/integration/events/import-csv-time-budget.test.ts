@@ -23,6 +23,7 @@ import { runInTenant } from '@/lib/db';
 import { eventRegistrations } from '@/modules/events/infrastructure/schema';
 import { importCsv, makeImportCsvDeps } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
+import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
 function buildBudgetCsv(rows: number): Uint8Array {
@@ -65,7 +66,7 @@ describe('H-10 — time-budget short-circuit semantics', () => {
       const deps = makeImportCsvDeps();
       const outcome = await importCsv(
         {
-          tenantId: tenant.ctx.slug,
+          tenantId: asTenantId(tenant.ctx.slug),
           actorUserId: asUserId('00000000-0000-0000-0000-000000000077'),
           bytes: csvBytes,
           batchSize: 50,

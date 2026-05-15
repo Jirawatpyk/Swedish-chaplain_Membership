@@ -502,6 +502,11 @@ export async function processAttendeeInTx(
         // quota_lookup_failed — simplify (2026-05-15): switch over the
         // nested cause kind instead of the prior triple-nested ternary
         // (CLAUDE.md explicit rule against nested ternaries).
+        // NEW-F fix (Round-2 review, 2026-05-15): explicit case for
+        // every variant + `default: never` exhaustiveness assertion.
+        // A future 4th variant of `QuotaAccountingError.cause.kind`
+        // would compile-error here instead of silently mislabelling
+        // as `plan_not_found`.
         const c = qe.cause;
         switch (c.kind) {
           case 'db_error':
@@ -510,8 +515,14 @@ export async function processAttendeeInTx(
           case 'member_not_found':
             detail = `member_not_found memberId=${c.memberId}`;
             break;
-          default:
+          case 'plan_not_found':
             detail = `plan_not_found memberId=${c.memberId}`;
+            break;
+          default: {
+            const _exhaustive: never = c;
+            void _exhaustive;
+            detail = `unexpected quota lookup cause: ${JSON.stringify(c)}`;
+          }
         }
       }
       throw new TxStageError(

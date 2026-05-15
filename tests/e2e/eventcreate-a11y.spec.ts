@@ -133,13 +133,22 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
 
   /**
    * H-13 fix (2026-05-15) — F6 Phase 7 CSV import surface axe-core
-   * scan. Three visual states render distinct DOM trees; the idle state
-   * is the most-frequently visited (every admin click on "Import CSV"
-   * lands here first). Preview-with-error + completed-with-result are
-   * exercised by T091 functional E2E; the axe scan here covers WCAG
-   * 2.1 AA defects that the functional spec wouldn't catch (colour
-   * contrast, label-input pairing, focusable-without-visible-focus,
-   * landmark hierarchy).
+   * scan. Three visual states render distinct DOM trees; each renders
+   * different roles + ARIA + colour-contrast surfaces, so each needs
+   * its own scan:
+   *   1. idle state — empty file input + drop zone (most-frequently
+   *      visited; every admin click on "Import CSV" lands here first)
+   *   2. preview-error state — malformed-header inline Alert with
+   *      missing-columns list + disabled Confirm CTA
+   *   3. completed-with-result state — result card with headline
+   *      counters + per-match-type breakdown + (collapsible) error rows
+   *
+   * NEW-M fix (Round-2 review, 2026-05-15): extended from just the
+   * idle scan to all three visual states. T091 covers the functional
+   * spec for (2) + (3); only this file catches WCAG 2.1 AA defects
+   * (colour contrast on the Alert banner, label-input pairing on the
+   * remap selects, focusable-without-visible-focus on disabled CTAs,
+   * landmark hierarchy on the result card).
    */
   test('admin CSV import — idle state (/admin/events/import) @a11y', async ({ page }) => {
     await signInAsAdmin(page);
@@ -149,5 +158,91 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
       page.getByRole('heading', { level: 1 }),
     ).toBeVisible();
     await expectNoAxeViolations(page, '/admin/events/import');
+  });
+
+  test('admin CSV import — preview-error state (malformed header) @a11y', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Upload a CSV missing required columns → client-side preview
+    // surfaces the inline `csv-header-error` Alert + disables Confirm.
+    const malformedCsv = Buffer.from(
+      [
+        'event_external_id,event_name,attendee_name',
+        'event_001,Midsummer 2026,Jane Andersson',
+      ].join('\n'),
+      'utf8',
+    );
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'malformed-header.csv',
+      mimeType: 'text/csv',
+      buffer: malformedCsv,
+    });
+
+    // Wait for the error banner to mount — scan against the populated
+    // DOM tree, not the idle one (different role + colour surface).
+    await expect(
+      page.locator('[data-testid="csv-header-error"]'),
+    ).toBeVisible({ timeout: 15_000 });
+
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (preview-error state)',
+    );
+  });
+
+  test('admin CSV import — completed-with-result state @a11y', async ({
+    page,
+  }) => {
+    // Generous timeout for the import to complete on cross-region Neon.
+    test.setTimeout(120_000);
+
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Build a small 5-row valid CSV → result card surfaces quickly.
+    // Result-card DOM is structurally identical for 5 vs 1000 rows;
+    // the a11y scan only cares about role + ARIA + contrast, not
+    // counters. 5 rows keeps this scan-test under 60s on cross-region.
+    const ts = Date.now();
+    const validCsv = Buffer.from(
+      [
+        'event_external_id,event_name,event_start,attendee_email,attendee_name',
+        ...Array.from({ length: 5 }, (_, i) =>
+          [
+            `event_a11y_${ts}_${i}`,
+            'A11y Test',
+            '2026-06-21T18:00:00+07:00',
+            `a11y_${ts}_${i}@example.com`,
+            `A11y Attendee ${i}`,
+          ].join(','),
+        ),
+      ].join('\n'),
+      'utf8',
+    );
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'a11y-result-5.csv',
+      mimeType: 'text/csv',
+      buffer: validCsv,
+    });
+    await page
+      .getByRole('button', { name: /import|confirm|upload/i })
+      .click();
+
+    // Result card mounts when the import completes.
+    await expect(
+      page.locator('[data-testid="csv-import-result"]'),
+    ).toBeVisible({ timeout: 90_000 });
+
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (completed-with-result state)',
+    );
   });
 });

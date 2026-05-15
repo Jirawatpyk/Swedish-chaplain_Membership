@@ -106,9 +106,12 @@ export function CsvMappingForm() {
   // H-12 + M-2 fix (2026-05-15): track whether a previous completed
   // phase happened so the idle re-entry announcement only fires on
   // intentional reset (not on first mount). Derived from
-  // `phase.kind` history — set in the same transition that emits
-  // `setPhase({kind:'completed'})` so render-time reads don't trip
-  // `react-hooks/refs` or `react-hooks/set-state-in-effect`.
+  // `phase.kind` history — set in the same `onSubmit` transition that
+  // fires `setPhase({kind:'completed'})` so the flag is updated
+  // alongside the phase, NOT in a `useEffect` (which would either
+  // (a) trigger an extra render via setState-during-effect, or
+  // (b) require a ref read during render to gate the live-region
+  // copy — both ESLint react-hooks rules flag those patterns).
   const [hasPreviouslyCompleted, setHasPreviouslyCompleted] =
     useState(false);
 
