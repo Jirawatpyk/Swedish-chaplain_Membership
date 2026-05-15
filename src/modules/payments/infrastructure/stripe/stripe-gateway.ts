@@ -1,5 +1,5 @@
 /**
- * T064 — Stripe gateway adapter (F5 Infrastructure).
+ * Stripe gateway adapter (F5 Infrastructure).
  *
  * Implements `ProcessorGatewayPort`. Wraps the shared `Stripe` client
  * singleton from `./stripe-client.ts` (already carries bounded retries
@@ -31,7 +31,7 @@ import type {
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
 
-// R3 H3: hoisted to module scope so we don't allocate two `Set`s on every
+// hoisted to module scope so we don't allocate two `Set`s on every
 // `mapStripeError` call (this runs in the SDK error hot path during
 // retries).
 const NETWORK_ERROR_NAMES: ReadonlySet<string> = new Set([
@@ -167,7 +167,7 @@ export function mapStripeError(
   switch (type) {
     case 'StripeConnectionError':
     case 'StripeAPIError':
-    // R3 I-7: SDK v10+ surfaces rate limits as a distinct
+    // SDK v10+ surfaces rate limits as a distinct
     // `StripeRateLimitError` type. The SDK already retries 3x under
     // the hood (see stripe-client.ts), so if it bubbles up here, the
     // burst is real — but classifying as `permanent` would force the
@@ -259,6 +259,21 @@ export const stripeGateway: ProcessorGatewayPort = {
         reason:
           'PromptPay must be the only payment_method_type — server-confirm requires a single method to populate next_action.promptpay_display_qr_code. ' +
           `Received: [${input.paymentMethodTypes.join(', ')}]`,
+      });
+    }
+
+    // F5R1-IMP6 — guard against bigint→number precision loss at the
+    // Stripe SDK boundary. THB satang ceiling sits at ~₿9e13 per
+    // single payment (Number.MAX_SAFE_INTEGER), well above any realistic
+    // invoice. The guard is belt-and-suspenders for F11 multi-currency
+    // (e.g. IDR sub-unit can push past MAX_SAFE_INTEGER on enterprise
+    // invoices). Failing-closed here means the use-case sees a typed
+    // `permanent` error and audit-logs it instead of silently truncating.
+    if (input.amountSatang > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return err({
+        kind: 'permanent',
+        code: 'amount_exceeds_safe_integer',
+        reason: `amountSatang ${input.amountSatang} exceeds Number.MAX_SAFE_INTEGER — cannot serialise to Stripe API without precision loss`,
       });
     }
 
@@ -455,6 +470,14 @@ export const stripeGateway: ProcessorGatewayPort = {
         metadata: { ...input.metadata },
       };
       if (input.amountSatang !== undefined) {
+        // F5R1-IMP6 — same SafeInteger guard as createPaymentIntent.
+        if (input.amountSatang > BigInt(Number.MAX_SAFE_INTEGER)) {
+          return err({
+            kind: 'permanent',
+            code: 'amount_exceeds_safe_integer',
+            reason: `refund amountSatang ${input.amountSatang} exceeds Number.MAX_SAFE_INTEGER — cannot serialise to Stripe API without precision loss`,
+          });
+        }
         params.amount = Number(input.amountSatang);
       }
       if (input.reason !== undefined) {

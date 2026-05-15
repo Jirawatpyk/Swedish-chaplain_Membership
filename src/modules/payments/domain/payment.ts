@@ -1,5 +1,5 @@
 /**
- * T047 — Payment aggregate root (F5).
+ * Payment aggregate root (F5).
  *
  * State machine (data-model.md § 2.5):
  *

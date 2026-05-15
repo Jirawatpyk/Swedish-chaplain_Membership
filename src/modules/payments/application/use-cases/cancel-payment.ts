@@ -1,5 +1,5 @@
 /**
- * T059 — cancelPayment use-case (F5 / payments-api.md § 2).
+ * cancelPayment use-case (F5 / payments-api.md § 2).
  *
  * Member-initiated cancel of own pending payment.
  */

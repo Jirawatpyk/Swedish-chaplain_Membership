@@ -1,5 +1,5 @@
 /**
- * T054 — PaymentsRepo port (F5 Application).
+ * PaymentsRepo port (F5 Application).
  *
  * Abstract persistence for the `payments` table. Implementation lives in
  * Infrastructure (Group E). Application layer calls these methods only

@@ -1,5 +1,5 @@
 /**
- * T057 — confirmPayment use-case (F5 / stripe-webhook.md § 4.1).
+ * confirmPayment use-case (F5 / stripe-webhook.md § 4.1).
  *
  * Handles `payment_intent.succeeded` webhook dispatch. Security-critical:
  * 100% branch coverage (Principle II).
@@ -101,7 +101,7 @@ export interface ConfirmPaymentDeps {
   /**
    * Optional — when supplied alongside `input.processorEventId`,
    * `markProcessed` runs inside this use-case's withTx so the dispatch
-   * + markProcessed commit atomically (audit 2026-04-25 finding #4).
+   * + markProcessed commit atomically.
    */
   readonly processorEventsRepo?: ProcessorEventsRepo;
   /**
@@ -302,7 +302,7 @@ async function confirmPaymentBody(
       // Exhaustive switch with `never` arm so a future addition to
       // InvoiceStatus (F4) fails the build here instead of silently
       // routing through the `invoice_credited` catch-all bucket
-      // (audit 2026-04-25 finding #6). The InvoiceStatus enum uses
+      //. The InvoiceStatus enum uses
       // `'void'` (not `'voided'`); the `invoice_credited` bucket
       // covers both `'credited'` and `'partially_credited'` since
       // both terminate the payable window.
@@ -511,7 +511,7 @@ async function confirmPaymentBody(
     // UTC slice was off-by-one for payments confirmed 17:00–24:00 UTC
     // (= 00:00–07:00 next-day Bangkok), which would group those rows
     // into the wrong daily settlement bucket on tax-receipt reports
-    // (audit 2026-04-25 finding #8). InvoicingBridgePort.markPaidFrom
+    //. InvoicingBridgePort.markPaidFrom
     // Processor.settlementDate is contractually `YYYY-MM-DD Asia/Bangkok`.
     const settlementDate = bangkokLocalDate(completedAt.toISOString());
     // Staff-review R2 R010 (2026-04-28): emit the trace's terminal

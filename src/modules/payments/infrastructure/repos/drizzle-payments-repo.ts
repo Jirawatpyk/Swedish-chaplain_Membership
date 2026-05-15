@@ -1,5 +1,5 @@
 /**
- * T061 — Drizzle payments repo (F5).
+ * Drizzle payments repo (F5).
  *
  * Implements `PaymentsRepo` (Application port). Mirrors F4's
  * `drizzle-invoice-repo.ts` shape: every tenant-scoped query runs

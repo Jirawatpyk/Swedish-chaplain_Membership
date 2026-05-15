@@ -1,5 +1,5 @@
 /**
- * T055 — initiatePayment use-case (F5 / payments-api.md § 1).
+ * initiatePayment use-case (F5 / payments-api.md § 1).
  *
  * Member-initiated payment-intent creation. See `payments-api.md § 1` for
  * the full error table. Returns `Result<InitiatePaymentSuccess,
@@ -236,7 +236,7 @@ async function initiatePaymentBody(
   input: InitiatePaymentInput,
 ): Promise<Result<InitiatePaymentSuccess, InitiatePaymentError>> {
   // Step 1: tenant settings — distinct error code for "no row exists"
-  // vs "row exists with missing fields" (audit 2026-04-25 finding #1).
+  // vs "row exists with missing fields".
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
     return err({
@@ -324,7 +324,7 @@ async function initiatePaymentBody(
 
   // Step 5 + 6: withTx → resume or insert+createIntent+audit.
   return await deps.paymentsRepo.withTx(async (tx) => {
-    // R2 fix (2026-04-27): advisory lock on (tenantId, invoiceId) so
+    // advisory lock on (tenantId, invoiceId) so
     // two concurrent initiate calls for the same invoice are serialised
     // at the DB layer. Without it, the findPending TOCTOU window lets
     // two callers both miss the pending row and both reach Stripe

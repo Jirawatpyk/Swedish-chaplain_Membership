@@ -683,6 +683,34 @@ export const paymentsMetrics = {
   },
 
   /**
+   * F5R1-E1 — `webhook.reject_audit_failed_total` — fires when the
+   * audit-row write on a webhook-reject path (signature, api-version,
+   * livemode, or unknown-account) throws. Without this counter, a
+   * chronic audit-rail outage would silently drop the forensic trail
+   * since pino logs roll off in 30 days but the audit table holds
+   * 5/10y compliance retention. NO tenant label (pre-tenant-resolution).
+   */
+  webhookRejectAuditFailed(): void {
+    counter(
+      'payments_webhook_reject_audit_failed_total',
+      'Webhook reject-path audit-log write threw — forensic trail may be lost',
+    ).add(1);
+  },
+
+  /**
+   * F5R1-E7 — `webhook.mark_processed_tail_failure_total{tenant, eventType}`
+   * — fires when the dispatcher's tail `markProcessed` write fails
+   * (sub-use-case did NOT set `markedProcessedAtomically=true` AND
+   * the defensive tail tx also threw). Code-bug-canary.
+   */
+  webhookMarkProcessedTailFailure(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_mark_processed_tail_failure_total',
+      'Dispatcher tail markProcessed write failed — processor_events row may stay unprocessed → Stripe retries',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
    * `webhook.signature_rejected_total` — abuse / misconfiguration canary.
    * NO tenant label (rejected pre-verification, before tenant resolution).
    */
@@ -701,6 +729,20 @@ export const paymentsMetrics = {
     counter(
       'payments_webhook_api_version_mismatch_total',
       'Webhook events with non-pinned api_version (acknowledged_only)',
+    ).add(1);
+  },
+
+  /**
+   * F5R1-IMP3 — `webhook.revalidate_path_failed_total` — Next.js cache
+   * invalidation failure on webhook dispatch tail. Webhook still
+   * 200-acks (markProcessed already committed), but admin UI may show
+   * stale Paid/Refunded status until manual reload. NO tenant label
+   * (the path/cache failure is global to the Next runtime).
+   */
+  webhookRevalidatePathFailed(): void {
+    counter(
+      'payments_webhook_revalidate_path_failed_total',
+      'Webhook handler revalidatePath call threw — Next cache may be stale',
     ).add(1);
   },
 
@@ -2842,6 +2884,24 @@ export const eventcreateMetrics = {
         'eventcreate_csv_adapter_mode_detected_total',
         'F6.1 CSV adapter format detection counter by mode (FR-001 / Spec § Rollback Plan)',
       ).add(1, { tenant: tenantId, format });
+    });
+  },
+
+  /**
+   * T051 (F6.1 · Feature 013 — Phase 6) — per-tenant error-CSV download
+   * counter. Emitted by `generateErrorCsvSignedUrl` ONLY on the success
+   * path (after the audit emit succeeds + before the signed URL is
+   * returned). Tracks Q4 "how often do admins download error CSVs?"
+   * for product-team review. Tagged with `tenant` so SREs can spot
+   * unexpected spikes (e.g., a single tenant downloading repeatedly
+   * suggests an admin-facing import-error pattern worth investigating).
+   */
+  csvErrorCsvDownloaded(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_downloaded_total',
+        'F6.1 error-CSV signed-URL download counter (Q4 admin access frequency)',
+      ).add(1, { tenant: tenantId });
     });
   },
 

@@ -53,7 +53,7 @@ import { paymentsLogger } from './logger/payments-logger';
 // RenewalCycle inside F4's atomic tx. Gated by `FEATURE_F8_RENEWALS` so
 // non-F8 deployments stay unchanged.
 //
-// Round 6 — dynamic import the renewals barrel ONLY when the feature
+// dynamic import the renewals barrel ONLY when the feature
 // is on. Previously a top-level static `import { f8OnPaidCallbacks }
 // from '@/modules/renewals'` paid the cold-start cost (~50-150ms +
 // bundle pollution from 32+ TS files in the renewals composition root)
@@ -130,7 +130,7 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
 export async function makeProcessWebhookEventDeps(
   tenantId: string,
 ): Promise<ProcessWebhookEventDeps> {
-  // Round 6 — async to await the dynamic F8 barrel import. Caller is
+  // async to await the dynamic F8 barrel import. Caller is
   // already async (Stripe webhook route handler).
   const f8Callbacks = await f8CallbacksFor(tenantId);
   return {
@@ -159,7 +159,7 @@ export async function makeProcessWebhookEventDeps(
 export async function makeConfirmPaymentDeps(
   tenantId: string,
 ): Promise<ConfirmPaymentDeps> {
-  // Round 6 — async to await the dynamic F8 barrel import.
+  // async to await the dynamic F8 barrel import.
   const f8Callbacks = await f8CallbacksFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),

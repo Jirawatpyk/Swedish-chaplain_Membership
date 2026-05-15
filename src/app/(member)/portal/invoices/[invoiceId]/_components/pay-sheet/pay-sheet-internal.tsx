@@ -342,7 +342,7 @@ export function PaySheetInternal({
   // Keep latest callback/translator refs so the initiate effect does
   // not re-fire on parent re-render (inline arrow props). Avoids the
   // `onInitiateResolved in deps → effect re-runs → fetch abort loop`
-  // class of bug (audit 2026-04-25 finding #4).
+  // class of bug.
   const onInitiateResolvedRef = useRef(onInitiateResolved);
   const onPaymentSettledRef = useRef(onPaymentSettled);
   const tRef = useRef<TranslateFn>(t);
@@ -355,7 +355,7 @@ export function PaySheetInternal({
   // Fire `onPaymentSettled` exactly once per PaymentIntent lifecycle.
   // Reset on every fresh initiate (new PI) AND on retry so the parent
   // cache is invalidated correctly on the failure → retry → success
-  // path (audit 2026-04-25 finding #1).
+  // path.
   const settledRef = useRef(false);
   useEffect(() => {
     if (settledRef.current) return;
@@ -666,7 +666,7 @@ export function PaySheetInternal({
     // Reset the terminal-state guard so the NEXT settlement
     // (retry-succeeds path) fires `onPaymentSettled` to the parent.
     // Defense-in-depth with the initiate-success reset
-    // (audit 2026-04-25 finding #1).
+    //.
     settledRef.current = false;
     // Bump `retryCount` to re-arm the initiate effect; the effect's
     // cleanup will abort any in-flight fetch from the previous attempt.

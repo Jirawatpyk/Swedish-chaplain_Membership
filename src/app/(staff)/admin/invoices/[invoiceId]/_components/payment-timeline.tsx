@@ -377,7 +377,7 @@ export async function PaymentTimeline({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {/* T099 — processor charge id chip + copy + dashboard link.
+        {/* processor charge id chip + copy + dashboard link.
             Hidden when no succeeded payment exists. */}
         {processorRef && dashboardUrl && latestSucceeded && (
           // Verify-fix S8 (2026-04-26): on narrow viewports (<sm) the chip
@@ -426,7 +426,7 @@ export async function PaymentTimeline({
           </div>
         )}
 
-        {/* T098 — empty state.
+        {/* empty state.
             Verify-fix S4 (2026-04-26): admin viewers get a secondary
             "Record payment manually" CTA when the invoice is still
             `issued` — it's the most likely next action when no online

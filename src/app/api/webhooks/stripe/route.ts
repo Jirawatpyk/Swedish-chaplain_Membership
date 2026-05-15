@@ -1,5 +1,5 @@
 /**
- * T071 — POST /api/webhooks/stripe (F5 / stripe-webhook.md § 3).
+ * POST /api/webhooks/stripe (F5 / stripe-webhook.md § 3).
  *
  * Pipeline (this route OWNS steps 1–5 + 7; `processWebhookEvent` starts
  * at step 6 / 8–10):
@@ -127,11 +127,17 @@ async function auditReject(
     });
   } catch (e) {
     // Audit write is best-effort on the reject path — never 500 a
-    // webhook request because the audit row failed to persist.
-    // H-4 (review 2026-04-27 — extended 2026-04-29 staff-review #4 A5.1
-    // closure): use constructor name only, never `e.message`. Audit-log
-    // writes go through Postgres; `e.message` on a Postgres failure can
-    // carry SQL params, table names, or interpolated values.
+    // webhook request because the audit row failed to persist. Use
+    // constructor name only (Postgres errors can carry SQL params /
+    // table names in .message).
+    //
+    // F5R1-E1 — emit a metric counter so SRE can alert on sustained
+    // audit-rail outage. Without this counter, a chronic audit-write
+    // failure would silently drop the forensic 5/10y compliance trail
+    // for signature-rejection / api-version-mismatch / livemode-
+    // mismatch events; pino logs roll off in 30 days. Mirrors the F8
+    // `coordinatorAuditEmitFailed` pattern.
+    paymentsMetrics.webhookRejectAuditFailed();
     logger.error(
       { err: e instanceof Error ? e.constructor.name : 'unknown', eventType, reason, requestId },
       'stripe-webhook.audit_reject_failed',
@@ -614,16 +620,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         revalidatePath('/portal/invoices', 'page');
         revalidatePath('/admin/invoices', 'page');
       } catch (e) {
-        // R5 N3 (2026-04-25): upgrade `warn` → `error`. A persistent
-        // revalidate failure means multi-tab/multi-user sync is
-        // silently degraded — admins won't see new "Paid"/"Refunded"
-        // status without manual reload. Surface this on the on-call
-        // dashboard via the higher log level. Webhook still returns
-        // 200 (markProcessed already committed) so Stripe doesn't
-        // retry-storm a non-deliverable side-effect failure.
+        // Upgrade warn → error: a persistent revalidate failure means
+        // multi-tab/multi-user sync is silently degraded — admins won't
+        // see new Paid/Refunded status without manual reload. Webhook
+        // still returns 200 (markProcessed already committed) so Stripe
+        // does not retry-storm a non-deliverable side-effect failure.
+        //
+        // F5R1-IMP3 — bump a metric counter so alert rules (attached
+        // to OTel counters, not log strings) can fire on sustained
+        // Next-cache outage. Plus H-4: use `e.constructor.name` not
+        // `e.message` — Next.js cache errors are framework-level and
+        // the raw string can carry path arguments; constructor name
+        // is sufficient diagnostic + matches the H-4 hygiene rule
+        // applied at every other catch in this file.
+        paymentsMetrics.webhookRevalidatePathFailed();
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: e instanceof Error ? e.constructor.name : 'unknown',
             eventId: evId,
             eventType: evType,
             correlationId,

@@ -1,5 +1,5 @@
 /**
- * T060 — handleCancelEvent use-case (F5 / stripe-webhook.md § 4.3).
+ * handleCancelEvent use-case (F5 / stripe-webhook.md § 4.3).
  *
  * Handles `payment_intent.canceled` webhook — either triggered by our
  * own cancelPayment (T059; row already `canceled` → no-op idempotent)
@@ -114,7 +114,7 @@ export async function handleCancelEvent(
           invoiceId: payment.invoiceId,
         });
       }
-      // R4 I-3: illegal_transition on webhook-side cancel is a PERMANENT
+      // illegal_transition on webhook-side cancel is a PERMANENT
       // mismatch. H-11 ack via dedicated event.
       await markProcessedIfPresent(deps, input, tx);
       await emitTerminalStateAck(deps.audit, {

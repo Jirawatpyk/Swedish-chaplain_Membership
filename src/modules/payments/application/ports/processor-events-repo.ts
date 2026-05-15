@@ -1,5 +1,5 @@
 /**
- * T054 — ProcessorEventsRepo port (F5 Application).
+ * ProcessorEventsRepo port (F5 Application).
  *
  * Backs the idempotency layer for Stripe webhook deliveries
  * (stripe-webhook.md § 3 step 6). Natural PK = Stripe `event.id`.

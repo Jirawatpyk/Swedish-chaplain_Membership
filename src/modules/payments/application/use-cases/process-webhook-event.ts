@@ -1,5 +1,5 @@
 /**
- * T056 — processWebhookEvent use-case (F5 / stripe-webhook.md § 3 steps 6–10).
+ * processWebhookEvent use-case (F5 / stripe-webhook.md § 3 steps 6–10).
  *
  * Route handler (Group C/F) owns steps 1–5 (raw body read, signature
  * verify, livemode check, api_version check) AND step 7 (tenant
@@ -190,7 +190,7 @@ export interface ProcessWebhookEventDeps {
   /**
    * Optional structured logger — defaults to `noopLogger` (silent) when
    * absent so existing tests do not need to provide one. Composition
-   * root wires `paymentsLogger` (audit 2026-04-25 finding #5).
+   * root wires `paymentsLogger`.
    */
   readonly logger?: LoggerPort;
   /**
@@ -435,7 +435,7 @@ async function processWebhookEventBody(
         // row, so the outcome MUST carry invoiceId. If it doesn't,
         // that's a `confirmPayment` contract violation.
         //
-        // R5 review-round-3 I-NEW-1 (2026-04-25): convert from
+        // convert from
         // `throw new Error('invariant: ...')` to `return err()`.
         // Throwing here bubbles to the route's outer try/catch → 500
         // → Stripe retries the event every 1h × 72h chasing a code
@@ -448,7 +448,7 @@ async function processWebhookEventBody(
         // layer MUST return Result<T,E>, never throw.
         /* v8 ignore start — confirmPayment contract guarantees invoiceId
          * on auto_refunded_stale_invoice; defence-in-depth for post-
-         * compile contract drift (R5 review-round-3 I-NEW-1). */
+         * compile contract drift. */
         if (confirmInvoiceId === undefined) {
           return err<ProcessWebhookEventError>({
             code: 'dispatch_failed',
@@ -584,7 +584,7 @@ async function processWebhookEventBody(
     }
 
     case 'charge.refunded': {
-      // T130 (2026-04-27): extracted to `process-charge-refunded.ts` for
+      // extracted to `process-charge-refunded.ts` for
       // symmetry with confirm/fail/cancel branches. Behaviour-preserving:
       // dispatcher maps the use-case's `dispatch_failed` Result into this
       // branch's `dispatch_threw` error variant (matches the previous
@@ -683,7 +683,7 @@ async function processWebhookEventBody(
       // Unknown event type — forward-compat per § 4.6. Mark the
       // processor_event row as `acknowledged_only` + processed_at
       // atomically so the row cannot get stuck in a split-commit.
-      // R3 I-8: wrap in try/catch to mirror charge.refunded /
+      // wrap in try/catch to mirror charge.refunded /
       // charge.dispute.created branches above. A bare throw here
       // would bubble past the route's structured error path.
       try {
@@ -751,11 +751,19 @@ async function processWebhookEventBody(
         await deps.processorEventsRepo.markProcessed(tx, event.id);
       });
     } catch (e) {
+      // F5R1-E7 — H-4 hygiene: use constructor name only, never
+      // `e.message`. The tail-write goes through Postgres; `.message`
+      // on a Postgres failure can carry SQL params / table names /
+      // interpolated values. Plus emit a metric so a sustained tail-
+      // failure pattern (chronic mid-flight crashes, RLS regression)
+      // surfaces to alert rules instead of being buried in pino logs
+      // that roll off in 30 days.
+      paymentsMetrics.webhookMarkProcessedTailFailure(tenantId, event.type);
       log.warn('processWebhookEvent.markProcessed_tail_failure', {
         eventId: event.id,
         eventType: event.type,
         tenantId,
-        error: e instanceof Error ? e.message : String(e),
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
       });
     }
   }

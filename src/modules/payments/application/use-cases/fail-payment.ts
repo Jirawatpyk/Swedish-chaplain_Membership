@@ -1,5 +1,5 @@
 /**
- * T058 — failPayment use-case (F5 / stripe-webhook.md § 4.2).
+ * failPayment use-case (F5 / stripe-webhook.md § 4.2).
  *
  * Handles `payment_intent.payment_failed`. No F4 invocation, no refund.
  */
@@ -123,7 +123,7 @@ async function failPaymentBody(
       input.tenantId,
     );
     if (!payment) {
-      // Ops-visibility audit (audit 2026-04-25 finding #10).
+      // Ops-visibility audit.
       // best-effort emit (tx=null) per audit-port contract — audit
       // outage MUST NOT roll back markProcessed (avoids stuck-row
       // class on probe paths). markProcessed stays inside `tx` so it
@@ -150,7 +150,7 @@ async function failPaymentBody(
           invoiceId: payment.invoiceId,
         });
       }
-      // R4 I-3: illegal_transition (e.g. succeeded → failed) is a
+      // illegal_transition (e.g. succeeded → failed) is a
       // PERMANENT webhook-side mismatch. H-11 ack via dedicated event.
       await markProcessedIfPresent(deps, input, tx);
       await emitTerminalStateAck(deps.audit, {
@@ -176,7 +176,7 @@ async function failPaymentBody(
       settings.processorAccountId,
     );
     if (!retrieved.ok) {
-      // R3 I-9: forensic audit so ops see Stripe outages during failPayment
+      // forensic audit so ops see Stripe outages during failPayment
       // (mirrors confirmPayment retrieve-fail trail). Best-effort emit on
       // null tx — outer withTx is about to roll back; emitting through
       // `tx` would discard the row we want ops to see.
@@ -221,7 +221,7 @@ async function failPaymentBody(
         payment_id: payment.id,
         invoice_id: payment.invoiceId,
         failure_reason_code: reasonCode,
-        // R3 I-1: card metadata intentionally OMITTED. A failed payment
+        // card metadata intentionally OMITTED. A failed payment
         // never produces a tax document, so card_brand/card_last4 have
         // no receipt-correlation purpose — keeping them only widens the
         // PCI surface in the long-retention audit_log.

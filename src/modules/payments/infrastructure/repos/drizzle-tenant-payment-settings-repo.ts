@@ -1,5 +1,5 @@
 /**
- * T063 — Drizzle tenant_payment_settings repo (F5).
+ * Drizzle tenant_payment_settings repo (F5).
  *
  * Implements `TenantPaymentSettingsRepo` with `unstable_cache` to
  * shelter the hot path — every `initiatePayment` and every webhook

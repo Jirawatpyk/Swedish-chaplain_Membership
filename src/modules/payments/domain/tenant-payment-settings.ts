@@ -1,5 +1,5 @@
 /**
- * T050 — TenantPaymentSettings value object (F5).
+ * TenantPaymentSettings value object (F5).
  *
  * Per-tenant configuration governing processor environment, publishable
  * key, processor account id, enabled methods, and behavioural flags.
@@ -65,7 +65,7 @@ export type SettingsIncompleteReason =
    * completed initial F5 configuration). Distinct from
    * `missing_processor_account_id` which means a row exists but with
    * an empty processorAccountId — different ops remediation path
-   * (audit 2026-04-25 finding #1).
+   *.
    */
   | 'settings_row_missing';
 

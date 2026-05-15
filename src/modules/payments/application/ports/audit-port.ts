@@ -1,5 +1,5 @@
 /**
- * T054 — F5 Audit port.
+ * F5 Audit port.
  *
  * 17 F5 audit event types per data-model.md § 7. Discriminated union so
  * callers cannot emit an unknown event_type.
@@ -344,7 +344,13 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   payment_succeeded: 10,
   payment_failed: 5,
   payment_canceled: 5,
-  payment_method_switched: 10,
+  // F5R1-IMP7 — method-switch cancels one PaymentIntent and creates a
+  // new one BEFORE settlement; it does NOT touch a tax document so the
+  // 10y class (Thai RD §86/10) does not apply. Downgraded to 5y to
+  // match payment_initiated / payment_canceled (operational, not
+  // financial-settlement). The settled `payment_succeeded` row keeps
+  // its 10y class as the actual financial-settlement record.
+  payment_method_switched: 5,
   payment_auto_refunded_stale_invoice: 10,
   payment_auto_refunded_concurrent_manual_mark: 10,
   refund_initiated: 10,
