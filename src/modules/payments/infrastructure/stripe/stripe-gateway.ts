@@ -454,8 +454,35 @@ export const stripeGateway: ProcessorGatewayPort = {
             });
           }
           // Other terminal states (requires_capture, etc.) — fall through.
-        } catch {
-          // retrieve failed — fall through to mapStripeError.
+        } catch (retrieveErr) {
+          // F5R1-E6 — retrieve disambiguation failed. Pre-fix this was
+          // a bare `catch {}` with no log, falling through to
+          // mapStripeError(original error). On a Stripe partial outage
+          // where the original `payment_intent_unexpected_state` came
+          // from a SUCCEEDED PI but the retrieve ALSO fails, the caller
+          // mapped the original error as a permanent cancel rejection
+          // and the DB then wrote `canceled` over a succeeded payment
+          // (financial-integrity divergence). Log + classify retrieve
+          // failure as retryable so the caller does NOT mark canceled
+          // over a possibly-succeeded PI.
+          logger.warn(
+            {
+              stripeAccount,
+              paymentIntentId,
+              originalErrCode: err_.code,
+              retrieveErr:
+                retrieveErr instanceof Error
+                  ? retrieveErr.constructor.name
+                  : 'unknown',
+            },
+            'stripe-gateway: cancelPaymentIntent disambiguation retrieve failed — caller must retry',
+          );
+          return err({
+            kind: 'retryable',
+            code: 'unexpected_state_disambiguation_failed',
+            reason:
+              'PI state ambiguous (cancel failed with unexpected_state + retrieve also failed); retry after Stripe recovers',
+          });
         }
       }
       return err(mapStripeError(e, { stripeAccount, paymentIntentId }));

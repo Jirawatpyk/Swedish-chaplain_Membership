@@ -748,18 +748,25 @@ async function confirmPaymentBody(
     // audit emits a SECOND time → double-emission. We ALSO defensively
     // log the error so ops have a forensic trail; the sweep cron is
     // the recovery path.
+    // F5R1-E15 — metric INSIDE the try block so a Phase B failure
+    // does NOT bump it (and the Stripe retry that recovers Phase B
+    // WILL bump it cleanly on the next attempt). Pre-fix the metric
+    // was outside, so chronic mid-flight crashes over-counted the
+    // auto-refund rate and triggered false-alert fatigue. Trade-off
+    // accepted: under-count by 1 on Phase B failure (recovered next
+    // retry) vs. over-count on every retry (false alarm).
     try {
       await deps.paymentsRepo.withTx(async (tx) => {
         await markProcessedIfPresent(deps, input, tx);
       });
+      paymentsMetrics.autoRefundedStaleCount(input.tenantId);
       /* v8 ignore start — best-effort Phase B catch; rare DB-outage
        * race window. Recovery is automatic via Stripe retry idempotency
-       * key. Forensic log emitted before the retry per H2-2026-04-28. */
+       * key. */
     } catch (phaseBErr) {
-      // Best-effort log — this is a known race window (R3 H3-2).
-      // Recovery is automatic via Stripe retry idempotency. Per
-      // review-20260428-102639.md H2, structured-log this so ops
-      // has a forensic trail before the retry rather than silence.
+      // Best-effort log — known race window. Recovery is automatic
+      // via Stripe retry idempotency. Structured-log so ops has a
+      // forensic trail before the retry rather than silence.
       deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,
@@ -770,7 +777,6 @@ async function confirmPaymentBody(
     }
     /* v8 ignore stop */
 
-    paymentsMetrics.autoRefundedStaleCount(input.tenantId);
     return ok<ConfirmPaymentOutcome>({
       kind: 'auto_refunded_stale_invoice',
       invoiceId: payment.invoiceId,

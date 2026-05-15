@@ -109,11 +109,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return noContent(400);
   }
 
+  // F5R1-E5 — hash the invoiceId before logging. The route documents
+  // that it does not validate ownership (forged ids only pollute the
+  // log stream — they cannot grant access or change state). Pre-fix
+  // the raw invoiceId went into pino, so an attacker could spray
+  // forged ids to contaminate forensic queries (SRE searches
+  // "client_optimistic_flip for invoice X" would return false
+  // positives from any member). Hashing preserves the SRE workflow
+  // (the legitimate client computes the same hash via lib/log-id)
+  // while denying attackers chosen-input control over the log stream.
   logger.info(
     {
       event: 'client_optimistic_flip',
       tenantId: tenantCtx.slug,
-      invoiceId: parsedBody.invoiceId,
+      invoiceIdHash: hashId(parsedBody.invoiceId),
       userIdHash: hashId(actorUserId),
       correlationId,
     },
