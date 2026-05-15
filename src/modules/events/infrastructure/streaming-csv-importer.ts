@@ -294,8 +294,13 @@ function tokeniseLine(line: string): TokeniseResult {
     i++;
   }
   if (inQuote) {
-    // Embedded newline inside quoted field (line terminated before the
-    // closing `"`) — R8 / E20 explicit rejection.
+    // C-1 (Round 1 — comment-analyzer): obsolete claim that this
+    // rejects "embedded newlines in quoted fields" removed. F6.1
+    // joinMultilineQuotedRows preprocessor already coalesces embedded
+    // newlines into one logical row (research.md § 8 / R1 - F6.1
+    // RFC 4180 § 2.6 acceptance). This branch fires ONLY when the
+    // buffer reaches EOF with inQuote still true — i.e. the file
+    // genuinely ends with an unclosed quote (corrupt CSV).
     return { ok: false, reason: `unterminated quoted field` };
   }
   cells.push(current);

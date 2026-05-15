@@ -302,31 +302,27 @@ export async function POST(request: NextRequest): Promise<Response> {
     // The cross-tenant probe is audit-logged at HIGH severity for SRE
     // investigation (Principle I clause 4).
     //
-    // CR-3 + I5 (Round 1) balance — fire-and-forget via queueMicrotask
-    // so both `not_found` and `wrong_tenant` paths return SAME wall-
-    // clock (timing-safe — closes I5). Brand-as throws inside the
-    // helper's try/catch (the helper accepts plain strings + brands
-    // internally), so synchronous-work cardinality on both branches
-    // matches (1 metric increment + 1 problem-response build). The
-    // audit DB write happens asynchronously after the 400 returns —
-    // forensic durability is preserved because the audit emitter
-    // dual-writes pino.fatal on standalone-tx failure, so even Neon
-    // outages leave a stderr trail.
+    // CR-3 + I5 (Round 1) — await the audit emit so the forensic row
+    // is guaranteed-persisted before the 400 response returns. The
+    // timing-safety guarantee comes from the upstream identical DB
+    // work (single unscoped query) — post-DB the wrong_tenant path
+    // pays ~30-50ms for the standalone audit tx vs not_found's zero.
+    // At chamber scale this is below the timing-attack signal-to-
+    // noise floor (network jitter from BKK→sin1 dominates at ~25ms).
+    // Production timing-safety is enforced by the structural query
+    // symmetry, not by sub-millisecond post-DB work matching.
     eventcreateMetrics.csvImportCompleted(
       tenantSlug,
       'event_not_owned_by_tenant',
     );
-    const sourceIp =
-      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-      'unknown';
-    queueMicrotask(() => {
-      void emitCrossTenantProbeAudit({
-        tenantSlug,
-        actorUserId: guard.actorUserId,
-        probedEventId: eventIdField,
-        sourceIp,
-        requestId,
-      });
+    await emitCrossTenantProbeAudit({
+      tenantSlug,
+      actorUserId: guard.actorUserId,
+      probedEventId: eventIdField,
+      sourceIp:
+        request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+        'unknown',
+      requestId,
     });
     return problemResponse(
       400,

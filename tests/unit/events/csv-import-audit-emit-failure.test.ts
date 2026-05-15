@@ -30,7 +30,7 @@ import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
+import { f6CsvTestSelectedEventStub, wrapParseStreamAsFormat } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -95,8 +95,10 @@ function makeFakeDeps(opts: FakeDepsOpts): ImportCsvDeps {
   } as unknown as ImportCsvTxScopedPorts;
 
   return {
-    csvImporter: {
-      parseStream: vi.fn(async () =>
+    csvImporter: ((parseStreamFn) => ({
+        parseStream: parseStreamFn,
+        parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
+      }))(vi.fn(async () =>
         ok(
           (async function* () {
             yield {
@@ -114,8 +116,7 @@ function makeFakeDeps(opts: FakeDepsOpts): ImportCsvDeps {
             };
           })(),
         ),
-      ),
-    },
+      )),
     runInTenantTx: vi.fn(async (_tenantId, fn) => fn(fakeBatchPorts)),
     emitStandalone: vi.fn(async () => {
       if (opts.emitFails) {

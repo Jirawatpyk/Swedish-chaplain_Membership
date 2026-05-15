@@ -29,7 +29,7 @@ import {
 } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
-import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
+import { f6CsvTestSelectedEventStub, wrapParseStreamAsFormat } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -88,8 +88,10 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
   } as unknown as ImportCsvTxScopedPorts;
 
     const deps = {
-      csvImporter: {
-        parseStream: vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
+      csvImporter: ((parseStreamFn) => ({
+        parseStream: parseStreamFn,
+        parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
+      }))(vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
           const text = new TextDecoder().decode(bytes);
           const lines = text.split('\n').filter((l) => l.length > 0);
           const dataLines = lines.slice(1);
@@ -113,8 +115,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
               }
             })(),
           );
-        }),
-      },
+        })),
       // Simulate the failure mode: the inner callback resolves
       // successfully (fills tentativeOutcomes); then the OUTER
       // `runInTenantTx` itself throws — modelling deferred-constraint
@@ -195,8 +196,10 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
   } as unknown as ImportCsvTxScopedPorts;
 
     const deps = {
-      csvImporter: {
-        parseStream: vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
+      csvImporter: ((parseStreamFn) => ({
+        parseStream: parseStreamFn,
+        parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
+      }))(vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
           const text = new TextDecoder().decode(bytes);
           const lines = text.split('\n').filter((l) => l.length > 0);
           const dataLines = lines.slice(1);
@@ -220,8 +223,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
               }
             })(),
           );
-        }),
-      },
+        })),
       runInTenantTx: vi.fn(
         async (
           _tenantId: string,

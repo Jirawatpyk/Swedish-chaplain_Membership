@@ -163,13 +163,15 @@ export interface CsvImporter {
    * EventCreate-format rows additionally carry `pdpaConsentAcknowledged`
    * for FR-009 storage; generic rows omit the field.
    *
-   * **Optional pin** — Phase 7 mocks predate this method. The F6.1
-   * use-case falls back to `parseStream` + a synthetic `generic_csv`
-   * envelope when this method is undefined, preserving back-compat
-   * for legacy `vi.fn` mocks without forcing a wide test refactor.
-   * Production adapters MUST implement this method.
+   * TYPE-D3 (Round 1 — type-design-analyzer): REQUIRED. Previously
+   * optional with a "Phase 7 mock predates" loophole, which let
+   * production code accidentally route through the legacy fallback
+   * branch (bypassing the dropdown-authoritative eventContext merge).
+   * Phase 7 mocks now provide this method via the shared
+   * `wrapParseStreamAsFormat` helper in
+   * `tests/unit/events/_helpers/f6-csv-test-fixtures.ts`.
    */
-  parseStreamWithFormat?(
+  parseStreamWithFormat(
     input: ParseStreamFormattedInput,
   ): Promise<Result<ParseStreamFormatted, CsvImporterError>>;
 }

@@ -700,9 +700,11 @@ async function processBatch(
 /**
  * Record an audit-emit failure (either `Result.err` or thrown exception)
  * to the dedicated `csvImportAuditEmitFailed` counter + a structured
- * `logger.error`. Centralises observability for the C-1/C-2 forensic-gap
- * paths so SREs can alert on `rate > 0` consistently across all four
- * emit sites (row-failed × {err, throw}, completed × {err, throw}).
+ * `logger.error`. C-2 (Round 1 comment-analyzer): updated for the 6
+ * call sites — row-failed × {err, throw}, completed × {err, throw},
+ * mismatch-override × {err, throw} (CR-4 Round 1 wired override paths
+ * to use this helper instead of inline-duplicated emit + mislabelled
+ * 'csv_import_completed' metric label).
  */
 function recordAuditEmitFailure(
   tenantId: TenantId,
@@ -796,45 +798,18 @@ export async function importCsv(
     category: input.selectedEvent.category,
   };
 
-  type FormatParseResult = Awaited<
-    ReturnType<NonNullable<CsvImporter['parseStreamWithFormat']>>
-  >;
-  let parsed: FormatParseResult;
-  const parseStreamWithFormat =
-    deps.csvImporter.parseStreamWithFormat?.bind(deps.csvImporter);
+  // TYPE-D3 (Round 1) — port method is now required; legacy fallback
+  // branch removed. Phase 7 mocks provide it via
+  // `wrapParseStreamAsFormat` helper.
+  let parsed: Awaited<ReturnType<CsvImporter['parseStreamWithFormat']>>;
   try {
-    if (parseStreamWithFormat) {
-      parsed = await parseStreamWithFormat({
-        bytes: input.bytes,
-        eventContext,
-        ...(input.columnMapping !== undefined && {
-          columnMapping: input.columnMapping,
-        }),
-      });
-    } else {
-      // Legacy mock path — `parseStream` only. Synthesize a `generic_csv`
-      // envelope so the rest of the use-case is format-agnostic. The
-      // event-context override is NOT applied in this path (legacy
-      // tests build their own rows already in CsvRow shape).
-      const legacy = await deps.csvImporter.parseStream({
-        bytes: input.bytes,
-        ...(input.columnMapping !== undefined && {
-          columnMapping: input.columnMapping,
-        }),
-      });
-      if (!legacy.ok) {
-        parsed = legacy;
-      } else {
-        parsed = {
-          ok: true as const,
-          value: {
-            format: 'generic_csv' as const,
-            rows: legacy.value,
-            unknownColumns: [],
-          },
-        };
-      }
-    }
+    parsed = await deps.csvImporter.parseStreamWithFormat({
+      bytes: input.bytes,
+      eventContext,
+      ...(input.columnMapping !== undefined && {
+        columnMapping: input.columnMapping,
+      }),
+    });
   } catch (e) {
     return {
       kind: 'unexpected_error',

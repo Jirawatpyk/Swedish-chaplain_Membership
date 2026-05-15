@@ -216,8 +216,18 @@ export function CsvMappingForm() {
             return;
           }
           // F6.1 `completed` envelope wraps summary at top-level.
-          const summary = (body['summary'] ??
-            body) as CsvImportResultPayload;
+          const rawSummary = (body['summary'] ?? body) as Omit<
+            CsvImportResultPayload,
+            'recordId'
+          >;
+          // Smart-feature S-02 (Round 1) — thread recordId from the
+          // F6.1 envelope so the result card can render it for support.
+          const summary: CsvImportResultPayload = {
+            ...rawSummary,
+            ...(typeof body['recordId'] === 'string'
+              ? { recordId: body['recordId'] }
+              : {}),
+          };
           setPhase({ kind: 'completed', summary });
           setHasPreviouslyCompleted(true);
           toast.success(t('importSuccessToast'), {

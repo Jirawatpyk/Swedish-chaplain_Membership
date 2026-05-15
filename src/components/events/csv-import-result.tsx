@@ -41,6 +41,13 @@ export interface CsvImportResultPayload {
     readonly reason: string;
   }>;
   readonly durationMs: number;
+  /**
+   * Smart-feature S-02 (Round 1 — enterprise-ux-designer): import
+   * record ID quotable for support tickets. Optional because Phase 7
+   * (pre-F6.1) imports don't carry recordId. F6.1 imports always
+   * populate this from `runImportCsv` outcome.
+   */
+  readonly recordId?: string;
 }
 
 interface CsvImportResultProps {
@@ -115,6 +122,19 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             testId="result-duration"
           />
         </dl>
+
+        {/* Smart-feature S-02 (Round 1) — record ID quotable for support.
+            Rendered as a small caption row below counters; uses monospace
+            for click-to-copy ergonomics. */}
+        {result.recordId !== undefined ? (
+          <p
+            className="text-caption text-muted-foreground"
+            data-testid="result-record-id"
+          >
+            {t('recordIdLabel')}:{' '}
+            <span className="font-mono select-all">{result.recordId}</span>
+          </p>
+        ) : null}
 
         {/* Per-match-type breakdown */}
         <section aria-labelledby="csv-result-match-breakdown" data-testid="result-match-counts">

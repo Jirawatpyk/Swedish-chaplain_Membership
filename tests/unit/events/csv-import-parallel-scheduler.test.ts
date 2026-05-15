@@ -29,7 +29,7 @@ import {
 } from '@/modules/events';
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
-import { f6CsvTestSelectedEventStub } from './_helpers/f6-csv-test-fixtures';
+import { f6CsvTestSelectedEventStub, wrapParseStreamAsFormat } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -86,8 +86,10 @@ function makeConcurrencyTrackingDeps(): {
   } as unknown as ImportCsvTxScopedPorts;
 
   const deps = {
-    csvImporter: {
-      parseStream: vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
+    csvImporter: ((parseStreamFn) => ({
+        parseStream: parseStreamFn,
+        parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
+      }))(vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
         // Hand-parse the test CSV: skip header, yield ParsedRow per data line.
         const text = new TextDecoder().decode(bytes);
         const lines = text.split('\n').filter((l) => l.length > 0);
@@ -112,8 +114,7 @@ function makeConcurrencyTrackingDeps(): {
             }
           })(),
         );
-      }),
-    },
+      })),
     runInTenantTx: vi.fn(
       async (
         _tenantId: string,

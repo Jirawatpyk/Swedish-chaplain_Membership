@@ -183,6 +183,135 @@ describe('T018 — FR-019b safety-net event-mismatch integration (live Neon)', (
       const payload = latest.payload as Record<string, unknown>;
       expect(payload['recordId']).toBe(r3.recordId);
       expect(payload['currentEventId']).toBe(eventB.eventId);
+      // I6 (Round 1 — pr-test-analyzer): assert priorRecordIds +
+      // priorEventIds populated for FR-019c forensic-trail value.
+      const priorRecordIds = payload['priorRecordIds'] as string[];
+      const priorEventIds = payload['priorEventIds'] as string[];
+      expect(Array.isArray(priorRecordIds)).toBe(true);
+      expect(priorRecordIds).toContain(firstRecordId);
+      expect(Array.isArray(priorEventIds)).toBe(true);
+      expect(priorEventIds).toContain(eventA.eventId);
     }
+  });
+
+  // TESTS-I4 (Round 1 — pr-test-analyzer) — FR-019b boundary semantics.
+  it('TESTS-I4 30-day boundary: priors at 31d ago are OUT-OF-WINDOW; 29d23h59m are IN-WINDOW', async () => {
+    const eventX = await seedEvent(tenant, 'Boundary X', 'boundary-x');
+    const eventY = await seedEvent(tenant, 'Boundary Y', 'boundary-y');
+    const eventZ = await seedEvent(tenant, 'Boundary Z', 'boundary-z');
+    const actorUserId = actor.userId;
+    const bytes = new TextEncoder().encode(EVENTCREATE_CSV);
+
+    // Seed a "31 days ago" import directly via db.insert (the use-case
+    // path can't backdate `uploaded_at`). Fingerprint matches the
+    // CSV's attendee set — would trigger safety-net if in-window.
+    // Run safety-net query on a SECOND attempt; we expect the 31d-old
+    // record to be EXCLUDED from priorImports.
+    //
+    // Strategy: directly write a csv_import_records row with
+    // uploaded_at = NOW - 31d targeting eventX. Then call runImportCsv
+    // on eventY — safety net should fire, but priorImports should NOT
+    // include the 31d-old record.
+    const recordId31 = randomUUID();
+    const fingerprint = '5a827858800f6452'; // ✗ stale literal — recompute below
+    // Compute the actual fingerprint via importing the helper:
+    const { computeAttendeeFingerprintFromEmails } = await import(
+      '@/modules/events/domain/eventcreate-csv-format'
+    );
+    const realFingerprint = computeAttendeeFingerprintFromEmails([
+      'anna-safety@example.com',
+      'bjorn-safety@example.com',
+      'charlie-safety@example.com',
+    ]);
+    if (!realFingerprint) throw new Error('fingerprint helper returned null');
+    void fingerprint;
+
+    const thirtyOneDaysAgo = new Date(
+      Date.now() - 31 * 24 * 60 * 60 * 1000,
+    );
+    await db.insert(csvImportRecords).values({
+      recordId: recordId31,
+      tenantId: tenant.ctx.slug,
+      actorUserId: actorUserId,
+      eventId: eventX.eventId,
+      sourceFormat: 'eventcreate_csv',
+      originalFilename: 'boundary-31d.csv',
+      originalSizeBytes: bytes.byteLength,
+      uploadedAt: thirtyOneDaysAgo,
+      rowsTotal: 3,
+      rowsProcessed: 3,
+      rowsAlreadyImported: 0,
+      rowsSkipped: 0,
+      rowsFailed: 0,
+      outcome: 'completed',
+      durationMs: 1_000,
+      attendeeFingerprint: realFingerprint,
+    });
+
+    // Also seed a record at 29d 23h 59m ago — should be IN-WINDOW.
+    const recordId29 = randomUUID();
+    const twentyNineDays23h59m = new Date(
+      Date.now() - (29 * 24 + 23) * 60 * 60 * 1000 - 59 * 60 * 1000,
+    );
+    await db.insert(csvImportRecords).values({
+      recordId: recordId29,
+      tenantId: tenant.ctx.slug,
+      actorUserId: actorUserId,
+      eventId: eventY.eventId,
+      sourceFormat: 'eventcreate_csv',
+      originalFilename: 'boundary-29d.csv',
+      originalSizeBytes: bytes.byteLength,
+      uploadedAt: twentyNineDays23h59m,
+      rowsTotal: 3,
+      rowsProcessed: 3,
+      rowsAlreadyImported: 0,
+      rowsSkipped: 0,
+      rowsFailed: 0,
+      outcome: 'completed',
+      durationMs: 1_000,
+      attendeeFingerprint: realFingerprint,
+    });
+
+    // Also seed a NULL-fingerprint record at 1d ago — should be EXCLUDED
+    // (FR-019b explicit null exclusion).
+    const recordIdNull = randomUUID();
+    await db.insert(csvImportRecords).values({
+      recordId: recordIdNull,
+      tenantId: tenant.ctx.slug,
+      actorUserId: actorUserId,
+      eventId: eventX.eventId,
+      sourceFormat: 'eventcreate_csv',
+      originalFilename: 'boundary-null.csv',
+      originalSizeBytes: bytes.byteLength,
+      uploadedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      rowsTotal: 0,
+      rowsProcessed: 0,
+      rowsAlreadyImported: 0,
+      rowsSkipped: 0,
+      rowsFailed: 0,
+      outcome: 'completed',
+      durationMs: 0,
+      attendeeFingerprint: null,
+    });
+
+    // Run an import to eventZ — safety net query inspects priors.
+    const result = await runImportCsv({
+      tenantSlug: tenant.ctx.slug,
+      actorUserId,
+      bytes,
+      selectedEvent: { ...eventZ, eventId: eventZ.eventId },
+    });
+
+    // Should fire warning (eventY's 29d-23h59m record IS in-window).
+    expect(result.kind).toBe('event_mismatch_warning');
+    if (result.kind !== 'event_mismatch_warning') return;
+    const priorIds = result.priorImports.map((p) => p.recordId as string);
+
+    // Boundary 1: 31d-old record EXCLUDED (out of window).
+    expect(priorIds).not.toContain(recordId31);
+    // Boundary 2: 29d-23h59m record INCLUDED (in window).
+    expect(priorIds).toContain(recordId29);
+    // Boundary 3: NULL fingerprint record EXCLUDED (FR-019a edge case).
+    expect(priorIds).not.toContain(recordIdNull);
   });
 });
