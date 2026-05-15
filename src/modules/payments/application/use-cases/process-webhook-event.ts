@@ -485,6 +485,10 @@ async function processWebhookEventBody(
         // invoice_not_found short-circuit folds markProcessed into the
         // same withTx as the row lock.
         'invoice_not_found',
+        // F5R1-E9 — give-up path calls markProcessedIfPresent in a
+        // best-effort try/catch (Phase B); whitelist the kind so the
+        // dispatcher does not double-write the tail tx.
+        'auto_refund_given_up',
       ]);
       markedProcessedAtomically = knownAtomicConfirmKinds.has(
         result.value.kind,

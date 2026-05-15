@@ -76,6 +76,21 @@ export type ConfirmPaymentOutcome =
   | { readonly kind: 'processed'; readonly invoiceId: string }
   | { readonly kind: 'already_succeeded'; readonly invoiceId: string }
   | { readonly kind: 'unknown_intent' }
+  /**
+   * F5R1-E9 — Stripe-side auto-refund call failed AND the Stripe
+   * webhook event has aged past the give-up threshold. Phase A
+   * already committed the payment row + emitted Phase A audit; we
+   * acknowledge the webhook to break Stripe's 72h retry storm,
+   * emitting an `out_of_band_refund_detected` forensic audit with
+   * `cause = auto_refund_giving_up` so the runbook picks up manual
+   * reconciliation. Customer's payment remains `succeeded` with no
+   * refund — operator must reconcile via Stripe Dashboard.
+   */
+  | {
+      readonly kind: 'auto_refund_given_up';
+      readonly paymentId: string;
+      readonly invoiceId: string;
+    }
   | {
       readonly kind: 'auto_refunded_stale_invoice';
       readonly invoiceId: string;
@@ -615,6 +630,68 @@ async function confirmPaymentBody(
       stripeAccount: settings.processorAccountId,
     });
     if (!refund.ok) {
+      // F5R1-E9 — bound the Stripe-retry storm. The default 500
+      // (processor_unavailable) tells Stripe to retry; Stripe retries
+      // for up to 72h. If the event itself is already aged past 48h,
+      // we are in an extended outage / permanent failure window —
+      // continuing to retry pollutes audit-log + SRE alerts.
+      // Emit a give-up audit + 200-ack so Stripe drains the queue.
+      // Customer's payment row stays succeeded (Phase A took the
+      // lock and decided stale); operator must reconcile via Stripe
+      // Dashboard per docs/runbooks/out-of-band-refund.md.
+      const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+      const eventAgeSeconds = nowSeconds - input.eventCreatedAtUnixSeconds;
+      const STALE_REFUND_GIVE_UP_SECONDS = 48 * 60 * 60;
+      if (eventAgeSeconds > STALE_REFUND_GIVE_UP_SECONDS) {
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'out_of_band_refund_detected',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Auto-refund giving up after ${Math.floor(eventAgeSeconds / 3600)}h — Stripe refund call still failing on event ${input.processorEventId ?? 'unknown'} for payment ${payment.id}; admin must reconcile via Stripe Dashboard`,
+          payload: {
+            // Use the Stripe event id as the refund-side identifier
+            // (no refund was actually created — Stripe call failed —
+            // so there is no processor_refund_id; use the event id
+            // for forensic correlation).
+            processor_refund_id: input.processorEventId ?? `event-${payment.id}`,
+            processor_charge_id: payment.processorPaymentIntentId,
+            amount_satang: payment.amountSatang.toString(),
+            runbook_url: 'docs/runbooks/out-of-band-refund.md',
+          },
+          retentionYears: retentionFor('out_of_band_refund_detected'),
+        });
+        // Audit row carries the forensic trail; processor_env not
+        // available at this Application-layer boundary (would require
+        // threading livemode through ConfirmPaymentInput). The grep-
+        // able summary "Auto-refund giving up after Xh" suffices for
+        // SRE alert rules pivoting on `eventType =
+        // out_of_band_refund_detected AND summary LIKE 'Auto-refund
+        // giving up%'`.
+        // Phase B markProcessedIfPresent — best-effort, drains the
+        // processor_events row so Stripe stops retrying.
+        try {
+          await deps.paymentsRepo.withTx(async (tx) => {
+            await markProcessedIfPresent(deps, input, tx);
+          });
+        } catch (phaseBErr) {
+          deps.logger?.warn(
+            'confirmPayment.give_up_phase_b_markProcessed_failed',
+            {
+              paymentId: payment.id,
+              errKind:
+                phaseBErr instanceof Error
+                  ? phaseBErr.constructor.name
+                  : 'unknown',
+            },
+          );
+        }
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'auto_refund_given_up',
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+        });
+      }
       return err<ConfirmPaymentError>({
         code: 'processor_unavailable',
         reason: refund.error.kind,
