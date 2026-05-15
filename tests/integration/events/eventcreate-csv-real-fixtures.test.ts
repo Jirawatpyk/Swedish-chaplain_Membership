@@ -163,6 +163,14 @@ describe('T016 — Real EventCreate fixture integration on live Neon', () => {
     // marketing-opt-in is broken. The Grant Thornton fixture
     // contains "I hereby acknowledge" rows.
     expect(pdpaTrue.length).toBeGreaterThan(0);
+    // R2 I6 (Round 2 — pr-test-analyzer): assert the non-true branches
+    // are populated too. The Grant Thornton fixture has ~57 rows but
+    // only ~16 match "I hereby acknowledge" — the remainder MUST land
+    // as `false` or `null` (not silently default to `true`). Without
+    // this assertion, a regression dropping the classifier's `false`
+    // branch (treating every non-acknowledge as `null` only, or worse
+    // defaulting to `true`) would not surface here.
+    expect(pdpaFalse.length + pdpaNull.length).toBeGreaterThan(0);
 
     // csv_import_records finalised — outcome != 'unexpected_error' (placeholder default).
     const records = await db

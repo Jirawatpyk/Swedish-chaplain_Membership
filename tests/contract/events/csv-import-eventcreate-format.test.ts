@@ -500,12 +500,19 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
      * latency of both 404 paths over ≥50 requests and asserting their
      * delta < 10ms."
      *
-     * The audit emit was moved to queueMicrotask in I5 Round 1 fix so
-     * the wrong_tenant path's synchronous work (metric increment +
-     * problem-response build) mirrors not_found exactly. This test
-     * pins the invariant so a future regression that adds synchronous
-     * work to one branch — e.g., await-ing the audit emit — surfaces
-     * here instead of becoming a timing-attack enumeration window.
+     * Timing-safety rests on the upstream structural invariant: a
+     * single unscoped `lookupEventByIdTimingSafe` query whose post-DB
+     * matching work is identical across not_found / wrong_tenant
+     * branches. The CR-3 retune (commit `3f52cbea`) reverted an earlier
+     * queueMicrotask attempt back to `await emitCrossTenantProbeAudit`
+     * — acceptable because the ~30-50ms audit-tx cost is below the
+     * BKK→sin1 network jitter floor (>=25ms RTT), so it is NOT
+     * detectable as an oracle distinguishing the two branches.
+     *
+     * This test pins the structural invariant against drift: any
+     * future change that adds branch-asymmetric synchronous work
+     * (e.g., a second DB read on wrong_tenant only) must keep the p95
+     * delta within tolerance.
      *
      * Tolerance widened to 50ms p95 delta (vs spec's 10ms) because:
      *   - In-process Vitest mocks + mocked use-cases produce ~1-3ms
@@ -514,9 +521,6 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
      *   - Real-traffic measurement against prod is the canonical
      *     proof; this test is the GUARD that the use-case structure
      *     stays branch-symmetric.
-     * Production timing-safe assurance comes from the route-handler
-     * design itself (single unscoped query, identical post-DB work
-     * via queueMicrotask) — this test prevents architectural drift.
      */
     it('p95 wall-clock delta between not_found and wrong_tenant < 50ms over 50 req each', async () => {
       const { POST } = await loadImportRoute();
@@ -598,6 +602,28 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
     });
   });
 
+  describe('R2 CR-2 — lookupEventByIdTimingSafe throws', () => {
+    it('returns 500 with requestId when the lookup helper throws (Neon outage)', async () => {
+      // R2 (Round 2 — pr-test-analyzer C3): exercise the try/catch wrap
+      // added in Round 1. Without this test, removing the try/catch
+      // would let the throw bubble out as a generic Next.js 500 with
+      // no `requestId` extras and no structured log — undetected by
+      // any contract assertion.
+      lookupEventByIdTimingSafeMock.mockRejectedValueOnce(
+        new Error('neon: connection reset'),
+      );
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body['type']).toMatch(/internal/);
+      expect(typeof body['requestId']).toBe('string');
+      expect((body['requestId'] as string).length).toBeGreaterThanOrEqual(8);
+      // Critical: use-case must NOT be dispatched when lookup throws.
+      expect(runImportCsvMock).not.toHaveBeenCalled();
+    });
+  });
+
   describe('504 timeout — F6.1 envelope', () => {
     it('returns problem-detail with recordId in extras', async () => {
       runImportCsvMock.mockResolvedValue({
@@ -635,6 +661,12 @@ describe('T012 — POST /api/admin/events/import (F6.1 contract deltas)', () => 
       // problem-response spreads `extras` at top-level.
       expect(body['recordId']).toBe('timeout-record-uuid');
       expect(body['sourceFormat']).toBe('eventcreate_csv');
+      // R2 I3 (Round 2 — pr-test-analyzer) — TYPE-D4 summary
+      // forwarded to the 504 response so admins are not blind to
+      // which rows committed before the budget bit.
+      expect(body['summary']).toBeDefined();
+      expect((body['summary'] as Record<string, unknown>)['rowsProcessed']).toBe(40);
+      expect((body['summary'] as Record<string, unknown>)['rowsTotal']).toBe(100);
     });
   });
 

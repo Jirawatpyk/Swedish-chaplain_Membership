@@ -423,10 +423,11 @@ export async function processAttendeeInTx(
     registeredAt: input.attendee.registeredAt,
     // F6.1 (FR-009 column population) — thread PDPA consent through
     // to the dedicated `event_registrations.attendee_pdpa_consent_acknowledged`
-    // column. `undefined` from webhook ingest passes through as `null`
-    // at the repo boundary (no consent captured upstream); CSV-import
-    // path sets the literal true/false/null from `classifyPdpaConsent`.
-    pdpaConsentAcknowledged: input.attendee.pdpaConsentAcknowledged ?? null,
+    // column. The input type is now tri-state `boolean | null` (TYPE-D2,
+    // Round 1 — exactOptionalPropertyTypes excludes undefined). Webhook
+    // ingest passes literal `null` (no consent captured upstream); CSV-
+    // import path sets the literal true/false/null from `classifyPdpaConsent`.
+    pdpaConsentAcknowledged: input.attendee.pdpaConsentAcknowledged,
   });
   if (!regInsert.ok) {
     const e = regInsert.error;

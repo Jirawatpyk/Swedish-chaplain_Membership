@@ -131,12 +131,10 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
             registeredAt: input.registeredAt,
             // F6.1 (FR-009 column population) — PDPA consent persists to
             // the dedicated BOOLEAN column added by migration 0140.
-            // `undefined` here forces Drizzle to OMIT the column from
-            // the INSERT (column then defaults to NULL); explicit
-            // `null` writes NULL; `true`/`false` writes the literal.
+            // Input is tri-state `boolean | null` per TYPE-D2 (Round 1);
+            // `null` writes NULL, `true`/`false` writes the literal.
             // Three states preserved end-to-end.
-            attendeePdpaConsentAcknowledged:
-              input.pdpaConsentAcknowledged ?? null,
+            attendeePdpaConsentAcknowledged: input.pdpaConsentAcknowledged,
             // attendee_email_lower omitted — STORED generated column
             // (see readAttendeeEmailLower helper above for the full WHY).
           })

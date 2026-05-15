@@ -212,7 +212,8 @@ describe('T017 — Cross-tenant CSV-import isolation (Principle I clause 3 block
     // it's not exported. Instead, drive the lookup helper + manually
     // invoke the emit via the standalone audit-deps factory the route
     // uses. This proves end-to-end that the audit row lands when the
-    // route's queueMicrotask path resolves successfully.
+    // route's standalone audit tx (await-ed inline per CR-3 retune)
+    // resolves successfully.
     const { makeStandaloneAuditDeps } = await import('@/modules/events');
     const { asUserId } = await import('@/modules/auth');
     const { asTenantId } = await import('@/modules/members');

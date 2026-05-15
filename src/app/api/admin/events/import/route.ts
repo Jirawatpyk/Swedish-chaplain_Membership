@@ -332,6 +332,31 @@ export async function POST(request: NextRequest): Promise<Response> {
       { extras: { eventId: eventIdField, requestId } },
     );
   }
+  // R2 (Round 2 — type-design-analyzer): exhaustive guard against a
+  // future EventLookupResult variant landing without a corresponding
+  // route handler branch. Without this, TypeScript would silently
+  // permit access to `eventLookup.event` on a new variant carrying
+  // that field, leaking through as an uncaught fall-through bug.
+  if (eventLookup.kind !== 'found') {
+    const _exhaustive: never = eventLookup;
+    void _exhaustive;
+    logger.error(
+      {
+        event: 'f6_csv_event_lookup_unknown_variant',
+        tenantSlug,
+        eventId: eventIdField,
+        requestId,
+      },
+      '[F6.1] lookupEventByIdTimingSafe returned an unrecognised variant — route handler is out of sync with the helper',
+    );
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Event lookup returned an unexpected state. Contact support.',
+      { extras: { requestId } },
+    );
+  }
 
   // 8. Dispatch use-case.
   let outcome: Awaited<ReturnType<typeof runImportCsv>>;
@@ -386,6 +411,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           recordId: outcome.recordId,
           sourceFormat: outcome.sourceFormat,
           errorCsvAvailable: outcome.errorCsvAvailable,
+          historyPersisted: outcome.historyPersisted,
           summary: outcome.summary,
         },
         { status: 200 },
@@ -420,7 +446,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         'csv-timeout',
         'CSV import exceeded time budget',
         'Import partially completed. Re-upload the same CSV — already-processed rows are idempotent and will be skipped.',
-        { extras: { recordId: outcome.recordId, sourceFormat: outcome.sourceFormat } },
+        {
+          extras: {
+            recordId: outcome.recordId,
+            sourceFormat: outcome.sourceFormat,
+            historyPersisted: outcome.historyPersisted,
+            summary: outcome.summary,
+          },
+        },
       );
     case 'unexpected_error':
       logger.error(
@@ -485,10 +518,17 @@ interface CrossTenantProbeAuditInput {
 
 /**
  * Emit `csv_import_cross_tenant_probe` via a standalone audit tx.
- * Fire-and-forget — the route NEVER blocks waiting for the audit DB
- * write. Failures log + drop; SREs alert on `rate > 0` for the
- * cross-tenant counter (which fires from the metrics call site, not
- * from the audit-emit success).
+ * Called with `await` from the route handler so the forensic row is
+ * guaranteed-persisted before the 4xx response returns — the ~30-50ms
+ * audit-tx cost is below the network jitter floor for BKK→sin1, so it
+ * does not create a measurable timing-leak against the not_found path
+ * (TESTS-I3 p95-symmetry test pins this). Failures log via `pino` +
+ * surface to SRE through the metric call site at the route.
+ *
+ * If a future maintainer needs to swap back to a non-blocking emit,
+ * REVIEW the upstream lookupEventByIdTimingSafe structural-symmetry
+ * design first — the timing-safety guarantee currently rests on the
+ * single-DB-query-shape invariant, NOT on emit timing.
  */
 async function emitCrossTenantProbeAudit(
   input: CrossTenantProbeAuditInput,

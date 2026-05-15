@@ -218,10 +218,11 @@ export async function createEvent(
         }
       }
       return ok({
-        // TYPE-D8: discriminator carries the created/exists info; the
-        // boolean is computed once here, attached to a private tuple
-        // so the caller can switch on it without polluting the public
-        // `CreateEventOutput` shape.
+        // TYPE-D8: `eventCreated` rides on the use-case-internal Result
+        // envelope and is stripped at the discriminator-conversion step
+        // below (line 247) so the public `CreateEventOutcome` carries
+        // no redundant field — only the discriminator
+        // (`kind: 'created' | 'already_exists'`).
         event: {
           eventId: event.eventId,
           externalId: trimmedExternalId,

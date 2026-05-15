@@ -146,6 +146,17 @@ export type ImportCsvOutcome =
       /** F6.1 — true iff `rowsFailed > 0` AND blob upload succeeded. */
       readonly errorCsvAvailable: boolean;
       readonly summary: ImportSummary;
+      /**
+       * F6.1 (Round 2 — silent-failure-hunter I-4): `true` when the
+       * `csv_import_records` row was successfully persisted (placeholder
+       * INSERT or CR-5 recovery INSERT). `false` when BOTH the
+       * placeholder and recovery INSERT failed — the rows committed
+       * are still safe, but admins quoting `recordId` to support will
+       * not find a matching history row. The UI surface SHOULD degrade
+       * the recordId chip / hide the "view history" link when this is
+       * `false`.
+       */
+      readonly historyPersisted: boolean;
     }
   | {
       readonly kind: 'invalid_header';
@@ -166,6 +177,8 @@ export type ImportCsvOutcome =
        */
       readonly summary: ImportSummary;
       readonly errorCsvAvailable: boolean;
+      /** See `completed.historyPersisted`. Same semantics. */
+      readonly historyPersisted: boolean;
     }
   | {
       /**
@@ -1137,7 +1150,13 @@ export async function importCsv(
   // breaking FR-019c forensic invariant. Repo now returns
   // err({kind:'not_found'}) on zero-rows; recovery path: try to INSERT
   // a fresh row with the final outcome (recovery from a lost placeholder).
-  let recordPersisted = true;
+  //
+  // R2-I4 (Round 2 — silent-failure-hunter): the boolean is now
+  // propagated to the outcome as `historyPersisted` so the route + UI
+  // can degrade the recordId surface when the history row is lost.
+  // Admins quoting `recordId` to support will not find a matching row
+  // unless this is `true`.
+  let historyPersisted = true;
   try {
     const updateResult = await deps.withImportRecordsTx(
       input.tenantId,
@@ -1170,7 +1189,7 @@ export async function importCsv(
       },
     );
     if (!updateResult.ok) {
-      recordPersisted = false;
+      historyPersisted = false;
       if (updateResult.error.kind === 'not_found') {
         // CR-5 recovery — placeholder never landed; try a single
         // INSERT with final counts. If THAT fails too the history row
@@ -1207,7 +1226,7 @@ export async function importCsv(
             },
           );
           if (recoveryResult.ok) {
-            recordPersisted = true;
+            historyPersisted = true;
             logger.warn(
               {
                 event: 'f6_csv_import_records_recovery_succeeded',
@@ -1251,7 +1270,7 @@ export async function importCsv(
       }
     }
   } catch (e) {
-    recordPersisted = false;
+    historyPersisted = false;
     logger.error(
       {
         event: 'f6_csv_import_records_update_threw',
@@ -1262,8 +1281,6 @@ export async function importCsv(
       '[F6.1] csv_import_records final-outcome update threw',
     );
   }
-  void recordPersisted; // CR-5 informational flag; future US5 history
-
   // F6.1 — Phase 4e: emit per-import `csv_import_completed` audit on
   // both completed AND timeout paths with `sourceFormat` extension.
   await emitImportCompletedAudit({
@@ -1302,6 +1319,7 @@ export async function importCsv(
         durationMs,
       },
       errorCsvAvailable,
+      historyPersisted,
     };
   }
 
@@ -1310,6 +1328,7 @@ export async function importCsv(
     recordId,
     sourceFormat,
     errorCsvAvailable,
+    historyPersisted,
     summary: {
       rowsTotal,
       rowsProcessed: summary.rowsProcessed,

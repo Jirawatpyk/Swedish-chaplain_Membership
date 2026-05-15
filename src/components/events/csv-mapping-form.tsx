@@ -26,7 +26,7 @@
  * Pure client component — no DB access. The route handler at
  * `/api/admin/events/import` does the parse-and-import.
  */
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
@@ -115,6 +115,15 @@ export function CsvMappingForm() {
     null,
   );
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  // R2 (Round 2 — code-reviewer #2): hold a callback the EventPicker
+  // registers so we can imperatively push a freshly-created event into
+  // its dropdown state on `onCreated`. Closes the stale-button-label
+  // window between create-success and the next refresh round-trip.
+  const addPickerEventRef = useRef<((event: {
+    eventId: string;
+    name: string;
+    startDate: string;
+  }) => void) | null>(null);
   const [mismatchDialog, setMismatchDialog] = useState<{
     open: boolean;
     priorImports: ReadonlyArray<PriorImportEntry>;
@@ -218,14 +227,20 @@ export function CsvMappingForm() {
           // F6.1 `completed` envelope wraps summary at top-level.
           const rawSummary = (body['summary'] ?? body) as Omit<
             CsvImportResultPayload,
-            'recordId'
+            'recordId' | 'historyPersisted'
           >;
           // Smart-feature S-02 (Round 1) — thread recordId from the
           // F6.1 envelope so the result card can render it for support.
+          // R2-I4 (Round 2) — thread `historyPersisted` so the card can
+          // render the degraded-history warning when both placeholder
+          // and CR-5 recovery INSERTs failed.
           const summary: CsvImportResultPayload = {
             ...rawSummary,
             ...(typeof body['recordId'] === 'string'
               ? { recordId: body['recordId'] }
+              : {}),
+            ...(typeof body['historyPersisted'] === 'boolean'
+              ? { historyPersisted: body['historyPersisted'] }
               : {}),
           };
           setPhase({ kind: 'completed', summary });
@@ -352,10 +367,15 @@ export function CsvMappingForm() {
         onOpenChange={setCreateModalOpen}
         onCreated={(event) => {
           // Auto-select the new event so the admin can immediately
-          // proceed to upload the CSV. The EventPicker's refresh path
-          // re-fetches the events list on next focus; we set the
-          // selectedEventId directly here so the dropdown updates
-          // without a round-trip.
+          // proceed to upload the CSV. R2 (Round 2 — code-reviewer #2):
+          // push the new event into EventPicker's local state so the
+          // button label updates immediately (previously stayed on
+          // "Select an event…" until the next refresh round-trip).
+          addPickerEventRef.current?.({
+            eventId: event.eventId,
+            name: event.name,
+            startDate: event.startDate,
+          });
           setSelectedEventId(event.eventId);
           setSelectedEventLabel(event.name);
         }}
@@ -406,6 +426,9 @@ export function CsvMappingForm() {
                   phase.kind === 'preview' ? phase.file.name : null
                 }
                 onCreateNew={() => setCreateModalOpen(true)}
+                registerAddEvent={(add) => {
+                  addPickerEventRef.current = add;
+                }}
               />
               <p className="text-caption text-muted-foreground">
                 {t('eventPicker.fieldHelp')}

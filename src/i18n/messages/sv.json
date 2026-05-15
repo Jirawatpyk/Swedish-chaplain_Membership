@@ -2582,7 +2582,8 @@
           "errorRowsTitle": "Överhoppade rader ({count})",
           "errorRowLabel": "Rad {rowNumber}",
           "noErrorRows": "Alla rader importerades utan fel.",
-          "recordIdLabel": "Referens-ID"
+          "recordIdLabel": "Referens-ID",
+          "historyDegraded": "Importhistoriken kunde inte sparas — raderna ovan är fortfarande säkert införda, men granskningstabellen saknar en rad för denna import. Ange referens-ID:t ovan om du behöver kontakta supporten i efterhand."
         },
         "errors": {
           "networkErrorTitle": "Nätverksfel",
@@ -2608,7 +2609,7 @@
           "triggerAriaLabel": "Välj evenemang för CSV-import",
           "loading": "Hämtar evenemang…",
           "placeholder": "Välj ett evenemang…",
-          "searchPlaceholder": "Sök efter evenemang efter namn…",
+          "searchPlaceholder": "Sök evenemang efter namn…",
           "searchAriaLabel": "Sök efter evenemang",
           "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
           "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
@@ -2631,10 +2632,11 @@
               "externalIdHelp": "Unik kodad slug (1-100 alfanumeriska tecken + bindestreck). Samma värde som CSV använder för event_external_id.",
               "nameLabel": "Evenemangsnamn",
               "namePlaceholder": "t.ex. SweCham AGM 2026",
+              "nameHelp": "Publikt evenemangsnamn som visas i importhistoriken och granskningstabellen (högst 500 tecken).",
               "startDateLabel": "Startdatum och tid",
               "startDateHelp": "Lokal tid i kammarens primära tidszon — lagras som UTC.",
               "categoryLabel": "Kategori (valfri)",
-              "categoryPlaceholder": "t.ex. AGM, Nätverk, Verkstad",
+              "categoryPlaceholder": "t.ex. AGM, Nätverk, Workshop",
               "categoryHelp": "Fri text som används för filtrering i evenemangslistan.",
               "errors": {
                 "externalIdRequired": "Externt ID krävs.",
@@ -2655,6 +2657,7 @@
               "validationDetail": "Ett eller flera fält är ogiltiga. Granska formuläret och försök igen.",
               "rateLimitTitle": "För många försök",
               "rateLimitDetail": "Du har skapat för många evenemang den senaste timmen. Vänta en stund och försök igen.",
+              "rateLimitDetailWithSeconds": "Frekvensgräns nådd: 30 evenemang/timme per administratör. Försök igen om {seconds} s.",
               "unexpectedTitle": "Oväntat fel",
               "unexpectedDetail": "Något gick fel på vår sida. Försök igen; om det kvarstår, kontakta support."
             }

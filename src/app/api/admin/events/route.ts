@@ -314,14 +314,41 @@ export async function POST(request: NextRequest) {
   }
 
   // Dispatch use-case.
-  const outcome = await runCreateEvent({
-    tenantSlug: tenantCtx.slug,
-    actorUserId: asUserId(session.user.id),
-    externalId: parsed.data.externalId,
-    name: parsed.data.name,
-    startDate: new Date(parsed.data.startDate),
-    category: parsed.data.category ?? null,
-  });
+  // R2-I2 (Round 2 — silent-failure-hunter): wrap runCreateEvent in
+  // try/catch mirroring `import/route.ts` precedent. `runInTenant(...)`
+  // can throw at the `asTenantContext` validation step BEFORE entering
+  // `createEvent`'s internal try/catch — without an outer guard this
+  // would bubble out as a generic Next.js 500 with no requestId, no
+  // structured log, and no admin_events_create_threw event for SRE.
+  const requestId = crypto.randomUUID();
+  let outcome: Awaited<ReturnType<typeof runCreateEvent>>;
+  try {
+    outcome = await runCreateEvent({
+      tenantSlug: tenantCtx.slug,
+      actorUserId: asUserId(session.user.id),
+      externalId: parsed.data.externalId,
+      name: parsed.data.name,
+      startDate: new Date(parsed.data.startDate),
+      category: parsed.data.category ?? null,
+    });
+  } catch (e) {
+    logger.error(
+      {
+        event: 'admin_events_create_threw',
+        tenantSlug: tenantCtx.slug,
+        requestId,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] runCreateEvent threw before returning an outcome',
+    );
+    return problemResponse(
+      500,
+      'internal',
+      'Internal Server Error',
+      'Failed to create event. Retry; if it persists, contact support.',
+      { extras: { requestId } },
+    );
+  }
 
   switch (outcome.kind) {
     case 'created':

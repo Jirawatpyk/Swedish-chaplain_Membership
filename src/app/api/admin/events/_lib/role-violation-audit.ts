@@ -73,7 +73,13 @@ export async function emitEventsRoleViolation(
       : `${input.actorRole} attempted GET ${input.attemptedRoute} (${input.attemptedAction})`;
   try {
     const deps = makeStandaloneAuditDeps();
-    await deps.emitStandalone({
+    // R2-I1 (Round 2 — silent-failure-hunter): `emitStandalone` returns
+    // `Result<AuditEventId, AuditEmitError>` — the previous code only
+    // caught thrown exceptions, silently dropping `Result.err` paths
+    // (db_error / audit_emit / etc.). A manager probing during a Neon
+    // outage would 404 with no `role_violation_blocked` forensic row
+    // and zero log signal. Check the Result and log non-ok branches.
+    const result = await deps.emitStandalone({
       eventType: 'role_violation_blocked',
       tenantId: asTenantId(tenantSlug),
       actorType: input.actorRole,
@@ -89,6 +95,19 @@ export async function emitEventsRoleViolation(
         blockedAt: 'app_layer',
       },
     });
+    if (!result.ok) {
+      logger.error(
+        {
+          event: 'f6_role_violation_audit_emit_failed',
+          err: result.error.kind,
+          tenantSlug,
+          actorRole: input.actorRole,
+          attemptedRoute: input.attemptedRoute,
+          ...(input.eventId !== null ? { eventId: input.eventId } : {}),
+        },
+        '[F6] role_violation_blocked audit emit returned Result.err — 404 response still served; forensic row LOST',
+      );
+    }
   } catch (e) {
     logger.error(
       { event: 'f6_audit_emit_failed', err: e instanceof Error ? e.message : String(e) },

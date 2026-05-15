@@ -9,8 +9,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
+// R2 (Round 2 — pr-test-analyzer C1): the kill-switch test must mock an
+// authenticated admin session so the kill-switch guard at the top of
+// the route is the ONLY code path that can produce a 404. Previously
+// the mock returned `undefined` (no session) → 404 from `if (!session)`
+// regardless of the kill-switch — a regression that flips the guard
+// ordering or removes the kill-switch check would have passed silently.
+const ADMIN_SESSION = {
+  user: {
+    id: '00000000-0000-4000-8000-000000000abc',
+    email: 'admin@example.com',
+    role: 'admin' as const,
+  },
+};
+const getCurrentSessionMock = vi.fn();
+
 vi.mock('@/lib/auth-session', () => ({
-  getCurrentSession: vi.fn(),
+  getCurrentSession: getCurrentSessionMock,
+}));
+
+// Mock the create-event composition adapter so we can assert it is NEVER
+// called when the kill-switch is OFF — proves the early 404 short-
+// circuited BEFORE use-case dispatch.
+const runCreateEventMock = vi.fn();
+vi.mock('@/lib/events-create-deps', () => ({
+  runCreateEvent: runCreateEventMock,
+  createEventRateLimitCheck: vi.fn(async () => ({
+    success: true,
+    resetAtUnixMs: Date.now() + 3_600_000,
+  })),
+  asUserId: (s: string) => s,
 }));
 
 vi.mock('@/lib/env', async () => {
@@ -36,7 +64,11 @@ afterEach(() => {
 describe('Round 1 CR-1 — kill-switch isolation', () => {
   vi.setConfig({ testTimeout: 60_000 });
 
-  it('returns 404 when FEATURE_F6_EVENTCREATE is false', async () => {
+  it('returns 404 when FEATURE_F6_EVENTCREATE is false (even with admin session)', async () => {
+    // R2 fix: stub an authenticated admin session so the ONLY 404
+    // trigger left is the kill-switch guard. The use-case mock must
+    // not be called.
+    getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
     const { POST } = (await import('@/app/api/admin/events/route')) as {
       POST: (req: NextRequest) => Promise<Response>;
     };
@@ -53,5 +85,11 @@ describe('Round 1 CR-1 — kill-switch isolation', () => {
       }),
     );
     expect(res.status).toBe(404);
+    // Critical R2 assertion: runCreateEvent MUST NOT be dispatched
+    // when kill-switch is OFF. Without this, a future refactor that
+    // moves the kill-switch below the session check + leaves admin
+    // session active would still pass `expect(res.status).toBe(404)`
+    // because of unrelated guards.
+    expect(runCreateEventMock).not.toHaveBeenCalled();
   });
 });

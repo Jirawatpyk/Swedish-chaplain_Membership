@@ -18,7 +18,7 @@
  *   - Keyboard nav: ArrowUp/Down/Enter/Escape inherited from `cmdk`.
  *   - aria-live announces the fuzzy-match hint when filename changes.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslations, useFormatter } from 'next-intl';
 import { Check, ChevronsUpDown, Plus, RefreshCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -58,6 +58,15 @@ export interface EventPickerProps {
   readonly events?: ReadonlyArray<EventPickerOption>;
   /** Inline CTA to open the event-create modal (T026 — MVP placeholder). */
   readonly onCreateNew?: () => void;
+  /**
+   * R2 (Round 2 — code-reviewer): imperative add of a freshly-created
+   * event so the parent (csv-mapping-form) can push the inline-created
+   * event into the dropdown state immediately on `onCreated`, avoiding
+   * the stale-label window between create-success and the next refresh.
+   */
+  readonly registerAddEvent?: (
+    add: (event: EventPickerOption) => void,
+  ) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,12 +149,19 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   // pages where some surfaces use locale-aware formatters and others
   // don't.
   const formatter = useFormatter();
+  const popoverContentId = useId();
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<ReadonlyArray<EventPickerOption>>(
     props.events ?? [],
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // R2 (Round 2 — enterprise-ux I-3): shared cancellation ref so the
+  // refresh button + the mount-effect share the same unmount-guard
+  // path. Previously the refresh handler created a per-click signal
+  // object with no cleanup, leaving a window for setState on unmounted
+  // component when the user navigated away mid-fetch.
+  const loadCancelRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 
   // UX-I2 (Round 1) — single shared loader for both initial mount and
   // refresh button. Previously duplicated ~30 LOC of fetch+normalize.
@@ -161,17 +177,23 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         // v1.x — chambers with >100 events need a search query upstream.
         const res = await fetch('/api/admin/events?pageSize=100');
         if (!res.ok) {
+          // R2-S-2 (Round 2 — silent-failure-hunter): log status code
+          // so dev debugging can distinguish 429 vs 500 vs kill-switch.
+          console.warn(
+            '[F6.1] event-picker fetch returned non-OK',
+            { status: res.status },
+          );
           if (!signal.cancelled) setError(t('loadErrorDetail'));
           return;
         }
         const body = (await res.json()) as {
-          events?: ReadonlyArray<{
+          items?: ReadonlyArray<{
             eventId?: string;
             name?: string;
             startDate?: string;
           }>;
         };
-        const normalised = (body.events ?? [])
+        const normalised = (body.items ?? [])
           .filter(
             (e): e is EventPickerOption =>
               typeof e.eventId === 'string' &&
@@ -188,7 +210,6 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         // S-1 (Round 1 — silent-failure-hunter): preserve console
         // diagnostic for dev so "why isn't my picker loading?" is
         // debuggable without breakpoints.
-        // eslint-disable-next-line no-console
         console.error('[F6.1] event-picker fetch failed', e);
         if (!signal.cancelled) setError(t('loadErrorDetail'));
       } finally {
@@ -199,14 +220,34 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   );
 
   // Fetch events list on mount (if not provided via props).
+  // R2 (Round 2 — enterprise-ux I-3): use the shared cancel ref so the
+  // refresh button + mount-effect collaborate on a single unmount-guard
+  // — refreshing then unmounting cancels the in-flight load.
   useEffect(() => {
     if (props.events !== undefined) return;
-    const signal = { cancelled: false };
-    void loadEvents(signal);
+    // Reset the shared signal on remount.
+    loadCancelRef.current = { cancelled: false };
+    void loadEvents(loadCancelRef.current);
     return () => {
-      signal.cancelled = true;
+      loadCancelRef.current.cancelled = true;
     };
   }, [props.events, loadEvents]);
+
+  // R2 (Round 2 — code-reviewer #2): expose an imperative `add` to the
+  // parent so a freshly-created event lands in `events` state
+  // immediately after `onCreated`, preventing the stale "Select an
+  // event…" label between create-success and the next refresh.
+  const registerAddEvent = props.registerAddEvent;
+  useEffect(() => {
+    if (registerAddEvent === undefined) return;
+    registerAddEvent((event) => {
+      setEvents((prev) =>
+        prev.some((e) => e.eventId === event.eventId)
+          ? prev
+          : [event, ...prev],
+      );
+    });
+  }, [registerAddEvent]);
 
   const selected = useMemo(
     () => events.find((e) => e.eventId === props.value) ?? null,
@@ -251,6 +292,8 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
               variant="outline"
               role="combobox"
               aria-expanded={open}
+              aria-haspopup="listbox"
+              aria-controls={open ? popoverContentId : undefined}
               aria-label={t('triggerAriaLabel')}
               className="min-h-11 w-full justify-between text-left font-normal"
             >
@@ -269,6 +312,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           }
         />
         <PopoverContent
+          id={popoverContentId}
           className="w-(--anchor-width) min-w-[280px] p-0"
         >
           <Command>
@@ -336,9 +380,13 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             // duplicating fetch+normalise logic. Resets `error` to
             // null automatically and respects unmount via the same
             // cancelled-signal pattern.
-            const signal = { cancelled: false };
+            // R2 (Round 2 — enterprise-ux I-3): mark any in-flight load
+            // as cancelled before starting a new one + reuse the shared
+            // ref so unmount kills BOTH this fetch and any prior one.
+            loadCancelRef.current.cancelled = true;
+            loadCancelRef.current = { cancelled: false };
             setEvents([]);
-            void loadEvents(signal);
+            void loadEvents(loadCancelRef.current);
           }}
           className="min-h-9"
           aria-label={t('refreshAriaLabel')}

@@ -2582,7 +2582,8 @@
           "errorRowsTitle": "Skipped rows ({count})",
           "errorRowLabel": "Row {rowNumber}",
           "noErrorRows": "All rows imported cleanly — no errors to review.",
-          "recordIdLabel": "Reference ID"
+          "recordIdLabel": "Reference ID",
+          "historyDegraded": "Import history could not be saved — the rows above are still committed safely, but the audit row is missing. Please quote the reference ID to support if you need to look this up later."
         },
         "errors": {
           "networkErrorTitle": "Network error",
@@ -2631,6 +2632,7 @@
               "externalIdHelp": "Unique typed slug (1-100 alphanumeric + hyphen). Same value the CSV uses for event_external_id.",
               "nameLabel": "Event name",
               "namePlaceholder": "e.g. SweCham AGM 2026",
+              "nameHelp": "Public-facing event title shown on the import history and audit log (up to 500 characters).",
               "startDateLabel": "Start date & time",
               "startDateHelp": "Local time in your tenant's primary timezone — stored as UTC.",
               "categoryLabel": "Category (optional)",
@@ -2655,6 +2657,7 @@
               "validationDetail": "One or more fields are invalid. Review the form and retry.",
               "rateLimitTitle": "Too many attempts",
               "rateLimitDetail": "You have created too many events in the past hour. Wait a minute and retry.",
+              "rateLimitDetailWithSeconds": "Rate-limit reached: 30 events/hour per admin. Retry after {seconds}s.",
               "unexpectedTitle": "Unexpected error",
               "unexpectedDetail": "Something went wrong on our side. Please retry; if it persists, contact support."
             }

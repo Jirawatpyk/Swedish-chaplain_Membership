@@ -95,9 +95,13 @@ export function EventCreateInlineModal(
     'admin.events.import.eventPicker.inlineCreateModal',
   );
   const externalIdId = useId();
+  const externalIdHintId = useId();
   const nameId = useId();
+  const nameHintId = useId();
   const startDateId = useId();
+  const startDateHintId = useId();
   const categoryId = useId();
+  const categoryHintId = useId();
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<ServerError | null>(null);
 
@@ -168,10 +172,14 @@ export function EventCreateInlineModal(
     // again for error path — second call against an already-consumed
     // body throws TypeError, masked by `catch { body = {} }`, hiding
     // real malformed-response bugs.
+    // R2-S-3 (Round 2 — silent-failure-hunter): preserve console
+    // diagnostic for dev so "why isn't my form responding?" is
+    // debuggable; matches event-picker's S-1 Round 1 pattern.
     let body: Record<string, unknown> = {};
     try {
       body = (await res.json()) as Record<string, unknown>;
-    } catch {
+    } catch (e) {
+      console.error('[F6.1] event-create response JSON parse failed', e);
       body = {};
     }
     const created = body['event'] as CreatedEvent | undefined;
@@ -201,9 +209,21 @@ export function EventCreateInlineModal(
         ),
       });
     } else if (res.status === 429) {
+      // R2-S-4 (Round 2 — silent-failure-hunter): surface Retry-After
+      // when present so admins see an actionable wait time instead of
+      // a generic "rate-limited" message. Matches the csv-mapping-form
+      // pattern.
+      const retryAfterHeader = res.headers.get('Retry-After');
+      const retryAfter =
+        retryAfterHeader && !Number.isNaN(Number(retryAfterHeader))
+          ? Number(retryAfterHeader)
+          : null;
       setServerError({
         title: t('errors.rateLimitTitle'),
-        detail: t('errors.rateLimitDetail'),
+        detail:
+          retryAfter !== null
+            ? t('errors.rateLimitDetailWithSeconds', { seconds: retryAfter })
+            : t('errors.rateLimitDetail'),
       });
     } else {
       setServerError({
@@ -247,7 +267,9 @@ export function EventCreateInlineModal(
               placeholder={t('fields.externalIdPlaceholder')}
               aria-invalid={errors.externalId !== undefined}
               aria-describedby={
-                errors.externalId !== undefined ? `${externalIdId}-error` : undefined
+                errors.externalId !== undefined
+                  ? `${externalIdId}-error`
+                  : externalIdHintId
               }
             />
             {errors.externalId ? (
@@ -259,7 +281,10 @@ export function EventCreateInlineModal(
                 {t(`fields.errors.${errors.externalId.message ?? 'externalIdInvalid'}`)}
               </p>
             ) : (
-              <p className="text-caption text-muted-foreground">
+              <p
+                id={externalIdHintId}
+                className="text-caption text-muted-foreground"
+              >
                 {t('fields.externalIdHelp')}
               </p>
             )}
@@ -273,7 +298,7 @@ export function EventCreateInlineModal(
               placeholder={t('fields.namePlaceholder')}
               aria-invalid={errors.name !== undefined}
               aria-describedby={
-                errors.name !== undefined ? `${nameId}-error` : undefined
+                errors.name !== undefined ? `${nameId}-error` : nameHintId
               }
             />
             {errors.name ? (
@@ -284,7 +309,14 @@ export function EventCreateInlineModal(
               >
                 {t(`fields.errors.${errors.name.message ?? 'nameRequired'}`)}
               </p>
-            ) : null}
+            ) : (
+              <p
+                id={nameHintId}
+                className="text-caption text-muted-foreground"
+              >
+                {t('fields.nameHelp')}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -297,7 +329,7 @@ export function EventCreateInlineModal(
               aria-describedby={
                 errors.startDateLocal !== undefined
                   ? `${startDateId}-error`
-                  : undefined
+                  : startDateHintId
               }
             />
             {errors.startDateLocal ? (
@@ -311,7 +343,10 @@ export function EventCreateInlineModal(
                 )}
               </p>
             ) : (
-              <p className="text-caption text-muted-foreground">
+              <p
+                id={startDateHintId}
+                className="text-caption text-muted-foreground"
+              >
                 {t('fields.startDateHelp')}
               </p>
             )}
@@ -327,7 +362,7 @@ export function EventCreateInlineModal(
               aria-describedby={
                 errors.category !== undefined
                   ? `${categoryId}-error`
-                  : undefined
+                  : categoryHintId
               }
             />
             {errors.category ? (
@@ -339,7 +374,10 @@ export function EventCreateInlineModal(
                 {t(`fields.errors.${errors.category.message ?? 'categoryTooLong'}`)}
               </p>
             ) : (
-              <p className="text-caption text-muted-foreground">
+              <p
+                id={categoryHintId}
+                className="text-caption text-muted-foreground"
+              >
                 {t('fields.categoryHelp')}
               </p>
             )}

@@ -30,7 +30,7 @@ import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { f6CsvTestSelectedEventStub, wrapParseStreamAsFormat } from './_helpers/f6-csv-test-fixtures';
+import { f6CsvTestSelectedEventStub, makeCsvImporterMock } from './_helpers/f6-csv-test-fixtures';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -95,10 +95,7 @@ function makeFakeDeps(opts: FakeDepsOpts): ImportCsvDeps {
   } as unknown as ImportCsvTxScopedPorts;
 
   return {
-    csvImporter: ((parseStreamFn) => ({
-        parseStream: parseStreamFn,
-        parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
-      }))(vi.fn(async () =>
+    csvImporter: makeCsvImporterMock(vi.fn(async () =>
         ok(
           (async function* () {
             yield {
@@ -297,5 +294,37 @@ describe('NEW-J — C-1 + C-2 audit-emit failure observability', () => {
       eventcreateMetrics.csvImportAuditEmitFailed as ReturnType<typeof vi.fn>
     ).mock.calls;
     expect(counterCalls).toHaveLength(0);
+  });
+
+  it('R2 I2 (Round 2 — pr-test-analyzer): csvImportAdapterModeDetected fires EXACTLY ONCE per import with format label', async () => {
+    // R2 I2 gap: the metric was mocked across the suite but never
+    // asserted. A regression deleting the single emit site
+    // (`import-csv.ts:847`) or accidentally placing it inside the
+    // row loop would have shipped silently — the metric is the
+    // rollback-trigger signal per spec § Rollback Plan + SC-008, so
+    // call-count drift is a release-blocker.
+    vi.clearAllMocks();
+    const deps = makeFakeDeps({ emitFails: false });
+    await importCsv(
+      {
+        tenantId: asTenantId('test-chamber-adapter-mode'),
+        actorUserId: asUserId('00000000-0000-0000-0000-000000000115'),
+        bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
+      },
+      deps,
+    );
+    const adapterModeMock = eventcreateMetrics.csvImportAdapterModeDetected as ReturnType<
+      typeof vi.fn
+    >;
+    expect(adapterModeMock).toHaveBeenCalledTimes(1);
+    // Format label is `'generic_csv'` because legacy mock fixture
+    // wraps parseStream into parseStreamWithFormat with default
+    // `format:'generic_csv'`. Real EventCreate paths emit
+    // `'eventcreate_csv'`; both are valid per the union type.
+    expect(adapterModeMock).toHaveBeenCalledWith(
+      'test-chamber-adapter-mode',
+      'generic_csv',
+    );
   });
 });

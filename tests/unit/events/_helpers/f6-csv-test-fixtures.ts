@@ -57,3 +57,27 @@ export function wrapParseStreamAsFormat(
     });
   };
 }
+
+/**
+ * F2 (Round 2 — code-simplifier): test-side factory for the `CsvImporter`
+ * mock. Encapsulates the 6+ duplicated IIFE-style mock wrapper sites
+ * that read:
+ *
+ *   csvImporter: ((parseStreamFn) => ({
+ *     parseStream: parseStreamFn,
+ *     parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
+ *   }))(vi.fn(...)),
+ *
+ * Tests pass their `parseStream` spy/mock directly; the helper threads
+ * it through `wrapParseStreamAsFormat` so both port methods are wired.
+ * `parseStream` is preserved as a spy so existing tests asserting call
+ * args (when added) continue to work.
+ */
+export function makeCsvImporterMock(
+  parseStreamFn: CsvImporter['parseStream'],
+): CsvImporter {
+  return {
+    parseStream: parseStreamFn,
+    parseStreamWithFormat: wrapParseStreamAsFormat(parseStreamFn),
+  };
+}

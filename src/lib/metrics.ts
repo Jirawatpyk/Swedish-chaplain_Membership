@@ -2842,6 +2842,23 @@ export const eventcreateMetrics = {
   },
 
   /**
+   * R2-I3 (Round 2 — silent-failure-hunter): `createEvent` admin-manual
+   * rate-limit fail-open counter. Mirrors `csvImportRateLimitFallback`
+   * — fires when Upstash is unreachable and the 30/hr per-(tenant,actor)
+   * cap could not be enforced. SRE alerts on `rate > 0` because actors
+   * may have created arbitrarily many events during the outage window
+   * (post-incident review reconciles via audit log).
+   */
+  createEventRateLimitFallback(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_create_event_rate_limit_fallback_total',
+        'F6.1 createEvent Upstash fail-open counter',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * Phase 7 review C-1/C-2 fix — `csv_import_row_failed` /
    * `csv_import_completed` audit-emit failure counter. Fires when the
    * audit emitter swallows an error (forensic-trail loss). Operators

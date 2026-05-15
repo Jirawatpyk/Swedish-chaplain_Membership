@@ -48,6 +48,16 @@ export interface CsvImportResultPayload {
    * populate this from `runImportCsv` outcome.
    */
   readonly recordId?: string;
+  /**
+   * R2-I4 (Round 2 — silent-failure-hunter): `false` when CR-5 recovery
+   * also failed and the `csv_import_records` row could not be persisted
+   * — admin's rows committed are still safe, but the recordId quoted
+   * here will NOT match a DB row. Surface degraded copy ("history
+   * degraded; rows are still committed") instead of the standard
+   * recordId chip. Optional/undefined => treat as `true` (Phase 7
+   * back-compat).
+   */
+  readonly historyPersisted?: boolean;
 }
 
 interface CsvImportResultProps {
@@ -125,15 +135,31 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
 
         {/* Smart-feature S-02 (Round 1) — record ID quotable for support.
             Rendered as a small caption row below counters; uses monospace
-            for click-to-copy ergonomics. */}
+            for click-to-copy ergonomics.
+            R2-I4 (Round 2) — when `historyPersisted === false`, the
+            recordId is shown together with an inline "history degraded"
+            warning so admins quoting it to support understand that the
+            DB-side row was lost (rows are still committed, only the
+            audit/history surface is degraded). */}
         {result.recordId !== undefined ? (
-          <p
-            className="text-caption text-muted-foreground"
-            data-testid="result-record-id"
-          >
-            {t('recordIdLabel')}:{' '}
-            <span className="font-mono select-all">{result.recordId}</span>
-          </p>
+          <div className="flex flex-col gap-1" data-testid="result-record-id-block">
+            <p
+              className="text-caption text-muted-foreground"
+              data-testid="result-record-id"
+            >
+              {t('recordIdLabel')}:{' '}
+              <span className="font-mono select-all">{result.recordId}</span>
+            </p>
+            {result.historyPersisted === false ? (
+              <p
+                className="text-caption text-amber-700 dark:text-amber-300"
+                role="status"
+                data-testid="result-history-degraded"
+              >
+                {t('historyDegraded')}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {/* Per-match-type breakdown */}
