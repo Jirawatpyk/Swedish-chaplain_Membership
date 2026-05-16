@@ -111,8 +111,16 @@ describe('Money value object', () => {
     });
 
     it('multiplyByFraction throws on negative result path (negative numerator)', () => {
-      // Hits the `scaled - half` branch in line 85 + negative-check in line 86.
-      expect(() => Money.fromSatangUnsafe(100).multiplyByFraction(-1n, 1n)).toThrow();
+      // F5R5 M-1 (2026-05-16) — pin the bespoke Error class +
+      // message: runbook search-keys depend on the literal string
+      // `Money.multiplyByFraction: result is negative`. If a future
+      // refactor drops the explicit guard and lets asSatang's
+      // RangeError surface, the message + class shift silently
+      // (RangeError + `Satang must be >= 0; got ...`). The class
+      // change alone is the observability contract — runbook
+      // greps + Sentry alert rules key off both.
+      expect(() => Money.fromSatangUnsafe(100).multiplyByFraction(-1n, 1n))
+        .toThrow(/Money\.multiplyByFraction: result is negative/);
     });
   });
 

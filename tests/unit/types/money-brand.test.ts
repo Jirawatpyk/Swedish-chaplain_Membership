@@ -69,15 +69,13 @@ function _typeOnlyBrandDisciplineProof(): void {
 
 describe('Satang ↔ UntrustedSatang brand discipline (type-level)', () => {
   it('compile-time @ts-expect-error directives pin the 5 unsafe shapes', () => {
-    // Reference the dead-code function so TS keeps type-checking it
-    // (referenced but never invoked → runtime is inert; compile-time
-    // assertions inside _typeOnlyBrandDisciplineProof are still
-    // enforced). If brands collapse back to nested shape, `pnpm
-    // typecheck` fails on the now-unused @ts-expect-error markers.
+    // F5R5 L-1 (2026-05-16) — the dead-code function above is type-
+    // checked by `pnpm typecheck` because `tsconfig.json` `include`
+    // picks up every `**/*.ts` file under `tests/`, NOT because of
+    // the runtime reference below. The `expect(...).toBeDefined()`
+    // is a runtime smoke-check that the test file is wired into the
+    // suite; the actual regression guard is the typecheck pass.
     expect(_typeOnlyBrandDisciplineProof).toBeDefined();
-    expect(_typeOnlyBrandDisciplineProof.name).toBe(
-      '_typeOnlyBrandDisciplineProof',
-    );
     // Sanity: legal direction still works at runtime.
     expect(addSatang(asSatang(100n), asSatang(50n))).toBe(150n);
     expect(asSatangUnchecked(-50n)).toBe(-50n);

@@ -614,6 +614,25 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       logErrorSpy.mockRestore();
     });
 
+    // F5R5 H-2 fix (2026-05-16) — shared log-shape assertion so every
+    // test pins the SRE-alert key + reason field, not just test 1.
+    // A future refactor that silently changes the log structure is
+    // caught at test time across all 4 cases (path A neg + path A
+    // null + path A no-input + path B fractional).
+    function expectBrandFailedLog(opts: {
+      reason: 'guard_failed_non_finite_or_negative' | 'asSatang_threw';
+      refundId: string;
+      rawAmount: number | null;
+    }): void {
+      expect(logErrorSpy).toHaveBeenCalledTimes(1);
+      const [logCtx, logMsg] = logErrorSpy.mock.calls[0]!;
+      expect(logMsg).toBe('stripe-gateway.refund_amount_brand_failed');
+      const c = logCtx as Record<string, unknown>;
+      expect(c['reason']).toBe(opts.reason);
+      expect(c['refundId']).toBe(opts.refundId);
+      expect(c['rawAmount']).toBe(opts.rawAmount);
+    }
+
     it('negative refund.amount + input.amountSatang provided → falls back to input + metric + error log', async () => {
       server.use(
         http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
@@ -643,12 +662,11 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       // R5 H-3 — observability contract: metric counter + error log.
       expect(metricSpy).toHaveBeenCalledTimes(1);
       expect(metricSpy).toHaveBeenCalledWith('refund_create');
-      expect(logErrorSpy).toHaveBeenCalledTimes(1);
-      const [logCtx, logMsg] = logErrorSpy.mock.calls[0]!;
-      expect(logMsg).toBe('stripe-gateway.refund_amount_brand_failed');
-      expect((logCtx as Record<string, unknown>)['reason']).toBe(
-        'guard_failed_non_finite_or_negative',
-      );
+      expectBrandFailedLog({
+        reason: 'guard_failed_non_finite_or_negative',
+        refundId: 'rfn_negative_001',
+        rawAmount: -50,
+      });
     });
 
     it('non-finite refund.amount + input.amountSatang absent → typed processor_response_amount_invalid err + metric + error log', async () => {
@@ -679,7 +697,11 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
         }
       }
       expect(metricSpy).toHaveBeenCalledWith('refund_create');
-      expect(logErrorSpy).toHaveBeenCalledTimes(1);
+      expectBrandFailedLog({
+        reason: 'guard_failed_non_finite_or_negative',
+        refundId: 'rfn_no_amt_001',
+        rawAmount: null,
+      });
     });
 
     it('null refund.amount + input.amountSatang provided → falls back to input + metric fires', async () => {
@@ -707,7 +729,54 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
         expect(result.value.amountSatang).toBe(2500n);
       }
       expect(metricSpy).toHaveBeenCalledWith('refund_create');
-      expect(logErrorSpy).toHaveBeenCalledTimes(1);
+      expectBrandFailedLog({
+        reason: 'guard_failed_non_finite_or_negative',
+        refundId: 'rfn_null_amt',
+        rawAmount: null,
+      });
+    });
+
+    // F5R5 H-1 fix (2026-05-16) — path B coverage. Pre-fix the 3
+    // MSW tests above only exercised path A (isValidStripeAmount ===
+    // false → outer log branch). Path B fires when shape passes
+    // (Number.isFinite + >= 0) but `BigInt(refund.amount)` itself
+    // throws — the case of FRACTIONAL refund.amount (e.g. 100.5).
+    // Without this test, a refactor removing the outer guard would
+    // silently drop tests onto path B with a different `reason`
+    // field (`asSatang_threw`) and the metric/log spies would still
+    // pass — only the reason discriminator would shift.
+    it('fractional refund.amount + input provided → path B (asSatang_threw) + falls back to input', async () => {
+      server.use(
+        http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
+          captureReq(request, await request.text());
+          return HttpResponse.json({
+            id: 'rfn_fractional',
+            object: 'refund',
+            amount: 100.5, // finite + >= 0 → passes outer guard;
+                           // BigInt(100.5) throws → path B catch.
+            status: 'succeeded',
+            payment_intent: 'pi_fractional',
+          });
+        }),
+      );
+      const result = await stripeGateway.createRefund({
+        paymentIntentId: 'pi_fractional',
+        amountSatang: asSatang(7500n),
+        metadata: {},
+        idempotencyKey: 'rfn-fractional',
+        stripeAccount: STRIPE_ACCOUNT,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.amountSatang).toBe(7500n);
+        expect(result.value.id).toBe('rfn_fractional');
+      }
+      expect(metricSpy).toHaveBeenCalledWith('refund_create');
+      expectBrandFailedLog({
+        reason: 'asSatang_threw',
+        refundId: 'rfn_fractional',
+        rawAmount: 100.5,
+      });
     });
   });
 });
