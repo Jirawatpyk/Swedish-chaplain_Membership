@@ -32,10 +32,20 @@
  * emit? FK contention?).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { importCsv, makeImportCsvDeps } from '@/modules/events';
-import { asUserId } from '@/modules/auth';
+import { randomUUID } from 'node:crypto';
+import { db } from '@/lib/db';
+import { importCsv, makeImportCsvDeps, asEventId } from '@/modules/events';
+import {
+  events,
+  type NewEventRow,
+} from '@/modules/events/infrastructure/schema';
 import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import {
+  createActiveTestUser,
+  deleteTestUser,
+  type TestUser,
+} from '../helpers/test-users';
 import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 const RUN_PERF = process.env['RUN_PERF'] === '1';
@@ -105,9 +115,38 @@ function buildLargeCsv(rowCount: number): Uint8Array {
 
 describe('SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB', () => {
   let tenant: TestTenant;
+  // Staff-review R3v2 LOW (2026-05-16): seed real `events` + `users`
+  // rows before running the bench so the `csv_import_records`
+  // placeholder INSERT does not violate either composite FK:
+  //   - `csv_import_records_event_fk` (tenant_id, event_id) → events
+  //   - `csv_import_records_actor_fk` (actor_user_id) → users
+  // Both FKs introduced in migration 0139. The use-case CATCHES the
+  // FK error and continues (defensive design — see `import-csv.ts`
+  // `f6_csv_import_records_insert_threw` + `f6_csv_import_records_
+  // recovery_threw` warn logs), but the catch path triggers
+  // recovery cycles that pollute bench measurements + leave the
+  // history row absent. Seeding fresh event + user eliminates the
+  // FK-fail warn noise and gives the bench a clean history-row
+  // lifecycle to measure.
+  //
+  // Both IDs are freshly generated per run (no collision with other
+  // perf-test invocations in the same tenant).
+  let seededEventId: string;
+  let actorUser: TestUser;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-chamber');
+    actorUser = await createActiveTestUser('admin');
+    seededEventId = randomUUID();
+    await db.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId: seededEventId,
+      source: 'eventcreate',
+      externalId: `perf-event-${seededEventId.slice(0, 8)}`,
+      name: 'SC-006 Perf Bench Event',
+      startDate: new Date('2026-06-21T18:00:00+07:00'),
+      category: null,
+    } satisfies NewEventRow);
   });
 
   afterAll(async () => {
@@ -115,6 +154,11 @@ describe('SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB', () => {
       await tenant?.cleanup();
     } catch {
       /* uuid-suffixed slug isolates other suites */
+    }
+    try {
+      if (actorUser) await deleteTestUser(actorUser);
+    } catch {
+      /* test-isolated user; cleanup on best-effort basis */
     }
   });
 
@@ -139,9 +183,15 @@ describe('SC-006 — CSV import 1k rows < 60s + peak heap < 500 MiB', () => {
       const outcome = await importCsv(
         {
           tenantId: asTenantId(tenant.ctx.slug),
-          actorUserId: asUserId('00000000-0000-0000-0000-000000000099'),
+          actorUserId: actorUser.userId,
           bytes: csvBytes,
-          selectedEvent: f6CsvTestSelectedEventStub,
+          // Override the stub's hardcoded UUID with the real seeded
+          // event ID so the csv_import_records placeholder INSERT
+          // passes the composite FK (R3v2 LOW fix).
+          selectedEvent: {
+            ...f6CsvTestSelectedEventStub,
+            eventId: asEventId(seededEventId),
+          },
           // Override the use-case's default 55s safety margin to match
           // the bench's explicit duration budget (parameterised so
           // dev vs prod-region runs can tune).
