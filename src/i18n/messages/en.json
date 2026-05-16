@@ -2796,7 +2796,11 @@
           "secretAriaLabel": "Masked webhook secret — last four characters visible",
           "rotateButton": "Rotate secret",
           "graceActiveUntil": "Old secret still verifies until {timestamp}",
-          "viewSetupGuide": "View setup guide (Zapier walkthrough)"
+          "viewSetupGuide": "View setup guide (Zapier walkthrough)",
+          "graceBanner": {
+            "title": "Webhook secret rotated — grace period active",
+            "description": "The previous secret will continue verifying webhook deliveries until {graceActiveUntil}. Update the secret in Zapier well before then to avoid signature rejections."
+          }
         },
         "phaseA": {
           "secretLabel": "Webhook secret (one-time reveal)",

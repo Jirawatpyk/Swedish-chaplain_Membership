@@ -24,6 +24,7 @@
  * No-op when `DATABASE_URL` is missing (returns early with warning).
  */
 import postgres from 'postgres';
+import { z } from 'zod';
 
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? process.env.TENANT_SLUG ?? 'swecham';
 
@@ -60,9 +61,13 @@ export async function resetEventcreateState(
   const client = openClient();
   if (!client) return;
   try {
-    // Order matters: registrations FK → events; receipts independent.
-    // Webhook config last because verifier reads it on next webhook hit.
+    // Order matters: child FKs first.
+    //   - event_registrations FK → events
+    //   - csv_import_records FK → events (added F6 Phase 7)
+    //   - eventcreate_idempotency_receipts: independent of events
+    //   - tenant_webhook_configs last so the verifier reads it on next hit
     await client.sql`DELETE FROM event_registrations WHERE tenant_id = ${tenantSlug}`;
+    await client.sql`DELETE FROM csv_import_records WHERE tenant_id = ${tenantSlug}`;
     await client.sql`DELETE FROM events WHERE tenant_id = ${tenantSlug}`;
     await client.sql`DELETE FROM eventcreate_idempotency_receipts WHERE tenant_id = ${tenantSlug}`;
     await client.sql`DELETE FROM tenant_webhook_configs WHERE tenant_id = ${tenantSlug}`;
@@ -110,6 +115,143 @@ export async function resetAndSeedKnownSecret(
 ): Promise<void> {
   await resetEventcreateState(tenantSlug);
   await seedKnownWebhookSecret(tenantSlug, secret);
+}
+
+/**
+ * T100 (F6 Phase 8 / US7 / FR-008) — seed a "post-rotation" webhook
+ * config so AS2 (12h grace verifies) + AS3 (25h grace rejects) can run
+ * without sleeping the test runner for hours.
+ *
+ * Writes a tenant_webhook_configs row with:
+ *   - webhook_secret_active = `newActiveSecret`   (current secret)
+ *   - webhook_secret_grace  = `oldSecret`         (the deprecated key)
+ *   - grace_rotated_at      = NOW() - INTERVAL `${ageHours} hours`
+ *   - last_rotated_at       = NOW() - INTERVAL `${ageHours} hours`
+ *
+ * The DB clock is used (not the JS runner clock) — verifier compares
+ * `now()` against `grace_rotated_at`, both server-side, so DB time is
+ * the authoritative source.
+ *
+ * Bypasses RLS via neondb_owner connection (same pattern as
+ * `resetEventcreateState`).
+ */
+export async function seedRotatedWebhookState(
+  tenantSlug: string = TENANT_ID,
+  options: {
+    readonly oldSecret: string;
+    readonly newActiveSecret: string;
+    readonly ageHours: number;
+  },
+): Promise<void> {
+  // PR-review code-review M-4 (2026-05-16): guard against NaN/Infinity
+  // because postgres-js binds `number` as a parameter and the resulting
+  // INTERVAL cast on `'NaN hours'::INTERVAL` errors at the DB with a
+  // confusing message far from the helper site.
+  if (!Number.isFinite(options.ageHours)) {
+    throw new Error(
+      `seedRotatedWebhookState: ageHours must be a finite number; got ${String(options.ageHours)}`,
+    );
+  }
+  const client = openClient();
+  if (!client) return;
+  try {
+    await client.sql`
+      INSERT INTO tenant_webhook_configs
+        (tenant_id, source, webhook_secret_active, webhook_secret_grace,
+         grace_rotated_at, last_rotated_at, enabled, created_at)
+      VALUES
+        (${tenantSlug}, 'eventcreate',
+         ${options.newActiveSecret}, ${options.oldSecret},
+         NOW() - (${options.ageHours}::TEXT || ' hours')::INTERVAL,
+         NOW() - (${options.ageHours}::TEXT || ' hours')::INTERVAL,
+         TRUE, NOW())
+      ON CONFLICT (tenant_id, source) DO UPDATE SET
+        webhook_secret_active = ${options.newActiveSecret},
+        webhook_secret_grace = ${options.oldSecret},
+        grace_rotated_at = NOW() - (${options.ageHours}::TEXT || ' hours')::INTERVAL,
+        last_rotated_at = NOW() - (${options.ageHours}::TEXT || ' hours')::INTERVAL,
+        enabled = TRUE
+    `;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * PR-review type-design CRITICAL fix (2026-05-16): runtime-validated
+ * shape for an audit_log row. Replaces the previous `as { ... }` cast
+ * which silently passed `tsc` if migrations renamed columns. With
+ * this schema, a column rename / view change fails at the seam
+ * (`AuditRowSchema.parse(rows[0])`) with a precise Zod error message
+ * rather than `undefined` at the test's assertion site.
+ */
+const AuditRowSchema = z.object({
+  event_type: z.string(),
+  tenant_id: z.string(),
+  request_id: z.string(),
+  summary: z.string(),
+  payload: z.unknown(),
+});
+
+export type AuditRow = z.infer<typeof AuditRowSchema>;
+
+/**
+ * T100 — query the audit_log for a webhook receipt outcome row tied
+ * to a specific `requestId`. Used by secret-rotation E2E to assert
+ * the grace-used / signature-rejected emission.
+ *
+ * Polls up to `timeoutMs` because the F6 receiver emits audit rows
+ * via `safeEmitStandalone` in a SEPARATE transaction (research.md
+ * R6) — the audit row may commit slightly after the HTTP response.
+ *
+ * Returns the most recent matching row, or `null` if the poll window
+ * expires.
+ *
+ * PR-review silent-failure H-2 fix (2026-05-16): throws when
+ * `DATABASE_URL` is unset rather than silently returning `null`. The
+ * old behaviour conflated "DB unavailable" with "audit row never
+ * emitted", letting absence-assertions (e.g., AS3) pass for the wrong
+ * reason on a misconfigured runner. E2E tests upstream of this helper
+ * are already guarded by `test.skip(!E2E_ADMIN_EMAIL || ...)` — when
+ * those guards pass, `DATABASE_URL` is expected and a missing value
+ * is a setup error worth surfacing loudly.
+ */
+export async function queryAuditEvent(
+  tenantSlug: string,
+  eventType: string,
+  requestId: string,
+  timeoutMs: number = 2000,
+): Promise<AuditRow | null> {
+  const client = openClient();
+  if (!client) {
+    throw new Error(
+      'queryAuditEvent requires DATABASE_URL. ' +
+        'This helper is called from E2E tests that are gated on ' +
+        'E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD; if those env vars are ' +
+        'set, DATABASE_URL must be set too.',
+    );
+  }
+  const startedAt = Date.now();
+  try {
+    for (;;) {
+      const rows = await client.sql`
+        SELECT event_type, tenant_id, request_id, summary, payload
+        FROM audit_log
+        WHERE tenant_id = ${tenantSlug}
+          AND event_type = ${eventType}
+          AND request_id = ${requestId}
+        ORDER BY timestamp DESC
+        LIMIT 1
+      `;
+      if (rows.length > 0) {
+        return AuditRowSchema.parse(rows[0]);
+      }
+      if (Date.now() - startedAt > timeoutMs) return null;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  } finally {
+    await client.end();
+  }
 }
 
 // ===========================================================================

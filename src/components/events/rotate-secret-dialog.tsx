@@ -96,9 +96,6 @@ export function RotateSecretDialog({
     }
   }
 
-  // Reset state when the dialog closes (so a follow-up open doesn't
-  // flash the previous secret).
-  //
   // Round 3 M-code-2 (2026-05-13) — accepts an `acknowledgedAlready`
   // flag from the explicit Acknowledge-button paths so we don't emit
   // `onRotationAcknowledged()` twice when the dialog closes via the
@@ -173,6 +170,16 @@ export function RotateSecretDialog({
       confirmLabel={t('confirm')}
       cancelLabel={t('cancel')}
       destructive
+      // F6 Phase 8 T100 (2026-05-16) — DO NOT auto-close after onConfirm.
+      // handleConfirm sets `rotationResult` so this dialog re-renders
+      // into the post-rotation one-time-reveal view (the `if
+      // (rotationResult)` branch above). The default
+      // `closeOnConfirm=true` would fire `onOpenChange(false)` BEFORE
+      // React commits the post-rotation re-render, so the admin never
+      // sees the new plaintext secret. The post-rotation view's
+      // explicit Done button owns its own close path via the inline
+      // onConfirm → handleOpenChange(false, true) wiring.
+      closeOnConfirm={false}
       onConfirm={handleConfirm}
     />
   );

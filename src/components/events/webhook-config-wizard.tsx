@@ -30,6 +30,7 @@ import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CopyButton } from '@/components/members/copy-button';
 import { formatGraceTimestamp } from '@/lib/format-grace-timestamp';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
@@ -319,6 +320,44 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
 
       {phase === 'c-test' && (
         <div className="space-y-6">
+          {/*
+            T102 (Phase 8 — US7 FR-008) — page-level 24h grace info
+            banner. Rendered only while `graceActiveUntilDisplay` is
+            truthy (i.e. `grace_rotated_at` within 24h of NOW per
+            research.md R7). Larger and more prominent than the
+            inline `<Badge>` next to the masked secret — the rotation
+            window is the admin's time-bounded ask to update Zapier,
+            and visibility here directly reduces the risk that
+            Zapier traffic starts being rejected at the 24h mark.
+            Disappears automatically once the grace window expires.
+
+            A11y: shadcn `<Alert>` defaults to `role="alert"`
+            (assertive — interrupts current SR speech). The rotation
+            reminder is informational, not emergency, and the wizard
+            re-renders on every `router.refresh()` (test-webhook
+            button, recent-deliveries toggle, secret-revealed
+            acknowledgement). Override to `role="status"` +
+            `aria-live="polite"` so SRs queue the announcement
+            politely on initial render and stay quiet on subsequent
+            reconciliations within the 24h window. WCAG 2.1 4.1.3 /
+            3.3.1 — informational live regions should be polite by
+            default; assertive is reserved for actionable errors.
+          */}
+          {graceActiveUntilDisplay ? (
+            <Alert
+              data-testid="grace-banner"
+              role="status"
+              aria-live="polite"
+            >
+              <InfoIcon aria-hidden />
+              <AlertTitle>{t('graceBanner.title')}</AlertTitle>
+              <AlertDescription>
+                {t('graceBanner.description', {
+                  graceActiveUntil: graceActiveUntilDisplay,
+                })}
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {/*
             Round-6 verify-fix 2026-05-13 (UX D-01) — "View setup
             guide" reference expandable. Phase 5's original

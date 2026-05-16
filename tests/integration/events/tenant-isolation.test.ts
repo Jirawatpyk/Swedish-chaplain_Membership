@@ -310,6 +310,122 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
       );
       expect(probeAudit).toBeDefined();
     });
+
+    it('D1 (Phase 8 verify): payload signed with tenant A GRACE secret POSTed to tenant B URL → 401 + no rows + reject audit', async () => {
+      // F6 Phase 8 verify check D1 (2026-05-16) — close the cross-
+      // tenant probe gap for the deprecated-grace key path. The
+      // existing test (above) covers the active-secret probe; this
+      // sibling proves the same isolation invariant holds when the
+      // attacker signs with a grace secret that's valid within tenant
+      // A's 24h grace window. Without this test, a future refactor
+      // that accidentally cross-references grace secrets across
+      // tenants (e.g., a shared cache, an over-broad SELECT) could
+      // pass the active-only test and silently regress.
+      //
+      // Setup: tenant A is mid-rotation (active=NEW_A, grace=OLD_A,
+      // grace_rotated_at=NOW-12h). Tenant B has its own independent
+      // active secret. Attacker signs with tenant A's grace key
+      // (OLD_A) and targets tenant B's URL.
+      const oldSecretA = 'old-tenant-A-grace-' + 'g'.repeat(28);
+      const newActiveSecretA = 'new-tenant-A-active-' + 'n'.repeat(27);
+      const secretB = 'unique-tenant-B-active-' + 'b'.repeat(24);
+
+      // Rotate tenant A so OLD_A is grace, NEW is active, grace_rotated_at=NOW-12h.
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx
+          .update(tenantWebhookConfigs)
+          .set({
+            webhookSecretActive: newActiveSecretA,
+            webhookSecretGrace: oldSecretA,
+            graceRotatedAt: new Date(Date.now() - 12 * 60 * 60 * 1000),
+          })
+          .where(eq(tenantWebhookConfigs.tenantId, tenantA.ctx.slug));
+      });
+
+      // Tenant B keeps an independent active secret, NO grace.
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx
+          .update(tenantWebhookConfigs)
+          .set({
+            webhookSecretActive: secretB,
+            webhookSecretGrace: null,
+            graceRotatedAt: null,
+          })
+          .where(eq(tenantWebhookConfigs.tenantId, tenantB.ctx.slug));
+      });
+
+      // Sign payload with tenant A's GRACE secret (oldSecretA).
+      const { signWebhookBody, makeWebhookPayload } = await import('./helpers/sign-webhook');
+      const payload = makeWebhookPayload({ tenantSlug: tenantA.ctx.slug });
+      const signed = signWebhookBody({ body: payload, secret: oldSecretA });
+
+      // Build a NextRequest targeting tenant B's URL.
+      const { NextRequest } = await import('next/server');
+      const requestId = `req-cross-tenant-grace-probe-${randomUUID()}`;
+      const crossTenantRequest = new NextRequest(
+        `https://app.test/api/webhooks/eventcreate/v1/${tenantB.ctx.slug}`,
+        {
+          method: 'POST',
+          body: signed.rawBody,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Chamber-Signature': signed.signatureHeader,
+            'X-Chamber-Timestamp': signed.timestamp,
+            'X-Request-ID': requestId,
+          },
+        },
+      );
+
+      const route = await import('@/app/api/webhooks/eventcreate/v1/[tenantSlug]/route');
+      const res = await route.POST(crossTenantRequest, {
+        params: Promise.resolve({ tenantSlug: tenantB.ctx.slug }),
+      });
+
+      // 401 generic body — no oracle leak (no mention of "grace",
+      // "expired", or the discriminator kind).
+      expect(res.status).toBe(401);
+      const body = await res.json();
+      expect(body.title).toBe('Webhook authentication failed');
+      const bodyStr = JSON.stringify(body).toLowerCase();
+      expect(bodyStr).not.toContain('grace');
+      expect(bodyStr).not.toContain('expired');
+      expect(bodyStr).not.toMatch(/signature_mismatch|skew|missing_header|cross_tenant/i);
+
+      // Tenant B's tables MUST NOT contain rows from this probe.
+      const eventsB = await runInTenant(tenantB.ctx, async (tx) =>
+        tx.select().from(events).where(eq(events.tenantId, tenantB.ctx.slug)),
+      );
+      const payloadEvent = payload['event'] as Record<string, unknown> | undefined;
+      const probeEvent = eventsB.find(
+        (e) => e.externalId === (payloadEvent?.['externalId'] as string | undefined),
+      );
+      expect(probeEvent).toBeUndefined();
+
+      // Tenant B's audit log must record the rejection (forensic trail).
+      const tenantBAudits = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantB.ctx.slug),
+            eq(auditLog.requestId, requestId),
+          ),
+        );
+      const rejectAudit = tenantBAudits.find(
+        (row) => (row.eventType as string) === 'webhook_signature_rejected',
+      );
+      expect(rejectAudit).toBeDefined();
+
+      // CRITICAL: tenant B's audit_log must NOT contain a
+      // `webhook_secret_grace_used` row — tenant A's grace secret is
+      // NOT a valid grace key for tenant B. If a future regression
+      // cross-references grace secrets, the verifier would short-
+      // circuit on a match and emit the wrong audit row here.
+      const graceAuditLeak = tenantBAudits.find(
+        (row) => (row.eventType as string) === 'webhook_secret_grace_used',
+      );
+      expect(graceAuditLeak).toBeUndefined();
+    });
   });
 
   describe('CSV import path — cross-tenant integration probe (staff-review R-S01)', () => {

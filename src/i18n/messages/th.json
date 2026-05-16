@@ -2796,7 +2796,11 @@
           "secretAriaLabel": "คีย์ webhook ที่ถูกซ่อน — แสดงเฉพาะ 4 ตัวอักษรท้าย",
           "rotateButton": "หมุนคีย์",
           "graceActiveUntil": "คีย์เก่ายังตรวจสอบได้จนถึง {timestamp}",
-          "viewSetupGuide": "ดูคู่มือการตั้งค่า (Zapier walkthrough)"
+          "viewSetupGuide": "ดูคู่มือการตั้งค่า (Zapier walkthrough)",
+          "graceBanner": {
+            "title": "หมุนเวียน webhook secret แล้ว — อยู่ในช่วงผ่อนผัน",
+            "description": "Secret เดิมจะยังคงยืนยันการรับ webhook ได้จนถึง {graceActiveUntil} โปรดอัพเดท secret ใน Zapier ก่อนหมดเวลาเพื่อป้องกัน signature ถูกปฏิเสธ"
+          }
         },
         "phaseA": {
           "secretLabel": "Webhook secret (แสดงครั้งเดียว)",

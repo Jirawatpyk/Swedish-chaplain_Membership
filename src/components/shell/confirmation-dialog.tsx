@@ -38,12 +38,25 @@ export interface ConfirmationDialogProps {
   readonly destructive?: boolean;
   readonly children?: ReactNode;
   /**
-   * Phase 5 review-fix W-04 (2026-05-13) — disable the confirm action
-   * while a parent-side gate is unfulfilled (e.g. the embedded
-   * WebhookSecretReveal's saved-checkbox in the post-rotation flow).
-   * Cancel always stays enabled so the user can back out.
+   * Disable the confirm action while a parent-side gate is unfulfilled
+   * (e.g. a wrapping component needs the user to tick a checkbox before
+   * the destructive action becomes available). Cancel always stays
+   * enabled so the user can back out. Introduced in Phase 5 review-fix
+   * W-04 (2026-05-13).
    */
   readonly confirmDisabled?: boolean;
+  /**
+   * F6 Phase 8 T100 (2026-05-16) — when true (default), the dialog
+   * auto-closes after `onConfirm` resolves. Pass `false` for flows
+   * where `onConfirm` is a state TRANSITION (not termination) and the
+   * dialog should re-render into a follow-up view via parent-state
+   * change. Example: rotate-secret pre-confirmation → post-rotation
+   * one-time-reveal — the auto-close races the parent's
+   * `setRotationResult(...)` and erases the new secret from state
+   * before the admin can copy it. The parent owns the close in those
+   * flows.
+   */
+  readonly closeOnConfirm?: boolean;
 }
 
 export function ConfirmationDialog({
@@ -57,6 +70,7 @@ export function ConfirmationDialog({
   destructive,
   children,
   confirmDisabled = false,
+  closeOnConfirm = true,
 }: ConfirmationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -76,7 +90,23 @@ export function ConfirmationDialog({
             onClick={(event) => {
               event.preventDefault();
               if (confirmDisabled) return;
-              void Promise.resolve(onConfirm()).then(() => onOpenChange(false));
+              // F6 Phase 8 silent-failure C-1 fix (2026-05-16): always close
+              // (when `closeOnConfirm`) AND surface rejections to the console
+              // + global error boundary via `queueMicrotask(throw)`. The
+              // previous `void Promise.resolve(...).then(...)` chain dropped
+              // rejections silently — a shared-primitive bug that every
+              // ConfirmationDialog consumer inherited.
+              void Promise.resolve()
+                .then(() => onConfirm())
+                .catch((err: unknown) => {
+                  console.error('[ConfirmationDialog] onConfirm rejected', err);
+                  queueMicrotask(() => {
+                    throw err;
+                  });
+                })
+                .finally(() => {
+                  if (closeOnConfirm) onOpenChange(false);
+                });
             }}
             className={destructive ? buttonVariants({ variant: 'destructive' }) : undefined}
           >

@@ -2796,7 +2796,11 @@
           "secretAriaLabel": "Maskerad webhook-nyckel — endast de fyra sista tecknen visas",
           "rotateButton": "Rotera nyckel",
           "graceActiveUntil": "Gammal nyckel verifierar fortfarande till {timestamp}",
-          "viewSetupGuide": "Visa konfigurationsguide (Zapier-genomgång)"
+          "viewSetupGuide": "Visa konfigurationsguide (Zapier-genomgång)",
+          "graceBanner": {
+            "title": "Webhook-hemlighet roterad — respitperiod aktiv",
+            "description": "Den föregående hemligheten fortsätter verifiera webhook-leveranser fram till {graceActiveUntil}. Uppdatera hemligheten i Zapier i god tid innan dess för att undvika att signaturer avvisas."
+          }
         },
         "phaseA": {
           "secretLabel": "Webhook-nyckel (visas en gång)",
