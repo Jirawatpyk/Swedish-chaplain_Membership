@@ -1437,6 +1437,248 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
   });
 
   /**
+   * Staff-review R-S01 (review-20260516-155013.md) — converts the
+   * mathematical proof of step-4b's deadlock-safe sorted-key lock
+   * acquisition into a regression-protected integration assertion.
+   *
+   * Scenario: two registrations R1 + R2 on the same event, R1 initially
+   * counted against Member A, R2 initially counted against Member B.
+   * Concurrently fire `runRelinkRegistration(R1: A→B)` and
+   * `runRelinkRegistration(R2: B→A)`. Each relink touches BOTH members'
+   * advisory locks. Without sorted-key acquisition, thread1 would hold
+   * A's lock waiting for B's, while thread2 would hold B's waiting for
+   * A's — a classic A→B vs B→A deadlock. With sorted-key acquisition
+   * (step 4b), both threads queue on the lexicographically-smaller key
+   * FIRST, so one fully completes its critical section before the
+   * other starts → both commits land deterministically with no
+   * deadlock.
+   *
+   * Assertion shape:
+   *   - Both `Promise.all` results are `Result.ok` (no lock failure /
+   *     timeout / deadlock-rollback errors surface).
+   *   - Final DB state: R1.matched=B + counted=true; R2.matched=A +
+   *     counted=true (a clean swap).
+   *   - Both registrations show the macro `registration_relinked`
+   *     audit row.
+   *   - Test completes well under the per-call advisory-lock timeout
+   *     (Postgres' default `lock_timeout` is unlimited unless we set
+   *     it; the suite-level vitest timeout is 30s — passing in <5s
+   *     is comfortably outside any pathological deadlock window).
+   *
+   * If a future refactor accidentally reverts the sorted-key ordering
+   * (e.g., acquires OLD before NEW without sorting), this test would
+   * fail with a Postgres `40P01 deadlock_detected` error OR hang past
+   * the vitest timeout.
+   */
+  describe('concurrent A→B + B→A relink (deadlock-safe sorted-key acquisition)', () => {
+    let tenant: TestTenant;
+    let userId: string;
+    const corpPlanId = `test-plan-concurrent-corp-${randomUUID()}`;
+    const partnershipPlanId = `test-plan-concurrent-partner-${randomUUID()}`;
+    const memberAId = randomUUID();
+    const memberBId = randomUUID();
+    const eventInternalId = randomUUID();
+    const reg1Id = randomUUID();
+    const reg2Id = randomUUID();
+    let contactAId: string;
+    let contactBId: string;
+
+    beforeAll(async () => {
+      tenant = await createTestTenant('test-swecham');
+      const u = await createActiveTestUser('admin');
+      userId = u.userId;
+      contactAId = randomUUID();
+      contactBId = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await seedF8MembershipPlan(tx, {
+          tenantSlug: tenant.ctx.slug,
+          planId: corpPlanId,
+          planName: { en: 'Corp Bundle (concurrent)' },
+          benefitMatrix: premiumMatrix,
+          planCategory: 'corporate',
+          createdBy: u.userId,
+        });
+        await seedF8MembershipPlan(tx, {
+          tenantSlug: tenant.ctx.slug,
+          planId: partnershipPlanId,
+          planName: { en: 'Diamond Partnership (concurrent)' },
+          benefitMatrix: diamondMatrix,
+          planCategory: 'partnership',
+          includesCorporatePlanId: corpPlanId,
+          createdBy: u.userId,
+        });
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: memberAId,
+          companyName: 'Concurrent A Co',
+          country: 'TH',
+          planId: partnershipPlanId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: contactAId,
+          memberId: memberAId,
+          firstName: 'Alice',
+          lastName: 'Concurrent',
+          email: 'alice@concurrent-a.example',
+          isPrimary: true,
+        } as unknown as typeof contacts.$inferInsert);
+        await tx.insert(members).values({
+          tenantId: tenant.ctx.slug,
+          memberId: memberBId,
+          companyName: 'Concurrent B Co',
+          country: 'TH',
+          planId: partnershipPlanId,
+          planYear: 2026,
+          status: 'active',
+        } as unknown as typeof members.$inferInsert);
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: contactBId,
+          memberId: memberBId,
+          firstName: 'Bob',
+          lastName: 'Concurrent',
+          email: 'bob@concurrent-b.example',
+          isPrimary: true,
+        } as unknown as typeof contacts.$inferInsert);
+        await tx.insert(tenantWebhookConfigs).values({
+          tenantId: tenant.ctx.slug,
+          source: 'eventcreate',
+          webhookSecretActive: 'test-secret-' + 'c'.repeat(43),
+          enabled: true,
+        });
+        await tx.insert(events).values({
+          tenantId: tenant.ctx.slug,
+          eventId: eventInternalId,
+          source: 'eventcreate',
+          externalId: `event_concurrent_${Date.now()}`,
+          name: 'Concurrent Relink Event',
+          startDate: new Date('2026-08-15T18:00:00+07:00'),
+          isPartnerBenefit: true,
+          isCulturalEvent: false,
+        } as unknown as typeof events.$inferInsert);
+        // R1: counted against A
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: reg1Id,
+          eventId: eventInternalId,
+          externalId: `att_concurrent_1_${Date.now()}`,
+          attendeeEmail: 'attendee1@concurrent.example',
+          attendeeName: 'Attendee 1',
+          attendeeCompany: 'Concurrent A Co',
+          matchType: 'member_contact',
+          matchedMemberId: memberAId,
+          matchedContactId: contactAId,
+          ticketType: null,
+          ticketPriceThb: null,
+          paymentStatus: 'paid',
+          countedAgainstPartnership: true,
+          countedAgainstCulturalQuota: false,
+          registeredAt: new Date(),
+          piiPseudonymisedAt: null,
+        } as unknown as typeof eventRegistrations.$inferInsert);
+        // R2: counted against B
+        await tx.insert(eventRegistrations).values({
+          tenantId: tenant.ctx.slug,
+          registrationId: reg2Id,
+          eventId: eventInternalId,
+          externalId: `att_concurrent_2_${Date.now()}`,
+          attendeeEmail: 'attendee2@concurrent.example',
+          attendeeName: 'Attendee 2',
+          attendeeCompany: 'Concurrent B Co',
+          matchType: 'member_contact',
+          matchedMemberId: memberBId,
+          matchedContactId: contactBId,
+          ticketType: null,
+          ticketPriceThb: null,
+          paymentStatus: 'paid',
+          countedAgainstPartnership: true,
+          countedAgainstCulturalQuota: false,
+          registeredAt: new Date(),
+          piiPseudonymisedAt: null,
+        } as unknown as typeof eventRegistrations.$inferInsert);
+      });
+    });
+
+    afterAll(async () => {
+      await tenant.cleanup();
+    });
+
+    it('R1 (A→B) + R2 (B→A) fired concurrently both succeed without deadlock; final state is a clean member swap', async () => {
+      const t0 = Date.now();
+      const [resA, resB] = await Promise.all([
+        runRelinkRegistration(tenant.ctx.slug, {
+          registrationId: reg1Id as never,
+          newMatchedMemberId: memberBId as never,
+          eventIdFromPath: null,
+          actorUserId: asUserId(userId),
+          occurredAt: new Date(),
+        }),
+        runRelinkRegistration(tenant.ctx.slug, {
+          registrationId: reg2Id as never,
+          newMatchedMemberId: memberAId as never,
+          eventIdFromPath: null,
+          actorUserId: asUserId(userId),
+          occurredAt: new Date(),
+        }),
+      ]);
+      const elapsed = Date.now() - t0;
+
+      // Both succeed — no `lock_acquisition_failed`, no Postgres
+      // `40P01 deadlock_detected` escaping as a `registrations_repo_error`.
+      expect(resA.ok).toBe(true);
+      expect(resB.ok).toBe(true);
+
+      // Completes in well under a deadlock-detector window. Postgres'
+      // default `deadlock_timeout` is 1s, after which one tx is killed
+      // — if either thread waited that long, the test would have
+      // observed it. We bound at 10s to allow slack for cross-region
+      // Neon latency without being permissive of pathological cases.
+      expect(elapsed).toBeLessThan(10_000);
+
+      // Final state: clean swap. R1 → B, R2 → A; both still counted.
+      const rows = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenant.ctx.slug),
+              eq(eventRegistrations.eventId, eventInternalId),
+            ),
+          )
+          .orderBy(eventRegistrations.registrationId),
+      );
+      const r1 = rows.find((r) => r.registrationId === reg1Id)!;
+      const r2 = rows.find((r) => r.registrationId === reg2Id)!;
+      expect(r1.matchedMemberId).toBe(memberBId);
+      expect(r1.matchType).toBe('member_contact');
+      expect(r1.countedAgainstPartnership).toBe(true);
+      expect(r2.matchedMemberId).toBe(memberAId);
+      expect(r2.matchType).toBe('member_contact');
+      expect(r2.countedAgainstPartnership).toBe(true);
+
+      // Each relink emitted its own macro audit — total 2. Filter the
+      // enum-typed eventType in JS rather than SQL because the
+      // pg-enum union in Drizzle-inferred types is open-ended (F8
+      // added many event types after F6 spec was drafted); the
+      // happy-path test above uses the same `String(...)` pattern.
+      const macroAudits = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenant.ctx.slug));
+      const concurrentMacros = macroAudits.filter((r) => {
+        if (String(r.eventType) !== 'registration_relinked') return false;
+        const p = r.payload as Record<string, unknown>;
+        return p.registrationId === reg1Id || p.registrationId === reg2Id;
+      });
+      expect(concurrentMacros.length).toBe(2);
+    });
+  });
+
+  /**
    * Constitution v1.4.0 Principle I (NON-NEG) Review-Gate blocker.
    * Mirrors archive-event.test.ts WARN-3 strengthening — verify both
    * the SELECT gate (registration_not_found) AND the post-probe state

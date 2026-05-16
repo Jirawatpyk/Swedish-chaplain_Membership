@@ -63,6 +63,7 @@ import type { EventId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
 import type { QuotaEffect } from '../../domain/event-registration';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import type {
   EventsRepository,
   EventsRepositoryError,
@@ -257,7 +258,10 @@ export async function toggleEventCategory(
     });
   }
   const eventAfter = setFlagResult.value;
-  const fiscalYear = deriveFiscalYear(eventAfter.startDate.toISOString(), 1);
+  const fiscalYear = deriveFiscalYear(
+    eventAfter.startDate.toISOString(),
+    F6_FISCAL_YEAR_START_MONTH,
+  );
 
   // (4) Load all registrations eligible for re-evaluation
   const requotaList = await deps.registrationsRepo.listForRequota(

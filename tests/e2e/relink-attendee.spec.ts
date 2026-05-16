@@ -34,6 +34,7 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { signInAsManager } from './helpers/manager-session';
 import {
   seedF6RelinkFixture,
   type SeedRelinkFixtureResult,
@@ -42,6 +43,8 @@ import {
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
+const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
+const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
 test.describe.configure({ timeout: 120_000 });
 
@@ -221,5 +224,122 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
       `relink-button-${fixture.pseudonymisedRegistrationId}`,
     );
     await expect(trigger).toHaveCount(0);
+  });
+
+  /**
+   * Staff-review R-S02 (review-20260516-155013.md) — locale parity for
+   * the disallowed-message surface. EN substring is covered by the
+   * dedicated test above; this scenario probes TH + SV by switching
+   * the cookie-driven locale before navigation. The retention-purged
+   * copy MUST be present in every locale because non-EN tenants
+   * (Swedish + Thai chamber admins) read this surface daily.
+   *
+   * Why locale-loop the *disallowed* surface and not AS1/AS2: the
+   * AS1/AS2 paths assert DOM-test-ids + sonner toasts whose i18n
+   * keys are exercised by `tests/e2e/eventcreate-i18n.spec.ts`'s
+   * full-screen sweep. The disallowed-row copy is a one-off long-form
+   * sentence (~30 words) where translation quality matters more than
+   * single-word labels and where mojibake / mistranslation can be
+   * embarrassing on a record-of-permanent-loss surface.
+   *
+   * EN remains gold-source — these tests do NOT assert specific TH /
+   * SV substrings (translations may evolve); they assert the
+   * data-testid surfaces visibly + the FR-014 sentence renders
+   * (length > 30 chars rules out empty / fallback-to-key state).
+   */
+  for (const locale of ['th', 'sv'] as const) {
+    test(`FR-014 disallowed message renders in ${locale.toUpperCase()} locale`, async ({
+      page,
+    }) => {
+      if (!fixture) {
+        test.skip(true, 'fixture not seeded');
+        return;
+      }
+      await signInAsAdmin(page);
+      // next-intl reads locale from the NEXT_LOCALE cookie; setting
+      // it before navigation is the standard locale-switch pattern
+      // used by tests/e2e/eventcreate-i18n.spec.ts.
+      await page.context().addCookies([
+        {
+          name: 'NEXT_LOCALE',
+          value: locale,
+          url: page.url() || 'http://localhost:3100',
+        },
+      ]);
+      await page.goto(`/admin/events/${fixture.eventId}`);
+      await page.waitForLoadState('networkidle');
+
+      const disallowed = page.getByTestId(
+        `relink-disallowed-${fixture.pseudonymisedRegistrationId}`,
+      );
+      await expect(disallowed).toBeVisible();
+      const text = (await disallowed.textContent()) ?? '';
+      // Rules out untranslated state (would render the literal
+      // i18n-key path "admin.events.detail.relink.disallowedShort").
+      expect(text).not.toContain('admin.events.detail.relink');
+      // Rules out empty fallback. EN FR-014 sentence is ~150 chars;
+      // any reasonable translation will land >30 chars.
+      expect(text.trim().length).toBeGreaterThan(30);
+
+      // CTA still absent — locale must not regress the structural
+      // invariant that pseudonymised rows expose no relink trigger.
+      const trigger = page.getByTestId(
+        `relink-button-${fixture.pseudonymisedRegistrationId}`,
+      );
+      await expect(trigger).toHaveCount(0);
+    });
+  }
+
+  /**
+   * Staff-review R-S02 (review-20260516-155013.md) — security boundary
+   * test for FR-035 manager → 403 mapping at the relink action endpoint.
+   *
+   * Distinct from `adminOnlyWriterGuard`'s unit tests (which prove the
+   * guard's return-shape in isolation) and from the writer-guard
+   * contract tests (which prove the route wires the guard in): this
+   * end-to-end test proves the **deployed** route surface enforces the
+   * spec-canonical 403-not-404 distinction for manager actors with a
+   * real session cookie. A regression that quietly removed the
+   * `adminOnlyWriterGuard` from the relink route (or swapped it for
+   * the `/integrations/eventcreate/_lib` 404-for-all sibling) would
+   * fail HERE even if all unit + contract tests still passed.
+   *
+   * Gated on E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD because the
+   * staging fixture does not always seed a manager account. Skip
+   * cleanly when absent rather than fail noisily.
+   */
+  test('FR-035 manager → 403 on POST relink (spec.md:248-251 action-level deny)', async ({
+    page,
+  }) => {
+    if (!MANAGER_EMAIL || !MANAGER_PASSWORD) {
+      test.skip(
+        true,
+        'Set E2E_MANAGER_EMAIL + E2E_MANAGER_PASSWORD to run F6 FR-035 manager-403 E2E',
+      );
+      return;
+    }
+    if (!fixture || !fixture.relinkTargetMemberId) {
+      test.skip(true, 'fixture not seeded');
+      return;
+    }
+    await signInAsManager(page);
+    // Direct API POST as the authenticated manager. The session
+    // cookie established by signInAsManager carries the manager role;
+    // adminOnlyWriterGuard MUST refuse with 403 + emit a
+    // `role_violation_blocked` audit (the audit emit is asserted in
+    // the writer-guard unit suite — here we only assert the status
+    // code because a Playwright spec cannot read the audit table
+    // directly without coupling to DB internals).
+    const response = await page.request.post(
+      `/api/admin/events/${fixture.eventId}/registrations/${fixture.nonMemberRegistrationId}/relink`,
+      {
+        data: { newMatchedMemberId: fixture.relinkTargetMemberId },
+        failOnStatusCode: false,
+      },
+    );
+    expect(response.status()).toBe(403);
+    const body = (await response.json()) as { title?: string; detail?: string };
+    expect(body.title).toBe('Forbidden');
+    expect(body.detail).toContain('admin');
   });
 });

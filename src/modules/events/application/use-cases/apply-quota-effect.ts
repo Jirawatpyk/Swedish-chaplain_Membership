@@ -84,9 +84,11 @@ export interface ApplyQuotaEffectInput {
   };
   /**
    * Calendar year of the event's `start_date` in Asia/Bangkok wall
-   * time. Derive at the caller via `deriveFiscalYear(event.startDate.toISOString(), 1)`
-   * (FR-016 specifies "calendar year of the event start date" — for
-   * SweCham fiscal-year-start-month=1, fiscal == calendar).
+   * time. Derive at the caller via
+   * `deriveFiscalYear(event.startDate.toISOString(), F6_FISCAL_YEAR_START_MONTH)`
+   * (the named const is exported from
+   * `_helpers/fiscal-year-constants.ts` — FR-016 anchors event-quota
+   * to calendar year, NOT the tenant-configurable F4 fiscal year).
    */
   readonly fiscalYear: number;
   readonly paymentStatus: PaymentStatus;

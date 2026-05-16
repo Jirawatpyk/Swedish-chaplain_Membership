@@ -66,6 +66,7 @@ import type {
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
@@ -239,7 +240,10 @@ export async function archiveEvent(
   // tenant fiscal year boundary is handled by `deriveFiscalYear`
   // (js-joda backed); SweCham fiscal-year-start-month=1 → fiscal year
   // equals calendar year. Other tenants can diverge later.
-  const fiscalYear = deriveFiscalYear(eventBefore.startDate.toISOString(), 1);
+  const fiscalYear = deriveFiscalYear(
+    eventBefore.startDate.toISOString(),
+    F6_FISCAL_YEAR_START_MONTH,
+  );
 
   // **R6 PERF-R6-04 closure (R7 COMMENT-FR-02 clarified)** — batch
   // `queryAllotments` by unique memberId. Pre-loop: walk the `counted`

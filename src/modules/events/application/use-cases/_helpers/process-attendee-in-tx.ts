@@ -41,6 +41,7 @@
  */
 import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { F6_FISCAL_YEAR_START_MONTH } from './fiscal-year-constants';
 import type { TenantId, MemberId, ContactId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { QuotaEffect } from '../../../domain/event-registration';
@@ -513,9 +514,13 @@ export async function processAttendeeInTx(
           isCulturalEvent: event.isCulturalEvent,
         },
         // FR-016 — calendar year of event.startDate in Asia/Bangkok
-        // wall time. For SweCham fiscal-year-start-month=1, fiscal
-        // year == calendar year. Other tenants may diverge later.
-        fiscalYear: deriveFiscalYear(event.startDate.toISOString(), 1),
+        // wall time. F6 quota counters bucket by **calendar year** even
+        // for tenants whose F4 fiscal year starts elsewhere — see
+        // `F6_FISCAL_YEAR_START_MONTH` doc for the cross-module rationale.
+        fiscalYear: deriveFiscalYear(
+          event.startDate.toISOString(),
+          F6_FISCAL_YEAR_START_MONTH,
+        ),
         paymentStatus: input.attendee.paymentStatus,
         actorType: input.actorContext.actorType,
         actorUserId: input.actorContext.actorUserId,
@@ -657,7 +662,10 @@ export async function processAttendeeInTx(
         tenantId: input.tenantId,
         memberId: matchedMemberId,
         eventId: event.eventId,
-        fiscalYear: deriveFiscalYear(event.startDate.toISOString(), 1),
+        fiscalYear: deriveFiscalYear(
+          event.startDate.toISOString(),
+          F6_FISCAL_YEAR_START_MONTH,
+        ),
       });
       if (!r.ok) {
         throw new TxStageError(

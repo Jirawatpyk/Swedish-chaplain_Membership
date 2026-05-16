@@ -138,6 +138,7 @@ import type {
 import type { UserId } from '@/modules/auth';
 import { buildQuotaLockKey } from './apply-quota-effect';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import {
   eventsRepoErrorMessage,
   registrationsRepoErrorMessage,
@@ -371,7 +372,10 @@ export async function relinkRegistration(
 
   const previousMatchType = registration.match.type;
   const previousQuotaEffect = registration.quotaEffect;
-  const fiscalYear = deriveFiscalYear(event.startDate.toISOString(), 1);
+  const fiscalYear = deriveFiscalYear(
+    event.startDate.toISOString(),
+    F6_FISCAL_YEAR_START_MONTH,
+  );
 
   const baseAudit = {
     tenantId: input.tenantId,
