@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import { runInTenant, db } from '@/lib/db';
 import {
   events,
@@ -28,6 +28,7 @@ import {
   csvImportRecords,
   type NewEventRow,
 } from '@/modules/events/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { runImportCsv } from '@/lib/events-csv-import-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import {
@@ -229,6 +230,7 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
       category: null,
     };
 
+    const beforeMs = Date.now();
     // 1st upload — Notes='verifying payment' → payment_status='pending'
     const r1 = await runImportCsv({
       tenantSlug: tenant.ctx.slug,
@@ -306,5 +308,32 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     expect(r3.summary.rowsStateChanged).toBe(0);
     expect(r3.summary.rowsAlreadyImported).toBe(1);
     expect(r3.summary.rowsProcessed).toBe(0);
+
+    // CR-5 (R1 — pr-test-analyzer): state-change audit emission.
+    // FR-018 mandates payment_status mutations on existing PII rows
+    // are audit-logged. Exactly ONE `csv_import_row_state_changed`
+    // row should exist for the 2nd upload (pending → paid) and NONE
+    // for the 3rd (no-change duplicate).
+    const stateChangeRows = await db
+      .select({
+        eventType: auditLog.eventType,
+        actorUserId: auditLog.actorUserId,
+        payload: auditLog.payload,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'csv_import_row_state_changed' as never),
+          gt(auditLog.timestamp, new Date(beforeMs - 1000)),
+        ),
+      );
+    expect(stateChangeRows.length).toBe(1);
+    const stateRow = stateChangeRows[0]!;
+    expect(stateRow.actorUserId).toBe(actor.userId);
+    const payload = stateRow.payload as Record<string, unknown>;
+    expect(payload['previousPaymentStatus']).toBe('pending');
+    expect(payload['newPaymentStatus']).toBe('paid');
+    expect(payload['severity']).toBe('info');
   });
 });

@@ -18,10 +18,12 @@
  *     when no access happened).
  *
  * Cross-tenant probe (Constitution Principle I clause 4):
- *   - When the tenant-scoped `findById` returns `not_found` AND the
- *     admin-bypass `findByIdAcrossTenants` shows the recordId DOES
- *     exist in a different tenant, emit `csv_import_cross_tenant_probe`
- *     audit at `critical` severity. The actor still gets 404.
+ *   - When the tenant-scoped `findById` returns `not_found` OR
+ *     `db_error` AND the admin-bypass `findByIdAcrossTenants` shows
+ *     the recordId DOES exist in a different tenant, emit
+ *     `csv_import_cross_tenant_probe` audit at `critical` severity.
+ *     The actor still gets 404. The probe runs on the `db_error`
+ *     branch too — security forensics > availability (CR-7).
  *
  * Pure Application — no framework imports (Constitution Principle III).
  */
@@ -184,6 +186,12 @@ export async function generateErrorCsvSignedUrl(
   }
 
   // --- Step 2: tenant-scoped lookup returned not_found OR db_error -----
+  // CR-7 (Round 1 — silent-failure): the probe MUST run on BOTH
+  // `not_found` and `db_error` branches. Returning 404 without
+  // checking the admin probe path would let an attacker enumerate
+  // recordIds under transient DB blips with no forensic audit trail
+  // (Constitution Principle I clause 4 break). Security forensics >
+  // availability — log the DB error, then fall through to probe.
   if (lookup.error.kind === 'db_error') {
     logger?.error(
       {
@@ -192,9 +200,8 @@ export async function generateErrorCsvSignedUrl(
         recordId: input.recordId,
         err: lookup.error.message,
       },
-      '[F6.1] findById DB error — failing closed with not_found',
+      '[F6.1] findById DB error — falling through to cross-tenant probe check (security forensics > availability)',
     );
-    return ok({ kind: 'not_found' });
   }
 
   // --- Step 3: cross-tenant probe detection ---------------------------
@@ -202,7 +209,7 @@ export async function generateErrorCsvSignedUrl(
     input.recordId,
   );
   if (probe.ok && probe.value !== null && probe.value.tenantId !== input.tenantId) {
-    // Constitution Principle I clause 4 — HIGH-severity probe event.
+    // Constitution Principle I clause 4 — critical-severity probe event.
     // Fail-open on emit (logger captures); 404 is returned regardless.
     const probedAt = now();
     const probeAudit = await deps.audit.emit({

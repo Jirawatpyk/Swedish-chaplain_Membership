@@ -268,6 +268,14 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/settings/integrations/eventcreate',
     requires: 'admin',
   },
+  // F6.1 R1 ux I8 — high-frequency navigation target for admins who
+  // run imports daily. Manager role gets 404 per FR-035 RBAC.
+  {
+    id: 'nav.csvImportHistory',
+    label: 'palette.navigate.csvImportHistory',
+    url: '/admin/events/import/history',
+    requires: 'admin',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

@@ -60,7 +60,11 @@ import type {
 import type { EventsRepository } from '../../ports/events-repository';
 import type { RegistrationsRepository } from '../../ports/registrations-repository';
 import type { AttendeeMatcher } from '../../ports/attendee-matcher';
-import type { QuotaAccountingPort } from '../../ports/quota-accounting-port';
+import type {
+  QuotaAccountingPort,
+  PlanAllotments,
+  ConsumedQuota,
+} from '../../ports/quota-accounting-port';
 import type { AdvisoryLockAcquirer } from '../../ports/advisory-lock-acquirer';
 import { applyQuotaEffect, buildQuotaLockKey } from '../apply-quota-effect';
 
@@ -628,10 +632,13 @@ export async function processAttendeeInTx(
     }
 
     const prev = flip.value.previousQuotaEffect;
-    type QueryAllotmentsResult = Awaited<
-      ReturnType<typeof ports.quotaAccountingPort.queryAllotments>
-    >;
-    type AllotmentSnapshot = Extract<QueryAllotmentsResult, { readonly ok: true }>['value'];
+    // R1 type-design M-1: explicit named type from the port instead
+    // of `Extract<QueryAllotmentsResult, {readonly ok:true}>['value']`.
+    // Same compile-time safety, decoupled from the Result envelope.
+    type AllotmentSnapshot = {
+      readonly allotments: PlanAllotments;
+      readonly consumed: ConsumedQuota;
+    };
     let allotmentSnapshot: AllotmentSnapshot | null = null;
     if (
       matchedMemberId !== null &&

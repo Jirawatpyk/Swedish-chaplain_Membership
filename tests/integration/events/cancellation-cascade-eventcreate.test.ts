@@ -18,7 +18,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import { runInTenant, db } from '@/lib/db';
 import {
   events,
@@ -27,6 +27,7 @@ import {
 } from '@/modules/events/infrastructure/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { processorEvents } from '@/modules/payments/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { runImportCsv } from '@/lib/events-csv-import-deps';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import {
@@ -209,5 +210,116 @@ describe('T032 — Cancellation cascade on EventCreate adapter (live Neon)', () 
       .from(processorEvents)
       .where(eq(processorEvents.tenantId, tenant.ctx.slug));
     expect(processorRows).toHaveLength(0);
+
+    // CR-4 (R1 — pr-test-analyzer): the cancellation cascade unconditionally
+    // flips payment_status to refunded (relaxed isRefundTransition gate),
+    // but `quota_credit_back_refund` audit + advisory-lock acquisition
+    // are MATCHED-MEMBER-GATED. The cancel attendee here is unmatched
+    // (no member seeded for this email), so NO credit-back audit should
+    // appear — this asserts the gate stays correctly placed.
+    const creditBackRows = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'quota_credit_back_refund' as never),
+        ),
+      );
+    expect(creditBackRows.length).toBe(0);
+  });
+
+  it('CR-6 — first-time Cancellation (no prior registration) → rowsSkipped + csv_import_row_cancelled_no_prior audit', async () => {
+    const eventId = randomUUID();
+    const externalId = `event-${eventId.slice(0, 8)}`;
+    await db.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId,
+      source: 'eventcreate',
+      externalId,
+      name: 'First-time Cancel Workshop',
+      startDate: new Date('2026-05-20T13:00:00Z'),
+      category: null,
+    } satisfies NewEventRow);
+
+    const lostAttendee = {
+      status: 'Cancelled' as const,
+      firstName: 'Lost',
+      lastName: 'Cancel',
+      email: 'lost.cancel@example.test',
+      attendeeId: 'ec-lost-001',
+      notes: '',
+      company: 'Nowhere Co',
+    };
+
+    const beforeMs = Date.now();
+    const result = await runImportCsv({
+      tenantSlug: tenant.ctx.slug,
+      actorUserId: actor.userId,
+      bytes: buildEventCreateCsv([lostAttendee]),
+      selectedEvent: {
+        eventId,
+        externalId,
+        name: 'First-time Cancel Workshop',
+        startDate: new Date('2026-05-20T13:00:00Z'),
+        category: null,
+      },
+      originalFilename: 'first-time-cancel.csv',
+    });
+    expect(result.kind).toBe('completed');
+    if (result.kind !== 'completed') return;
+    // CancellationSkipMarker rolls back the savepoint → no registration row
+    expect(result.summary.rowsProcessed).toBe(0);
+    expect(result.summary.rowsSkipped).toBe(1);
+    expect(result.summary.rowsFailed).toBe(0);
+
+    const regs = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(eventRegistrations)
+        .where(
+          and(
+            eq(eventRegistrations.tenantId, tenant.ctx.slug),
+            eq(eventRegistrations.eventId, eventId),
+          ),
+        ),
+    );
+    expect(regs).toHaveLength(0);
+
+    // CR-10 — forensic audit row must be present
+    const cancelRows = await db
+      .select({
+        eventType: auditLog.eventType,
+        actorUserId: auditLog.actorUserId,
+        payload: auditLog.payload,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(
+            auditLog.eventType,
+            'csv_import_row_cancelled_no_prior' as never,
+          ),
+          gt(auditLog.timestamp, new Date(beforeMs - 1000)),
+        ),
+      );
+    expect(cancelRows.length).toBe(1);
+    const payload = cancelRows[0]!.payload as Record<string, unknown>;
+    expect(payload['severity']).toBe('info');
+    expect(payload['rowNumber']).toBe(2); // header is row 1; first data row is row 2
+
+    // row_failed MUST NOT have been emitted (rowsFailed semantics differ)
+    const failedRows = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'csv_import_row_failed' as never),
+          gt(auditLog.timestamp, new Date(beforeMs - 1000)),
+        ),
+      );
+    expect(failedRows.length).toBe(0);
   });
 });

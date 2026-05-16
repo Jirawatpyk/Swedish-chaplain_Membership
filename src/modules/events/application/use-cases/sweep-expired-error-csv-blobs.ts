@@ -48,6 +48,13 @@ export interface SweepExpiredErrorCsvBlobsOutput {
   /** Number of rows skipped due to blob delete or DB update failure. */
   readonly skippedCount: number;
   readonly cutoff: Date;
+  /**
+   * CR-2 / I-6 (R1 — silent-failure): true when the bulk-scan step
+   * failed. The use-case still returns ok-Result (the cron handler
+   * already wraps the call), but the route maps `scanFailed:true`
+   * → 500 so cron-job.org "2 consecutive failures" alert can fire.
+   */
+  readonly scanFailed: boolean;
 }
 
 export interface SweepExpiredErrorCsvBlobsDeps {
@@ -66,7 +73,17 @@ export interface SweepExpiredErrorCsvBlobsDeps {
   readonly logger?: {
     info(meta: Record<string, unknown>, msg: string): void;
     warn(meta: Record<string, unknown>, msg: string): void;
+    error(meta: Record<string, unknown>, msg: string): void;
   };
+  /**
+   * R1 I-1 (silent-failure) — increments
+   * `csvErrorCsvSweepClearFailed(tenantId)` when the post-blob-delete
+   * DB clear fails. Injected so unit tests can assert call counts;
+   * route composition wires `eventcreateMetrics.csvErrorCsvSweepClearFailed`.
+   */
+  readonly onSweepClearFailed?: (tenantId: TenantId) => void;
+  /** R1 I-6 — increments `csvSweepScanFailed()` when bulk-scan fails. */
+  readonly onScanFailed?: () => void;
 }
 
 export async function sweepExpiredErrorCsvBlobs(
@@ -84,19 +101,25 @@ export async function sweepExpiredErrorCsvBlobs(
       limit,
     );
   if (!scanResult.ok) {
-    logger?.warn(
+    // CR-2 / I-6 (R1 — silent-failure): elevate to `logger.error` so
+    // SRE dashboards fire on scan failures. The route maps
+    // `scanFailed:true` to 500 so cron-job.org's "2 consecutive
+    // failures" alert can detect a sustained outage.
+    logger?.error(
       {
         event: 'f6_error_csv_sweep_scan_failed',
         cutoff: cutoff.toISOString(),
         err: scanResult.error.kind,
       },
-      '[F6.1] sweep cron: scan step failed; no rows swept this run',
+      '[F6.1] sweep cron: scan step failed; route will return 500',
     );
+    deps.onScanFailed?.();
     return ok({
       candidatesScanned: 0,
       sweptCount: 0,
       skippedCount: 0,
       cutoff,
+      scanFailed: true,
     });
   }
 
@@ -127,6 +150,7 @@ export async function sweepExpiredErrorCsvBlobs(
     sweptCount,
     skippedCount,
     cutoff,
+    scanFailed: false,
   });
 }
 
@@ -167,27 +191,33 @@ async function sweepOne(
         repo.clearErrorCsvBlob(candidate.tenantId, candidate.recordId),
     );
     if (!updateResult.ok) {
-      logger?.warn(
+      // R1 I-1 (silent-failure): elevate to ERROR + emit metric.
+      // Orphan blob-url pointer left in DB → next-run idempotent
+      // retry will see `blob_not_found` and re-attempt the clear;
+      // sustained `rate > 0` indicates a persistent RLS / pool issue.
+      logger?.error(
         {
           event: 'f6_error_csv_sweep_clear_failed',
           tenantId: candidate.tenantId,
           recordId: candidate.recordId,
           errKind: updateResult.error.kind,
         },
-        '[F6.1] sweep cron: clearErrorCsvBlob failed after blob delete; row may show stale URL until next run',
+        '[F6.1] sweep cron: clearErrorCsvBlob FAILED after blob delete — orphan DB pointer (next-run idempotent retry)',
       );
+      deps.onSweepClearFailed?.(candidate.tenantId);
       return false;
     }
   } catch (e) {
-    logger?.warn(
+    logger?.error(
       {
         event: 'f6_error_csv_sweep_clear_threw',
         tenantId: candidate.tenantId,
         recordId: candidate.recordId,
         err: e instanceof Error ? e.message : String(e),
       },
-      '[F6.1] sweep cron: clearErrorCsvBlob threw after blob delete',
+      '[F6.1] sweep cron: clearErrorCsvBlob THREW after blob delete — investigate runInTenant outage',
     );
+    deps.onSweepClearFailed?.(candidate.tenantId);
     return false;
   }
 

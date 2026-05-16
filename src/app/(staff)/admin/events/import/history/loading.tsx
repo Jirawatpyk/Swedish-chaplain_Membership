@@ -10,7 +10,10 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const SKELETON_ROW_COUNT = 6;
+// ux I1 (R1 — enterprise-ux-designer): 10 rows match the viewport-visible
+// count for a 30-row page so the skeleton ⇄ real-data swap minimises CLS
+// (rows below the fold are below the swap boundary and don't affect LCP).
+const SKELETON_ROW_COUNT = 10;
 
 export default function CsvImportHistoryLoading() {
   return (

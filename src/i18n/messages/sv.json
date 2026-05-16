@@ -2599,6 +2599,8 @@
           "rowsProcessedLabel": "Rader importerade",
           "rowsAlreadyImportedLabel": "Redan importerade",
           "rowsAlreadyImportedDescription": "Dessa rader matchar en tidigare uppladdning och hoppades över (idempotent).",
+          "rowsStateChangedLabel": "Statusändrad",
+          "rowsStateChangedDescription": "Återuppladdade rader vars betalningsstatus ändrades efter en Notes-rättning.",
           "eventsCreatedLabel": "Evenemang skapade",
           "eventsUpdatedLabel": "Evenemang uppdaterade",
           "durationLabel": "Varaktighet",
@@ -2702,8 +2704,7 @@
           "tableAriaLabel": "Tabell över CSV-importhistorik",
           "columns": {
             "uploadedAt": "Uppladdat",
-            "event": "Evenemang",
-            "actor": "Aktör",
+            "file": "Fil",
             "sourceFormat": "Källformat",
             "outcome": "Resultat",
             "rowsProcessed": "Bearbetade",
@@ -2730,13 +2731,18 @@
           "expiredTooltip": "Fel-CSV-filen för denna import utgick efter 30 dagar. Kör om importen för att återskapa filen.",
           "noErrorRows": "Inga fel",
           "emptyState": "Inga importer ännu. Använd uppladdningssidan för att ta in en CSV.",
-          "loadError": "Kunde inte läsa in CSV-importhistorik. Ladda om sidan för att försöka igen.",
+          "loadError": "Kunde inte läsa in CSV-importhistorik.",
+          "loadErrorRetry": "Ladda om",
           "pagination": {
             "previous": "Föregående",
             "next": "Nästa",
             "pageOf": "Sida {page} av {totalPages}",
-            "showing": "Visar {from}–{to} av {totalRecords}"
+            "showing": "Visar {from}–{to} av {totalRecords}",
+            "navAriaLabel": "Sidnavigering"
           },
+          "emptyStateTitle": "Inga importer ännu",
+          "emptyStateBody": "Tidigare importer visas här efter uppladdning av en CSV-fil.",
+          "emptyStateCta": "Ladda upp CSV",
           "backToImport": "Tillbaka till import"
         }
       }
@@ -2948,7 +2954,8 @@
       "escalationTasksMine": "Uppföljningsuppgifter: mina",
       "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade",
       "eventsList": "Evenemang",
-      "eventcreateIntegration": "EventCreate-integration"
+      "eventcreateIntegration": "EventCreate-integration",
+      "csvImportHistory": "CSV-importhistorik"
     }
   },
   "nav": {

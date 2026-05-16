@@ -57,6 +57,13 @@ vi.mock('@/lib/metrics', () => ({
     csvImportAdapterModeDetected: vi.fn(),
     csvImportSafetyNetFallback: vi.fn(),
     createEventDurationSeconds: vi.fn(),
+    // R1 (silent-failure) — new metric stubs
+    csvErrorCsvUploadFailed: vi.fn(),
+    csvErrorCsvSweepClearFailed: vi.fn(),
+    csvSweepScanFailed: vi.fn(),
+    csvImportParserThrew: vi.fn(),
+    csvImportStateChangeFallback: vi.fn(),
+    csvErrorCsvDownloaded: vi.fn(),
   },
   safeMetric: vi.fn((fn: () => void) => fn()),
 }));

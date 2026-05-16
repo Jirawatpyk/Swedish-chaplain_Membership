@@ -125,10 +125,11 @@ export const F6_AUDIT_EVENT_TYPES = [
   'webhook_ingest_precondition_failed',
   // F6.1 (Feature 013 · T008) — CSV-import audit event types added in
   // migration 0141. `csv_import_error_csv_downloaded` is wired by the
-  // signed-URL route in US5 (deferred post-MVP). `csv_import_cross_tenant_probe`
-  // is HIGH-severity per Constitution Principle I clause 4 — emitted by
-  // the timing-safe event lookup in route.ts when `event_id` belongs to
-  // another tenant + by the signed-URL route's cross-tenant probe path.
+  // signed-URL route in US5. `csv_import_cross_tenant_probe` is
+  // critical-severity per Constitution Principle I clause 4 — emitted
+  // by the timing-safe event lookup in route.ts when `event_id`
+  // belongs to another tenant + by the signed-URL route's
+  // cross-tenant probe path.
   // `csv_import_event_mismatch_overridden` is WARN — emitted by
   // `importCsv` when admin re-submits with `force_proceed=true` to
   // bypass the FR-019b safety net (gives operators visibility into how
@@ -136,6 +137,18 @@ export const F6_AUDIT_EVENT_TYPES = [
   'csv_import_error_csv_downloaded',
   'csv_import_cross_tenant_probe',
   'csv_import_event_mismatch_overridden',
+  // CR-10 (R1 — silent-failure) — first-time Cancellation row
+  // skipped (no prior registration to refund). Severity: 'info' —
+  // informational forensic event so support can reconstruct why a
+  // row appears in `rowsSkipped`. NOT a security or availability
+  // signal; non-blocking on emit failure.
+  'csv_import_row_cancelled_no_prior',
+  // CR-5 / I-5 (R1 — test-analyzer + code-reviewer) — per-row
+  // state-change audit. Severity: 'info' — admin re-uploaded with
+  // a modified Notes column that flipped payment_status; the row
+  // was UPDATEd in place. Required for PDPA Art. 30 + GDPR Art. 30
+  // traceable processing records on payment-status mutations.
+  'csv_import_row_state_changed',
   // F6.1 (Feature 013 · T026 full impl) — admin-manual event creation
   // event. Emitted by `createEvent` use-case when an admin uses the
   // inline-create modal on /admin/events/import. Backed by migration
@@ -663,6 +676,41 @@ export interface AuditPayloads {
     readonly name: string;
     readonly startDate: Date;
     readonly category: string | null;
+  };
+
+  /**
+   * CR-10 (R1 — silent-failure) — first-time Cancellation row skipped
+   * (no prior registration to refund). Severity: 'info'. Lets
+   * support reconstruct WHY rows appear in `rowsSkipped` without the
+   * EventCreate Status-filter pretext (which uses a different "Skipped:
+   * Status=..." reason string in the errorRows summary).
+   */
+  csv_import_row_cancelled_no_prior: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    readonly rowNumber: number;
+    /** SHA-256 hex prefix of attendee_email_lower (≤16 chars) — PII-safe correlator. */
+    readonly attendeeEmailHash: string;
+  };
+
+  /**
+   * CR-5 / I-5 (R1 — code-reviewer + test-analyzer) — per-row
+   * state-change audit. Emitted by `maybeApplyStateChange` when a
+   * re-uploaded receipt-duplicate row's Notes column flipped the
+   * payment_status enum. PDPA Art. 30 + GDPR Art. 30 traceable
+   * processing-records requirement for personal-data mutations on
+   * existing registrations.
+   *
+   * Severity: 'info' — accountability log, not alerting.
+   */
+  csv_import_row_state_changed: {
+    readonly severity: Severity;
+    readonly actorUserId: UserId;
+    readonly rowNumber: number;
+    readonly registrationId: RegistrationId;
+    readonly previousPaymentStatus: string;
+    readonly newPaymentStatus: string;
+    readonly rowHash: string;
   };
 
 }

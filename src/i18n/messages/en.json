@@ -2599,6 +2599,8 @@
           "rowsProcessedLabel": "Rows imported",
           "rowsAlreadyImportedLabel": "Already imported",
           "rowsAlreadyImportedDescription": "These rows match a prior upload and were skipped (idempotent).",
+          "rowsStateChangedLabel": "State changed",
+          "rowsStateChangedDescription": "Re-uploaded rows whose payment status flipped after a Notes-column fix.",
           "eventsCreatedLabel": "Events created",
           "eventsUpdatedLabel": "Events updated",
           "durationLabel": "Duration",
@@ -2702,8 +2704,7 @@
           "tableAriaLabel": "CSV import history table",
           "columns": {
             "uploadedAt": "Uploaded",
-            "event": "Event",
-            "actor": "Actor",
+            "file": "File",
             "sourceFormat": "Source",
             "outcome": "Outcome",
             "rowsProcessed": "Processed",
@@ -2730,13 +2731,18 @@
           "expiredTooltip": "The error CSV for this import expired after 30 days. Re-run the import to regenerate.",
           "noErrorRows": "No errors",
           "emptyState": "No imports yet. Use the upload page to bring in a CSV.",
-          "loadError": "Could not load CSV import history. Reload to try again.",
+          "loadError": "Could not load CSV import history.",
+          "loadErrorRetry": "Reload",
           "pagination": {
             "previous": "Previous",
             "next": "Next",
             "pageOf": "Page {page} of {totalPages}",
-            "showing": "Showing {from}–{to} of {totalRecords}"
+            "showing": "Showing {from}–{to} of {totalRecords}",
+            "navAriaLabel": "Pagination"
           },
+          "emptyStateTitle": "No imports yet",
+          "emptyStateBody": "Past imports appear here after you upload a CSV.",
+          "emptyStateCta": "Upload a CSV",
           "backToImport": "Back to import"
         }
       }
@@ -2948,7 +2954,8 @@
       "escalationTasksMine": "Escalation tasks: my tray",
       "escalationTasksOverdue": "Escalation tasks: overdue only",
       "eventsList": "Events",
-      "eventcreateIntegration": "EventCreate integration"
+      "eventcreateIntegration": "EventCreate integration",
+      "csvImportHistory": "CSV import history"
     }
   },
   "nav": {

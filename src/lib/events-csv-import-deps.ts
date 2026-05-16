@@ -27,8 +27,6 @@ import {
   makeImportCsvDeps,
   asEventId,
   asCsvImportRecordId,
-  type CsvImportRecordId,
-  type EventId,
   listCsvImportRecords,
   type ListCsvImportRecordsOutput,
   type ListCsvImportRecordsError,
@@ -47,7 +45,7 @@ import {
 import type { F6AuditEntry, F6AuditEventType, F6AuditPort } from '@/modules/events/application/ports/audit-port';
 import type { UserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
 import type { Result } from '@/lib/result';
@@ -356,19 +354,17 @@ export async function runSweepExpiredErrorCsvBlobs(
       });
     },
     logger,
+    // R1 I-1 / I-6 (silent-failure): wire OTel metric counters so SRE
+    // alerts fire on clearErrorCsvBlob failures + sweep-scan failures.
+    onSweepClearFailed: (tenantId) =>
+      eventcreateMetrics.csvErrorCsvSweepClearFailed(tenantId),
+    onScanFailed: () => eventcreateMetrics.csvSweepScanFailed(),
   });
   if (!outcome.ok) {
     throw new Error('runSweepExpiredErrorCsvBlobs: unreachable err branch');
   }
   return outcome.value;
 }
-
-// Suppress unused-import lint when no consumer triggers the type-only
-// imports above (TenantTx, EventId, CsvImportRecordId are used only as
-// type re-exports in some compile paths).
-type _UnusedTypes = TenantTx | EventId | CsvImportRecordId;
-const _unused: _UnusedTypes | undefined = undefined;
-void _unused;
 
 /**
  * F6.1 (Feature 013 · T023) — Single-query event fetch by id WITHOUT

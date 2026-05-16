@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { runListCsvImportRecords } from '@/lib/events-csv-import-deps';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import {
   CsvImportHistoryTable,
   type CsvImportHistoryRow,
@@ -70,32 +71,45 @@ export default async function CsvImportHistoryPage({
   // change introduces a hard-fail, surface a user-friendly error
   // banner without crashing the route.
   if (!result.ok) {
+    // role="alert" (assertive live region) ensures screen readers
+    // interrupt current speech to announce the error immediately —
+    // WCAG SC 4.1.3. role="status" is polite + non-blocking; wrong
+    // semantic for an error.
     return (
       <TableContainer>
         <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
         <div
           className="text-body rounded-md border border-destructive/30 bg-destructive/5 p-4"
-          role="status"
+          role="alert"
         >
-          {t('loadError')}
+          {t('loadError')}{' '}
+          <Link
+            href="/admin/events/import/history"
+            className="font-medium underline-offset-2 hover:underline"
+          >
+            {t('loadErrorRetry')}
+          </Link>
         </div>
       </TableContainer>
     );
   }
 
-  const formatter = new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  // Bangkok TZ is mandatory — Vercel runtime is UTC; without an
+  // explicit timeZone all rendered timestamps drift 7 h behind. The
+  // shared helper also handles Thai Buddhist Era display for th-TH.
+  const formatTimestamp = (iso: string): string =>
+    formatLocalisedDate(iso, locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Bangkok',
+    });
 
   const rows: CsvImportHistoryRow[] = result.value.rows.map((row) => ({
     recordId: row.record.recordId,
     uploadedAt: row.record.uploadedAt.toISOString(),
-    actor: { userId: row.record.actorUserId },
-    event: { eventId: row.record.eventId },
     sourceFormat: row.record.sourceFormat,
     originalFilename: row.record.originalFilename,
     originalSizeBytes: row.record.originalSizeBytes,
@@ -137,7 +151,7 @@ export default async function CsvImportHistoryPage({
         rows={rows}
         pagination={result.value.pagination}
         pageHref={pageHref}
-        formatTimestamp={(iso) => formatter.format(new Date(iso))}
+        formatTimestamp={formatTimestamp}
       />
     </TableContainer>
   );

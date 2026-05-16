@@ -172,6 +172,7 @@ describe('T037 — error-csv signed-URL cross-tenant isolation (live Neon)', () 
       true,
     );
 
+    const beforeMs = Date.now();
     const outcome = await runGenerateErrorCsvSignedUrl({
       tenantSlug: tenantB.ctx.slug,
       actorUserId: actorB.userId,
@@ -182,6 +183,38 @@ describe('T037 — error-csv signed-URL cross-tenant isolation (live Neon)', () 
     // rejected the synthetic URL). NEVER not_found because the tenant
     // owns the record.
     expect(['success', 'signing_failure']).toContain(outcome.kind);
+
+    // CR-3 (R1 — pr-test-analyzer): strict-audit invariant. If the
+    // use-case returned `success`, exactly one `csv_import_error_csv_downloaded`
+    // row must exist for this (tenant, actor, recordId). If
+    // `signing_failure`, the audit row MUST NOT exist (the use-case
+    // returns the failure outcome BEFORE the audit emit when signing
+    // fails).
+    const downloadedRows = await db
+      .select({
+        eventType: auditLog.eventType,
+        actorUserId: auditLog.actorUserId,
+        payload: auditLog.payload,
+      })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenantB.ctx.slug),
+          eq(auditLog.eventType, 'csv_import_error_csv_downloaded' as never),
+          gt(auditLog.timestamp, new Date(beforeMs - 5000)),
+        ),
+      );
+    if (outcome.kind === 'success') {
+      expect(downloadedRows.length).toBeGreaterThanOrEqual(1);
+      const row = downloadedRows[downloadedRows.length - 1]!;
+      expect(row.actorUserId).toBe(actorB.userId);
+      const payload = row.payload as Record<string, unknown>;
+      expect(payload['recordId']).toBe(recordB);
+      expect(payload['severity']).toBe('info');
+    } else {
+      // signing_failure: NO audit row should be present.
+      expect(downloadedRows.length).toBe(0);
+    }
   });
 
   it('Tenant A request for a recordId that does NOT exist anywhere → not_found + NO probe audit', async () => {

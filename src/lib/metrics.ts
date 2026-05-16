@@ -787,6 +787,68 @@ export const paymentsMetrics = {
   },
 
   /**
+   * F5R2-SF-3 — `confirm_payment.give_up_phase_b_mark_processed_failed_total`
+   * — fires when the auto-refund give-up branch's Phase B
+   * `markProcessedIfPresent` throws. The give-up path returns ok to
+   * break Stripe's 72h retry storm; if the markProcessed write also
+   * fails, the audit row commits but `processor_events.processed_at`
+   * stays NULL → Stripe sees 200 (stops retrying) but DB says
+   * "never processed" → sweep cron does NOT catch it (sweep targets
+   * refund rows, not unprocessed events). Pino logs roll off in 30
+   * days; this counter anchors the long-term SLO so on-call gets
+   * paged on a stuck-row class that would otherwise survive forever.
+   * NO tenant label (give-up path is tenant-resolved but the metric
+   * pivots on overall give-up health, not per-tenant).
+   */
+  confirmPaymentGiveUpPhaseBMarkProcessedFailed(): void {
+    counter(
+      'payments_confirm_payment_give_up_phase_b_mark_processed_failed_total',
+      'Auto-refund give-up Phase B markProcessed throw — processor_events.processed_at left NULL',
+    ).add(1);
+  },
+
+  /**
+   * F5R2-SF-4 / SF-5 — `use_case_audit_emit_failed_total{event_type}`
+   * — fires when an Application-layer `audit.emit(null, ...)` call
+   * throws (read-path probe / give-up forensic / cancel attempt
+   * failed / cross-tenant-probe). The route-side `webhookRejectAudit
+   * Failed` covers webhook-reject paths only; this counter covers the
+   * 11+ use-case-side `null`-tx audit emits. Without it, a chronic
+   * audit-rail outage silently drops the 5/10y forensic compliance
+   * trail because the adapter currently logs+swallows on probe paths.
+   * SRE alert on `> 0 over 5 min` matching the webhookRejectAudit
+   * Failed pattern. NO tenant label (audit-rail outages are tenant-
+   * agnostic infra failures).
+   */
+  useCaseAuditEmitFailed(eventType: string): void {
+    counter(
+      'payments_use_case_audit_emit_failed_total',
+      'Application-layer audit.emit(null, …) threw — forensic 5/10y compliance row may be lost',
+    ).add(1, { event_type: eventType });
+  },
+
+  /**
+   * F5R2-SF-7 — `f4_bridge_unknown_error_shape_total{bridge_op}` —
+   * fires when `summariseF4Error` falls through to its fallback path
+   * (the F4 error variant has no recognised `code`/`kind`/`detail`/
+   * `reason` field). The fallback degrades the F4 error to a generic
+   * `{code:'f4_error', detail:'unknown_f4_error_shape (...)'}` which
+   * the dispatcher then classifies as PERMANENT (because
+   * `'bridge_error'` IS in the permanent set) → Stripe stops retrying
+   * + customer's payment row is `succeeded` while F4 invoice may
+   * still be `issued`. Dedicated counter so SRE can page on this
+   * specific class instead of seeing it as just another generic
+   * `bridge_error`. The `bridge_op` label distinguishes
+   * markPaidFromProcessor vs issueCreditNoteFromRefund call sites.
+   */
+  f4BridgeUnknownErrorShape(bridgeOp: string): void {
+    counter(
+      'payments_f4_bridge_unknown_error_shape_total',
+      'summariseF4Error fell through to unknown-shape fallback — F4 error variant unrecognised',
+    ).add(1, { bridge_op: bridgeOp });
+  },
+
+  /**
    * `out_of_band_refund_rejected_total{tenant, processor_env}` — FR-011a
    * leading indicator. Admin used Stripe Dashboard refund instead of
    * in-app refund flow.
@@ -2992,15 +3054,13 @@ export const eventcreateMetrics = {
    */
   csvImportAuditEmitFailed(
     tenantId: string,
-    // CR-4 (Round 1 — silent-failure-hunter): extended label union so
-    // SRE dashboards distinguish per-import / per-row / FR-019c
-    // override / event_created audit-emit failures. Previously a
-    // mismatch-override emit failure was mislabelled as
-    // 'csv_import_completed', misrouting alerts.
     eventType:
       | 'csv_import_completed'
       | 'csv_import_row_failed'
       | 'csv_import_event_mismatch_overridden'
+      | 'csv_import_row_state_changed'
+      | 'csv_import_row_cancelled_no_prior'
+      | 'csv_import_cross_tenant_probe'
       | 'event_created',
   ): void {
     safeMetric(() => {
@@ -3008,6 +3068,84 @@ export const eventcreateMetrics = {
         'eventcreate_csv_import_audit_emit_failed_total',
         'F6 CSV-import audit-emit failure counter (forensic-trail gap)',
       ).add(1, { tenant: tenantId, event_type: eventType });
+    });
+  },
+
+  /**
+   * R1 CR-8 (silent-failure-hunter) — fired when `maybeApplyStateChange`
+   * encounters an error in the receipt-duplicate state-change probe
+   * (RLS denial, serialisation failure, repo throw). Admin sees the
+   * row as `rowsAlreadyImported` (no visible failure); SRE alerts on
+   * `rate > 0` because state-change loss is a silent data-correctness
+   * regression on re-upload.
+   */
+  csvImportStateChangeFallback(tenantId: string, reason: 'lookup_err' | 'lookup_missing' | 'update_err' | 'threw'): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_state_change_fallback_total',
+        'F6.1 state-change fallback counter (admin Notes-fix silently dropped)',
+      ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * R1 I-1 (silent-failure-hunter) — fired when the TTL-sweep cron
+   * deletes a blob successfully but fails to clear the DB column.
+   * Result: orphan blob_url pointer in DB (idempotent next-run retry
+   * cleans up; SRE alerts on sustained `rate > 0` indicating a
+   * persistent RLS / connection-pool issue).
+   */
+  csvErrorCsvSweepClearFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_sweep_clear_failed_total',
+        'F6.1 error-CSV sweep clearErrorCsvBlob failure counter',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R1 I-3 (silent-failure-hunter) — fired when `errorCsvStore.put`
+   * fails post-import-commit. `errorCsvAvailable` stays false; admin
+   * sees a greyed-out download button. SRE alerts on `rate > 0`
+   * indicating Blob outage or quota exhaustion.
+   */
+  csvErrorCsvUploadFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_upload_failed_total',
+        'F6.1 error-CSV blob put failure counter (download unavailable for this import)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R1 I-2 (silent-failure-hunter) — fired when the unexpected
+   * top-level catch in `importCsv` swallows a parser exception. SRE
+   * alerts on `rate > 0` indicating parser regressions or unhandled
+   * malformed CSV shapes.
+   */
+  csvImportParserThrew(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_parser_threw_total',
+        'F6.1 importCsv top-level catch (unexpected parser exception)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R1 I-6 (silent-failure-hunter) — sweep cron returned success with
+   * zero rows swept because the bulk-scan step failed. SRE alerts on
+   * sustained rate >0 because cron-job.org cannot see the gap (200 OK
+   * masks the scan failure).
+   */
+  csvSweepScanFailed(): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_sweep_scan_failed_total',
+        'F6.1 sweep-error-csv-blobs bulk-scan failure (silent 200-OK trap)',
+      ).add(1, {});
     });
   },
 } as const;

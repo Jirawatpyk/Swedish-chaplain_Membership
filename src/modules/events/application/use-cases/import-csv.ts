@@ -360,13 +360,28 @@ export interface ImportCsvDeps {
 // row outcome (counted in `rowsSkipped`, NOT `rowsFailed`), audit-quiet
 // — first-time cancellation is expected behaviour, not a failure.
 
+// CR-10 (R1 — silent-failure): Symbol brand prevents collision with
+// any future Error subclass also named `CancellationSkipMarker`
+// (3rd-party lib, cross-realm vm contexts, etc.). The brand is
+// constant-identity so `instanceof` AND brand-equality both pass.
+const CANCELLATION_SKIP_BRAND = Symbol('f6.csv-skip.cancellation');
+
 class CancellationSkipMarker extends Error {
+  static readonly brand = CANCELLATION_SKIP_BRAND;
+  readonly _csvSkipBrand = CANCELLATION_SKIP_BRAND;
   constructor(
     public readonly rowNumber: number,
     public readonly email: string,
   ) {
     super(`Cancellation skip marker (rowNumber=${rowNumber})`);
   }
+}
+
+function isCancellationSkip(e: unknown): e is CancellationSkipMarker {
+  return (
+    e instanceof CancellationSkipMarker &&
+    (e as CancellationSkipMarker)._csvSkipBrand === CANCELLATION_SKIP_BRAND
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -469,17 +484,7 @@ async function maybeApplyStateChange(
   // Cancellation path which bypasses the receipt entirely.
   if (parsed.row.payment_status === 'refunded') return null;
 
-  // Defensive: unit-test mocks may omit `findByEventAndEmail` /
-  // `updatePaymentStatus` (test cares only about the duplicate-hit
-  // path, not state-change). Falling back to `null` preserves the
-  // pre-T031 behaviour for those tests.
   const repo = ports.registrationsRepo;
-  if (
-    typeof repo?.findByEventAndEmail !== 'function' ||
-    typeof repo?.updatePaymentStatus !== 'function'
-  ) {
-    return null;
-  }
 
   try {
     const existing = await repo.findByEventAndEmail(
@@ -487,15 +492,50 @@ async function maybeApplyStateChange(
       input.selectedEvent.eventId,
       parsed.row.attendee_email,
     );
-    if (!existing.ok || existing.value === null) {
-      // Lookup failed OR no persisted row found (rare race: receipt
-      // committed but registration roll-back). Fall back to duplicate
-      // semantics; next re-upload retries.
+    if (!existing.ok) {
+      // CR-8 (R1 — silent-failure): lookup err is a real signal
+      // (RLS denial, serialisation failure, pool exhaustion). Log +
+      // metric so SRE sees the rate; row falls back to duplicate so
+      // admin sees `rowsAlreadyImported` (next re-upload retries).
+      logger.warn(
+        {
+          event: 'f6_csv_state_change_lookup_err',
+          tenantId: input.tenantId,
+          rowNumber: parsed.rowNumber,
+          err: existing.error.kind,
+        },
+        '[F6.1] state-change lookup err — row falls back to duplicate semantics',
+      );
+      eventcreateMetrics.csvImportStateChangeFallback(
+        input.tenantId,
+        'lookup_err',
+      );
+      return null;
+    }
+    if (existing.value === null) {
+      // The receipt INSERT just committed, but no registration row
+      // exists. This is an invariant violation: either the receipt
+      // landed in a different tenant scope, or a concurrent admin
+      // archived the registration between the receipt INSERT and
+      // this lookup. Emit error-level signal — root cause must be
+      // diagnosed before recurrence.
+      logger.error(
+        {
+          event: 'f6_csv_state_change_lookup_missing',
+          tenantId: input.tenantId,
+          rowNumber: parsed.rowNumber,
+          eventId: input.selectedEvent.eventId,
+        },
+        '[F6.1] receipt-duplicate but no persisted registration — invariant violation; row falls back to duplicate',
+      );
+      eventcreateMetrics.csvImportStateChangeFallback(
+        input.tenantId,
+        'lookup_missing',
+      );
       return null;
     }
     const persisted = existing.value;
     if (persisted.ticket.paymentStatus === parsed.row.payment_status) {
-      // Same status — truly a no-op duplicate.
       return null;
     }
 
@@ -505,8 +545,53 @@ async function maybeApplyStateChange(
       parsed.row.payment_status,
     );
     if (!update.ok) {
-      // Update failed — treat as duplicate (don't fail the row).
+      logger.warn(
+        {
+          event: 'f6_csv_state_change_update_err',
+          tenantId: input.tenantId,
+          rowNumber: parsed.rowNumber,
+          registrationId: persisted.registrationId,
+          err: update.error.kind,
+        },
+        '[F6.1] state-change UPDATE err — admin Notes-fix silently dropped; falls back to duplicate',
+      );
+      eventcreateMetrics.csvImportStateChangeFallback(
+        input.tenantId,
+        'update_err',
+      );
       return null;
+    }
+    // CR-5 / I-5 (R1) — emit per-row state-change audit. PDPA Art. 30
+    // + GDPR Art. 30 require traceable processing-records for payment-
+    // status mutations of an existing PII row. In-tx emit (via the
+    // savepoint-scoped audit port) so audit + UPDATE either both
+    // commit or both roll back atomically.
+    const auditResult = await ports.audit.emit({
+      eventType: 'csv_import_row_state_changed',
+      tenantId: input.tenantId,
+      actorType: 'csv_import',
+      actorUserId: input.actorUserId,
+      occurredAt: new Date(),
+      summary: `CSV row ${parsed.rowNumber} payment_status ${update.value.previousPaymentStatus} → ${parsed.row.payment_status}`,
+      payload: {
+        severity: 'info',
+        actorUserId: input.actorUserId,
+        rowNumber: parsed.rowNumber,
+        registrationId: persisted.registrationId,
+        previousPaymentStatus: update.value.previousPaymentStatus,
+        newPaymentStatus: parsed.row.payment_status,
+        rowHash: parsed.rowHash,
+      },
+    });
+    if (!auditResult.ok) {
+      // State-change audit failure: roll back the savepoint by
+      // throwing — the FR-018 contract requires the UPDATE be
+      // forensically traceable. The outer catch converts to
+      // `kind:'row_failed'` so admin sees the failure clearly.
+      throw new TxStageError(
+        'audit_emit',
+        `csv_import_row_state_changed audit emit failed: ${auditResult.error.kind}`,
+      );
     }
     return {
       kind: 'state_changed',
@@ -514,11 +599,22 @@ async function maybeApplyStateChange(
       previousPaymentStatus: update.value.previousPaymentStatus,
       newPaymentStatus: parsed.row.payment_status,
     };
-  } catch {
-    // Defensive — any error in the state-change path falls back to
-    // duplicate semantics. Idempotency is preserved; the operator
-    // sees `rowsAlreadyImported` instead of `rowsStateChanged`. Next
-    // re-upload retries the detection.
+  } catch (e) {
+    // CR-8 (R1 — silent-failure): never swallow silently. Log
+    // structured error + emit metric. State-change path failure
+    // means admin's payment_status fix is silently dropped — must
+    // be visible to SRE alerting.
+    logger.error(
+      {
+        event: 'f6_csv_state_change_threw',
+        tenantId: input.tenantId,
+        rowNumber: parsed.rowNumber,
+        attendeeEmail: parsed.row.attendee_email,
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[F6.1] state-change probe threw — row falls back to duplicate; admin re-upload required',
+    );
+    eventcreateMetrics.csvImportStateChangeFallback(input.tenantId, 'threw');
     return null;
   }
 }
@@ -699,7 +795,13 @@ async function processOneRowInSavepoint(
     // registration). Savepoint rolled back; surface as a `skipped`
     // outcome so the row flows into `rowsSkipped` instead of
     // `rowsFailed`.
-    if (e instanceof CancellationSkipMarker) {
+    if (isCancellationSkip(e)) {
+      // CR-10 (R1 — silent-failure): emit a low-severity forensic
+      // event so support can reconstruct WHY this row appears in
+      // `rowsSkipped` (vs the EventCreate Status filter). Audit emit
+      // failure is non-blocking — this is informational forensics,
+      // not a strict-audit-invariant surface.
+      await safeEmitCancellationNoPrior(deps, input, e.rowNumber, e.email);
       return {
         kind: 'skipped',
         rowNumber: e.rowNumber,
@@ -912,14 +1014,20 @@ async function processBatch(
  */
 function recordAuditEmitFailure(
   tenantId: TenantId,
-  // CR-4 (Round 1) — widened union to include FR-019c override path
-  // so the metric label routes alerts correctly.
   eventType:
     | 'csv_import_row_failed'
     | 'csv_import_completed'
-    | 'csv_import_event_mismatch_overridden',
+    | 'csv_import_event_mismatch_overridden'
+    | 'csv_import_row_cancelled_no_prior'
+    | 'csv_import_row_state_changed',
   logEvent: string,
   logMessage: string,
+  // R1 S-5 (silent-failure): context now carries `actorUserId` so
+  // forensics can attribute the audit-emit failure to the specific
+  // admin who triggered it. Each call-site MUST include it explicitly
+  // (TypeScript-enforced via the Readonly<Record<string, unknown>>
+  // type — string indexer permits but the audit caller does the
+  // discipline at the call site).
   context: Readonly<Record<string, unknown>>,
 ): void {
   eventcreateMetrics.csvImportAuditEmitFailed(tenantId, eventType);
@@ -963,7 +1071,12 @@ async function safeEmitRowFailed(
         'csv_import_row_failed',
         'f6_csv_row_failed_audit_emit_failed',
         '[F6] csv_import_row_failed audit emit failed — forensic trail loss; row outcome still tracked in summary counter',
-        { rowNumber, reason: reason.slice(0, 500), auditErrKind: result.error.kind },
+        {
+          actorUserId: input.actorUserId,
+          rowNumber,
+          reason: reason.slice(0, 500),
+          auditErrKind: result.error.kind,
+        },
       );
     }
   } catch (e) {
@@ -972,7 +1085,61 @@ async function safeEmitRowFailed(
       'csv_import_row_failed',
       'f6_csv_row_failed_audit_emit_threw',
       '[F6] csv_import_row_failed audit emitter threw — forensic trail loss',
-      { rowNumber, reason: reason.slice(0, 500), err: e instanceof Error ? e.message : String(e) },
+      {
+        actorUserId: input.actorUserId,
+        rowNumber,
+        reason: reason.slice(0, 500),
+        err: e instanceof Error ? e.message : String(e),
+      },
+    );
+  }
+}
+
+/**
+ * CR-10 (R1 — silent-failure) — emit a low-severity forensic event
+ * when a first-time Cancellation row is skipped. Audit-quiet on emit
+ * failure (informational only, not a strict-audit-invariant surface).
+ */
+async function safeEmitCancellationNoPrior(
+  deps: ImportCsvDeps,
+  input: ImportCsvInput,
+  rowNumber: number,
+  emailHash: string,
+): Promise<void> {
+  try {
+    const result = await deps.emitStandalone({
+      eventType: 'csv_import_row_cancelled_no_prior',
+      tenantId: input.tenantId,
+      actorType: 'csv_import',
+      actorUserId: input.actorUserId,
+      occurredAt: new Date(),
+      summary: `CSV row ${rowNumber} Status=Cancelled but no prior registration — skipped`,
+      payload: {
+        severity: 'info',
+        actorUserId: input.actorUserId,
+        rowNumber,
+        // Hash the email so the forensic log does not surface raw
+        // attendee PII. SHA-256 prefix is sufficient for incident
+        // correlation against the source CSV.
+        attendeeEmailHash: emailHash,
+      },
+    });
+    if (!result.ok) {
+      recordAuditEmitFailure(
+        input.tenantId,
+        'csv_import_row_cancelled_no_prior',
+        'f6_csv_row_cancelled_no_prior_audit_emit_failed',
+        '[F6.1] csv_import_row_cancelled_no_prior audit emit failed — forensic trail loss (informational)',
+        { rowNumber, auditErrKind: result.error.kind },
+      );
+    }
+  } catch (e) {
+    recordAuditEmitFailure(
+      input.tenantId,
+      'csv_import_row_cancelled_no_prior',
+      'f6_csv_row_cancelled_no_prior_audit_emit_threw',
+      '[F6.1] csv_import_row_cancelled_no_prior audit emitter threw — forensic trail loss (informational)',
+      { rowNumber, err: e instanceof Error ? e.message : String(e) },
     );
   }
 }
@@ -1020,9 +1187,24 @@ export async function importCsv(
       }),
     });
   } catch (e) {
+    // R1 I-2 (silent-failure): structured log capture of the raw
+    // message + stack to stderr; admin-facing message is generic to
+    // prevent internal-details leak (e.g., Drizzle "relation does
+    // not exist" or Postgres connection-string fragments).
+    logger.error(
+      {
+        event: 'f6_csv_parser_threw',
+        tenantId: input.tenantId,
+        recordId,
+        err: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      },
+      '[F6.1] CSV parser threw — admin sees generic error; investigate stderr trail',
+    );
+    eventcreateMetrics.csvImportParserThrew(input.tenantId);
     return {
       kind: 'unexpected_error',
-      message: e instanceof Error ? e.message : 'parser threw',
+      message: 'parser failed; please re-upload or contact support',
     };
   }
   if (!parsed.ok) {
@@ -1067,17 +1249,28 @@ export async function importCsv(
   // strict schema silently drops unknown columns (no equivalent
   // observability requirement).
   if (sourceFormat === 'eventcreate_csv' && unknownColumns.length > 0) {
-    logger.info(
-      {
-        event: 'f6_eventcreate_adapter_unknown_columns',
-        tenantId: input.tenantId,
-        // Cap at 50 distinct names defensively — chamber CSVs rarely
-        // have >30 columns so 50 is comfortable headroom.
-        distinctUnknownColumns: unknownColumns.slice(0, 50),
-        unknownColumnCount: unknownColumns.length,
-      },
-      '[F6.1] EventCreate CSV import contained unknown columns — review for future adapter extension',
-    );
+    try {
+      // R1 S-1 (code-reviewer): sanitize unknown column names so a
+      // CRLF-injection or oversized header can't pollute the log
+      // stream. Cap each name to 64 chars + strip control chars.
+      const sanitisedColumns = unknownColumns
+        .slice(0, 50)
+        .map((c) => c.slice(0, 64).replace(/[\r\n\t]/g, '_'));
+      logger.info(
+        {
+          event: 'f6_eventcreate_adapter_unknown_columns',
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          recordId,
+          distinctUnknownColumns: sanitisedColumns,
+          unknownColumnCount: unknownColumns.length,
+        },
+        '[F6.1] EventCreate CSV import contained unknown columns — review for future adapter extension',
+      );
+    } catch {
+      // R1 I-7 (silent-failure): pino transport failure must not
+      // abort the import. Observability degraded; correctness preserved.
+    }
   }
 
   // F6.1 — Phase 2: collect rows from the async stream into an array.
@@ -1163,8 +1356,26 @@ export async function importCsv(
   // F6.1 — Phase 2e: if forceProceed bypasses a real safety-net hit,
   // emit `csv_import_event_mismatch_overridden` audit BEFORE batches
   // commit (so the override is auditable even if the import fails).
+  //
+  // CR-9 (R1 — silent-failure): strict-audit invariant. If the
+  // override audit emit fails, REFUSE to proceed with the import —
+  // a forceProceed import without a forensic trail breaks the
+  // FR-019c contract. Admin retries via the same form; the audit
+  // store may have recovered by then.
   if (priorImports.length > 0 && input.forceProceed) {
-    await safeEmitMismatchOverride(deps, input, recordId, priorImports);
+    const emitted = await tryEmitMismatchOverride(
+      deps,
+      input,
+      recordId,
+      priorImports,
+    );
+    if (!emitted) {
+      return {
+        kind: 'unexpected_error',
+        message:
+          'override audit emit failed — refusing to proceed without forensic trail; please retry',
+      };
+    }
   }
 
   // F6.1 — Phase 2f: insert placeholder csv_import_records row. Uses
@@ -1329,7 +1540,10 @@ export async function importCsv(
         errorCsvAvailable = true;
         errorCsvBlobUrl = putResult.value.blobUrl;
       } else {
-        logger.warn(
+        // R1 I-3 (silent-failure): elevate to error + emit metric.
+        // The error rows are lost from the US5 download surface for
+        // this import (admin must re-run); SRE alerts on `rate > 0`.
+        logger.error(
           {
             event: 'f6_csv_error_csv_blob_put_failed',
             tenantId: input.tenantId,
@@ -1337,19 +1551,21 @@ export async function importCsv(
             rowsFailed,
             err: putResult.error.kind,
           },
-          '[F6.1] error-CSV blob upload failed — US5 download will be unavailable; admin sees errorRows inline only',
+          '[F6.1] error-CSV blob upload FAILED — US5 download unavailable for this import; admin must re-run to regenerate',
         );
+        eventcreateMetrics.csvErrorCsvUploadFailed(input.tenantId);
       }
     } catch (e) {
-      logger.warn(
+      logger.error(
         {
           event: 'f6_csv_error_csv_blob_put_threw',
           tenantId: input.tenantId,
           recordId,
           err: e instanceof Error ? e.message : String(e),
         },
-        '[F6.1] error-CSV blob put threw — US5 download unavailable',
+        '[F6.1] error-CSV blob put THREW — US5 download unavailable; investigate Vercel Blob outage',
       );
+      eventcreateMetrics.csvErrorCsvUploadFailed(input.tenantId);
     }
   }
 
@@ -1607,12 +1823,26 @@ function csvEscape(s: string): string {
 // F6.1 — helper: emit mismatch-override audit (never throws)
 // ---------------------------------------------------------------------------
 
-async function safeEmitMismatchOverride(
+/**
+ * Emit the FR-019c `csv_import_event_mismatch_overridden` audit.
+ *
+ * CR-9 (R1 — silent-failure) — strict-audit invariant: when the
+ * audit emit fails OR throws, return `false` so the caller can
+ * REFUSE to proceed with the import. A forceProceed without a
+ * forensic trail breaks the FR-019c contract; admin retry may
+ * succeed against the same DB.
+ *
+ * Returns:
+ *   - `true` on successful emit — caller proceeds with import.
+ *   - `false` on emit failure (Result.err OR throw) — caller MUST
+ *     abort the import to preserve forensic trail integrity.
+ */
+async function tryEmitMismatchOverride(
   deps: ImportCsvDeps,
   input: ImportCsvInput,
   recordId: CsvImportRecordId,
   priorImports: ReadonlyArray<PriorImportMatch>,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const result = await deps.emitStandalone({
       eventType: 'csv_import_event_mismatch_overridden',
@@ -1632,34 +1862,35 @@ async function safeEmitMismatchOverride(
       },
     });
     if (!result.ok) {
-      // CR-4 (Round 1 — silent-failure-hunter): tag the metric with
-      // the actual failing audit type so SRE dashboards alert on
-      // FR-019c override-emit failures separately from per-import +
-      // per-row emit failures.
       recordAuditEmitFailure(
         input.tenantId,
         'csv_import_event_mismatch_overridden',
         'f6_csv_mismatch_override_audit_emit_failed',
-        '[F6.1] csv_import_event_mismatch_overridden audit emit failed — proceeding with import; override forensic trail at risk',
+        '[F6.1] csv_import_event_mismatch_overridden audit emit failed — REFUSING to proceed with import; admin must retry',
         {
+          actorUserId: input.actorUserId,
           recordId,
           priorImportsCount: priorImports.length,
           auditErrKind: result.error.kind,
         },
       );
+      return false;
     }
+    return true;
   } catch (e) {
     recordAuditEmitFailure(
       input.tenantId,
       'csv_import_event_mismatch_overridden',
       'f6_csv_mismatch_override_audit_emit_threw',
-      '[F6.1] csv_import_event_mismatch_overridden audit emitter threw',
+      '[F6.1] csv_import_event_mismatch_overridden audit emitter threw — REFUSING to proceed with import; admin must retry',
       {
+        actorUserId: input.actorUserId,
         recordId,
         priorImportsCount: priorImports.length,
         err: e instanceof Error ? e.message : String(e),
       },
     );
+    return false;
   }
 }
 

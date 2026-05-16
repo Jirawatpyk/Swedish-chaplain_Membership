@@ -36,6 +36,14 @@ import type { MatchType } from '@/modules/events';
 export interface CsvImportResultPayload {
   readonly rowsProcessed: number;
   readonly rowsAlreadyImported: number;
+  /**
+   * F6.1 R1 code-review I-1 — `rowsStateChanged` counter for re-uploaded
+   * rows whose payment_status flipped via FR-018 Notes-inference
+   * detection. Surfaced as a 6th headline counter so admins see that the
+   * Notes-fix re-upload had EFFECT (not silently bucketed into
+   * rowsAlreadyImported per SC-004).
+   */
+  readonly rowsStateChanged?: number;
   readonly eventsCreated: number;
   readonly eventsUpdated: number;
   readonly matchCounts: Readonly<Record<MatchType, number>>;
@@ -114,7 +122,7 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         {/* Headline counters */}
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 md:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 md:grid-cols-6">
           <Counter
             label={t('rowsProcessedLabel')}
             value={result.rowsProcessed}
@@ -128,6 +136,18 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             testId="result-rows-already-imported"
             tone="muted"
           />
+          {/* F6.1 R1 code-review I-1 — render the state-change counter
+              only when at least one row's payment_status flipped; admins
+              for vanilla re-uploads don't need a clutter cell. */}
+          {(result.rowsStateChanged ?? 0) > 0 ? (
+            <Counter
+              label={t('rowsStateChangedLabel')}
+              description={t('rowsStateChangedDescription')}
+              value={result.rowsStateChanged ?? 0}
+              testId="result-rows-state-changed"
+              tone="success"
+            />
+          ) : null}
           <Counter
             label={t('eventsCreatedLabel')}
             value={result.eventsCreated}

@@ -26,9 +26,10 @@
  *
  * Node runtime pinned for Drizzle + Vercel Blob.
  */
+import { randomUUID } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
-import { verifyCronBearer } from '@/lib/cron-auth';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { runSweepExpiredErrorCsvBlobs } from '@/lib/events-csv-import-deps';
 
 export const runtime = 'nodejs';
@@ -36,32 +37,34 @@ export const runtime = 'nodejs';
 const ROUTE = '/api/internal/retention/sweep-error-csv-blobs';
 
 export async function GET(request: NextRequest): Promise<Response> {
-  // 1. Verify Bearer.
-  const secret = process.env.CRON_SECRET;
-  if (!secret || secret.length < 16) {
-    logger.error(
-      {
-        event: 'f6_error_csv_sweep_cron_secret_misconfigured',
-        route: ROUTE,
-      },
-      '[F6.1] sweep cron: CRON_SECRET missing or <16 chars; refusing to run',
-    );
-    return new NextResponse(null, { status: 500 });
-  }
-  if (!verifyCronBearer(request.headers.get('authorization'), secret)) {
-    logger.warn(
-      {
-        event: 'f6_error_csv_sweep_cron_bearer_rejected',
-        route: ROUTE,
-      },
-      '[F6.1] sweep cron: bearer mismatch — request rejected',
-    );
-    return new NextResponse(null, { status: 401 });
-  }
+  // CR-2 / I-2 (R1 — code-reviewer): use the shared `gateCronBearerOrRespond`
+  // helper to align with F8/F4/F5/F7 cron coordinators. The helper emits
+  // `cron_bearer_auth_rejected` audit + bumps the IP rate-limit on 401 +
+  // returns 429 on excessive rejections — closing the silent-401 gap
+  // flagged as a Constitution Principle I clause 4 violation.
+  const gate = await gateCronBearerOrRespond(request, { route: ROUTE });
+  if (gate) return gate;
 
   const startedAtMs = Date.now();
+  const requestId = randomUUID();
   try {
     const result = await runSweepExpiredErrorCsvBlobs({});
+    // CR-2 / I-6 (R1 — silent-failure): if the bulk-scan step failed,
+    // the use-case returned all-zero counts BUT the route used to
+    // surface that as 200-OK — masking the gap from cron-job.org's
+    // "2 consecutive failures" alert. Detect via the negative signal
+    // (`scanFailed`) and map to 500 so cron-job.org sees the failure.
+    if (result.scanFailed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'sweep_scan_failed',
+          requestId,
+          durationMs: Date.now() - startedAtMs,
+        },
+        { status: 500 },
+      );
+    }
     return NextResponse.json(
       {
         ok: true,
@@ -70,6 +73,7 @@ export async function GET(request: NextRequest): Promise<Response> {
         skippedCount: result.skippedCount,
         cutoff: result.cutoff.toISOString(),
         durationMs: Date.now() - startedAtMs,
+        requestId,
       },
       { status: 200 },
     );
@@ -78,13 +82,14 @@ export async function GET(request: NextRequest): Promise<Response> {
       {
         event: 'f6_error_csv_sweep_cron_threw',
         route: ROUTE,
+        requestId,
         err: e instanceof Error ? e.message : String(e),
         durationMs: Date.now() - startedAtMs,
       },
-      '[F6.1] sweep cron threw — operator should investigate (cron-job.org will alert on ≥2 consecutive failures per T058)',
+      '[F6.1] sweep cron threw — operator should investigate (cron-job.org alerts on ≥2 consecutive failures per T058)',
     );
     return NextResponse.json(
-      { ok: false, error: 'sweep_cron_failed' },
+      { ok: false, error: 'sweep_cron_failed', requestId },
       { status: 500 },
     );
   }

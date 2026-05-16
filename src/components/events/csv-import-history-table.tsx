@@ -20,7 +20,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, FileX2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -36,8 +36,6 @@ import { cn } from '@/lib/utils';
 export interface CsvImportHistoryRow {
   readonly recordId: string;
   readonly uploadedAt: string;
-  readonly actor: { readonly userId: string };
-  readonly event: { readonly eventId: string };
   readonly sourceFormat: 'eventcreate_csv' | 'generic_csv';
   readonly originalFilename: string;
   readonly originalSizeBytes: number;
@@ -89,12 +87,24 @@ export function CsvImportHistoryTable({
   const t = useTranslations('admin.events.import.history');
 
   if (rows.length === 0) {
+    // ux I3 (R1 — enterprise-ux-designer): empty-state anatomy per
+    // ux-standards.md § 3.1 — icon + title + body + CTA.
     return (
       <div
-        className="text-body text-muted-foreground rounded-md border border-dashed p-6 text-center"
+        className="flex flex-col items-center gap-4 rounded-md border border-dashed p-10 text-center"
         data-testid="csv-import-history-empty"
       >
-        {t('emptyState')}
+        <FileX2 className="size-12 text-muted-foreground" aria-hidden="true" />
+        <div className="flex flex-col gap-1">
+          <p className="text-lg font-semibold">{t('emptyStateTitle')}</p>
+          <p className="text-body text-muted-foreground">{t('emptyStateBody')}</p>
+        </div>
+        <Link
+          href="/admin/events/import"
+          className={cn(buttonVariants({ variant: 'default' }), 'min-h-11')}
+        >
+          {t('emptyStateCta')}
+        </Link>
       </div>
     );
   }
@@ -111,7 +121,7 @@ export function CsvImportHistoryTable({
         <TableHeader>
           <TableRow>
             <TableHead scope="col">{t('columns.uploadedAt')}</TableHead>
-            <TableHead scope="col">{t('columns.event')}</TableHead>
+            <TableHead scope="col">{t('columns.file')}</TableHead>
             <TableHead scope="col">{t('columns.sourceFormat')}</TableHead>
             <TableHead scope="col">{t('columns.outcome')}</TableHead>
             <TableHead scope="col" className="text-right tabular-nums">
@@ -146,9 +156,14 @@ export function CsvImportHistoryTable({
                 </Badge>
               </TableCell>
               <TableCell>
-                <span data-testid="csv-import-history-outcome">
+                {/* ux I5 (R1) — outcome rendered as Badge with semantic */}
+                {/* variant so admins can scan failures at a glance. */}
+                <Badge
+                  variant={row.outcome === 'completed' ? 'default' : 'destructive'}
+                  data-testid="csv-import-history-outcome"
+                >
                   {t(`outcome.${row.outcome}`)}
-                </span>
+                </Badge>
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 {row.counts.processed}
@@ -180,10 +195,11 @@ export function CsvImportHistoryTable({
                     {t('downloadErrorCsv')}
                   </a>
                 ) : (
+                  /* ux S1 (R1) — aria-disabled on a span has no AT */
+                  /* effect; the visible text already communicates state. */
                   <span
                     className="text-caption text-muted-foreground"
                     title={t('expiredTooltip')}
-                    aria-disabled="true"
                     data-testid="csv-import-history-expired"
                   >
                     {t('expiredBadge')}
@@ -197,7 +213,7 @@ export function CsvImportHistoryTable({
 
       <nav
         className="flex items-center justify-between gap-2 pt-2"
-        aria-label="Pagination"
+        aria-label={t('pagination.navAriaLabel')}
         data-testid="csv-import-history-pagination"
       >
         <p className="text-caption text-muted-foreground">

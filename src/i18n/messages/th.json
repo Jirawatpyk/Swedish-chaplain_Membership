@@ -2599,6 +2599,8 @@
           "rowsProcessedLabel": "แถวที่นำเข้า",
           "rowsAlreadyImportedLabel": "นำเข้าไปแล้วก่อนหน้า",
           "rowsAlreadyImportedDescription": "แถวเหล่านี้ตรงกับการนำเข้าก่อนหน้าและถูกข้ามอัตโนมัติ (idempotent)",
+          "rowsStateChangedLabel": "สถานะเปลี่ยน",
+          "rowsStateChangedDescription": "แถวที่อัปโหลดซ้ำและสถานะการชำระเงินเปลี่ยนหลังแก้ไขคอลัมน์ Notes",
           "eventsCreatedLabel": "กิจกรรมที่สร้างใหม่",
           "eventsUpdatedLabel": "กิจกรรมที่อัปเดต",
           "durationLabel": "ระยะเวลา",
@@ -2702,8 +2704,7 @@
           "tableAriaLabel": "ตารางประวัติการนำเข้า CSV",
           "columns": {
             "uploadedAt": "อัปโหลดเมื่อ",
-            "event": "อีเวนต์",
-            "actor": "ผู้ดำเนินการ",
+            "file": "ไฟล์",
             "sourceFormat": "รูปแบบที่มา",
             "outcome": "ผลลัพธ์",
             "rowsProcessed": "ประมวลผล",
@@ -2730,13 +2731,18 @@
           "expiredTooltip": "ไฟล์ CSV ของแถวผิดพลาดสำหรับการนำเข้าครั้งนี้หมดอายุหลังจาก 30 วัน หากต้องการดาวน์โหลด ให้นำเข้าใหม่อีกครั้ง",
           "noErrorRows": "ไม่มีข้อผิดพลาด",
           "emptyState": "ยังไม่มีการนำเข้า ใช้หน้าอัปโหลดเพื่อนำเข้า CSV",
-          "loadError": "ไม่สามารถโหลดประวัติการนำเข้า CSV ได้ โปรดลองใหม่",
+          "loadError": "ไม่สามารถโหลดประวัติการนำเข้า CSV ได้",
+          "loadErrorRetry": "โหลดใหม่",
           "pagination": {
             "previous": "ก่อนหน้า",
             "next": "ถัดไป",
             "pageOf": "หน้า {page} จาก {totalPages}",
-            "showing": "แสดง {from}–{to} จาก {totalRecords}"
+            "showing": "แสดง {from}–{to} จาก {totalRecords}",
+            "navAriaLabel": "การแบ่งหน้า"
           },
+          "emptyStateTitle": "ยังไม่มีการนำเข้า",
+          "emptyStateBody": "ประวัติการนำเข้าจะแสดงที่นี่หลังจากอัปโหลด CSV",
+          "emptyStateCta": "อัปโหลด CSV",
           "backToImport": "กลับไปหน้านำเข้า"
         }
       }
@@ -2948,7 +2954,8 @@
       "escalationTasksMine": "งานติดตามด่วน: ของฉัน",
       "escalationTasksOverdue": "งานติดตามด่วน: เฉพาะที่เกินกำหนด",
       "eventsList": "อีเวนต์",
-      "eventcreateIntegration": "การเชื่อมต่อ EventCreate"
+      "eventcreateIntegration": "การเชื่อมต่อ EventCreate",
+      "csvImportHistory": "ประวัติการนำเข้า CSV"
     }
   },
   "nav": {
