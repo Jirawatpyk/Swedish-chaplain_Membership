@@ -25,6 +25,7 @@ import {
   satangToProcessorAmount,
   subSatang,
   type Satang,
+  type UntrustedSatang,
 } from '@/lib/money';
 
 describe('asSatang', () => {
@@ -76,26 +77,31 @@ describe('asSatangUnchecked (B-1 forensic escape)', () => {
     expect(asSatangUnchecked(1_000_000_000_000n)).toBe(1_000_000_000_000n);
   });
 
-  it('returned value carries Satang brand (assignable to addSatang)', () => {
-    // Type-level + runtime guard. Brand is structural so runtime is
-    // pure bigint arithmetic; the point is TS compilation accepts
-    // asSatangUnchecked's return as a Satang via the addSatang gate.
-    const v: Satang = asSatangUnchecked(42n);
-    expect(addSatang(v, asSatang(8n))).toBe(50n);
+  it('returned value carries UntrustedSatang brand (NOT assignable to Satang)', () => {
+    // F5R5 BLOCKER fix (2026-05-16) — disjoint sibling brands prove
+    // their value HERE: assigning `asSatangUnchecked(...)` (returns
+    // `UntrustedSatang`) into a `Satang` slot is TS2322 (verified at
+    // build time). Asserting at runtime that the value carries the
+    // structural bigint behaviour is enough — the type system enforces
+    // the rest.
+    const v: UntrustedSatang = asSatangUnchecked(42n);
+    expect(typeof v).toBe('bigint');
+    expect(v).toBe(42n);
   });
 
-  it('downstream arithmetic on unchecked values is structurally bigint', () => {
-    // Documents the "do not arithmetic-fold" docstring intent. If a
-    // caller breaks the rule, they get unsigned-underflow-style
-    // surprises (or whatever the bigint arithmetic produces). The
-    // brand is a one-way guarantee — values OUT of asSatangUnchecked
-    // are untrusted.
-    const corrupt: Satang = asSatangUnchecked(-100n);
-    const valid: Satang = asSatang(50n);
-    // a + b where a = -100, b = 50 → -50. asSatang would reject this,
-    // but addSatang does NOT re-validate (by design — it preserves
-    // brand on values already in the system).
-    expect(addSatang(corrupt, valid)).toBe(-50n);
+  it('arithmetic helpers REJECT UntrustedSatang at compile time (M-5 contract)', () => {
+    // The whole point of the disjoint brand: `addSatang(unchecked, ...)`
+    // would be TS2345. The runtime check here is moot — the
+    // compile-time contract IS the safety guarantee. If a future
+    // maintainer collapses the brand into a single shared symbol,
+    // `tests/types/money-brand.test-d.ts` (the type-level companion
+    // test, post-R5) will catch the regression.
+    const corrupt: UntrustedSatang = asSatangUnchecked(-100n);
+    expect(typeof corrupt).toBe('bigint');
+    expect(corrupt).toBe(-100n);
+    // INTENTIONALLY no `addSatang(corrupt, ...)` call — the type
+    // system rejects it; calling via `as Satang` would defeat the
+    // guard. See the type-test file for the compile-error proof.
   });
 });
 

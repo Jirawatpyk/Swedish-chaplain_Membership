@@ -88,40 +88,11 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     await tenant.cleanup().catch(() => {});
   }, 60_000);
 
-  // F4+F8 Satang migration (2026-05-16) — pre-existing F8 fixture
-  // failure: `gateCronBearerOrRespond` emits via the env.tenant.slug
-  // ('swecham') bookkeeping tenant. In integration-test env the
-  // emit succeeds at the helper level but the inserted row is not
-  // visible from the test's SELECT path — likely a combination of
-  // `audit_log` FORCE RLS policy interacting with the test runner's
-  // owner-role configuration and the runInTenant boundary the emit
-  // sets internally.
-  //
-  // F5R3v3 M-3 (2026-05-16) — rationale rewrite after R3v3 reviewer
-  // flagged the prior wording as still inaccurate:
-  //   * `gateCronBearerOrRespond` runs BEFORE the F8 feature-flag
-  //     check in every cron-renewals route (verified at
-  //     `src/app/api/cron/renewals/dispatch-coordinator/route.ts`
-  //     line ~234). The production emit IS live and signal-bearing.
-  //   * The 401 STATUS-CODE return IS covered at the unit layer by
-  //     `tests/unit/lib/cron-auth.test.ts` (4 timing-safe-compare
-  //     scenarios pin the response shape). Coordinator-level wiring
-  //     (each route handler invokes `gateCronBearerOrRespond` first)
-  //     is trusted by shared-helper convention — not iterated per
-  //     route. F8 ships ~7 cron routes under
-  //     `src/app/api/cron/renewals/**`; the per-route smoke happens
-  //     via the dispatch-coordinator integration tests.
-  //   * The gap THIS test would close is integration-level audit-row
-  //     persistence visibility. The audit emit succeeds at the
-  //     helper level but the inserted row is not visible from the
-  //     test's SELECT path — a combination of the audit_log FORCE
-  //     RLS policy interacting with the test runner's owner-role
-  //     configuration and the `runInTenant(env.tenant.slug)` boundary
-  //     the emit sets internally.
-  //   * TODO (post-F8-flag-flip): port the emit assertion into a
-  //     unit test using a mock audit port that captures `.emit`
-  //     calls — bypasses the RLS-context bug entirely. File a
-  //     GitHub issue and link it here when triaged.
+  // F5R5 cleanup (2026-05-16) — pre-fix skip rationale removed.
+  // The historical "RLS-context gap" theory was wrong; the actual
+  // root cause was a filter literal mismatch (see inline F5R3v4
+  // comment at the SELECT site below). Both tests pass under the
+  // payload-route filter.
   it('missing Bearer → 401 + cron_bearer_auth_rejected audit row in audit_log', async () => {
     const ROUTE = '/api/cron/renewals/dispatch-coordinator';
 
@@ -136,8 +107,7 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     // `buildSummary` default fires (`F8 cron_bearer_auth_rejected
     // (tenant=...)`) — NOT the literal `'cron bearer rejected on ...'`
     // the pre-fix filter was looking for. Filter by event type +
-    // payload route extraction (the route is the actual forensic
-    // discriminator). `db.select` (owner BYPASSRLS) like test 3.
+    // payload-route extraction (the actual forensic discriminator).
     const recentRows = await db
       .select()
       .from(auditLog)
@@ -159,14 +129,6 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     expect(landed!.actorUserId).toBe('system:cron');
   });
 
-  // F4+F8 Satang migration (2026-05-16) — same skip rationale as
-  // the test above (audit-row visibility gap from test-runner RLS
-  // context, NOT a production bug).
-  //
-  // F5R3v3 M-3 (2026-05-16) — same skip rationale as the test
-  // above; the 401 wrong-bearer code path is also covered at the
-  // unit layer by `tests/unit/lib/cron-auth.test.ts`. The gap here
-  // is the integration audit-row persistence visibility.
   it('wrong Bearer → 401 + audit row lands (timing-safe compare must not leak via differential behaviour)', async () => {
     const ROUTE = '/api/cron/renewals/at-risk-recompute-coordinator';
 
@@ -211,19 +173,20 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     });
 
     const ROUTE = '/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator';
+    // F5R5 H-2 fix (2026-05-16) — filter by payload.route (the actual
+    // forensic discriminator) matches the new tests 1+2 pattern.
+    // Pre-fix used a `summary` literal that the emitter NEVER
+    // produces (buildSummary default is `F8 cron_bearer_auth_rejected
+    // (tenant=...)`), so before/after both returned 0, and the
+    // assertion passed trivially regardless of actual emit behaviour.
+    // A regression that DID emit on the rate-limit path would have
+    // slipped through. R4 review HIGH-1 / H-2 / LOW-2.
+    const filter = and(
+      eq(auditLog.eventType, 'cron_bearer_auth_rejected' as never),
+      sql`payload->>'route' = ${ROUTE}`,
+    );
     const auditCountBefore = (
-      await db
-        .select({ count: auditLog.id })
-        .from(auditLog)
-        .where(
-          and(
-            eq(
-              auditLog.eventType,
-              'cron_bearer_auth_rejected' as never,
-            ),
-            eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
-          ),
-        )
+      await db.select({ count: auditLog.id }).from(auditLog).where(filter)
     ).length;
 
     const response = await gateCronBearerOrRespond(makeRequest({}), {
@@ -239,18 +202,7 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     // re-recording the same probe N times floods audit_log without
     // adding signal).
     const auditCountAfter = (
-      await db
-        .select({ count: auditLog.id })
-        .from(auditLog)
-        .where(
-          and(
-            eq(
-              auditLog.eventType,
-              'cron_bearer_auth_rejected' as never,
-            ),
-            eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
-          ),
-        )
+      await db.select({ count: auditLog.id }).from(auditLog).where(filter)
     ).length;
     expect(auditCountAfter).toBe(auditCountBefore);
   });

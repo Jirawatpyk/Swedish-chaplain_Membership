@@ -3,7 +3,7 @@
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { asSatang, asSatangUnchecked } from '@/lib/money';
+import { asSatang, asSatangUnchecked, type Satang } from '@/lib/money';
 import { computeRefundableAmount } from '@/modules/payments/domain/value-objects/refundable-amount';
 import { checkRefundNotExceedingRemainder } from '@/modules/payments/domain/invariants/refund-not-exceeding-remainder';
 
@@ -45,15 +45,18 @@ describe('computeRefundableAmount', () => {
   });
 
   it('throws on negative paymentAmountSatang', () => {
-    // F5R3v3 L-8 (2026-05-16) — `asSatangUnchecked(-1n)` is the
-    // semantic right tool for the test (deliberately bypass the
-    // brand's runtime gate so we can exercise the VO's INTERNAL
-    // non-negative guard at line 55-58). Pre-fix used a `as unknown
-    // as ReturnType<typeof asSatang>` double-cast that obscured the
-    // intent.
+    // F5R5 BLOCKER fix (2026-05-16) — after disjoint-brand split,
+    // `asSatangUnchecked(-1n)` returns `UntrustedSatang` which is NOT
+    // assignable to a `Satang`-typed parameter (compile error). To
+    // exercise the VO's INTERNAL non-negative runtime guard (which is
+    // belt-and-suspenders against future internal callers bypassing
+    // the brand), use an explicit `as unknown as Satang` cast — the
+    // unsafe cast is the SIGNAL that we're deliberately bypassing the
+    // type system to test the runtime gate. Cleaner than the prior
+    // `as ReturnType<typeof asSatang>` indirection.
     expect(() =>
       computeRefundableAmount({
-        paymentAmountSatang: asSatangUnchecked(-1n),
+        paymentAmountSatang: asSatangUnchecked(-1n) as unknown as Satang,
         succeededSumSatang: asSatang(0n),
       }),
     ).toThrow(RangeError);
@@ -63,7 +66,7 @@ describe('computeRefundableAmount', () => {
     expect(() =>
       computeRefundableAmount({
         paymentAmountSatang: asSatang(100n),
-        succeededSumSatang: asSatangUnchecked(-1n),
+        succeededSumSatang: asSatangUnchecked(-1n) as unknown as Satang,
       }),
     ).toThrow(RangeError);
   });

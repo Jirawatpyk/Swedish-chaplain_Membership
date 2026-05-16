@@ -27,6 +27,7 @@
  * brand re-applies via `asSatang` on the way out of arithmetic.
  */
 import {
+  addSatang,
   asSatang,
   asSatangUnchecked,
   type Satang,
@@ -50,18 +51,8 @@ export class Money {
   readonly satang: Satang;
 
   /**
-   * F5R3v4 M-2 (2026-05-16) — constructor now accepts the already-
-   * branded `Satang` type. Pre-fix the inner `asSatang(satang)` ran
-   * unconditionally even though all four public factories
-   * (zero / ofSatang / fromSatangUnsafe / fromTHB) pre-validated
-   * non-negative AND `subtract` returns a typed err on underflow.
-   * The double-validation was harmless but inflated coverage burden
-   * + obscured the actual invariant boundary. With `: Satang` the
-   * type system enforces that callers must pass through one of the
-   * brand-applying factories. Internal arithmetic (`add`, `subtract`,
-   * `multiplyByFraction`) re-brands its bigint result via `asSatang`
-   * at exactly one site (the factory call), keeping the brand
-   * boundary explicit.
+   * Takes already-branded `Satang`. Brand boundary is the factories
+   * below — see M-2 commit `b342c4eb` for the rationale + history.
    */
   private constructor(satang: Satang) {
     this.satang = satang;
@@ -109,13 +100,22 @@ export class Money {
   }
 
   add(other: Money): Money {
-    return new Money(asSatang(this.satang + other.satang));
+    // F5R5 M-1 (2026-05-16) — `addSatang` is brand-preserving on
+    // already-validated `Satang` inputs (Satang + Satang ≥ 0 by
+    // construction). The prior `asSatang(this.satang + other.satang)`
+    // re-validated unnecessarily, contradicting the M-2 ctor
+    // rationale ("single brand boundary at the factory"). Using
+    // addSatang keeps add() truly zero-validation in the happy path.
+    return new Money(addSatang(this.satang, other.satang));
   }
 
   subtract(other: Money): { ok: true; value: Money } | { ok: false; error: MoneyError } {
     const diff = this.satang - other.satang;
     if (diff < 0n) return { ok: false, error: { kind: 'negative_amount', satang: asSatangUnchecked(diff) } };
-    return { ok: true, value: new Money(asSatang(diff)) };
+    // F5R5 M-1 (2026-05-16) — `diff < 0n` already verified above,
+    // so `asSatang(diff)` would re-check unnecessarily. Use the
+    // unchecked brand-apply since the gate above is the proof.
+    return { ok: true, value: new Money(diff as Satang) };
   }
 
   /**
@@ -133,7 +133,14 @@ export class Money {
     const half = denominator / 2n;
     const rounded = (scaled >= 0n ? scaled + half : scaled - half) / denominator;
     if (rounded < 0n) throw new Error('Money.multiplyByFraction: result is negative');
-    return new Money(asSatang(rounded));
+    // F5R5 M-1 — the explicit guard above is the proof; the inner
+    // `asSatang` would re-check unnecessarily (contradicting M-2
+    // single-validation-boundary rationale). The explicit Error
+    // message preserves the observability contract: runbooks search
+    // for "Money.multiplyByFraction: result is negative" — keeping
+    // the bespoke Error instead of letting asSatang's RangeError
+    // surface keeps that contract intact (R4 review MED-1).
+    return new Money(rounded as Satang);
   }
 
   /**

@@ -32,45 +32,51 @@
  * arithmetic also fails at compile time.
  */
 
-declare const SatangBrand: unique symbol;
+declare const TrustedBrand: unique symbol;
 declare const UntrustedBrand: unique symbol;
 
 /**
- * THB minor unit (1 baht = 100 satang). Branded subtype of `bigint`
- * so values constructed via `asSatang` cannot be confused with raw
- * `bigint` (e.g. invoice totals in baht) at compile time. CARRIES
- * the non-negative invariant.
+ * F5R5 BLOCKER fix (2026-05-16) — brand design re-architected from
+ * nested intersection (`Satang & UntrustedSatang`) to DISJOINT
+ * SIBLINGS. R4 review proved the prior nested shape was structurally
+ * INVERTED — `UntrustedSatang` had MORE brand constraints than
+ * `Satang`, making it a *subtype* of `Satang` under TS structural
+ * typing → freely assignable to `Satang`-typed slots → arithmetic
+ * helpers silently accepted unchecked values. M-5's compile-time
+ * enforcement claim was theatre.
+ *
+ * Now: `Satang` and `UntrustedSatang` are siblings — neither is
+ * assignable to the other without an explicit cast through one of
+ * the constructors (`asSatang` revalidates non-negative; the
+ * implicit `as Satang` would be flagged by an eslint rule). The
+ * arithmetic helpers `addSatang` / `subSatang` accept only `Satang`
+ * → passing an `UntrustedSatang` is a TS2345 compile error. This
+ * actually closes the "policy-only enforcement" gap.
+ *
+ * Verified via TS probe:
+ *   - `addSatang(asSatangUnchecked(-1n), asSatang(0n))` → TS2345
+ *   - `const s: Satang = asSatangUnchecked(0n)` → TS2322
+ *   - `const u: UntrustedSatang = asSatang(0n)` → TS2322
  */
-export type Satang = bigint & { readonly [SatangBrand]: true };
 
 /**
- * F5R3v4 M-5 (2026-05-16) — phantom brand for forensic err-payload
- * values that bypassed `asSatang`'s non-negative gate. Constructed
- * ONLY via `asSatangUnchecked`. Distinct from `Satang` at the type
- * level (carries an additional `UntrustedBrand` symbol) so the
- * arithmetic helpers `addSatang`/`subSatang` (which accept `Satang`)
- * reject an UntrustedSatang argument at compile time. Code that
- * needs to display, log, or audit an UntrustedSatang can do so —
- * it's still structurally a `bigint` — but arithmetic-folding
- * corrupted forensic values into trusted-value chains is a compile
- * error. This closes the "policy-only enforcement" gap that R3v3
- * type-design review flagged.
- *
- * The brand is one-way: `Satang` is structurally assignable to
- * `UntrustedSatang` (the union of constraints widens), but
- * `UntrustedSatang` is NOT assignable to `Satang` (TS enforces brand
- * subtyping). So:
- *   - Logging / audit / display: accept `Satang | UntrustedSatang`
- *     (currently typed as `bigint` in JSON-payload sites).
- *   - Arithmetic helpers: accept only `Satang`.
- *   - Err-payload fields: typed `Satang | UntrustedSatang` so both
- *     trusted (post-validation) and forensic (post-corruption)
- *     values can flow into the diagnostic payload.
+ * THB minor unit (1 baht = 100 satang). Branded `bigint` carrying
+ * the non-negative invariant; constructed via `asSatang`.
  */
-export type UntrustedSatang = bigint & {
-  readonly [SatangBrand]: true;
-  readonly [UntrustedBrand]: true;
-};
+export type Satang = bigint & { readonly [TrustedBrand]: true };
+
+/**
+ * Forensic-escape sibling brand for err-payload values that bypassed
+ * `asSatang`'s non-negative gate (B-1 forensic-preservation
+ * contract). Constructed ONLY via `asSatangUnchecked`. Disjoint from
+ * `Satang` so:
+ *   - `addSatang`/`subSatang` reject `UntrustedSatang` at compile.
+ *   - A `Satang`-typed field cannot silently absorb an
+ *     `UntrustedSatang` from an err payload.
+ *   - Logging / audit / display sites that accept either accept the
+ *     explicit union `Satang | UntrustedSatang`.
+ */
+export type UntrustedSatang = bigint & { readonly [UntrustedBrand]: true };
 
 /**
  * Construct a `Satang` from a raw `bigint` already in minor unit.
@@ -78,6 +84,13 @@ export type UntrustedSatang = bigint & {
  * money throughout (refunds, invoices, payments all carry positive
  * amounts; sign is encoded in the use-case branch / column
  * discriminator, not in the value).
+ */
+/**
+ * Observability contract (F5R5 M-2): the thrown class is `RangeError`
+ * and the message prefix is `Satang must be >= 0`. Both are part of
+ * the SRE alert + runbook surface. DO NOT change the class or the
+ * prefix without coordinating with `docs/observability.md`. The
+ * regression test at `tests/unit/lib/money.test.ts` pins both.
  */
 export function asSatang(raw: bigint): Satang {
   if (raw < 0n) {
@@ -113,11 +126,9 @@ export function asSatang(raw: bigint): Satang {
  * through `asSatang(value as bigint)` — the cast is intentional and
  * forces a code review.
  *
- * Production callsites:
- *   - F4 `Money.ofSatang` / `Money.subtract` err payload
- *   - F4 `enforceCreditCannotExceedRemainder` error payload
- *   - F4 `assertCreditNoteVatBalance` error payload
- *   - F4 `issueCreditNote` `credit_exceeds_remainder` err return
+ * Production callsites — locate via `rg asSatangUnchecked` (avoid
+ * an enumerated list here — it rots fast: pre-fix R4 review flagged
+ * the prior list as already-stale after one iteration).
  * Adding new callers requires the same forensic-payload justification.
  */
 export function asSatangUnchecked(raw: bigint): UntrustedSatang {

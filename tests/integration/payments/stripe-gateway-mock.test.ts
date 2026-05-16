@@ -19,6 +19,7 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { asSatang } from '@/lib/money';
+import { paymentsMetrics } from '@/lib/metrics';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import Stripe from 'stripe';
@@ -596,22 +597,24 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     expect(req!.headers['stripe-account']).toBeUndefined();
   });
 
-  // F5R3v4 M-8 (2026-05-16) — gateway defensive amount projection
-  //
-  // R3v2 H-3 added a defensive `Number.isFinite + >= 0` guard to
-  // `createRefund`'s response handling so Stripe API drift (negative
-  // amount, NaN, null) doesn't crash the use-case. R3v3 H-2 + H-5
-  // tightened it so:
-  //   - input.amountSatang provided + shape invalid → fall back to
-  //     input (we sent it, Stripe accepted, can't parse response)
-  //   - input.amountSatang undefined + shape invalid → return typed
-  //     `err({kind:'permanent', code:'processor_response_amount_invalid'})`
-  //   - happy path is unchanged
-  //
-  // R3v3 M-8 (this batch): add MSW handlers exercising the guard via
-  // real Stripe-SDK round-trip + assert the metric + log fire.
+  // Pins `stripeGateway.createRefund` defensive amount projection
+  // (guard at src/modules/payments/infrastructure/stripe/stripe-gateway.ts).
+  // Result shape + observability contract (metric + logger.error).
   describe('createRefund — defensive amount projection (R3v3 H-2/H-5/M-8)', () => {
-    it('negative refund.amount + input.amountSatang provided → falls back to input + warns', async () => {
+    let metricSpy: ReturnType<typeof vi.spyOn>;
+    let logErrorSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      metricSpy = vi.spyOn(paymentsMetrics, 'gatewayBoundaryAmountBrandFailed');
+      logErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      metricSpy.mockRestore();
+      logErrorSpy.mockRestore();
+    });
+
+    it('negative refund.amount + input.amountSatang provided → falls back to input + metric + error log', async () => {
       server.use(
         http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
           captureReq(request, await request.text());
@@ -634,13 +637,21 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // Defensive fallback: use what WE sent (Stripe accepted it).
         expect(result.value.amountSatang).toBe(5000n);
         expect(result.value.id).toBe('rfn_negative_001');
       }
+      // R5 H-3 — observability contract: metric counter + error log.
+      expect(metricSpy).toHaveBeenCalledTimes(1);
+      expect(metricSpy).toHaveBeenCalledWith('refund_create');
+      expect(logErrorSpy).toHaveBeenCalledTimes(1);
+      const [logCtx, logMsg] = logErrorSpy.mock.calls[0]!;
+      expect(logMsg).toBe('stripe-gateway.refund_amount_brand_failed');
+      expect((logCtx as Record<string, unknown>)['reason']).toBe(
+        'guard_failed_non_finite_or_negative',
+      );
     });
 
-    it('non-finite refund.amount + input.amountSatang absent → typed processor_response_amount_invalid err', async () => {
+    it('non-finite refund.amount + input.amountSatang absent → typed processor_response_amount_invalid err + metric + error log', async () => {
       server.use(
         http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
           captureReq(request, await request.text());
@@ -667,9 +678,11 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
           expect(result.error.code).toBe('processor_response_amount_invalid');
         }
       }
+      expect(metricSpy).toHaveBeenCalledWith('refund_create');
+      expect(logErrorSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('null refund.amount + input.amountSatang provided → falls back to input', async () => {
+    it('null refund.amount + input.amountSatang provided → falls back to input + metric fires', async () => {
       server.use(
         http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
           captureReq(request, await request.text());
@@ -693,6 +706,8 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       if (result.ok) {
         expect(result.value.amountSatang).toBe(2500n);
       }
+      expect(metricSpy).toHaveBeenCalledWith('refund_create');
+      expect(logErrorSpy).toHaveBeenCalledTimes(1);
     });
   });
 });

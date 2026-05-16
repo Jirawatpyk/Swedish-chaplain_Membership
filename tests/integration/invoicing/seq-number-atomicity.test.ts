@@ -467,7 +467,6 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
   it('(g) Audit emit throws → rollback, no invoice issued, no seq consumed', async () => {
     const freshTenant = await createTestTenant('test-swecham');
     const freshSeed = await seedTenantForIssuance(freshTenant, user);
-    let propagatedAsThrow = false;
     try {
       const draftId = await insertDraft(
         freshTenant,
@@ -500,7 +499,6 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
       } catch (e) {
         // If the driver propagated the throw, the message must come
         // from our failing audit, not from an unrelated source.
-        propagatedAsThrow = true;
         expect(String(e)).toMatch(/audit_log/);
       }
 
@@ -526,9 +524,6 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
         expect(seqRows).toHaveLength(1);
         expect(seqRows[0]!.nextSequenceNumber).toBe(1);
       }
-      // Telemetry: record which path the driver took so regressions in
-      // error-propagation semantics are visible in test output.
-      void propagatedAsThrow;
     } finally {
       await freshTenant.cleanup().catch(() => {});
     }
@@ -598,19 +593,13 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
     }
   }, 60_000);
 
-  // -------------------------------------------------------------------------
-  // (c) Post-commit Blob sweeper — SHIPPED at T166-11.
-  // The placeholder formerly here pre-dated the async receipt-PDF
-  // pipeline. Once `FEATURE_F5_ASYNC_RECEIPT_PDF` shipped, the actual
-  // reconciliation cron landed at
-  //   src/app/api/internal/cron/receipt-pdf-reconcile/route.ts
-  // with end-to-end coverage at
-  //   tests/integration/invoicing/receipt-pdf-reconcile-cron.test.ts
-  // (re-enqueue + dedupe + permanent-failure audit branches).
-  // For the synchronous-issue path, blob upload is INSIDE the tx — a
-  // failed upload rolls back, so no orphan row exists to recover from.
-  // The historical placeholder is removed as obsolete (F5R3v4 fix).
-  // -------------------------------------------------------------------------
+  // (c) Post-commit Blob sweeper covered at
+  //     `tests/integration/invoicing/receipt-pdf-reconcile-cron.test.ts`
+  //     (FEATURE_F5_ASYNC_RECEIPT_PDF path; re-enqueue + dedupe +
+  //     permanent-failure audit + stuck-pending sweep + atomicity).
+  //     Sync-issue paths (issue-invoice + issue-credit-note) keep
+  //     Blob upload INSIDE the tx — failed upload rolls back at (b)
+  //     above. F5R5 M-3 trim of the prior F5R3v4 history block.
 
   // -------------------------------------------------------------------------
   // (perf) 50-writer load variant — gated by RUN_PERF=1.
