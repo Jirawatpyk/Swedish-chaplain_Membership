@@ -45,6 +45,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F6 idempotency sweep** | **`POST /api/cron/eventcreate/sweep-idempotency-receipts`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/cron/eventcreate/pseudonymise-non-member-pii`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
 | **F6.1 error-CSV blob TTL sweep** (T058) | **`GET /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
+| **F6 recompute match-rate gauge** (Phase 10 T126) | **`POST /api/internal/observability/recompute-match-rate`** | **`0 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | [f6-match-rate-degradation-triage.md](./f6-match-rate-degradation-triage.md) — refreshes `eventcreate_match_rate_gauge` per tenant; powers SC-002 dashboard |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org

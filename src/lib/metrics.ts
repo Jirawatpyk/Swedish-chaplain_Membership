@@ -2778,6 +2778,70 @@ export const eventcreateMetrics = {
   },
 
   /**
+   * Phase 10 T130 — `eventcreate_pii_pseudonymisation_sweep_rows_total`.
+   * Counter incremented by the daily retention-sweep cron handler
+   * (T114) per tenant + outcome. The sweep replaces email/name/company
+   * fields with deterministic salted SHA-256 hashes on rows where
+   * `match_type IN ('non_member','unmatched') AND
+   * pii_pseudonymised_at IS NULL AND registered_at < (now - 2y)`.
+   *
+   * Powers:
+   *   - SC-011 retention compliance dashboard
+   *   - FR-032 retention-sweep audit trail
+   *
+   * Labels:
+   *   - tenant: tenant slug
+   *   - outcome: 'pseudonymised' | 'skipped_not_eligible' | 'error'
+   *
+   * Emitted alongside the per-row `pii_pseudonymised` audit + the
+   * aggregate `pii_pseudonymisation_sweep_run` macro audit so dashboard
+   * + audit log + metric all reconcile.
+   *
+   * Counter declared in Phase 10 Wave 4 (observability gap-fill) so it
+   * is reachable + dashboardable BEFORE the cron handler ships in
+   * Wave 2 (T113+T114). Zero-emission counter is correctly absent
+   * from Prometheus output until first call — no noise pre-handler.
+   */
+  pseudonymisationSweepRowsTotal(
+    tenantId: string,
+    outcome: 'pseudonymised' | 'skipped_not_eligible' | 'error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_pii_pseudonymisation_sweep_rows_total',
+        'F6 PII pseudonymisation retention sweep counter — outcome=pseudonymised|skipped_not_eligible|error (FR-032 / SC-011)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * Phase 10 T126 — `eventcreate_match_rate_gauge`.
+   * Rolling 30-day per-tenant match rate (fraction of webhook
+   * deliveries that resolve to a known F3 member). Refreshed hourly
+   * by `recompute-match-rate` cron handler at
+   * `/api/internal/observability/recompute-match-rate`.
+   *
+   * Formula: `(member_contact + member_domain + member_fuzzy) /
+   *           total_resolved` over the last 30 days per tenant.
+   *
+   * Range: [0.0, 1.0]. SC-002 target: ≥ 0.70 after 30 days post-
+   * flag-flip + sustained F3 member onboarding.
+   *
+   * Powers:
+   *   - SC-002 success-criterion dashboard
+   *   - `f6_match_rate_degradation` alert (drop below 0.50 for 24h)
+   *   - Runbook `f6-match-rate-degradation-triage.md`
+   */
+  matchRateGauge(tenantId: string, value: number): void {
+    observeGauge(
+      'eventcreate_match_rate_gauge',
+      'F6 rolling 30-day per-tenant match rate (fraction in [0.0, 1.0]) — SC-002',
+      { tenant: tenantId },
+      Math.max(0, Math.min(1, value)),
+    );
+  },
+
+  /**
    * FR-036 #8 — `eventcreate_webhook_secret_rotated_total`.
    * Counter incremented every time a tenant admin successfully rotates
    * the webhook secret (FR-008). Per-tenant labelled. Powers the
