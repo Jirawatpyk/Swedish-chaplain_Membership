@@ -246,9 +246,33 @@ export async function cancelPayment(
     }
 
     if (fresh.status === 'canceled') {
-      // Webhook beat us. Idempotent return — the audit row was
-      // already emitted by the webhook path. completedAt comes from
-      // the fresh read (webhook set it).
+      // Webhook beat us. Idempotent return — the original
+      // `payment_canceled` audit row was already emitted by the
+      // webhook path. completedAt comes from the fresh read.
+      //
+      // F5R2-M2 — also emit a `payment_cross_tenant_probe` audit on
+      // `null` tx (best-effort) so ops dashboards can distinguish
+      // "member cancelled successfully" from "webhook beat us to
+      // it". The probe shape is reused (forensic class fits — the
+      // probe schema covers same-tenant ownership-mismatch +
+      // sibling forensic classes). Pre-fix this branch returned
+      // ok silently, so the "webhook-beat" volume was invisible
+      // — sustained high rate would indicate Stripe clock drift /
+      // out-of-order delivery that operators should know about.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Phase B webhook-beat: payment ${fresh.id} already canceled when member's cancel request arrived (idempotent ack)`,
+        payload: {
+          acting_tenant_id: input.tenantId,
+          probing_actor_id: input.actorUserId,
+          target_entity: 'payment',
+          target_id: fresh.id,
+        },
+        retentionYears: retentionFor('payment_cross_tenant_probe'),
+      });
       return ok<CancelPaymentSuccess>({
         paymentId: fresh.id,
         status: 'canceled',

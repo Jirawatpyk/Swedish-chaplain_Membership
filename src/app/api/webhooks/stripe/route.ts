@@ -41,7 +41,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { webhookVerifier } from '@/lib/stripe-webhook-verifier';
+import { webhookVerifier, WebhookSignatureError } from '@/lib/stripe-webhook-verifier';
 import { baseHeaders } from '@/lib/payments-route-helpers';
 import {
   processWebhookEvent,
@@ -309,13 +309,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       env.stripe.webhookSecret,
     )) as unknown as Record<string, unknown>;
   } catch (e) {
-    // Duck-type on the `kind` discriminator rather than `instanceof
-    // WebhookSignatureError` so tests that mock only the verifier
-    // function (and omit the error class) still exercise this branch.
-    const kind =
-      typeof (e as { kind?: unknown })?.kind === 'string'
-        ? ((e as { kind: string }).kind)
-        : 'bad_signature';
+    // F5R2-TY-B — narrow via `instanceof WebhookSignatureError` (the
+    // canonical Application-port error class) so a future variant
+    // added to the `kind` union forces this consumer to handle it.
+    // Pre-fix duck-type on `e.kind` accepted ANY object with a string
+    // `kind` field — a thrown TypeError from an env-config bug
+    // (e.g. `cannot read .secret of undefined`) silently became
+    // `kind='bad_signature'` because TypeError has no `kind`. Now
+    // genuine-but-non-shape exceptions fall to the else branch and
+    // bump a distinct counter.
+    let kind: WebhookSignatureError['kind'] | 'verifier_internal_error';
+    if (e instanceof WebhookSignatureError) {
+      kind = e.kind;
+    } else {
+      // Internal verifier error (env/config drift, OOM, undici fetch
+      // crash). Pino-log the constructor name + bump a counter so
+      // SRE distinguishes "Stripe sent bad signature" from "our
+      // verifier exploded". Audit row still emitted via auditReject
+      // so the forensic trail is consistent across both classes.
+      logger.error(
+        {
+          err: e instanceof Error ? e.constructor.name : 'unknown',
+          correlationId,
+          requestId,
+        },
+        'stripe-webhook.verifier_internal_error',
+      );
+      kind = 'verifier_internal_error';
+    }
     await auditReject('webhook_signature_rejected', kind, requestId);
     return jsonUnauthorized('bad_signature', correlationId);
   }
@@ -483,9 +504,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const refundIdsFromVerifier = rawDataObject?.['refundIds'] as
     | readonly string[]
     | undefined;
-  const lastPaymentError = rawDataObject?.['last_payment_error'] as
-    | Record<string, unknown>
-    | undefined;
+  // F5R2-M5 — narrow `last_payment_error` extraction so the wide
+  // `Record<string, unknown>` object is NOT bound in the route's
+  // local scope. PCI SAQ-A risk: future logger/response-body additions
+  // could accidentally include the full Stripe error object (which
+  // can carry card_brand, card_last4, decline reason text). Extract
+  // ONLY the `code` string here; downstream consumers see a single
+  // `lastPaymentErrorCode` field instead of the wide envelope.
+  const lastPaymentErrorRawCode = (
+    rawDataObject?.['last_payment_error'] as Record<string, unknown> | undefined
+  )?.['code'];
   const lastPaymentErrorCodeFromVerifier = rawDataObject?.[
     'lastPaymentErrorCode'
   ] as string | undefined;
@@ -532,8 +560,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           : {}),
       ...(typeof lastPaymentErrorCodeFromVerifier === 'string'
         ? { lastPaymentErrorCode: lastPaymentErrorCodeFromVerifier }
-        : typeof lastPaymentError?.['code'] === 'string'
-          ? { lastPaymentErrorCode: String(lastPaymentError['code']) }
+        : typeof lastPaymentErrorRawCode === 'string'
+          ? { lastPaymentErrorCode: lastPaymentErrorRawCode }
           : {}),
       ...(typeof amountVal === 'number' && {
         amountSatang: BigInt(amountVal),

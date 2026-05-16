@@ -14,6 +14,7 @@ import {
   processWebhookEvent,
   type ProcessWebhookEventDeps,
 } from '@/modules/payments';
+import { PERMANENT_SUB_USE_CASE_DETAILS } from '@/modules/payments/application/use-cases/process-webhook-event';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
 import type { VerifiedStripeEvent } from '../../../../src/modules/payments/application/ports';
@@ -550,5 +551,26 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.detail).toBe('unknown');
+  });
+
+  /**
+   * F5R2-M1 — pin the membership of `PERMANENT_SUB_USE_CASE_DETAILS`.
+   * The set is the single discriminator between "Stripe retries 72h"
+   * (transient) and "Stripe stops retrying" (permanent). Without a
+   * membership test, a future PR that removes (say) `'bridge_error'`
+   * thinking it should retry would silently regress the F5R1-IMP2 fix
+   * with no test failure. Snapshot the canonical 6 codes here.
+   */
+  it('R2-M1: PERMANENT_SUB_USE_CASE_DETAILS membership snapshot', () => {
+    expect(PERMANENT_SUB_USE_CASE_DETAILS).toEqual(
+      new Set([
+        'tenant_settings_missing',
+        'bridge_error',
+        'invoice_not_found',
+        'invoice_shape_invalid',
+        'payment_method_unsupported',
+        'invariant_auto_refunded_missing_invoice_id',
+      ]),
+    );
   });
 });

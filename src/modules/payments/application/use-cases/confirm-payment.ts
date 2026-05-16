@@ -714,7 +714,11 @@ async function confirmPaymentBody(
         } catch (phaseBErr) {
           paymentsMetrics.confirmPaymentGiveUpPhaseBMarkProcessedFailed();
           deps.logger?.warn(
-            'confirmPayment.give_up_phase_b_markProcessed_failed',
+            // F5R2-M3 — standardised to underscore-prefix matching the
+            // sibling `confirm_payment.stale_refund_phase_b_mark_failed`
+            // (line 808). SRE grep `confirm_payment.*phase_b` now
+            // matches both paths.
+            'confirm_payment.give_up_phase_b_mark_processed_failed',
             {
               paymentId: payment.id,
               errKind:

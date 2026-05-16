@@ -85,10 +85,16 @@ function mapF4GetError(
  * pass through type-checked, and the unsafe cast is gone.
  */
 function summariseF4Error<E extends {
-  readonly code?: unknown;
-  readonly kind?: unknown;
-  readonly detail?: unknown;
-  readonly reason?: unknown;
+  // F5R2-M4 — tightened from `unknown` → `string` (optional). The
+  // `unknown` form let TS accept a caller passing `code: number`
+  // even though the runtime guard then dropped it; the tighter
+  // constraint catches that drift at compile time while keeping
+  // the "at-least-one-of" flexibility (any optional string field
+  // suffices). All F4 error variants today satisfy this constraint.
+  readonly code?: string;
+  readonly kind?: string;
+  readonly detail?: string;
+  readonly reason?: string;
 }>(e: E, bridgeOp: string): { code: string; detail: string } {
   const code =
     typeof e.code === 'string'

@@ -99,6 +99,16 @@ export type ProcessWebhookEventOutcome =
   | {
       readonly kind: 'auto_refunded_stale_invoice';
       readonly invoiceId: string;
+    }
+  // F5R2-TY-A — distinct outcome for the E9 give-up path. Pre-fix
+  // this kind fell through to the generic `processed` catch-all →
+  // ops dashboards saw it as successful dispatch, masking the
+  // "Stripe retry storm broken — operator must reconcile" signal
+  // that the audit row carries.
+  | {
+      readonly kind: 'auto_refund_given_up';
+      readonly dispatched: string;
+      readonly invoiceId: string;
     };
 
 /**
@@ -462,17 +472,11 @@ async function processWebhookEventBody(
         // row, so the outcome MUST carry invoiceId. If it doesn't,
         // that's a `confirmPayment` contract violation.
         //
-        // convert from
-        // `throw new Error('invariant: ...')` to `return err()`.
-        // Throwing here bubbles to the route's outer try/catch → 500
-        // → Stripe retries the event every 1h × 72h chasing a code
-        // bug that won't fix itself. Return a structured
-        // `dispatch_failed` instead so the route 500-once + alerts
-        // ops via the existing `dispatchFailureKind` log channel,
-        // and Stripe gives up after the standard 3-retry-then-die
-        // window for non-2xx responses tagged
-        // `invariant_*`. Constitution Principle III: Application
-        // layer MUST return Result<T,E>, never throw.
+        // Returns a structured `dispatch_failed` permanent — route
+        // 200-acks Stripe (no retry storm) + alerts ops via the
+        // existing `dispatchFailureKind` log channel + the
+        // `webhookDispatchFailed` metric. Constitution Principle III:
+        // Application layer MUST return Result<T,E>, never throw.
         /* v8 ignore start — confirmPayment contract guarantees invoiceId
          * on auto_refunded_stale_invoice; defence-in-depth for post-
          * compile contract drift. */
@@ -489,6 +493,20 @@ async function processWebhookEventBody(
         outcome = {
           kind: 'auto_refunded_stale_invoice',
           invoiceId: confirmInvoiceId,
+        };
+      } else if (result.value.kind === 'auto_refund_given_up') {
+        // F5R2-TY-A — distinct outcome for the E9 give-up path.
+        // Pre-fix this kind fell through to the generic `processed`
+        // catch-all → ops dashboards saw it as a successful
+        // dispatch, losing the "Stripe stopped retrying — operator
+        // must reconcile via Stripe Dashboard" signal that the
+        // forensic audit row carries. The route handler can now
+        // pivot on `outcome.kind === 'auto_refund_given_up'` if
+        // needed (e.g., for SRE alerting on chronic occurrences).
+        outcome = {
+          kind: 'auto_refund_given_up',
+          dispatched: envelope.type,
+          invoiceId: result.value.invoiceId,
         };
       } else {
         outcome = {
@@ -608,9 +626,16 @@ async function processWebhookEventBody(
           // internal ids. Use the class name only — caller logs it into
           // pino + audit downstream where leak risk is real.
           detail: formatDispatchErrorDetail(refundResult.error.cause),
-          // Default to transient: Stripe-side or DB-side throw on
-          // charge.refunded should retry. The categorise helper would
-          // catch the rare permanent-class detail string if needed.
+          // F5R2 — `formatDispatchErrorDetail` returns the error class
+          // name (e.g. `PostgresError`, `TypeError`), NOT a sub-use-
+          // case code. `categorisePermanence` operates on
+          // PERMANENT_SUB_USE_CASE_DETAILS code strings, so passing
+          // a class name through it would always return 'transient'
+          // anyway. Hardcoded transient is correct for the
+          // dispatch_threw branch — a thrown-error class doesn't carry
+          // the permanent/transient semantics; rely on the route's
+          // retry budget + observability counters to surface chronic
+          // permanent throws (e.g. StripeAuthenticationError storms).
           permanence: 'transient',
         });
       }

@@ -23,8 +23,9 @@
  * not block the rest.
  *
  * Authentication: gated by `CRON_SECRET` (Bearer token in the
- * `Authorization` header). Dev-mode accepts unauthenticated calls
- * for manual operator triggering.
+ * `Authorization` header). F5R1-E10 removed the previous dev-mode
+ * unauthenticated fallback — every request MUST carry the bearer
+ * token regardless of NODE_ENV.
  *
  * Idempotent: re-running the cron is safe — already-swept rows are
  * already in `failed` status and won't match `WHERE status='pending'`.
