@@ -22,7 +22,7 @@
  * `@/lib/events-admin-integration-deps` composition adapter that
  * exposes the `runXxx` factories the tests mock here.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // ---------------------------------------------------------------------------
@@ -121,6 +121,23 @@ const MEMBER_SESSION = {
   session: { id: 'sess-member', userId: 'mem' } as unknown,
   user: { id: 'mem', role: 'member' as const, email: 'mem@test' },
 };
+
+// Staff-review R3 follow-up (2026-05-16): pre-warm all 5 route modules
+// in `beforeAll` so the first test does not pay the cold-start
+// dynamic-import cost (~11-12s normal, 2-3× higher under coverage
+// instrumentation, racing the 30s testTimeout when running in parallel
+// with the full ~450-file suite). The route modules transitively
+// import Drizzle schemas + tenant context + audit ports; first import
+// compiles everything, subsequent imports return cached module.
+beforeAll(async () => {
+  await Promise.all([
+    loadGetRoute(),
+    loadGenerateSecretRoute(),
+    loadRotateSecretRoute(),
+    loadTestWebhookRoute(),
+    loadDisableRoute(),
+  ]);
+});
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });

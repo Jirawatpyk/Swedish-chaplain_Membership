@@ -26,7 +26,7 @@
  * added in F1+F2 verify-fix (commit 9491f714). E4 logger.error spy
  * added in this verify-review fix sweep.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 // T9 fix: type-only imports to constrain the
@@ -144,6 +144,18 @@ vi.mock('@/lib/tenant-context', () => ({
 }));
 
 const TENANT_SLUG = 'test-swecham';
+
+// Staff-review R3 follow-up (2026-05-16): pre-warm both route modules
+// so the first test does not pay the cold-start dynamic-import cost
+// (~10-15s in normal mode, 2-3× higher under `pnpm test:coverage`
+// instrumentation). Under parallel coverage runs the first test's
+// duration was racing the global 30s testTimeout (vitest.config.ts:50)
+// and intermittently failing. `beforeAll` runs once per file and the
+// imported module is cached, so all subsequent test cases pay only
+// the call-handler cost (~50-200ms each).
+beforeAll(async () => {
+  await Promise.all([loadListRoute(), loadDetailRoute()]);
+});
 
 beforeEach(() => {
   // Default: admin signed in, tenant resolves. Both mocks resolve to

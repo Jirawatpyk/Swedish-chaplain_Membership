@@ -19,7 +19,7 @@
  * `tests/contract/events/admin-integration-eventcreate-api.test.ts`
  * + `tests/contract/events/admin-events-api.test.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // ---------------------------------------------------------------------------
@@ -99,6 +99,16 @@ const MEMBER_SESSION = {
 const VALID_CSV =
   'event_external_id,event_name,event_start,attendee_email,attendee_name\n' +
   'event_001,Midsummer 2026,2026-06-21T18:00:00+07:00,jane@example.com,Jane Andersson\n';
+
+// Staff-review R3 follow-up (2026-05-16): pre-warm the import route
+// module. Prior coverage run measured this file's first test at
+// 29.3s (just under the 30s testTimeout) — under additional
+// instrumentation + parallel CPU contention it intermittently
+// timed out. `beforeAll` amortises the cold-import into a single
+// hook (which now has its own 30s hookTimeout per vitest.config.ts).
+beforeAll(async () => {
+  await loadImportRoute();
+});
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });

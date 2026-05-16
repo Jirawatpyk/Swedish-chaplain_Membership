@@ -48,6 +48,17 @@ export default defineConfig({
     // bugs (assertion failures + syntax errors land in <100ms
     // regardless) and absorbs the cold-import variance.
     testTimeout: 30_000,
+    // Staff-review R3 follow-up (2026-05-16): bump hookTimeout from the
+    // vitest default 10s to 30s so beforeAll-based route-module pre-
+    // warm hooks (used in tests/contract/events/admin-events-api +
+    // admin-integration-eventcreate-api to dodge first-test cold-start
+    // timeouts under `pnpm test:coverage` instrumentation) have the
+    // same headroom as test bodies. Cold-start variance for routes
+    // that transitively import Drizzle schemas + tenant context can
+    // reach 15-20s under coverage instrumentation + parallel CPU
+    // contention; 30s leaves comfortable margin without masking real
+    // bugs (genuine setup failures land in <500ms).
+    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary', 'lcov'],

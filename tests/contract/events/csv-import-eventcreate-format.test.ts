@@ -26,7 +26,7 @@
  * `@/lib/events-csv-import-deps` — no DB, no Upstash, no real CSV
  * parser hit.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // ---------------------------------------------------------------------------
@@ -105,6 +105,15 @@ const FOUND_EVENT = {
   startDate: new Date('2026-06-21T18:00:00+07:00'),
   category: null,
 };
+
+// Staff-review R3 follow-up (2026-05-16): pre-warm the import route
+// module — prior coverage run measured this file's first test at
+// 23.3s (under 30s testTimeout but close enough to flake under
+// instrumentation + parallel CPU contention). `beforeAll` amortises
+// the cold-import; hookTimeout is now 30s globally.
+beforeAll(async () => {
+  await loadImportRoute();
+});
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
