@@ -278,19 +278,13 @@ function formatDispatchErrorDetail(e: unknown): string {
  * (e.g. `unknown_intent`) yield `undefined` so the dispatcher can
  * fall back to the broader revalidation path at the route layer.
  */
-function extractInvoiceId(
-  value:
-    | ConfirmPaymentOutcome
-    | FailPaymentOutcome
-    | HandleCancelEventOutcome,
-): string | undefined {
-  // Duck-type narrowing; FailPayment + HandleCancel outcome shapes
-  // never carry invoiceId in unit-test fixtures, so the false branch
-  // is exercised only via integration paths.
-  /* v8 ignore start */
-  return 'invoiceId' in value ? value.invoiceId : undefined;
-  /* v8 ignore stop */
-}
+// F5R3 MED-6 (2026-05-16) — `extractInvoiceId` helper removed.
+// The duck-type `'invoiceId' in value` narrowing was opaque and
+// triggered v8-ignore overhead because not every outcome variant
+// carries the field. Call sites now inline the same predicate
+// (`'invoiceId' in result.value ? result.value.invoiceId : undefined`)
+// — the reader sees the actual narrowing predicate at the use site
+// instead of jumping to a helper.
 
 export async function processWebhookEvent(
   deps: ProcessWebhookEventDeps,
@@ -419,13 +413,16 @@ async function processWebhookEventBody(
   let outcome: ProcessWebhookEventOutcome;
   // F5R1-S5 — flag + tail canary deleted. Every sub-use-case + every
   // inline branch is contracted to fold markProcessed into its own
-  // withTx (confirm-payment.ts:582, fail-payment.ts:233, handle-
-  // cancel-event.ts:159, process-charge-refunded.ts:233, refunded /
-  // dispute / default branches below). The previous defensive flag +
-  // canary tail block was documented "unreachable through input
-  // manipulation alone" and v8-ignored — it only fired on a code-bug
-  // regression that the sweep-stale-pending cron would have caught
-  // independently. ~80 lines removed.
+  // withTx (confirm-payment.ts happy-path tail, fail-payment.ts
+  // terminal-and-happy paths, handle-cancel-event.ts happy /
+  // already-canceled / terminal paths, process-charge-refunded.ts
+  // withTx tail, refunded / dispute / default branches below). The
+  // previous defensive flag + canary tail block was documented
+  // "unreachable through input manipulation alone" and v8-ignored —
+  // it only fired on a code-bug regression that the sweep-stale-
+  // pending cron would have caught independently. ~80 lines removed.
+  // (R3 comment-rot fix: symbolic refs replace line numbers that
+  // rotted as R1+R2 grew the underlying files.)
   switch (event.type) {
     case 'payment_intent.succeeded': {
       const result = await confirmPayment(
@@ -465,7 +462,7 @@ async function processWebhookEventBody(
       // surgical `revalidatePath('/portal/invoices/<id>')`. Outcome
       // kinds that DON'T carry invoiceId (e.g. `unknown_intent`)
       // produce undefined here — route falls back to broader pattern.
-      const confirmInvoiceId = extractInvoiceId(result.value);
+      const confirmInvoiceId = 'invoiceId' in result.value ? result.value.invoiceId : undefined;
       if (result.value.kind === 'auto_refunded_stale_invoice') {
         // R5 I4 (2026-04-25): `auto_refunded_stale_invoice` is only
         // ever emitted by confirmPayment AFTER it loaded the payment
@@ -548,7 +545,7 @@ async function processWebhookEventBody(
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
       // surgical revalidation in the route handler.
-      const failInvoiceId = extractInvoiceId(result.value);
+      const failInvoiceId = 'invoiceId' in result.value ? result.value.invoiceId : undefined;
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
@@ -579,7 +576,7 @@ async function processWebhookEventBody(
       }
       /* v8 ignore stop */
       // R5 canonical fix (2026-04-25): forward `invoiceId`.
-      const cancelInvoiceId = extractInvoiceId(result.value);
+      const cancelInvoiceId = 'invoiceId' in result.value ? result.value.invoiceId : undefined;
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,

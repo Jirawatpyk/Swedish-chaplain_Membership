@@ -289,6 +289,39 @@ describe('exportPaidInvoicesCsv', () => {
     expect(result.error.reason).toBe('too_wide');
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
+
+  // F5R3 MED-8 (2026-05-16) — pin the 366-day boundary explicitly.
+  // The use-case uses inclusive `daysBetween` so a full leap year
+  // (Jan 1 → Dec 31 of a leap year) is exactly 366 days inclusive
+  // and must pass; one day MORE must reject as too_wide. Without
+  // these tests a future MAX_DAYS off-by-one (367 instead of 366,
+  // or 365 instead of 366) would silently slip through.
+  it('accepts exactly 366 days inclusive (full leap year boundary)', async () => {
+    const deps = makeDeps([]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2024-01-01',
+      to: '2024-12-31', // 2024 is a leap year, 366 days inclusive
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects exactly 367 days inclusive (one beyond MAX_DAYS=366)', async () => {
+    const deps = makeDeps([]);
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2024-01-01',
+      to: '2025-01-01', // 367 days inclusive (366-day leap year + 1)
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    if (result.error.code !== 'invalid_range') {
+      throw new Error(`expected invalid_range, got ${result.error.code}`);
+    }
+    expect(result.error.reason).toBe('too_wide');
+  });
 });
 
 describe('escapeCsv (RFC 4180)', () => {

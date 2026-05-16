@@ -13,8 +13,14 @@
  *
  * Tenant isolation: every tenant-scoped table uses `tenant_id text`
  * scoped by RLS+FORCE (see migrations). `processor_events.tenant_id`
- * is NULL-allowed during the pre-resolution window; see data-model.md
- * § 5.4 for the special 4-policy RLS setup.
+ * is NULL-allowed only for rejection-audit rows (env mismatch /
+ * api-version mismatch / unknown processor account) written outside
+ * `runInTenant`. Successful events INSERT with the resolved tenant_id
+ * from the route. See data-model.md § 5.4 + the file-level docstring
+ * in `drizzle-processor-events-repo.ts` for the audit-2026-04-25
+ * reality-check reasoning. (R3 comment-rot fix: the original
+ * "pre-resolution window" design framing was abandoned after the
+ * 2026-04-25 audit; comment updated to match current behaviour.)
  *
  * Relations: `payments → refunds` (one-to-many), `refunds → credit_notes`
  * (many-to-one via `refunds.credit_note_id` nullable FK). Relations are

@@ -31,14 +31,6 @@
  *
  * Pattern: uses vi.mock for the stripe verifier + a spy on NextRequest.text()
  * to count invocations. No real DB, no real Stripe SDK.
- *
- * RED reason: `src/app/api/webhooks/stripe/route.ts` and
- * `src/lib/stripe-webhook-verifier.ts` do NOT exist yet (Group C T048 + T053).
- * `@ts-expect-error` on each dynamic import suppresses TS2307 so
- * `pnpm typecheck` passes; MODULE_NOT_FOUND at runtime makes tests RED.
- *
- * Turns GREEN: Group C T048 (route handler) + Group C T053
- * (stripe-webhook-verifier helper).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';

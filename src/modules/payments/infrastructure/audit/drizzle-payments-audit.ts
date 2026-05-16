@@ -2,11 +2,13 @@
  * T067 — F5 Drizzle audit adapter.
  *
  * Implements the F5 `AuditPort`. Writes to F1's shared `audit_log`
- * table (schema in `src/modules/auth/infrastructure/db/schema.ts`
- * line 278) via raw SQL — same pattern as F4's audit-adapter (which
- * also writes raw SQL because the Drizzle `auditLog` table
- * definition does not include the F5-added `retention_years`
- * column, added by migration 0039).
+ * table (see `auditLog` pgTable in
+ * `src/modules/auth/infrastructure/db/schema.ts`) via raw SQL —
+ * same pattern as F4's audit-adapter (which also writes raw SQL
+ * because the Drizzle `auditLog` table definition does not include
+ * the F5-added `retention_years` column, added by migration 0039).
+ * (R3 comment-rot fix: symbolic ref replaces precise line number
+ * that rotted past F1+F4+F5 schema additions.)
  *
  * tx semantics (mirror F4):
  *   - `tx != null` → write inside caller's tenant-scoped tx so the

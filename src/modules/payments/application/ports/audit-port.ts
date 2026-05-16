@@ -219,13 +219,16 @@ export interface F5AuditPayloadByType {
   };
   /**
    * Two emit shapes:
-   *   (a) admin-initiated refund (issue-refund.ts:492) — creates F4 CN
-   *       and flips payment/invoice status; payload carries the full
+   *   (a) admin-initiated refund (`issueRefund` use-case,
+   *       `path: 'admin_initiated'` emit) — creates F4 CN and flips
+   *       payment/invoice status; payload carries the full
    *       state-transition record.
-   *   (b) webhook-driven recovery (process-charge-refunded.ts:155) —
-   *       Stripe `charge.refunded` event arrives for a known refund
-   *       row that was stuck `pending`; payload carries Stripe ids +
-   *       recovery_path discriminator.
+   *   (b) webhook-driven recovery (`processChargeRefunded` use-case,
+   *       `path: 'webhook_recovery'` emit) — Stripe `charge.refunded`
+   *       event arrives for a known refund row that was stuck
+   *       `pending`; payload carries Stripe ids + recovery_path
+   *       discriminator. (R3 comment-rot fix: symbolic refs replace
+   *       precise line numbers that rotted past R1+R2.)
    */
   /**
    * R3 TD-2 (2026-04-28): explicit `path` discriminator on both arms
