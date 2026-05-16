@@ -25,7 +25,6 @@ import {
   makeGetInvoiceDeps,
   type InvoiceForPayment as F4InvoiceForPayment,
   type GetInvoiceForPaymentError as F4GetInvoiceForPaymentError,
-  type MarkPaidFromProcessorError as F4MarkPaidFromProcessorError,
 } from '@/modules/invoicing';
 // Bridge response uses the public `CreditedInvoiceStatus` type — kept on
 // the port file so the F5 caller derives the value without re-reading.
@@ -75,27 +74,32 @@ function mapF4GetError(
  * useful structured detail, add a typed branch here rather than
  * widening the JSON.stringify fallback.
  */
-function summariseF4Error(e: F4MarkPaidFromProcessorError): {
-  code: string;
-  detail: string;
-} {
-  const shape = e as {
-    code?: unknown;
-    kind?: unknown;
-    detail?: unknown;
-    reason?: unknown;
-  };
+/**
+ * F5R1-TY13 — generic over the F4 error shape. Pre-fix the helper
+ * accepted only `F4MarkPaidFromProcessorError` and forced the
+ * issueCreditNoteFromRefund call site to `as unknown as
+ * F4MarkPaidFromProcessorError` (double-cast) just to reuse the
+ * duck-type. Now any structural shape with the optional
+ * code/kind/detail/reason fields satisfies it — both bridge sites
+ * pass through type-checked, and the unsafe cast is gone.
+ */
+function summariseF4Error<E extends {
+  readonly code?: unknown;
+  readonly kind?: unknown;
+  readonly detail?: unknown;
+  readonly reason?: unknown;
+}>(e: E): { code: string; detail: string } {
   const code =
-    typeof shape.code === 'string'
-      ? shape.code
-      : typeof shape.kind === 'string'
-        ? shape.kind
+    typeof e.code === 'string'
+      ? e.code
+      : typeof e.kind === 'string'
+        ? e.kind
         : 'f4_error';
   const detail =
-    typeof shape.detail === 'string'
-      ? shape.detail
-      : typeof shape.reason === 'string'
-        ? shape.reason
+    typeof e.detail === 'string'
+      ? e.detail
+      : typeof e.reason === 'string'
+        ? e.reason
         : `unknown_f4_error_shape (code=${code})`;
   return { code, detail };
 }
@@ -177,7 +181,7 @@ export const invoicingBridge: InvoicingBridgePort = {
       // Reuse the same scalar-only summariser used for
       // markPaidFromProcessor errors. F4's `IssueCreditNoteError` is
       // a discriminated union; the cast lets us share one helper.
-      return err(summariseF4Error(cn.error as unknown as F4MarkPaidFromProcessorError));
+      return err(summariseF4Error(cn.error));
     }
 
     return ok({

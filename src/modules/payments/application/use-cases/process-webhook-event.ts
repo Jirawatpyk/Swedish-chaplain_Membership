@@ -28,7 +28,6 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import {
-  noopLogger,
   type AuditPort,
   type ClockPort,
   type InvoicingBridgePort,
@@ -188,9 +187,12 @@ export interface ProcessWebhookEventDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /**
-   * Optional structured logger — defaults to `noopLogger` (silent) when
-   * absent so existing tests do not need to provide one. Composition
-   * root wires `paymentsLogger`.
+   * Optional structured logger. Currently the dispatcher emits via the
+   * module-level `paymentsLogger` (see `route.ts`) and OTel spans; this
+   * deps slot is reserved for future structured callsites inside the
+   * dispatcher itself and for test doubles (`noopLogger` /
+   * `vi.fn()`-backed). Absent → no-op (field is `undefined`, no default
+   * substitution).
    */
   readonly logger?: LoggerPort;
   /**
