@@ -4,7 +4,7 @@
  * branches that integration tests cannot reach cheaply:
  *
  *   - Happy path: 2 expired rows → both deleted + cleared
- *   - Scan failure → `scanFailed:true` + ERROR log + onScanFailed metric
+ *   - Scan failure → `kind:'scan_failed'` + ERROR log + onScanFailed metric
  *   - Blob delete `blob_not_found` → idempotent success (still counted as swept)
  *   - Blob delete `storage_error` → skipped + WARN log + retry on next run
  *   - clearErrorCsvBlob err result → skipped + onSweepClearFailed metric
@@ -87,14 +87,15 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.value.kind).toBe('ok');
+    if (result.value.kind !== 'ok') return;
     expect(result.value.candidatesScanned).toBe(2);
     expect(result.value.sweptCount).toBe(2);
     expect(result.value.skippedCount).toBe(0);
-    expect(result.value.scanFailed).toBe(false);
     expect(clearedTenants).toEqual([tenantA, tenantB]);
   });
 
-  it('scan failure → scanFailed:true + onScanFailed + ERROR log', async () => {
+  it('scan failure → kind:"scan_failed" + onScanFailed + ERROR log', async () => {
     const deps = makeDeps();
     (
       deps.csvImportRecordsAdminRepo
@@ -104,9 +105,7 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.scanFailed).toBe(true);
-    expect(result.value.candidatesScanned).toBe(0);
-    expect(result.value.sweptCount).toBe(0);
+    expect(result.value.kind).toBe('scan_failed');
     expect(deps.onScanFailed).toHaveBeenCalledTimes(1);
     expect(deps.logger?.error).toHaveBeenCalledWith(
       expect.objectContaining({ event: 'f6_error_csv_sweep_scan_failed' }),
@@ -136,6 +135,7 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    if (result.value.kind !== 'ok') throw new Error('expected ok');
     expect(result.value.sweptCount).toBe(1);
     expect(result.value.skippedCount).toBe(0);
   });
@@ -162,6 +162,7 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    if (result.value.kind !== 'ok') throw new Error('expected ok');
     expect(result.value.sweptCount).toBe(0);
     expect(result.value.skippedCount).toBe(1);
     expect(deps.logger?.warn).toHaveBeenCalledWith(
@@ -201,6 +202,7 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    if (result.value.kind !== 'ok') throw new Error('expected ok');
     expect(result.value.sweptCount).toBe(0);
     expect(result.value.skippedCount).toBe(1);
     expect(deps.onSweepClearFailed).toHaveBeenCalledTimes(1);
@@ -234,6 +236,7 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    if (result.value.kind !== 'ok') throw new Error('expected ok');
     expect(result.value.sweptCount).toBe(0);
     expect(result.value.skippedCount).toBe(1);
     expect(deps.onSweepClearFailed).toHaveBeenCalledTimes(1);
@@ -276,6 +279,7 @@ describe('sweepExpiredErrorCsvBlobs', () => {
     const result = await sweepExpiredErrorCsvBlobs({}, deps);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    if (result.value.kind !== 'ok') throw new Error('expected ok');
     expect(result.value.sweptCount).toBe(1);
     expect(result.value.skippedCount).toBe(1);
     expect(deps.onSweepClearFailed).toHaveBeenCalledTimes(1);

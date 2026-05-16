@@ -415,6 +415,25 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     if (r1.kind !== 'completed') return;
     expect(r1.summary.rowsProcessed).toBe(1);
 
+    // R4 SUGGESTION (pr-test-analyzer S-R2-01) — pin r1's intermediate
+    // paymentStatus to 'paid' BEFORE the second upload so a regression
+    // in Notes-inference that flipped r1 to 'pending' would be caught
+    // here (r2 still ends at 'refunded' regardless, so this assertion
+    // is the only line that catches that specific regression class).
+    const regsAfter1 = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(eventRegistrations)
+        .where(
+          and(
+            eq(eventRegistrations.tenantId, tenant.ctx.slug),
+            eq(eventRegistrations.eventId, eventId),
+          ),
+        ),
+    );
+    expect(regsAfter1).toHaveLength(1);
+    expect(regsAfter1[0]?.paymentStatus).toBe('paid');
+
     // 2nd upload: Cancelled + Notes='pending' — the Cancellation
     // signal beats the Notes-inferred state-change. Row flips to
     // 'refunded' (FR-018), NOT 'pending'.

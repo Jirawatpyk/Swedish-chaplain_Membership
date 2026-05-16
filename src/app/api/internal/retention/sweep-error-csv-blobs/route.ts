@@ -49,12 +49,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   const requestId = randomUUID();
   try {
     const result = await runSweepExpiredErrorCsvBlobs({});
-    // CR-2 / I-6 (R1 — silent-failure): if the bulk-scan step failed,
-    // the use-case returned all-zero counts BUT the route used to
-    // surface that as 200-OK — masking the gap from cron-job.org's
-    // "2 consecutive failures" alert. Detect via the negative signal
-    // (`scanFailed`) and map to 500 so cron-job.org sees the failure.
-    if (result.scanFailed) {
+    // If the bulk-scan step failed, surface as 500 so cron-job.org's
+    // "2 consecutive failures" alert can detect a sustained outage.
+    // Discriminated outcome makes the scan-failed shape disjoint
+    // from the success counters (no accidental sweptCount:5 +
+    // scan_failed).
+    if (result.kind === 'scan_failed') {
       return NextResponse.json(
         {
           ok: false,

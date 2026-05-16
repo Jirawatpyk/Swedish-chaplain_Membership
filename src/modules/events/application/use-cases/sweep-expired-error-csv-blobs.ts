@@ -40,22 +40,29 @@ export interface SweepExpiredErrorCsvBlobsInput {
   readonly clock?: () => Date;
 }
 
-export interface SweepExpiredErrorCsvBlobsOutput {
-  /** Number of expired rows the read step returned. */
-  readonly candidatesScanned: number;
-  /** Number of rows whose blob was deleted + DB column cleared. */
-  readonly sweptCount: number;
-  /** Number of rows skipped due to blob delete or DB update failure. */
-  readonly skippedCount: number;
-  readonly cutoff: Date;
-  /**
-   * `true` when the bulk-scan step failed. The use-case still returns
-   * ok-Result (the cron handler already wraps the call), but the route
-   * maps `scanFailed:true` → 500 so cron-job.org "2 consecutive
-   * failures" alert can fire.
-   */
-  readonly scanFailed: boolean;
-}
+/**
+ * Discriminated outcome for the sweep cron. The `scan_failed` variant
+ * makes "scan failed implies no work done" unrepresentable — earlier
+ * shape (`{ scanFailed: boolean; sweptCount; skippedCount; ... }`)
+ * permitted `{ scanFailed: true, sweptCount: 5 }` which is semantically
+ * nonsensical. The route maps `kind:'scan_failed'` → 500 so
+ * cron-job.org "2 consecutive failures" alert fires.
+ */
+export type SweepExpiredErrorCsvBlobsOutput =
+  | {
+      readonly kind: 'ok';
+      /** Number of expired rows the read step returned. */
+      readonly candidatesScanned: number;
+      /** Number of rows whose blob was deleted + DB column cleared. */
+      readonly sweptCount: number;
+      /** Number of rows skipped due to blob delete or DB update failure. */
+      readonly skippedCount: number;
+      readonly cutoff: Date;
+    }
+  | {
+      readonly kind: 'scan_failed';
+      readonly cutoff: Date;
+    };
 
 export interface SweepExpiredErrorCsvBlobsDeps {
   readonly csvImportRecordsAdminRepo: CsvImportRecordsAdminRepository;
@@ -77,12 +84,15 @@ export interface SweepExpiredErrorCsvBlobsDeps {
   };
   /**
    * Increments `csvErrorCsvSweepClearFailed(tenantId)` when the
-   * post-blob-delete DB clear fails. Injected so unit tests can
-   * assert call counts; route composition wires the metric counter.
+   * post-blob-delete DB clear fails. REQUIRED at the boundary — pass
+   * an explicit no-op `() => {}` in tests that don't care about the
+   * metric. Composition layer wires the OTel counter. Earlier this
+   * was optional, which let a test/composition silently forget the
+   * metric and lose SRE alerting visibility.
    */
-  readonly onSweepClearFailed?: (tenantId: TenantId) => void;
-  /** Increments `csvSweepScanFailed()` when bulk-scan fails. */
-  readonly onScanFailed?: () => void;
+  readonly onSweepClearFailed: (tenantId: TenantId) => void;
+  /** Increments `csvSweepScanFailed()` when bulk-scan fails. REQUIRED. */
+  readonly onScanFailed: () => void;
 }
 
 export async function sweepExpiredErrorCsvBlobs(
@@ -101,7 +111,7 @@ export async function sweepExpiredErrorCsvBlobs(
     );
   if (!scanResult.ok) {
     // Elevate to `logger.error` so SRE dashboards fire on scan
-    // failures. The route maps `scanFailed:true` to 500 so
+    // failures. The route maps `kind:'scan_failed'` to 500 so
     // cron-job.org's "2 consecutive failures" alert can detect
     // a sustained outage.
     logger?.error(
@@ -112,14 +122,8 @@ export async function sweepExpiredErrorCsvBlobs(
       },
       '[F6.1] sweep cron: scan step failed; route will return 500',
     );
-    deps.onScanFailed?.();
-    return ok({
-      candidatesScanned: 0,
-      sweptCount: 0,
-      skippedCount: 0,
-      cutoff,
-      scanFailed: true,
-    });
+    deps.onScanFailed();
+    return ok({ kind: 'scan_failed', cutoff });
   }
 
   const candidates = scanResult.value;
@@ -145,11 +149,11 @@ export async function sweepExpiredErrorCsvBlobs(
   );
 
   return ok({
+    kind: 'ok',
     candidatesScanned: candidates.length,
     sweptCount,
     skippedCount,
     cutoff,
-    scanFailed: false,
   });
 }
 
@@ -203,7 +207,7 @@ async function sweepOne(
         },
         '[F6.1] sweep cron: clearErrorCsvBlob FAILED after blob delete — orphan DB pointer (next-run idempotent retry)',
       );
-      deps.onSweepClearFailed?.(candidate.tenantId);
+      deps.onSweepClearFailed(candidate.tenantId);
       return false;
     }
   } catch (e) {
