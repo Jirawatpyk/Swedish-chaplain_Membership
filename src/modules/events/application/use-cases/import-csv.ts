@@ -617,7 +617,7 @@ async function maybeApplyStateChange(
         tenantId: input.tenantId,
         rowNumber: parsed.rowNumber,
         attendeeEmailHash: hashAttendeeEmail(parsed.row.attendee_email),
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
       },
       '[F6.1] state-change probe threw — row falls back to duplicate; admin re-upload required',
     );
@@ -822,7 +822,7 @@ async function processOneRowInSavepoint(
     // `TxStageError.stage` taxonomy on BOTH the `RowOutcome.row_failed`
     // field AND the `csv_import_row_failed` audit payload so dashboards
     // can alert on `audit_emit` failures (security-critical).
-    const reason = e instanceof Error ? e.message : String(e);
+    const reason = toErrMessage(e);
     const failureStage: FailureStage =
       e instanceof TxStageError ? e.stage : 'unknown';
     await safeEmitRowFailed(
@@ -953,7 +953,7 @@ async function processBatch(
     // double-count and forensic reviewers see contradictory
     // narratives (`event_upsert` vs `batch_tx_aborted`) for the same
     // rowNumber.
-    const reason = e instanceof Error ? e.message : String(e);
+    const reason = toErrMessage(e);
     logger.error(
       {
         event: 'f6_csv_batch_tx_aborted',
@@ -992,7 +992,7 @@ async function processBatch(
           {
             event: 'f6_csv_batch_fan_out_rejected',
             tenantId: input.tenantId,
-            err: r.reason instanceof Error ? r.reason.message : String(r.reason),
+            err: toErrMessage(r.reason),
           },
           '[F6] batch-tx-abort fan-out emit rejected — internal swallow regressed; forensic trail at risk',
         );
@@ -1026,6 +1026,16 @@ async function processBatch(
  * the dedicated csvImportAuditEmitFailed counter + a structured
  * logger.error so SREs alert on rate>0 without losing forensic context.
  */
+/**
+ * R3 (R2 simplifier — code-simplifier R2 NITPICK close): collapse the
+ * 12 inline `e instanceof Error ? e.message : String(e)` sites. Single
+ * source of truth means future refactors (e.g. adding stack capture
+ * to caught-and-sanitised errors) flow through one location.
+ */
+function toErrMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 function recordAuditEmitFailure(
   tenantId: TenantId,
   eventType:
@@ -1103,7 +1113,7 @@ async function safeEmitRowFailed(
         actorUserId: input.actorUserId,
         rowNumber,
         reason: reason.slice(0, 500),
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
       },
     );
   }
@@ -1156,7 +1166,7 @@ async function safeEmitCancellationNoPrior(
       'csv_import_row_cancelled_no_prior',
       'f6_csv_row_cancelled_no_prior_audit_emit_threw',
       '[F6.1] csv_import_row_cancelled_no_prior audit emitter threw — forensic trail loss (informational)',
-      { rowNumber, err: e instanceof Error ? e.message : String(e) },
+      { rowNumber, err: toErrMessage(e) },
     );
   }
 }
@@ -1213,7 +1223,7 @@ export async function importCsv(
         event: 'f6_csv_parser_threw',
         tenantId: input.tenantId,
         recordId,
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
         stack: e instanceof Error ? e.stack : undefined,
       },
       '[F6.1] CSV parser threw — admin sees generic error; investigate stderr trail',
@@ -1352,7 +1362,7 @@ export async function importCsv(
           tenantId: input.tenantId,
           eventId: input.selectedEvent.eventId,
           eventExternalId: input.selectedEvent.externalId,
-          err: e instanceof Error ? e.message : String(e),
+          err: toErrMessage(e),
         },
         '[F6.1] safety-net fingerprint query threw — fail-open',
       );
@@ -1434,7 +1444,7 @@ export async function importCsv(
         event: 'f6_csv_import_records_insert_threw',
         tenantId: input.tenantId,
         recordId,
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
       },
       '[F6.1] csv_import_records placeholder insert threw — proceeding with import',
     );
@@ -1581,7 +1591,7 @@ export async function importCsv(
           event: 'f6_csv_error_csv_blob_put_threw',
           tenantId: input.tenantId,
           recordId,
-          err: e instanceof Error ? e.message : String(e),
+          err: toErrMessage(e),
         },
         '[F6.1] error-CSV blob put THREW — US5 download unavailable; investigate Vercel Blob outage',
       );
@@ -1743,7 +1753,7 @@ export async function importCsv(
         event: 'f6_csv_import_records_update_threw',
         tenantId: input.tenantId,
         recordId,
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
       },
       '[F6.1] csv_import_records final-outcome update threw',
     );
@@ -1911,7 +1921,7 @@ async function tryEmitMismatchOverride(
         actorUserId: input.actorUserId,
         recordId,
         priorImportsCount: priorImports.length,
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
       },
     );
     return false;
@@ -1998,9 +2008,24 @@ async function emitImportCompletedAudit(
       {
         actorUserId: input.actorUserId,
         ...completedAuditContext,
-        err: e instanceof Error ? e.message : String(e),
+        err: toErrMessage(e),
       },
     );
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Test-only internals (R3 — pr-test-analyzer R2-I-8 close)
+// ---------------------------------------------------------------------------
+//
+// Exported under `_internals` to mark "test-seam only — not for
+// production consumers" (precedent: streaming-csv-importer.ts). Enables
+// collision-resistance unit tests for the Symbol-brand pattern without
+// weakening the production API surface.
+
+export const _internals = {
+  CancellationSkipMarker,
+  isCancellationSkip,
+  hashAttendeeEmail,
+} as const;

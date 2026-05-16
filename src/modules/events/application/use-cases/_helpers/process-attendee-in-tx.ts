@@ -62,8 +62,7 @@ import type { RegistrationsRepository } from '../../ports/registrations-reposito
 import type { AttendeeMatcher } from '../../ports/attendee-matcher';
 import type {
   QuotaAccountingPort,
-  PlanAllotments,
-  ConsumedQuota,
+  AllotmentSnapshot,
 } from '../../ports/quota-accounting-port';
 import type { AdvisoryLockAcquirer } from '../../ports/advisory-lock-acquirer';
 import { applyQuotaEffect, buildQuotaLockKey } from '../apply-quota-effect';
@@ -632,13 +631,8 @@ export async function processAttendeeInTx(
     }
 
     const prev = flip.value.previousQuotaEffect;
-    // R1 type-design M-1: explicit named type from the port instead
-    // of `Extract<QueryAllotmentsResult, {readonly ok:true}>['value']`.
-    // Same compile-time safety, decoupled from the Result envelope.
-    type AllotmentSnapshot = {
-      readonly allotments: PlanAllotments;
-      readonly consumed: ConsumedQuota;
-    };
+    // R3 (R2 type-design): imported from quota-accounting-port as
+    // the canonical paired-snapshot type (was inline-redeclared).
     let allotmentSnapshot: AllotmentSnapshot | null = null;
     if (
       matchedMemberId !== null &&

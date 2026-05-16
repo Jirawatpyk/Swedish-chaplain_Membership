@@ -45,7 +45,8 @@ import {
 import type { F6AuditEntry, F6AuditEventType, F6AuditPort } from '@/modules/events/application/ports/audit-port';
 import type { UserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
+import { sql } from 'drizzle-orm';
 import { asTenantContext } from '@/modules/tenants';
 import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
 import type { Result } from '@/lib/result';
@@ -232,9 +233,6 @@ export type { ImportSummary };
 // ---------------------------------------------------------------------------
 // F6.1 (Feature 013 · T023) — Timing-safe event lookup
 // ---------------------------------------------------------------------------
-
-import { db } from '@/lib/db';
-import { sql } from 'drizzle-orm';
 
 /**
  * Outcome of the route-layer event lookup. Maps onto contract responses:

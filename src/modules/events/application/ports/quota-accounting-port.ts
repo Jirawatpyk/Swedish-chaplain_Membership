@@ -75,6 +75,20 @@ export interface ConsumedQuota {
   readonly culturalConsumedForYear: number;
 }
 
+/**
+ * R3 (R2 type-design — code-simplifier MEDIUM) — canonical paired
+ * snapshot shape used by callers that need BOTH the plan-derived
+ * allotment AND the consumed-counts side-by-side (e.g., refund
+ * credit-back paths comparing pre/post quotas). Lifted here so
+ * `process-attendee-in-tx.ts` (and any future caller) can import a
+ * named type instead of re-declaring inline OR using opaque
+ * `Extract<QueryAllotmentsResult, {ok:true}>['value']` narrows.
+ */
+export interface AllotmentSnapshot {
+  readonly allotments: PlanAllotments;
+  readonly consumed: ConsumedQuota;
+}
+
 export interface QueryAllotmentsInput {
   readonly tenantId: TenantId;
   readonly memberId: MemberId;
