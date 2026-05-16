@@ -144,8 +144,9 @@ export function stripMailtoPrefix(raw: string): string {
 // downstream F4 invoicing handles `unknown` correctly (admin manually
 // reconciles).
 //
-// The pino aggregate log `f6_eventcreate_unknown_payment_note` (T052,
-// deferred to Phase 6 / US5+ session) surfaces drift over time.
+// The product team reviews
+// `eventcreate_csv_adapter_mode_detected_total{format="generic_csv"}`
+// rate spikes as a drift signal — see `docs/runbooks/eventcreate-csv-import.md`.
 
 export type InferredPaymentStatus = 'paid' | 'pending' | 'unknown';
 
@@ -288,8 +289,9 @@ export function translateEventCreateRow(
 // committed fixtures — the workshop CSV has different optional columns
 // than the AGM CSV). FR-012 requires we tolerate unknown columns at
 // import time AND surface their names to the product team via a per-
-// upload aggregate pino log (T052, deferred). This helper collects the
-// list; the use-case emits the log.
+// upload aggregate pino log (`f6_eventcreate_adapter_unknown_columns`
+// emitted by `import-csv.ts`). This helper collects the list; the
+// use-case emits the log.
 //
 // The set of "known" columns is the union of REQUIRED + standard
 // optionals that the adapter actively reads. Any header cell outside

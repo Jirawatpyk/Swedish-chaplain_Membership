@@ -588,8 +588,8 @@ export interface AuditPayloads {
 
   /**
    * Emitted on every successful signed-URL generation in
-   * `GET /api/admin/events/import/{recordId}/error-csv` (US5 route,
-   * deferred post-MVP). PDPA / GDPR audit trail for any PII access —
+   * `GET /api/admin/events/import/{recordId}/error-csv` (US5 route).
+   * PDPA / GDPR audit trail for any PII access —
    * the error CSV contains attendee emails + names + companies, even
    * though admin already had access via the original upload. The
    * re-download is a discrete access event auditors expect to see.
@@ -617,7 +617,7 @@ export interface AuditPayloads {
    *   - POST /api/admin/events/import — `event_id` form field belongs
    *     to another tenant (route handler T023 emits via standalone tx).
    *   - GET /api/admin/events/import/{recordId}/error-csv — `recordId`
-   *     belongs to another tenant (US5 deferred surface).
+   *     belongs to another tenant (US5).
    */
   csv_import_cross_tenant_probe: {
     readonly severity: Severity;

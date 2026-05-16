@@ -496,4 +496,3 @@ export { asTenantId } from '@/modules/members';
 // MTA tenant-per-DB) a one-line barrel re-wire instead of an N-line
 // grep through every adapter file.
 export { makeDrizzleTenantWebhookConfigRepository } from './infrastructure/drizzle-tenant-webhook-config-repository';
-export { makePinoAuditPort } from './infrastructure/pino-audit-port';

@@ -310,3 +310,60 @@ describe('streamingCsvImporter — rowHash determinism + sensitivity', () => {
     );
   });
 });
+
+// T053 (F6.1 Phase 6) — Sub-flag rollback safety net.
+// CR-2 / test-analyzer I-1 — adapterEnabled MUST force the generic-CSV
+// path when explicitly false, even when the header has all 6
+// EventCreate required columns. Critical for emergency rollback per
+// Spec § Rollback Plan.
+describe('streamingCsvImporter — adapterEnabled (T053 sub-flag)', () => {
+  const EVENT_CONTEXT = {
+    externalId: 'evt-1',
+    name: 'Workshop',
+    startDate: new Date('2026-04-10T13:00:00Z'),
+    category: null,
+  };
+  // Minimal EventCreate header — 6 required columns; should be detected
+  // as eventcreate_csv when adapterEnabled defaults to true.
+  const EVENTCREATE_HEADER =
+    'Basic Info,Status,First Name,Last Name,Email,Phone Number,Phone Number Consent,Registration Date,Added Date,Last Updated Date,Attendee Edited Date,Ticket,Guest Of,Checked In,Attendee ID,Order ID,VIP,Notes,Assigned Table,Tags,Company Name,Registration Category,Personal Data Protection Consent,Last Email Sent,Last Email Sent Date,Unsubscribed';
+  const ATTENDING_ROW =
+    'Workshop,Attending,Jane,Doe,jane@example.test,,,,,,,Standard,,No,ec-001,ord-1,No,Paid,,,Test Co,Member,,,,No';
+  const CSV_BYTES = new TextEncoder().encode(
+    `${EVENTCREATE_HEADER}\r\n${ATTENDING_ROW}\r\n`,
+  );
+
+  it('adapterEnabled undefined → defaults to true → detects eventcreate_csv', async () => {
+    const result = await streamingCsvImporter.parseStreamWithFormat({
+      bytes: CSV_BYTES,
+      eventContext: EVENT_CONTEXT,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.format).toBe('eventcreate_csv');
+  });
+
+  it('adapterEnabled true → detects eventcreate_csv', async () => {
+    const result = await streamingCsvImporter.parseStreamWithFormat({
+      bytes: CSV_BYTES,
+      eventContext: EVENT_CONTEXT,
+      adapterEnabled: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.format).toBe('eventcreate_csv');
+  });
+
+  it('adapterEnabled false → SKIPS EventCreate detection → routes through generic schema', async () => {
+    const result = await streamingCsvImporter.parseStreamWithFormat({
+      bytes: CSV_BYTES,
+      eventContext: EVENT_CONTEXT,
+      adapterEnabled: false,
+    });
+    // Generic schema lacks the EventCreate columns → invalid_header
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('invalid_header');
+  });
+});
+

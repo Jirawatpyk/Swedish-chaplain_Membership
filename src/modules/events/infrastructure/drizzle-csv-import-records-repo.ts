@@ -1,8 +1,8 @@
 /**
  * T020 (Feature 013 / F6.1) — Drizzle `csv_import_records` repository.
  *
- * Implements the persistence surface for F6.1 import-history (US5 deferred)
- * + the FR-019b event-mismatch safety net (US1 MVP — `findByFingerprintAcrossEvents`).
+ * Implements the persistence surface for F6.1 import-history (US5) +
+ * the FR-019b event-mismatch safety net (US1 — `findByFingerprintAcrossEvents`).
  *
  * Per Constitution Principle III (Clean Architecture):
  *   - Application layer never sees Drizzle types directly — repo returns
