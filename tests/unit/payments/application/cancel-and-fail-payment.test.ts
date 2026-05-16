@@ -300,6 +300,59 @@ describe('cancelPayment (T059)', () => {
     const r = await cancelPayment(d, BASE_INPUT);
     expect(r.ok).toBe(false);
   });
+
+  /**
+   * F5R1-MED-TESTS — pin the F5R1-E4 closure: the audit row emitted on
+   * a Stripe-side cancel failure MUST be the new
+   * `payment_cancel_attempt_failed` event (migration 0148 + audit-port
+   * union), NOT the `payment_canceled` event the pre-fix code reused.
+   * Audit-log dashboards filtering `event_type='payment_canceled'` would
+   * otherwise see Stripe-rejected cancel attempts as successes — a
+   * false-positive that masks a real reconciliation problem.
+   */
+  it('R1-E4: Stripe cancel failure emits payment_cancel_attempt_failed (NOT payment_canceled)', async () => {
+    const d = deps();
+    (d.processorGateway.cancelPaymentIntent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'permanent', reason: 'pi_already_canceled' }),
+    );
+
+    const r = await cancelPayment(d, BASE_INPUT);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('processor_unavailable');
+    if (r.error.code !== 'processor_unavailable') return;
+    // Permanent kind must propagate so the route layer doesn't apply
+    // a transient retry hint (Retry-After) on a permanent failure.
+    expect(r.error.kind).toBe('permanent');
+
+    // Find the audit emit for the cancel-attempt-failed event. The
+    // probe-audit emits earlier branches don't fire for the happy
+    // unlock-then-Stripe-fail path, so calls[0] is the right one —
+    // but assert by event_type to be robust against future order
+    // changes.
+    const calls = (d.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const failedCall = calls.find(
+      (c) => c[1]?.eventType === 'payment_cancel_attempt_failed',
+    );
+    expect(failedCall, 'expected payment_cancel_attempt_failed audit emit').toBeDefined();
+    if (!failedCall) return;
+    expect(failedCall[1].eventType).toBe('payment_cancel_attempt_failed');
+    // 5y retention per F5_AUDIT_RETENTION_YEARS — operational class.
+    expect(failedCall[1].retentionYears).toBe(5);
+    expect(failedCall[1].payload).toMatchObject({
+      processor_error_kind: 'permanent',
+      actor_type: 'member',
+    });
+
+    // Defence-in-depth: the OLD `payment_canceled` event_type MUST
+    // NOT be in the calls — a pre-E4 bug emitted both, polluting
+    // success dashboards.
+    const canceledCall = calls.find(
+      (c) => c[1]?.eventType === 'payment_canceled',
+    );
+    expect(canceledCall, 'payment_canceled must NOT fire on Stripe failure').toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
