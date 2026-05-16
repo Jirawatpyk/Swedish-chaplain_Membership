@@ -52,11 +52,23 @@ const processWebhookEventMock = vi.fn();
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
 const auditWriteMock = vi.fn(async (..._args: unknown[]) => undefined);
 
-vi.mock('@/lib/stripe-webhook-verifier', () => ({
-  webhookVerifier: {
-    constructEvent: (...args: unknown[]) => constructEventMock(...args),
-  },
-}));
+// F5R2-TY-B — route narrows verifier throws via `instanceof
+// WebhookSignatureError`, so the mock must re-export the real
+// error class. Importing from the original module preserves the
+// instanceof check for tests that throw via `new WebhookSignatureError(...)`.
+// Mocks that throw plain `Error` fall to the `verifier_internal_error`
+// branch (also returns 401, which is the assertion these tests check).
+vi.mock('@/lib/stripe-webhook-verifier', async () => {
+  const original = await vi.importActual<typeof import('@/lib/stripe-webhook-verifier')>(
+    '@/lib/stripe-webhook-verifier',
+  );
+  return {
+    webhookVerifier: {
+      constructEvent: (...args: unknown[]) => constructEventMock(...args),
+    },
+    WebhookSignatureError: original.WebhookSignatureError,
+  };
+});
 
 vi.mock('@/lib/stripe-webhook-deps', async () => {
   const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
@@ -264,7 +276,13 @@ describe('webhook-signature route contract: verify-before-parse invariant (T044)
   it('valid signature → req.text() called; processWebhookEvent called; 200', async () => {
     const event = JSON.parse(VALID_RAW_BODY) as Record<string, unknown>;
     constructEventMock.mockReturnValueOnce(event);
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'processed' });
+    // F5R2-CRIT-2 — route now narrows via `if (!result.ok)` instead
+    // of the prior duck-type `(result as {ok?:boolean}).ok === false`
+    // check. The mock must return a proper `Result.ok` shape now.
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { kind: 'acknowledged_only' },
+    });
 
     const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {
       'stripe-signature': 't=1716000000,v1=validhex',

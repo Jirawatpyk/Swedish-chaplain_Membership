@@ -30,7 +30,30 @@ const F5_PREFIXES = [
   'online_payment_',
 ] as const;
 
+/**
+ * F6.1 (EventCreate CSV import + webhook ingestion) added a family
+ * of `webhook_*` audit event types in migration 0150 that share the
+ * `webhook_` prefix with F5 but belong to a different module. Exclude
+ * them explicitly here so the parity test doesn't false-positive
+ * detect F6 events as missing from the F5 TS union.
+ */
+const F6_WEBHOOK_EXCLUSIONS = new Set([
+  'webhook_receipt_verified',
+  'webhook_replay_rejected',
+  'webhook_duplicate_rejected',
+  'webhook_malformed_rejected',
+  'webhook_rolled_back',
+  'webhook_secret_grace_used',
+  'webhook_test_invoked',
+  'webhook_secret_generated',
+  'webhook_secret_rotated',
+  'webhook_rate_limit_exceeded',
+  'webhook_secret_force_expired',
+  'webhook_ingest_precondition_failed',
+]);
+
 function isF5Event(label: string): boolean {
+  if (F6_WEBHOOK_EXCLUSIONS.has(label)) return false;
   return F5_PREFIXES.some((p) => label.startsWith(p));
 }
 
