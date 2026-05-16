@@ -187,9 +187,18 @@ export function EventDetailHeader({ event, actions }: EventHeaderProps) {
             )}
           </div>
           {/* C2 — hero match-rate scorecard. Big number + band caption +
-              secondary metadata strip on the right. */}
-          <dl className="flex flex-col gap-4 border-t pt-4 sm:flex-row sm:items-end sm:justify-between">
-            <div className="flex flex-col gap-1">
+              secondary metadata strip on the right.
+              F6.1 R3 a11y-fix 2026-05-16 — was a single `<dl>` flex
+              container with: (a) a wrapping `<div>` holding `<dt>`+`<dd>`
+              followed by two `<p>` siblings (axe `only-dlitems`: `<dl>>
+              <div>` may only contain `<dt>`/`<dd>`); (b) a sibling
+              wrapping `<div>` holding TWO nested `<div>` groupings,
+              each with `<dt>`+`<dd>` (axe `dlitem`: dt/dd not direct
+              under <dl>). Split into a wrapper `<div>` (visual flex
+              layout only) holding TWO sibling `<dl>` blocks — one per
+              logical pair group — keeping the same visual layout. */}
+          <div className="flex flex-col gap-4 border-t pt-4 sm:flex-row sm:items-end sm:justify-between">
+            <dl className="flex flex-col gap-1">
               <dt className="text-sm font-medium text-muted-foreground">
                 {t('header.matchRate')}
               </dt>
@@ -202,23 +211,25 @@ export function EventDetailHeader({ event, actions }: EventHeaderProps) {
               >
                 {pctDisplay}
                 <span className="sr-only"> — {matchRateAria}</span>
+                <small className="text-sm mt-1 block font-normal text-muted-foreground">
+                  {stackedLabel}
+                </small>
+                <small
+                  className={cn(
+                    'text-xs mt-1 block font-medium',
+                    band === 'high' &&
+                      'text-emerald-700 dark:text-emerald-300',
+                    band === 'medium' &&
+                      'text-amber-700 dark:text-amber-300',
+                    band === 'low' && 'text-destructive',
+                    band === 'none' && 'text-muted-foreground',
+                  )}
+                >
+                  {bandLabel}
+                </small>
               </dd>
-              <p className="text-sm text-muted-foreground">{stackedLabel}</p>
-              <p
-                className={cn(
-                  'text-xs font-medium',
-                  band === 'high' &&
-                    'text-emerald-700 dark:text-emerald-300',
-                  band === 'medium' &&
-                    'text-amber-700 dark:text-amber-300',
-                  band === 'low' && 'text-destructive',
-                  band === 'none' && 'text-muted-foreground',
-                )}
-              >
-                {bandLabel}
-              </p>
-            </div>
-            <div className="flex flex-col gap-1 text-sm sm:items-end">
+            </dl>
+            <dl className="flex flex-col gap-1 text-sm sm:items-end">
               <div className="flex items-baseline gap-2">
                 <dt className="whitespace-nowrap text-muted-foreground">
                   {t('header.totalRegistrations')}
@@ -254,8 +265,8 @@ export function EventDetailHeader({ event, actions }: EventHeaderProps) {
                   </Tooltip>
                 </dd>
               </div>
-            </div>
-          </dl>
+            </dl>
+          </div>
           {/* C4-lite — admin actions slot. Rendered as a bordered footer
               when the page passes EventCategoryToggles + ArchiveEventButton.
               When `actions` is undefined (member/manager view, or archived

@@ -306,6 +306,12 @@ const COUNTER_TONE_CLASSES = {
 } as const;
 
 function Counter({ label, description, value, valueText, testId, tone }: CounterProps) {
+  // F6.1 R3 a11y-fix 2026-05-16 — description was previously a
+  // sibling `<p>` after `<dd>` inside the `<dl>`'s wrapping `<div>`.
+  // HTML spec + axe `only-dlitems` rule restrict `<dl> > <div>` to
+  // ONLY contain `<dt>`/`<dd>` (definition pair grouping). Move the
+  // description into the `<dd>` as a `<small>` block-styled child;
+  // keeps semantic pair grouping intact + retains visual layout.
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-caption text-muted-foreground">{label}</dt>
@@ -314,10 +320,12 @@ function Counter({ label, description, value, valueText, testId, tone }: Counter
         className={`text-h2 tabular-nums ${tone ? COUNTER_TONE_CLASSES[tone] : ''}`}
       >
         {valueText ?? value}
+        {description ? (
+          <small className="text-caption mt-1 block font-normal text-muted-foreground">
+            {description}
+          </small>
+        ) : null}
       </dd>
-      {description ? (
-        <p className="text-caption text-muted-foreground">{description}</p>
-      ) : null}
     </div>
   );
 }

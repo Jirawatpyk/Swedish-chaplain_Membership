@@ -687,7 +687,19 @@ function PreviewPanel({
         <h3 id="csv-preview-rows" className="text-body mb-2 font-medium">
           {t('previewRowsTitle', { count: sampleRows.length })}
         </h3>
-        <div className="overflow-x-auto">
+        {/*
+          F6.1 R3 a11y-fix 2026-05-16 — axe-core `scrollable-region-focusable`
+          required a keyboard-focusable handle on the horizontally-scrolling
+          region so keyboard-only users can pan a wide preview. Pattern
+          mirrors `recent-deliveries-panel.tsx` (role=region + aria-labelledby
+          + tabIndex=0 + visible focus ring).
+        */}
+        <div
+          role="region"
+          aria-labelledby="csv-preview-rows"
+          tabIndex={0}
+          className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
           <table
             className="text-caption w-full border-collapse font-mono"
             aria-label={t('tableAriaLabel', { fileName })}

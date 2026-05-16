@@ -116,9 +116,18 @@ export function RecentDeliveriesPanel({
           {t('title')}
         </h2>
         <div className="flex items-center gap-2">
-          {/* Accessible name comes from the sibling `<Label htmlFor>`. */}
+          {/*
+            F6.1 R3 a11y-fix 2026-05-16 — Base UI Switch generates an
+            internal id (`base-ui-_R_…`) on its inner `<span role="switch">`
+            that does NOT match the wrapper id we set, so `<Label htmlFor>`
+            alone failed `aria-toggle-field-name` (no `aria-label` /
+            `aria-labelledby` / visible text on the role=switch element).
+            Add `aria-label` for AT consumers + keep the visible `<Label>`
+            for sighted users (visual label remains; AT redundancy OK).
+          */}
           <Switch
             id="include-test-deliveries"
+            aria-label={t('includeTestDeliveriesLabel')}
             checked={optimisticInclude}
             onCheckedChange={handleToggle}
             disabled={pending}
