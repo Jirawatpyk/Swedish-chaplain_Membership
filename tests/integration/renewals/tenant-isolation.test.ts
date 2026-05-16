@@ -113,21 +113,11 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
       }),
     );
 
-    // F8 cross-module: scheduled_plan_changes
-    await runInTenant(t.ctx, (tx) =>
-      tx.insert(scheduledPlanChanges).values({
-        tenantId: t.ctx.slug,
-        scheduledChangeId: schedChangeId,
-        memberId,
-        effectiveAtCycleId: cycleId,
-        fromPlanId: planId,
-        toPlanId: 'corporate-premier',
-        scheduledByUserId: user.userId,
-        status: 'pending',
-      }),
-    );
-
-    // F8 renewal_cycles
+    // F8 renewal_cycles MUST precede scheduled_plan_changes —
+    // migration 0125 (F8 PR #24) added FK
+    // `scheduled_plan_changes_effective_at_cycle_fk` referring to
+    // renewal_cycles(cycle_id). Pre-fix this order was reversed,
+    // which silently broke after the FK landed.
     await runInTenant(t.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: t.ctx.slug,
@@ -143,6 +133,21 @@ describe('F8 Tenant isolation — REVIEW-GATE BLOCKER (T052)', () => {
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+      }),
+    );
+
+    // F8 cross-module: scheduled_plan_changes (after renewal_cycles
+    // per the FK above).
+    await runInTenant(t.ctx, (tx) =>
+      tx.insert(scheduledPlanChanges).values({
+        tenantId: t.ctx.slug,
+        scheduledChangeId: schedChangeId,
+        memberId,
+        effectiveAtCycleId: cycleId,
+        fromPlanId: planId,
+        toPlanId: 'corporate-premier',
+        scheduledByUserId: user.userId,
+        status: 'pending',
       }),
     );
 

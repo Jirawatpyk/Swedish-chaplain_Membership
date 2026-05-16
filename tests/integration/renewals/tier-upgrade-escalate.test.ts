@@ -31,11 +31,13 @@ import {
   expect,
   it,
 } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { atRiskOutreach } from '@/modules/renewals/infrastructure/schema-at-risk-outreach';
 import { tierUpgradeSuggestions } from '@/modules/renewals/infrastructure/schema-tier-upgrade-suggestions';
 import {
@@ -46,6 +48,53 @@ import {
 } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
+
+// F4+F8 Satang migration (2026-05-16) — plan-catalogue seeder.
+// Mirrors the working tier-upgrade-pending.test.ts pattern; required
+// because the members fixture's `planId='regular', planYear=2026`
+// triggers FK `members_plan_tenant_year_fk` against membership_plans.
+const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrix = {
+  eblast_per_year: 1,
+  website_page_type: 'member_news_update',
+  homepage_logo_category: 'regular',
+  directory_listing_size: 'half_page',
+  event_discount_scope: 'all_employees',
+  events_cobranded_access: false,
+  cultural_tickets_per_year: 0,
+  m2m_benefits_access: true,
+  business_referrals: true,
+  tailor_made_services: false,
+  partnership: null,
+};
+
+async function seedPlan(
+  tenant: TestTenant,
+  user: TestUser,
+  planId: string,
+): Promise<void> {
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(membershipPlans).values({
+      tenantId: tenant.ctx.slug,
+      planId,
+      planYear: 2026,
+      planName: { en: planId },
+      description: { en: '' },
+      sortOrder: 10,
+      planCategory: 'corporate',
+      memberTypeScope: 'company',
+      annualFeeMinorUnits: 5_000_000,
+      includesCorporatePlanId: null,
+      minTurnoverMinorUnits: null,
+      maxTurnoverMinorUnits: null,
+      maxDurationYears: null,
+      maxMemberAge: null,
+      benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+      isActive: true,
+      createdBy: user.userId,
+      updatedBy: user.userId,
+    });
+  });
+}
 
 interface SeededState {
   readonly memberId: string;
@@ -111,6 +160,10 @@ describe('F8 escalateTierUpgrade — integration (Round 6 F-003)', () => {
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
+    // F4+F8 Satang migration (2026-05-16) — seed plan catalogue
+    // referenced by the suggestion fixture (FK members → membership_plans).
+    await seedPlan(tenant, admin, 'regular');
+    await seedPlan(tenant, admin, 'premium');
   }, 180_000);
 
   afterAll(async () => {
@@ -154,11 +207,20 @@ describe('F8 escalateTierUpgrade — integration (Round 6 F-003)', () => {
     expect(outreach?.actorUserId).toBe(admin.userId);
 
     // at_risk_outreach_recorded audit emitted with template_id discriminator.
+    // F4+F8 Satang migration (2026-05-16) — filter by seeded
+    // member_id; audit_log is append-only across the file (the
+    // append-only trigger blocks DELETE) so per-test filtering is
+    // the only correct isolation primitive.
     const audits = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select()
         .from(auditLog)
-        .where(eq(auditLog.eventType, 'at_risk_outreach_recorded')),
+        .where(
+          and(
+            eq(auditLog.eventType, 'at_risk_outreach_recorded'),
+            sql`${auditLog.payload}->>'member_id' = ${seeded.memberId}`,
+          ),
+        ),
     );
     expect(audits.length).toBeGreaterThanOrEqual(1);
     const payload = audits[0]?.payload as Record<string, unknown>;
