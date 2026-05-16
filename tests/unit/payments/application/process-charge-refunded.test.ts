@@ -37,6 +37,19 @@ function makeDeps(): ProcessChargeRefundedDeps {
         const tx = { __mock: 'tx' };
         return cb(tx);
       }),
+      // F5R3 SB-1 (2026-05-16) — webhook-recovery path now also
+      // looks up the parent payment row + recovers Payment.status
+      // (mirrors issueRefund Phase B happy-path). Default mock
+      // returns a `succeeded` payment so the recovery branch fires
+      // without changing the mocked status (test-by-test overrides
+      // refine the response to assert specific recovery behaviour).
+      lockForUpdate: vi.fn(async () => ({
+        id: asPaymentId('pmt_test'),
+        tenantId: TENANT_ID,
+        status: 'succeeded' as const,
+        amountSatang: 100_000n,
+      })),
+      updateStatus: vi.fn(async () => ({})),
     } as unknown as ProcessChargeRefundedDeps['paymentsRepo'],
     refundsRepo: {
       findByProcessorRefundId: vi.fn(async () => null),
@@ -44,6 +57,13 @@ function makeDeps(): ProcessChargeRefundedDeps {
       // existing refund row is found in `pending` (Phase B double-
       // fault recovery path).
       updateStatus: vi.fn(async () => ({}) as unknown),
+      // F5R3 SB-1 (2026-05-16) — recovery path also reads the
+      // succeeded-sum to compute the parent's next status.
+      getRefundContextForUpdate: vi.fn(async () => ({
+        pendingCount: 0,
+        succeededSumSatang: 50_000n,
+        nextSeq: 1,
+      })),
     } as unknown as ProcessChargeRefundedDeps['refundsRepo'],
     processorEventsRepo: {
       markProcessed: vi.fn(async () => undefined),

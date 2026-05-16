@@ -65,9 +65,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Unexpected throw from requireMemberContext (DB outage,
     // misconfigured env, etc.) — log so ops doesn't see a silent
     // 500 spike. Pattern matches `/api/payments/initiate` route.
+    // F5R3 CR-2 (2026-05-16) — H-4 PCI/PDPA hygiene: log error
+    // class only (e.constructor.name). Drizzle/Postgres errors carry
+    // SQL fragments, table names, and partial parameter bindings in
+    // .message — replicates the pattern enforced across all other F5
+    // catch sites (drizzle-payments-audit:94, stripe webhook:148, etc.).
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e.constructor.name : 'unknown',
         correlationId,
       },
       'payments.log_optimistic_flip.member_context_throw',

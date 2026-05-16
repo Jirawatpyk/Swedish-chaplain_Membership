@@ -134,10 +134,20 @@ export async function handleCancelEvent(
     }
 
     const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);
+    // F5R3 CR-1 (2026-05-16) — defence-in-depth `expectedCurrentStatus`
+    // mirroring R2-CRIT-1 in cancel-payment. Single-tx + FOR UPDATE
+    // pattern keeps the row locked across the use-case body — the
+    // WHERE clause is currently a build-time invariant matching the
+    // canTransition gate above. The guard exists so a future refactor
+    // splitting handleCancelEvent into Phase A/B (matching cancel-
+    // payment's pattern) cannot silently regress the financial-
+    // integrity invariant. canTransition narrowed payment.status to
+    // 'pending' (only legal `from` for 'canceled').
     await deps.paymentsRepo.updateStatus(tx, {
       paymentId: payment.id,
       tenantId: input.tenantId,
       nextStatus: 'canceled',
+      expectedCurrentStatus: payment.status,
       completedAt,
     });
 

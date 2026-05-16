@@ -46,6 +46,7 @@ import { baseHeaders } from '@/lib/payments-route-helpers';
 import {
   processWebhookEvent,
   makeProcessWebhookEventDeps,
+  SYSTEM_ACTOR_STRIPE_WEBHOOK,
   type ProcessWebhookEventError,
 } from '@/modules/payments';
 import {
@@ -53,6 +54,16 @@ import {
   insertRejectedProcessorEvent as insertRejectedProcessorEventImpl,
   auditRepo,
 } from '@/lib/stripe-webhook-deps';
+// F5R3 CR-3 (2026-05-16) — direct F5 audit-adapter + retention helper
+// import for the permanent-failure typed-payload emit. The route is a
+// Stripe-side system surface so this is composition-root code (not
+// Application — no Principle III violation). Convention across other
+// composition-root files (page.tsx + api/.../route.ts) is to silence
+// `no-restricted-imports` on the specific composition-root line.
+// eslint-disable-next-line no-restricted-imports
+import { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
+// eslint-disable-next-line no-restricted-imports
+import { retentionFor as f5RetentionFor } from '@/modules/payments/application/ports/audit-port';
 import { paymentsMetrics } from '@/lib/metrics';
 
 export const runtime = 'nodejs';
@@ -100,13 +111,15 @@ async function auditReject(
   eventType:
     | 'webhook_signature_rejected'
     | 'payment_environment_mismatch'
-    | 'webhook_api_version_mismatch'
-    // F5R2-C2 — `webhook_dispatch_permanent_failure` joins this
-    // helper for the route's permanent-200 path. Migration 0151
-    // adds the enum value. Reusing the same helper avoids drift on
-    // the H-4 logging hygiene + metric counters that auditReject
-    // already enforces.
-    | 'webhook_dispatch_permanent_failure',
+    | 'webhook_api_version_mismatch',
+  // F5R3 CR-3 (2026-05-16) — `webhook_dispatch_permanent_failure`
+  // moved off this helper into a direct `f5AuditAdapter.emit(null,
+  // …)` call. Reason: F1's auditRepo.append doesn't persist the
+  // JSONB `payload` column, so the typed payload promised in
+  // F5AuditPayloadByType was silently dropped. The 3 events kept
+  // here are TRUE pre-tenant-resolution rejections that don't have a
+  // typed-payload contract (low-stakes ops events, F1-format
+  // `{reason}` is sufficient).
   reason: string,
   requestId: string,
 ): Promise<void> {
@@ -645,6 +658,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // point; a 500 here would force Stripe into a 24-hour retry
       // loop chasing an already-processed event.
       try {
+        // F5R3 CR-5 (2026-05-16) — explicit ops-visibility log on the
+        // `auto_refund_given_up` outcome. The metric already fired at
+        // the use-case level; this complements it with a queryable
+        // pino line so SREs can correlate the give-up with surrounding
+        // request-id context. Pino message starts with the runbook-
+        // grep prefix so dashboards filtering on
+        // 'stripe-webhook.auto_refund_given_up' surface this class
+        // distinct from routine success.
+        const outcomeKind = (result as {
+          value?: { kind?: string };
+        }).value?.kind;
+        if (outcomeKind === 'auto_refund_given_up') {
+          logger.error(
+            {
+              eventId: evId,
+              eventType: evType,
+              tenantId,
+              correlationId,
+              requestId,
+              runbook: 'docs/runbooks/out-of-band-refund.md',
+            },
+            'stripe-webhook.auto_refund_given_up',
+          );
+        }
         const outcomeInvoiceId = (result as {
           value?: { invoiceId?: string };
         }).value?.invoiceId;
@@ -739,20 +776,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Stripe's webhook delivery log. Transient errors stay 500 so
       // Stripe retries through the outage window.
       if (permanence === 'permanent') {
-        // F5R2-C2 — emit the 5y forensic audit row promised by the
-        // process-webhook-event.ts:156 docstring (pre-R2 only pino-
-        // logged, which rolls off in 30 days). auditReject is
-        // best-effort by contract — failure to emit logs +
-        // bumps `webhookRejectAuditFailed` counter and does NOT
-        // throw, so the 200-ack to Stripe is never blocked.
-        // Encode the dispatch_failure_kind + dispatch_failure_detail
-        // into the `reason` discriminator + summary so audit-log
-        // queries can pivot without re-parsing.
-        await auditReject(
-          'webhook_dispatch_permanent_failure',
-          `${dispatchError.kind}/${dispatchError.detail}`,
+        // F5R3 CR-3 (2026-05-16) — emit through F5 audit-adapter
+        // (typed payload persists in the JSONB `payload` column) NOT
+        // F1 auditRepo.append (which only writes the `reason` string
+        // and silently drops the typed shape promised by
+        // F5AuditPayloadByType). Pre-fix R2-C2 wired this through
+        // auditReject → auditRepo.append, leaving SRE queries that
+        // pivot on `payload->>'dispatch_failure_kind'` returning zero
+        // rows. The forensic data was visible only in pino logs +
+        // the human-readable summary string — both rotate after 30d
+        // while the audit row is supposed to carry 5y compliance
+        // retention. The adapter's null-tx path is best-effort
+        // (log-and-swallow + useCaseAuditEmitFailed counter), so the
+        // 200-ack to Stripe is never blocked by audit-rail outage.
+        await f5AuditAdapter.emit(null, {
+          tenantId,
           requestId,
-        );
+          eventType: 'webhook_dispatch_permanent_failure',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `stripe webhook dispatch permanently failed: ${dispatchError.kind}/${dispatchError.detail}`,
+          payload: {
+            event_id: evId ?? 'unknown',
+            stripe_event_type: evType ?? 'unknown',
+            dispatch_failure_kind: dispatchError.kind,
+            dispatch_failure_detail: dispatchError.detail,
+          },
+          retentionYears: f5RetentionFor('webhook_dispatch_permanent_failure'),
+        });
         // F5R2-C2 — drop `detail` from response body to avoid leaking
         // F4 bridge taxonomy / internal error codes to the Stripe
         // Dashboard webhook delivery log (visible to anyone with

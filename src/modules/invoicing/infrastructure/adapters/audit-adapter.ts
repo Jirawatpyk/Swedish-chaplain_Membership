@@ -11,6 +11,7 @@ import {
   type F4AuditEvent,
 } from '../../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 
 export const f4AuditAdapter: AuditPort = {
@@ -30,6 +31,7 @@ export const f4AuditAdapter: AuditPort = {
     // Tx-bound emits (mutation path) inherit `SET LOCAL ROLE
     // chamber_app` from the caller's runInTenant so RLS applies there
     // as Constitution Principle I clause 4 requires.
+    const isStandalone = txUnknown === null || txUnknown === undefined;
     const tx = (txUnknown as TenantTx | null) ?? db;
 
     const requestId = event.requestId ?? 'no-request-id';
@@ -41,18 +43,45 @@ export const f4AuditAdapter: AuditPort = {
     // 10y minimum). Caught by `tests/integration/payments/audit-retention-backfill.test.ts`.
     const retentionYears = f4RetentionFor(event.eventType);
 
-    await tx.execute(sql`
-      INSERT INTO audit_log
-        (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
-      VALUES
-        (${event.eventType}::audit_event_type,
-         ${event.actorUserId},
-         ${event.summary},
-         ${requestId},
-         ${JSON.stringify(event.payload)}::jsonb,
-         ${event.tenantId},
-         ${retentionYears})
-    `);
+    // F5R3 SB-3 (2026-05-16) — log-and-swallow on the null-tx path
+    // only. Tx-bound emits MUST still throw so the caller's mutation tx
+    // rolls back on audit-log unavailability (audit-trail integrity).
+    // Standalone emits (CSV export audit, probe audits, receipt
+    // downloads) run AFTER the user-visible work is done; throwing here
+    // would lose the response while the user already saw success.
+    // Mirror's the F5 `drizzle-payments-audit.ts:88-98` pattern.
+    try {
+      await tx.execute(sql`
+        INSERT INTO audit_log
+          (event_type, actor_user_id, summary, request_id, payload, tenant_id, retention_years)
+        VALUES
+          (${event.eventType}::audit_event_type,
+           ${event.actorUserId},
+           ${event.summary},
+           ${requestId},
+           ${JSON.stringify(event.payload)}::jsonb,
+           ${event.tenantId},
+           ${retentionYears})
+      `);
+    } catch (e) {
+      if (!isStandalone) {
+        // Tx-bound: re-throw so caller's tx rolls back.
+        throw e;
+      }
+      // Standalone: log + bump counter. PCI hygiene — constructor name
+      // only; raw .message can carry SQL fragments / column values.
+      logger.warn(
+        {
+          err: e instanceof Error ? e.constructor.name : 'unknown',
+          eventType: event.eventType,
+          tenantId: event.tenantId,
+          requestId,
+        },
+        'invoicing.audit_emit_failed_standalone',
+      );
+      invoicingMetrics.auditEmitFailed(event.eventType, event.tenantId);
+      return;
+    }
 
     // T113 — cross-tenant-probe counter (alert: any non-zero rate
     // over 5 min signals an enumeration attack). Bumped for the 3

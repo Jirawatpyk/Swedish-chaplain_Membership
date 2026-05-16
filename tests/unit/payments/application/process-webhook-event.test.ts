@@ -90,6 +90,14 @@ function makeDeps(): ProcessWebhookEventDeps {
     updateStatus: vi.fn(),
     findByProcessorRefundId: vi.fn(async () => null),
     sumSucceededForPayment: vi.fn(),
+    // F5R3 SB-1 (2026-05-16) — webhook recovery now reads succeeded
+    // sum to compute parent payment's next status when flipping a
+    // pending refund row.
+    getRefundContextForUpdate: vi.fn(async () => ({
+      pendingCount: 0,
+      succeededSumSatang: 100_000n,
+      nextSeq: 1,
+    })),
   };
   const processorEventsRepo = {
     insertIfNew: vi.fn(async (_tx: unknown, input: { id: string }) => ({

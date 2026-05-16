@@ -293,7 +293,17 @@ async function confirmPaymentBody(
       // unrequested customer refund. Belt-and-suspenders: ack the
       // webhook + log forensic, never auto-refund on a forbidden read.
       if (invoiceResult.error.code === 'forbidden') {
-        await deps.audit.emit(null, {
+        // F5R3 CR-4 (2026-05-16) — atomic markProcessed inside the
+        // withTx (mirrors the not_found sibling at line ~262). The
+        // pre-fix branch returned ok(invoice_not_found) WITHOUT
+        // marking the processor_events row, leaving Stripe to retry
+        // forever (recovery-replay path re-enters bridge → still
+        // forbidden → still no markProcessed → 72h retry storm
+        // class). Switch the audit emit to tx-bound (was null) so it
+        // commits atomically with markProcessed. F4 forbidden is a
+        // PERMANENT bridge state — Stripe retry has zero chance of
+        // success.
+        await deps.audit.emit(tx, {
           tenantId: input.tenantId,
           requestId: input.requestId,
           eventType: 'payment_invoice_not_found',
@@ -306,6 +316,7 @@ async function confirmPaymentBody(
           },
           retentionYears: retentionFor('payment_invoice_not_found'),
         });
+        await markProcessed();
         return ok<ConfirmPaymentOutcome>({
           kind: 'invoice_not_found',
           invoiceId: payment.invoiceId,
@@ -513,10 +524,21 @@ async function confirmPaymentBody(
     const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);
 
     // Step 7 — persist.
+    // F5R3 CR-1 (2026-05-16) — defence-in-depth `expectedCurrentStatus`
+    // mirroring R2-CRIT-1 in cancel-payment. Single-tx + FOR UPDATE
+    // pattern keeps the row locked across the Stripe retrieve call so
+    // a concurrent webhook cannot flip pending→succeeded mid-tx — the
+    // WHERE clause is currently a build-time invariant matching the
+    // canTransition gate (line ~480). The guard exists so a future
+    // refactor splitting confirmPayment into Phase A/B (matching
+    // cancel-payment's pattern) cannot silently regress the
+    // financial-integrity invariant. canTransition narrowed
+    // payment.status to 'pending' (only legal `from` for 'succeeded').
     await deps.paymentsRepo.updateStatus(tx, {
       paymentId: payment.id,
       tenantId: input.tenantId,
       nextStatus: 'succeeded',
+      expectedCurrentStatus: payment.status,
       processorChargeId: intent.latestChargeId,
       card: intent.card,
       completedAt,
@@ -728,6 +750,14 @@ async function confirmPaymentBody(
             },
           );
         }
+        // F5R3 CR-5 (2026-05-16) — bump the success-path counter for
+        // SRE alerting. R2-TY-A added the `auto_refund_given_up`
+        // outcome variant explicitly so dashboards could pivot on
+        // it, but the metric was missing — chronic stale-invoice
+        // give-ups were invisible to alert rules (audit row only,
+        // no OTel signal). >0 in 24h = page ops (Stripe-side outage
+        // class, not a routine path).
+        paymentsMetrics.autoRefundGivenUpCount(input.tenantId);
         return ok<ConfirmPaymentOutcome>({
           kind: 'auto_refund_given_up',
           paymentId: payment.id,
@@ -809,6 +839,12 @@ async function confirmPaymentBody(
       // Best-effort log — known race window. Recovery is automatic
       // via Stripe retry idempotency. Structured-log so ops has a
       // forensic trail before the retry rather than silence.
+      // F5R3 CR-6 (2026-05-16) — bump dedicated counter parallel to
+      // the give-up sibling at line ~737. Pre-fix only the optional
+      // logger.warn fired (undefined logger in tests = silent), and
+      // pino logs roll off in 30 days — chronic Phase B failures
+      // were invisible to alert rules.
+      paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
       deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,

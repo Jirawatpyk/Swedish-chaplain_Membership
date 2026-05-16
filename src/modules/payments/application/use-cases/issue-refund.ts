@@ -536,13 +536,27 @@ async function issueRefundBody(
         credit_note_number: cnResult.value.creditNoteNumber,
         phase_b_error_kind: detailKind,
       },
-    }).catch((finaliseError) => {
+    }).catch(async (finaliseError) => {
       // If even the failure-finalise tx throws, the pending row
       // stays — the T130a stale-pending-refund sweep cron is the
       // last-resort recovery (Phase 9 polish). R2 reliability fix:
       // emit a structured warn before suppressing so ops have a
       // signal to act on between sweeps. Constructor name only —
       // raw Postgres `error.message` may carry SQL fragments.
+      // F5R3 CR-7 (2026-05-16) — pre-fix only the optional logger
+      // fired (undefined logger in tests = silent), and pino logs
+      // roll off in 30 days. Money already moved (Stripe + F4 CN
+      // succeeded), local row stuck pending, sweep cron is the
+      // recovery (12h cadence). Bump dedicated counter + emit the
+      // `stale_pending_refund_detected` audit row SYNCHRONOUSLY
+      // so the forensic 10y-retention trail appears immediately
+      // (not waiting up to 12h for the sweep). Triggers the
+      // existing observability.md SRE alert on `>0 over 1h`.
+      const finaliseErrKind =
+        finaliseError instanceof Error
+          ? finaliseError.constructor.name
+          : 'unknown';
+      paymentsMetrics.refundFinaliseDoubleFault(input.tenantId);
       deps.logger?.warn('issue_refund.finalise_failed_double_fault', {
         tenantId: input.tenantId,
         refundId: prepared.refundId,
@@ -550,12 +564,39 @@ async function issueRefundBody(
         invoiceId: prepared.payment.invoiceId,
         processorRefundId: stripeRefund.value.id,
         creditNoteId: cnResult.value.creditNoteId,
-        finaliseErrKind:
-          finaliseError instanceof Error
-            ? finaliseError.constructor.name
-            : 'unknown',
+        finaliseErrKind,
         recovery: 'awaiting_stale_pending_refund_sweep',
       });
+      // Best-effort emit on null tx — outer tx is gone. Adapter
+      // log-and-swallows on failure so this never re-throws back
+      // into the .catch.
+      await deps.audit
+        .emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'stale_pending_refund_detected',
+          actorUserId: input.actorUserId,
+          summary: `Double-fault: issueRefund Phase B + finaliseFailedRefund both threw — refund ${prepared.refundId} stuck pending; Stripe ${stripeRefund.value.id} + F4 CN ${cnResult.value.creditNoteId} both succeeded; ops follow up via runbook`,
+          payload: {
+            refund_id: prepared.refundId,
+            payment_id: paymentId,
+            invoice_id: prepared.payment.invoiceId,
+            amount_satang: input.amountSatang.toString(),
+            // Age 0 — fired immediately at the double-fault, not
+            // by the sweep. Distinguishes this audit class from
+            // the sweep's age-driven detections.
+            age_minutes: 0,
+            original_initiator_user_id: input.actorUserId,
+            original_correlation_id: input.requestId ?? 'no-request-id',
+            runbook_url: 'docs/runbooks/stale-pending-refund-sweep.md',
+          },
+          retentionYears: retentionFor('stale_pending_refund_detected'),
+        })
+        .catch(() => {
+          // Triple-fault swallow — the audit adapter already log-
+          // and-swallows + bumps useCaseAuditEmitFailed. No further
+          // action available.
+        });
     });
     return err({ code: 'f4_bridge_error', detail: detailKind });
   }

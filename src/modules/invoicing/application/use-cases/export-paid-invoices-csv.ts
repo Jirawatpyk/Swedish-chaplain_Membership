@@ -116,24 +116,37 @@ export async function exportPaidInvoicesCsv(
   }
 
   // 2. Page through every paid invoice for the tenant + filter to range.
+  // F5R3 SB-2 (2026-05-16) — wrap in try/catch so a Neon transient
+  // (connection pool exhaust mid-scan, RLS misconfig, etc.) returns
+  // the typed `list_failed` Result.err instead of bubbling as a bare
+  // throw → opaque Next.js 500 with no log/audit trail. The route
+  // layer maps `code: 'list_failed'` to 500 + `logger.error`.
   const inRange: Invoice[] = [];
   let offset = 0;
   let total = 0;
-  do {
-    const { rows, total: t } = await deps.invoiceRepo.listPaged(input.tenantId, {
-      offset,
-      pageSize: PAGE_SIZE,
-      status: 'paid',
-      includeDrafts: false,
-    });
-    total = t;
-    for (const r of rows) {
-      if (r.paidAt === null) continue;
-      const paidYmd = paidAtToBangkokYmd(r.paidAt);
-      if (paidYmd >= input.from && paidYmd <= input.to) inRange.push(r);
-    }
-    offset += PAGE_SIZE;
-  } while (offset < total);
+  try {
+    do {
+      const { rows, total: t } = await deps.invoiceRepo.listPaged(input.tenantId, {
+        offset,
+        pageSize: PAGE_SIZE,
+        status: 'paid',
+        includeDrafts: false,
+      });
+      total = t;
+      for (const r of rows) {
+        if (r.paidAt === null) continue;
+        const paidYmd = paidAtToBangkokYmd(r.paidAt);
+        if (paidYmd >= input.from && paidYmd <= input.to) inRange.push(r);
+      }
+      offset += PAGE_SIZE;
+    } while (offset < total);
+  } catch {
+    // Constructor name preserved by the route's logger.error pattern.
+    // We intentionally drop the cause object here — `list_failed` is
+    // the contractual signal; the route side logs `e.constructor.name`
+    // separately so we don't widen this Result.err shape with `unknown`.
+    return err({ code: 'list_failed' });
+  }
 
   // 3. F5 payment-method lookup for the filtered slice only.
   const methodMap =

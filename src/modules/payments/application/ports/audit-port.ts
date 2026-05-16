@@ -252,6 +252,17 @@ export interface F5AuditPayloadByType {
         processor_refund_id: string;
         processor_charge_id: string;
         recovery_path: 'webhook_charge_refunded';
+        /**
+         * F5R3 SB-1 (2026-05-16) — when the webhook recovery flips a
+         * stuck-pending refund row, it ALSO atomically recovers the
+         * parent Payment.status (mirrors issueRefund Phase B).
+         *   `'partially_refunded' | 'refunded'` — parent was advanced
+         *   `null` — parent already at the correct status (no-op) OR
+         *     a concurrent writer raced us (race-guard returned null);
+         *     the refund-row flip still committed, parent status was
+         *     correct without our help.
+         */
+        parent_payment_status_recovered_to: 'partially_refunded' | 'refunded' | null;
       };
   refund_failed: {
     refund_id: string;

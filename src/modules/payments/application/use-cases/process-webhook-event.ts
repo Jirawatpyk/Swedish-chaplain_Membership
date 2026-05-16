@@ -602,6 +602,9 @@ async function processWebhookEventBody(
           audit: deps.audit,
           // review-20260428-102639.md W5 closure — clock is now required.
           clock: deps.clock,
+          // F5R3 SB-1 (2026-05-16) — propagate the dispatcher's logger
+          // so the parent_status_recovery race-warn lands in pino.
+          ...(deps.logger ? { logger: deps.logger } : {}),
         },
         {
           tenantId,

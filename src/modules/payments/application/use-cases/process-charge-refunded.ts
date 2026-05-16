@@ -49,6 +49,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
   ClockPort,
+  LoggerPort,
   PaymentsRepo,
   ProcessorEventsRepo,
   RefundsRepo,
@@ -120,6 +121,14 @@ export interface ProcessChargeRefundedDeps {
    * Constitution Principle III determinism.
    */
   readonly clock: ClockPort;
+  /**
+   * F5R3 SB-1 (2026-05-16) — optional logger for the
+   * parent_status_recovery race-warn (concurrent writer flipped the
+   * parent before this branch could). Optional so existing test
+   * scaffolding without a logger still compiles; production
+   * composition root threads the real pino logger.
+   */
+  readonly logger?: LoggerPort;
 }
 
 export async function processChargeRefunded(
@@ -210,6 +219,63 @@ export async function processChargeRefunded(
             completedAt: new Date(deps.clock.nowMs()),
             expectedCurrentStatus: 'pending',
           });
+          // F5R3 SB-1 (2026-05-16) — flip the parent Payment.status too.
+          // The original webhook-recovery path only updated the refund row
+          // and left Payment.status drifted (still 'succeeded' even though
+          // a refund was now succeeded). issueRefund's Phase B happy-path
+          // updates BOTH atomically (issue-refund.ts:475-480) — a
+          // double-fault that drops Phase B and lands here MUST mirror
+          // the same parent-payment update or SC-013 ("succeeded payment
+          // maps cleanly to invoice-paid/refunded states") silently
+          // breaks. Read the new succeededSum + payment row, derive
+          // next status, update with `expectedCurrentStatus` race-guard.
+          const ctx = await deps.refundsRepo.getRefundContextForUpdate(
+            tx,
+            input.tenantId,
+            existing.paymentId,
+          );
+          const parent = await deps.paymentsRepo.lockForUpdate(
+            tx,
+            existing.paymentId,
+            input.tenantId,
+          );
+          let parentRecoveredTo: 'partially_refunded' | 'refunded' | null = null;
+          if (
+            parent != null &&
+            (parent.status === 'succeeded' ||
+              parent.status === 'partially_refunded')
+          ) {
+            const isFullyRefunded =
+              ctx.succeededSumSatang >= parent.amountSatang;
+            const nextPaymentStatus: 'partially_refunded' | 'refunded' =
+              isFullyRefunded ? 'refunded' : 'partially_refunded';
+            if (parent.status !== nextPaymentStatus) {
+              const updated = await deps.paymentsRepo.updateStatus(tx, {
+                paymentId: existing.paymentId,
+                tenantId: input.tenantId,
+                nextStatus: nextPaymentStatus,
+                expectedCurrentStatus: parent.status,
+                completedAt: new Date(deps.clock.nowMs()),
+              });
+              if (updated !== null) {
+                parentRecoveredTo = nextPaymentStatus;
+              } else {
+                // expectedCurrentStatus race — concurrent writer flipped
+                // the parent before we could; refund row is fine, parent
+                // status was set by someone else. Silent no-op (idempotent).
+                deps.logger?.warn(
+                  'process_charge_refunded.parent_status_recovery_race',
+                  {
+                    tenantId: input.tenantId,
+                    paymentId: existing.paymentId,
+                    refundId: existing.id,
+                    expectedStatus: parent.status,
+                    attemptedNextStatus: nextPaymentStatus,
+                  },
+                );
+              }
+            }
+          }
           await deps.audit.emit(tx, {
             tenantId: input.tenantId,
             requestId: input.requestId,
@@ -222,6 +288,7 @@ export async function processChargeRefunded(
               processor_refund_id: refundId,
               processor_charge_id: input.chargeId,
               recovery_path: 'webhook_charge_refunded',
+              parent_payment_status_recovered_to: parentRecoveredTo,
             },
             retentionYears: retentionFor('refund_succeeded'),
           });

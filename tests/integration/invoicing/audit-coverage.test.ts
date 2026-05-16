@@ -734,6 +734,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // `tenant_receipt_prefix_changed` on settings.receipt_prefix flip).
       'tests/integration/invoicing/receipt-prefix-change-audit.test.ts':
         'tests/integration/invoicing/receipt-prefix-change-audit.test.ts',
+      // F5R3 (2026-05-16) — F4 Phase 3 CSV export inventory needle.
+      // The `invoices_csv_exported` 'where' entry references this file
+      // but the rot-check needs it registered to resolve.
+      'tests/unit/invoicing/export-paid-invoices-csv.test.ts':
+        'tests/unit/invoicing/export-paid-invoices-csv.test.ts',
     };
 
     for (const t of declared) {
@@ -772,11 +777,13 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     const deferredCount = Object.values(coverage).filter(
       (c) => c.status === 'deferred',
     ).length;
-    expect(coveredCount + deferredCount).toBe(23);
-    // Behavioral coverage target: 20/23. Remaining 3 are post-MVP
+    // F5R3 (2026-05-16) — bumped from 23 → 24 to include the F4 Phase 3
+    // `invoices_csv_exported` event added in `0149_audit_invoices_csv_exported`.
+    expect(coveredCount + deferredCount).toBe(24);
+    // Behavioral coverage target: 21/24. Remaining 3 are post-MVP
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
     // receipt-PDF worker — integration coverage lands with T166-06).
-    expect(coveredCount).toBeGreaterThanOrEqual(20);
+    expect(coveredCount).toBeGreaterThanOrEqual(21);
   });
 });

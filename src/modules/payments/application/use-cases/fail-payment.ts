@@ -220,10 +220,22 @@ async function failPaymentBody(
     const reasonCode =
       retrieved.value.lastPaymentErrorCode ?? PAYMENT_FAILURE_REASON_UNKNOWN;
 
+    // F5R3 CR-1 (2026-05-16) — defence-in-depth `expectedCurrentStatus`
+    // mirroring R2-CRIT-1 in cancel-payment. The single-tx + FOR UPDATE
+    // pattern here keeps the row locked across the Stripe retrieve call
+    // (~10s timeout) so a concurrent webhook cannot flip pending→succeeded
+    // mid-tx — the WHERE clause is currently a build-time invariant
+    // matching the canTransition gate above. The guard exists so a
+    // future refactor that splits this into two phases (mirroring
+    // cancel-payment's lock-release-then-re-lock pattern) cannot
+    // silently regress into the same financial-integrity break R2-CRIT-1
+    // closed. canTransition narrowed payment.status to a value where
+    // 'failed' is reachable; the guard pins that value.
     await deps.paymentsRepo.updateStatus(tx, {
       paymentId: payment.id,
       tenantId: input.tenantId,
       nextStatus: 'failed',
+      expectedCurrentStatus: payment.status,
       failureReasonCode: reasonCode,
       completedAt,
     });
