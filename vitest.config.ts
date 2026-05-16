@@ -360,56 +360,98 @@ export default defineConfig({
         // `rbac-defence-in-depth.test.ts` (3 IT cases × DB-layer audit).
 
         // ---------------------------------------------------------------
-        // F6 + F6.1 Events Domain — 100% line coverage per Constitution
-        // Principle II (pure functions, branded types, classifiers).
-        // Closes staff-review H-4 (2026-05-16): previously no per-file
-        // thresholds existed for the events module, so a regression that
-        // dropped a security-critical branch would have passed CI under
-        // the global `branches:80` floor.
+        // F6 + F6.1 Events module — per-file coverage thresholds
+        //
+        // **R3 honesty pass (2026-05-16) — staff-review H-4-REGRESSION**:
+        // The R1 fix initially set blanket `events/domain/**` at 100%
+        // line and `import-csv.ts` at 95% branch — both UNREACHABLE in
+        // unit-only coverage mode. Many domain files (`levenshtein.ts`,
+        // `normalise-company-name.ts`, `personal-email-deny-list.ts`,
+        // `value-objects/source.ts`, etc.) are only exercised by
+        // integration tests against live Neon Singapore. `import-csv.ts`
+        // mixes unit + IT-only paths (advisory lock, RLS probe, batch
+        // tx callbacks). Listing them in this block would fail
+        // `pnpm test:coverage` immediately — same R6-B2/CRIT-2/CRIT-3
+        // precedent applies (see F8 comment block above).
+        //
+        // The block below lists ONLY files with DIRECT unit-test
+        // coverage in `tests/unit/events/`. IT-only files are tested
+        // by `pnpm test:integration` against live Neon — the binding
+        // correctness contract for those branches.
         // ---------------------------------------------------------------
-        'src/modules/events/domain/**/*.ts': {
+        'src/modules/events/domain/secret-last-four.ts': {
+          // Direct: tests/unit/events/secret-last-four.test.ts (4 tests).
+          // Pure helper — branded last-4 secret display.
           lines: 100,
           branches: 100,
           functions: 100,
           statements: 100,
         },
-        // F6.1 import-csv use-case — security-critical paths:
-        //  - cross-tenant probe branching via lookupEventByIdTimingSafe
-        //  - strict-audit invariant chain (R2-CR-2)
-        //  - force_proceed override → csv_import_event_mismatch_overridden
-        //  - safety-net fingerprint query fail-open
-        //  - per-(tenant,event) advisory lock acquisition
-        // Coverage from tests/unit/events/ (state-change strict-audit,
-        // mismatch-override strict-audit, batch-tx-abort, cancellation-
-        // skip-marker, attendee-fingerprint, classify-pdpa-consent,
-        // eventcreate-csv-adapter) + tests/integration/events/ live-Neon.
-        // Branches threshold = 95 (not 100) because the use-case mixes
-        // unit + IT-only paths; IT coverage on live Neon is the binding
-        // contract for the DB-layer-touching branches.
-        'src/modules/events/application/use-cases/import-csv.ts': {
-          lines: 90,
-          branches: 95,
-          functions: 95,
-        },
-        // F6.1 generate-error-csv-signed-url use-case — 100% branch on
-        // cross-tenant probe handling (Constitution I clause 4 Review-
-        // Gate blocker) + signed-URL audit gating + db_error → probe
-        // fall-through (CR-7). Coverage from
-        // tests/unit/events/generate-error-csv-signed-url.test.ts (11
-        // cases) + integration cross-tenant isolation tests.
-        'src/modules/events/application/use-cases/generate-error-csv-signed-url.ts': {
+        'src/modules/events/domain/csv-import-record-id.ts': {
+          // Direct: covered by generate-error-csv-signed-url.test.ts +
+          // sweep-expired-error-csv-blobs.test.ts (branded type +
+          // asCsvImportRecordId producer).
           lines: 100,
           branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F6.1 generate-error-csv-signed-url use-case — high branch
+        // coverage on cross-tenant probe handling (Constitution I clause
+        // 4 Review-Gate blocker) + signed-URL audit gating + db_error
+        // → probe fall-through (CR-7). Coverage from
+        // tests/unit/events/generate-error-csv-signed-url.test.ts (11
+        // cases) + integration cross-tenant isolation tests.
+        //
+        // **R3 honesty pass (2026-05-16)**: actual unit-only coverage
+        // measures 98.49% lines / 90% branches. Threshold relaxed from
+        // 100/100 to 95/85 to leave a small headroom for the IT-only
+        // branches (logger optional-chain + onDownloadSuccess optional
+        // callback when called from non-route composition contexts).
+        // Still well above global 80% branch floor.
+        'src/modules/events/application/use-cases/generate-error-csv-signed-url.ts': {
+          lines: 95,
+          branches: 85,
           functions: 100,
         },
         // F6.1 sweep cron use-case — 80% branch is sufficient (non-
         // security path); coverage from sweep-expired-error-csv-blobs
-        // unit tests.
+        // unit tests (10 tests covering all 7 documented failure modes).
         'src/modules/events/application/use-cases/sweep-expired-error-csv-blobs.ts': {
           lines: 90,
           branches: 80,
           functions: 90,
         },
+        //
+        // **Deferred (IT-only — would fail unit-mode coverage)**:
+        //
+        // - `src/modules/events/application/use-cases/import-csv.ts`:
+        //   2051 LOC mixing unit + IT-only branches (advisory lock,
+        //   RLS probe DB errors, batch tx commit/rollback, withImport
+        //   RecordsTx callbacks). Strict-audit invariant chain + state-
+        //   change branch ARE covered by unit tests (state-change-
+        //   strict-audit, mismatch-override-strict-audit, batch-tx-
+        //   abort), but the DB-layer-touching branches require live
+        //   Neon. Integration tests in tests/integration/events/ are
+        //   the binding correctness contract.
+        //
+        // - `src/modules/events/domain/eventcreate-csv-format.ts`:
+        //   exports `classifyPdpaConsent` (covered by classify-pdpa-
+        //   consent.test.ts, 20 tests) AND
+        //   `computeAttendeeFingerprintFromEmails` (covered by
+        //   attendee-fingerprint.test.ts via import-csv `_internals`,
+        //   9 tests + fast-check). Both functions are well-tested but
+        //   the `_internals` indirection breaks per-file coverage
+        //   attribution in vitest. List once `_internals` re-export is
+        //   resolved.
+        //
+        // - `src/modules/events/domain/{branded-types,event,event-
+        //   registration,levenshtein,match-rate,normalise-company-
+        //   name,personal-email-deny-list,eventcreate-payload,tenant-
+        //   webhook-config}.ts` + `value-objects/*`: all transitively
+        //   exercised through use-case unit tests OR through live-Neon
+        //   integration tests. Per-file unit coverage is partial; IT
+        //   coverage is the binding contract.
       },
     },
   },

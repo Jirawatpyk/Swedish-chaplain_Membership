@@ -2,7 +2,7 @@
 
 **Status**: REVIEW-READY — chamber DPO action required pre-flag-flip
 **Owner**: Chamber DPO + legal counsel
-**Last reviewed**: 2026-05-12 (Issue H-PDPA-1 from full-scope review)
+**Last reviewed**: 2026-05-16 (staff-review R3 — Path A CSV-direct + Art. 13(2)(d)/(f) additions per H-6 + M-NEW-2/3)
 
 ## Purpose
 
@@ -67,6 +67,19 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > access, correct, erase, restrict processing of, port, or object to
 > the processing of your personal data. To exercise these rights,
 > contact the Chamber's Data Protection Officer at **[DPO email]**.
+>
+> You also have the right to lodge a complaint with your national data
+> protection supervisory authority — for EU residents: your Member
+> State's data protection authority (a list is published by the EDPB at
+> edpb.europa.eu/about-edpb/about-edpb/members\_en); for Thai residents:
+> the Personal Data Protection Committee (www.pdpc.or.th). This right
+> exists independently of contacting the Chamber DPO above.
+>
+> **Automated decision-making**: No automated decision-making or
+> profiling with legal or similarly significant effects on you takes
+> place. Event-attendance matching (linking your registration to an
+> existing member record) is subject to chamber administrator review,
+> and any link can be corrected on request.
 >
 > **Lawful basis**: The Chamber processes your data under the
 > "legitimate interest" basis (PDPA §24(5); GDPR Art. 6(1)(f)) — the
@@ -157,6 +170,19 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > หากต้องการใช้สิทธิเหล่านี้ กรุณาติดต่อเจ้าหน้าที่คุ้มครองข้อมูล
 > ส่วนบุคคลของหอการค้าที่ **[DPO email]**
 >
+> ท่านยังมีสิทธิยื่นเรื่องร้องเรียนต่อหน่วยงานกำกับดูแลการคุ้มครอง
+> ข้อมูลส่วนบุคคล — สำหรับผู้พำนักในประเทศไทย: คณะกรรมการคุ้มครอง
+> ข้อมูลส่วนบุคคล (www.pdpc.or.th); สำหรับผู้พำนักในสหภาพยุโรป:
+> หน่วยงานกำกับดูแลข้อมูลส่วนบุคคลของประเทศสมาชิกของท่าน (รายชื่อ
+> ดูได้ที่ edpb.europa.eu) สิทธินี้มีอยู่อย่างเป็นอิสระจากการ
+> ติดต่อเจ้าหน้าที่คุ้มครองข้อมูลของหอการค้าด้านบน
+>
+> **การตัดสินใจอัตโนมัติ**: ไม่มีการตัดสินใจอัตโนมัติหรือการทำ
+> Profiling ที่ส่งผลทางกฎหมายหรือผลกระทบที่มีนัยสำคัญต่อท่าน การ
+> จับคู่ผู้เข้าร่วมงานกับบันทึกสมาชิก (ที่มีอยู่แล้ว) จะอยู่ภายใต้
+> การตรวจสอบของผู้ดูแลระบบของหอการค้า และสามารถแก้ไขการเชื่อมโยง
+> ได้ตามคำขอ
+>
 > **ฐานทางกฎหมาย**: หอการค้าประมวลผลข้อมูลของท่านโดยอาศัยฐาน
 > "ประโยชน์โดยชอบด้วยกฎหมาย" (PDPA §24(5); GDPR Art. 6(1)(f)) — เพื่อ
 > ประโยชน์ของหอการค้าในการรักษาบันทึกการจัดงานและการมีส่วนร่วมของ
@@ -246,6 +272,21 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > invända mot behandlingen av dina personuppgifter. För att utöva
 > dessa rättigheter, kontakta Handelskammarens dataskyddsombud på
 > **[DPO email]**.
+>
+> Du har också rätt att lämna in ett klagomål till din nationella
+> tillsynsmyndighet för dataskydd — för EU-bosatta: din
+> medlemsstats dataskyddsmyndighet (i Sverige:
+> Integritetsskyddsmyndigheten / IMY, www.imy.se); för
+> Thailand-bosatta: Personal Data Protection Committee
+> (www.pdpc.or.th). Denna rätt finns oberoende av kontakt med
+> Handelskammarens dataskyddsombud ovan.
+>
+> **Automatiserat beslutsfattande**: Inget automatiserat
+> beslutsfattande eller profilering med rättsliga eller på liknande
+> sätt betydande effekter för dig förekommer. Matchning av
+> evenemangsdeltagande (koppling av din anmälan till en befintlig
+> medlemspost) är föremål för administratörens granskning, och
+> kopplingen kan korrigeras på begäran.
 >
 > **Rättslig grund**: Handelskammaren behandlar dina uppgifter på
 > grunden "berättigat intresse" (PDPA §24(5); GDPR art. 6.1 f) —

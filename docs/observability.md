@@ -1304,7 +1304,7 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | `eventcreate_quota_cultural_decremented_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + plan tier (plan_tier='unknown' pending PERF-05) |
 | `eventcreate_quota_credit_back_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + cause (refund|archive|relink) + scope (partnership|cultural) |
 | `eventcreate_quota_over_quota_warnings_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + scope (partnership|cultural) — burst threshold alert R10 |
-| `eventcreate_csv_import_duration_ms` | Phase 7 | histogram per tenant |
+| `eventcreate_csv_import_duration_ms` | Phase 7 | **Shipped as `eventcreate_csv_import_duration_seconds`** (seconds, not ms — staff-review L-NEW-1 2026-05-16 reconciled the deferred-row name drift). Histogram per tenant. |
 | `eventcreate_webhook_secret_rotation_total` | Phase 8 | counter per tenant |
 | `eventcreate_tenant_ingest_disabled_gauge` | Phase 8 | observable gauge — 1 when tenant disabled |
 
@@ -1315,7 +1315,7 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | `eventcreate_csv_adapter_mode_detected_total` | counter | `tenant`, `format` (`eventcreate_csv` \| `generic_csv`) | Emitted once per upload at top of `importCsv` use-case after parser format detection. Feeds rollback-trigger signal per spec § Rollback Plan and FR-025. Adoption tracking signal: drop to zero on tenants known to use EventCreate = header drift alert (see `f6_eventcreate_adapter_drift` below). |
 | `eventcreate_csv_error_csv_downloaded_total` | counter | `tenant` | Emitted on successful signed-URL generation in `generateErrorCsvSignedUrl` use-case, AFTER strict-audit emit (`csv_import_error_csv_downloaded`) succeeds. PII-access frequency signal. |
 | `eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}` | counter | `tenant`, `event_type` | Wired in `/api/admin/events/import/route.ts` cross-tenant probe failure path (staff-review H-2, 2026-05-16). Alerts on `rate > 0` because each emit failure is a forensic-trail gap on a Constitution Principle I clause 4 security event. Shares the existing `csvImportAuditEmitFailed` counter with `csv_import_completed` / `csv_import_row_failed` / `csv_import_event_mismatch_overridden` / `csv_import_row_state_changed` / `csv_import_row_cancelled_no_prior` / `event_created` so SRE dashboards can `group by event_type`. |
-| `eventcreate_csv_safety_net_fallback_total` | counter | `tenant` | Emitted by `importCsv` fingerprint safety-net (FR-019b) on query failure → fail-open path; non-zero rate signals DB/pool instability that is silently masking event-mismatch detection. |
+| `eventcreate_csv_safety_net_fallback_total` | counter | `tenant`, `reason` (`result_err` \| `threw`) | Emitted by `importCsv` fingerprint safety-net (FR-019b) on query failure → fail-open path; non-zero rate signals DB/pool instability that is silently masking event-mismatch detection. `reason` discriminates between Result-Err return (`result_err`) and thrown exception (`threw`) — staff-review M-NEW-7 (2026-05-16) added this label to match the actual emit at `metrics.ts:3104`. |
 
 ### 24.2 SLOs
 

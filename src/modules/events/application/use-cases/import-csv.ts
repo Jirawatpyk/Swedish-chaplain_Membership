@@ -1751,7 +1751,7 @@ export async function importCsv(
             recordId,
             err: updateResult.error.kind,
           },
-          '[F6.1] csv_import_records final-outcome update failed — placeholder row persists with stale unexpected_error outcome',
+          '[F6.1] csv_import_records final-outcome update failed — placeholder row persists as running (stale; expected terminal outcome was never written back)',
         );
       }
     }

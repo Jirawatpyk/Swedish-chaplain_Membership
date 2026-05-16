@@ -248,8 +248,32 @@ The result lists every error-CSV blob that COULD contain the requester's row. Wi
 For each row above:
 
 ```bash
-# 1) Delete the Vercel Blob via the CLI (or API)
-vercel blob del "<error_csv_blob_url>" --token "$BLOB_READ_WRITE_TOKEN"
+# 1) Delete the Vercel Blob via the project script
+#
+# Staff-review H-NEW-1 (2026-05-16): use the project's SDK-backed script
+# rather than `vercel blob` CLI — the latter has confusing subcommand
+# naming (`delete` not `del`) and the `--token` flag refers to CLI auth
+# not the SDK's BLOB_READ_WRITE_TOKEN, so wrong-token executions can
+# silently no-op while appearing to succeed. The script exits non-zero
+# on any failure and treats `blob_not_found` as idempotent success
+# (the daily TTL sweep may have already cleared the blob).
+#
+# Prereq: env loaded — either `.env.local` is populated locally or
+# run `vercel env pull .env.local` first.
+
+pnpm tsx scripts/erase-error-blob.ts "<error_csv_blob_url>"
+
+# Expected stdout on success:
+#   Deleting blob: /<tenant>/csv-import-errors/<recordId>.csv-<suffix>
+#   OK — blob deleted.
+#   Next step: clear csv_import_records.error_csv_blob_url + emit
+#   csv_import_error_csv_manually_erased audit per runbook § F6.1.
+#
+# Or, on idempotent re-run / already-swept:
+#   OK — blob already absent (blob_not_found). Idempotent success.
+#
+# DO NOT proceed to step 2 if the script exits non-zero. Diagnose the
+# Blob API error first.
 ```
 
 ```sql
@@ -299,8 +323,8 @@ WHERE tenant_id = '<TENANT_SLUG>'
 ### Notes
 
 - The audit event `csv_import_error_csv_manually_erased` is NOT in the canonical F6.1 audit-event taxonomy (it is a DSR-time manual emit). Track in DPO log alongside the F6 erasure events.
-- The natural 30-day TTL sweep cron will deliver the same outcome if the DSR can wait — only act manually when the 30-day GDPR response deadline forces it.
-- The `attendee_fingerprint` on `csv_import_records` is a SHA-256 first-16-hex truncation — non-reversible to plaintext email. It is NOT subject to erasure (Art. 11 GDPR — pseudonymised, no link to identifying data without disproportionate effort).
+- The natural 30-day TTL sweep cron will deliver the same outcome if the DSR can wait — only act manually when the DSR response deadline forces it. **Deadline reference** (staff-review M-NEW-4 2026-05-16): PDPA §30 grants 30 days from receipt, extendable by 30 days with written notice; GDPR Art. 12(3) grants 1 month, extendable to 3 months total with notification to the data subject within the first month. Chamber-OS defaults to the PDPA 30-day clock as the tighter constraint for Thailand-resident subjects.
+- The `attendee_fingerprint` on `csv_import_records` is a SHA-256 first-16-hex truncation. **Staff-review M-NEW-6 (2026-05-16) — legal-position caveat**: the fingerprint is not reversible by a third party, but the chamber (as controller) can re-derive it from a known email in O(1) time. EDPB guidance on pseudonymisation (`Art. 11 GDPR`) distinguishes general-public inference (disproportionate effort, exemption applies) from controller-assisted inference (not disproportionate, exemption does NOT clearly apply). For a TARGETED DSR where the requester's email is known, the Art. 11 exemption is legally borderline — DPO should consult counsel on whether to zero-out `csv_import_records.attendee_fingerprint` alongside the `event_registrations` erasure. The lowest-risk path is to wait for the 30-day natural sweep window (after which the fingerprint is no longer queried by the safety-net code path); if the DSR clock requires earlier action, NULL the column explicitly.
 
 ---
 

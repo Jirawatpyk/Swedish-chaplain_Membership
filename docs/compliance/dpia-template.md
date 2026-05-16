@@ -393,9 +393,9 @@ Chamber admin uploads EventCreate "Guestlist" CSV export (~30 columns, 50-100 at
 ### Outstanding items before flag-flip (staff-review B-5 2026-05-16)
 
 - [ ] DPO sign-off on this DPIA section.
-- [ ] Update `docs/compliance/processing-records.md § F6.processing-activities` with the 4 new data items (csv_import_records table, Vercel Blob error-CSV storage, attendee_fingerprint, attendee_pdpa_consent_acknowledged).
-- [ ] Update `docs/compliance/eventcreate-privacy-notice-template.md` (EN/TH/SV) to mention CSV-direct upload path + 30-day Blob retention.
-- [ ] Update `docs/runbooks/f6-manual-erasure.md` with cascading erasure to error-CSV Blobs.
+- [x] Update `docs/compliance/processing-records.md § F6.processing-activities` with the 4 new data items (csv_import_records table, Vercel Blob error-CSV storage, attendee_fingerprint, attendee_pdpa_consent_acknowledged). **Engineering: done in commit `0d55bd8b` (staff-review-fix R1) — DPO sign-off pending.**
+- [x] Update `docs/compliance/eventcreate-privacy-notice-template.md` (EN/TH/SV) to mention CSV-direct upload path + 30-day Blob retention. **Engineering: done in commit `0d55bd8b` (R1); also amended R3 for Art. 13(2)(d)/(f) statements per staff-review M-NEW-2/3 — DPO sign-off pending.**
+- [x] Update `docs/runbooks/f6-manual-erasure.md` with cascading erasure to error-CSV Blobs. **Engineering: done in commit `0d55bd8b` (R1); also fixed Vercel CLI → `scripts/erase-error-blob.ts` invocation per staff-review H-NEW-1 in R3 fix commit — DPO sign-off pending.**
 - [ ] Risk-accept the Vercel Blob `access:'public'` design trade-off (residual M) — DPO sign-off documented here.
 
 ### Conclusion
