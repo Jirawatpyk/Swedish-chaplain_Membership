@@ -780,11 +780,96 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         return err(wrapRepoError('registrations', e));
       }
     },
-    async listPseudonymiseEligible() {
-      return err({ kind: 'not_implemented', method: 'listPseudonymiseEligible', futureTask: 'Phase 10 T113' });
+    async listPseudonymiseEligible(
+      tenantId: TenantId,
+      olderThan: Date,
+      pageSize: number,
+    ): Promise<Result<ReadonlyArray<EventRegistrationAggregate>, RegistrationsRepositoryError>> {
+      // Phase 10 T113 — retention sweep eligibility scan per FR-032.
+      // Filters:
+      //   - matchType ∈ {non_member, unmatched}
+      //   - piiPseudonymisedAt IS NULL
+      //   - registeredAt < olderThan (2 years ago)
+      // Ordered by registeredAt ASC for FIFO sweep (oldest rows first
+      // — bounded so a partial sweep at least processes the oldest
+      // PII first per PDPA Section 37 / GDPR Art. 30 priority).
+      try {
+        const rows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              sql`${eventRegistrations.matchType} IN ('non_member','unmatched')`,
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+              sql`${eventRegistrations.registeredAt} < ${olderThan.toISOString()}`,
+            ),
+          )
+          .orderBy(eventRegistrations.registeredAt)
+          .limit(pageSize);
+        return ok(rows.map(toAggregate));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
-    async pseudonymiseRow() {
-      return err({ kind: 'not_implemented', method: 'pseudonymiseRow', futureTask: 'Phase 10 T113' });
+    async pseudonymiseRow(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+      pseudonymisedEmail: AttendeeEmail,
+      pseudonymisedName: string,
+      pseudonymisedCompany: string | null,
+      pseudonymisedAt: Date,
+    ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>> {
+      // Phase 10 T113 — replace attendee_email + attendee_name +
+      // attendee_company with deterministic salted hashes + stamp
+      // piiPseudonymisedAt. Idempotent: re-running on an already-
+      // pseudonymised row updates nothing material; returns the
+      // existing aggregate via the WHERE-piiPseudonymisedAt-IS-NULL
+      // guard (returning zero rows → SELECT existing + return).
+      try {
+        const updated = await executor
+          .update(eventRegistrations)
+          .set({
+            attendeeEmail: pseudonymisedEmail,
+            attendeeName: pseudonymisedName,
+            attendeeCompany: pseudonymisedCompany,
+            piiPseudonymisedAt: pseudonymisedAt,
+          })
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+            ),
+          )
+          .returning();
+        if (updated.length > 0) {
+          return ok(toAggregate(updated[0]!));
+        }
+        // Row not updated — either doesn't exist, or already pseudonymised.
+        // SELECT to disambiguate.
+        const probe = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+            ),
+          )
+          .limit(1);
+        if (probe.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations.pseudonymiseRow: row not found — caller passed a registrationId with no matching row in this tenant',
+          });
+        }
+        // Already pseudonymised — idempotent no-op success.
+        return ok(toAggregate(probe[0]!));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
     async hardDelete(
       tenantId: TenantId,

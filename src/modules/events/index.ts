@@ -402,6 +402,30 @@ export {
   drizzleEventAttendeesAdapter,
 } from './infrastructure/drizzle-event-attendees-by-member';
 
+// --- 6e. Phase 10 T113+T115 — Retention sweeps -----------------------
+
+export {
+  pseudonymiseStaleNonMemberPii,
+  type PseudonymiseStaleNonMemberPiiInput,
+  type PseudonymiseStaleNonMemberPiiOutput,
+  type PseudonymiseStaleNonMemberPiiError,
+  type PseudonymiseStaleNonMemberPiiDeps,
+  type PseudonymisationHasher,
+} from './application/use-cases/pseudonymise-stale-non-member-pii';
+
+export {
+  sweepStaleIdempotencyReceipts,
+  type SweepStaleIdempotencyReceiptsInput,
+  type SweepStaleIdempotencyReceiptsOutput,
+  type SweepStaleIdempotencyReceiptsError,
+  type SweepStaleIdempotencyReceiptsDeps,
+  type IdempotencyReceiptsSweepPort,
+} from './application/use-cases/sweep-stale-idempotency-receipts';
+
+export { makeDrizzleIdempotencySweepPort } from './infrastructure/drizzle-idempotency-sweep';
+export { makeDrizzleRegistrationsRepository } from './infrastructure/drizzle-registrations-repository';
+export { makePinoAuditPort } from './infrastructure/pino-audit-port';
+
 // --- 7. Infrastructure composition factories (DI surface) -------------------
 
 export {
