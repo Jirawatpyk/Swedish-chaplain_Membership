@@ -3,6 +3,7 @@
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { computeRefundableAmount } from '@/modules/payments/domain/value-objects/refundable-amount';
 import { checkRefundNotExceedingRemainder } from '@/modules/payments/domain/invariants/refund-not-exceeding-remainder';
 
@@ -10,8 +11,8 @@ describe('computeRefundableAmount', () => {
   it('returns full amount when no refunds yet', () => {
     expect(
       computeRefundableAmount({
-        paymentAmountSatang: 5_350_000n,
-        succeededSumSatang: 0n,
+        paymentAmountSatang: asSatang(5_350_000n),
+        succeededSumSatang: asSatang(0n),
       }),
     ).toEqual({ remainingSatang: 5_350_000n, fullyRefunded: false });
   });
@@ -19,8 +20,8 @@ describe('computeRefundableAmount', () => {
   it('returns remaining when partial refunds exist', () => {
     expect(
       computeRefundableAmount({
-        paymentAmountSatang: 5_350_000n,
-        succeededSumSatang: 1_500_000n,
+        paymentAmountSatang: asSatang(5_350_000n),
+        succeededSumSatang: asSatang(1_500_000n),
       }),
     ).toEqual({ remainingSatang: 3_850_000n, fullyRefunded: false });
   });
@@ -28,8 +29,8 @@ describe('computeRefundableAmount', () => {
   it('clamps to zero + fullyRefunded=true when sum equals payment', () => {
     expect(
       computeRefundableAmount({
-        paymentAmountSatang: 5_350_000n,
-        succeededSumSatang: 5_350_000n,
+        paymentAmountSatang: asSatang(5_350_000n),
+        succeededSumSatang: asSatang(5_350_000n),
       }),
     ).toEqual({ remainingSatang: 0n, fullyRefunded: true });
   });
@@ -37,17 +38,20 @@ describe('computeRefundableAmount', () => {
   it('clamps to zero + fullyRefunded=true even when sum exceeds payment (defensive)', () => {
     expect(
       computeRefundableAmount({
-        paymentAmountSatang: 5_350_000n,
-        succeededSumSatang: 6_000_000n,
+        paymentAmountSatang: asSatang(5_350_000n),
+        succeededSumSatang: asSatang(6_000_000n),
       }),
     ).toEqual({ remainingSatang: 0n, fullyRefunded: true });
   });
 
   it('throws on negative paymentAmountSatang', () => {
+    // asSatang(-1n) would throw first — exercise the runtime gate inside
+    // computeRefundableAmount by casting through `as` so the test
+    // continues to assert that the function itself rejects negatives.
     expect(() =>
       computeRefundableAmount({
-        paymentAmountSatang: -1n,
-        succeededSumSatang: 0n,
+        paymentAmountSatang: -1n as unknown as ReturnType<typeof asSatang>,
+        succeededSumSatang: asSatang(0n),
       }),
     ).toThrow(RangeError);
   });
@@ -55,8 +59,8 @@ describe('computeRefundableAmount', () => {
   it('throws on negative succeededSumSatang', () => {
     expect(() =>
       computeRefundableAmount({
-        paymentAmountSatang: 100n,
-        succeededSumSatang: -1n,
+        paymentAmountSatang: asSatang(100n),
+        succeededSumSatang: -1n as unknown as ReturnType<typeof asSatang>,
       }),
     ).toThrow(RangeError);
   });
@@ -69,8 +73,8 @@ describe('computeRefundableAmount', () => {
         (payment, sum) => {
           fc.pre(sum <= payment);
           const r = computeRefundableAmount({
-            paymentAmountSatang: payment,
-            succeededSumSatang: sum,
+            paymentAmountSatang: asSatang(payment),
+            succeededSumSatang: asSatang(sum),
           });
           expect(r.remainingSatang + sum).toBe(payment);
           expect(r.fullyRefunded).toBe(payment === sum);
@@ -84,9 +88,9 @@ describe('computeRefundableAmount', () => {
 describe('checkRefundNotExceedingRemainder (FR-011b invariant)', () => {
   it('ok when newRefund ≤ remaining', () => {
     const r = checkRefundNotExceedingRemainder({
-      paymentAmountSatang: 5_350_000n,
-      succeededSumSatang: 1_500_000n,
-      newRefundSatang: 3_850_000n,
+      paymentAmountSatang: asSatang(5_350_000n),
+      succeededSumSatang: asSatang(1_500_000n),
+      newRefundSatang: asSatang(3_850_000n),
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.remainingSatang).toBe(3_850_000n);
@@ -94,9 +98,9 @@ describe('checkRefundNotExceedingRemainder (FR-011b invariant)', () => {
 
   it('err refund_exceeds_remaining when newRefund > remaining', () => {
     const r = checkRefundNotExceedingRemainder({
-      paymentAmountSatang: 5_350_000n,
-      succeededSumSatang: 4_000_000n,
-      newRefundSatang: 2_000_000n,
+      paymentAmountSatang: asSatang(5_350_000n),
+      succeededSumSatang: asSatang(4_000_000n),
+      newRefundSatang: asSatang(2_000_000n),
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -107,10 +111,12 @@ describe('checkRefundNotExceedingRemainder (FR-011b invariant)', () => {
   });
 
   it('err refund_exceeds_remaining when newRefund ≤ 0 (defensive)', () => {
+    // asSatang(0n) is permitted (0 is the minimum non-negative); the
+    // invariant rejects ≤ 0 internally so we use the public path.
     const r = checkRefundNotExceedingRemainder({
-      paymentAmountSatang: 5_350_000n,
-      succeededSumSatang: 0n,
-      newRefundSatang: 0n,
+      paymentAmountSatang: asSatang(5_350_000n),
+      succeededSumSatang: asSatang(0n),
+      newRefundSatang: asSatang(0n),
     });
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -121,9 +127,9 @@ describe('checkRefundNotExceedingRemainder (FR-011b invariant)', () => {
 
   it('exact-match boundary: newRefund === remaining → ok', () => {
     const r = checkRefundNotExceedingRemainder({
-      paymentAmountSatang: 5_350_000n,
-      succeededSumSatang: 0n,
-      newRefundSatang: 5_350_000n,
+      paymentAmountSatang: asSatang(5_350_000n),
+      succeededSumSatang: asSatang(0n),
+      newRefundSatang: asSatang(5_350_000n),
     });
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.remainingSatang).toBe(5_350_000n);

@@ -25,6 +25,7 @@
  */
 import type Stripe from 'stripe';
 import { asSatang } from '@/lib/money';
+import { logger } from '@/lib/logger';
 import type {
   WebhookVerifierPort,
   VerifiedStripeEvent,
@@ -77,7 +78,30 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
   let disputeId: string | null | undefined;
   // F5R3 H-5 (2026-05-16) — projected as branded Satang at the
   // Stripe→Application boundary; downstream code never re-validates.
+  // F5R3v2 C-1 (2026-05-16) — defensive projection: `asSatang` throws
+  // RangeError on negative values. Stripe SDK types `amount` as
+  // non-negative number, but a fuzz / API drift / dispute-closed-
+  // with-reversed-sign could violate that. A throw inside the
+  // verifier (which already cleared HMAC) would propagate as 500 →
+  // Stripe retry storm. Treat malformed amount as "skip projection"
+  // + warn, letting downstream use-case decide if amount-less is OK.
   let amountSatang: import('@/lib/money').Satang | undefined;
+  const projectAmountSafely = (kind: string, n: number): void => {
+    try {
+      amountSatang = asSatang(BigInt(n));
+    } catch (e) {
+      logger.warn(
+        {
+          kind,
+          rawAmount: n,
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        },
+        'stripe-webhook-verifier.amount_projection_failed',
+      );
+      // amountSatang stays undefined → envelope omits the field
+      // (downstream guards with `?? 0n` or `if (amountSatang)`).
+    }
+  };
 
   if (objectType === 'payment_intent') {
     const lc = raw['latest_charge'];
@@ -100,7 +124,7 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
     lastPaymentErrorCode =
       lpe && typeof lpe.code === 'string' ? lpe.code : null;
     if (typeof raw['amount'] === 'number') {
-      amountSatang = asSatang(BigInt(raw['amount'] as number));
+      projectAmountSafely('payment_intent', raw['amount'] as number);
     }
   } else if (objectType === 'charge') {
     const refunds = raw['refunds'] as
@@ -113,12 +137,12 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
         .filter((v): v is string => v !== null);
     }
     if (typeof raw['amount'] === 'number') {
-      amountSatang = asSatang(BigInt(raw['amount'] as number));
+      projectAmountSafely('charge', raw['amount'] as number);
     }
   } else if (objectType === 'dispute') {
     disputeId = rawId;
     if (typeof raw['amount'] === 'number') {
-      amountSatang = asSatang(BigInt(raw['amount'] as number));
+      projectAmountSafely('dispute', raw['amount'] as number);
     }
   }
 

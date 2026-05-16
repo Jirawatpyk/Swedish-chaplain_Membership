@@ -111,8 +111,8 @@ export type IssueRefundError =
     }
   | {
       readonly code: 'refund_exceeds_remaining';
-      readonly requestedSatang: bigint;
-      readonly remainingSatang: bigint;
+      readonly requestedSatang: Satang;
+      readonly remainingSatang: Satang;
     }
   | { readonly code: 'refund_in_progress' }
   | {

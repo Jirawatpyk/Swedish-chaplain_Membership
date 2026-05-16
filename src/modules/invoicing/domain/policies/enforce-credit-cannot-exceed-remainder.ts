@@ -10,7 +10,7 @@
  *
  * Pure TypeScript — no framework/ORM imports.
  */
-import { asSatang, type Satang } from '@/lib/money';
+import { asSatangUnchecked, type Satang } from '@/lib/money';
 import type { Money } from '@/modules/invoicing/domain/value-objects/money';
 
 export type CreditRemainderError = {
@@ -36,13 +36,17 @@ export function enforceCreditCannotExceedRemainder(input: {
       ok: false,
       error: {
         kind: 'credit_exceeds_remainder',
-        // F5R3 H-5 (2026-05-16) — brand Money.satang reads at the
-        // error-payload escape point. Money VO internal storage stays
-        // bigint; the brand applies where money leaves the VO surface.
-        invoiceTotalSatang: asSatang(input.invoiceTotal.satang),
-        alreadyCreditedSatang: asSatang(input.alreadyCredited.satang),
-        proposedSatang: asSatang(input.proposed.satang),
-        remainingSatang: asSatang(remaining < 0n ? 0n : remaining),
+        // F5R3v2 B-1 (2026-05-16) — `asSatangUnchecked` for error-
+        // payload escape: surfacing money imbalance MUST NOT throw on
+        // the corrupted values it exists to record. The non-negative
+        // clamp on `remainingSatang` (lines below) was already
+        // defensive against the legitimate "fully credited" zero
+        // case; here we additionally allow corrupted negatives to flow
+        // through for diagnostic forensics.
+        invoiceTotalSatang: asSatangUnchecked(input.invoiceTotal.satang),
+        alreadyCreditedSatang: asSatangUnchecked(input.alreadyCredited.satang),
+        proposedSatang: asSatangUnchecked(input.proposed.satang),
+        remainingSatang: asSatangUnchecked(remaining < 0n ? 0n : remaining),
       },
     };
   }

@@ -142,3 +142,162 @@ describe('stripeWebhookVerifier — verify + project', () => {
     }
   });
 });
+
+// F5R3v2 H-6 (2026-05-16) — amount-projection equality tests.
+//
+// C-1 made amount projection defensive (try/catch around asSatang →
+// fallback to undefined + logger.warn) for three object types
+// (payment_intent / charge / dispute). Equally important is that the
+// happy-path projection is BYTE-FAITHFUL: `envelope.dataObject.amountSatang`
+// MUST equal `BigInt(raw.amount)` for every supported object type, with
+// no silent transformation, scaling, or rounding. A future bug that
+// (say) divided by 100 thinking Stripe sent baht-not-satang would silently
+// halve every received amount — these tests pin the contract.
+describe('stripeWebhookVerifier — amount projection (H-6)', () => {
+  function signedBody(body: string): {
+    body: string;
+    sig: string;
+  } {
+    return { body, sig: makeSigHeader(body) };
+  }
+
+  it('payment_intent: amountSatang === BigInt(raw.amount) exactly', () => {
+    const raw = 535_000; // 5,350.00 THB
+    const body = JSON.stringify({
+      id: 'evt_pi_amount',
+      type: 'payment_intent.succeeded',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'pi_amount_test',
+          object: 'payment_intent',
+          latest_charge: 'ch_amount_test',
+          amount: raw,
+        },
+      },
+    });
+    const { sig } = signedBody(body);
+    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    expect(envelope.dataObject.amountSatang).toBeDefined();
+    expect(envelope.dataObject.amountSatang).toBe(BigInt(raw));
+  });
+
+  it('charge: amountSatang === BigInt(raw.amount) exactly', () => {
+    const raw = 250_000; // 2,500.00 THB
+    const body = JSON.stringify({
+      id: 'evt_ch_amount',
+      type: 'charge.refunded',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'ch_amount_test',
+          object: 'charge',
+          amount: raw,
+          refunds: { data: [] },
+        },
+      },
+    });
+    const { sig } = signedBody(body);
+    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    expect(envelope.dataObject.amountSatang).toBe(BigInt(raw));
+  });
+
+  it('dispute: amountSatang === BigInt(raw.amount) exactly', () => {
+    const raw = 100_000; // 1,000.00 THB
+    const body = JSON.stringify({
+      id: 'evt_dp_amount',
+      type: 'charge.dispute.created',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'dp_amount_test',
+          object: 'dispute',
+          amount: raw,
+        },
+      },
+    });
+    const { sig } = signedBody(body);
+    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    expect(envelope.dataObject.amountSatang).toBe(BigInt(raw));
+  });
+
+  it('payment_intent: zero amount projects as 0n (not undefined)', () => {
+    // Edge case — a 0-amount payment_intent is rare but valid (e.g.,
+    // setup_intent flow, $0 invoice for trial). asSatang accepts 0n.
+    const body = JSON.stringify({
+      id: 'evt_pi_zero',
+      type: 'payment_intent.succeeded',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'pi_zero_test',
+          object: 'payment_intent',
+          amount: 0,
+        },
+      },
+    });
+    const { sig } = signedBody(body);
+    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    expect(envelope.dataObject.amountSatang).toBe(0n);
+  });
+
+  it('payment_intent: negative amount triggers C-1 fallback (amountSatang omitted)', () => {
+    // C-1 defensive: a negative amount (impossible under Stripe API
+    // contract but plausible under fuzz / SDK drift / dispute-reversal)
+    // MUST NOT throw — the verifier should warn + omit the field so
+    // downstream use-cases stay alive.
+    const body = JSON.stringify({
+      id: 'evt_pi_negative',
+      type: 'payment_intent.succeeded',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'pi_negative_test',
+          object: 'payment_intent',
+          amount: -100,
+        },
+      },
+    });
+    const { sig } = signedBody(body);
+    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    // amountSatang field must be omitted (envelope still constructs).
+    expect(envelope.dataObject.amountSatang).toBeUndefined();
+    expect(envelope.dataObject.id).toBe('pi_negative_test');
+  });
+
+  it('payment_intent: missing amount field projects as undefined', () => {
+    // No `amount` on the raw object → no projection attempt → omitted.
+    const body = JSON.stringify({
+      id: 'evt_pi_no_amount',
+      type: 'payment_intent.succeeded',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_test',
+      data: {
+        object: {
+          id: 'pi_no_amount',
+          object: 'payment_intent',
+        },
+      },
+    });
+    const { sig } = signedBody(body);
+    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    expect(envelope.dataObject.amountSatang).toBeUndefined();
+  });
+});

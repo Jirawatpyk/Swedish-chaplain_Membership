@@ -533,11 +533,45 @@ export const stripeGateway: ProcessorGatewayPort = {
         'stripe-gateway: createRefund ok',
       );
 
+      // F5R3v2 H-3 (2026-05-16) — defensive amount projection at the
+      // Stripe→Domain boundary. `asSatang(BigInt(refund.amount))`
+      // would throw RangeError if Stripe ever returns a negative
+      // amount (API drift, fuzz, partial-refund edge). Stripe just
+      // accepted the refund — throwing here loses the typed Result
+      // path AND the refund row's processor_refund_id, creating an
+      // out-of-band refund condition recoverable only via the 12h
+      // sweep cron. Fall back to the input.amountSatang (which we
+      // sent to Stripe and just succeeded) so the caller can
+      // finalise normally. Log + counter so SREs see API drift.
+      let refundAmount: ReturnType<typeof asSatang>;
+      try {
+        refundAmount =
+          Number.isFinite(refund.amount) && refund.amount >= 0
+            ? asSatang(BigInt(refund.amount))
+            : (() => {
+                throw new RangeError(
+                  `stripe-gateway: refund.amount is not a finite non-negative number (${refund.amount})`,
+                );
+              })();
+      } catch (brandErr) {
+        logger.warn(
+          {
+            stripeAccount: input.stripeAccount,
+            paymentIntentId: input.paymentIntentId,
+            refundId: refund.id,
+            rawAmount: refund.amount,
+            errKind:
+              brandErr instanceof Error ? brandErr.constructor.name : 'unknown',
+          },
+          'stripe-gateway.refund_amount_brand_failed',
+        );
+        // Fall back to the input amount (which Stripe just accepted).
+        refundAmount = input.amountSatang ?? asSatang(0n);
+      }
       return ok({
         id: refund.id,
         status: refund.status ?? 'pending',
-        // F5R3 H-5 (2026-05-16) — brand at the Stripe→Domain boundary.
-        amountSatang: asSatang(BigInt(refund.amount)),
+        amountSatang: refundAmount,
       });
     } catch (e) {
       return err(

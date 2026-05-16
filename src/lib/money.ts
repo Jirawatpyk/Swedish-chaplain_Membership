@@ -56,6 +56,41 @@ export function asSatang(raw: bigint): Satang {
 }
 
 /**
+ * F5R3v2 B-1 (2026-05-16) — diagnostic / forensic escape hatch.
+ *
+ * Apply the `Satang` brand WITHOUT running the non-negative
+ * validation. Use ONLY at error-payload construction sites where the
+ * caller is intentionally preserving a possibly-corrupted value for
+ * forensics (e.g. `credit_exceeds_remainder` carries the offending
+ * proposed/remaining values — if those happen to be negative due to a
+ * data-integrity bug, the err-path is precisely the surface that must
+ * NOT throw and lose the diagnostic).
+ *
+ * Pre-fix the R3 H-5 migration used `asSatang(...)` at error-payload
+ * sites. A negative value would throw `RangeError` inside the
+ * error-construction expression, escape the err-branch, propagate to
+ * the outer tracer catch, and become a generic 500 with no money
+ * breakdown in audit_log. The whole point of these typed errors is
+ * surfacing exactly that breakdown.
+ *
+ * Trade-off: bypassing validation means a `Satang` constructed via
+ * this helper does NOT carry the non-negative invariant. Callers
+ * accepting such a value from an error payload MUST treat it as
+ * untrusted (do not arithmetic-fold into other Satang values via
+ * `addSatang` / `subSatang` — the brand check is a one-way
+ * guarantee).
+ *
+ * Production callsites are limited to:
+ *   - F4 `enforceCreditCannotExceedRemainder` error payload
+ *   - F4 `assertCreditNoteVatBalance` error payload
+ *   - F4 `issueCreditNote` `credit_exceeds_remainder` err return
+ * Adding new callers requires the same forensic-payload justification.
+ */
+export function asSatangUnchecked(raw: bigint): Satang {
+  return raw as Satang;
+}
+
+/**
  * Construct from a number/string that is KNOWN to be a minor-unit
  * integer. Use at DB / Stripe / parse boundaries where the value
  * is provably non-negative integer satang. THROWS on negative or

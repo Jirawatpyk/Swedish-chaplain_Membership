@@ -37,7 +37,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
-import { addSatang, asSatang, type Satang } from '@/lib/money';
+import { addSatang, asSatang, asSatangUnchecked, type Satang } from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
@@ -252,19 +252,23 @@ export async function issueCreditNote(
           },
           'issueCreditNote: vat calculation failed after remainder guard (unreachable — investigate)',
         );
-        // F5R3 H-5 (2026-05-16) — brand Money.satang reads + subtract
-        // result at the err-payload escape point. Subtraction can
-        // legitimately be 0 (fully credited); cap negative at 0n then
-        // brand. `subSatang` would throw on underflow but we want a
-        // clamped 0 here for the SC-013 invariant ("remaining ≥ 0").
-        const subSafe = (a: bigint, b: bigint): Satang =>
-          asSatang(a >= b ? a - b : 0n);
+        // F5R3v2 B-1 (2026-05-16) — `asSatangUnchecked` for the err-
+        // payload escape. Subtraction can legitimately be 0 (fully
+        // credited) — clamp negative-result to 0n for the SC-013
+        // invariant ("remaining ≥ 0") but pass corrupted values
+        // (e.g. proposed > invoice total → already-credited corruption
+        // class) through to the audit payload unchanged so admins can
+        // see the actual values that triggered the violation.
+        const remaining =
+          loaded.total.satang >= loaded.creditedTotal.satang
+            ? loaded.total.satang - loaded.creditedTotal.satang
+            : 0n;
         return err({
           code: 'credit_exceeds_remainder',
-          invoiceTotalSatang: asSatang(loaded.total.satang),
-          alreadyCreditedSatang: asSatang(loaded.creditedTotal.satang),
-          proposedSatang: asSatang(proposed.satang),
-          remainingSatang: subSafe(loaded.total.satang, loaded.creditedTotal.satang),
+          invoiceTotalSatang: asSatangUnchecked(loaded.total.satang),
+          alreadyCreditedSatang: asSatangUnchecked(loaded.creditedTotal.satang),
+          proposedSatang: asSatangUnchecked(proposed.satang),
+          remainingSatang: asSatangUnchecked(remaining),
         });
       }
       const { creditAmount, vat, total } = vatCalc.value;

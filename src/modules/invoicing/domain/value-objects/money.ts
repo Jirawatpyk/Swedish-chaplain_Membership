@@ -14,7 +14,19 @@
  *
  * Rule: ALL monetary math inside the invoicing domain goes through this
  * type. Presentation converts to THB.ss display via `formatTHB()`.
+ *
+ * F5R3v2 H-4 (2026-05-16) — `Money.satang` is now the branded `Satang`
+ * type from `@/lib/money`. Pre-fix every consumer that escaped a
+ * Money into a port / DTO / event had to re-cast via `asSatang(...)`
+ * — a maintainer could write `money.satang` directly into a DTO and
+ * silently defeat the brand. Push the brand INTO the VO so the
+ * non-negative invariant is established at construction (already true
+ * at runtime via `ofSatang` + `fromSatangUnsafe`) and survives every
+ * read. `Satang` is structurally `bigint` so existing arithmetic
+ * (`a + b`, `a - b`, comparisons) inside Money continues to work; the
+ * brand re-applies via `asSatang` on the way out of arithmetic.
  */
+import { asSatang, type Satang } from '@/lib/money';
 
 export type MoneyError =
   | { kind: 'negative_amount'; satang: bigint }
@@ -24,10 +36,14 @@ export type MoneyError =
 const MAX_SAFE_FACTOR_DENOMINATOR = 10_000n; // 4 decimal places
 
 export class Money {
-  readonly satang: bigint;
+  readonly satang: Satang;
 
   private constructor(satang: bigint) {
-    this.satang = satang;
+    // asSatang validates non-negative at the brand boundary. Existing
+    // public constructors (ofSatang / fromSatangUnsafe / fromTHB)
+    // already pre-validate, so this is belt-and-suspenders — the only
+    // path that could surface a negative is `subtract`'s own guard.
+    this.satang = asSatang(satang);
   }
 
   static zero(): Money {

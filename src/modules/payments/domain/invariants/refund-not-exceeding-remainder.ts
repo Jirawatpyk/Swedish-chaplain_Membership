@@ -14,24 +14,32 @@
  *
  * Pure TypeScript — no framework/ORM imports.
  */
+import { asSatang, type Satang } from '@/lib/money';
 import {
   computeRefundableAmount,
   type RefundableAmountInput,
 } from '../value-objects/refundable-amount';
 
+/**
+ * F5R3v2 H-5 (2026-05-16) — branded `Satang` on every money field.
+ * Pre-fix the inputs + error payload used raw `bigint` while their
+ * callers (`Payment.amountSatang`, refund context, route body) were
+ * already branded. A future refund-policy authoring mistake mixing
+ * baht-by-100 by hand had no compile-time guard.
+ */
 export type RefundExceedsRemainderError = {
   readonly kind: 'refund_exceeds_remaining';
-  readonly requestedSatang: bigint;
-  readonly remainingSatang: bigint;
+  readonly requestedSatang: Satang;
+  readonly remainingSatang: Satang;
 };
 
 export interface RefundNotExceedingRemainderInput extends RefundableAmountInput {
-  readonly newRefundSatang: bigint;
+  readonly newRefundSatang: Satang;
 }
 
 export function checkRefundNotExceedingRemainder(
   input: RefundNotExceedingRemainderInput,
-): { ok: true; remainingSatang: bigint } | { ok: false; error: RefundExceedsRemainderError } {
+): { ok: true; remainingSatang: Satang } | { ok: false; error: RefundExceedsRemainderError } {
   if (input.newRefundSatang <= 0n) {
     // Caller bug — zod at the route boundary already rejects this.
     // Surface a typed error so the invariant is total.
@@ -40,7 +48,7 @@ export function checkRefundNotExceedingRemainder(
       error: {
         kind: 'refund_exceeds_remaining',
         requestedSatang: input.newRefundSatang,
-        remainingSatang: 0n,
+        remainingSatang: asSatang(0n),
       },
     };
   }

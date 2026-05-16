@@ -17,7 +17,7 @@
  * Pure TypeScript — no framework/ORM imports.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { asSatang, type Satang } from '@/lib/money';
+import { asSatangUnchecked, type Satang } from '@/lib/money';
 import type { Money } from './value-objects/money';
 import type { DocumentNumber } from './value-objects/document-number';
 import type { FiscalYear } from './value-objects/fiscal-year';
@@ -126,10 +126,15 @@ export function assertCreditNoteVatBalance(
   if (parts.creditAmount.satang + parts.vat.satang !== parts.total.satang) {
     return err({
       kind: 'vat_balance_violated',
-      // F5R3 H-5 (2026-05-16) — brand Money.satang reads at error-payload escape.
-      creditAmountSatang: asSatang(parts.creditAmount.satang),
-      vatSatang: asSatang(parts.vat.satang),
-      totalSatang: asSatang(parts.total.satang),
+      // F5R3v2 B-1 (2026-05-16) — `asSatangUnchecked` at error-payload
+      // escape: the WHOLE point of this err-branch is surfacing money
+      // imbalance, and `asSatang` would throw on the very negative
+      // value the diagnostic exists to record. Bypass validation here;
+      // downstream consumers MUST treat the values as untrusted (audit
+      // payload + UI display only; never arithmetic-fold).
+      creditAmountSatang: asSatangUnchecked(parts.creditAmount.satang),
+      vatSatang: asSatangUnchecked(parts.vat.satang),
+      totalSatang: asSatangUnchecked(parts.total.satang),
     });
   }
   return ok(undefined);

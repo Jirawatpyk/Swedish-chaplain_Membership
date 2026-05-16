@@ -40,13 +40,28 @@ import type {
 function mapF4InvoiceForPayment(
   v: F4InvoiceForPayment,
 ): InvoiceForPaymentDTO {
+  // F5R3v2 H-2 (2026-05-16) — defensive brand at F4→F5 boundary.
+  // F4 + F5 both type money as `Satang` after the 2026-05-16
+  // migration so this cast is structurally a no-op, BUT `asSatang`
+  // still runtime-validates non-negative. If F4 ever surfaces a
+  // negative total (data corruption, dropped CHECK constraint),
+  // throwing here would mid-flight an `initiatePayment` call with
+  // a generic 500 + no bridge-specific audit. Instead emit a
+  // forensic counter + cap the totalSatang at zero so downstream
+  // typed-error paths still fire (will hit the "invoice not
+  // payable" branch with status=paid/credited rather than
+  // mysteriously 500).
+  let totalSatang: ReturnType<typeof asSatang>;
+  try {
+    totalSatang = asSatang(v.totalSatang);
+  } catch {
+    paymentsMetrics.f4BridgeUnknownErrorShape('f4_invoice_total_negative');
+    totalSatang = asSatang(0n);
+  }
   return {
     id: v.id,
     status: v.status,
-    // F5R3 H-5 (2026-05-16) — brand at F4→F5 bridge boundary. F4
-    // still holds invoice totals as bare `bigint`; future F4 migration
-    // to Satang will make this cast a no-op (the brand is structural).
-    totalSatang: asSatang(v.totalSatang),
+    totalSatang,
     memberId: v.memberId,
     tenantId: v.tenantId,
   };
