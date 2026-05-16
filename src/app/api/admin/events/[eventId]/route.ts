@@ -76,7 +76,9 @@ export async function GET(
     // Narrowed `role` passed directly so future Role-union additions
     // fail to compile against the helper's `'member' | 'manager'`.
     await emitEventsRoleViolation(request, {
-      actorUserId: session.user.id,
+      // Round-3 type-M closure — brand at callsite for consistency
+      // with the 5 other admin write routes' actor-id discipline.
+      actorUserId: asUserId(session.user.id),
       actorRole: role,
       attemptedRoute: `/api/admin/events/${eventId}`,
       attemptedAction: 'load_event_detail',

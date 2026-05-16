@@ -6,6 +6,15 @@
  *   1. Loads the registration via `registrationsRepo.findById` →
  *      `registration_not_found` if missing.
  *
+ *   1b. **Path-eventId guard** (Round-2 code-H1 closure) — when
+ *      `eventIdFromPath !== null` and differs from
+ *      `registration.eventId`, returns `event_path_mismatch` BEFORE
+ *      step 2 / any mutation / lock / audit. Closes a silent-success
+ *      class bug where a Round-1 post-commit route check refused the
+ *      response AFTER the use-case had already mutated the DB.
+ *      `eventIdFromPath: null` (e.g., future bulk-relink endpoint
+ *      without URL context) skips the check.
+ *
  *   2. Rejects pseudonymised rows EARLY at the Application boundary with
  *      `pseudonymised_row_rejected` — the Drizzle adapter ALSO enforces
  *      this via `WHERE pii_pseudonymised_at IS NULL` (defence-in-depth),
@@ -23,6 +32,15 @@
  *      with `ok({ noop:true, ... })`. No audit row, no lock, no DB write.
  *      Route handler returns 200 with a no-op flag for client-side
  *      toast guidance.
+ *
+ *   4b. **Deadlock-safe lock acquisition** (Round-1 polish) — when the
+ *      relink touches BOTH OLD + NEW members, acquire both advisory
+ *      locks upfront in `LockKey`-sorted order so two concurrent
+ *      relinks `A→B` and `B→A` cannot deadlock. Same principle as
+ *      archive-event's `ORDER BY matched_member_id ASC` SELECT —
+ *      different mechanism (sort 2 keys in-process vs ORDER BY at
+ *      SQL layer over N rows). Skipped when OLD has no counted
+ *      scope (only NEW lock needed).
  *
  *   5. CREDIT-BACK OLD MEMBER (skipped if old `matchedMemberId === null`,
  *      e.g., previous match was `non_member` / `unmatched`). For each

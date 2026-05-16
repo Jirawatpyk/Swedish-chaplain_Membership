@@ -24,6 +24,7 @@ import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { runListEvents } from '@/lib/events-admin-deps';
+import { asUserId } from '@/modules/auth';
 import {
   runCreateEvent,
   createEventRateLimitCheck,
@@ -95,7 +96,12 @@ export async function GET(request: NextRequest) {
     // the helper's `'member' | 'manager'` param — surfaceable signal,
     // not silent audit mis-labelling.
     await emitEventsRoleViolation(request, {
-      actorUserId: session.user.id,
+      // Round-3 type-M closure — brand at this callsite for
+      // consistency with the 5 other admin write routes' actor-id
+      // branding. The helper's `actorUserId: string | null` accepts
+      // any string subtype (UserId widens cleanly); this brand is
+      // future-proof against tightening the helper to require UserId.
+      actorUserId: asUserId(session.user.id),
       actorRole: role,
       attemptedRoute: '/api/admin/events',
       attemptedAction: 'list_events',
@@ -237,6 +243,16 @@ export async function GET(request: NextRequest) {
 //
 // Authz: admin ONLY (manager/member → 404 + audit). Rate-limit 30/hr
 // per (tenant, actor) for tenant-onboarding burst tolerance.
+
+// ===========================================================================
+// § POST handler init                                                       —
+// Round-3 anchor (replaces stale line-number citation in `relink/route.ts`
+// requestId rationale). The 4 lines below establish the canonical
+// requestId-correlation pattern for every F6 admin write route: generate
+// once at the top so every 500 path can correlate logs ↔ response body.
+// Mirror across new sibling routes by copying lines requestId-decl + every
+// `logger.error({ requestId })` + response body `{ requestId }`.
+// ===========================================================================
 
 export async function POST(request: NextRequest) {
   if (!env.features.f6EventCreate) {

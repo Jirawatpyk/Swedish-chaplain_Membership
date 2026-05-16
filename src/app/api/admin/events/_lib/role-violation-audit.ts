@@ -200,8 +200,24 @@ export async function adminOnlyWriterGuard(
   let tenantSlug: string | null = null;
   try {
     tenantSlug = resolveTenantFromRequest(request).slug;
-  } catch {
-    // best-effort only — proceed without tenantSlug
+  } catch (e) {
+    // Round-3 errors-M closure — surface best-effort failures at
+    // `debug` level so a sustained spike (e.g., misconfigured host
+    // allowlist in a new deployment env) is observable as a metric
+    // delta on the `f6_admin_writer_guard_tenant_resolve_failed_best_effort`
+    // log event. Without this, silent discards would leave SRE with
+    // no signal — every 500 would show `tenantSlug: null`
+    // indistinguishably from legitimately-unresolvable requests.
+    // `debug` keeps noise low in normal operation; turn on at the
+    // pino-level filter when investigating.
+    logger.debug(
+      {
+        event: 'f6_admin_writer_guard_tenant_resolve_failed_best_effort',
+        err: e instanceof Error ? e.message : String(e),
+        attemptedRoute: input.attemptedRoute,
+      },
+      '[F6] tenantSlug resolve failed in writer-guard (best-effort, continuing without tenant context)',
+    );
   }
 
   // Round-1 err-M5 — wrap session lookup so a DB / Redis blip during

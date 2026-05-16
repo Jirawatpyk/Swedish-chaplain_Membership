@@ -221,7 +221,7 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
     );
   });
 
-  it('Round-2 err-M5 — caller-supplied requestId is preserved through guard 500 response', async () => {
+  it('Round-2 err-M5 — caller-supplied requestId is preserved through guard 500 response + log line', async () => {
     getCurrentSessionMock.mockRejectedValue(new Error('blip'));
     const { adminOnlyWriterGuard } = await loadGuard();
     const callerRequestId = '11111111-2222-3333-4444-555555555555';
@@ -234,5 +234,18 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
       const body = (await result.response.json()) as { requestId?: string };
       expect(body.requestId).toBe(callerRequestId);
     }
+    // Round-3 test-M closure — the structured log line MUST carry the
+    // SAME requestId as the response body. A regression that mints a
+    // separate requestId for the log would break SRE audit-trail
+    // correlation (admin reports requestId from response; SRE searches
+    // logs by that id; without this assertion, that flow could
+    // silently break).
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'f6_admin_writer_guard_session_lookup_failed',
+        requestId: callerRequestId,
+      }),
+      expect.any(String),
+    );
   });
 });

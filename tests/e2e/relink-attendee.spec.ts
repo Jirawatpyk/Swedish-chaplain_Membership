@@ -165,6 +165,11 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     await picker.fill(fixture.relinkTargetCompany.slice(0, 13));
     const firstOption = page.getByRole('option').first();
     await expect(firstOption).toBeVisible({ timeout: 10_000 });
+    // Round-3 test-M closure — pin EXACTLY one option in the picker
+    // result list. A future seed that adds another "Relink Target *"
+    // member would surface as a count mismatch here rather than as
+    // a flaky "wrong row clicked" downstream failure.
+    await expect(page.getByRole('option')).toHaveCount(1);
     // Verify the option text matches the target company before
     // clicking — defence-in-depth against picker surfacing the
     // wrong row.
@@ -172,11 +177,23 @@ test.describe('@a11y @e2e F6 US6 manual relink', () => {
     await firstOption.click();
 
     // Success toast (not noop) because A ≠ B. The integration test
-    // owns the credit-back arithmetic; here we only assert the UI
+    // owns the credit-back arithmetic; here we assert the UI
     // wire-up + the absence of the noop short-circuit.
     await expect(
       page.getByRole('status').filter({ hasText: /relinked/i }),
     ).toBeVisible({ timeout: 10_000 });
+
+    // Round-3 test-M closure — verify the row's match badge updated
+    // to "Verified contact" (matchType=member_contact) AFTER the
+    // POST persisted + router.refresh() re-rendered. Mirrors AS1's
+    // post-toast badge-update assertion. Without this, a regression
+    // that toasts success without persisting (e.g., dropped POST
+    // dispatch) would slip through.
+    await page.waitForLoadState('networkidle');
+    const updatedRow = page
+      .getByTestId(`relink-button-${fixture.countedRegistrationId}`)
+      .locator('xpath=ancestor::tr');
+    await expect(updatedRow).toContainText(/verified contact/i);
   });
 
   test('FR-014 round-2 R4 — pseudonymised row renders inline disallowed message instead of Relink CTA', async ({

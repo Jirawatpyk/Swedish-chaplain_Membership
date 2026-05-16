@@ -120,9 +120,14 @@ type MemberSearchHit = z.infer<typeof MemberSearchHitSchema>;
 //     credit-back/decrement summary).
 // `passthrough` is added on each variant so future server-side fields
 // don't trigger a parse failure during a deploy crossover window.
+// Round-3 type-M closure — tighten member-id fields to UUID
+// validation matching `MemberSearchHitSchema.memberId` discipline.
+// Server emits branded `MemberId` (UUID PK from members table); a
+// future regression that leaks a non-UUID member-id (e.g., a slug,
+// a name) would fail parse instead of silently flowing through.
 const QuotaImpactSchema = z.object({
-  creditedBackFor: z.string().nullable(),
-  decrementedFor: z.string().nullable(),
+  creditedBackFor: z.string().uuid().nullable(),
+  decrementedFor: z.string().uuid().nullable(),
   scopes: z.array(z.enum(['partnership', 'cultural'])),
 });
 
@@ -301,11 +306,12 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
   // `data-testid='relink-disallowed-{rid}'` `aria-label`, which
   // carries the full sentence for SR users + the E2E `getByTestId`.
   //
-  // Round-2 comments-M — no nested `TooltipProvider`: rely on the
-  // hoisted single provider in `attendee-table.tsx` (lines 237-240
-  // documenting the single-provider invariant). Nesting providers
-  // wouldn't break Radix but contradicted the explicit hoist
-  // pattern.
+  // Round-2 comments-M + Round-3 — no nested `TooltipProvider`:
+  // rely on the hoisted single provider in
+  // `attendee-table.tsx § "Round-11 review fix — single
+  // TooltipProvider hoisted"` (anchor citation, not line number).
+  // Nesting providers wouldn't break Radix but contradicted the
+  // explicit hoist pattern.
   if (props.isPseudonymised) {
     return (
       <Tooltip>

@@ -57,11 +57,23 @@ export type RequestId = string & { readonly __brand: 'RequestId' };
  * 1. Hot paths — every Drizzle row read brands a UUID; a regex check
  *    on each would add non-zero overhead on read-heavy queries
  *    (e.g., the attendee table render at 50 rows × 4 brand calls).
- * 2. DB type system already guarantees the shape — Postgres `uuid`
- *    columns cannot store malformed values.
+ * 2. DB type system already guarantees the shape **for the
+ *    UUID-PK-backed brands** (`EventId`, `RegistrationId`) — Postgres
+ *    `uuid` columns cannot store malformed values, so `as*` reads
+ *    from those rows are inherently safe.
  * 3. Route handlers already inline UUID_V4 regex on path params
  *    BEFORE calling `as*`, so the constructor's regex would be
  *    redundant.
+ *
+ * **External*-ID exception** (Round-3 types-M closure):
+ * `ExternalEventId` + `ExternalAttendeeId` are NOT backed by Postgres
+ * `uuid` columns — they originate from CSV cells / webhook payload
+ * fields and have variable-format identifiers (EventCreate emits
+ * snake_case strings, NOT UUIDs). Callers MUST validate at the
+ * CSV/webhook ingest boundary BEFORE calling `asExternalEventId` /
+ * `asExternalAttendeeId`. The length-only check here only protects
+ * against the empty-string class — it does NOT enforce any format
+ * shape on external identifiers because no canonical shape exists.
  *
  * Strengthening (rename to `asXUnchecked` OR add regex) was
  * considered in Round 2 and rejected on cost-vs-benefit grounds

@@ -206,10 +206,11 @@ export async function POST(
       case 'event_path_mismatch':
         // Round-2 code-H1 — surface-disclosure 404 (same shape as
         // not-found cases; do not leak which discriminator fired).
-        // The use-case has already logged the mismatch at warn level
-        // via `pino-audit-port` (not applicable — use-case is pure
-        // Application), so add a structured log line here for SRE
-        // triage of misrouted URLs (typically client-bug indicator).
+        // The use-case (pure Application) cannot log directly — this
+        // route is the SOLE log source for path-mismatch events.
+        // Structured warn log enables SRE triage of misrouted URLs
+        // (typically a client-bug indicator) without exposing the
+        // discriminator to the admin.
         if (result.error.kind === 'event_path_mismatch') {
           logger.warn(
             {
@@ -282,11 +283,14 @@ export async function POST(
             errKind: result.error.kind,
             errMessage:
               'message' in result.error ? result.error.message : undefined,
-            // Round-2 err-M1 — fallback to `.name` so
-            // `InvalidLockKeyError` (plain Error subclass — no `.kind`
-            // but has `.name = 'InvalidLockKeyError'`) and the
-            // generic Error from pg driver (`name = 'Error'`) still
-            // produce a useful SRE filter label instead of `null`.
+            // Round-2 err-M1 + Round-3 — fallback chain:
+            //   1. `.kind` (discriminated repo/quota/audit errors)
+            //   2. `.name` (InvalidLockKeyError, generic Error)
+            //   3. `null` (last resort)
+            // Plus surface `.code` for pg-driver errors (SQLSTATE
+            // like '57P01' admin-shutdown, '40P01' deadlock_detected)
+            // — gives SRE a queryable filter label even when
+            // `.kind`/`.name` resolve to generic 'Error'.
             causeKind:
               (result.error as { cause?: { kind?: string; name?: string } })
                 .cause?.kind ??
@@ -295,6 +299,9 @@ export async function POST(
             causeMessage:
               (result.error as { cause?: { message?: string } }).cause
                 ?.message ?? null,
+            causeCode:
+              (result.error as { cause?: { code?: string } }).cause?.code ??
+              null,
           },
           '[F6] relinkRegistration returned use-case error',
         );

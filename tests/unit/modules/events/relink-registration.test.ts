@@ -329,13 +329,32 @@ describe('relinkRegistration — F6 Phase 9 / US6 (Round-1 code-H1)', () => {
     });
 
     it('event_path_mismatch is skipped when eventIdFromPath=null (callers without URL context)', async () => {
-      const { deps } = makeDeps();
+      const {
+        deps,
+        findEventByIdMock,
+        acquireMock,
+        emitMock,
+        updateMatchAndQuotaMock,
+      } = makeDeps();
       const r = await relinkRegistration(
         baseInput({ eventIdFromPath: null }),
         deps,
       );
-      // No mismatch firing → happy path
+      // No mismatch firing → happy path proceeds through ALL downstream
+      // steps. Round-3 test-M closure — affirmatively assert the
+      // happy-path execution (was: only `r.ok === true`, which would
+      // pass a regression that silently returns noop on null path).
       expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.noop).toBe(false);
+      // Event lookup ran (would NOT run if path-mismatch had fired).
+      expect(findEventByIdMock).toHaveBeenCalled();
+      // Locks acquired (sorted-key dual-lock per OLD + NEW members).
+      expect(acquireMock).toHaveBeenCalled();
+      // Audit emit happened (at least the macro registration_relinked).
+      expect(emitMock).toHaveBeenCalled();
+      // Final repo write happened.
+      expect(updateMatchAndQuotaMock).toHaveBeenCalled();
     });
 
     it('event_archived when event.archivedAt is non-null', async () => {
