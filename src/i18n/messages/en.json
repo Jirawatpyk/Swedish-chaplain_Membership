@@ -2502,6 +2502,7 @@
           "noopToast": "No change",
           "noopToastDescription": "This attendance was already linked to {companyName}.",
           "errorToast": "Could not relink — please try again",
+          "errorToastNetwork": "Connection lost — check your internet and try again",
           "errorToastConflict": "Cannot relink right now — the event state may have changed. Please refresh and try again.",
           "notFoundToast": "Target member is no longer available",
           "disallowedShort": "PII purged — cannot relink",

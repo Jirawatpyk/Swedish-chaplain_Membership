@@ -35,6 +35,43 @@
  *   - sr-only role=status announces "Relinking …" + "Searching members …".
  *   - Loader2 animations carry `motion-reduce:animate-none` per
  *     `docs/ux-standards.md § Reduced motion`.
+ *
+ * Review-fix log (Round-3 deferred-fix index for the 16+ inline
+ * `Round-N X-Y` tags scattered through the file body — inline tags
+ * are PRESERVED to label each code change; this header is a lookup
+ * table so future readers can resolve the tag IDs without needing
+ * access to the original review reports):
+ *
+ *   Round-1 ux-H3 — server 409 `event_archived` reason → localised
+ *     `errorToastConflict` (avoid echoing EN `body.detail` to TH/SV).
+ *   Round-1 err-H1 — distinct `searchError` state so search-fail is
+ *     distinguishable from "no results" empty state.
+ *   Round-1 err-H2 — try/catch around POST in `handleSelect` keeps
+ *     the dialog open on network throw (user can retry).
+ *   Round-1 ux-H1 — `triggerAriaLabel` includes attendee email so SR
+ *     disambiguates duplicate-name rows.
+ *   Round-1 ux-H2 — `aria-hidden` on `<CommandList>` while
+ *     searching+empty avoids dual-SR-announcement conflict with the
+ *     spinner's role=status.
+ *   Round-1 ux-M1 — short visible label + Info icon + Tooltip with
+ *     the full FR-014 sentence (cell width small; portal-rendered
+ *     tooltip does not affect row height).
+ *   Round-1 code-M3 — `fetchSeqRef` counter guards setState writes
+ *     from stale resolutions across rapid keystrokes.
+ *   Round-1 err-M6 — reset-on-close effect clears stale spinner +
+ *     error state so the next open starts fresh.
+ *   Round-2 types-H4 — `RelinkRegistrationDialogProps` branded
+ *     (RegistrationId / EventId / AttendeeEmail / MemberId | null).
+ *   Round-2 type-M3 + Round-3 type-M — zod schemas with `.uuid()` +
+ *     `.passthrough()` runtime-validate server responses; match wire
+ *     shape (noop adds registrationId, non-noop adds quotaImpact).
+ *   Round-2 comments-M — no nested `TooltipProvider`; rely on the
+ *     `attendee-table.tsx § "Round-11 review fix — single
+ *     TooltipProvider hoisted"` invariant.
+ *   Round-3 err-LOW — 5xx response keeps dialog open (matches err-H2
+ *     semantics for retry consistency).
+ *   Round-3 comments-M — anchor citations (not line numbers) for
+ *     cross-file references.
  */
 'use client';
 
@@ -398,9 +435,12 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
         }
       } catch (err) {
         console.error('relink POST failed', err);
-        // Keep dialog OPEN so the admin can retry. Surface a generic
-        // network-error toast.
-        toast.error(t('errorToast'));
+        // Keep dialog OPEN so the admin can retry. Round-3 deferred-
+        // fix closure — use the network-specific toast so support can
+        // distinguish "browser never reached the API" from "server
+        // 500" (both keep the dialog open per err-H2 + err-LOW, but
+        // the toast text helps triage the failure class).
+        toast.error(t('errorToastNetwork'));
       }
     });
   }

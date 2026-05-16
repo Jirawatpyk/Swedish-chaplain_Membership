@@ -149,18 +149,15 @@ export async function POST(
   let result: Awaited<ReturnType<typeof runRelinkRegistration>>;
   try {
     result = await runRelinkRegistration(tenantCtx.slug, {
-      // Round-1 type-H1 + Round-2 type-H1 — use brand smart
-      // constructors (already-UUID-validated above + by zod on body).
+      // brand-boundary: UUID_V4 regex at path-param check above
       registrationId: asRegistrationId(registrationId),
+      // brand-boundary: zod UUID_V4 refine at BodySchema definition
       newMatchedMemberId: asMemberId(parsed.data.newMatchedMemberId),
-      // Round-2 code-H1 closure — thread the URL-path eventId into
-      // the use-case so it can verify it matches the registration's
-      // stored event_id BEFORE any mutation. Without this, a
-      // misrouted URL would silently relink the registration
-      // server-side while the route returned 404 to the admin.
+      // brand-boundary: UUID_V4 regex at path-param check above.
+      // Use-case verifies eventIdFromPath === registration.eventId
+      // BEFORE any mutation (closes Round-2 code-H1 silent-success).
       eventIdFromPath: asEventId(eventId),
-      // Round-2 types-H2 — guard now returns branded UserId; no
-      // re-wrap needed.
+      // No brand-boundary needed — guard returns branded UserId already.
       actorUserId,
       occurredAt: new Date(),
     });

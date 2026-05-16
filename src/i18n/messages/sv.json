@@ -2502,6 +2502,7 @@
           "noopToast": "Ingen ändring",
           "noopToastDescription": "Detta deltagande var redan länkat till {companyName}.",
           "errorToast": "Kunde inte länka om — försök igen",
+          "errorToastNetwork": "Anslutningen bröts — kontrollera ditt internet och försök igen",
           "errorToastConflict": "Kan inte länka om just nu — händelsestatus kan ha ändrats. Uppdatera sidan och försök igen.",
           "notFoundToast": "Målmedlem är inte längre tillgänglig",
           "disallowedShort": "PII raderad — kan inte länka om",

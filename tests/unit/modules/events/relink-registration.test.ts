@@ -31,8 +31,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 import {
   relinkRegistration,
-  asEventId,
-  asRegistrationId,
   type EventsRepository,
   type RegistrationsRepository,
   type F6AuditPort,
@@ -46,14 +44,23 @@ import {
 } from '@/modules/events';
 import type { QuotaAccountingPort } from '@/modules/events/application/ports/quota-accounting-port';
 import { asTenantId, type MemberId, type ContactId } from '@/modules/members';
-import type { AuditEventId, UserId } from '@/modules/auth';
+import type { AuditEventId } from '@/modules/auth';
+// Round-3 deferred-fix closure — `mk*` helpers validate UUID-v4 at
+// fixture-load time so mis-typed fixtures fail loud rather than
+// masquerading as production data (see `tests/helpers/brand-fixtures.ts`).
+import {
+  mkEventId,
+  mkRegistrationId,
+  mkMemberId,
+  mkUserId,
+} from '../../../helpers/brand-fixtures';
 
 const TENANT_ID = asTenantId('test-swecham-relink');
-const EVENT_ID = asEventId('11111111-1111-4111-8111-111111111111');
-const REG_ID = asRegistrationId('22222222-2222-4222-8222-222222222222');
-const MEMBER_A = '33333333-3333-4333-8333-333333333333' as MemberId;
-const MEMBER_B = '44444444-4444-4444-8444-444444444444' as MemberId;
-const ACTOR = '55555555-5555-4555-8555-555555555555' as UserId;
+const EVENT_ID = mkEventId('11111111-1111-4111-8111-111111111111');
+const REG_ID = mkRegistrationId('22222222-2222-4222-8222-222222222222');
+const MEMBER_A = mkMemberId('33333333-3333-4333-8333-333333333333');
+const MEMBER_B = mkMemberId('44444444-4444-4444-8444-444444444444');
+const ACTOR = mkUserId('55555555-5555-4555-8555-555555555555');
 const CONTACT_A = '66666666-6666-4666-8666-666666666666' as ContactId;
 
 function makeEvent(patch: Partial<EventAggregate> = {}): EventAggregate {
@@ -299,9 +306,7 @@ describe('relinkRegistration — F6 Phase 9 / US6 (Round-1 code-H1)', () => {
     });
 
     it('event_path_mismatch (Round-2 code-H1) — URL eventId != registration.eventId → refuse BEFORE any mutation', async () => {
-      const otherEvent = asEventId(
-        '99999999-9999-4999-8999-999999999999',
-      );
+      const otherEvent = mkEventId('99999999-9999-4999-8999-999999999999');
       const {
         deps,
         findEventByIdMock,

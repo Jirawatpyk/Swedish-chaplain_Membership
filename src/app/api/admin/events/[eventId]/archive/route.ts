@@ -96,9 +96,7 @@ export async function POST(
   let result: Awaited<ReturnType<typeof runArchiveEvent>>;
   try {
     result = await runArchiveEvent(tenantCtx.slug, {
-      // Round-2 types-H1 closure — brand smart constructor (UUID-v4
-      // already verified above; `asEventId` is the length-only
-      // pre-validated boundary per branded-types.ts trust convention).
+      // brand-boundary: UUID_V4 regex at line 64 (path-param check)
       eventId: asEventId(eventId),
       actorUserId,
       occurredAt: new Date(),

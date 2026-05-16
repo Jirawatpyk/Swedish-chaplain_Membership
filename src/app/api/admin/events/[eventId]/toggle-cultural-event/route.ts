@@ -92,6 +92,7 @@ export async function POST(
   let result: Awaited<ReturnType<typeof runToggleEventCategory>>;
   try {
     result = await runToggleEventCategory(tenantCtx.slug, {
+      // brand-boundary: UUID_V4 regex at line 45 (path-param check)
       eventId: asEventId(eventId),
       flag: 'is_cultural_event',
       newValue: parsed.data.newValue,

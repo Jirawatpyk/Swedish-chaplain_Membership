@@ -81,6 +81,31 @@ export type RequestId = string & { readonly __brand: 'RequestId' };
  * doc-comment makes it explicit). Future audits should treat `as*`
  * as the moral equivalent of `as EventId` cast with a runtime
  * non-empty assertion.
+ *
+ * **Brand-boundary audit convention** (Round-3 types-H1 closure):
+ *
+ * Every `as*` callsite that brands untrusted input (HTTP path param,
+ * body field, header, CSV cell, webhook payload) MUST be preceded by
+ * a `// brand-boundary: <validation-source>` comment that documents
+ * WHERE the UUID-shape (or external-id-shape) check happened. Format:
+ *
+ * ```ts
+ * // brand-boundary: UUID_V4 regex at line N OR zod parse at line N
+ * eventId: asEventId(eventId),
+ * ```
+ *
+ * Callsites that brand TRUSTED input do NOT need the comment:
+ *   - Drizzle row reads (DB type guarantees the shape for uuid PKs)
+ *   - Test fixtures (constructors with `mkEventId(...)` helpers —
+ *     see `tests/helpers/brand-fixtures.ts`)
+ *   - Re-branding within Application/Infrastructure boundaries
+ *
+ * Future PR reviewers SHOULD grep for new `as(EventId|Registration|
+ * Member|User)Id\(` callsites in route handlers and verify each
+ * carries the boundary comment. A CI custom ESLint rule was
+ * considered but deferred — manual review with grep is sufficient at
+ * F6 scale (~5 new callsites per feature). Promote to ESLint rule if
+ * audit drift becomes a recurring review finding.
  */
 
 export function asEventId(value: string): EventId {
