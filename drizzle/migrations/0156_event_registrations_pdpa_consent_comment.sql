@@ -1,0 +1,34 @@
+-- ---------------------------------------------------------------------------
+-- 0156 — F6.1 QA-pass M-2: DB column COMMENT on attendee_pdpa_consent_acknowledged
+-- ---------------------------------------------------------------------------
+--
+-- Closes pdpa-gdpr-compliance-officer M-2 finding from QA report
+-- `specs/013-csv-import-eventcreate-format/qa/qa-20260516-112309.md`.
+--
+-- The migration 0140 header comment documents the tri-state semantics
+-- of `attendee_pdpa_consent_acknowledged` (NULL = consent status
+-- unknown, TRUE = "hereby acknowledge" detected, FALSE = "do not
+-- consent" detected) but the live Postgres column carries no
+-- `COMMENT ON COLUMN` metadata. A future SQL query author reading
+-- `WHERE attendee_pdpa_consent_acknowledged IS NULL` could misinterpret
+-- the NULL as refusal — an FR-009 / PDPA Art. 5(1)(a) transparency
+-- gap at the data-governance layer.
+--
+-- This migration adds the column comment so the meaning is visible
+-- in any pgAdmin/Neon/psql `\d+ event_registrations` introspection
+-- AND in tools like DBeaver/DataGrip that surface column metadata
+-- to query authors.
+--
+-- Idempotent: `COMMENT ON COLUMN` is always safe to re-apply (it
+-- replaces any prior comment, defaulting to NULL if absent — there
+-- is no SQLSTATE 42710 duplicate-object class for comments).
+--
+-- F7 broadcast filter (`WHERE attendee_pdpa_consent_acknowledged =
+-- true`) is the canonical consumer of this column; the comment
+-- ensures any future broadcast or analytics author treats the
+-- tri-state correctly.
+-- ---------------------------------------------------------------------------
+
+COMMENT ON COLUMN event_registrations.attendee_pdpa_consent_acknowledged IS
+  'PDPA / GDPR Art. 7 marketing consent classification. Tri-state: NULL = consent status unknown at import time (cell empty / "-" / unrecognized text — NOT refusal); TRUE = cell contained "hereby acknowledge" (case-insensitive); FALSE = cell contained "do not consent" (case-insensitive). Raw consent text is NOT stored (FR-009 PDPA minimization). F7 broadcast filter MUST query WHERE = true for marketing-eligible recipients; NULL recipients should be excluded from marketing per PDPA §24 (consent required, not inferred).';
+--> statement-breakpoint

@@ -1093,6 +1093,13 @@
 			"when": 1796112000000,
 			"tag": "0155_audit_csv_import_error_csv_manually_erased",
 			"breakpoints": true
+		},
+		{
+			"idx": 156,
+			"version": "7",
+			"when": 1796198400000,
+			"tag": "0156_event_registrations_pdpa_consent_comment",
+			"breakpoints": true
 		}
 	]
 }

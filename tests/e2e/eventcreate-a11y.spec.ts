@@ -549,10 +549,15 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
   // T048 (F6.1 · Feature 013 — Phase 5 US5) — history page axe scan.
   // 4th visual state beyond Phase 7's coverage. Validates table role +
   // pagination nav + download button labels remain WCAG 2.1 AA clean.
-  test.skip(
-    !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to enable',
-  );
+  //
+  // QA-pass W-1 cleanup (2026-05-16) — the bare `test.skip(condition,
+  // reason)` previously here at the describe-block level was redundant
+  // with the top-of-describe gate at lines 78-81 and is a fragile
+  // pattern: if a maintainer ever moves the top-of-describe gate, this
+  // duplicate could silently swallow subsequent tests in the block.
+  // Removed; the top-of-describe `test.skip(!ADMIN_EMAIL || ...)` at
+  // lines 78-81 still gates the entire describe block including this
+  // history scan.
   test('@a11y F6.1 — /admin/events/import/history (paginated history table)', async ({
     page,
   }) => {
