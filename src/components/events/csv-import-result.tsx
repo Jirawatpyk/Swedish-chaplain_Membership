@@ -1,29 +1,29 @@
 /**
- * T097 — CSV import result card (F6 Phase 7).
+ * CSV import result card (F6 Phase 7 + F6.1 US5 augmentations).
  *
  * Pure presentational component — renders the `ImportSummary` payload
- * returned by `POST /api/admin/events/import` (200 OK path) in a
- * card layout with:
+ * returned by `POST /api/admin/events/import` (200 OK path):
  *   1. Headline counters: rowsProcessed, rowsAlreadyImported,
- *      eventsCreated, eventsUpdated, durationMs.
- *   2. Per-match-type breakdown table reusing the
- *      `MatchStatusBadge` primitive (Phase 4 T064).
- *   3. Collapsible error-rows section (`<details>` + `<summary>`)
- *      listing `{rowNumber, reason}`. Empty when zero errors.
+ *      rowsStateChanged (conditional), eventsCreated, eventsUpdated,
+ *      durationMs.
+ *   2. Per-match-type breakdown table via `MatchStatusBadge` primitive.
+ *   3. Collapsible error-rows section (`<details>` + `<summary>`).
+ *   4. F6.1 surfaces: recordId chip, historyPersisted+auditCompletionEmitted
+ *      degraded banners, persistent error-CSV download link.
  *
  * Distinct `rowsProcessed` vs `rowsAlreadyImported` labels per
- * contracts/csv-import-api.md csv-import-api contracts R3 — admins must clearly see
- * the difference between "0 actually delivered" and "100 idempotency-
+ * `contracts/csv-import-api.md` — admins must clearly see the
+ * difference between "0 actually delivered" and "100 idempotency-
  * skipped".
  *
  * Accessibility:
  *   - WCAG 2.5.8 tap target (≥24×24px) on the `<summary>` toggle via
- *     `min-h-6 + py-1`, mirroring Phase 5 round-6 H-04 fix.
+ *     `min-h-6 + py-1`.
  *   - `role="region"` + `aria-label` on the Card so SR users can
  *     navigate INTO the result via region-jump shortcuts. The
  *     phase-transition announcement is owned by the persistent
  *     live region in `csv-mapping-form.tsx`.
- *   - data-testid hooks for the E2E spec (T091).
+ *   - data-testid hooks for the E2E spec.
  */
 import { useTranslations } from 'next-intl';
 import { Download, TriangleAlert } from 'lucide-react';
@@ -300,19 +300,18 @@ interface CounterProps {
   readonly tone?: 'success' | 'muted';
 }
 
+const COUNTER_TONE_CLASSES = {
+  success: 'text-emerald-700 dark:text-emerald-300',
+  muted: 'text-muted-foreground',
+} as const;
+
 function Counter({ label, description, value, valueText, testId, tone }: CounterProps) {
   return (
     <div className="flex flex-col gap-1">
       <dt className="text-caption text-muted-foreground">{label}</dt>
       <dd
         data-testid={testId}
-        className={`text-h2 tabular-nums ${
-          tone === 'success'
-            ? 'text-emerald-700 dark:text-emerald-300'
-            : tone === 'muted'
-              ? 'text-muted-foreground'
-              : ''
-        }`}
+        className={`text-h2 tabular-nums ${tone ? COUNTER_TONE_CLASSES[tone] : ''}`}
       >
         {valueText ?? value}
       </dd>

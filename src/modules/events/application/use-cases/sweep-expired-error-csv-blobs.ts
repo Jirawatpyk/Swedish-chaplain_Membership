@@ -111,9 +111,8 @@ export async function sweepExpiredErrorCsvBlobs(
     );
   if (!scanResult.ok) {
     // Elevate to `logger.error` so SRE dashboards fire on scan
-    // failures. The route maps `kind:'scan_failed'` to 500 so
-    // cron-job.org's "2 consecutive failures" alert can detect
-    // a sustained outage.
+    // failures (see `SweepExpiredErrorCsvBlobsOutput` JSDoc for the
+    // `kind:'scan_failed'` → 500 route contract).
     logger?.error(
       {
         event: 'f6_error_csv_sweep_scan_failed',
@@ -220,7 +219,7 @@ async function sweepOne(
       },
       '[F6.1] sweep cron: clearErrorCsvBlob THREW after blob delete — investigate runInTenant outage',
     );
-    deps.onSweepClearFailed?.(candidate.tenantId);
+    deps.onSweepClearFailed(candidate.tenantId);
     return false;
   }
 

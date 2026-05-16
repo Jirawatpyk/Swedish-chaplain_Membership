@@ -65,6 +65,31 @@ describe('CancellationSkipMarker — Symbol-brand collision resistance', () => {
     expect(isCancellationSkip(fake)).toBe(false);
   });
 
+  it('isCancellationSkip(prototype-spoofed instance with wrong brand) === false', () => {
+    // Constructs an object that PASSES `instanceof CancellationSkipMarker`
+    // via prototype injection (`Object.create(CancellationSkipMarker.prototype)`)
+    // but carries a different Symbol as `_csvSkipBrand`. This is the
+    // STRONGER variant of the previous test: the `instanceof` gate
+    // alone would let this slip; only the brand-equality check
+    // (`e._csvSkipBrand === CANCELLATION_SKIP_BRAND`) rejects it.
+    // Defends against cross-realm vm contexts where two modules
+    // construct the same class identity but with different Symbol
+    // brands.
+    const spoofedMarker = Object.create(
+      CancellationSkipMarker.prototype,
+    ) as InstanceType<typeof CancellationSkipMarker>;
+    Object.assign(spoofedMarker, {
+      rowNumber: 1,
+      emailHash: FAKE_HASH,
+      // Wrong brand: a different Symbol that happens to share the
+      // same description string. Symbol() values are always !== unless
+      // they came from the same evaluation site.
+      _csvSkipBrand: Symbol('f6.csv-skip.cancellation'),
+    });
+    expect(spoofedMarker instanceof CancellationSkipMarker).toBe(true);
+    expect(isCancellationSkip(spoofedMarker)).toBe(false);
+  });
+
   it('isCancellationSkip(null / undefined / non-Error) === false', () => {
     expect(isCancellationSkip(null)).toBe(false);
     expect(isCancellationSkip(undefined)).toBe(false);

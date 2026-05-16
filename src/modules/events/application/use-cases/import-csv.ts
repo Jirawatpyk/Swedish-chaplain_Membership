@@ -1019,20 +1019,19 @@ async function processBatch(
 }
 
 /**
- * Record an audit-emit failure (Result.err OR thrown exception) into
- * the dedicated csvImportAuditEmitFailed counter + a structured
- * logger.error so SREs alert on rate>0 without losing forensic context.
- */
-/**
- * R3 (R2 simplifier — code-simplifier R2 NITPICK close): collapse the
- * 12 inline `e instanceof Error ? e.message : String(e)` sites. Single
- * source of truth means future refactors (e.g. adding stack capture
- * to caught-and-sanitised errors) flow through one location.
+ * Collapse `e instanceof Error ? e.message : String(e)` boilerplate;
+ * single source of truth for caught-error stringification (future
+ * refactors like stack capture + PII redaction flow through here).
  */
 function toErrMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/**
+ * Record an audit-emit failure (Result.err OR thrown exception) into
+ * the dedicated csvImportAuditEmitFailed counter + a structured
+ * logger.error so SREs alert on rate>0 without losing forensic context.
+ */
 function recordAuditEmitFailure(
   tenantId: TenantId,
   eventType:
@@ -1155,7 +1154,11 @@ async function safeEmitCancellationNoPrior(
         'csv_import_row_cancelled_no_prior',
         'f6_csv_row_cancelled_no_prior_audit_emit_failed',
         '[F6.1] csv_import_row_cancelled_no_prior audit emit failed — forensic trail loss (informational)',
-        { rowNumber, auditErrKind: result.error.kind },
+        {
+          actorUserId: input.actorUserId,
+          rowNumber,
+          auditErrKind: result.error.kind,
+        },
       );
     }
   } catch (e) {
@@ -1164,7 +1167,11 @@ async function safeEmitCancellationNoPrior(
       'csv_import_row_cancelled_no_prior',
       'f6_csv_row_cancelled_no_prior_audit_emit_threw',
       '[F6.1] csv_import_row_cancelled_no_prior audit emitter threw — forensic trail loss (informational)',
-      { rowNumber, err: toErrMessage(e) },
+      {
+        actorUserId: input.actorUserId,
+        rowNumber,
+        err: toErrMessage(e),
+      },
     );
   }
 }
@@ -1725,7 +1732,7 @@ export async function importCsv(
               event: 'f6_csv_import_records_recovery_threw',
               tenantId: input.tenantId,
               recordId,
-              err: recoveryErr instanceof Error ? recoveryErr.message : String(recoveryErr),
+              err: toErrMessage(recoveryErr),
             },
             '[F6.1] csv_import_records recovery INSERT threw',
           );

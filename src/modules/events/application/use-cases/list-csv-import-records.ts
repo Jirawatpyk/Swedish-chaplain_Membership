@@ -66,13 +66,14 @@ export interface ListCsvImportRecordsDeps {
   /** Injectable for tests; defaults to `new Date()` at call time. */
   readonly clock?: () => Date;
   /**
-   * R2-CR-4 — optional structured logger. Composition layer wires
-   * `@/lib/logger`; tests can inject a spy. Used to emit `logger.fatal`
-   * on an unknown repo error kind so SREs see a future port-shape
-   * regression on dashboards (the route-layer 500 alone is not enough
-   * signal).
+   * Structured logger for `logger.fatal` on unknown repo error kind
+   * (so SREs see future port-shape regressions on dashboards — the
+   * route-layer 500 alone is not enough signal). REQUIRED at the
+   * boundary; tests that don't care about the surface pass an
+   * explicit `{ fatal: () => {} }` no-op (mirrors the sweep deps
+   * REQUIRED-callback pattern).
    */
-  readonly logger?: {
+  readonly logger: {
     fatal(meta: Record<string, unknown>, msg: string): void;
   };
 }
@@ -141,14 +142,14 @@ export async function listCsvImportRecords(
 
 function mapRepoError(
   e: CsvImportRecordsRepoError,
-  logger?: ListCsvImportRecordsDeps['logger'],
+  logger: ListCsvImportRecordsDeps['logger'],
 ): ListCsvImportRecordsError {
   if (e.kind === 'db_error') return { code: 'db_error', message: e.message };
-  // R2-CR-4 (R2): unknown error kind = the repo port grew a new variant
-  // that this caller hasn't been taught about. Emit logger.fatal so
-  // SREs see the regression on dashboards. The route maps the generic
+  // Unknown error kind = the repo port grew a new variant that this
+  // caller hasn't been taught about. Emit logger.fatal so SREs see
+  // the regression on dashboards. The route maps the generic
   // 'db_error' to 500, which is the correct user-facing surface.
-  logger?.fatal(
+  logger.fatal(
     { event: 'f6_csv_list_repo_unknown_error_kind', errKind: e.kind },
     '[F6.1] listCsvImportRecords repo returned unknown error kind — port-shape regression',
   );

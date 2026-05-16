@@ -74,6 +74,13 @@ type FixtureOpts = {
   readonly stateChangeAuditEmitFails: boolean;
 };
 
+// Module-scope capture for S-14 payload structure assertions. Reset
+// inside each test via vi.clearAllMocks() + manual splice.
+let capturedAuditEmits: ReadonlyArray<{
+  eventType: string;
+  payload: Record<string, unknown>;
+}> = [];
+
 function makeDeps(opts: FixtureOpts): ImportCsvDeps {
   // The state-change branch needs:
   //   - idempotencyStore.tryInsert returns wasFresh:false (duplicate)
@@ -109,10 +116,17 @@ function makeDeps(opts: FixtureOpts): ImportCsvDeps {
     } as unknown as ImportCsvTxScopedPorts['registrationsRepo'],
     audit: {
       emit: vi.fn(async (entry) => {
-        const eventType = (entry as { eventType?: string }).eventType;
+        const typed = entry as {
+          readonly eventType: string;
+          readonly payload: Record<string, unknown>;
+        };
+        capturedAuditEmits = [
+          ...capturedAuditEmits,
+          { eventType: typed.eventType, payload: typed.payload },
+        ];
         if (
           opts.stateChangeAuditEmitFails &&
-          eventType === 'csv_import_row_state_changed'
+          typed.eventType === 'csv_import_row_state_changed'
         ) {
           return err({
             kind: 'db_error' as const,
@@ -202,6 +216,7 @@ describe('R2-I-11 (R4) — maybeApplyStateChange strict-audit invariant', () => 
 
   it('state-change audit emit succeeds → row outcome state_changed; no audit-emit-failed bump', async () => {
     vi.clearAllMocks();
+    capturedAuditEmits = [];
     const deps = makeDeps({ stateChangeAuditEmitFails: false });
 
     const outcome = await importCsv(
@@ -226,6 +241,27 @@ describe('R2-I-11 (R4) — maybeApplyStateChange strict-audit invariant', () => 
       (c) => c[1] === 'csv_import_row_state_changed',
     );
     expect(stateChangedCall).toBeUndefined();
+
+    // S-14 (R3): pin audit payload structure. PDPA Art. 30 + GDPR Art.
+    // 30 require previousPaymentStatus + newPaymentStatus + rowHash on
+    // every state-change row mutation. A regression dropping any of
+    // these fields would silently break the forensic record.
+    // The audit.emit mock was invoked via fakeBatchPorts.audit.emit;
+    // we expose it via the deps closure so the assertion can read the
+    // payload structure.
+    expect(capturedAuditEmits.length).toBeGreaterThanOrEqual(1);
+    const stateChangeEmit = capturedAuditEmits.find(
+      (entry) => entry.eventType === 'csv_import_row_state_changed',
+    );
+    expect(stateChangeEmit).toBeDefined();
+    if (stateChangeEmit === undefined) return;
+    const payload = stateChangeEmit.payload as Record<string, unknown>;
+    expect(payload).toHaveProperty('previousPaymentStatus');
+    expect(payload).toHaveProperty('newPaymentStatus');
+    expect(payload).toHaveProperty('rowHash');
+    expect(payload).toHaveProperty('actorUserId');
+    expect(payload).toHaveProperty('rowNumber');
+    expect(payload['severity']).toBe('info');
   });
 
   it('R2-I-3 cross-check: NO csvImportStateChangeFallback bump on the audit-emit-failure path (different metric)', async () => {

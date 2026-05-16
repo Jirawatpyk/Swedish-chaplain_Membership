@@ -21,7 +21,7 @@
  * emit when the outer COMMIT then fails.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { ok } from '@/lib/result';
+import { ok, err } from '@/lib/result';
 import {
   importCsv,
   type ImportCsvDeps,
@@ -269,19 +269,51 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
     expect(rowFailedEmits).toHaveLength(ROW_COUNT);
   });
 
-  it('R2-I-7 (R3): batch fan-out emit rejection logs f6_csv_batch_fan_out_rejected', async () => {
-    // Force the outer-tx catch path AND make safeEmitRowFailed reject
-    // on the fan-out (emitStandalone throws). The Promise.allSettled
-    // iteration MUST emit `f6_csv_batch_fan_out_rejected` logger.error
-    // so a future refactor that drops the internal swallow doesn't
-    // silently lose forensic signal.
+  it('R2-I-7 (R3): outer-tx commit failure → batch-tx-aborted log + fan-out emit loop reached + f6_csv_batch_fan_out_rejected fires when safeEmitRowFailed rejects', async () => {
+    // The R2-I-7 fix adds defensive logging on `Promise.allSettled`
+    // rejections in the fan-out emit loop. `safeEmitRowFailed` has its
+    // own internal try/catch so it normally cannot reject — but if a
+    // dependency injected into `recordAuditEmitFailure` (the
+    // `eventcreateMetrics.csvImportAuditEmitFailed` counter) throws
+    // synchronously, the throw escapes safeEmitRowFailed's catch
+    // because the catch CALLS recordAuditEmitFailure too. This forces
+    // the fan-out-rejection branch which the R2-I-7 log captures.
     const { logger } = await import('@/lib/logger');
+    const { eventcreateMetrics } = await import('@/lib/metrics');
     (logger.error as ReturnType<typeof vi.fn>).mockClear();
 
+    // Force csvImportAuditEmitFailed to throw — propagates out of
+    // safeEmitRowFailed's catch since the catch also calls the same
+    // metric counter.
+    (
+      eventcreateMetrics.csvImportAuditEmitFailed as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(() => {
+      throw new Error('simulated metric counter throw');
+    });
+    (
+      eventcreateMetrics.csvImportAuditEmitFailed as ReturnType<typeof vi.fn>
+    ).mockImplementationOnce(() => {
+      throw new Error('simulated metric counter throw (catch re-emit)');
+    });
+
+    // Mock `runRowInSavepoint` to return a successful `inserted` row
+    // outcome directly (bypassing the real processAttendeeInTx chain).
+    // The fan-out filter at the outer-tx catch path only INCLUDES rows
+    // whose savepoint succeeded (`kind !== 'row_failed'`). Then the
+    // outer-tx throws → fan-out runs safeEmitRowFailed for each row →
+    // forced metric-counter throw propagates out → Promise rejects →
+    // R2-I-7 log fires.
+    let runRowCallIndex = 0;
     const fakeBatchPorts: ImportCsvTxScopedPorts = {
-      runRowInSavepoint: (async <T>(
-        fn: (sp: ImportCsvTxScopedPorts) => Promise<T>,
-      ) => fn(fakeBatchPorts)) as ImportCsvTxScopedPorts['runRowInSavepoint'],
+      runRowInSavepoint: vi.fn(async (_fn) => {
+        const rowNumber = (runRowCallIndex += 1) + 1; // rows 2, 3
+        return {
+          kind: 'inserted' as const,
+          rowNumber,
+          matchType: 'unmatched' as const,
+          eventCreated: false,
+        };
+      }) as unknown as ImportCsvTxScopedPorts['runRowInSavepoint'],
       idempotencyStore: {
         tryInsert: vi.fn(async () =>
           ok({ wasFresh: true, originalProcessedAt: null }),
@@ -292,15 +324,6 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
       } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
     } as unknown as ImportCsvTxScopedPorts;
 
-    // emitStandalone throws on the fan-out — wraps safeEmitRowFailed's
-    // try/catch and exercises the recordAuditEmitFailure path. But
-    // because allSettled is wrapping the calls, the throw is captured
-    // as a rejected settlement. To exercise the fan-out-rejected
-    // path specifically, we'd need safeEmitRowFailed's internal catch
-    // to NOT catch — but it does. So this test verifies the loop
-    // runs at all on the catch path; absence of the log is the
-    // regression signal.
-    let emitCallCount = 0;
     const deps = {
       csvImporter: makeCsvImporterMock(
         vi.fn(async ({ bytes }: { bytes: Uint8Array }) => {
@@ -340,15 +363,16 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
           throw new Error('simulated outer-tx commit failure');
         },
       ),
-      emitStandalone: vi.fn(async () => {
-        emitCallCount += 1;
-        return ok('audit-id' as never);
-      }),
+      // emitStandalone returns Result.err so the fan-out path triggers
+      // recordAuditEmitFailure (which throws via the metric mock).
+      emitStandalone: vi.fn(async () =>
+        err({ kind: 'db_error' as const, message: 'forced emit fail' }),
+      ),
     } as unknown as ImportCsvDeps;
 
     const outcome = await importCsv(
       {
-        tenantId: asTenantId('test-chamber-fanout-log'),
+        tenantId: asTenantId('test-chamber-fanout-rejected'),
         actorUserId: asUserId('00000000-0000-0000-0000-000000000777'),
         bytes: buildCsv(2),
         selectedEvent: f6CsvTestSelectedEventStub,
@@ -357,12 +381,8 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
     );
     expect(outcome.kind).toBe('completed');
 
-    // Fan-out emits ran (proves the catch block reached the
-    // Promise.allSettled iteration). The control-path log assertion
-    // is on the f6_csv_batch_tx_aborted entry which fires whenever
-    // the outer catch executes.
-    expect(emitCallCount).toBeGreaterThanOrEqual(2);
     const errorCalls = (logger.error as ReturnType<typeof vi.fn>).mock.calls;
+    // The outer-tx-aborted log fires from the catch entry.
     const batchAbortLog = errorCalls.find(
       (c) =>
         c[0] !== null &&
@@ -371,5 +391,17 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
           'f6_csv_batch_tx_aborted',
     );
     expect(batchAbortLog).toBeDefined();
+    // CRITICAL R3-I-2: the fan-out-rejected log fires when
+    // safeEmitRowFailed rejects (which requires its internal
+    // recordAuditEmitFailure to throw — exercised via the metric
+    // mock above).
+    const fanOutRejectedLog = errorCalls.find(
+      (c) =>
+        c[0] !== null &&
+        typeof c[0] === 'object' &&
+        (c[0] as Record<string, unknown>)['event'] ===
+          'f6_csv_batch_fan_out_rejected',
+    );
+    expect(fanOutRejectedLog).toBeDefined();
   });
 });

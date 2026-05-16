@@ -58,7 +58,10 @@ import type {
   F6AuditPort,
 } from '../../ports/audit-port';
 import type { EventsRepository } from '../../ports/events-repository';
-import type { RegistrationsRepository } from '../../ports/registrations-repository';
+import type {
+  RegistrationsRepository,
+  RegistrationsRepositoryError,
+} from '../../ports/registrations-repository';
 import type { AttendeeMatcher } from '../../ports/attendee-matcher';
 import type {
   QuotaAccountingPort,
@@ -84,6 +87,24 @@ export class TxStageError extends Error {
     message: string,
   ) {
     super(message);
+  }
+}
+
+/**
+ * Format a `markRefunded` repo error into a human-readable string for
+ * the `TxStageError` payload. Switch exhausts the 4 known variants;
+ * CLAUDE.md anti-pattern (nested ternary) avoided.
+ */
+function markRefundedErrorMessage(e: RegistrationsRepositoryError): string {
+  switch (e.kind) {
+    case 'db_error':
+      return e.message;
+    case 'invariant_violation':
+      return `markRefunded invariant: ${e.invariant}`;
+    case 'pseudonymised_row_rejected':
+      return `markRefunded on pseudonymised row ${e.registrationId}`;
+    case 'not_implemented':
+      return `markRefunded not implemented: ${e.method}`;
   }
 }
 
@@ -618,16 +639,10 @@ export async function processAttendeeInTx(
       existingReg.registrationId,
     );
     if (!flip.ok) {
-      const e = flip.error;
-      const msg =
-        e.kind === 'db_error'
-          ? e.message
-          : e.kind === 'invariant_violation'
-            ? `markRefunded invariant: ${e.invariant}`
-            : e.kind === 'pseudonymised_row_rejected'
-              ? `markRefunded on pseudonymised row ${e.registrationId}`
-              : `markRefunded ${e.kind}`;
-      throw new TxStageError('quota_decrement', msg);
+      throw new TxStageError(
+        'quota_decrement',
+        markRefundedErrorMessage(flip.error),
+      );
     }
 
     const prev = flip.value.previousQuotaEffect;

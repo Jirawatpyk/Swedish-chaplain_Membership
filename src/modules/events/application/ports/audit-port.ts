@@ -138,15 +138,13 @@ export const F6_AUDIT_EVENT_TYPES = [
   'csv_import_error_csv_downloaded',
   'csv_import_cross_tenant_probe',
   'csv_import_event_mismatch_overridden',
-  // CR-10 (R1 — silent-failure) — first-time Cancellation row
-  // skipped (no prior registration to refund). Severity: 'info' —
-  // informational forensic event so support can reconstruct why a
-  // row appears in `rowsSkipped`. NOT a security or availability
-  // signal; non-blocking on emit failure.
+  // First-time Cancellation row skipped (no prior registration to
+  // refund). Severity: 'info' — informational forensic event so
+  // support can reconstruct why a row appears in `rowsSkipped`. NOT a
+  // security or availability signal; non-blocking on emit failure.
   'csv_import_row_cancelled_no_prior',
-  // CR-5 / I-5 (R1 — test-analyzer + code-reviewer) — per-row
-  // state-change audit. Severity: 'info' — admin re-uploaded with
-  // a modified Notes column that flipped payment_status; the row
+  // Per-row state-change audit. Severity: 'info' — admin re-uploaded
+  // with a modified Notes column that flipped payment_status; the row
   // was UPDATEd in place. Required for PDPA Art. 30 + GDPR Art. 30
   // traceable processing records on payment-status mutations.
   'csv_import_row_state_changed',
@@ -684,7 +682,7 @@ export interface AuditPayloads {
   };
 
   /**
-   * CR-10 (R1 — silent-failure) — first-time Cancellation row skipped
+   * First-time Cancellation row skipped
    * (no prior registration to refund). Severity: 'info'. Lets
    * support reconstruct WHY rows appear in `rowsSkipped` without the
    * EventCreate Status-filter pretext (which uses a different "Skipped:
@@ -699,7 +697,7 @@ export interface AuditPayloads {
   };
 
   /**
-   * CR-5 / I-5 (R1 — code-reviewer + test-analyzer) — per-row
+   * Per-row
    * state-change audit. Emitted by `maybeApplyStateChange` when a
    * re-uploaded receipt-duplicate row's Notes column flipped the
    * payment_status enum. PDPA Art. 30 + GDPR Art. 30 traceable
@@ -714,7 +712,7 @@ export interface AuditPayloads {
     readonly rowNumber: number;
     readonly registrationId: RegistrationId;
     /**
-     * R2-I-16 (R2 — type-design): typed `PaymentStatus` brand instead
+     * Typed `PaymentStatus` brand instead
      * of raw `string` so the closed-set guarantee survives audit
      * consumers (dashboard renderers, GDPR exports). Indirect import
      * via `import(...)` matches the registrations-repository pattern
