@@ -353,6 +353,85 @@ describe('cancelPayment (T059)', () => {
     );
     expect(canceledCall, 'payment_canceled must NOT fire on Stripe failure').toBeUndefined();
   });
+
+  /**
+   * F5R2-CRIT-1 — Phase B WEBHOOK-RACE branch (succeeded webhook
+   * lands between Phase A release and Phase B re-lock). The pre-fix
+   * code had no canTransition guard in Phase B + no
+   * `expectedCurrentStatus` on the repo's updateStatus → silently
+   * overwrote a succeeded payment with canceled = customer charged
+   * AND DB says canceled = SC-013 invariant break.
+   *
+   * The fix re-runs canTransition under Phase B's lock. For
+   * status='succeeded' the transition to 'canceled' is illegal →
+   * emit `payment_cancel_attempt_failed` audit + return
+   * `payment_not_cancelable` (route maps to 409). updateStatus must
+   * NOT be called.
+   */
+  it('R2-CRIT-1: webhook flips pending→succeeded between phases — Phase B catches it', async () => {
+    const d = deps();
+    // Phase A lockForUpdate sees pending; Phase B sees succeeded.
+    (d.paymentsRepo.lockForUpdate as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(PENDING)
+      .mockResolvedValueOnce({ ...PENDING, status: 'succeeded' as const });
+
+    const r = await cancelPayment(d, BASE_INPUT);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('payment_not_cancelable');
+    if (r.error.code !== 'payment_not_cancelable') return;
+    expect(r.error.currentStatus).toBe('succeeded');
+
+    // updateStatus MUST NOT be called — pre-fix it WAS called and
+    // silently overwrote succeeded → canceled.
+    expect(d.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+
+    // Forensic audit emitted with race-detected summary so SRE can
+    // page on chronic occurrences (Stripe ↔ webhook clock skew /
+    // out-of-order delivery class).
+    const calls = (d.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const failedCall = calls.find(
+      (c) =>
+        c[1]?.eventType === 'payment_cancel_attempt_failed' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.startsWith('Phase B race:'),
+    );
+    expect(failedCall, 'expected Phase B race audit emit').toBeDefined();
+  });
+
+  /**
+   * F5R2-CRIT-1 narrow race — even after the canTransition guard
+   * passes (Phase B sees pending), an even-narrower race could flip
+   * the row mid-UPDATE. The repo's `expectedCurrentStatus` WHERE
+   * clause makes the UPDATE match zero rows → returns null → caller
+   * treats as same race class.
+   */
+  it('R2-CRIT-1: updateStatus narrow-race returns null — caller emits forensic audit + err', async () => {
+    const d = deps();
+    // Phase B lockForUpdate sees pending (canTransition passes), but
+    // updateStatus returns null (zero-match — row flipped to
+    // succeeded between the lock and the UPDATE).
+    (d.paymentsRepo.lockForUpdate as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(PENDING)
+      .mockResolvedValueOnce(PENDING);
+    (d.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const r = await cancelPayment(d, BASE_INPUT);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('payment_not_cancelable');
+
+    const calls = (d.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const narrowRaceCall = calls.find(
+      (c) =>
+        c[1]?.eventType === 'payment_cancel_attempt_failed' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.startsWith('Phase B narrow race:'),
+    );
+    expect(narrowRaceCall, 'expected narrow-race audit emit').toBeDefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

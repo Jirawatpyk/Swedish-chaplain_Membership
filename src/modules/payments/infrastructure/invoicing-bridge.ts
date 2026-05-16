@@ -18,6 +18,7 @@
  * outer tx now unwinds BOTH writes atomically (SC-013 invariant holds).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { paymentsMetrics } from '@/lib/metrics';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
@@ -88,7 +89,7 @@ function summariseF4Error<E extends {
   readonly kind?: unknown;
   readonly detail?: unknown;
   readonly reason?: unknown;
-}>(e: E): { code: string; detail: string } {
+}>(e: E, bridgeOp: string): { code: string; detail: string } {
   const code =
     typeof e.code === 'string'
       ? e.code
@@ -101,6 +102,15 @@ function summariseF4Error<E extends {
       : typeof e.reason === 'string'
         ? e.reason
         : `unknown_f4_error_shape (code=${code})`;
+  // F5R2-SF-7 — bump dedicated counter when the unknown-shape fallback
+  // fires so SRE can page on this specific class. Pre-fix the dispatcher
+  // classified `'bridge_error'` as permanent → Stripe stops retrying →
+  // customer's payment is `succeeded` but F4 invoice may still be
+  // `issued`. Without the counter this silent data divergence was only
+  // visible by manually correlating audit-summary text.
+  if (detail.startsWith('unknown_f4_error_shape')) {
+    paymentsMetrics.f4BridgeUnknownErrorShape(bridgeOp);
+  }
   return { code, detail };
 }
 
@@ -145,7 +155,7 @@ export const invoicingBridge: InvoicingBridgePort = {
     });
 
     if (!f4Result.ok) {
-      return err(summariseF4Error(f4Result.error));
+      return err(summariseF4Error(f4Result.error, 'markPaidFromProcessor'));
     }
     return ok(undefined);
   },
@@ -181,7 +191,7 @@ export const invoicingBridge: InvoicingBridgePort = {
       // Reuse the same scalar-only summariser used for
       // markPaidFromProcessor errors. F4's `IssueCreditNoteError` is
       // a discriminated union; the cast lets us share one helper.
-      return err(summariseF4Error(cn.error));
+      return err(summariseF4Error(cn.error, 'issueCreditNoteFromRefund'));
     }
 
     return ok({

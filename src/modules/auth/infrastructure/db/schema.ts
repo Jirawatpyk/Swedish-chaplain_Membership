@@ -258,6 +258,13 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     report, not §86/§87 document). Payload: from, to, row_count,
   //     actor_user_id, route. ---
   'invoices_csv_exported',
+  // --- F5R2 (migration 0151, 2026-05-16) — two operational events
+  //     added together: refund_amount_mismatch_detected (SF-6 — splits
+  //     genuine OOB refunds from local↔Stripe amount divergence) and
+  //     webhook_dispatch_permanent_failure (C2 — forensic 5y record
+  //     for the route's permanent-failure 200-ack path). Both 5y. ---
+  'refund_amount_mismatch_detected',
+  'webhook_dispatch_permanent_failure',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

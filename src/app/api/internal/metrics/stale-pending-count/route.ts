@@ -75,8 +75,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
     rows = Array.from(result);
   } catch (e) {
+    // F5R2-H3 — `e.message` from Postgres carries SQL params /
+    // table names (PII risk). Use constructor name only, matching
+    // the H-4 hygiene rule applied at sibling cron route
+    // (sweep-stale-pending-refunds/route.ts).
     logger.error(
-      { requestId, err: e instanceof Error ? e.message : String(e) },
+      { requestId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
       'cron.stale_pending_count.query_failed',
     );
     return NextResponse.json({ error: 'query_failed' }, { status: 500 });

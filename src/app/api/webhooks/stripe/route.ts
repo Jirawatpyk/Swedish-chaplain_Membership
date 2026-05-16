@@ -100,7 +100,13 @@ async function auditReject(
   eventType:
     | 'webhook_signature_rejected'
     | 'payment_environment_mismatch'
-    | 'webhook_api_version_mismatch',
+    | 'webhook_api_version_mismatch'
+    // F5R2-C2 — `webhook_dispatch_permanent_failure` joins this
+    // helper for the route's permanent-200 path. Migration 0151
+    // adds the enum value. Reusing the same helper avoids drift on
+    // the H-4 logging hygiene + metric counters that auditReject
+    // already enforces.
+    | 'webhook_dispatch_permanent_failure',
   reason: string,
   requestId: string,
 ): Promise<void> {
@@ -705,14 +711,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Stripe's webhook delivery log. Transient errors stay 500 so
       // Stripe retries through the outage window.
       if (permanence === 'permanent') {
+        // F5R2-C2 — emit the 5y forensic audit row promised by the
+        // process-webhook-event.ts:156 docstring (pre-R2 only pino-
+        // logged, which rolls off in 30 days). auditReject is
+        // best-effort by contract — failure to emit logs +
+        // bumps `webhookRejectAuditFailed` counter and does NOT
+        // throw, so the 200-ack to Stripe is never blocked.
+        // Encode the dispatch_failure_kind + dispatch_failure_detail
+        // into the `reason` discriminator + summary so audit-log
+        // queries can pivot without re-parsing.
+        await auditReject(
+          'webhook_dispatch_permanent_failure',
+          `${dispatchError.kind}/${dispatchError.detail}`,
+          requestId,
+        );
         // F5R2-C2 — drop `detail` from response body to avoid leaking
         // F4 bridge taxonomy / internal error codes to the Stripe
         // Dashboard webhook delivery log (visible to anyone with
-        // Stripe read access). The forensic detail is captured in the
-        // pino log line + the metric counter above. (Adding a 5y
-        // audit row for permanent dispatch failures is tracked
-        // separately as HIGH — requires migration for a new
-        // `webhook_dispatch_permanent_failure` event type.)
+        // Stripe read access). The forensic detail is captured in
+        // the audit row + pino log line + metric counter above.
         // Use baseHeaders() for consistent Cache-Control: no-store
         // across all branches (F5R2-L2 — PCI F-01 cache hygiene).
         return NextResponse.json(

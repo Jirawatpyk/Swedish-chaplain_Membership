@@ -56,6 +56,10 @@ export const AUDIT_EVENT_TYPES = [
   'payment_processor_retrieve_failed',
   // --- Migration 0048 (Review S5) — confirmPayment invoice_not_found trail.
   'payment_invoice_not_found',
+  // --- Migration 0151 (F5R2-C2) — webhook route's permanent-failure
+  //     200-ack forensic trail. 5y retention. Honours the
+  //     process-webhook-event.ts:156 docstring promise.
+  'webhook_dispatch_permanent_failure',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

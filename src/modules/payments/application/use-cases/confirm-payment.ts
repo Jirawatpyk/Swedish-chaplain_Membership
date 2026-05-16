@@ -699,11 +699,20 @@ async function confirmPaymentBody(
         // giving up%'`.
         // Phase B markProcessedIfPresent — best-effort, drains the
         // processor_events row so Stripe stops retrying.
+        //
+        // F5R2-SF-3 — bump a dedicated metric on Phase B failure so
+        // SRE can alert on the stuck-row class (audit row commits
+        // but processor_events.processed_at left NULL → Stripe sees
+        // 200 (stops retrying) but DB says "never processed" → sweep
+        // cron does NOT catch it). Pre-fix only the optional-
+        // chained logger.warn fired; if deps.logger is undefined
+        // (test path), the failure was completely silent.
         try {
           await deps.paymentsRepo.withTx(async (tx) => {
             await markProcessedIfPresent(deps, input, tx);
           });
         } catch (phaseBErr) {
+          paymentsMetrics.confirmPaymentGiveUpPhaseBMarkProcessedFailed();
           deps.logger?.warn(
             'confirmPayment.give_up_phase_b_markProcessed_failed',
             {

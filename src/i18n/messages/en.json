@@ -1433,6 +1433,7 @@
         "success": "Payment recorded",
         "successDetail": "Invoice {number} is now paid.",
         "cancel": "Back to invoice",
+        "cancelDialog": "Cancel",
         "errors": {
           "failed": "Could not record payment",
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",

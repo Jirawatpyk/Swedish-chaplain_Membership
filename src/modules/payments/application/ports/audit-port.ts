@@ -1,8 +1,10 @@
 /**
  * F5 Audit port.
  *
- * 17 F5 audit event types per data-model.md § 7. Discriminated union so
- * callers cannot emit an unknown event_type.
+ * F5 audit event types per data-model.md § 7. Discriminated union so
+ * callers cannot emit an unknown event_type. The `F5AuditEventType`
+ * union literal below is the authoritative list — count against it
+ * directly rather than baking a number into prose (F5R2-F-1).
  *
  * `tx` semantics mirror F4's AuditPort:
  *   - mutation path (initiate / confirm / fail / cancel): pass tx handle
@@ -12,10 +14,11 @@
  */
 
 /**
- * The 17 event types below are the authoritative F5 audit catalogue
+ * The event types below are the authoritative F5 audit catalogue
  * (data-model.md § 7). Not all are wired to a use-case in Group D —
  * the following fire from later-phase surfaces and are declared up-
- * front so the enum matches the DB migration 0040 exactly and
+ * front so the enum matches the DB migration sequence (0040 + 0046
+ * + 0047 + 0048 + 0049 + 0052 + 0148 + 0151) exactly and the
  * `check:audit-events` drift-check (scripts/check-audit-event-count.ts)
  * stays truthful:
  *   - `payment_auto_refunded_concurrent_manual_mark` → emitted by a
@@ -97,7 +100,22 @@ export type F5AuditEventType =
   // typed-emitter path AND closes the audit_event_type ↔ F5AuditEventType
   // drift surface caught by `tests/integration/payments/audit-event-type-parity.test.ts`.
   | 'payment_initiate_rate_limited'
-  | 'payment_cancel_rate_limited';
+  | 'payment_cancel_rate_limited'
+  // F5R2-SF-6 (migration 0151) — emitted by `processChargeRefunded`
+  // when the local refund row's `amount_satang` exceeds Stripe's
+  // confirmed charge total. Pre-fix these mismatches were bucketed
+  // under `out_of_band_refund_detected` → operator dashboards
+  // pivoting on actual OOB refunds saw amount-mismatch false
+  // positives. Dedicated type isolates the genuine DB↔Stripe
+  // divergence class. 5y operational retention.
+  | 'refund_amount_mismatch_detected'
+  // F5R2-C2 (migration 0151) — emitted by the webhook route when
+  // `process-webhook-event` returns `permanence: 'permanent'` (route
+  // 200-acks Stripe to break the 72h retry storm). Honours the
+  // process-webhook-event.ts:156 docstring promise that pre-R2 was
+  // unfulfilled (only pino-logged, which rolls off in 30d). 5y
+  // forensic compliance retention.
+  | 'webhook_dispatch_permanent_failure';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -296,6 +314,25 @@ export interface F5AuditPayloadByType {
   // payload fields today (only summary + actorUserId + requestId).
   payment_initiate_rate_limited: Record<string, unknown>;
   payment_cancel_rate_limited: Record<string, unknown>;
+  // F5R2-SF-6 — typed payload to keep PII out (no member email, no
+  // raw SQL, no Stripe charge object). Just the IDs + amounts needed
+  // to reconcile the divergence in the SRE runbook.
+  refund_amount_mismatch_detected: {
+    readonly refund_id: string;
+    readonly payment_id: string;
+    readonly db_amount_satang: string;
+    readonly stripe_amount_satang: string;
+    readonly runbook_url: string;
+  };
+  // F5R2-C2 — forensic 200-ack record. Detail is the
+  // ProcessWebhookEventError.detail string (already PII-scrubbed by
+  // the dispatcher's err-construction).
+  webhook_dispatch_permanent_failure: {
+    readonly event_id: string;
+    readonly stripe_event_type: string;
+    readonly dispatch_failure_kind: string;
+    readonly dispatch_failure_detail: string;
+  };
 }
 
 /**
@@ -391,6 +428,9 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // Migration 0043 — operational rate-limit events; 5y retention.
   payment_initiate_rate_limited: 5,
   payment_cancel_rate_limited: 5,
+  // F5R2 — operational/audit class events; 5y per Constitution VIII.
+  refund_amount_mismatch_detected: 5,
+  webhook_dispatch_permanent_failure: 5,
 };
 
 /**

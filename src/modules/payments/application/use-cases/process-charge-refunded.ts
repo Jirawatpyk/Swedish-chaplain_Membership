@@ -170,24 +170,31 @@ export async function processChargeRefunded(
           // `specs/009-online-payment/r10-carryover-from-f4.md` and
           // F5R1 review report.
           if (existing.amountSatang > input.amountSatang) {
-            // The audit payload schema for out_of_band_refund_detected
-            // takes a single amount; record DB-side here and the
-            // forensic detail (mismatch vs Stripe total) goes into the
-            // summary string + structured log line below. New audit
-            // event type for amount-mismatch is the R2 follow-up.
+            // F5R2-SF-6 — dedicated `refund_amount_mismatch_detected`
+            // event type (migration 0151) replaces the F5R1-E13
+            // partial-fix that bucketed amount-mismatches under the
+            // generic `out_of_band_refund_detected`. Operator
+            // dashboards filtering for genuine OOB refunds (admin-via-
+            // Stripe-Dashboard) now get a clean signal; the divergence
+            // class has its own SRE alert pivot.
             await deps.audit.emit(tx, {
               tenantId: input.tenantId,
               requestId: input.requestId,
-              eventType: 'out_of_band_refund_detected',
+              eventType: 'refund_amount_mismatch_detected',
               actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
               summary: `Refund amount mismatch: DB row ${existing.id} amount ${existing.amountSatang} satang exceeds Stripe charge total refunded ${input.amountSatang} satang — admin must reconcile`,
               payload: {
-                processor_refund_id: refundId,
-                processor_charge_id: input.chargeId,
-                amount_satang: existing.amountSatang.toString(),
+                refund_id: existing.id,
+                // existing.paymentId is the FK on the refund row to
+                // its parent payment — the typed audit payload uses
+                // string (not branded) since this is downstream of
+                // the Domain boundary.
+                payment_id: existing.paymentId,
+                db_amount_satang: existing.amountSatang.toString(),
+                stripe_amount_satang: input.amountSatang.toString(),
                 runbook_url: RUNBOOK_URL,
               },
-              retentionYears: retentionFor('out_of_band_refund_detected'),
+              retentionYears: retentionFor('refund_amount_mismatch_detected'),
             });
             paymentsMetrics.outOfBandRefundRejected(
               input.tenantId,

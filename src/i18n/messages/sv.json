@@ -1433,6 +1433,7 @@
         "success": "Betalning registrerad",
         "successDetail": "Faktura {number} är nu betald.",
         "cancel": "Tillbaka",
+        "cancelDialog": "Avbryt",
         "errors": {
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",

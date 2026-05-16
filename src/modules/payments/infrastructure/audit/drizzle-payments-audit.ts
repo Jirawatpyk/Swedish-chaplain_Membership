@@ -34,6 +34,7 @@ import {
 } from '../../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { paymentsMetrics } from '@/lib/metrics';
 
 // Re-export so existing callers/tests that import these from the
 // infrastructure adapter keep working. Authoritative source lives in
@@ -73,14 +74,24 @@ export const f5AuditAdapter: AuditPort = {
 
     // Probe / best-effort path — log-and-swallow; never mask the
     // primary Result with an audit-write failure.
+    //
+    // F5R2-SF-5 — bump `useCaseAuditEmitFailed` counter so SRE can
+    // alert on chronic audit-rail outages affecting the 11+
+    // Application-layer null-tx call sites (cross-tenant probes,
+    // give-up forensic, cancel-attempt-failed). Pre-fix only the
+    // pino log fired; pino rolls off in 30 days so a sustained
+    // outage silently dropped the 5/10y forensic compliance trail.
+    // F5R2-H3 — `e.message` from Postgres can carry SQL params /
+    // table names. Use `e.constructor.name` instead.
     try {
       await insertAuditRow(db, event);
     } catch (e) {
+      paymentsMetrics.useCaseAuditEmitFailed(event.eventType);
       logger.error(
         {
           eventType: event.eventType,
           tenantId: event.tenantId,
-          err: e instanceof Error ? e.message : String(e),
+          errKind: e instanceof Error ? e.constructor.name : 'unknown',
         },
         'f5-audit-adapter: probe-path audit write failed (suppressed)',
       );

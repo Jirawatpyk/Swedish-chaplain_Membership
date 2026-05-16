@@ -177,6 +177,34 @@ function categorisePermanence(detail: string): 'transient' | 'permanent' {
   return PERMANENT_SUB_USE_CASE_DETAILS.has(detail) ? 'permanent' : 'transient';
 }
 
+/**
+ * F5R2-S7 — factory for `dispatch_failed` errors with
+ * `kind: 'sub_use_case_error'`. The 3 sub-use-case error sites
+ * (`payment_intent.succeeded` confirmPayment branch,
+ * `payment_intent.payment_failed` failPayment branch,
+ * `payment_intent.canceled` handleCancelEvent branch) had identical
+ * 5-line err({...}) blocks differing only in the `detail` value.
+ * Centralising:
+ *   - Removes the "forget categorisePermanence" bug class on a
+ *     future 4th sub-use-case branch.
+ *   - Single anchor point for `'sub_use_case_error'` literal —
+ *     dispatcher-error grep is more discoverable.
+ *   - `permanence` is derived from `detail` in one place; cannot
+ *     drift across call sites.
+ */
+function subUseCaseErr(
+  eventType: string,
+  detail: string,
+): ProcessWebhookEventError {
+  return {
+    code: 'dispatch_failed',
+    kind: 'sub_use_case_error',
+    eventType,
+    detail,
+    permanence: categorisePermanence(detail),
+  };
+}
+
 export interface ProcessWebhookEventDeps {
   readonly paymentsRepo: PaymentsRepo;
   readonly refundsRepo: RefundsRepo;
@@ -420,13 +448,7 @@ async function processWebhookEventBody(
         },
       );
       if (!result.ok) {
-        return err<ProcessWebhookEventError>({
-          code: 'dispatch_failed',
-          kind: 'sub_use_case_error',
-          eventType: event.type,
-          detail: result.error.code,
-          permanence: categorisePermanence(result.error.code),
-        });
+        return err(subUseCaseErr(event.type, result.error.code));
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` from the
       // sub-use-case outcome up to the route handler so it can fire a
@@ -455,13 +477,13 @@ async function processWebhookEventBody(
          * on auto_refunded_stale_invoice; defence-in-depth for post-
          * compile contract drift. */
         if (confirmInvoiceId === undefined) {
-          return err<ProcessWebhookEventError>({
-            code: 'dispatch_failed',
-            kind: 'sub_use_case_error',
-            eventType: event.type,
-            detail: 'invariant_auto_refunded_missing_invoice_id',
-            permanence: 'permanent',
-          });
+          // F5R2-S7 — `invariant_auto_refunded_missing_invoice_id` is in
+          // PERMANENT_SUB_USE_CASE_DETAILS so `subUseCaseErr` derives
+          // permanence='permanent' automatically (same value as the
+          // pre-fix literal).
+          return err(
+            subUseCaseErr(event.type, 'invariant_auto_refunded_missing_invoice_id'),
+          );
         }
         /* v8 ignore stop */
         outcome = {
@@ -504,13 +526,7 @@ async function processWebhookEventBody(
         },
       );
       if (!result.ok) {
-        return err<ProcessWebhookEventError>({
-          code: 'dispatch_failed',
-          kind: 'sub_use_case_error',
-          eventType: event.type,
-          detail: result.error.code,
-          permanence: categorisePermanence(result.error.code),
-        });
+        return err(subUseCaseErr(event.type, result.error.code));
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
       // surgical revalidation in the route handler.
@@ -541,13 +557,7 @@ async function processWebhookEventBody(
       );
       /* v8 ignore start -- R4 I-3 (2026-04-26): handleCancelEvent now ack's every error case as ok({kind:'already_canceled'}) to break Stripe's 24h retry loop on permanent mismatches. The err arm here is dead code preserved structurally so the dispatcher matches the other branches' shape; if a future handleCancelEvent revision reintroduces err returns, this guard prevents a silent fall-through to ok(outcome) with `outcome` undefined. */
       if (!result.ok) {
-        return err<ProcessWebhookEventError>({
-          code: 'dispatch_failed',
-          kind: 'sub_use_case_error',
-          eventType: event.type,
-          detail: result.error.code,
-          permanence: categorisePermanence(result.error.code),
-        });
+        return err(subUseCaseErr(event.type, result.error.code));
       }
       /* v8 ignore stop */
       // R5 canonical fix (2026-04-25): forward `invoiceId`.

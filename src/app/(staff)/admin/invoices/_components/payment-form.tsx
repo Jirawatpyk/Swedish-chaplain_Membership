@@ -174,16 +174,27 @@ export function PaymentForm({
       </div>
       <div className="flex justify-end gap-2">
         {onCancel && (
+          // F5R2-UX-F2 — `cancel` key copy ("Back to invoice") was
+          // written for the now-deleted full-page route. Inside a
+          // dialog, `cancelDialog` ("Cancel" / "ยกเลิก" / "Avbryt")
+          // is the standard dismiss copy. F5R2-UX-F3 — min-h-[44px]
+          // satisfies WCAG 2.5.8 touch-target on mobile.
           <Button
             type="button"
             variant="outline"
+            className="min-h-[44px]"
             onClick={onCancel}
             disabled={pending}
           >
-            {t('cancel')}
+            {t('cancelDialog')}
           </Button>
         )}
-        <Button type="submit" disabled={pending} aria-busy={pending}>
+        <Button
+          type="submit"
+          className="min-h-[44px]"
+          disabled={pending}
+          aria-busy={pending}
+        >
           {pending && (
             <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
           )}

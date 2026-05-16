@@ -263,11 +263,11 @@ export const stripeGateway: ProcessorGatewayPort = {
     }
 
     // F5R1-IMP6 — guard against bigint→number precision loss at the
-    // Stripe SDK boundary. THB satang ceiling sits at ~₿9e13 per
-    // single payment (Number.MAX_SAFE_INTEGER), well above any realistic
-    // invoice. The guard is belt-and-suspenders for F11 multi-currency
-    // (e.g. IDR sub-unit can push past MAX_SAFE_INTEGER on enterprise
-    // invoices). Failing-closed here means the use-case sees a typed
+    // Stripe SDK boundary. Number.MAX_SAFE_INTEGER ≈ 9e15 satang
+    // (≈฿90T) — well above any realistic THB invoice. The guard is
+    // belt-and-suspenders for F11 multi-currency (e.g. IDR sub-unit
+    // pricing can push enterprise invoices past MAX_SAFE_INTEGER).
+    // Failing-closed here means the use-case sees a typed
     // `permanent` error and audit-logs it instead of silently truncating.
     if (input.amountSatang > BigInt(Number.MAX_SAFE_INTEGER)) {
       return err({
