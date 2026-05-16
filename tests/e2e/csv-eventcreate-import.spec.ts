@@ -155,8 +155,42 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
     await expect(confirmBtn).toBeEnabled();
     await confirmBtn.click();
 
-    // Result card renders after the use-case returns.
+    // FR-019b safety net: when the same attendee fingerprint was
+    // imported to a different event within the last 30 days, the
+    // server returns `kind:'event_mismatch_warning'` and the UI
+    // surfaces an AlertDialog with "Cancel" / "Continue anyway".
+    // This happens in cross-project E2E runs because all 3 browser
+    // projects upload the SAME Grant Thornton fixture in quick
+    // succession — chromium runs first and persists a csv_import_
+    // records row, then mobile-safari + mobile-chrome see it as a
+    // prior import (the fingerprint is identical). In a real admin
+    // workflow this is correct production behaviour. Test handles
+    // both paths so all 3 projects pass deterministically.
     const resultCard = page.getByTestId('csv-import-result');
+    const mismatchDialog = page.getByRole('alertdialog', {
+      name: /may belong to a different event/i,
+    });
+    // Race: whichever of (resultCard | mismatchDialog) appears first
+    // wins. Use shorter timeout on the race so we can branch fast;
+    // if neither appears the resultCard.toBeVisible at the end
+    // surfaces the actual delay diagnostic.
+    await Promise.race([
+      resultCard.waitFor({ state: 'visible', timeout: 30_000 }).catch(() => null),
+      mismatchDialog
+        .waitFor({ state: 'visible', timeout: 30_000 })
+        .catch(() => null),
+    ]);
+    if (await mismatchDialog.isVisible()) {
+      console.log(
+        '[E2E debug] FR-019b mismatch dialog surfaced — clicking Continue anyway',
+      );
+      await mismatchDialog
+        .getByRole('button', { name: /continue anyway/i })
+        .click();
+    }
+
+    // Result card renders after the use-case returns (with or without
+    // the force_proceed override path above).
     await expect(resultCard).toBeVisible({ timeout: 90_000 });
 
     // recordId chip is part of the result card per csv-import-result.tsx:161
