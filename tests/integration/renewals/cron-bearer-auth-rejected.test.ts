@@ -35,12 +35,10 @@
  * signal of a sustained CRON_SECRET-rotation incident.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
-import { db, runInTenant } from '@/lib/db';
+import { db } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { env } from '@/lib/env';
-import { asTenantContext } from '@/modules/tenants';
 import {
   createTestTenant,
   type TestTenant,
@@ -124,7 +122,7 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
   //     unit test using a mock audit port that captures `.emit`
   //     calls — bypasses the RLS-context bug entirely. File a
   //     GitHub issue and link it here when triaged.
-  it.skip('missing Bearer → 401 + cron_bearer_auth_rejected audit row in audit_log', async () => {
+  it('missing Bearer → 401 + cron_bearer_auth_rejected audit row in audit_log', async () => {
     const ROUTE = '/api/cron/renewals/dispatch-coordinator';
 
     const response = await gateCronBearerOrRespond(makeRequest({}), {
@@ -133,34 +131,22 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(401);
 
-    // The helper emits via env.tenant.slug (bookkeeping tenant), NOT
-    // the test tenant — so we cannot filter by tenant slug. Instead
-    // pin via the route discriminator + a recent timestamp window.
-    // The audit row's `tenant_id` reflects the env-level
-    // bookkeeping-tenant value; for production single-tenant deploy
-    // this is `swecham` (or the test runner's env override).
-    // F4+F8 Satang migration (2026-05-16) — read under runInTenant
-    // of env.tenant.slug (the bookkeeping tenant the helper emits as)
-    // so RLS/FORCE policies surface the row regardless of test-runner
-    // owner-role BYPASSRLS configuration. Pre-fix `db.select` ran as
-    // raw owner; on environments where neondb_owner does not have
-    // BYPASSRLS the FORCE-RLS audit_log policy filtered the row out.
-    const recentRows = await runInTenant(
-      asTenantContext(env.tenant.slug),
-      (tx) =>
-        tx
-          .select()
-          .from(auditLog)
-          .where(
-            and(
-              eq(
-                auditLog.eventType,
-                'cron_bearer_auth_rejected' as never,
-              ),
-              eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
-            ),
-          ),
-    );
+    // F5R3v4 fix (2026-05-16) — root cause of the pre-fix skip: the
+    // gate helper emits with no `summary` field set, so the emitter's
+    // `buildSummary` default fires (`F8 cron_bearer_auth_rejected
+    // (tenant=...)`) — NOT the literal `'cron bearer rejected on ...'`
+    // the pre-fix filter was looking for. Filter by event type +
+    // payload route extraction (the route is the actual forensic
+    // discriminator). `db.select` (owner BYPASSRLS) like test 3.
+    const recentRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.eventType, 'cron_bearer_auth_rejected' as never),
+          sql`payload->>'route' = ${ROUTE}`,
+        ),
+      );
     // At least one row must have landed for THIS test execution; we
     // can't tightly bound the count because parallel test runs may
     // also fire.
@@ -181,7 +167,7 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
   // above; the 401 wrong-bearer code path is also covered at the
   // unit layer by `tests/unit/lib/cron-auth.test.ts`. The gap here
   // is the integration audit-row persistence visibility.
-  it.skip('wrong Bearer → 401 + audit row lands (timing-safe compare must not leak via differential behaviour)', async () => {
+  it('wrong Bearer → 401 + audit row lands (timing-safe compare must not leak via differential behaviour)', async () => {
     const ROUTE = '/api/cron/renewals/at-risk-recompute-coordinator';
 
     const response = await gateCronBearerOrRespond(
@@ -193,24 +179,18 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(401);
 
-    // F4+F8 Satang migration (2026-05-16) — runInTenant SELECT to
-    // surface rows regardless of owner-BYPASSRLS configuration.
-    const rows = await runInTenant(
-      asTenantContext(env.tenant.slug),
-      (tx) =>
-        tx
-          .select()
-          .from(auditLog)
-          .where(
-            and(
-              eq(
-                auditLog.eventType,
-                'cron_bearer_auth_rejected' as never,
-              ),
-              eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
-            ),
-          ),
-    );
+    // F5R3v4 fix (2026-05-16) — filter by payload route (the actual
+    // forensic discriminator) instead of the prior summary literal
+    // mismatch. See sibling test 1 for full root-cause comment.
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.eventType, 'cron_bearer_auth_rejected' as never),
+          sql`payload->>'route' = ${ROUTE}`,
+        ),
+      );
     const landed = rows.find((r) => {
       const payload = r.payload as { route?: string } | null;
       return payload?.route === ROUTE;

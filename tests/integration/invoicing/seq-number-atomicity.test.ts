@@ -599,19 +599,18 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
   }, 60_000);
 
   // -------------------------------------------------------------------------
-  // (c) Post-commit Blob sweeper — DEFERRED to F4 backlog (post-MVP).
-  // The sweeper recovers orphan rows when DB commits but the matching
-  // Blob upload fails post-tx. No code path exists today.
-  // Converting `it.todo` → `it.skip` removes the ambient `1 todo` flag
-  // from CI summaries while keeping the future scenario discoverable.
-  // Re-enable when F4 sweeper ships.
+  // (c) Post-commit Blob sweeper — SHIPPED at T166-11.
+  // The placeholder formerly here pre-dated the async receipt-PDF
+  // pipeline. Once `FEATURE_F5_ASYNC_RECEIPT_PDF` shipped, the actual
+  // reconciliation cron landed at
+  //   src/app/api/internal/cron/receipt-pdf-reconcile/route.ts
+  // with end-to-end coverage at
+  //   tests/integration/invoicing/receipt-pdf-reconcile-cron.test.ts
+  // (re-enqueue + dedupe + permanent-failure audit branches).
+  // For the synchronous-issue path, blob upload is INSIDE the tx — a
+  // failed upload rolls back, so no orphan row exists to recover from.
+  // The historical placeholder is removed as obsolete (F5R3v4 fix).
   // -------------------------------------------------------------------------
-  it.skip(
-    '(c) DB commit succeeds but Blob reconciliation sweep recovers orphans — sweeper unimplemented (F4 backlog)',
-    () => {
-      // No-op until the sweeper ships — see F4 retrospective § post-MVP polish.
-    },
-  );
 
   // -------------------------------------------------------------------------
   // (perf) 50-writer load variant — gated by RUN_PERF=1.
