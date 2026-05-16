@@ -139,7 +139,6 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
         render={
           <Button
             variant="destructive-outline"
-            size="sm"
             aria-disabled={pending}
             type="button"
           />
@@ -150,7 +149,7 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
         {pending && (
           <Loader2
             aria-hidden="true"
-            className="size-3 animate-spin"
+            className="animate-spin"
             data-icon="inline-end"
           />
         )}

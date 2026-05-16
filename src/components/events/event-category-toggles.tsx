@@ -174,7 +174,6 @@ export function EventCategoryToggles({
           render={
             <Button
               variant={isPartnerBenefit ? 'secondary' : 'outline'}
-              size="sm"
               disabled={disabled}
               aria-disabled={pending}
               type="button"
@@ -190,7 +189,7 @@ export function EventCategoryToggles({
           {activeFlag === 'partner_benefit' && (
             <Loader2
               aria-hidden="true"
-              className="size-3 animate-spin"
+              className="animate-spin"
               data-icon="inline-end"
             />
           )}
@@ -234,7 +233,6 @@ export function EventCategoryToggles({
           render={
             <Button
               variant={isCulturalEvent ? 'secondary' : 'outline'}
-              size="sm"
               disabled={disabled}
               aria-disabled={pending}
               type="button"
@@ -250,7 +248,7 @@ export function EventCategoryToggles({
           {activeFlag === 'cultural_event' && (
             <Loader2
               aria-hidden="true"
-              className="size-3 animate-spin"
+              className="animate-spin"
               data-icon="inline-end"
             />
           )}
