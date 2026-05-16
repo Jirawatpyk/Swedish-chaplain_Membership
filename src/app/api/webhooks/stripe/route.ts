@@ -672,6 +672,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         'stripe-webhook.dispatch_failed',
       );
+      // F5R1-E14 — metric counter for dispatch failure. Pino logs
+      // alone roll off in 30 days; SRE alert rules attached to OTel
+      // counters need this to fire on sustained dispatch failures
+      // (permanence + kind labels split transient infra outages from
+      // permanent F4 schema-drift class).
+      paymentsMetrics.webhookDispatchFailed(
+        permanence,
+        errorObj?.kind ?? 'unknown',
+      );
 
       // F5R1-IMP2 — permanent errors must NOT cause Stripe retries
       // (72h retry storm + audit-log pollution). 200-ack with a

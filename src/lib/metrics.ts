@@ -698,6 +698,41 @@ export const paymentsMetrics = {
   },
 
   /**
+   * F5R1-E14 — `webhook.dispatch_failed_total{permanence, kind}` —
+   * dispatcher returned Result.err (sub_use_case_error / dispatch_threw /
+   * unknown_event_type_threw). Labels split transient (Stripe retries)
+   * from permanent (200-ack drained the queue) so SRE alert rules can
+   * pivot on `permanence='transient' AND rate > 5/min` (genuine outage)
+   * vs `permanence='permanent' AND rate > 0` (schema drift).
+   * NO tenant label (failures are often pre-tenant-resolution).
+   */
+  webhookDispatchFailed(
+    permanence: 'transient' | 'permanent',
+    kind: string,
+  ): void {
+    counter(
+      'payments_webhook_dispatch_failed_total',
+      'Stripe webhook dispatcher returned Result.err; labels distinguish retry semantics',
+    ).add(1, { permanence, kind });
+  },
+
+  /**
+   * F5R1-E11 — `cron.sweep_tenant_failed_total{tenant}` — per-tenant
+   * stale-pending-refund sweep failed (use-case Result.err OR
+   * uncaught throw). SRE alert pivots on `> 0 over 1h` per tenant —
+   * a chronic failure for a single tenant indicates RLS context
+   * drift / Neon outage / refund-repo schema regression scoped to
+   * that tenant. Pino logs roll off in 30 days; this counter +
+   * alert anchors the long-term SLO compliance trail.
+   */
+  cronSweepTenantFailed(tenantId: string): void {
+    counter(
+      'payments_cron_sweep_tenant_failed_total',
+      'Stale-pending-refund cron sweep failed for a single tenant',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
    * F5R1-E7 — `webhook.mark_processed_tail_failure_total{tenant, eventType}`
    * — fires when the dispatcher's tail `markProcessed` write fails
    * (sub-use-case did NOT set `markedProcessedAtomically=true` AND

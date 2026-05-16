@@ -48,6 +48,7 @@ import {
 } from '@/modules/payments';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { paymentsMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
@@ -133,6 +134,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         }
       } else {
         tenantsErrored += 1;
+        // F5R1-E11 — emit metric counter so SRE alert rules attached
+        // to OTel counters (not log strings) can fire on sustained
+        // per-tenant sweep failures. Pino logs alone roll off in
+        // 30 days; alert rules + the audit-log forensic trail (5y)
+        // are the long-term compliance anchors.
+        paymentsMetrics.cronSweepTenantFailed(tenantId);
         logger.error(
           { requestId, tenantId, cause: result.error.cause },
           'cron.sweep_stale_pending_refunds.tenant_failed',
@@ -140,6 +147,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     } catch (e) {
       tenantsErrored += 1;
+      paymentsMetrics.cronSweepTenantFailed(tenantId);
       logger.error(
         { requestId, tenantId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
         'cron.sweep_stale_pending_refunds.tenant_threw',
