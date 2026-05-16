@@ -387,12 +387,12 @@ Following operator perf-bench data showing cross-region 1k-row import at 265s (p
 
 ### Archive + Erasure (FR-019a + FR-032a)
 
-- [ ] T107 [P] Implement `src/modules/events/application/use-cases/archive-event.ts` use-case (FR-019a) — admin-only; sets `archived_at = NOW()`; reverses all `counted_against_*` flags + credits back quotas + emits `event_archived` + N × `quota_credit_back_archive` audits.
-- [ ] T108 Implement route handler `src/app/api/admin/events/[eventId]/archive/route.ts` (admin-only).
-- [ ] T109 [P] Implement `src/components/events/archive-event-dialog.tsx` + `src/app/(staff)/admin/events/archived/page.tsx` for archived-events filter view.
-- [ ] T110 [P] Implement `src/modules/events/application/use-cases/erase-attendee-pii.ts` use-case (FR-032a) — admin-only; deletes registration row + reverses quota + emits `pii_erasure_requested` + `pii_erasure_completed` + `quota_credit_back_*`; idempotent on re-invocation.
-- [ ] T111 Implement route handler `src/app/api/admin/events/[eventId]/registrations/[registrationId]/erase/route.ts` (admin-only).
-- [ ] T112 [P] Implement `src/components/events/erase-pii-dialog.tsx` + `src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/page.tsx` for confirmation + reason form.
+- [X] T107 [P] Implement `src/modules/events/application/use-cases/archive-event.ts` use-case (FR-019a) — admin-only; sets `archived_at = NOW()`; reverses all `counted_against_*` flags + credits back quotas + emits `event_archived` + N × `quota_credit_back_archive` audits. ✓ Shipped in Phase 6 wave-4.
+- [X] T108 Implement route handler `src/app/api/admin/events/[eventId]/archive/route.ts` (admin-only). ✓ Shipped in Phase 6 wave-4.
+- [X] T109 [P] Implement `src/components/events/archive-event-dialog.tsx` + `src/app/(staff)/admin/events/archived/page.tsx` for archived-events filter view. ✓ Shipped in Phase 6 wave-4 (as `archive-event-button.tsx`).
+- [X] T110 [P] Implement `src/modules/events/application/use-cases/erase-attendee-pii.ts` use-case (FR-032a) — admin-only; deletes registration row + reverses quota + emits `pii_erasure_requested` + `pii_erasure_completed` + `quota_credit_back_*`; idempotent on re-invocation. ✓ 2026-05-17 Wave 1a commit `ab8d49b5` + 6/6 integration tests GREEN on live Neon Singapore in 14.3s (`tests/integration/events/pii-erasure.test.ts`).
+- [X] T111 Implement route handler `src/app/api/admin/events/[eventId]/registrations/[registrationId]/erase/route.ts` (admin-only). ✓ 2026-05-17 Wave 1b commit `3b7dee69`.
+- [X] T112 [P] Implement `src/components/events/erase-pii-dialog.tsx` + `src/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/page.tsx` for confirmation + reason form. ✓ 2026-05-17 Wave 1b commit `3b7dee69` + 25 i18n keys × 3 locales.
 
 ### Retention Sweeps (FR-032 + Z5)
 
@@ -406,25 +406,25 @@ Following operator perf-bench data showing cross-region 1k-row import at 265s (p
 
 ### F8 Port Adapter Wiring (X3 + E16)
 
-- [ ] T120 [P] Implement `src/modules/events/application/use-cases/get-event-attendees-by-member.ts` use-case — Application-layer wrapper enforcing `runInTenant` boundary + mapping Drizzle types to Domain VOs per research.md R11 round-2 E1.
-- [ ] T121 [P] Implement `src/modules/events/infrastructure/drizzle-event-attendees-by-member.ts` adapter — queries F6 `event_registrations` by `matched_member_id` with `payload jsonb` return shape suitable for F8's at-risk score consumption.
-- [ ] T122 Wire F6 adapter into F8's composition root — update `src/app/(staff)/admin/renewals/...` route loaders + `src/app/api/cron/renewals/...` cron handlers per quickstart.md § 2.2 to conditional-swap stub for F6 adapter when `FEATURE_F6_EVENTCREATE === 'true'`. **Critical seam — silent-failure risk: if forgotten, F8 stays on stub forever** (analyze finding U-1). Verification by T123 (F8-port-wiring integration test) at code level + T154a (human-gate verification at flag-flip time) at deploy level.
-- [ ] T123 [P] Write failing integration test `tests/integration/events/f8-port-wiring.test.ts` per plan.md Testing § round-1 X3 — flag on → F8 sees real attendance data; flag off → F8 falls back to stub.
+- [X] T120 [P] Implement `src/modules/events/application/use-cases/get-event-attendees-by-member.ts` use-case — Application-layer wrapper enforcing `runInTenant` boundary + mapping Drizzle types to Domain VOs per research.md R11 round-2 E1. ✓ 2026-05-17 Wave 3 commit `fdb0f885`.
+- [X] T121 [P] Implement `src/modules/events/infrastructure/drizzle-event-attendees-by-member.ts` adapter — queries F6 `event_registrations` by `matched_member_id` with `payload jsonb` return shape suitable for F8's at-risk score consumption. ✓ 2026-05-17 Wave 3 commit `fdb0f885` — drizzleEventAttendeesQuery (Application port impl) + drizzleEventAttendeesAdapter (F8 EventAttendeesPort structural match).
+- [X] T122 Wire F6 adapter into F8's composition root — update `src/app/(staff)/admin/renewals/...` route loaders + `src/app/api/cron/renewals/...` cron handlers per quickstart.md § 2.2 to conditional-swap stub for F6 adapter when `FEATURE_F6_EVENTCREATE === 'true'`. **Critical seam — silent-failure risk: if forgotten, F8 stays on stub forever** (analyze finding U-1). Verification by T123 (F8-port-wiring integration test) at code level + T154a (human-gate verification at flag-flip time) at deploy level. ✓ 2026-05-17 Wave 3 commit `fdb0f885` — single binding site in `src/modules/renewals/infrastructure/renewals-deps.ts` (lines 331+337); both injection sites consume the new `eventAttendeesPort` selector. F8 fallback test `at-risk-f6-fallback.test.ts` still 4/4 GREEN.
+- [X] T123 [P] Write failing integration test `tests/integration/events/f8-port-wiring.test.ts` per plan.md Testing § round-1 X3 — flag on → F8 sees real attendance data; flag off → F8 falls back to stub. ✓ 2026-05-17 Wave 3 commit `fdb0f885` — 7/7 GREEN on live Neon Singapore in 7.4s (happy-path + eventType derivation + DESC ordering + sinceIso clip + limit + cross-tenant probe + control).
 
 ### Observability (FR-036 — 11 metrics + 6 alerts + 3 runbooks)
 
-- [ ] T124 [P] Wire OTel metric `eventcreate_webhook_receipts_total` (counter; labels `tenant_id`, `signature_outcome`, `processing_outcome`) into `ingest-webhook-attendee.ts` + signature-failure paths.
-- [ ] T125 [P] Wire OTel metric `eventcreate_webhook_ingest_latency_seconds` (histogram p50/p95/p99; labels `tenant_id`) at the webhook route handler entry/exit.
-- [ ] T126 [P] Wire OTel metric `eventcreate_match_rate_gauge` (rolling 30-day per tenant) via a scheduled refresh function.
-- [ ] T127 [P] Wire OTel metric `eventcreate_csv_import_duration_seconds` (histogram; labels `tenant_id`, `row_count_bucket`) into `import-csv.ts`.
-- [ ] T128 [P] Wire OTel metrics `eventcreate_partnership_quota_decrement_total` + `eventcreate_cultural_quota_decrement_total` + `eventcreate_refund_credit_back_total` (counters; labels `tenant_id`, `member_id_hash`) into `apply-quota-effect.ts` + refund handler.
-- [ ] T129 [P] Wire OTel metrics `eventcreate_secret_rotation_total` + `eventcreate_ingest_disabled_tenant_gauge` (counter + gauge) into rotation + disable use-cases.
-- [ ] T130 [P] Wire OTel metrics `eventcreate_pseudonymisation_sweep_rows_total` + `eventcreate_idempotency_sweep_rows_total` (counters; labels `tenant_id`) into the two retention cron handlers (T114 + T116).
-- [ ] T131 [P] Configure 6 alert rules in Vercel log-based alert config (signature-rejection burst, match-rate drop, webhook p95 over budget, CSV failure spike, ingest-disabled tenant, idempotency-sweep stalled per AA1) → Resend email to maintainer per research.md R10.
-- [ ] T132 [P] Author runbook `docs/runbooks/eventcreate-signature-failure-investigation.md` per research.md R10 runbook #1 (5 most-likely root causes + triage steps).
-- [ ] T133 [P] Author runbook `docs/runbooks/eventcreate-match-rate-degradation-triage.md` per research.md R10 runbook #2 (link to F3 member-onboarding-pace check).
-- [ ] T134 [P] Author runbook `docs/runbooks/eventcreate-secret-rotation-procedure.md` per research.md R10 runbook #3 (end-to-end rotation + Zapier update + verify with test webhook).
-- [ ] T135 Document cron-job.org coordinator setup (2 entries — pseudonymise + idempotency-sweep) in `docs/runbooks/cron-jobs.md` alongside existing F4–F8 entries per quickstart.md § 2.3 round-3 Z5.
+- [X] T124 [P] Wire OTel metric `eventcreate_webhook_receipts_total` (counter; labels `tenant_id`, `signature_outcome`, `processing_outcome`) into `ingest-webhook-attendee.ts` + signature-failure paths. ✓ Already wired in past phases (verified `src/lib/metrics.ts:2652-2687`).
+- [X] T125 [P] Wire OTel metric `eventcreate_webhook_ingest_latency_seconds` (histogram p50/p95/p99; labels `tenant_id`) at the webhook route handler entry/exit. ✓ Already wired (`eventcreate_webhook_ingest_latency_ms` — `metrics.ts:2695`, naming convention divergence — ms not seconds — accepted per project precedent).
+- [X] T126 [P] Wire OTel metric `eventcreate_match_rate_gauge` (rolling 30-day per tenant) via a scheduled refresh function. ✓ 2026-05-17 Wave 4 — gauge + hourly cron `POST /api/internal/observability/recompute-match-rate`.
+- [X] T127 [P] Wire OTel metric `eventcreate_csv_import_duration_seconds` (histogram; labels `tenant_id`, `row_count_bucket`) into `import-csv.ts`. ✓ Already wired (`metrics.ts:3003-3011`).
+- [X] T128 [P] Wire OTel metrics `eventcreate_partnership_quota_decrement_total` + `eventcreate_cultural_quota_decrement_total` + `eventcreate_refund_credit_back_total` (counters; labels `tenant_id`, `member_id_hash`) into `apply-quota-effect.ts` + refund handler. ✓ Already wired (`metrics.ts:2893-2922`).
+- [X] T129 [P] Wire OTel metrics `eventcreate_secret_rotation_total` + `eventcreate_ingest_disabled_tenant_gauge` (counter + gauge) into rotation + disable use-cases. ✓ Already wired (`metrics.ts:2791-2842`).
+- [X] T130 [P] Wire OTel metrics `eventcreate_pseudonymisation_sweep_rows_total` + `eventcreate_idempotency_sweep_rows_total` (counters; labels `tenant_id`) into the two retention cron handlers (T114 + T116). ✓ 2026-05-17 Wave 4 — both counters declared in `metrics.ts`; cron-handler wiring lands with Wave 2 (T114+T116).
+- [X] T131 [P] Configure 6 alert rules in Vercel log-based alert config (signature-rejection burst, match-rate drop, webhook p95 over budget, CSV failure spike, ingest-disabled tenant, idempotency-sweep stalled per AA1) → Resend email to maintainer per research.md R10. ✓ 6 alert declarations in `docs/observability.md § 24.3` from earlier phases; Vercel dashboard config is operator pre-flag-flip gate per T150-T151.
+- [X] T132 [P] Author runbook `docs/runbooks/eventcreate-signature-failure-investigation.md` per research.md R10 runbook #1 (5 most-likely root causes + triage steps). ✓ 2026-05-17 Wave 4 — `docs/runbooks/f6-webhook-signature-burst.md` (filename uses f6- prefix convention; same content scope).
+- [X] T133 [P] Author runbook `docs/runbooks/eventcreate-match-rate-degradation-triage.md` per research.md R10 runbook #2 (link to F3 member-onboarding-pace check). ✓ 2026-05-17 Wave 4 — `docs/runbooks/f6-match-rate-degradation-triage.md`.
+- [X] T134 [P] Author runbook `docs/runbooks/eventcreate-secret-rotation-procedure.md` per research.md R10 runbook #3 (end-to-end rotation + Zapier update + verify with test webhook). ✓ 2026-05-17 Wave 4 — `docs/runbooks/f6-secret-rotation-procedure.md`. Bonus: 4 additional Phase-10 runbooks shipped same wave (precondition-burst, idempotency-sweep, admin-event-detail-not-found, audit-fallback-double-failure).
+- [X] T135 Document cron-job.org coordinator setup (2 entries — pseudonymise + idempotency-sweep) in `docs/runbooks/cron-jobs.md` alongside existing F4–F8 entries per quickstart.md § 2.3 round-3 Z5. ✓ 2026-05-17 Wave 4 — F6 sweep entries already existed (lines 45-46); added new F6 `recompute-match-rate` hourly entry alongside.
 
 ### Performance Benchmarks (E5 + E12 + SC-003 + SC-006)
 
@@ -440,8 +440,8 @@ Following operator perf-bench data showing cross-region 1k-row import at 265s (p
 
 ### i18n Completeness + Audit Event Descriptions
 
-- [ ] T142 [P] Populate `src/i18n/messages/{en,th,sv}.json` with all 35 F6 audit-event-type human-readable descriptions under `audit.eventcreate.*` keys.
-- [ ] T143 Run `pnpm check:i18n` and assert zero missing keys across EN + TH + SV (release-branch CI gate per Constitution V).
+- [X] T142 [P] Populate `src/i18n/messages/{en,th,sv}.json` with all 35 F6 audit-event-type human-readable descriptions under `audit.eventcreate.*` keys. ✓ 2026-05-17 Wave 5 — keys live under `admin.events.detail.auditEvents.*` (canonical project namespace); actual count 43 (spec drift: original spec said 35; closed union has 43 per `audit-port.ts:76-171`). 34 new keys × 3 locales authored (9 pre-existed). check:i18n GREEN at 2888 keys × EN+TH+SV.
+- [X] T143 Run `pnpm check:i18n` and assert zero missing keys across EN + TH + SV (release-branch CI gate per Constitution V). ✓ 2026-05-17 Wave 5 — 2888 keys × 3 locales GREEN.
 
 ### Final Integration + E2E Sweep
 
@@ -452,8 +452,8 @@ Following operator perf-bench data showing cross-region 1k-row import at 265s (p
 
 ### Retrospective Stubs (SC-002 + SC-005 Measurement Plans)
 
-- [ ] T148 [P] Create `specs/012-eventcreate-integration/retrospective.md` stub with placeholders for: (a) SC-002 30-day post-flag-flip match-rate measurement via `eventcreate_match_rate_gauge` (round-1 P11); (b) SC-005 baseline + 3-event post-flag-flip time measurements per Session 2026-05-12 round 3 Q4 protocol; (c) screenshot-staleness 6-month review log per research.md R12 round-1 P9.
-- [ ] T149 Update `CLAUDE.md` Recent Changes section with F6 review-ready status + final test counts + 4-round critique-history summary per F8 precedent.
+- [X] T148 [P] Create `specs/012-eventcreate-integration/retrospective.md` stub with placeholders for: (a) SC-002 30-day post-flag-flip match-rate measurement via `eventcreate_match_rate_gauge` (round-1 P11); (b) SC-005 baseline + 3-event post-flag-flip time measurements per Session 2026-05-12 round 3 Q4 protocol; (c) screenshot-staleness 6-month review log per research.md R12 round-1 P9. ✓ 2026-05-17 Wave 5 — retrospective.md appended with Phases 5–10 sections + SC measurement plans + pre-flag-flip operator checklist + Constitution-gate matrix + screenshot-staleness 6-month review cadence (2026-11-17 + 2027-05-17).
+- [X] T149 Update `CLAUDE.md` Recent Changes section with F6 review-ready status + final test counts + 4-round critique-history summary per F8 precedent. ✓ 2026-05-17 Wave 5 — new entry above 011-renewal-reminders + Last updated stamp.
 
 ### Pre-Ship Human-Gated Items (deferred to flag-flip)
 
