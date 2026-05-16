@@ -26,6 +26,16 @@ describe('Money value object', () => {
       expect(() => Money.fromSatangUnsafe(-1)).toThrow();
     });
 
+    it('fromSatangUnsafe(-1n) throws (bigint variant — belt-and-suspenders for H-4)', () => {
+      // F5R3v3 M-10 (2026-05-16) — pin the bigint-input rejection
+      // separately from the number-input case. After H-4 pushed the
+      // Satang brand INTO Money.satang, the private constructor's
+      // inner `asSatang(satang)` is the last line of defence; if
+      // fromSatangUnsafe's own guard is ever weakened, only the
+      // bigint branch would surface the regression at the inner gate.
+      expect(() => Money.fromSatangUnsafe(-1n)).toThrow();
+    });
+
     it('fromSatangUnsafe accepts number and bigint', () => {
       expect(Money.fromSatangUnsafe(100).satang).toBe(100n);
       expect(Money.fromSatangUnsafe(100n).satang).toBe(100n);

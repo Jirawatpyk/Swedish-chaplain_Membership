@@ -3,7 +3,7 @@
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { asSatang } from '@/lib/money';
+import { asSatang, asSatangUnchecked } from '@/lib/money';
 import { computeRefundableAmount } from '@/modules/payments/domain/value-objects/refundable-amount';
 import { checkRefundNotExceedingRemainder } from '@/modules/payments/domain/invariants/refund-not-exceeding-remainder';
 
@@ -45,12 +45,15 @@ describe('computeRefundableAmount', () => {
   });
 
   it('throws on negative paymentAmountSatang', () => {
-    // asSatang(-1n) would throw first — exercise the runtime gate inside
-    // computeRefundableAmount by casting through `as` so the test
-    // continues to assert that the function itself rejects negatives.
+    // F5R3v3 L-8 (2026-05-16) — `asSatangUnchecked(-1n)` is the
+    // semantic right tool for the test (deliberately bypass the
+    // brand's runtime gate so we can exercise the VO's INTERNAL
+    // non-negative guard at line 55-58). Pre-fix used a `as unknown
+    // as ReturnType<typeof asSatang>` double-cast that obscured the
+    // intent.
     expect(() =>
       computeRefundableAmount({
-        paymentAmountSatang: -1n as unknown as ReturnType<typeof asSatang>,
+        paymentAmountSatang: asSatangUnchecked(-1n),
         succeededSumSatang: asSatang(0n),
       }),
     ).toThrow(RangeError);
@@ -60,7 +63,7 @@ describe('computeRefundableAmount', () => {
     expect(() =>
       computeRefundableAmount({
         paymentAmountSatang: asSatang(100n),
-        succeededSumSatang: -1n as unknown as ReturnType<typeof asSatang>,
+        succeededSumSatang: asSatangUnchecked(-1n),
       }),
     ).toThrow(RangeError);
   });

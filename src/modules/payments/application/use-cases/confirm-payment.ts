@@ -95,7 +95,17 @@ export type ConfirmPaymentOutcome =
       readonly kind: 'auto_refunded_stale_invoice';
       readonly invoiceId: string;
     }
-  | { readonly kind: 'invoice_not_found'; readonly invoiceId: string };
+  | { readonly kind: 'invoice_not_found'; readonly invoiceId: string }
+  /**
+   * F5R3v3 H-1 (2026-05-16) — F4 bridge surfaced a malformed invoice
+   * (currently: negative `totalSatang`). The webhook is acknowledged
+   * to prevent Stripe retry storm; the customer's payment row stays
+   * `succeeded` with the invoice still corrupt. Forensic audit fires
+   * with the offending invoiceId so admin runbook can reconcile out
+   * of band. Mirrors the `invoice_not_found` semantics — Stripe has
+   * already charged the customer; our DB state is the broken side.
+   */
+  | { readonly kind: 'invoice_data_corrupt'; readonly invoiceId: string };
 
 // review-20260428-102639.md S7 closure — `invoice_not_found` removed
 // from this union: code path emits `ok({kind:'invoice_not_found'})`,
@@ -371,6 +381,38 @@ async function confirmPaymentBody(
         await markProcessed();
         return ok<ConfirmPaymentOutcome>({
           kind: 'invoice_not_found',
+          invoiceId: payment.invoiceId,
+        });
+      }
+      // F5R3v3 H-1 (2026-05-16) — bridge surfaced corrupted F4 invoice
+      // money (negative totalSatang). Stripe already CHARGED the
+      // customer; ack the webhook + audit forensic + markProcessed so
+      // we don't retry forever. Customer's payment row stays succeeded
+      // with the invoice corrupt — admin runbook reconciles out of
+      // band (refund manually via Stripe Dashboard OR fix the invoice
+      // row). Pre-fix (Batch 1) the bridge silently capped totalSatang
+      // at 0n → control fell through to the stale-refund branch and
+      // attempted an auto-refund using a fake-zero baseline; that
+      // would either underrefund the customer or trip an arithmetic
+      // edge in `computeRefundableAmount`.
+      if (invoiceResult.error.code === 'corrupted_total') {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'payment_invoice_not_found',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Webhook arrived for invoice ${payment.invoiceId} that F4 bridge flagged as data-corrupt (negative totalSatang); PI ${input.paymentIntentId} — admin must reconcile out of band`,
+          payload: {
+            payment_intent_id: input.paymentIntentId,
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+            bridge_outcome: 'corrupted_total',
+          },
+          retentionYears: retentionFor('payment_invoice_not_found'),
+        });
+        await markProcessed();
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'invoice_data_corrupt',
           invoiceId: payment.invoiceId,
         });
       }

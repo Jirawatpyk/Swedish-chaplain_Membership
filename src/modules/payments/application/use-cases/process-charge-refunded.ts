@@ -72,6 +72,17 @@ export interface ProcessChargeRefundedInput {
   /** Charge amount in satang (`event.data.object.amount` projected by adapter). */
   readonly amountSatang: bigint;
   /**
+   * F5R3v3 H-4 (2026-05-16) — `true` iff the webhook verifier's
+   * defensive amount projection (C-1) failed for THIS event. When
+   * true, `amountSatang` is the `?? 0n` default and MUST NOT be
+   * compared against existing refund rows — doing so would flag
+   * EVERY pending refund (existing > 0) as
+   * `refund_amount_mismatch_detected`, creating an audit storm on a
+   * single fuzzed/drifted webhook. Skip the mismatch comparison
+   * entirely; out-of-band sweep cron reconciles.
+   */
+  readonly amountProjectionFailed?: boolean;
+  /**
    * Stripe `event.livemode` projected to processor-env label. Powers the
    * T141 `out_of_band_refund_rejected_total{tenant, processor_env}`
    * counter so dashboards can split test-mode noise from live-mode
@@ -212,7 +223,16 @@ export async function processChargeRefunded(
           // `amountSatang`). Tracked as R2 follow-up — see
           // `specs/009-online-payment/r10-carryover-from-f4.md` and
           // F5R1 review report.
-          if (existing.amountSatang > input.amountSatang) {
+          // F5R3v3 H-4 (2026-05-16) — skip mismatch comparison when
+          // the verifier flagged the amount projection as failed
+          // (input.amountSatang is the `?? 0n` default, not a real
+          // value). Pre-fix every existing > 0 tripped the mismatch
+          // branch → audit storm on a single fuzzed event. Sweep
+          // cron reconciles the actual amount out of band.
+          if (
+            !input.amountProjectionFailed &&
+            existing.amountSatang > input.amountSatang
+          ) {
             // F5R2-SF-6 — dedicated `refund_amount_mismatch_detected`
             // event type (migration 0151) replaces the F5R1-E13
             // partial-fix that bucketed amount-mismatches under the

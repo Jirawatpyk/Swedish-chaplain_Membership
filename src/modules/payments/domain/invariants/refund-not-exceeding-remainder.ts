@@ -21,11 +21,7 @@ import {
 } from '../value-objects/refundable-amount';
 
 /**
- * F5R3v2 H-5 (2026-05-16) — branded `Satang` on every money field.
- * Pre-fix the inputs + error payload used raw `bigint` while their
- * callers (`Payment.amountSatang`, refund context, route body) were
- * already branded. A future refund-policy authoring mistake mixing
- * baht-by-100 by hand had no compile-time guard.
+ * Branded at boundary per F5R3v2 H-5 — see commit `1203403f`.
  */
 export type RefundExceedsRemainderError = {
   readonly kind: 'refund_exceeds_remaining';

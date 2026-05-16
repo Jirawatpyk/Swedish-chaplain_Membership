@@ -252,13 +252,9 @@ export async function issueCreditNote(
           },
           'issueCreditNote: vat calculation failed after remainder guard (unreachable — investigate)',
         );
-        // F5R3v2 B-1 (2026-05-16) — `asSatangUnchecked` for the err-
-        // payload escape. Subtraction can legitimately be 0 (fully
-        // credited) — clamp negative-result to 0n for the SC-013
-        // invariant ("remaining ≥ 0") but pass corrupted values
-        // (e.g. proposed > invoice total → already-credited corruption
-        // class) through to the audit payload unchanged so admins can
-        // see the actual values that triggered the violation.
+        // F5R3v2 B-1 — forensic err payload via `asSatangUnchecked`
+        // (see @/lib/money). Clamp negative remaining to 0n for the
+        // SC-013 invariant; raw corrupted values flow into the audit.
         const remaining =
           loaded.total.satang >= loaded.creditedTotal.satang
             ? loaded.total.satang - loaded.creditedTotal.satang

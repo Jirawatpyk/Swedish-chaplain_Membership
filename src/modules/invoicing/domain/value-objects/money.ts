@@ -26,10 +26,19 @@
  * (`a + b`, `a - b`, comparisons) inside Money continues to work; the
  * brand re-applies via `asSatang` on the way out of arithmetic.
  */
-import { asSatang, type Satang } from '@/lib/money';
+import { asSatang, asSatangUnchecked, type Satang } from '@/lib/money';
 
+/**
+ * F5R3v3 M-1 (2026-05-16) — `MoneyError.satang` is now `Satang`
+ * (was raw `bigint` post-H-4 ROT). The `negative_amount` variant
+ * carries a diagnostic value that may be negative (the whole point
+ * of the err is recording the over-subtraction), so we use
+ * `asSatangUnchecked` to preserve the corrupted value WITHOUT the
+ * non-negative validation that `asSatang` enforces. Matches B-1's
+ * forensic-escape pattern on the F4 err-payload sites.
+ */
 export type MoneyError =
-  | { kind: 'negative_amount'; satang: bigint }
+  | { kind: 'negative_amount'; satang: Satang }
   | { kind: 'non_integer_factor'; factor: string }
   | { kind: 'factor_out_of_range'; factor: string };
 
@@ -39,10 +48,12 @@ export class Money {
   readonly satang: Satang;
 
   private constructor(satang: bigint) {
-    // asSatang validates non-negative at the brand boundary. Existing
-    // public constructors (ofSatang / fromSatangUnsafe / fromTHB)
-    // already pre-validate, so this is belt-and-suspenders — the only
-    // path that could surface a negative is `subtract`'s own guard.
+    // F5R3v3 L-9 (2026-05-16) — comment rewrite. All public
+    // constructors (ofSatang / fromSatangUnsafe / fromTHB) pre-
+    // validate, and `subtract` returns a typed err on underflow
+    // rather than constructing. The inner `asSatang` is defence
+    // against future internal callers that bypass these gates;
+    // genuinely unreachable from current code paths.
     this.satang = asSatang(satang);
   }
 
@@ -56,7 +67,7 @@ export class Money {
    * negative Money.
    */
   static ofSatang(satang: bigint): { ok: true; value: Money } | { ok: false; error: MoneyError } {
-    if (satang < 0n) return { ok: false, error: { kind: 'negative_amount', satang } };
+    if (satang < 0n) return { ok: false, error: { kind: 'negative_amount', satang: asSatangUnchecked(satang) } };
     return { ok: true, value: new Money(satang) };
   }
 
@@ -92,7 +103,7 @@ export class Money {
 
   subtract(other: Money): { ok: true; value: Money } | { ok: false; error: MoneyError } {
     const diff = this.satang - other.satang;
-    if (diff < 0n) return { ok: false, error: { kind: 'negative_amount', satang: diff } };
+    if (diff < 0n) return { ok: false, error: { kind: 'negative_amount', satang: asSatangUnchecked(diff) } };
     return { ok: true, value: new Money(diff) };
   }
 

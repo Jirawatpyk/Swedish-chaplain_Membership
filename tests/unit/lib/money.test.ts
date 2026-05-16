@@ -19,10 +19,12 @@ import { describe, expect, it } from 'vitest';
 import {
   addSatang,
   asSatang,
+  asSatangUnchecked,
   formatSatangAsBaht,
   parseSatang,
   satangToProcessorAmount,
   subSatang,
+  type Satang,
 } from '@/lib/money';
 
 describe('asSatang', () => {
@@ -48,6 +50,52 @@ describe('asSatang', () => {
   it('throws on negative bigint', () => {
     expect(() => asSatang(-1n)).toThrow(RangeError);
     expect(() => asSatang(-1n)).toThrow(/must be >= 0/);
+  });
+});
+
+/**
+ * F5R3v3 H-6 (2026-05-16) — asSatangUnchecked direct coverage.
+ *
+ * Pre-fix R3v2 Batch 1 added `asSatangUnchecked` (B-1 forensic escape
+ * for err-payload values that may be corrupt) but tests-reviewer
+ * flagged it had ZERO unit tests. If a future maintainer "fixes" it
+ * to validate non-negative, all 3 production callsites silently
+ * regress to BLOCKER-class B-1 behavior (RangeError mid-error-
+ * construction → generic 500 + lost diagnostic). These tests pin the
+ * "do NOT validate" contract.
+ */
+describe('asSatangUnchecked (B-1 forensic escape)', () => {
+  it('accepts negative bigint WITHOUT throwing — REGRESSION GUARD for B-1', () => {
+    expect(() => asSatangUnchecked(-1n)).not.toThrow();
+    expect(asSatangUnchecked(-1n)).toBe(-1n);
+    expect(asSatangUnchecked(-1_000_000n)).toBe(-1_000_000n);
+  });
+
+  it('accepts zero and large positive bigint', () => {
+    expect(asSatangUnchecked(0n)).toBe(0n);
+    expect(asSatangUnchecked(1_000_000_000_000n)).toBe(1_000_000_000_000n);
+  });
+
+  it('returned value carries Satang brand (assignable to addSatang)', () => {
+    // Type-level + runtime guard. Brand is structural so runtime is
+    // pure bigint arithmetic; the point is TS compilation accepts
+    // asSatangUnchecked's return as a Satang via the addSatang gate.
+    const v: Satang = asSatangUnchecked(42n);
+    expect(addSatang(v, asSatang(8n))).toBe(50n);
+  });
+
+  it('downstream arithmetic on unchecked values is structurally bigint', () => {
+    // Documents the "do not arithmetic-fold" docstring intent. If a
+    // caller breaks the rule, they get unsigned-underflow-style
+    // surprises (or whatever the bigint arithmetic produces). The
+    // brand is a one-way guarantee — values OUT of asSatangUnchecked
+    // are untrusted.
+    const corrupt: Satang = asSatangUnchecked(-100n);
+    const valid: Satang = asSatang(50n);
+    // a + b where a = -100, b = 50 → -50. asSatang would reject this,
+    // but addSatang does NOT re-validate (by design — it preserves
+    // brand on values already in the system).
+    expect(addSatang(corrupt, valid)).toBe(-50n);
   });
 });
 

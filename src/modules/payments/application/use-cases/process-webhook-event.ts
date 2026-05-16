@@ -614,6 +614,13 @@ async function processWebhookEventBody(
           chargeId: dataObject.id,
           refundIds: dataObject.refundIds ?? [],
           amountSatang: dataObject.amountSatang ?? 0n,
+          // F5R3v3 H-4 (2026-05-16) — propagate the verifier's
+          // amount-projection-failed flag so the use-case can skip
+          // the mismatch comparison (existing > 0 vs default 0)
+          // that would otherwise trip on a single fuzzed event.
+          ...(dataObject.amountProjectionFailed
+            ? { amountProjectionFailed: true }
+            : {}),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin
            * one livemode value at a time. Cross-livemode coverage
            * lives in the contract tests for /api/webhooks/stripe. */
@@ -666,7 +673,16 @@ async function processWebhookEventBody(
             payload: {
               dispute_id: dataObject.disputeId ?? null,
               charge_id: dataObject.id,
-              amount_satang: (dataObject.amountSatang ?? 0n).toString(),
+              // F5R3v3 H-4 (2026-05-16) — when the verifier flagged
+              // amount projection as failed, write a 'projection_failed'
+              // sentinel rather than the misleading '0' default. This
+              // audit row is retained 10 years (RD §87 / GDPR Art.
+              // 6(1)(c)) — a known-wrong value is worse than a
+              // sentinel that reads "we couldn't parse this" at
+              // forensic review time.
+              amount_satang: dataObject.amountProjectionFailed
+                ? 'projection_failed'
+                : (dataObject.amountSatang ?? 0n).toString(),
             },
             retentionYears: retentionFor('dispute_created'),
           });

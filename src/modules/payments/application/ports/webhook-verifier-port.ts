@@ -91,6 +91,21 @@ export interface VerifiedStripeEvent {
     readonly lastPaymentErrorCode?: string | null;
     readonly disputeId?: string | null;
     readonly amountSatang?: import('@/lib/money').Satang;
+    /**
+     * F5R3v3 H-4 (2026-05-16) — `true` iff the verifier's defensive
+     * amount projection (C-1) caught a brand failure (negative, NaN,
+     * Infinity, fractional, missing). When true, `amountSatang` is
+     * omitted AND downstream consumers MUST NOT treat
+     * `amountSatang ?? 0n` as a real amount. Pre-fix the missing
+     * flag let `process-charge-refunded` flag every pending refund
+     * as `refund_amount_mismatch_detected` (existing > 0 vs default
+     * 0) — a single fuzzed webhook caused a mismatch-audit storm.
+     * Similarly `dispute_created` audit rows wrote `amount_satang:
+     * '0'` (a known-wrong value retained 10 years per RD §87 / GDPR
+     * Art. 6(1)(c)). With this flag, consumers route to dead-letter
+     * / sentinel paths instead of substituting a misleading 0.
+     */
+    readonly amountProjectionFailed?: boolean;
   };
 }
 

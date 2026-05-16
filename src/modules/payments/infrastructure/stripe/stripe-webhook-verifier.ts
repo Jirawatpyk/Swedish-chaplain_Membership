@@ -78,28 +78,44 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
   let disputeId: string | null | undefined;
   // F5R3 H-5 (2026-05-16) — projected as branded Satang at the
   // Stripe→Application boundary; downstream code never re-validates.
-  // F5R3v2 C-1 (2026-05-16) — defensive projection: `asSatang` throws
-  // RangeError on negative values. Stripe SDK types `amount` as
-  // non-negative number, but a fuzz / API drift / dispute-closed-
-  // with-reversed-sign could violate that. A throw inside the
-  // verifier (which already cleared HMAC) would propagate as 500 →
-  // Stripe retry storm. Treat malformed amount as "skip projection"
-  // + warn, letting downstream use-case decide if amount-less is OK.
+  // F5R3v3 C-1 + H-3 + H-4 (2026-05-16) — defensive projection:
+  //   - `asSatang(BigInt(n))` would throw on negative / fractional /
+  //     non-finite values (fuzz, SDK drift, dispute reversal). A
+  //     throw post-HMAC would propagate as 500 → Stripe retry storm.
+  //   - Pre-fix the envelope SILENTLY omitted `amountSatang`,
+  //     leaving every downstream consumer to default `?? 0n` — which
+  //     caused `process-charge-refunded` to flag every pending
+  //     refund as `refund_amount_mismatch_detected` on a single
+  //     fuzzed event (audit storm class) and `dispute_created` to
+  //     audit `amount_satang: '0'` (known-wrong value retained
+  //     10 years per RD §87 / GDPR Art. 6(1)(c)).
+  //   - Now: set `amountProjectionFailed: true` so consumers can
+  //     branch on "projection failed, dead-letter" vs "amount is 0".
+  //   - Bump log to `error` (Principle X — invariant violation,
+  //     not expected anomaly) with full event triage context
+  //     (eventId, account, livemode, objectType).
   let amountSatang: import('@/lib/money').Satang | undefined;
+  let amountProjectionFailed = false;
   const projectAmountSafely = (kind: string, n: number): void => {
     try {
       amountSatang = asSatang(BigInt(n));
     } catch (e) {
-      logger.warn(
+      amountProjectionFailed = true;
+      logger.error(
         {
-          kind,
+          eventId: event.id,
+          eventType: event.type,
+          account: event.account ?? null,
+          livemode: event.livemode,
+          objectType: kind,
           rawAmount: n,
           errKind: e instanceof Error ? e.constructor.name : 'unknown',
         },
         'stripe-webhook-verifier.amount_projection_failed',
       );
-      // amountSatang stays undefined → envelope omits the field
-      // (downstream guards with `?? 0n` or `if (amountSatang)`).
+      // amountSatang stays undefined → envelope sets
+      // `amountProjectionFailed: true`; downstream gates on the flag
+      // rather than treating `?? 0n` as a real amount.
     }
   };
 
@@ -161,6 +177,7 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
       ...(lastPaymentErrorCode !== undefined ? { lastPaymentErrorCode } : {}),
       ...(disputeId !== undefined ? { disputeId } : {}),
       ...(amountSatang !== undefined ? { amountSatang } : {}),
+      ...(amountProjectionFailed ? { amountProjectionFailed: true } : {}),
     },
   };
 

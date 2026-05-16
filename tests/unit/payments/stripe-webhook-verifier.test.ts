@@ -10,10 +10,11 @@
  * `(rawBody, sigHeader, endpointSecret)` so it belongs in unit tests
  * (cf. spec §5b alternate-placement clause).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import Stripe from 'stripe';
 import { stripeWebhookVerifier } from '@/modules/payments/infrastructure/stripe/stripe-webhook-verifier';
 import { WebhookSignatureError } from '@/modules/payments/infrastructure/stripe/errors';
+import { logger } from '@/lib/logger';
 
 const ENDPOINT_SECRET = 'whsec_test_group_e3_fixture_secret';
 
@@ -154,12 +155,9 @@ describe('stripeWebhookVerifier — verify + project', () => {
 // (say) divided by 100 thinking Stripe sent baht-not-satang would silently
 // halve every received amount — these tests pin the contract.
 describe('stripeWebhookVerifier — amount projection (H-6)', () => {
-  function signedBody(body: string): {
-    body: string;
-    sig: string;
-  } {
-    return { body, sig: makeSigHeader(body) };
-  }
+  // F5R3v3 L-6 (2026-05-16) — `signedBody` helper deleted; the
+  // inline `makeSigHeader(body)` form matches the older tests in
+  // this file and removes a 6-line indirection.
 
   it('payment_intent: amountSatang === BigInt(raw.amount) exactly', () => {
     const raw = 535_000; // 5,350.00 THB
@@ -179,8 +177,7 @@ describe('stripeWebhookVerifier — amount projection (H-6)', () => {
         },
       },
     });
-    const { sig } = signedBody(body);
-    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    const envelope = stripeWebhookVerifier.constructEvent(body, makeSigHeader(body), ENDPOINT_SECRET);
     expect(envelope.dataObject.amountSatang).toBeDefined();
     expect(envelope.dataObject.amountSatang).toBe(BigInt(raw));
   });
@@ -203,8 +200,7 @@ describe('stripeWebhookVerifier — amount projection (H-6)', () => {
         },
       },
     });
-    const { sig } = signedBody(body);
-    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    const envelope = stripeWebhookVerifier.constructEvent(body, makeSigHeader(body), ENDPOINT_SECRET);
     expect(envelope.dataObject.amountSatang).toBe(BigInt(raw));
   });
 
@@ -225,8 +221,7 @@ describe('stripeWebhookVerifier — amount projection (H-6)', () => {
         },
       },
     });
-    const { sig } = signedBody(body);
-    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    const envelope = stripeWebhookVerifier.constructEvent(body, makeSigHeader(body), ENDPOINT_SECRET);
     expect(envelope.dataObject.amountSatang).toBe(BigInt(raw));
   });
 
@@ -244,12 +239,14 @@ describe('stripeWebhookVerifier — amount projection (H-6)', () => {
         object: {
           id: 'pi_zero_test',
           object: 'payment_intent',
+          // L-1: include latest_charge so the test remains decoupled
+          // from the verifier's projection-field ordering.
+          latest_charge: 'ch_zero_test',
           amount: 0,
         },
       },
     });
-    const { sig } = signedBody(body);
-    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    const envelope = stripeWebhookVerifier.constructEvent(body, makeSigHeader(body), ENDPOINT_SECRET);
     expect(envelope.dataObject.amountSatang).toBe(0n);
   });
 
@@ -269,12 +266,12 @@ describe('stripeWebhookVerifier — amount projection (H-6)', () => {
         object: {
           id: 'pi_negative_test',
           object: 'payment_intent',
+          latest_charge: 'ch_negative_test',
           amount: -100,
         },
       },
     });
-    const { sig } = signedBody(body);
-    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    const envelope = stripeWebhookVerifier.constructEvent(body, makeSigHeader(body), ENDPOINT_SECRET);
     // amountSatang field must be omitted (envelope still constructs).
     expect(envelope.dataObject.amountSatang).toBeUndefined();
     expect(envelope.dataObject.id).toBe('pi_negative_test');
@@ -293,11 +290,117 @@ describe('stripeWebhookVerifier — amount projection (H-6)', () => {
         object: {
           id: 'pi_no_amount',
           object: 'payment_intent',
+          latest_charge: 'ch_no_amount',
         },
       },
     });
-    const { sig } = signedBody(body);
-    const envelope = stripeWebhookVerifier.constructEvent(body, sig, ENDPOINT_SECRET);
+    const envelope = stripeWebhookVerifier.constructEvent(body, makeSigHeader(body), ENDPOINT_SECRET);
     expect(envelope.dataObject.amountSatang).toBeUndefined();
+    // Missing field is NOT a projection failure — the flag stays unset.
+    expect(envelope.dataObject.amountProjectionFailed).toBeUndefined();
+  });
+});
+
+// F5R3v3 H-6 + H-4 + M-6 (2026-05-16) — extra C-1 fallback coverage:
+//   - fractional / NaN / Infinity amounts (BigInt() throws)
+//   - amountProjectionFailed flag is set on every failure path
+//   - logger.error fires with the right shape for SRE alerting
+//   - all 3 object types (payment_intent / charge / dispute) exercise
+//     the C-1 catch independently
+describe('stripeWebhookVerifier — C-1 fallback coverage (H-4 flag + M-6 log)', () => {
+  let loggerErrorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    loggerErrorSpy.mockRestore();
+  });
+
+  function makeBody(opts: {
+    eventId: string;
+    objectType: 'payment_intent' | 'charge' | 'dispute';
+    amount: number;
+  }): string {
+    const dataObject: Record<string, unknown> = {
+      id: `${opts.objectType.slice(0, 2)}_test`,
+      object: opts.objectType,
+      amount: opts.amount,
+    };
+    if (opts.objectType === 'charge') {
+      dataObject['refunds'] = { data: [] };
+    }
+    return JSON.stringify({
+      id: opts.eventId,
+      type: 'payment_intent.succeeded',
+      api_version: '2025-09-30.clover',
+      livemode: false,
+      created: Math.floor(Date.now() / 1000),
+      account: 'acct_h4_test',
+      data: { object: dataObject },
+    });
+  }
+
+  // NB: NaN and Infinity cannot reach the verifier via real Stripe
+  // webhooks — JSON.stringify(NaN|Infinity) emits `null`, and the
+  // `typeof raw['amount'] === 'number'` gate in the verifier filters
+  // them out before projectAmountSafely runs. The relevant unit-level
+  // coverage for `asSatang(BigInt(NaN))` lives in tests/unit/lib/
+  // money.test.ts (parseSatang NaN guard).
+  it.each([
+    ['payment_intent' as const, 100.5, 'fractional triggers BigInt() throw'],
+    ['payment_intent' as const, -100, 'negative triggers asSatang RangeError'],
+    ['charge' as const, -50, 'charge: negative triggers C-1 fallback'],
+    ['dispute' as const, -25, 'dispute: negative triggers C-1 fallback'],
+  ])(
+    '%s amount=%p (%s) → amountProjectionFailed=true + logger.error',
+    (objectType, amount, _label) => {
+      const eventId = `evt_h4_${objectType}_${String(amount).replace(/[^a-z0-9]/gi, '')}`;
+      const body = makeBody({ eventId, objectType, amount });
+      const sig = makeSigHeader(body);
+      const envelope = stripeWebhookVerifier.constructEvent(
+        body,
+        sig,
+        ENDPOINT_SECRET,
+      );
+
+      // H-4 flag: must be set so downstream consumers gate on it.
+      expect(envelope.dataObject.amountProjectionFailed).toBe(true);
+      // amountSatang field must be omitted (never substitute fake 0).
+      expect(envelope.dataObject.amountSatang).toBeUndefined();
+
+      // M-6 logger.error: SRE depends on this for triage.
+      expect(loggerErrorSpy).toHaveBeenCalledTimes(1);
+      const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
+      expect(msg).toBe('stripe-webhook-verifier.amount_projection_failed');
+      const c = ctx as Record<string, unknown>;
+      expect(c['eventId']).toBe(eventId);
+      expect(c['objectType']).toBe(objectType);
+      expect(c['account']).toBe('acct_h4_test');
+      expect(c['livemode']).toBe(false);
+      expect(c['rawAmount']).toBe(amount);
+      // errKind is either 'RangeError' (asSatang) or 'RangeError'/'SyntaxError'
+      // (BigInt) — both Error subclasses; we assert presence + non-empty.
+      expect(typeof c['errKind']).toBe('string');
+      expect((c['errKind'] as string).length).toBeGreaterThan(0);
+    },
+  );
+
+  it('happy path (positive integer) does NOT fire logger.error and amountProjectionFailed stays unset', () => {
+    const body = makeBody({
+      eventId: 'evt_happy',
+      objectType: 'payment_intent',
+      amount: 535_000,
+    });
+    const sig = makeSigHeader(body);
+    const envelope = stripeWebhookVerifier.constructEvent(
+      body,
+      sig,
+      ENDPOINT_SECRET,
+    );
+    expect(envelope.dataObject.amountSatang).toBe(535_000n);
+    expect(envelope.dataObject.amountProjectionFailed).toBeUndefined();
+    expect(loggerErrorSpy).not.toHaveBeenCalled();
   });
 });

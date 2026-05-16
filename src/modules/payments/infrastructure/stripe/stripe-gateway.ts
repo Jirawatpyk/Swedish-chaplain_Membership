@@ -22,7 +22,8 @@ import type Stripe from 'stripe';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
-import { asSatang, satangToProcessorAmount } from '@/lib/money';
+import { asSatang, satangToProcessorAmount, type Satang } from '@/lib/money';
+import { paymentsMetrics } from '@/lib/metrics';
 import type {
   ProcessorGatewayPort,
   ProcessorGatewayError,
@@ -533,40 +534,80 @@ export const stripeGateway: ProcessorGatewayPort = {
         'stripe-gateway: createRefund ok',
       );
 
-      // F5R3v2 H-3 (2026-05-16) — defensive amount projection at the
-      // Stripe→Domain boundary. `asSatang(BigInt(refund.amount))`
-      // would throw RangeError if Stripe ever returns a negative
-      // amount (API drift, fuzz, partial-refund edge). Stripe just
-      // accepted the refund — throwing here loses the typed Result
-      // path AND the refund row's processor_refund_id, creating an
-      // out-of-band refund condition recoverable only via the 12h
-      // sweep cron. Fall back to the input.amountSatang (which we
-      // sent to Stripe and just succeeded) so the caller can
-      // finalise normally. Log + counter so SREs see API drift.
-      let refundAmount: ReturnType<typeof asSatang>;
-      try {
-        refundAmount =
-          Number.isFinite(refund.amount) && refund.amount >= 0
-            ? asSatang(BigInt(refund.amount))
-            : (() => {
-                throw new RangeError(
-                  `stripe-gateway: refund.amount is not a finite non-negative number (${refund.amount})`,
-                );
-              })();
-      } catch (brandErr) {
-        logger.warn(
+      // F5R3v3 H-2 + H-3 + H-5 (2026-05-16) — defensive amount
+      // projection at the Stripe→Domain boundary. Pre-fix (Batch 1)
+      // we silently fell back to `input.amountSatang ?? asSatang(0n)`
+      // on response-shape drift — but that means a full-refund call
+      // (`input.amountSatang === undefined`) + malformed Stripe
+      // response = `amountSatang: 0n` returned upward. The refund row
+      // would persist with `amount_satang = 0` against a Stripe
+      // refund that actually moved customer money → breaks the
+      // `succeededSumSatang` invariant; next refund attempt sees full
+      // remaining capacity → over-refund. Now:
+      //   1. If response shape is valid: brand + return ok normally.
+      //   2. If shape invalid + input.amountSatang IS provided:
+      //      use the input (we know what we sent + Stripe accepted)
+      //      + emit metric + structured ERROR log for SRE alerting.
+      //   3. If shape invalid + input.amountSatang is undefined
+      //      (full refund): return a TYPED permanent err so the
+      //      caller (issueRefund) marks the refund failed and the
+      //      12h out-of-band sweep cron reconciles via Stripe.
+      //      Never persist a known-wrong amount.
+      const isValidStripeAmount =
+        Number.isFinite(refund.amount) && refund.amount >= 0;
+      let refundAmount: Satang;
+      if (isValidStripeAmount) {
+        try {
+          refundAmount = asSatang(BigInt(refund.amount));
+        } catch (brandErr) {
+          // Defensive — should be unreachable given isValidStripeAmount
+          // gate above (Number.isFinite + >= 0 implies BigInt-safe).
+          paymentsMetrics.gatewayBoundaryAmountBrandFailed('refund_create');
+          logger.error(
+            {
+              stripeAccount: input.stripeAccount,
+              paymentIntentId: input.paymentIntentId,
+              refundId: refund.id,
+              rawAmount: refund.amount,
+              inputAmountSatang: input.amountSatang?.toString() ?? null,
+              reason: 'asSatang_threw',
+              errKind:
+                brandErr instanceof Error
+                  ? brandErr.constructor.name
+                  : 'unknown',
+            },
+            'stripe-gateway.refund_amount_brand_failed',
+          );
+          if (input.amountSatang === undefined) {
+            return err({
+              kind: 'permanent',
+              code: 'processor_response_amount_invalid',
+              reason: `Stripe refund ${refund.id} response amount brand_failed; no input fallback available`,
+            });
+          }
+          refundAmount = input.amountSatang;
+        }
+      } else {
+        paymentsMetrics.gatewayBoundaryAmountBrandFailed('refund_create');
+        logger.error(
           {
             stripeAccount: input.stripeAccount,
             paymentIntentId: input.paymentIntentId,
             refundId: refund.id,
             rawAmount: refund.amount,
-            errKind:
-              brandErr instanceof Error ? brandErr.constructor.name : 'unknown',
+            inputAmountSatang: input.amountSatang?.toString() ?? null,
+            reason: 'guard_failed_non_finite_or_negative',
           },
           'stripe-gateway.refund_amount_brand_failed',
         );
-        // Fall back to the input amount (which Stripe just accepted).
-        refundAmount = input.amountSatang ?? asSatang(0n);
+        if (input.amountSatang === undefined) {
+          return err({
+            kind: 'permanent',
+            code: 'processor_response_amount_invalid',
+            reason: `Stripe refund ${refund.id} returned non-finite-or-negative amount (${refund.amount}); no input fallback available`,
+          });
+        }
+        refundAmount = input.amountSatang;
       }
       return ok({
         id: refund.id,

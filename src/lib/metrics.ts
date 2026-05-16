@@ -910,6 +910,25 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments_gateway_boundary_amount_brand_failed_total{operation}` —
+   * F5R3v3 H-2/H-5 counter (2026-05-16). The Stripe→Domain `asSatang`
+   * brand check (or the upstream `Number.isFinite/>=0` guard)
+   * rejected a money field that just round-tripped through Stripe.
+   * Class of cause: SDK drift, fuzz, partial-refund response edge.
+   * SRE pages on a non-zero rate — typically a Stripe API-version
+   * mismatch or a recently-introduced metadata-causing partial-refund
+   * scenario. The `operation` label distinguishes call sites
+   * (currently: `refund_create`). Pre-fix the comment promised "Log
+   * + counter so SREs see API drift" but no counter actually fired.
+   */
+  gatewayBoundaryAmountBrandFailed(operation: string): void {
+    counter(
+      'payments_gateway_boundary_amount_brand_failed_total',
+      'Stripe response money field failed asSatang brand check at gateway boundary',
+    ).add(1, { operation });
+  },
+
+  /**
    * `out_of_band_refund_rejected_total{tenant, processor_env}` — FR-011a
    * leading indicator. Admin used Stripe Dashboard refund instead of
    * in-app refund flow.

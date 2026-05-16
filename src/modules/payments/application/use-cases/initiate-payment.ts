@@ -99,6 +99,17 @@ export type InitiatePaymentError =
   | { readonly code: 'invoice_not_found' }
   | { readonly code: 'forbidden_invoice' }
   | { readonly code: 'invoice_not_payable'; readonly currentStatus: string }
+  /**
+   * F5R3v3 H-1 (2026-05-16) — bridge detected a malformed F4 invoice
+   * (currently: negative `totalSatang` from data corruption or dropped
+   * CHECK constraint). The use-case short-circuits BEFORE the Stripe
+   * call so we don't fabricate a `createPaymentIntent({ amount: 0n })`
+   * call that Stripe would reject as `amount_too_small` + create a
+   * misleading audit row. Route handler maps to 422 with a runbook
+   * pointer; the underlying data corruption is logged + counter-emitted
+   * inside the bridge for SRE triage.
+   */
+  | { readonly code: 'invoice_data_corrupt'; readonly invoiceId: string }
   | { readonly code: 'online_payment_disabled' }
   | { readonly code: 'method_not_enabled'; readonly requestedMethod: PaymentMethod }
   | {
@@ -304,6 +315,15 @@ async function initiatePaymentBody(
       return err({
         code: e.code === 'not_found' ? 'invoice_not_found' : 'forbidden_invoice',
       });
+    }
+    // F5R3v3 H-1 (2026-05-16) — surface bridge data-corruption as a
+    // typed 422 INSTEAD of feeding a zero-amount PI to Stripe. Bridge
+    // already logger.error'd + bumped the counter; this branch just
+    // routes to the typed-error path so the route handler can render
+    // a deterministic "invoice data corrupt — contact admin" UX
+    // without a Stripe round-trip.
+    if (e.code === 'corrupted_total') {
+      return err({ code: 'invoice_data_corrupt', invoiceId: e.invoiceId });
     }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });

@@ -19,7 +19,8 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { paymentsMetrics } from '@/lib/metrics';
-import { asSatang } from '@/lib/money';
+import { asSatang, type Satang } from '@/lib/money';
+import { logger } from '@/lib/logger';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
@@ -37,34 +38,46 @@ import type {
   MarkPaidFromProcessorInput,
 } from '../application/ports/invoicing-bridge-port';
 
+/**
+ * F5R3v3 H-1 + H-3 (2026-05-16) — return a Result so a corrupt-total
+ * F4 invoice surfaces as a typed `corrupted_total` bridge error
+ * instead of silently capping at `asSatang(0n)`. The pre-fix path
+ * (Batch 1) substituted `0n` and let the use-case feed it into
+ * `createPaymentIntent({ amount: 0n })`, which Stripe rejects with
+ * `amount_too_small` → `processor_unavailable` retry storm + audit
+ * row with a wrong amount. Now: error path emits a metric counter +
+ * structured `logger.error` (Constitution Principle X — invariant
+ * violations are `error`, not `warn`) carrying tenantId + invoiceId
+ * + raw totalSatang + errKind for SRE triage, then propagates as
+ * `corrupted_total` so initiate-payment returns a deterministic
+ * `invoice_data_corrupt` 422 without a Stripe round-trip.
+ */
 function mapF4InvoiceForPayment(
   v: F4InvoiceForPayment,
-): InvoiceForPaymentDTO {
-  // F5R3v2 H-2 (2026-05-16) — defensive brand at F4→F5 boundary.
-  // F4 + F5 both type money as `Satang` after the 2026-05-16
-  // migration so this cast is structurally a no-op, BUT `asSatang`
-  // still runtime-validates non-negative. If F4 ever surfaces a
-  // negative total (data corruption, dropped CHECK constraint),
-  // throwing here would mid-flight an `initiatePayment` call with
-  // a generic 500 + no bridge-specific audit. Instead emit a
-  // forensic counter + cap the totalSatang at zero so downstream
-  // typed-error paths still fire (will hit the "invoice not
-  // payable" branch with status=paid/credited rather than
-  // mysteriously 500).
-  let totalSatang: ReturnType<typeof asSatang>;
+): Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError> {
+  let totalSatang: Satang;
   try {
     totalSatang = asSatang(v.totalSatang);
-  } catch {
+  } catch (e) {
     paymentsMetrics.f4BridgeUnknownErrorShape('f4_invoice_total_negative');
-    totalSatang = asSatang(0n);
+    logger.error(
+      {
+        tenantId: v.tenantId,
+        invoiceId: v.id,
+        rawTotalSatang: String(v.totalSatang),
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+      },
+      'invoicing-bridge.f4_invoice_total_brand_failed',
+    );
+    return err({ code: 'corrupted_total', invoiceId: v.id });
   }
-  return {
+  return ok({
     id: v.id,
     status: v.status,
     totalSatang,
     memberId: v.memberId,
     tenantId: v.tenantId,
-  };
+  });
 }
 
 function mapF4GetError(
@@ -161,7 +174,10 @@ export const invoicingBridge: InvoicingBridgePort = {
       ...(input.actor ? { actor: input.actor } : {}),
     });
     if (!result.ok) return err(mapF4GetError(result.error));
-    return ok(mapF4InvoiceForPayment(result.value));
+    // F5R3v3 H-1 (2026-05-16) — bridge may surface its OWN typed err
+    // (corrupted_total) when F4 returns a money field that fails
+    // asSatang validation. Propagate verbatim.
+    return mapF4InvoiceForPayment(result.value);
   },
 
   async markPaidFromProcessor(

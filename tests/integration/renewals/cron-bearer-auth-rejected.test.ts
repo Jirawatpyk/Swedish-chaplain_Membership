@@ -99,21 +99,31 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
   // owner-role configuration and the runInTenant boundary the emit
   // sets internally.
   //
-  // F5R3v2 H-1 (2026-05-16) — rationale clarified after review feedback:
-  //   * The previous version of this comment claimed the audit emit
-  //     "ships dark behind FEATURE_F8_RENEWALS=false". That was
-  //     INCORRECT — `gateCronBearerOrRespond` runs BEFORE the F8
-  //     feature-flag check in every cron-renewals route (see e.g.
+  // F5R3v3 M-3 (2026-05-16) — rationale rewrite after R3v3 reviewer
+  // flagged the prior wording as still inaccurate:
+  //   * `gateCronBearerOrRespond` runs BEFORE the F8 feature-flag
+  //     check in every cron-renewals route (verified at
   //     `src/app/api/cron/renewals/dispatch-coordinator/route.ts`
-  //     lines 234-241 vs 245). The production emit IS live and
-  //     signal-bearing.
-  //   * The 401 STATUS-CODE behaviour itself IS covered by unit tests
-  //     at `tests/unit/lib/cron-auth.test.ts` (4 sites). Integration
-  //     coverage of the audit-ROW persistence is what's gapped; the
-  //     gap is a test-runner RLS-context issue, NOT a production bug.
-  //   * Tracked for F8 follow-up: investigate why the SELECT (run as
-  //     owner with BYPASSRLS) cannot see rows emitted by the
-  //     `runInTenant(env.tenant.slug=…)` insert.
+  //     line ~234). The production emit IS live and signal-bearing.
+  //   * The 401 STATUS-CODE return IS covered at the unit layer by
+  //     `tests/unit/lib/cron-auth.test.ts` (4 timing-safe-compare
+  //     scenarios pin the response shape). Coordinator-level wiring
+  //     (each route handler invokes `gateCronBearerOrRespond` first)
+  //     is trusted by shared-helper convention — not iterated per
+  //     route. F8 ships ~7 cron routes under
+  //     `src/app/api/cron/renewals/**`; the per-route smoke happens
+  //     via the dispatch-coordinator integration tests.
+  //   * The gap THIS test would close is integration-level audit-row
+  //     persistence visibility. The audit emit succeeds at the
+  //     helper level but the inserted row is not visible from the
+  //     test's SELECT path — a combination of the audit_log FORCE
+  //     RLS policy interacting with the test runner's owner-role
+  //     configuration and the `runInTenant(env.tenant.slug)` boundary
+  //     the emit sets internally.
+  //   * TODO (post-F8-flag-flip): port the emit assertion into a
+  //     unit test using a mock audit port that captures `.emit`
+  //     calls — bypasses the RLS-context bug entirely. File a
+  //     GitHub issue and link it here when triaged.
   it.skip('missing Bearer → 401 + cron_bearer_auth_rejected audit row in audit_log', async () => {
     const ROUTE = '/api/cron/renewals/dispatch-coordinator';
 
@@ -167,12 +177,10 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
   // the test above (audit-row visibility gap from test-runner RLS
   // context, NOT a production bug).
   //
-  // F5R3v2 H-1 (2026-05-16) — corrected claim: both tests in this file
-  // are skipped, so the 401-status code path has zero coverage HERE.
-  // The 401 path itself IS covered at the unit layer by
-  // `tests/unit/lib/cron-auth.test.ts` — see the timing-safe-compare
-  // assertions at lines 101, 114, 128, 158. The gap here is only
-  // integration-level audit-row persistence.
+  // F5R3v3 M-3 (2026-05-16) — same skip rationale as the test
+  // above; the 401 wrong-bearer code path is also covered at the
+  // unit layer by `tests/unit/lib/cron-auth.test.ts`. The gap here
+  // is the integration audit-row persistence visibility.
   it.skip('wrong Bearer → 401 + audit row lands (timing-safe compare must not leak via differential behaviour)', async () => {
     const ROUTE = '/api/cron/renewals/at-risk-recompute-coordinator';
 

@@ -23,7 +23,19 @@ export interface InvoiceForPaymentDTO {
 export type GetInvoiceForPaymentBridgeError =
   | { readonly code: 'not_found' }
   | { readonly code: 'forbidden' }
-  | { readonly code: 'not_payable'; readonly status: InvoiceStatus };
+  | { readonly code: 'not_payable'; readonly status: InvoiceStatus }
+  /**
+   * F5R3v3 H-1 (2026-05-16) — bridge detected an unbrandable F4 money
+   * field (e.g. negative `totalSatang` from data corruption, dropped
+   * CHECK constraint, or out-of-band manual SQL). The pre-fix path
+   * silently capped at `asSatang(0n)` and let the use-case fabricate a
+   * `createPaymentIntent({ amount: 0n })` call — Stripe would reject
+   * with `amount_too_small` and surface as a retry-storm `processor_
+   * unavailable`, with a `payment_initiated` audit row containing the
+   * wrong amount. Instead surface a discrete error so the use-case can
+   * emit a `payment_invoice_data_corrupt` audit + return a typed 422.
+   */
+  | { readonly code: 'corrupted_total'; readonly invoiceId: string };
 
 export interface MarkPaidFromProcessorInput {
   readonly tenantId: string;
