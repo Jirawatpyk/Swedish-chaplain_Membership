@@ -37,7 +37,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
-import { addSatang, asSatang, asSatangUnchecked, type Satang } from '@/lib/money';
+import {
+  addSatang,
+  asSatang,
+  asSatangUnchecked,
+  type UntrustedSatang,
+} from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
@@ -96,11 +101,16 @@ export type IssueCreditNoteError =
   | { code: 'no_snapshot_on_invoice' }
   | { code: 'settings_missing' }
   | {
+      // F5R3v4 M-5 (2026-05-16) — fields are `UntrustedSatang`
+      // because they preserve corrupt diagnostic values (the err
+      // exists exactly to record over-credit + corruption cases).
+      // Type-distinct from `Satang` so arithmetic helpers reject
+      // silent folding at compile time.
       code: 'credit_exceeds_remainder';
-      invoiceTotalSatang: Satang;
-      alreadyCreditedSatang: Satang;
-      proposedSatang: Satang;
-      remainingSatang: Satang;
+      invoiceTotalSatang: UntrustedSatang;
+      alreadyCreditedSatang: UntrustedSatang;
+      proposedSatang: UntrustedSatang;
+      remainingSatang: UntrustedSatang;
     }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }

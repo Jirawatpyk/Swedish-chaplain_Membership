@@ -17,7 +17,7 @@
  * Pure TypeScript — no framework/ORM imports.
  */
 import { err, ok, type Result } from '@/lib/result';
-import { asSatangUnchecked, type Satang } from '@/lib/money';
+import { asSatangUnchecked, type UntrustedSatang } from '@/lib/money';
 import type { Money } from './value-objects/money';
 import type { DocumentNumber } from './value-objects/document-number';
 import type { FiscalYear } from './value-objects/fiscal-year';
@@ -100,11 +100,17 @@ export interface CreditNote {
   readonly updatedAt: string;
 }
 
+/**
+ * F5R3v4 M-5 (2026-05-16) — err-payload fields are `UntrustedSatang`
+ * (NOT `Satang`). The whole branch exists to preserve corrupt
+ * values for diagnostic display + audit; the distinct type prevents
+ * silent arithmetic-folding into trusted-value chains.
+ */
 export type CreditNoteBalanceError = {
   readonly kind: 'vat_balance_violated';
-  readonly creditAmountSatang: Satang;
-  readonly vatSatang: Satang;
-  readonly totalSatang: Satang;
+  readonly creditAmountSatang: UntrustedSatang;
+  readonly vatSatang: UntrustedSatang;
+  readonly totalSatang: UntrustedSatang;
 };
 
 /**

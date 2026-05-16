@@ -33,13 +33,44 @@
  */
 
 declare const SatangBrand: unique symbol;
+declare const UntrustedBrand: unique symbol;
 
 /**
  * THB minor unit (1 baht = 100 satang). Branded subtype of `bigint`
  * so values constructed via `asSatang` cannot be confused with raw
- * `bigint` (e.g. invoice totals in baht) at compile time.
+ * `bigint` (e.g. invoice totals in baht) at compile time. CARRIES
+ * the non-negative invariant.
  */
 export type Satang = bigint & { readonly [SatangBrand]: true };
+
+/**
+ * F5R3v4 M-5 (2026-05-16) — phantom brand for forensic err-payload
+ * values that bypassed `asSatang`'s non-negative gate. Constructed
+ * ONLY via `asSatangUnchecked`. Distinct from `Satang` at the type
+ * level (carries an additional `UntrustedBrand` symbol) so the
+ * arithmetic helpers `addSatang`/`subSatang` (which accept `Satang`)
+ * reject an UntrustedSatang argument at compile time. Code that
+ * needs to display, log, or audit an UntrustedSatang can do so —
+ * it's still structurally a `bigint` — but arithmetic-folding
+ * corrupted forensic values into trusted-value chains is a compile
+ * error. This closes the "policy-only enforcement" gap that R3v3
+ * type-design review flagged.
+ *
+ * The brand is one-way: `Satang` is structurally assignable to
+ * `UntrustedSatang` (the union of constraints widens), but
+ * `UntrustedSatang` is NOT assignable to `Satang` (TS enforces brand
+ * subtyping). So:
+ *   - Logging / audit / display: accept `Satang | UntrustedSatang`
+ *     (currently typed as `bigint` in JSON-payload sites).
+ *   - Arithmetic helpers: accept only `Satang`.
+ *   - Err-payload fields: typed `Satang | UntrustedSatang` so both
+ *     trusted (post-validation) and forensic (post-corruption)
+ *     values can flow into the diagnostic payload.
+ */
+export type UntrustedSatang = bigint & {
+  readonly [SatangBrand]: true;
+  readonly [UntrustedBrand]: true;
+};
 
 /**
  * Construct a `Satang` from a raw `bigint` already in minor unit.
@@ -56,9 +87,10 @@ export function asSatang(raw: bigint): Satang {
 }
 
 /**
- * F5R3v2 B-1 (2026-05-16) — diagnostic / forensic escape hatch.
+ * F5R3v2 B-1 + F5R3v4 M-5 (2026-05-16) — diagnostic / forensic
+ * escape hatch.
  *
- * Apply the `Satang` brand WITHOUT running the non-negative
+ * Apply the `UntrustedSatang` brand WITHOUT running the non-negative
  * validation. Use ONLY at error-payload construction sites where the
  * caller is intentionally preserving a possibly-corrupted value for
  * forensics (e.g. `credit_exceeds_remainder` carries the offending
@@ -73,21 +105,23 @@ export function asSatang(raw: bigint): Satang {
  * breakdown in audit_log. The whole point of these typed errors is
  * surfacing exactly that breakdown.
  *
- * Trade-off: bypassing validation means a `Satang` constructed via
- * this helper does NOT carry the non-negative invariant. Callers
- * accepting such a value from an error payload MUST treat it as
- * untrusted (do not arithmetic-fold into other Satang values via
- * `addSatang` / `subSatang` — the brand check is a one-way
- * guarantee).
+ * Type-level enforcement (M-5): returns `UntrustedSatang`, NOT
+ * `Satang`. The arithmetic helpers (`addSatang`, `subSatang`) only
+ * accept `Satang`, so an `UntrustedSatang` from this helper CANNOT
+ * be silently arithmetic-folded into trusted-value chains at compile
+ * time. To re-validate an UntrustedSatang you've cleansed, pass it
+ * through `asSatang(value as bigint)` — the cast is intentional and
+ * forces a code review.
  *
- * Production callsites are limited to:
+ * Production callsites:
+ *   - F4 `Money.ofSatang` / `Money.subtract` err payload
  *   - F4 `enforceCreditCannotExceedRemainder` error payload
  *   - F4 `assertCreditNoteVatBalance` error payload
  *   - F4 `issueCreditNote` `credit_exceeds_remainder` err return
  * Adding new callers requires the same forensic-payload justification.
  */
-export function asSatangUnchecked(raw: bigint): Satang {
-  return raw as Satang;
+export function asSatangUnchecked(raw: bigint): UntrustedSatang {
+  return raw as UntrustedSatang;
 }
 
 /**

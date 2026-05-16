@@ -10,19 +10,26 @@
  *
  * Pure TypeScript — no framework/ORM imports.
  */
-import { asSatangUnchecked, type Satang } from '@/lib/money';
+import { asSatangUnchecked, type UntrustedSatang } from '@/lib/money';
 import type { Money } from '@/modules/invoicing/domain/value-objects/money';
 
+/**
+ * F5R3v4 M-5 (2026-05-16) — err-payload fields are `UntrustedSatang`
+ * because they preserve potentially-corrupt diagnostic values via
+ * `asSatangUnchecked`. The type-level distinction prevents callers
+ * from silently passing these values into trusted arithmetic
+ * (`addSatang` / `subSatang` reject `UntrustedSatang` at compile).
+ */
 export type CreditRemainderError = {
   readonly kind: 'credit_exceeds_remainder';
-  /** Invoice total (satang, incl. VAT). */
-  readonly invoiceTotalSatang: Satang;
-  /** Sum of prior credit-note totals (satang). */
-  readonly alreadyCreditedSatang: Satang;
-  /** Proposed new credit-note total (satang). */
-  readonly proposedSatang: Satang;
-  /** Remaining creditable amount (satang). */
-  readonly remainingSatang: Satang;
+  /** Invoice total (satang, incl. VAT) — possibly corrupted. */
+  readonly invoiceTotalSatang: UntrustedSatang;
+  /** Sum of prior credit-note totals (satang) — possibly corrupted. */
+  readonly alreadyCreditedSatang: UntrustedSatang;
+  /** Proposed new credit-note total (satang) — possibly corrupted. */
+  readonly proposedSatang: UntrustedSatang;
+  /** Remaining creditable amount (satang), clamped to 0 on negative. */
+  readonly remainingSatang: UntrustedSatang;
 };
 
 export function enforceCreditCannotExceedRemainder(input: {

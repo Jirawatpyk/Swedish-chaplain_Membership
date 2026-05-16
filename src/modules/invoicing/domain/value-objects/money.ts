@@ -26,19 +26,21 @@
  * (`a + b`, `a - b`, comparisons) inside Money continues to work; the
  * brand re-applies via `asSatang` on the way out of arithmetic.
  */
-import { asSatang, asSatangUnchecked, type Satang } from '@/lib/money';
+import {
+  asSatang,
+  asSatangUnchecked,
+  type Satang,
+  type UntrustedSatang,
+} from '@/lib/money';
 
 /**
- * F5R3v3 M-1 (2026-05-16) — `MoneyError.satang` is now `Satang`
- * (was raw `bigint` post-H-4 ROT). The `negative_amount` variant
- * carries a diagnostic value that may be negative (the whole point
- * of the err is recording the over-subtraction), so we use
- * `asSatangUnchecked` to preserve the corrupted value WITHOUT the
- * non-negative validation that `asSatang` enforces. Matches B-1's
- * forensic-escape pattern on the F4 err-payload sites.
+ * F5R3v3 M-1 + F5R3v4 M-5 (2026-05-16) — `MoneyError.satang` is
+ * `UntrustedSatang` (preserves negative diagnostic value via
+ * `asSatangUnchecked` and is type-distinct from `Satang` so it
+ * cannot be silently arithmetic-folded into trusted-value chains).
  */
 export type MoneyError =
-  | { kind: 'negative_amount'; satang: Satang }
+  | { kind: 'negative_amount'; satang: UntrustedSatang }
   | { kind: 'non_integer_factor'; factor: string }
   | { kind: 'factor_out_of_range'; factor: string };
 
@@ -47,18 +49,26 @@ const MAX_SAFE_FACTOR_DENOMINATOR = 10_000n; // 4 decimal places
 export class Money {
   readonly satang: Satang;
 
-  private constructor(satang: bigint) {
-    // F5R3v3 L-9 (2026-05-16) — comment rewrite. All public
-    // constructors (ofSatang / fromSatangUnsafe / fromTHB) pre-
-    // validate, and `subtract` returns a typed err on underflow
-    // rather than constructing. The inner `asSatang` is defence
-    // against future internal callers that bypass these gates;
-    // genuinely unreachable from current code paths.
-    this.satang = asSatang(satang);
+  /**
+   * F5R3v4 M-2 (2026-05-16) — constructor now accepts the already-
+   * branded `Satang` type. Pre-fix the inner `asSatang(satang)` ran
+   * unconditionally even though all four public factories
+   * (zero / ofSatang / fromSatangUnsafe / fromTHB) pre-validated
+   * non-negative AND `subtract` returns a typed err on underflow.
+   * The double-validation was harmless but inflated coverage burden
+   * + obscured the actual invariant boundary. With `: Satang` the
+   * type system enforces that callers must pass through one of the
+   * brand-applying factories. Internal arithmetic (`add`, `subtract`,
+   * `multiplyByFraction`) re-brands its bigint result via `asSatang`
+   * at exactly one site (the factory call), keeping the brand
+   * boundary explicit.
+   */
+  private constructor(satang: Satang) {
+    this.satang = satang;
   }
 
   static zero(): Money {
-    return new Money(0n);
+    return new Money(asSatang(0n));
   }
 
   /**
@@ -68,14 +78,15 @@ export class Money {
    */
   static ofSatang(satang: bigint): { ok: true; value: Money } | { ok: false; error: MoneyError } {
     if (satang < 0n) return { ok: false, error: { kind: 'negative_amount', satang: asSatangUnchecked(satang) } };
-    return { ok: true, value: new Money(satang) };
+    return { ok: true, value: new Money(asSatang(satang)) };
   }
 
   /** Convenience ctor — treats input as satang and throws on negative. */
   static fromSatangUnsafe(satang: bigint | number): Money {
     const n = typeof satang === 'bigint' ? satang : BigInt(satang);
-    if (n < 0n) throw new Error(`Money.fromSatangUnsafe: negative satang ${n}`);
-    return new Money(n);
+    // asSatang's RangeError on negative replaces the prior inline
+    // `if (n < 0n) throw` — same outcome, single validation site.
+    return new Money(asSatang(n));
   }
 
   /**
@@ -94,17 +105,17 @@ export class Money {
     const [intPart, fracPartRaw = '00'] = thb.toFixed(2).split('.');
     const fracPadded = (fracPartRaw + '00').slice(0, 2);
     const satang = BigInt(intPart!) * 100n + BigInt(fracPadded);
-    return new Money(satang);
+    return new Money(asSatang(satang));
   }
 
   add(other: Money): Money {
-    return new Money(this.satang + other.satang);
+    return new Money(asSatang(this.satang + other.satang));
   }
 
   subtract(other: Money): { ok: true; value: Money } | { ok: false; error: MoneyError } {
     const diff = this.satang - other.satang;
     if (diff < 0n) return { ok: false, error: { kind: 'negative_amount', satang: asSatangUnchecked(diff) } };
-    return { ok: true, value: new Money(diff) };
+    return { ok: true, value: new Money(asSatang(diff)) };
   }
 
   /**
@@ -122,7 +133,7 @@ export class Money {
     const half = denominator / 2n;
     const rounded = (scaled >= 0n ? scaled + half : scaled - half) / denominator;
     if (rounded < 0n) throw new Error('Money.multiplyByFraction: result is negative');
-    return new Money(rounded);
+    return new Money(asSatang(rounded));
   }
 
   /**

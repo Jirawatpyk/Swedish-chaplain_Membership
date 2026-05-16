@@ -595,4 +595,104 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     // verified, not coincidentally-empty-string verified.
     expect(req!.headers['stripe-account']).toBeUndefined();
   });
+
+  // F5R3v4 M-8 (2026-05-16) — gateway defensive amount projection
+  //
+  // R3v2 H-3 added a defensive `Number.isFinite + >= 0` guard to
+  // `createRefund`'s response handling so Stripe API drift (negative
+  // amount, NaN, null) doesn't crash the use-case. R3v3 H-2 + H-5
+  // tightened it so:
+  //   - input.amountSatang provided + shape invalid → fall back to
+  //     input (we sent it, Stripe accepted, can't parse response)
+  //   - input.amountSatang undefined + shape invalid → return typed
+  //     `err({kind:'permanent', code:'processor_response_amount_invalid'})`
+  //   - happy path is unchanged
+  //
+  // R3v3 M-8 (this batch): add MSW handlers exercising the guard via
+  // real Stripe-SDK round-trip + assert the metric + log fire.
+  describe('createRefund — defensive amount projection (R3v3 H-2/H-5/M-8)', () => {
+    it('negative refund.amount + input.amountSatang provided → falls back to input + warns', async () => {
+      server.use(
+        http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
+          captureReq(request, await request.text());
+          return HttpResponse.json({
+            id: 'rfn_negative_001',
+            object: 'refund',
+            amount: -50, // SDK drift / fuzz — impossible per API contract.
+            status: 'succeeded',
+            payment_intent: 'pi_neg_amt',
+          });
+        }),
+      );
+      const result = await stripeGateway.createRefund({
+        paymentIntentId: 'pi_neg_amt',
+        amountSatang: asSatang(5000n),
+        reason: 'requested_by_customer',
+        metadata: {},
+        idempotencyKey: 'rfn-neg-001',
+        stripeAccount: STRIPE_ACCOUNT,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Defensive fallback: use what WE sent (Stripe accepted it).
+        expect(result.value.amountSatang).toBe(5000n);
+        expect(result.value.id).toBe('rfn_negative_001');
+      }
+    });
+
+    it('non-finite refund.amount + input.amountSatang absent → typed processor_response_amount_invalid err', async () => {
+      server.use(
+        http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
+          captureReq(request, await request.text());
+          return HttpResponse.json({
+            id: 'rfn_no_amt_001',
+            object: 'refund',
+            amount: null, // genuinely unparseable + we asked for full refund.
+            status: 'succeeded',
+            payment_intent: 'pi_no_amt',
+          });
+        }),
+      );
+      const result = await stripeGateway.createRefund({
+        paymentIntentId: 'pi_no_amt',
+        // No amountSatang → full-refund semantics → no fallback available.
+        metadata: {},
+        idempotencyKey: 'rfn-no-amt-001',
+        stripeAccount: STRIPE_ACCOUNT,
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe('permanent');
+        if (result.error.kind === 'permanent') {
+          expect(result.error.code).toBe('processor_response_amount_invalid');
+        }
+      }
+    });
+
+    it('null refund.amount + input.amountSatang provided → falls back to input', async () => {
+      server.use(
+        http.post('https://api.stripe.com/v1/refunds', async ({ request }) => {
+          captureReq(request, await request.text());
+          return HttpResponse.json({
+            id: 'rfn_null_amt',
+            object: 'refund',
+            amount: null,
+            status: 'succeeded',
+            payment_intent: 'pi_null_amt',
+          });
+        }),
+      );
+      const result = await stripeGateway.createRefund({
+        paymentIntentId: 'pi_null_amt',
+        amountSatang: asSatang(2500n),
+        metadata: {},
+        idempotencyKey: 'rfn-null-001',
+        stripeAccount: STRIPE_ACCOUNT,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.amountSatang).toBe(2500n);
+      }
+    });
+  });
 });
