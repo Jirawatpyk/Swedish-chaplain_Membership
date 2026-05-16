@@ -31,6 +31,7 @@ export type F5AuditEventType =
   | 'payment_succeeded'
   | 'payment_failed'
   | 'payment_canceled'
+  | 'payment_cancel_attempt_failed'
   // Migration 0049 — distinct from `payment_canceled` (which means
   // user-abandon / sweep-cron / explicit cancel). Method-switch is
   // a different forensic class: the user did NOT abandon — they
@@ -148,10 +149,21 @@ export interface F5AuditPayloadByType {
     payment_id: string;
     invoice_id: string;
     actor_type: 'member' | 'webhook' | 'admin';
-    /** Set on Stripe-failure path (cancel-payment.ts:170). Omitted on happy path. */
-    outcome?: 'stripe_error';
-    /** Stripe gateway error.kind on the failure path. */
-    processor_error_kind?: 'retryable' | 'permanent' | 'idempotency_conflict';
+  };
+  /**
+   * F5R1-E4 — distinct event type for cancel attempts that failed at
+   * Stripe. Pre-fix `payment_canceled` doubled as "cancel succeeded"
+   * AND "cancel attempt failed" (disambiguated only by
+   * `payload.outcome: 'stripe_error'`). Audit-log dashboards filtering
+   * `event_type='payment_canceled'` silently over-counted successes
+   * unless they ALSO projected the outcome discriminator. New
+   * dedicated event type closes that ambiguity.
+   */
+  payment_cancel_attempt_failed: {
+    payment_id: string;
+    invoice_id: string;
+    actor_type: 'member' | 'webhook' | 'admin';
+    processor_error_kind: 'retryable' | 'permanent' | 'idempotency_conflict';
   };
   payment_method_switched: {
     payment_id: string;
@@ -344,6 +356,7 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   payment_succeeded: 10,
   payment_failed: 5,
   payment_canceled: 5,
+  payment_cancel_attempt_failed: 5,
   // F5R1-IMP7 — method-switch cancels one PaymentIntent and creates a
   // new one BEFORE settlement; it does NOT touch a tax document so the
   // 10y class (Thai RD §86/10) does not apply. Downgraded to 5y to

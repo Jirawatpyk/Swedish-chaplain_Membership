@@ -128,6 +128,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'payment_succeeded',
   'payment_failed',
   'payment_canceled',
+  'payment_cancel_attempt_failed',
   'payment_method_switched',
   'payment_auto_refunded_stale_invoice',
   'payment_auto_refunded_concurrent_manual_mark',

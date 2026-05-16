@@ -95,6 +95,53 @@ export interface PriorImportMatch {
   readonly uploadedAt: Date;
 }
 
+// --- F6.1 Phase 5 US5 (T040 list, T041 signed-URL, T049 sweep) -------------
+
+export interface ListByTenantInput {
+  readonly tenantId: TenantId;
+  /** 1-based page index. */
+  readonly page: number;
+  /** Page size, capped at 100 by the use-case. */
+  readonly perPage: number;
+  /** Optional filter by event_id. */
+  readonly eventIdFilter?: EventId;
+  /** Optional filter by actor user_id. */
+  readonly actorUserIdFilter?: UserId;
+}
+
+export interface CsvImportRecordSummary {
+  readonly recordId: CsvImportRecordId;
+  readonly tenantId: TenantId;
+  readonly actorUserId: UserId;
+  readonly eventId: EventId;
+  readonly uploadedAt: Date;
+  readonly sourceFormat: 'eventcreate_csv' | 'generic_csv';
+  readonly originalFilename: string;
+  readonly originalSizeBytes: number;
+  readonly rowsTotal: number;
+  readonly rowsProcessed: number;
+  readonly rowsAlreadyImported: number;
+  readonly rowsSkipped: number;
+  readonly rowsFailed: number;
+  readonly outcome: CsvImportRecordOutcome;
+  readonly durationMs: number;
+  readonly errorCsvBlobUrl: string | null;
+  readonly errorCsvExpiresAt: Date | null;
+}
+
+export interface ListByTenantResult {
+  readonly records: ReadonlyArray<CsvImportRecordSummary>;
+  /** Total count for the filter — feeds the totalPages computation. */
+  readonly totalRecords: number;
+}
+
+export interface ExpiredBlobRow {
+  readonly recordId: CsvImportRecordId;
+  readonly tenantId: TenantId;
+  readonly errorCsvBlobUrl: string;
+  readonly errorCsvExpiresAt: Date;
+}
+
 // --- Repo error envelope ---------------------------------------------------
 
 export type CsvImportRecordsRepoError =
@@ -126,5 +173,72 @@ export interface CsvImportRecordsRepository {
     input: FindByFingerprintInput,
   ): Promise<
     Result<ReadonlyArray<PriorImportMatch>, CsvImportRecordsRepoError>
+  >;
+
+  /**
+   * F6.1 Phase 5 US5 (T040) — paginated history listing for the US5
+   * /admin/events/import/history page. Reverse-chronological by
+   * `uploaded_at`. Filters by event + actor are optional + combinable.
+   * Returns the matching records + total count for pagination.
+   */
+  listByTenant(
+    input: ListByTenantInput,
+  ): Promise<Result<ListByTenantResult, CsvImportRecordsRepoError>>;
+
+  /**
+   * F6.1 Phase 5 US5 (T041) — fetch a single import record by (tenant,
+   * recordId). RLS+FORCE enforces that records belonging to other
+   * tenants are invisible — callers receive `kind:'not_found'` in
+   * that case (the same response as record-does-not-exist, satisfying
+   * the surface-disclosure invariant of the signed-URL route).
+   */
+  findById(
+    tenantId: TenantId,
+    recordId: CsvImportRecordId,
+  ): Promise<
+    Result<CsvImportRecordSummary, CsvImportRecordsRepoError>
+  >;
+
+  /**
+   * F6.1 Phase 5 US5 (T049) — sweep cron clears `error_csv_blob_url` +
+   * `error_csv_expires_at` for a single record after the cron has
+   * successfully deleted the underlying blob. Idempotent — re-run
+   * after a partial failure is a no-op.
+   */
+  clearErrorCsvBlob(
+    tenantId: TenantId,
+    recordId: CsvImportRecordId,
+  ): Promise<Result<void, CsvImportRecordsRepoError>>;
+}
+
+/**
+ * F6.1 Phase 5 US5 (T041 + T049) — admin-bypass repo for cross-tenant
+ * operations:
+ *   - `findByIdAcrossTenants` is used by the signed-URL route to detect
+ *     cross-tenant probes (Constitution Principle I clause 4) — the
+ *     route checks whether a recordId exists at all (without the actor's
+ *     tenant filter), then compares the row's tenant to the actor's;
+ *     mismatch → 404 + HIGH-severity `csv_import_cross_tenant_probe`
+ *     audit. The row data is NEVER returned to the actor.
+ *   - `listExpiredErrorCsvBlobsAllTenants` is the cron's read step.
+ *     Per the F4 receipt-pdf-reconcile precedent, the cron handler
+ *     bulk-reads bypassing RLS, then iterates rows + scopes each
+ *     mutation into `runInTenant(...)` for the per-row delete + clear.
+ */
+export interface CsvImportRecordsAdminRepository {
+  findByIdAcrossTenants(
+    recordId: CsvImportRecordId,
+  ): Promise<
+    Result<
+      { readonly tenantId: TenantId } | null,
+      CsvImportRecordsRepoError
+    >
+  >;
+
+  listExpiredErrorCsvBlobsAllTenants(
+    cutoff: Date,
+    limit: number,
+  ): Promise<
+    Result<ReadonlyArray<ExpiredBlobRow>, CsvImportRecordsRepoError>
   >;
 }

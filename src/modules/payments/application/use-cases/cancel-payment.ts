@@ -177,24 +177,23 @@ export async function cancelPayment(
     // Forensic audit on Stripe-side cancel failure. `null` tx so the
     // audit row survives the err() return below.
     //
-    // Event type collision noted in F5R1-E4: `payment_canceled`
-    // doubles as cancel-success + cancel-attempt-failed (disambiguated
-    // by `payload.outcome`). New dedicated `payment_cancel_attempt_
-    // failed` event type tracked for R2 (requires enum migration).
+    // F5R1-E4 closure — dedicated `payment_cancel_attempt_failed`
+    // event type (migration 0148 + audit-port union). Audit-log
+    // dashboards filtering `event_type='payment_canceled'` now see
+    // only successes; cancel-attempt-failed is a sibling row.
     await deps.audit.emit(null, {
       tenantId: input.tenantId,
       requestId: input.requestId,
-      eventType: 'payment_canceled',
+      eventType: 'payment_cancel_attempt_failed',
       actorUserId: input.actorUserId,
       summary: `Payment ${payment.id} cancel attempt failed at Stripe (${cancelResult.error.kind})`,
       payload: {
         payment_id: payment.id,
         invoice_id: payment.invoiceId,
         actor_type: 'member',
-        outcome: 'stripe_error',
         processor_error_kind: cancelResult.error.kind,
       },
-      retentionYears: retentionFor('payment_canceled'),
+      retentionYears: retentionFor('payment_cancel_attempt_failed'),
     });
     const kind: 'retryable' | 'permanent' =
       cancelResult.error.kind === 'retryable' ? 'retryable' : 'permanent';
