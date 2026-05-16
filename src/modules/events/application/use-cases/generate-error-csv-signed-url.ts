@@ -186,7 +186,7 @@ export async function generateErrorCsvSignedUrl(
   }
 
   // --- Step 2: tenant-scoped lookup returned not_found OR db_error -----
-  // CR-7 (Round 1 — silent-failure): the probe MUST run on BOTH
+  // The probe MUST run on BOTH
   // `not_found` and `db_error` branches. Returning 404 without
   // checking the admin probe path would let an attacker enumerate
   // recordIds under transient DB blips with no forensic audit trail

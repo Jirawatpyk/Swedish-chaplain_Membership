@@ -120,11 +120,10 @@ export type ImportCsvOutcome =
        */
       readonly historyPersisted: boolean;
       /**
-       * silent-failure I-10 (R1 R2): `true` when the per-import
-       * `csv_import_completed` audit row was written. `false` when
-       * the standalone-tx emit failed — DB side effects committed
-       * but the audit trail is incomplete for THIS import. UI should
-       * surface a degraded audit-trail chip.
+       * `true` when the per-import `csv_import_completed` audit row
+       * was written. `false` when the standalone-tx emit failed — DB
+       * side effects committed but the audit trail is incomplete for
+       * THIS import. UI should surface a degraded audit-trail chip.
        */
       readonly auditCompletionEmitted: boolean;
     }
@@ -322,25 +321,24 @@ export interface ImportCsvDeps {
 // row outcome (counted in `rowsSkipped`, NOT `rowsFailed`), audit-quiet
 // — first-time cancellation is expected behaviour, not a failure.
 
-// CR-10 (R1) — Symbol brand prevents collision with any future Error
-// subclass named `CancellationSkipMarker` (3rd-party lib, cross-realm
-// vm contexts). `instanceof` AND brand-equality both must hold.
+// Symbol brand prevents collision with any future Error subclass
+// named `CancellationSkipMarker` (3rd-party lib, cross-realm vm
+// contexts). `instanceof` AND brand-equality both must hold.
 const CANCELLATION_SKIP_BRAND = Symbol('f6.csv-skip.cancellation');
 
 /**
- * R2-SUG-4 (R2 — type-design + simplifier): branded SHA-256 hex prefix
- * so a future caller cannot accidentally pass a raw email into a slot
- * that expects a hash. Only `hashAttendeeEmail` can construct values
- * of this type — TypeScript blocks plain-string assignment at compile
- * time.
+ * Branded SHA-256 hex prefix so a future caller cannot accidentally
+ * pass a raw email into a slot that expects a hash. Only
+ * `hashAttendeeEmail` can construct values of this type — TypeScript
+ * blocks plain-string assignment at compile time.
  */
 type EmailHashPrefix = string & { readonly __emailHashPrefix: unique symbol };
 
 /**
- * R2-CR-1 (PDPA / GDPR Art. 5(1)(c) data minimisation): the marker
- * carries a SHA-256 hex prefix of `attendee_email_lower`, NOT the raw
- * email. Audit payload `attendeeEmailHash` and `errorRows.reason` both
- * read from this field — neither surface is permitted to leak raw PII.
+ * PDPA / GDPR Art. 5(1)(c) data minimisation: the marker carries a
+ * SHA-256 hex prefix of `attendee_email_lower`, NOT the raw email.
+ * Audit payload `attendeeEmailHash` and `errorRows.reason` both read
+ * from this field — neither surface is permitted to leak raw PII.
  */
 class CancellationSkipMarker extends Error {
   readonly _csvSkipBrand = CANCELLATION_SKIP_BRAND;
@@ -363,11 +361,11 @@ function isCancellationSkip(e: unknown): e is CancellationSkipMarker {
 }
 
 /**
- * R2-CR-1: hash `attendee_email_lower` → SHA-256 hex prefix (16 chars).
- * Used for the cancellation-skip forensic correlator + state-change
- * catch logging. NEVER store the raw email in audit payloads or logs.
- * R2-SUG-4 branded return makes this the only legal source of
- * `EmailHashPrefix` values.
+ * Hash `attendee_email_lower` → SHA-256 hex prefix (16 chars). Used
+ * for the cancellation-skip forensic correlator + state-change catch
+ * logging. NEVER store the raw email in audit payloads or logs. The
+ * branded return makes this the only legal source of `EmailHashPrefix`
+ * values.
  */
 function hashAttendeeEmail(email: string): EmailHashPrefix {
   return createHash('sha256')
@@ -485,10 +483,10 @@ async function maybeApplyStateChange(
       parsed.row.attendee_email,
     );
     if (!existing.ok) {
-      // CR-8 (R1 — silent-failure): lookup err is a real signal
-      // (RLS denial, serialisation failure, pool exhaustion). Log +
-      // metric so SRE sees the rate; row falls back to duplicate so
-      // admin sees `rowsAlreadyImported` (next re-upload retries).
+      // Lookup err is a real signal (RLS denial, serialisation failure,
+      // pool exhaustion). Log + metric so SRE sees the rate; row falls
+      // back to duplicate so admin sees `rowsAlreadyImported` (next
+      // re-upload retries).
       logger.warn(
         {
           event: 'f6_csv_state_change_lookup_err',
@@ -553,9 +551,9 @@ async function maybeApplyStateChange(
       );
       return null;
     }
-    // CR-5 / I-5 (R1) — emit per-row state-change audit. PDPA Art. 30
-    // + GDPR Art. 30 require traceable processing-records for payment-
-    // status mutations of an existing PII row. In-tx emit (via the
+    // Emit per-row state-change audit. PDPA Art. 30 + GDPR Art. 30
+    // require traceable processing-records for payment-status
+    // mutations of an existing PII row. In-tx emit (via the
     // savepoint-scoped audit port) so audit + UPDATE either both
     // commit or both roll back atomically.
     const auditResult = await ports.audit.emit({
@@ -581,8 +579,8 @@ async function maybeApplyStateChange(
       // require the payment_status UPDATE be forensically traceable
       // (see `audit-port.ts § csv_import_row_state_changed`). The
       // outer catch converts to `kind:'row_failed'` so admin sees
-      // the failure clearly. R2-CR-2 closure: catch detects this
-      // TxStageError and re-throws so the savepoint actually rolls back.
+      // the failure clearly. The outer catch detects this TxStageError
+      // and re-throws so the savepoint actually rolls back.
       throw new TxStageError(
         'audit_emit',
         `csv_import_row_state_changed audit emit failed: ${auditResult.error.kind}`,
@@ -595,8 +593,8 @@ async function maybeApplyStateChange(
       newPaymentStatus: parsed.row.payment_status,
     };
   } catch (e) {
-    // R2-CR-2: strict-audit invariant — re-throw audit-emit failures so
-    // the savepoint rolls back the UPDATE (PDPA Art. 30 / GDPR Art. 30
+    // Strict-audit invariant — re-throw audit-emit failures so the
+    // savepoint rolls back the UPDATE (PDPA Art. 30 / GDPR Art. 30
     // require state-change forensic trace; committing the UPDATE
     // without the audit row is a Reliability/Privacy regression).
     if (e instanceof TxStageError && e.stage === 'audit_emit') {
@@ -606,11 +604,11 @@ async function maybeApplyStateChange(
       );
       throw e;
     }
-    // CR-8 (R1) — never swallow silently. Log structured error + emit
-    // metric. State-change path failure means admin's payment_status
-    // fix is silently dropped — must be visible to SRE alerting.
-    // R2-CR-3 (R2 — silent-failure-hunter): forensic log MUST NOT
-    // surface raw attendee email; hash it for cross-request correlation.
+    // Never swallow silently. Log structured error + emit metric.
+    // State-change path failure means admin's payment_status fix is
+    // silently dropped — must be visible to SRE alerting.
+    // The forensic log MUST NOT surface raw attendee email; hash it
+    // for cross-request correlation.
     logger.error(
       {
         event: 'f6_csv_state_change_threw',
@@ -784,8 +782,8 @@ async function processOneRowInSavepoint(
       // `rowsFailed` / `rowsProcessed`). Audit-quiet: no
       // `csv_import_row_failed` emit.
       if (parsed.intendedStateChange && result.isNewRegistration) {
-        // R2-CR-1: hash at the throw site so neither the audit payload
-        // nor the errorRows reason can ever surface the raw email.
+        // Hash at the throw site so neither the audit payload nor the
+        // errorRows reason can ever surface the raw email (PDPA Art. 5(1)(c)).
         throw new CancellationSkipMarker(
           parsed.rowNumber,
           hashAttendeeEmail(parsed.row.attendee_email),
@@ -805,11 +803,10 @@ async function processOneRowInSavepoint(
     // outcome so the row flows into `rowsSkipped` instead of
     // `rowsFailed`.
     if (isCancellationSkip(e)) {
-      // CR-10 (R1) — emit low-severity forensic event so support can
-      // reconstruct WHY this row appears in `rowsSkipped`. Audit emit
-      // failure is non-blocking (informational forensics, not a
-      // strict-audit surface).
-      // R2-CR-1: `e.emailHash` is the SHA-256 prefix (16 hex chars);
+      // Emit low-severity forensic event so support can reconstruct
+      // WHY this row appears in `rowsSkipped`. Audit emit failure is
+      // non-blocking (informational forensics, not a strict-audit
+      // surface). `e.emailHash` is the SHA-256 prefix (16 hex chars);
       // both audit payload + errorRows.reason consume the hash only.
       await safeEmitCancellationNoPrior(deps, input, e.rowNumber, e.emailHash);
       return {
@@ -1046,12 +1043,12 @@ function recordAuditEmitFailure(
     | 'csv_import_row_state_changed',
   logEvent: string,
   logMessage: string,
-  // R2 (comment-analyzer): each call-site MUST include `actorUserId`
-  // in the context so forensics can attribute the audit-emit failure
-  // to the triggering admin. Convention-only — the
-  // `Readonly<Record<string, unknown>>` type does NOT enforce it.
-  // (If the call-site count is later bounded, switch to a discriminated
-  // union to lift this to a compile error.)
+  // Each call-site MUST include `actorUserId` in the context so
+  // forensics can attribute the audit-emit failure to the triggering
+  // admin. Convention-only — the `Readonly<Record<string, unknown>>`
+  // type does NOT enforce it. (If the call-site count is later
+  // bounded, switch to a discriminated union to lift this to a
+  // compile error.)
   context: Readonly<Record<string, unknown>>,
 ): void {
   eventcreateMetrics.csvImportAuditEmitFailed(tenantId, eventType);
@@ -1120,17 +1117,18 @@ async function safeEmitRowFailed(
 }
 
 /**
- * CR-10 (R1 — silent-failure) — emit a low-severity forensic event
- * when a first-time Cancellation row is skipped. Audit-quiet on emit
- * failure (informational only, not a strict-audit-invariant surface).
+/**
+ * Emit a low-severity forensic event when a first-time Cancellation
+ * row is skipped. Audit-quiet on emit failure (informational only,
+ * not a strict-audit-invariant surface).
  */
 async function safeEmitCancellationNoPrior(
   deps: ImportCsvDeps,
   input: ImportCsvInput,
   rowNumber: number,
-  // R2-SUG-4 (R2 — type-design): branded type so the caller cannot
-  // accidentally pass a raw email. Only `hashAttendeeEmail` returns
-  // `EmailHashPrefix`; TypeScript compile-time check at the call site.
+  // Branded type so the caller cannot accidentally pass a raw email.
+  // Only `hashAttendeeEmail` returns `EmailHashPrefix`; TypeScript
+  // compile-time check at the call site.
   emailHash: EmailHashPrefix,
 ): Promise<void> {
   try {
@@ -1196,8 +1194,7 @@ export async function importCsv(
     category: input.selectedEvent.category,
   };
 
-  // TYPE-D3 (Round 1) — port method is now required; legacy fallback
-  // branch removed. Phase 7 mocks provide it via
+  // Port method is required; Phase 7 mocks provide it via
   // `wrapParseStreamAsFormat` helper.
   let parsed: Awaited<ReturnType<CsvImporter['parseStreamWithFormat']>>;
   try {
@@ -1214,10 +1211,10 @@ export async function importCsv(
       }),
     });
   } catch (e) {
-    // R1 I-2 (silent-failure): structured log capture of the raw
-    // message + stack to stderr; admin-facing message is generic to
-    // prevent internal-details leak (e.g., Drizzle "relation does
-    // not exist" or Postgres connection-string fragments).
+    // Structured log capture of the raw message + stack to stderr;
+    // admin-facing message is generic to prevent internal-details leak
+    // (e.g., Drizzle "relation does not exist" or Postgres
+    // connection-string fragments).
     logger.error(
       {
         event: 'f6_csv_parser_threw',
@@ -1256,7 +1253,7 @@ export async function importCsv(
   const sourceFormat: CsvAdapterMode = parsed.value.format;
   const unknownColumns = parsed.value.unknownColumns;
 
-  // I2 (Round 1 — code-reviewer): emit the rollback-trigger signal
+  // Emit the rollback-trigger signal
   // per spec § Rollback Plan + SC-008. SRE watches:
   //   rate(eventcreate_csv_adapter_mode_detected_total{format="generic_csv"})
   // unexpectedly spike → EventCreate capitalization drifted, adapter
@@ -1277,9 +1274,9 @@ export async function importCsv(
   // observability requirement).
   if (sourceFormat === 'eventcreate_csv' && unknownColumns.length > 0) {
     try {
-      // R1 S-1 (code-reviewer): sanitize unknown column names so a
-      // CRLF-injection or oversized header can't pollute the log
-      // stream. Cap each name to 64 chars + strip control chars.
+      // Sanitize unknown column names so a CRLF-injection or oversized
+      // header can't pollute the log stream. Cap each name to 64 chars
+      // + strip control chars.
       const sanitisedColumns = unknownColumns
         .slice(0, 50)
         .map((c) => c.slice(0, 64).replace(/[\r\n\t]/g, '_'));
@@ -1295,8 +1292,8 @@ export async function importCsv(
         '[F6.1] EventCreate CSV import contained unknown columns — review for future adapter extension',
       );
     } catch {
-      // R1 I-7 (silent-failure): pino transport failure must not
-      // abort the import. Observability degraded; correctness preserved.
+      // Pino transport failure must not abort the import.
+      // Observability degraded; correctness preserved.
     }
   }
 
@@ -1384,11 +1381,10 @@ export async function importCsv(
   // emit `csv_import_event_mismatch_overridden` audit BEFORE batches
   // commit (so the override is auditable even if the import fails).
   //
-  // CR-9 (R1 — silent-failure): strict-audit invariant. If the
-  // override audit emit fails, REFUSE to proceed with the import —
-  // a forceProceed import without a forensic trail breaks the
-  // FR-019c contract. Admin retries via the same form; the audit
-  // store may have recovered by then.
+  // Strict-audit invariant. If the override audit emit fails, REFUSE
+  // to proceed with the import — a forceProceed import without a
+  // forensic trail breaks the FR-019c contract. Admin retries via the
+  // same form; the audit store may have recovered by then.
   if (priorImports.length > 0 && input.forceProceed) {
     const emitted = await tryEmitMismatchOverride(
       deps,
@@ -1567,9 +1563,9 @@ export async function importCsv(
         errorCsvAvailable = true;
         errorCsvBlobUrl = putResult.value.blobUrl;
       } else {
-        // R1 I-3 (silent-failure): elevate to error + emit metric.
-        // The error rows are lost from the US5 download surface for
-        // this import (admin must re-run); SRE alerts on `rate > 0`.
+        // Elevate to error + emit metric. The error rows are lost from
+        // the US5 download surface for this import (admin must re-run);
+        // SRE alerts on `rate > 0`.
         logger.error(
           {
             event: 'f6_csv_error_csv_blob_put_failed',
@@ -1760,8 +1756,8 @@ export async function importCsv(
   }
   // F6.1 — Phase 4e: emit per-import `csv_import_completed` audit on
   // both completed AND timeout paths with `sourceFormat` extension.
-  // silent-failure I-10 (R1 R2): capture emit success so the outcome
-  // can surface the audit-trail gap to the UI (degraded chip).
+  // Capture audit-completion emit success so the outcome can surface
+  // the audit-trail gap to the UI (degraded chip).
   const auditCompletionEmitted = await emitImportCompletedAudit({
     deps,
     input,
@@ -1783,8 +1779,8 @@ export async function importCsv(
       kind: 'timeout',
       recordId,
       sourceFormat,
-      // TYPE-D4 (Round 1) — partial summary surfaced so admins +
-      // route handler aren't blind to which rows committed.
+      // Partial summary surfaced so admins + route handler aren't
+      // blind to which rows committed.
       summary: {
         rowsTotal,
         rowsProcessed: summary.rowsProcessed,
@@ -1860,11 +1856,10 @@ function csvEscape(s: string): string {
 /**
  * Emit the FR-019c `csv_import_event_mismatch_overridden` audit.
  *
- * CR-9 (R1 — silent-failure) — strict-audit invariant: when the
- * audit emit fails OR throws, return `false` so the caller can
- * REFUSE to proceed with the import. A forceProceed without a
- * forensic trail breaks the FR-019c contract; admin retry may
- * succeed against the same DB.
+ * Strict-audit invariant: when the audit emit fails OR throws,
+ * return `false` so the caller can REFUSE to proceed with the import.
+ * A forceProceed without a forensic trail breaks the FR-019c contract;
+ * admin retry may succeed against the same DB.
  *
  * Returns:
  *   - `true` on successful emit — caller proceeds with import.
@@ -1948,9 +1943,9 @@ interface EmitImportCompletedAuditArgs {
 async function emitImportCompletedAudit(
   args: EmitImportCompletedAuditArgs,
 ): Promise<boolean> {
-  // silent-failure I-10 (R1 R2): returns true on successful emit, false
-  // on Result.err OR throw. Caller threads into the outcome so the UI
-  // can degrade the audit-trail chip when forensic record is lost.
+  // Returns true on successful emit, false on Result.err OR throw.
+  // Caller threads into the outcome so the UI can degrade the audit-
+  // trail chip when forensic record is lost.
   const { deps, input, summary, durationMs, timedOut, sourceFormat } = args;
   const completedAuditContext = {
     rowsProcessed: summary.rowsProcessed,
@@ -2016,7 +2011,7 @@ async function emitImportCompletedAudit(
 }
 
 // ---------------------------------------------------------------------------
-// Test-only internals (R3 — pr-test-analyzer R2-I-8 close)
+// Test-only internals
 // ---------------------------------------------------------------------------
 //
 // Exported under `_internals` to mark "test-seam only — not for

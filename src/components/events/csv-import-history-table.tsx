@@ -87,8 +87,8 @@ export function CsvImportHistoryTable({
   const t = useTranslations('admin.events.import.history');
 
   if (rows.length === 0) {
-    // ux I3 (R1 — enterprise-ux-designer): empty-state anatomy per
-    // ux-standards.md § 3.1 — icon + title + body + CTA.
+    // Empty-state anatomy per ux-standards.md § 3.1 — icon + title +
+    // body + CTA.
     return (
       <div
         className="flex flex-col items-center gap-4 rounded-md border border-dashed p-10 text-center"
@@ -156,8 +156,8 @@ export function CsvImportHistoryTable({
                 </Badge>
               </TableCell>
               <TableCell>
-                {/* ux I5 (R1) — outcome rendered as Badge with semantic */}
-                {/* variant so admins can scan failures at a glance. */}
+                {/* Outcome rendered as Badge with semantic variant so */}
+                {/* admins can scan failures at a glance. */}
                 <Badge
                   variant={row.outcome === 'completed' ? 'default' : 'destructive'}
                   data-testid="csv-import-history-outcome"
@@ -195,8 +195,8 @@ export function CsvImportHistoryTable({
                     {t('downloadErrorCsv')}
                   </a>
                 ) : (
-                  /* ux S1 (R1) — aria-disabled on a span has no AT */
-                  /* effect; the visible text already communicates state. */
+                  /* aria-disabled on a span has no AT effect; the */
+                  /* visible text already communicates state. */
                   <span
                     className="text-caption text-muted-foreground"
                     title={t('expiredTooltip')}

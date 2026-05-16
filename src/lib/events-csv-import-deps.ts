@@ -139,7 +139,7 @@ export async function csvImportRateLimitCheck(
 export interface RunImportCsvInput {
   readonly tenantSlug: string;
   /**
-   * H-15 fix (2026-05-15): branded UserId at the boundary instead of
+   * Branded UserId at the boundary instead of
    * `string` with internal `as UserId` cast. Route handler brands via
    * `asUserId(session.user.id)` before invoking. Matches F4/F5
    * branding pattern at composition adapters.
@@ -168,7 +168,7 @@ export interface RunImportCsvInput {
 }
 
 /**
- * H-14 fix (2026-05-15): collapse duplicate discriminated-union to a
+ * Re-alias the canonical Application type so future variants flow
  * type alias. Previously declared a structurally-identical clone of
  * `ImportCsvOutcome` here — drift risk if Application added a 5th
  * variant. Now re-aliases the canonical Application type so future
@@ -200,7 +200,7 @@ export async function runImportCsv(
   const outcome = await importCsv(
     {
       // Brand at the composition boundary so the use-case never sees
-      // an unbranded string (matches the H-15 pattern for actorUserId).
+      // an unbranded string (matches the actorUserId branding pattern).
       tenantId: asTenantId(input.tenantSlug),
       actorUserId: input.actorUserId,
       bytes: input.bytes,
@@ -297,7 +297,7 @@ export async function runListCsvImportRecords(
       },
       {
         csvImportRecordsRepo: repo,
-        // R2-CR-4: thread logger so the use-case can emit logger.fatal
+        // Thread logger so the use-case can emit logger.fatal
         // on an unknown repo error kind (port-shape regression signal).
         logger,
       },
@@ -325,11 +325,11 @@ export async function runGenerateErrorCsvSignedUrl(
     const adminRepo = makeDrizzleCsvImportRecordsAdminRepository();
     const audit = makePinoAuditPort(tx);
     const standalone = makeStandaloneAuditDeps();
-    // R2-I-14 (R2 — comment-analyzer): override `emit` so that BOTH the
-    // strict-audit `csv_import_error_csv_downloaded` write AND the
-    // cross-tenant probe emit commit in their own tx — survives a
-    // parent-tx rollback. `emitRolledBack` / `emitStandalone` retain
-    // their original semantics via the spread.
+    // Override `emit` so that BOTH the strict-audit
+    // `csv_import_error_csv_downloaded` write AND the cross-tenant
+    // probe emit commit in their own tx — survives a parent-tx
+    // rollback. `emitRolledBack` / `emitStandalone` retain their
+    // original semantics via the spread.
     const hybrid: F6AuditPort = {
       ...audit,
       emit: async (entry) => {
@@ -390,8 +390,8 @@ export async function runSweepExpiredErrorCsvBlobs(
       });
     },
     logger,
-    // R1 I-1 / I-6 (silent-failure): wire OTel metric counters so SRE
-    // alerts fire on clearErrorCsvBlob failures + sweep-scan failures.
+    // Wire OTel metric counters so SRE alerts fire on
+    // clearErrorCsvBlob failures + sweep-scan failures.
     onSweepClearFailed: (tenantId) =>
       eventcreateMetrics.csvErrorCsvSweepClearFailed(tenantId),
     onScanFailed: () => eventcreateMetrics.csvSweepScanFailed(),

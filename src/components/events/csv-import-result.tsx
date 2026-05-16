@@ -37,9 +37,9 @@ export interface CsvImportResultPayload {
   readonly rowsProcessed: number;
   readonly rowsAlreadyImported: number;
   /**
-   * F6.1 R1 code-review I-1 — `rowsStateChanged` counter for re-uploaded
-   * rows whose payment_status flipped via FR-018 Notes-inference
-   * detection. Surfaced as a 6th headline counter so admins see that the
+   * `rowsStateChanged` counter for re-uploaded rows whose
+   * payment_status flipped via FR-018 Notes-inference detection.
+   * Surfaced as a 6th headline counter so admins see that the
    * Notes-fix re-upload had EFFECT (not silently bucketed into
    * rowsAlreadyImported per SC-004).
    */
@@ -53,20 +53,18 @@ export interface CsvImportResultPayload {
   }>;
   readonly durationMs: number;
   /**
-   * Smart-feature S-02 (Round 1 — enterprise-ux-designer): import
-   * record ID quotable for support tickets. Optional because Phase 7
-   * (pre-F6.1) imports don't carry recordId. F6.1 imports always
-   * populate this from `runImportCsv` outcome.
+   * Import record ID quotable for support tickets. Optional because
+   * Phase 7 (pre-F6.1) imports don't carry recordId. F6.1 imports
+   * always populate this from `runImportCsv` outcome.
    */
   readonly recordId?: string;
   /**
-   * R2-I4 (Round 2 — silent-failure-hunter): `false` when CR-5 recovery
-   * also failed and the `csv_import_records` row could not be persisted
-   * — admin's rows committed are still safe, but the recordId quoted
-   * here will NOT match a DB row. Surface degraded copy ("history
-   * degraded; rows are still committed") instead of the standard
-   * recordId chip. Optional/undefined => treat as `true` (Phase 7
-   * back-compat).
+   * `false` when both the placeholder INSERT and the recovery INSERT
+   * for `csv_import_records` failed — admin's rows committed are
+   * still safe, but the recordId quoted here will NOT match a DB row.
+   * Surface degraded copy ("history degraded; rows are still
+   * committed") instead of the standard recordId chip.
+   * Optional/undefined => treat as `true` (back-compat).
    */
   readonly historyPersisted?: boolean;
   /**
@@ -78,12 +76,12 @@ export interface CsvImportResultPayload {
    */
   readonly errorCsvAvailable?: boolean;
   /**
-   * R2-I-1 (Round 2 — silent-failure-hunter): `false` when the
-   * per-import `csv_import_completed` audit row failed to emit. DB
-   * side effects (rows + history) are committed but the audit trail
-   * is incomplete for THIS import — surface a "Audit trail degraded"
-   * chip so admins can quote the recordId to support during incident
-   * response. Optional/undefined => treat as `true` (back-compat).
+   * `false` when the per-import `csv_import_completed` audit row
+   * failed to emit. DB side effects (rows + history) are committed
+   * but the audit trail is incomplete for THIS import — surface a
+   * "Audit trail degraded" chip so admins can quote the recordId to
+   * support during incident response. Optional/undefined => treat
+   * as `true` (back-compat).
    */
   readonly auditCompletionEmitted?: boolean;
 }
@@ -145,9 +143,9 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             testId="result-rows-already-imported"
             tone="muted"
           />
-          {/* F6.1 R1 code-review I-1 — render the state-change counter
-              only when at least one row's payment_status flipped; admins
-              for vanilla re-uploads don't need a clutter cell. */}
+          {/* Render the state-change counter only when at least one
+              row's payment_status flipped; admins for vanilla re-
+              uploads don't need a clutter cell. */}
           {(result.rowsStateChanged ?? 0) > 0 ? (
             <Counter
               label={t('rowsStateChangedLabel')}
@@ -196,10 +194,10 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
                 </p>
               </div>
             ) : null}
-            {/* R2-I-1 (Round 2): audit-completion degraded chip — when */}
-            {/* false, the per-import csv_import_completed audit row */}
-            {/* failed to emit. Rows + history may still be safe; the */}
-            {/* gap is purely on the audit trail. */}
+            {/* Audit-completion degraded chip — when false, the per- */}
+            {/* import csv_import_completed audit row failed to emit. */}
+            {/* Rows + history may still be safe; the gap is purely on */}
+            {/* the audit trail. */}
             {result.auditCompletionEmitted === false ? (
               <div
                 className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"

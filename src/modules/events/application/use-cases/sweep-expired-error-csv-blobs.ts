@@ -49,10 +49,10 @@ export interface SweepExpiredErrorCsvBlobsOutput {
   readonly skippedCount: number;
   readonly cutoff: Date;
   /**
-   * CR-2 / I-6 (R1 — silent-failure): true when the bulk-scan step
-   * failed. The use-case still returns ok-Result (the cron handler
-   * already wraps the call), but the route maps `scanFailed:true`
-   * → 500 so cron-job.org "2 consecutive failures" alert can fire.
+   * `true` when the bulk-scan step failed. The use-case still returns
+   * ok-Result (the cron handler already wraps the call), but the route
+   * maps `scanFailed:true` → 500 so cron-job.org "2 consecutive
+   * failures" alert can fire.
    */
   readonly scanFailed: boolean;
 }
@@ -76,13 +76,12 @@ export interface SweepExpiredErrorCsvBlobsDeps {
     error(meta: Record<string, unknown>, msg: string): void;
   };
   /**
-   * R1 I-1 (silent-failure) — increments
-   * `csvErrorCsvSweepClearFailed(tenantId)` when the post-blob-delete
-   * DB clear fails. Injected so unit tests can assert call counts;
-   * route composition wires `eventcreateMetrics.csvErrorCsvSweepClearFailed`.
+   * Increments `csvErrorCsvSweepClearFailed(tenantId)` when the
+   * post-blob-delete DB clear fails. Injected so unit tests can
+   * assert call counts; route composition wires the metric counter.
    */
   readonly onSweepClearFailed?: (tenantId: TenantId) => void;
-  /** R1 I-6 — increments `csvSweepScanFailed()` when bulk-scan fails. */
+  /** Increments `csvSweepScanFailed()` when bulk-scan fails. */
   readonly onScanFailed?: () => void;
 }
 
@@ -101,10 +100,10 @@ export async function sweepExpiredErrorCsvBlobs(
       limit,
     );
   if (!scanResult.ok) {
-    // CR-2 / I-6 (R1 — silent-failure): elevate to `logger.error` so
-    // SRE dashboards fire on scan failures. The route maps
-    // `scanFailed:true` to 500 so cron-job.org's "2 consecutive
-    // failures" alert can detect a sustained outage.
+    // Elevate to `logger.error` so SRE dashboards fire on scan
+    // failures. The route maps `scanFailed:true` to 500 so
+    // cron-job.org's "2 consecutive failures" alert can detect
+    // a sustained outage.
     logger?.error(
       {
         event: 'f6_error_csv_sweep_scan_failed',
@@ -191,10 +190,10 @@ async function sweepOne(
         repo.clearErrorCsvBlob(candidate.tenantId, candidate.recordId),
     );
     if (!updateResult.ok) {
-      // R1 I-1 (silent-failure): elevate to ERROR + emit metric.
-      // Orphan blob-url pointer left in DB → next-run idempotent
-      // retry will see `blob_not_found` and re-attempt the clear;
-      // sustained `rate > 0` indicates a persistent RLS / pool issue.
+      // Elevate to ERROR + emit metric. Orphan blob-url pointer left
+      // in DB → next-run idempotent retry will see `blob_not_found`
+      // and re-attempt the clear; sustained `rate > 0` indicates a
+      // persistent RLS / pool issue.
       logger?.error(
         {
           event: 'f6_error_csv_sweep_clear_failed',
