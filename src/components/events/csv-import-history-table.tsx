@@ -47,6 +47,10 @@ export interface CsvImportHistoryRow {
     readonly failed: number;
   };
   readonly outcome:
+    // Staff-review M-5 (2026-05-16): 'running' placeholder for in-flight
+    // imports — rendered as "Running…" badge per US5 AS3. Flipped to a
+    // terminal outcome by `updateOutcome` at use-case end.
+    | 'running'
     | 'completed'
     | 'timeout'
     | 'partial_failure'
@@ -157,9 +161,19 @@ export function CsvImportHistoryTable({
               </TableCell>
               <TableCell>
                 {/* Outcome rendered as Badge with semantic variant so */}
-                {/* admins can scan failures at a glance. */}
+                {/* admins can scan failures at a glance. Staff-review */}
+                {/* M-5 (2026-05-16): 'running' is in-flight (US5 AS3) */}
+                {/* — surface with neutral 'secondary' variant so it */}
+                {/* doesn't appear as completed (default/green) or */}
+                {/* failed (destructive/red). */}
                 <Badge
-                  variant={row.outcome === 'completed' ? 'default' : 'destructive'}
+                  variant={
+                    row.outcome === 'completed'
+                      ? 'default'
+                      : row.outcome === 'running'
+                        ? 'secondary'
+                        : 'destructive'
+                  }
                   data-testid="csv-import-history-outcome"
                 >
                   {t(`outcome.${row.outcome}`)}

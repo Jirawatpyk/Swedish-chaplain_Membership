@@ -1308,6 +1308,15 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | `eventcreate_webhook_secret_rotation_total` | Phase 8 | counter per tenant |
 | `eventcreate_tenant_ingest_disabled_gauge` | Phase 8 | observable gauge — 1 when tenant disabled |
 
+#### 24.1.5 F6.1 — CSV Import Primary Path + EventCreate Format Adapter (Feature 013, shipped staff-review T061 2026-05-16)
+
+| Metric | Type | Labels | Notes |
+|---|---|---|---|
+| `eventcreate_csv_adapter_mode_detected_total` | counter | `tenant`, `format` (`eventcreate_csv` \| `generic_csv`) | Emitted once per upload at top of `importCsv` use-case after parser format detection. Feeds rollback-trigger signal per spec § Rollback Plan and FR-025. Adoption tracking signal: drop to zero on tenants known to use EventCreate = header drift alert (see `f6_eventcreate_adapter_drift` below). |
+| `eventcreate_csv_error_csv_downloaded_total` | counter | `tenant` | Emitted on successful signed-URL generation in `generateErrorCsvSignedUrl` use-case, AFTER strict-audit emit (`csv_import_error_csv_downloaded`) succeeds. PII-access frequency signal. |
+| `eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}` | counter | `tenant`, `event_type` | Wired in `/api/admin/events/import/route.ts` cross-tenant probe failure path (staff-review H-2, 2026-05-16). Alerts on `rate > 0` because each emit failure is a forensic-trail gap on a Constitution Principle I clause 4 security event. Shares the existing `csvImportAuditEmitFailed` counter with `csv_import_completed` / `csv_import_row_failed` / `csv_import_event_mismatch_overridden` / `csv_import_row_state_changed` / `csv_import_row_cancelled_no_prior` / `event_created` so SRE dashboards can `group by event_type`. |
+| `eventcreate_csv_safety_net_fallback_total` | counter | `tenant` | Emitted by `importCsv` fingerprint safety-net (FR-019b) on query failure → fail-open path; non-zero rate signals DB/pool instability that is silently masking event-mismatch detection. |
+
 ### 24.2 SLOs
 
 | SLO ID | Target | Measurement source | Error budget |
@@ -1331,6 +1340,9 @@ Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.pag
 | `f6_idempotency_sweep_stalled` | SLO-F6-004 violation | P2 | `docs/runbooks/f6-idempotency-sweep.md` (Phase 10) |
 | `f6_audit_fallback_double_failure` | counter increments by ≥1 in 5-min window | P1 page | `docs/runbooks/f6-audit-fallback-double-failure.md` (Phase 10) |
 | `f6_rate_limit_fallback_sustained` | rate(`eventcreate_rate_limit_fallback_total`) > 1/min for 10 min | P3 | Indicates Upstash incident — auth surface alert already covers root cause |
+| `f6_eventcreate_adapter_drift` | `rate(eventcreate_csv_adapter_mode_detected_total{format='eventcreate_csv'}) / rate(eventcreate_csv_adapter_mode_detected_total) < 0.5` over rolling 24h on tenants known to use EventCreate | P2 | `docs/runbooks/eventcreate-csv-import.md` § 4 — EventCreate header drift detection. Spec § Rollback Plan auto-trigger: > 5 admin issues attributable to F6.1 in 7d post-launch → flip `FEATURE_F6_EVENTCREATE_ADAPTER=false`. |
+| `f6_csv_cross_tenant_probe_audit_emit_failed` | rate(`eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}`) > 0 over rolling 5 min | P1 page | Each event = forensic-trail gap on Constitution Principle I clause 4 security event. Investigate Neon connectivity, pool exhaustion, audit-port regression. |
+| `f6_csv_error_csv_downloaded_burst` | rate(`eventcreate_csv_error_csv_downloaded_total`) > 5/min per tenant for 10 min | P3 | PII-access burst — possible admin operator audit-trail review session, but also possible compromised admin credentials downloading bulk attendee CSVs. Cross-reference with admin auth session activity. |
 
 ### 24.4 Forbidden-log-field additions (F6-specific)
 

@@ -456,6 +456,14 @@ export interface AuditPayloads {
     readonly actorUserId: UserId;
     readonly rowsProcessed: number;
     readonly rowsAlreadyImported: number;
+    /**
+     * Staff-review H-1 (2026-05-16): subset of `rowsProcessed`
+     * whose state actually changed on a re-upload (Notes-driven
+     * payment flip, Attending→Cancelled, etc.). Optional for
+     * backward-compatibility with pre-H-1 audit rows (interpret
+     * absent as 0 in analytics queries).
+     */
+    readonly rowsStateChanged?: number;
     readonly eventsCreated: number;
     readonly eventsUpdated: number;
     readonly matchCounts: Readonly<Record<MatchType, number>>;

@@ -111,7 +111,14 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
       logger.error(
         {
           event: 'f6_error_csv_signed_url_failed',
-          blobUrl: input.blobUrl,
+          // Staff-review M-6 (2026-05-16): the blob URL IS the
+          // capability token for the next 30 days — logging it at
+          // error level leaks the token to log sinks. Log only the
+          // length + a truncated hash prefix so diagnostics still
+          // correlate with the upstream `error_csv_blob_url` DB
+          // column without exposing the capability.
+          blobUrlLength: input.blobUrl.length,
+          blobUrlPathSuffix: extractPathSuffix(input.blobUrl),
           err: message,
         },
         'F6.1 error CSV signed-URL generation failed (likely malformed blobUrl)',
@@ -135,7 +142,10 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
       logger.error(
         {
           event: 'f6_error_csv_delete_failed',
-          blobUrl: input.blobUrl,
+          // Staff-review M-6: same capability-token redaction as the
+          // signed-URL path above.
+          blobUrlLength: input.blobUrl.length,
+          blobUrlPathSuffix: extractPathSuffix(input.blobUrl),
           err: message,
         },
         'F6.1 error CSV blob delete failed',
@@ -144,3 +154,31 @@ export const vercelBlobErrorCsvStore: ErrorCsvStore = {
     }
   },
 };
+
+/**
+ * Staff-review M-6 (2026-05-16): produce a non-capability-leaking
+ * identifier from a Vercel Blob URL for diagnostic logging. Keeps the
+ * tenant-scoped path prefix (which carries no secret material — the
+ * tenant slug is already log-safe) and the last 8 characters of the
+ * random suffix (cardinality enough to correlate distinct failures
+ * without exposing the full capability token).
+ *
+ * Example:
+ *   `https://blob.vercel-storage.com/tenants/swecham/csv-import-errors/
+ *    abc123.csv-randomSuffix01234567` →
+ *   `tenants/swecham/csv-import-errors/abc123.csv-...01234567`
+ *
+ * On a malformed URL (which is precisely the failure case the caller
+ * is logging), fall back to a fixed sentinel so the log line still
+ * renders.
+ */
+function extractPathSuffix(blobUrl: string): string {
+  try {
+    const parsed = new URL(blobUrl);
+    const path = parsed.pathname;
+    if (path.length <= 16) return path;
+    return `${path.slice(0, path.lastIndexOf('/') + 1)}...${path.slice(-8)}`;
+  } catch {
+    return '<malformed-blob-url>';
+  }
+}

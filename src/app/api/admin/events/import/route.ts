@@ -311,6 +311,17 @@ export async function POST(request: NextRequest): Promise<Response> {
     // noise floor (network jitter from BKK→sin1 dominates at ~25ms).
     // Production timing-safety is enforced by the structural query
     // symmetry, not by sub-millisecond post-DB work matching.
+    //
+    // STAFF-REVIEW M-2 (2026-05-16) — accepted timing delta. A
+    // dedicated TESTS-I3 p95-symmetry integration test would need a
+    // stable measurement harness (≥100 paired requests + statistical
+    // assertion on the delta) and is gated behind operator T059
+    // prod-region perf bench infra. Until then, the timing delta is
+    // documented as accepted at SweCham scale (1 tenant, 1-2 admin
+    // operators, no observed adversarial probe activity) and the
+    // structural-symmetry property is the binding contract. If the
+    // platform onboards an MTA tenant with hostile-actor exposure,
+    // re-evaluate this trade-off.
     eventcreateMetrics.csvImportCompleted(
       tenantSlug,
       'event_not_owned_by_tenant',
@@ -567,6 +578,15 @@ async function emitCrossTenantProbeAudit(
         },
         '[F6.1] csv_import_cross_tenant_probe audit emit failed — security event lost from audit table; SRE counter still fires',
       );
+      // Staff-review H-2 (2026-05-16): bump the audit-emit-failed
+      // counter so SRE dashboards can alert on `rate > 0` for the
+      // critical-severity probe event. Without this, a silent
+      // Neon/pool failure would lose the forensic record AND remain
+      // unobservable until manual audit-table review.
+      eventcreateMetrics.csvImportAuditEmitFailed(
+        input.tenantSlug,
+        'csv_import_cross_tenant_probe',
+      );
     }
   } catch (e) {
     logger.error(
@@ -577,6 +597,12 @@ async function emitCrossTenantProbeAudit(
         err: e instanceof Error ? e.message : String(e),
       },
       '[F6.1] csv_import_cross_tenant_probe audit emitter threw',
+    );
+    // Staff-review H-2: same counter on the throw path so a
+    // composition-layer exception is also observable.
+    eventcreateMetrics.csvImportAuditEmitFailed(
+      input.tenantSlug,
+      'csv_import_cross_tenant_probe',
     );
   }
 }

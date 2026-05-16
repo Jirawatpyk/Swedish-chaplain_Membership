@@ -73,7 +73,12 @@ export function makeDrizzleCsvImportRecordsRepository(
           rowsAlreadyImported: 0,
           rowsSkipped: 0,
           rowsFailed: 0,
-          outcome: 'unexpected_error',
+          // Staff-review M-5 (2026-05-16): the placeholder INSERT now
+          // uses 'running' so history-page queries surface the row
+          // as "Running…" per US5 AS3 while the use-case is still
+          // committing. updateOutcome flips this to a terminal state
+          // at end-of-import.
+          outcome: 'running',
           durationMs: 0,
         });
         return ok(undefined);
@@ -100,6 +105,11 @@ export function makeDrizzleCsvImportRecordsRepository(
             rowsAlreadyImported: input.rowsAlreadyImported,
             rowsSkipped: input.rowsSkipped,
             rowsFailed: input.rowsFailed,
+            // Staff-review H-1 (2026-05-16): persist the
+            // re-upload state-change counter so operator-facing
+            // history shows whether a re-upload was a no-op or
+            // carried meaningful mutations.
+            rowsStateChanged: input.rowsStateChanged,
             outcome: input.outcome,
             durationMs: input.durationMs,
             attendeeFingerprint: input.attendeeFingerprint,
@@ -357,6 +367,7 @@ function rowToSummary(row: CsvImportRecordRow): CsvImportRecordSummary {
     rowsAlreadyImported: row.rowsAlreadyImported,
     rowsSkipped: row.rowsSkipped,
     rowsFailed: row.rowsFailed,
+    rowsStateChanged: row.rowsStateChanged,
     outcome: row.outcome as CsvImportRecordSummary['outcome'],
     durationMs: row.durationMs,
     errorCsvBlobUrl: row.errorCsvBlobUrl,

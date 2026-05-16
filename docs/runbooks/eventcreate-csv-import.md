@@ -78,9 +78,18 @@ The sweep is idempotent + re-running is safe. SLA target: blob deletion within 3
 
 ---
 
-## 3. Signed-URL leak response
+## 3. Signed-URL leak response — and Vercel Blob `access:'public'` design caveat
 
-If a signed URL for an error CSV is accidentally shared externally:
+### 3.0 Public-blob design trade-off (staff-review M-1 / 2026-05-16)
+
+Vercel Blob's non-Enterprise tier does NOT support true private buckets. Error-CSV blobs are stored with `access:'public'` and an opaque `addRandomSuffix:true` capability-token URL. Any actor with access to the URL (DB read on `csv_import_records.error_csv_blob_url`, or the issued signed-URL redirect target) can fetch the underlying CSV during the **30-day TTL window** WITHOUT producing an audit-log entry. The 15-minute signed-URL expiry stamped in the `?expires=` query param is enforced at the route handler, not by Vercel Blob itself.
+
+**Practical implications for admins**:
+- Treat the `error_csv_blob_url` column as sensitive — anyone with DB query access to `csv_import_records` can read the corresponding error CSV directly until the 30-day TTL sweep runs.
+- Do NOT upload CSVs containing strictly-confidential attendee lists where a 30-day public-URL window would be unacceptable. EventCreate "Guestlist" exports for chamber events meet the documented PDPA risk acceptance; high-confidentiality exports (e.g., medical/legal client lists if F6.1 is ever repurposed) do not.
+- Escalation path if a wider customer mandates true private blob storage: revisit Vercel Blob Enterprise tier ($XX/month) or migrate to S3+presigned-URLs — tracked as F6.2 backlog.
+
+### 3.1 If a signed URL for an error CSV is accidentally shared externally:
 
 1. **Confirm the URL is still valid** (15-minute window from issuance). Look up the most recent `csv_import_error_csv_downloaded` audit row for the affected recordId:
 
@@ -106,6 +115,21 @@ If a signed URL for an error CSV is accidentally shared externally:
 3. **PDPA Section 37 breach notification**: if the leaked CSV contained ≥1 row of member PII (email + name), notify the DPO within 72h. The error CSV's row count is recorded in `csv_import_records.rows_failed`.
 
 4. **Audit trail**: every download — both the legitimate admin click and any attacker re-click — is logged in `audit_log` with `event_type = 'csv_import_error_csv_downloaded'`. Use this to scope the blast radius.
+
+---
+
+## 3a. Error-CSV formula injection caveat (staff-review M-3 / 2026-05-16)
+
+The downloaded error CSV reproduces the FAILED ROWS VERBATIM per FR-021, including any cells that begin with `=`, `@`, `+`, or `-`. If opened in Microsoft Excel, Google Sheets, or LibreOffice Calc with default settings, those cells will be interpreted as formulas and may execute (including external calls like `=WEBSERVICE("...")`). This is intentional spec behaviour for the admin-only tool — admins repair the rows and re-upload — but admins MUST be informed of the risk.
+
+**Operator instructions to attach to the F6.1 admin onboarding doc**:
+1. After downloading an error CSV, open it in a text editor first (Notepad++, VS Code) to verify nothing surprising leads cells.
+2. If opening in Excel/Sheets is necessary, disable automatic formula calculation BEFORE opening:
+   - Excel: File → Options → Formulas → Workbook Calculation: Manual; or use `Get Data → From Text` import mode.
+   - Sheets: File → Settings → Calculation → Iterative calculation: Off; or import via `File → Import → Replace data at selected cell` to preserve raw text.
+3. After review and edit, save back to CSV (NOT XLSX) and re-upload.
+
+No code change is required; the verbatim emit is per-spec. This caveat is now part of the F6.1 admin-facing release notes.
 
 ---
 

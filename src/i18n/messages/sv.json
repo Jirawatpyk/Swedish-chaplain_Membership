@@ -2685,7 +2685,7 @@
               "validationDetail": "Ett eller flera fält är ogiltiga. Granska formuläret och försök igen.",
               "rateLimitTitle": "För många försök",
               "rateLimitDetail": "Du har skapat för många evenemang den senaste timmen. Vänta en stund och försök igen.",
-              "rateLimitDetailWithSeconds": "Frekvensgräns nådd: 30 evenemang/timme per administratör. Försök igen om {seconds} s.",
+              "rateLimitDetailWithSeconds": "Frekvensgräns nådd: 30 evenemang/timme per administratör. Försök igen om {seconds, plural, one {# sekund} other {# sekunder}}.",
               "unexpectedTitle": "Oväntat fel",
               "unexpectedDetail": "Något gick fel på vår sida. Försök igen; om det kvarstår, kontakta support."
             }
@@ -2719,6 +2719,7 @@
             "generic_csv": "Generisk"
           },
           "outcome": {
+            "running": "Pågår…",
             "completed": "Klar",
             "timeout": "Tidsgräns nådd",
             "partial_failure": "Delvis fel",

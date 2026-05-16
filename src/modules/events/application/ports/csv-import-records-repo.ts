@@ -50,6 +50,17 @@ export interface InsertCsvImportRecordInput {
  * values are documented in `data-model.md § 1`.
  */
 export type CsvImportRecordOutcome =
+  /**
+   * Staff-review M-5 (2026-05-16): in-flight placeholder. Set on the
+   * initial INSERT and flipped to a terminal outcome by `updateOutcome`
+   * at use-case end. Surfaces on the import-history page as "Running…"
+   * per spec US5 AS3. Previously the placeholder used
+   * `'unexpected_error'`, which was misleading — admins refreshing
+   * history mid-import would see their own import as "failed" while
+   * it was still committing. The 'running' state has no terminal
+   * semantics; row count fields stay 0 until updateOutcome lands.
+   */
+  | 'running'
   | 'completed'
   | 'timeout'
   | 'partial_failure'
@@ -66,6 +77,16 @@ export interface UpdateOutcomeInput {
   readonly rowsAlreadyImported: number;
   readonly rowsSkipped: number;
   readonly rowsFailed: number;
+  /**
+   * Subset of `rowsProcessed` representing rows whose state actually
+   * changed on a re-upload (Notes-driven payment_status, Attending→
+   * Cancelled, etc.). Persisted so post-import operator review of
+   * `csv_import_records` shows whether a re-upload was a no-op (zero
+   * state-changes) or carried meaningful mutations. Defaults to 0
+   * on first import (when state-change semantics do not apply).
+   * Closes staff-review H-1 (audit-trail completeness).
+   */
+  readonly rowsStateChanged: number;
   readonly outcome: CsvImportRecordOutcome;
   readonly durationMs: number;
   readonly attendeeFingerprint: string | null;
@@ -123,6 +144,8 @@ export interface CsvImportRecordSummary {
   readonly rowsAlreadyImported: number;
   readonly rowsSkipped: number;
   readonly rowsFailed: number;
+  /** Rows whose state changed during a re-upload — see UpdateOutcomeInput. */
+  readonly rowsStateChanged: number;
   readonly outcome: CsvImportRecordOutcome;
   readonly durationMs: number;
   readonly errorCsvBlobUrl: string | null;

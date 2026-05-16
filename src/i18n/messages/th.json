@@ -2589,7 +2589,7 @@
           "columnMappingTitle": "คอลัมน์ที่ตรวจพบ",
           "columnMappingLegend": "คอลัมน์ที่จำเป็นแสดงเป็นสีเขียว คอลัมน์เสริมแสดงสีจาง คอลัมน์ที่จำเป็นที่หายไปจะบล็อกการนำเข้า",
           "optionalColumnTooltip": "ไม่บังคับ — เพิ่มข้อมูลกิจกรรมที่ละเอียดขึ้นหากมี",
-          "previewRowsTitle": "ตัวอย่าง ({count} แถว)",
+          "previewRowsTitle": "ตัวอย่าง ({count, plural, other {# แถว}})",
           "missingColumnsTitle": "CSV ขาดคอลัมน์ที่จำเป็น",
           "missingColumnsDescription": "กรุณาส่งออกไฟล์ใหม่หลังเพิ่มคอลัมน์เหล่านี้:",
           "tableAriaLabel": "ตัวอย่าง CSV สำหรับ {fileName}"
@@ -2685,7 +2685,7 @@
               "validationDetail": "มีฟิลด์ไม่ถูกต้องอย่างน้อยหนึ่งช่อง ตรวจสอบฟอร์มแล้วลองใหม่",
               "rateLimitTitle": "พยายามมากเกินไป",
               "rateLimitDetail": "คุณได้สร้างอีเวนต์มากเกินไปในช่วงชั่วโมงที่ผ่านมา รอสักครู่แล้วลองใหม่",
-              "rateLimitDetailWithSeconds": "เกินขีดจำกัด: ผู้ดูแลสร้างได้ 30 อีเวนต์ต่อชั่วโมง ลองใหม่หลังจาก {seconds} วินาที",
+              "rateLimitDetailWithSeconds": "เกินขีดจำกัด: ผู้ดูแลระบบสร้างได้ 30 อีเวนต์ต่อชั่วโมง ลองใหม่หลังจาก {seconds, plural, other {# วินาที}}",
               "unexpectedTitle": "เกิดข้อผิดพลาด",
               "unexpectedDetail": "เกิดความผิดพลาดขึ้นทางเซิร์ฟเวอร์ กรุณาลองใหม่ หากยังพบให้แจ้งทีมสนับสนุน"
             }
@@ -2719,6 +2719,7 @@
             "generic_csv": "ทั่วไป"
           },
           "outcome": {
+            "running": "กำลังนำเข้า…",
             "completed": "สำเร็จ",
             "timeout": "หมดเวลา",
             "partial_failure": "บางส่วนล้มเหลว",

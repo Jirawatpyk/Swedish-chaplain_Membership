@@ -358,6 +358,58 @@ export default defineConfig({
         // + `enforce-rbac-on-f8-mutation.ts` — neither ships as a
         // standalone file; coverage lives in
         // `rbac-defence-in-depth.test.ts` (3 IT cases × DB-layer audit).
+
+        // ---------------------------------------------------------------
+        // F6 + F6.1 Events Domain — 100% line coverage per Constitution
+        // Principle II (pure functions, branded types, classifiers).
+        // Closes staff-review H-4 (2026-05-16): previously no per-file
+        // thresholds existed for the events module, so a regression that
+        // dropped a security-critical branch would have passed CI under
+        // the global `branches:80` floor.
+        // ---------------------------------------------------------------
+        'src/modules/events/domain/**/*.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F6.1 import-csv use-case — security-critical paths:
+        //  - cross-tenant probe branching via lookupEventByIdTimingSafe
+        //  - strict-audit invariant chain (R2-CR-2)
+        //  - force_proceed override → csv_import_event_mismatch_overridden
+        //  - safety-net fingerprint query fail-open
+        //  - per-(tenant,event) advisory lock acquisition
+        // Coverage from tests/unit/events/ (state-change strict-audit,
+        // mismatch-override strict-audit, batch-tx-abort, cancellation-
+        // skip-marker, attendee-fingerprint, classify-pdpa-consent,
+        // eventcreate-csv-adapter) + tests/integration/events/ live-Neon.
+        // Branches threshold = 95 (not 100) because the use-case mixes
+        // unit + IT-only paths; IT coverage on live Neon is the binding
+        // contract for the DB-layer-touching branches.
+        'src/modules/events/application/use-cases/import-csv.ts': {
+          lines: 90,
+          branches: 95,
+          functions: 95,
+        },
+        // F6.1 generate-error-csv-signed-url use-case — 100% branch on
+        // cross-tenant probe handling (Constitution I clause 4 Review-
+        // Gate blocker) + signed-URL audit gating + db_error → probe
+        // fall-through (CR-7). Coverage from
+        // tests/unit/events/generate-error-csv-signed-url.test.ts (11
+        // cases) + integration cross-tenant isolation tests.
+        'src/modules/events/application/use-cases/generate-error-csv-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        // F6.1 sweep cron use-case — 80% branch is sufficient (non-
+        // security path); coverage from sweep-expired-error-csv-blobs
+        // unit tests.
+        'src/modules/events/application/use-cases/sweep-expired-error-csv-blobs.ts': {
+          lines: 90,
+          branches: 80,
+          functions: 90,
+        },
       },
     },
   },

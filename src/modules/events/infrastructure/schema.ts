@@ -301,6 +301,15 @@ export const csvImportRecords = pgTable(
     rowsAlreadyImported: integer('rows_already_imported').notNull(),
     rowsSkipped: integer('rows_skipped').notNull(),
     rowsFailed: integer('rows_failed').notNull(),
+    /**
+     * Subset of `rowsProcessed` representing rows whose state actually
+     * changed on a re-upload (Notes-driven payment_status, Attending→
+     * Cancelled, etc.). Migration 0153 (staff-review H-1, 2026-05-16)
+     * backfills DEFAULT 0 for existing rows; new rows always populate
+     * via `updateOutcome`. Surfaces alongside other count columns on
+     * the import-history page for operator review of re-upload deltas.
+     */
+    rowsStateChanged: integer('rows_state_changed').notNull().default(0),
 
     outcome: text('outcome').notNull(),
     durationMs: integer('duration_ms').notNull(),

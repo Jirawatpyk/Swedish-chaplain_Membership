@@ -1649,6 +1649,11 @@ export async function importCsv(
           rowsAlreadyImported: summary.rowsAlreadyImported,
           rowsSkipped: summary.rowsSkipped,
           rowsFailed,
+          // Staff-review H-1: persist the re-upload state-change
+          // counter so the import-history row reflects whether the
+          // re-upload was a no-op (zero state-changes) or carried
+          // meaningful mutations.
+          rowsStateChanged: summary.rowsStateChanged,
           outcome: recordOutcome,
           durationMs,
           attendeeFingerprint,
@@ -1697,6 +1702,7 @@ export async function importCsv(
                 rowsAlreadyImported: summary.rowsAlreadyImported,
                 rowsSkipped: summary.rowsSkipped,
                 rowsFailed,
+                rowsStateChanged: summary.rowsStateChanged,
                 outcome: recordOutcome,
                 durationMs,
                 attendeeFingerprint,
@@ -1771,6 +1777,7 @@ export async function importCsv(
     summary: {
       rowsProcessed: summary.rowsProcessed,
       rowsAlreadyImported: summary.rowsAlreadyImported,
+      rowsStateChanged: summary.rowsStateChanged,
       eventsCreated: summary.eventsCreated,
       eventsUpdated: summary.eventsUpdated,
       matchCounts: summary.matchCounts,
@@ -1936,6 +1943,14 @@ interface EmitImportCompletedAuditArgs {
   readonly summary: {
     readonly rowsProcessed: number;
     readonly rowsAlreadyImported: number;
+    /**
+     * Staff-review H-1 (2026-05-16): subset of rowsProcessed whose
+     * state actually changed on this re-upload (Notes-driven payment
+     * flip, Attending→Cancelled, etc.). Surfaced on the audit payload
+     * so post-import forensic queries can distinguish no-op re-uploads
+     * from re-uploads that mutated existing registrations.
+     */
+    readonly rowsStateChanged: number;
     readonly eventsCreated: number;
     readonly eventsUpdated: number;
     readonly matchCounts: Record<MatchType, number>;
@@ -1977,6 +1992,9 @@ async function emitImportCompletedAudit(
         actorUserId: input.actorUserId,
         rowsProcessed: summary.rowsProcessed,
         rowsAlreadyImported: summary.rowsAlreadyImported,
+        // Staff-review H-1: re-upload state-change counter on the
+        // forensic audit payload.
+        rowsStateChanged: summary.rowsStateChanged,
         eventsCreated: summary.eventsCreated,
         eventsUpdated: summary.eventsUpdated,
         matchCounts: summary.matchCounts,

@@ -1032,13 +1032,6 @@
 			"breakpoints": true
 		},
 		{
-			"idx": 145,
-			"version": "7",
-			"when": 1795161600000,
-			"tag": "0145_events_source_allow_admin_manual",
-			"breakpoints": true
-		},
-		{
 			"idx": 147,
 			"version": "7",
 			"when": 1795248000000,
@@ -1071,6 +1064,27 @@
 			"version": "7",
 			"when": 1795766400000,
 			"tag": "0151_audit_f5r2_event_types",
+			"breakpoints": true
+		},
+		{
+			"idx": 152,
+			"version": "7",
+			"when": 1795852800000,
+			"tag": "0152_events_source_allow_admin_manual",
+			"breakpoints": true
+		},
+		{
+			"idx": 153,
+			"version": "7",
+			"when": 1795939200000,
+			"tag": "0153_csv_import_records_rows_state_changed",
+			"breakpoints": true
+		},
+		{
+			"idx": 154,
+			"version": "7",
+			"when": 1796025600000,
+			"tag": "0154_csv_import_records_running_outcome",
 			"breakpoints": true
 		}
 	]

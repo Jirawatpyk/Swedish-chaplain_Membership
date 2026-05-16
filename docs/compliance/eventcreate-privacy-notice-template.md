@@ -82,21 +82,40 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > **Data processors and transit**:
 >
 > Your registration data flows through the following processors before
-> reaching the Chamber's systems:
+> reaching the Chamber's systems. Two paths are supported and your
+> registration may take either depending on the Chamber's operational
+> setup:
+>
+> **Path A — Direct CSV upload (primary, F6.1)**:
 >
 > - **EventCreate** (event registration platform — United States) — the
 >   event organiser, where you submit your registration.
-> - **Zapier** (automation service — United States) — transmits your
->   registration record from EventCreate to Chamber-OS in near real-time
->   (typically within 15 minutes of registration). Zapier is a temporary
->   data conduit; no long-term retention occurs at the Zapier layer.
-> - **Chamber-OS** (Chamber's membership-management system — Singapore
->   region) — persists your registration record under the retention
->   policy stated above.
+> - **Chamber admin** downloads the "Guestlist" CSV export from
+>   EventCreate (~within 1–7 days after the event) and uploads it into
+>   Chamber-OS via the admin portal.
+> - **Vercel Blob** (Singapore region) — if any rows in the upload fail
+>   validation, the failed rows are temporarily stored as a private
+>   error CSV with a **30-day automatic deletion** (no manual operator
+>   action needed — a daily cron sweep enforces the deletion). The
+>   error CSV is used by the Chamber admin to correct typos in the
+>   upstream data and re-upload.
+> - **Chamber-OS** (Singapore region) — persists your registration
+>   record under the retention policy stated above.
+>
+> **Path B — Automated webhook (legacy, F6 Phase 6)**:
+>
+> - **EventCreate** + **Zapier** (automation service — United States) —
+>   transmits your registration record from EventCreate to Chamber-OS
+>   in near real-time. Zapier is a temporary data conduit; no
+>   long-term retention occurs at the Zapier layer.
+> - **Chamber-OS** (Singapore region) — same retention as Path A.
 >
 > The Chamber has signed contractual safeguards (PDPA §28 cross-border
 > consent; GDPR Standard Contractual Clauses + adequacy assessments)
-> for the EU-US and Thailand-US data flows via EventCreate and Zapier.
+> for the EU-US and Thailand-US data flows via EventCreate (Paths A+B)
+> and Zapier (Path B). The CSV upload path (Path A) does not involve
+> US-resident processors beyond EventCreate's storage of the export
+> file itself.
 >
 > For the full Chamber privacy policy, see **[Chamber privacy policy URL]**.
 
@@ -153,22 +172,39 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > **ผู้ประมวลผลและการส่งผ่านข้อมูล**:
 >
 > ข้อมูลการลงทะเบียนของท่านจะผ่านผู้ประมวลผลต่อไปนี้ก่อนเข้าสู่ระบบ
-> ของหอการค้า:
+> ของหอการค้า โดยรองรับสองเส้นทาง และการลงทะเบียนของท่านอาจใช้
+> เส้นทางใดเส้นทางหนึ่งขึ้นอยู่กับการตั้งค่าการดำเนินงานของหอการค้า:
+>
+> **เส้นทาง A — การอัปโหลด CSV โดยตรง (เส้นทางหลัก, F6.1)**:
 >
 > - **EventCreate** (แพลตฟอร์มลงทะเบียนงาน — ประเทศสหรัฐอเมริกา) —
 >   ผู้จัดงาน ซึ่งเป็นจุดที่ท่านส่งข้อมูลการลงทะเบียน
-> - **Zapier** (บริการอัตโนมัติ — ประเทศสหรัฐอเมริกา) — ส่งข้อมูล
->   การลงทะเบียนของท่านจาก EventCreate ไปยัง Chamber-OS แบบ
->   เกือบเรียลไทม์ (โดยปกติภายใน 15 นาทีหลังการลงทะเบียน) Zapier
->   เป็นช่องทางส่งผ่านข้อมูลชั่วคราว ไม่มีการเก็บรักษาข้อมูลระยะยาว
->   ที่ชั้น Zapier
-> - **Chamber-OS** (ระบบจัดการสมาชิกของหอการค้า — ภูมิภาคสิงคโปร์)
->   — จัดเก็บข้อมูลการลงทะเบียนของท่านตามนโยบายการเก็บข้อมูลข้างต้น
+> - **ผู้ดูแลหอการค้า** ดาวน์โหลดไฟล์ CSV "Guestlist" จาก
+>   EventCreate (โดยทั่วไปภายใน 1–7 วันหลังงาน) และอัปโหลดเข้าสู่
+>   Chamber-OS ผ่านพอร์ทัลผู้ดูแล
+> - **Vercel Blob** (ภูมิภาคสิงคโปร์) — หากแถวข้อมูลใดในการอัปโหลด
+>   ล้มเหลวในการตรวจสอบ แถวที่ล้มเหลวเหล่านั้นจะถูกจัดเก็บชั่วคราว
+>   เป็นไฟล์ CSV ส่วนตัว พร้อม **ลบอัตโนมัติภายใน 30 วัน** (ไม่ต้อง
+>   มีการดำเนินการของผู้ปฏิบัติงาน — มี cron sweep รายวันบังคับลบ)
+>   ไฟล์ CSV นี้ใช้สำหรับผู้ดูแลในการแก้ไขข้อผิดพลาดในข้อมูลต้นทาง
+>   และอัปโหลดใหม่
+> - **Chamber-OS** (ภูมิภาคสิงคโปร์) — จัดเก็บข้อมูลการลงทะเบียน
+>   ของท่านตามนโยบายการเก็บข้อมูลข้างต้น
+>
+> **เส้นทาง B — Webhook อัตโนมัติ (เส้นทางเดิม, F6 Phase 6)**:
+>
+> - **EventCreate** + **Zapier** (บริการอัตโนมัติ — ประเทศ
+>   สหรัฐอเมริกา) — ส่งข้อมูลการลงทะเบียนของท่านจาก EventCreate
+>   ไปยัง Chamber-OS แบบเกือบเรียลไทม์ Zapier เป็นช่องทาง
+>   ส่งผ่านข้อมูลชั่วคราว ไม่มีการเก็บรักษาข้อมูลระยะยาว
+> - **Chamber-OS** (ภูมิภาคสิงคโปร์) — การเก็บข้อมูลเช่นเดียวกับ
+>   เส้นทาง A
 >
 > หอการค้าได้ลงนามในข้อกำหนดสัญญาเชิงป้องกันที่เหมาะสม (PDPA §28
 > ความยินยอมการส่งข้อมูลข้ามพรมแดน; GDPR Standard Contractual
 > Clauses + การประเมินความเพียงพอ) สำหรับการส่งข้อมูล EU-US และ
-> ไทย-US ผ่าน EventCreate และ Zapier
+> ไทย-US ผ่าน EventCreate (เส้นทาง A+B) และ Zapier (เส้นทาง B
+> เท่านั้น)
 >
 > สำหรับนโยบายความเป็นส่วนตัวฉบับเต็มของหอการค้า โปรดดู **[Chamber
 > privacy policy URL]**
@@ -226,23 +262,42 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > **Personuppgiftsbiträden och dataflöde**:
 >
 > Dina registreringsuppgifter passerar följande databehandlare innan
-> de når Handelskammarens system:
+> de når Handelskammarens system. Två vägar stöds, och din
+> registrering kan ta endera vägen beroende på Handelskammarens
+> operativa konfiguration:
+>
+> **Väg A — Direkt CSV-uppladdning (primär, F6.1)**:
 >
 > - **EventCreate** (registreringsplattform — USA) — evenemangs-
 >   arrangören, där du skickar in din registrering.
-> - **Zapier** (automatiseringstjänst — USA) — överför din
->   registreringspost från EventCreate till Chamber-OS nästan i
->   realtid (vanligtvis inom 15 minuter efter registrering). Zapier
->   är en tillfällig dataförmedlare; ingen långsiktig lagring sker
->   på Zapier-nivå.
-> - **Chamber-OS** (Handelskammarens medlemshanteringssystem —
->   Singapore-regionen) — bevarar din registreringspost enligt den
->   bevarandepolicy som anges ovan.
+> - **Handelskammarens administratör** laddar ner "Guestlist"-CSV-
+>   exporten från EventCreate (vanligtvis inom 1–7 dagar efter
+>   evenemanget) och laddar upp den till Chamber-OS via
+>   administratörsportalen.
+> - **Vercel Blob** (Singapore-regionen) — om någon rad i uppladdningen
+>   misslyckas med valideringen lagras de misslyckade raderna
+>   tillfälligt som en privat fel-CSV med **automatisk radering
+>   inom 30 dagar** (ingen manuell åtgärd krävs — ett dagligt
+>   cron-sweep upprätthåller raderingen). Fel-CSV:n används av
+>   administratören för att korrigera skrivfel i uppströmsdata och
+>   ladda upp på nytt.
+> - **Chamber-OS** (Singapore-regionen) — bevarar din
+>   registreringspost enligt den bevarandepolicy som anges ovan.
+>
+> **Väg B — Automatiserad webhook (äldre, F6 Phase 6)**:
+>
+> - **EventCreate** + **Zapier** (automatiseringstjänst — USA) —
+>   överför din registreringspost från EventCreate till Chamber-OS
+>   nästan i realtid. Zapier är en tillfällig dataförmedlare; ingen
+>   långsiktig lagring sker på Zapier-nivå.
+> - **Chamber-OS** (Singapore-regionen) — samma bevarandepolicy
+>   som väg A.
 >
 > Handelskammaren har undertecknat avtalsmässiga skyddsåtgärder
 > (PDPA §28 samtycke till gränsöverskridande överföring; GDPR
 > Standard Contractual Clauses + adekvansbedömningar) för data-
-> flödena EU-USA och Thailand-USA via EventCreate och Zapier.
+> flödena EU-USA och Thailand-USA via EventCreate (vägar A+B) och
+> Zapier (endast väg B).
 >
 > Se Handelskammarens fullständiga integritetspolicy på
 > **[Chamber privacy policy URL]**.

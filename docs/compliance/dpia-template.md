@@ -354,6 +354,59 @@ the threshold for both PDPA and GDPR. The DPIA must be re-reviewed if:
 
 ---
 
+## F6.1 — CSV Import Primary Path + EventCreate Format Adapter (added staff-review 2026-05-16)
+
+### Triggers (GDPR Art. 35 / PDPA §39)
+
+- **New PII storage tier**: Vercel Blob private bucket storing error-rows CSVs with attendee email + name + company + payment status VERBATIM (30-day TTL).
+- **New PII column on existing table**: `event_registrations.attendee_pdpa_consent_acknowledged BOOLEAN NULL` (FR-009 classification at import time — raw consent text NOT stored, PDPA Art. 5(1)(c) data minimisation).
+- **New attendee fingerprint**: SHA-256 first-16-hex of sorted-lowercased-NUL-joined Attending email list, persisted on `csv_import_records.attendee_fingerprint` to support the FR-019b event-mismatch safety net.
+- **New audit event types** (3): `csv_import_error_csv_downloaded`, `csv_import_cross_tenant_probe`, `csv_import_event_mismatch_overridden`.
+- **Repositioned processing path**: CSV upload is now the primary daily-driver (replacing the F6 Zapier-webhook assumption broken by EventCreate's Enterprise-only API).
+
+### Description of processing
+
+Chamber admin uploads EventCreate "Guestlist" CSV export (~30 columns, 50-100 attendees per event) at `/admin/events/import`. System parses, matches against existing members, populates `event_registrations`, credits/decrements quotas, and emits per-row + per-import audit events. Failed rows are aggregated into a private-blob error CSV with 30-day TTL + 15-min signed-URL access (audit-logged on every download).
+
+### Lawful basis per processing operation
+
+| Operation | Lawful basis (PDPA §24) | Lawful basis (GDPR Art. 6) | Retention |
+|---|---|---|---|
+| Attendee row insert (matched member) | Legitimate interest (chamber operational need) | Art. 6(1)(b) contract performance for paid attendees / Art. 6(1)(f) legitimate interest for free attendees | 5y (audit), per-row indefinite (member roster) |
+| Attendee row insert (non-member) | Legitimate interest | Art. 6(1)(f) | 2y from event date (PDPA minimisation) |
+| `attendee_pdpa_consent_acknowledged` classification | Legitimate interest (chamber needs to know consent state for F7 broadcast filter) | Art. 6(1)(f) | Indefinite (boolean only, no raw text) |
+| `attendee_fingerprint` storage | Legitimate interest (FR-019b safety net prevents admin error of importing to wrong event) | Art. 6(1)(f) | 30 days (sweep query window) |
+| Error-CSV blob storage | Legitimate interest (operational recovery tool — admin fixes typos + re-uploads) | Art. 6(1)(f) | 30d hard TTL via daily sweep cron |
+| `csv_import_records` row | Legitimate interest (operational visibility + forensic trail) | Art. 6(1)(f) | 5y matching F6 audit policy |
+
+### Risk assessment
+
+| Risk | Likelihood × Severity | Mitigation | Residual |
+|---|---|---|---|
+| Vercel Blob `access:'public'` exposes error-CSV publicly for up to 30 days (non-Enterprise tier limitation) | M × M | Random-suffix capability-token URL; 15-min server-side signed-URL TTL enforced at route handler; access audit on every download; admins warned in runbook § 3.0 not to upload strictly-confidential lists | M (accepted — see § Stakeholder consultation) |
+| Cross-tenant probe via `/admin/events/import/[recordId]/error-csv` | L × H | `findById` tenant-scoped + RLS+FORCE on `csv_import_records`; `findByIdAcrossTenants` returns only `{tenantId}`; cross-tenant outcome → identical 404 ProblemDetails + HIGH-severity `csv_import_cross_tenant_probe` audit emit | L |
+| CSV formula injection (error CSV served VERBATIM per FR-021) | L × M | Admin-only tool; runbook § 3a documents the risk + safe-open instructions; spec deliberately preserves verbatim row content for admin repair workflow | L |
+| Forensic trail loss on cross-tenant probe audit emit failure | L × H | `eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}` counter wired in route handler (staff-review H-2 2026-05-16); P1 page alert on `rate > 0` | L |
+| Attendee email leak in pino logs | L × H | `hashAttendeeEmail()` SHA-256 hex prefix in all log paths; raw email never in audit payloads; `attendee_email`/`attendeeEmail` in `logger.ts` REDACT_PATHS depth-2 | L |
+| Right-to-erasure non-cascading to error-CSV blobs | M × M | `docs/runbooks/f6-manual-erasure.md` § F6.1 (staff-review H-5 2026-05-16) covers blob deletion alongside row deletion | L |
+
+### Outstanding items before flag-flip (staff-review B-5 2026-05-16)
+
+- [ ] DPO sign-off on this DPIA section.
+- [ ] Update `docs/compliance/processing-records.md § F6.processing-activities` with the 4 new data items (csv_import_records table, Vercel Blob error-CSV storage, attendee_fingerprint, attendee_pdpa_consent_acknowledged).
+- [ ] Update `docs/compliance/eventcreate-privacy-notice-template.md` (EN/TH/SV) to mention CSV-direct upload path + 30-day Blob retention.
+- [ ] Update `docs/runbooks/f6-manual-erasure.md` with cascading erasure to error-CSV Blobs.
+- [ ] Risk-accept the Vercel Blob `access:'public'` design trade-off (residual M) — DPO sign-off documented here.
+
+### Conclusion
+
+DPIA scope amended for F6.1; mitigations in code are correct (verified by staff-review 2026-05-16). Compliance documentation gaps are the binding pre-flag-flip work. Re-review trigger if/when:
+- Tenant onboards with strict-confidentiality attendee data (hospital, gov't).
+- Multi-tenant deployment changes the cross-tenant exposure surface.
+- Error-CSV TTL is extended beyond 30 days.
+
+---
+
 ## Future feature DPIAs
 
 Feature owners MUST add a DPIA section here BEFORE `/speckit.review`

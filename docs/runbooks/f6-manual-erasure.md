@@ -216,6 +216,94 @@ for non-member rows. Member-linked rows persist 5y per FR-032. After 5y,
 the entire row should be archived to cold storage or hard-deleted via a
 separate retention runbook (TBD Phase 10+).
 
+## F6.1 — CSV-import error-blob cascade (added staff-review H-5 2026-05-16)
+
+If the requester's email/name appears in a row that failed validation during a CSV import, the failed row may persist in a Vercel Blob error CSV for up to 30 days after the import (FR-021). The 30-day TTL sweep cron deletes blobs automatically, but a DSR may require deletion BEFORE the natural TTL.
+
+### Locate matching blobs (Day 1–3 extension)
+
+In addition to the F6 query in § 2, run:
+
+```sql
+SELECT
+  cir.record_id,
+  cir.tenant_id,
+  cir.event_id,
+  cir.uploaded_at,
+  cir.error_csv_blob_url,
+  cir.error_csv_expires_at
+FROM csv_import_records cir
+WHERE cir.tenant_id = '<TENANT_SLUG>'
+  AND cir.error_csv_blob_url IS NOT NULL
+  AND cir.error_csv_expires_at > NOW()
+  AND cir.uploaded_at > '<DSR_DATE> - INTERVAL ''30 days'''
+  AND cir.event_id IN (<EVENT_IDS_FROM_F6_QUERY>)
+ORDER BY cir.uploaded_at DESC;
+```
+
+The result lists every error-CSV blob that COULD contain the requester's row. Without parsing the blob bytes (which would itself defeat minimisation), erase ALL matching blobs to comply — the alternative (download + parse + redact + re-upload) is operationally infeasible at chamber scale and violates the storage-limitation principle.
+
+### Erase the blob + clear DB columns (Day 7–14 extension)
+
+For each row above:
+
+```bash
+# 1) Delete the Vercel Blob via the CLI (or API)
+vercel blob del "<error_csv_blob_url>" --token "$BLOB_READ_WRITE_TOKEN"
+```
+
+```sql
+-- 2) Clear the DB pointer + emit audit event
+UPDATE csv_import_records
+   SET error_csv_blob_url = NULL,
+       error_csv_expires_at = NULL,
+       updated_at = NOW()
+ WHERE tenant_id = '<TENANT_SLUG>'
+   AND record_id = '<RECORD_ID>';
+
+-- 3) Emit erasure audit (manual until F6.1.1 ships an admin UI)
+INSERT INTO audit_log (
+  tenant_id, actor_user_id, actor_type, event_type, severity,
+  occurred_at, summary, payload, retention_years
+)
+VALUES (
+  '<TENANT_SLUG>',
+  '<DPO_USER_ID>',
+  'admin',
+  'csv_import_error_csv_manually_erased',
+  'info',
+  NOW(),
+  'Manual erasure of error CSV blob in response to DSR <TICKET_ID>',
+  jsonb_build_object(
+    'recordId', '<RECORD_ID>',
+    'eventId', '<EVENT_ID>',
+    'dsrTicketId', '<TICKET_ID>',
+    'reason', 'gdpr_art_17'
+  ),
+  5
+);
+```
+
+### Post-erasure verification
+
+```sql
+SELECT COUNT(*) AS remaining_blobs
+FROM csv_import_records
+WHERE tenant_id = '<TENANT_SLUG>'
+  AND error_csv_blob_url IS NOT NULL
+  AND uploaded_at > '<DSR_DATE> - INTERVAL ''30 days'''
+  AND event_id IN (<EVENT_IDS>);
+-- MUST return 0
+```
+
+### Notes
+
+- The audit event `csv_import_error_csv_manually_erased` is NOT in the canonical F6.1 audit-event taxonomy (it is a DSR-time manual emit). Track in DPO log alongside the F6 erasure events.
+- The natural 30-day TTL sweep cron will deliver the same outcome if the DSR can wait — only act manually when the 30-day GDPR response deadline forces it.
+- The `attendee_fingerprint` on `csv_import_records` is a SHA-256 first-16-hex truncation — non-reversible to plaintext email. It is NOT subject to erasure (Art. 11 GDPR — pseudonymised, no link to identifying data without disproportionate effort).
+
+---
+
 ## Deprecation
 
 This runbook is **superseded** when Phase 10 T110 ships the admin erasure

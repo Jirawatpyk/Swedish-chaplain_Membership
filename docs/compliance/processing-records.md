@@ -529,4 +529,51 @@ Same as F7.
 | Date | Change | Author |
 |---|---|---|
 | 2026-05-12 | Initial F6 entry created (Issue H-PDPA-3 from full-scope review) | F6 fixit pass |
+| 2026-05-16 | F6.1 amendment: add CSV import primary path + Vercel Blob error-CSV tier (staff-review B-5/H-7) | staff-review pass |
+
+---
+
+## F6.1 — CSV Import Primary Path + EventCreate Format Adapter (amendment to F6)
+
+**Status**: Staff-review T061 staged 2026-05-16. Engineering complete; awaiting DPO sign-off + flag-flip.
+**Scope**: Amends the F6 record above with the 4 new data items + 1 new processor activity introduced by `013-csv-import-eventcreate-format`.
+
+### New processing activities
+
+| Activity | Lawful basis | Retention | Recipients | TOMs |
+|---|---|---|---|---|
+| CSV upload + parse + per-row insert into `event_registrations` | PDPA §24 legitimate interest / GDPR Art. 6(1)(b) for paid attendees / Art. 6(1)(f) for free attendees | 2y (non-member rows) / indefinite (member roster); audit 5y | Vercel (hosting), Neon (DB) | Admin-only RBAC, RLS+FORCE on csv_import_records, per-(tenant,event) advisory lock, 5/hr rate-limit |
+| Attendee-fingerprint storage (FR-019a) | PDPA §24 legitimate interest / GDPR Art. 6(1)(f) | 30 days (sweep window) | Vercel, Neon | SHA-256 first-16-hex truncation — not reversible to plaintext email |
+| PDPA consent classification (FR-009) | PDPA §24 legitimate interest / GDPR Art. 6(1)(f) | Indefinite (boolean only, no raw text per Art. 5(1)(c) minimisation) | Vercel, Neon | Classification at import time; raw text NEVER persisted |
+| Error-CSV blob storage | PDPA §24 legitimate interest / GDPR Art. 6(1)(f) | 30 days hard TTL via daily sweep cron | Vercel Blob (sin1) | `addRandomSuffix:true` capability-token URL; access audit on every download via `csv_import_error_csv_downloaded` event |
+
+### New data items stored
+
+| Storage | Data category | Subject category | New as of F6.1? |
+|---|---|---|---|
+| `csv_import_records` (NEW table, migration 0139) | Operational metadata + counts + outcome + blob URL + fingerprint | Admin (actor only) — no attendee PII; PII lives in linked event_registrations | YES |
+| `event_registrations.attendee_pdpa_consent_acknowledged BOOLEAN NULL` (migration 0140) | Classification | Attendee | YES (column) |
+| `csv_import_records.attendee_fingerprint TEXT` (16-hex) | Pseudonymised identifier | Attendee (aggregate) | YES |
+| Vercel Blob `tenants/{slug}/csv-import-errors/{recordId}.csv-{randomSuffix}` | Failed CSV rows VERBATIM | Attendee | YES (storage tier) |
+
+### Vercel Blob processor amendment
+
+Existing F6 record already lists Vercel as hosting + OTel processor. F6.1 expands the **Vercel Inc. processor** scope to include Vercel Blob storage of error-CSV bytes (30-day TTL). No new DPA required — covered under the existing F1–F8 Vercel DPA (F4 invoice PDF already uses Vercel Blob).
+
+**Public-blob design caveat**: Vercel Blob non-Enterprise tier uses `access:'public'` (no true private bucket). The error CSV URL acts as a capability token (random suffix) and is enforced server-side at the route handler. See `docs/runbooks/eventcreate-csv-import.md § 3.0` + DPIA F6.1 risk row 1. DPO sign-off documents this accepted residual risk.
+
+### New audit event types
+
+| Event type | Severity | Purpose | Retention |
+|---|---|---|---|
+| `csv_import_error_csv_downloaded` | info | PII access record — every signed-URL access by admin (Art. 30 GDPR) | 5y |
+| `csv_import_cross_tenant_probe` | critical | Tenant-isolation breach attempt (Constitution Principle I clause 4) | 5y |
+| `csv_import_event_mismatch_overridden` | warn | Forensic record when admin overrides FR-019b safety-net warning | 5y |
+
+### Data subject rights amendments
+
+| Right | F6.1 procedure |
+|---|---|
+| Erasure (Art. 17 / §30) | Cascades to error-CSV Blobs per `docs/runbooks/f6-manual-erasure.md § F6.1` (staff-review H-5). Operator queries `csv_import_records WHERE error_csv_expires_at > NOW()` for the affected event + run-time-range, `del()` the matching Blob URLs, emits `csv_import_error_csv_manually_erased` audit. Also clears DB columns. |
+| Access (Art. 15 / §30) | Existing F6 procedure covers attendee row export. F6.1 csv_import_records contains only operational metadata + counts (no attendee PII outside the linked event_registrations); not exported separately. |
 

@@ -2719,6 +2719,7 @@
             "generic_csv": "Generic"
           },
           "outcome": {
+            "running": "Running…",
             "completed": "Completed",
             "timeout": "Timed out",
             "partial_failure": "Partial",
