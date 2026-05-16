@@ -733,19 +733,6 @@ export const paymentsMetrics = {
   },
 
   /**
-   * F5R1-E7 — `webhook.mark_processed_tail_failure_total{tenant, eventType}`
-   * — fires when the dispatcher's tail `markProcessed` write fails
-   * (sub-use-case did NOT set `markedProcessedAtomically=true` AND
-   * the defensive tail tx also threw). Code-bug-canary.
-   */
-  webhookMarkProcessedTailFailure(tenantId: string, eventType: string): void {
-    counter(
-      'payments_webhook_mark_processed_tail_failure_total',
-      'Dispatcher tail markProcessed write failed — processor_events row may stay unprocessed → Stripe retries',
-    ).add(1, { tenant: tenantId, event_type: eventType });
-  },
-
-  /**
    * `webhook.signature_rejected_total` — abuse / misconfiguration canary.
    * NO tenant label (rejected pre-verification, before tenant resolution).
    */

@@ -377,12 +377,15 @@ async function processWebhookEventBody(
   const { dataObject } = event;
 
   let outcome: ProcessWebhookEventOutcome;
-  // Tracks whether markProcessed was folded into the dispatch tx
-  // atomically (refunded / dispute / default branches). Sub-use-case
-  // branches (succeeded / failed / canceled) run a separate-tx mark
-  // at the tail. See Architect D-03 LOW closeout block below.
-  let markedProcessedAtomically = false;
-
+  // F5R1-S5 — flag + tail canary deleted. Every sub-use-case + every
+  // inline branch is contracted to fold markProcessed into its own
+  // withTx (confirm-payment.ts:582, fail-payment.ts:233, handle-
+  // cancel-event.ts:159, process-charge-refunded.ts:233, refunded /
+  // dispute / default branches below). The previous defensive flag +
+  // canary tail block was documented "unreachable through input
+  // manipulation alone" and v8-ignored — it only fired on a code-bug
+  // regression that the sweep-stale-pending cron would have caught
+  // independently. ~80 lines removed.
   switch (event.type) {
     case 'payment_intent.succeeded': {
       const result = await confirmPayment(
@@ -477,22 +480,6 @@ async function processWebhookEventBody(
       // typed against the outcome union so adding a new kind in
       // ConfirmPaymentOutcome forces a build error here if the dev
       // forgets to whitelist it (vs runtime canary log only).
-      const knownAtomicConfirmKinds = new Set<ConfirmPaymentOutcome['kind']>([
-        'processed',
-        'auto_refunded_stale_invoice',
-        'already_succeeded',
-        'unknown_intent',
-        // invoice_not_found short-circuit folds markProcessed into the
-        // same withTx as the row lock.
-        'invoice_not_found',
-        // F5R1-E9 — give-up path calls markProcessedIfPresent in a
-        // best-effort try/catch (Phase B); whitelist the kind so the
-        // dispatcher does not double-write the tail tx.
-        'auto_refund_given_up',
-      ]);
-      markedProcessedAtomically = knownAtomicConfirmKinds.has(
-        result.value.kind,
-      );
       break;
     }
 
@@ -531,14 +518,6 @@ async function processWebhookEventBody(
         dispatched: envelope.type,
         ...(failInvoiceId !== undefined && { invoiceId: failInvoiceId }),
       };
-      // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
-      // typed against FailPaymentOutcome.
-      const knownAtomicFailKinds = new Set<FailPaymentOutcome['kind']>([
-        'processed',
-        'unknown_intent',
-        'already_terminal',
-      ]);
-      markedProcessedAtomically = knownAtomicFailKinds.has(result.value.kind);
       break;
     }
 
@@ -576,14 +555,6 @@ async function processWebhookEventBody(
         dispatched: envelope.type,
         ...(cancelInvoiceId !== undefined && { invoiceId: cancelInvoiceId }),
       };
-      // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
-      // typed against HandleCancelEventOutcome.
-      const knownAtomicCancelKinds = new Set<HandleCancelEventOutcome['kind']>([
-        'processed',
-        'unknown_intent',
-        'already_canceled',
-      ]);
-      markedProcessedAtomically = knownAtomicCancelKinds.has(result.value.kind);
       break;
     }
 
@@ -638,7 +609,6 @@ async function processWebhookEventBody(
           invoiceId: refundResult.value.invoiceId,
         }),
       };
-      markedProcessedAtomically = true;
       break;
     }
 
@@ -679,7 +649,6 @@ async function processWebhookEventBody(
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
-      markedProcessedAtomically = true;
       break;
     }
 
@@ -712,66 +681,8 @@ async function processWebhookEventBody(
         });
       }
       outcome = { kind: 'acknowledged_only' };
-      markedProcessedAtomically = true;
     }
   }
-
-  // Audit 2026-04-26 round-2 #5b: split-tx tail ELIMINATED. Every
-  // sub-use-case branch (succeeded / failed / canceled, including their
-  // unknown_intent + already_* + auto_refunded_stale_invoice early-
-  // return paths) now folds markProcessed into its own withTx + the
-  // refunded / dispute / default branches mark inline. The flag is
-  // kept for now as a documentation marker + safety guard: if a future
-  // branch forgets to mark, we still log + try the tail commit rather
-  // than silently leave a stuck row. Production should NEVER reach the
-  // `if (!markedProcessedAtomically)` body — the warn line is the
-  // canary that flags any regression.
-  //
-  // Coverage: the canary is unreachable through input manipulation alone
-  // because every current outcome.kind is in the corresponding whitelist.
-  // The branch only fires if a future dev adds a new outcome.kind to a
-  // sub-use-case AND forgets to whitelist it — i.e. a code-change
-  // regression, not a runtime input. v8-ignore here is honest: testing
-  // it would require coercing the type system to inject a fake outcome,
-  // and that test would only re-prove the type system's exhaustiveness
-  // (already enforced by the typed `Set<X['kind']>` declarations above).
-  /* v8 ignore start */
-  if (!markedProcessedAtomically) {
-    const log: LoggerPort = deps.logger ?? noopLogger;
-    log.error(
-      'processWebhookEvent.markedProcessedAtomically_invariant_violated',
-      {
-        eventId: event.id,
-        eventType: event.type,
-        tenantId,
-        // If this fires, a new dispatch branch was added without
-        // setting `markedProcessedAtomically = true` AND without
-        // folding markProcessed into the sub-use-case's withTx. Fix
-        // the new branch — do NOT silently rely on this tail.
-      },
-    );
-    try {
-      await deps.paymentsRepo.withTx(async (tx) => {
-        await deps.processorEventsRepo.markProcessed(tx, event.id);
-      });
-    } catch (e) {
-      // F5R1-E7 — H-4 hygiene: use constructor name only, never
-      // `e.message`. The tail-write goes through Postgres; `.message`
-      // on a Postgres failure can carry SQL params / table names /
-      // interpolated values. Plus emit a metric so a sustained tail-
-      // failure pattern (chronic mid-flight crashes, RLS regression)
-      // surfaces to alert rules instead of being buried in pino logs
-      // that roll off in 30 days.
-      paymentsMetrics.webhookMarkProcessedTailFailure(tenantId, event.type);
-      log.warn('processWebhookEvent.markProcessed_tail_failure', {
-        eventId: event.id,
-        eventType: event.type,
-        tenantId,
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
-      });
-    }
-  }
-  /* v8 ignore stop */
 
   return ok(outcome);
 }
