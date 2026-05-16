@@ -2610,7 +2610,8 @@
           "errorRowLabel": "Rad {rowNumber}",
           "noErrorRows": "Alla rader importerades utan fel.",
           "recordIdLabel": "Referens-ID",
-          "historyDegraded": "Importhistoriken kunde inte sparas — raderna ovan är fortfarande säkert införda, men granskningstabellen saknar en rad för denna import. Ange referens-ID:t ovan om du behöver kontakta supporten i efterhand."
+          "historyDegraded": "Importhistoriken kunde inte sparas — raderna ovan är fortfarande säkert införda, men granskningstabellen saknar en rad för denna import. Ange referens-ID:t ovan om du behöver kontakta supporten i efterhand.",
+          "auditDegraded": "Granskningsspåret är ofullständigt — raderna importerades men granskningsraden för denna import sparades inte. Ange referens-ID:t till supporten vid incidenthantering."
         },
         "errors": {
           "networkErrorTitle": "Nätverksfel",

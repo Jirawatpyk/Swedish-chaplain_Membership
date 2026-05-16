@@ -77,6 +77,15 @@ export interface CsvImportResultPayload {
    * absent or false (Phase 7 imports OR imports with no failed rows).
    */
   readonly errorCsvAvailable?: boolean;
+  /**
+   * R2-I-1 (Round 2 — silent-failure-hunter): `false` when the
+   * per-import `csv_import_completed` audit row failed to emit. DB
+   * side effects (rows + history) are committed but the audit trail
+   * is incomplete for THIS import — surface a "Audit trail degraded"
+   * chip so admins can quote the recordId to support during incident
+   * response. Optional/undefined => treat as `true` (back-compat).
+   */
+  readonly auditCompletionEmitted?: boolean;
 }
 
 interface CsvImportResultProps {
@@ -184,6 +193,25 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
                 />
                 <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
                   {t('historyDegraded')}
+                </p>
+              </div>
+            ) : null}
+            {/* R2-I-1 (Round 2): audit-completion degraded chip — when */}
+            {/* false, the per-import csv_import_completed audit row */}
+            {/* failed to emit. Rows + history may still be safe; the */}
+            {/* gap is purely on the audit trail. */}
+            {result.auditCompletionEmitted === false ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+                role="status"
+                data-testid="result-audit-degraded"
+              >
+                <TriangleAlert
+                  aria-hidden="true"
+                  className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+                />
+                <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
+                  {t('auditDegraded')}
                 </p>
               </div>
             ) : null}

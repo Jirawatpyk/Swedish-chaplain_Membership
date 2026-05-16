@@ -392,8 +392,8 @@ type RowOutcome =
        */
       readonly kind: 'state_changed';
       readonly rowNumber: number;
-      readonly previousPaymentStatus: string;
-      readonly newPaymentStatus: string;
+      readonly previousPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
+      readonly newPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
     }
   | {
       readonly kind: 'inserted';
@@ -564,9 +564,12 @@ async function maybeApplyStateChange(
     });
     if (!auditResult.ok) {
       // State-change audit failure: roll back the savepoint by
-      // throwing — the FR-018 contract requires the UPDATE be
-      // forensically traceable. The outer catch converts to
-      // `kind:'row_failed'` so admin sees the failure clearly.
+      // throwing — PDPA Art. 30 / GDPR Art. 30 processing-records
+      // require the payment_status UPDATE be forensically traceable
+      // (see `audit-port.ts § csv_import_row_state_changed`). The
+      // outer catch converts to `kind:'row_failed'` so admin sees
+      // the failure clearly. R2-CR-2 closure: catch detects this
+      // TxStageError and re-throws so the savepoint actually rolls back.
       throw new TxStageError(
         'audit_emit',
         `csv_import_row_state_changed audit emit failed: ${auditResult.error.kind}`,
@@ -1551,7 +1554,10 @@ export async function importCsv(
           },
           '[F6.1] error-CSV blob upload FAILED — US5 download unavailable for this import; admin must re-run to regenerate',
         );
-        eventcreateMetrics.csvErrorCsvUploadFailed(input.tenantId);
+        eventcreateMetrics.csvErrorCsvUploadFailed(
+          input.tenantId,
+          'result_err',
+        );
       }
     } catch (e) {
       logger.error(
@@ -1563,7 +1569,7 @@ export async function importCsv(
         },
         '[F6.1] error-CSV blob put THREW — US5 download unavailable; investigate Vercel Blob outage',
       );
-      eventcreateMetrics.csvErrorCsvUploadFailed(input.tenantId);
+      eventcreateMetrics.csvErrorCsvUploadFailed(input.tenantId, 'threw');
     }
   }
 

@@ -167,6 +167,16 @@ describe('generateErrorCsvSignedUrl', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('signing_failure');
     expect(deps.onDownloadSuccess).not.toHaveBeenCalled();
+    // R2-I-9 (R2 — pr-test-analyzer): also assert the structured
+    // `f6_error_csv_audit_emit_blocking_failure` pino log fired —
+    // a regression to a silent return would otherwise leave SREs
+    // blind to the strict-audit gate firing.
+    expect(deps.logger?.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'f6_error_csv_audit_emit_blocking_failure',
+      }),
+      expect.any(String),
+    );
   });
 
   it('not_found when errorCsvBlobUrl is null (rowsFailed=0 import)', async () => {
@@ -271,6 +281,16 @@ describe('generateErrorCsvSignedUrl', () => {
       expect.objectContaining({ event: 'f6_error_csv_findbyid_db_error' }),
       expect.any(String),
     );
+    // R2-I-10 (R2 — pr-test-analyzer): db_error branch MUST emit probe
+    // at `critical` severity, same as the not_found-path test. A
+    // regression flipping severity ONLY on the db_error path would
+    // otherwise slip through CI.
+    const probeCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[0].eventType === 'csv_import_cross_tenant_probe',
+    );
+    expect(probeCall?.[0].payload.severity).toBe('critical');
+    expect(probeCall?.[0].payload.probedId).toBe(recordId);
+    expect(probeCall?.[0].payload.probeSurface).toBe('error_csv_record_id');
   });
 
   it('cross-tenant probe: emits critical-severity audit, returns 404', async () => {

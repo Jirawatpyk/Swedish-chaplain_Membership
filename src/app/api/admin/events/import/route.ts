@@ -412,6 +412,9 @@ export async function POST(request: NextRequest): Promise<Response> {
           sourceFormat: outcome.sourceFormat,
           errorCsvAvailable: outcome.errorCsvAvailable,
           historyPersisted: outcome.historyPersisted,
+          // R2-I-1: surface audit-completion status so UI can degrade
+          // the audit-trail chip when the per-import audit row was lost.
+          auditCompletionEmitted: outcome.auditCompletionEmitted,
           summary: outcome.summary,
         },
         { status: 200 },
@@ -450,7 +453,10 @@ export async function POST(request: NextRequest): Promise<Response> {
           extras: {
             recordId: outcome.recordId,
             sourceFormat: outcome.sourceFormat,
+            errorCsvAvailable: outcome.errorCsvAvailable,
             historyPersisted: outcome.historyPersisted,
+            // R2-I-1: same audit-trail signal on the timeout path.
+            auditCompletionEmitted: outcome.auditCompletionEmitted,
             summary: outcome.summary,
           },
         },

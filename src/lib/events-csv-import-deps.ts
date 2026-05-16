@@ -292,15 +292,13 @@ export async function runGenerateErrorCsvSignedUrl(
   return runInTenant(asTenantContext(input.tenantSlug), async (tx) => {
     const repo = makeDrizzleCsvImportRecordsRepository(tx);
     const adminRepo = makeDrizzleCsvImportRecordsAdminRepository();
-    // The audit port writes inside the current tx scope (`emit`).
-    // Use the standalone audit port for cross-tenant probe events
-    // (those must commit independently of the calling tx).
     const audit = makePinoAuditPort(tx);
     const standalone = makeStandaloneAuditDeps();
-    // Compose a hybrid F6AuditPort that uses `emit` for success path
-    // (in-tx commit) AND routes cross-tenant probe + downloaded audits
-    // through standalone-tx so they survive even when the calling tx
-    // is later aborted.
+    // R2-I-14 (R2 — comment-analyzer): override `emit` so that BOTH the
+    // strict-audit `csv_import_error_csv_downloaded` write AND the
+    // cross-tenant probe emit commit in their own tx — survives a
+    // parent-tx rollback. `emitRolledBack` / `emitStandalone` retain
+    // their original semantics via the spread.
     const hybrid: F6AuditPort = {
       ...audit,
       emit: async (entry) => {

@@ -505,6 +505,24 @@ export const invoicingMetrics = {
       'Tenant logo Blob fetch failures — render falls through to no-logo',
     ).add(1);
   },
+
+  /**
+   * F5R3 SB-3 (2026-05-16) — F4 audit emit failures on best-effort
+   * (null-tx) paths. Tx-bound emits still throw to roll back the
+   * caller; these are read-only / standalone audits where the work is
+   * already done (CSV built, PDF rendered) and losing the response
+   * would be worse than losing the audit row. Alert: any non-zero
+   * rate per `event_type` — likely audit_log table outage or
+   * retention_years constraint drift.
+   */
+  auditEmitFailed(eventType: string, tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_audit_emit_failed_total',
+        'F4 best-effort (null-tx) audit emit failures — log-and-swallow',
+      ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    });
+  },
 } as const;
 
 // --- F5 payments metrics -----------------------------------------------------
@@ -805,6 +823,49 @@ export const paymentsMetrics = {
       'payments_confirm_payment_give_up_phase_b_mark_processed_failed_total',
       'Auto-refund give-up Phase B markProcessed throw — processor_events.processed_at left NULL',
     ).add(1);
+  },
+
+  /**
+   * F5R3 CR-5 (2026-05-16) — fires whenever a webhook completes with
+   * the `auto_refund_given_up` outcome (R2-TY-A added the outcome
+   * variant; the metric was missing). Pivots on chronic Stripe outage
+   * during stale-invoice recovery: >0 in 24h = page ops to investigate
+   * the underlying issue. Distinct from the Phase B FAILURE counter
+   * above, which only fires when post-give-up markProcessed throws.
+   */
+  autoRefundGivenUpCount(tenantId: string): void {
+    counter(
+      'payments_auto_refund_given_up_total',
+      'Stale-invoice recovery gave up after 48h — Stripe-side outage class',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * F5R3 CR-6 (2026-05-16) — fires when the stale-refund Phase B
+   * markProcessed catch swallows. Pre-fix only `logger?.warn` fired
+   * (optional — undefined logger in tests = silent). Sibling to
+   * `confirmPaymentGiveUpPhaseBMarkProcessedFailed` for the
+   * stale-refund SUCCESS variant of the same Phase B race.
+   */
+  confirmPaymentStaleRefundPhaseBMarkFailed(): void {
+    counter(
+      'payments_confirm_payment_stale_refund_phase_b_mark_failed_total',
+      'Stale-refund Phase B markProcessed throw — processor_events.processed_at left NULL',
+    ).add(1);
+  },
+
+  /**
+   * F5R3 CR-7 (2026-05-16) — fires inside `issueRefund`'s
+   * finaliseFailedRefund double-fault catch. Money already moved
+   * (Stripe + F4 CN succeeded), local row stuck pending, sweep cron
+   * is the recovery — alert on >0 over 1h so ops can intervene
+   * before the next sweep (12h cadence).
+   */
+  refundFinaliseDoubleFault(tenantId: string): void {
+    counter(
+      'payments_refund_finalise_double_fault_total',
+      'issueRefund Phase B + finaliseFailedRefund both threw — money moved, local row stuck pending',
+    ).add(1, { tenant: tenantId });
   },
 
   /**
@@ -3109,13 +3170,21 @@ export const eventcreateMetrics = {
    * fails post-import-commit. `errorCsvAvailable` stays false; admin
    * sees a greyed-out download button. SRE alerts on `rate > 0`
    * indicating Blob outage or quota exhaustion.
+   *
+   * R2-I-4 (R2 — silent-failure-hunter): `reason` discriminator added
+   * so dashboards can break down by failure mode — Result.err
+   * (storage_error / blob_not_found) is operationally distinct from a
+   * thrown `await put(...)` network timeout.
    */
-  csvErrorCsvUploadFailed(tenantId: string): void {
+  csvErrorCsvUploadFailed(
+    tenantId: string,
+    reason: 'result_err' | 'threw',
+  ): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_error_csv_upload_failed_total',
         'F6.1 error-CSV blob put failure counter (download unavailable for this import)',
-      ).add(1, { tenant: tenantId });
+      ).add(1, { tenant: tenantId, reason });
     });
   },
 

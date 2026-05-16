@@ -303,6 +303,30 @@ describe('NEW-J — C-1 + C-2 audit-emit failure observability', () => {
       eventcreateMetrics.csvImportAuditEmitFailed as ReturnType<typeof vi.fn>
     ).mock.calls;
     expect(counterCalls).toHaveLength(0);
+    // R2-I-6 (R2 — pr-test-analyzer): `auditCompletionEmitted` is the
+    // I-10 silent-failure field. On the happy path it MUST be `true`.
+    if (outcome.kind === 'completed') {
+      expect(outcome.auditCompletionEmitted).toBe(true);
+    }
+  });
+
+  it('R2-I-6: auditCompletionEmitted === false when csv_import_completed emit fails', async () => {
+    vi.clearAllMocks();
+    const deps = makeFakeDeps({ emitFails: true });
+    const outcome = await importCsv(
+      {
+        tenantId: asTenantId('test-chamber-audit-degraded'),
+        actorUserId: asUserId('00000000-0000-0000-0000-000000000118'),
+        bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
+      },
+      deps,
+    );
+    // The route still returns 200 (DB-committed invariant)
+    expect(outcome.kind).toBe('completed');
+    if (outcome.kind !== 'completed') return;
+    // But the audit-trail field exposes the gap to the UI.
+    expect(outcome.auditCompletionEmitted).toBe(false);
   });
 
   it('R2 I2 (Round 2 — pr-test-analyzer): csvImportAdapterModeDetected fires EXACTLY ONCE per import with format label', async () => {

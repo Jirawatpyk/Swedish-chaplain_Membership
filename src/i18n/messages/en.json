@@ -2610,7 +2610,8 @@
           "errorRowLabel": "Row {rowNumber}",
           "noErrorRows": "All rows imported cleanly — no errors to review.",
           "recordIdLabel": "Reference ID",
-          "historyDegraded": "Import history could not be saved — the rows above are still committed safely, but the audit row is missing. Please quote the reference ID to support if you need to look this up later."
+          "historyDegraded": "Import history could not be saved — the rows above are still committed safely, but the audit row is missing. Please quote the reference ID to support if you need to look this up later.",
+          "auditDegraded": "Audit trail degraded — rows were committed but the per-import audit row failed to save. Quote the reference ID to support during incident response."
         },
         "errors": {
           "networkErrorTitle": "Network error",

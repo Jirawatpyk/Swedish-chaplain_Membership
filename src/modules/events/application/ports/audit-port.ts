@@ -1,13 +1,13 @@
 /**
  * `F6AuditPort` Application port (F6).
  *
- * Closed TypeScript union over the 37 F6 audit event types (canonical
- * taxonomy in data-model.md § 4 + contracts/audit-port.md; enum extended
- * by migrations 0132 + 0137; migration 0138 added a
- * `wizard_privacy_notice_acknowledged` Postgres value that was
- * subsequently removed from the TS surface during round-10 staff
- * review — the DB slot is harmlessly retained, no application code
- * can write to it). The discriminated `AuditPayloads` mapped type
+ * Closed TypeScript union over the **43 F6 audit event types**
+ * (canonical taxonomy in data-model.md § 4 + contracts/audit-port.md;
+ * enum extended by migrations 0132 + 0137 + 0141 + 0144 + 0150;
+ * migration 0138 added a `wizard_privacy_notice_acknowledged` Postgres
+ * value that was subsequently removed from the TS surface during
+ * round-10 staff review — the DB slot is harmlessly retained, no
+ * application code can write to it). The discriminated `AuditPayloads` mapped type
  * gives compile-time enforcement that callers pass the correct
  * payload shape for the event they emit — mismatch is a type error.
  *
@@ -68,9 +68,10 @@ export type FailureStage =
   | 'audit_emit'
   | 'unknown';
 
-// --- Canonical event-type list (37 events; migrations 0132 + 0137; 0138 ---
-// added `wizard_privacy_notice_acknowledged` enum value retired from TS
-// during round-10 staff review, retained harmlessly in Postgres)
+// --- Canonical event-type list (43 events; migrations 0132 + 0137 + ---
+//     0141 + 0144 + 0150; 0138 added `wizard_privacy_notice_acknowledged`
+//     enum value retired from TS during round-10 staff review,
+//     retained harmlessly in Postgres)
 
 export const F6_AUDIT_EVENT_TYPES = [
   // Webhook ingest (8)
@@ -94,7 +95,7 @@ export const F6_AUDIT_EVENT_TYPES = [
   'quota_credit_back_refund',
   'quota_credit_back_archive',
   'quota_over_quota_warning',
-  // Admin actions (10)
+  // Admin actions (11)
   'registration_relinked',
   'event_archived',
   'event_partner_benefit_toggled',
@@ -580,11 +581,15 @@ export interface AuditPayloads {
     readonly errorName: string;
   };
 
-  // --- F6.1 (Feature 013) CSV-import audit events (3) -------------------
+  // --- F6.1 (Feature 013) CSV-import audit events (6) -------------------
   //
   // Source-of-truth contract: specs/013-csv-import-eventcreate-format/
-  // contracts/audit-port.md. Postgres enum extended in migration 0141.
-  // All 3 use the F6 default 5-year retention (no tax-document overlap).
+  // contracts/audit-port.md. Postgres enum extended in migrations:
+  //   0141 — csv_import_error_csv_downloaded + csv_import_cross_tenant_probe
+  //          + csv_import_event_mismatch_overridden (3 originals)
+  //   0144 — event_created (admin-manual seed via inline-create modal)
+  //   0150 — csv_import_row_state_changed + csv_import_row_cancelled_no_prior
+  // All 6 use the F6 default 5-year retention (no tax-document overlap).
 
   /**
    * Emitted on every successful signed-URL generation in
@@ -708,8 +713,15 @@ export interface AuditPayloads {
     readonly actorUserId: UserId;
     readonly rowNumber: number;
     readonly registrationId: RegistrationId;
-    readonly previousPaymentStatus: string;
-    readonly newPaymentStatus: string;
+    /**
+     * R2-I-16 (R2 — type-design): typed `PaymentStatus` brand instead
+     * of raw `string` so the closed-set guarantee survives audit
+     * consumers (dashboard renderers, GDPR exports). Indirect import
+     * via `import(...)` matches the registrations-repository pattern
+     * (avoids pulling the entire domain layer into the port file).
+     */
+    readonly previousPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
+    readonly newPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
     readonly rowHash: string;
   };
 
