@@ -387,6 +387,21 @@ export {
   type SecretLastFour,
 } from './domain/secret-last-four';
 
+// --- 6d. Phase 10 T120 — F8 EventAttendees bridge -----------------------
+
+export {
+  getEventAttendeesByMember,
+  type EventAttendanceRecord,
+  type ListAttendancesOpts,
+  type EventAttendeesQueryPort,
+  type GetEventAttendeesByMemberDeps,
+} from './application/use-cases/get-event-attendees-by-member';
+
+export {
+  drizzleEventAttendeesQuery,
+  drizzleEventAttendeesAdapter,
+} from './infrastructure/drizzle-event-attendees-by-member';
+
 // --- 7. Infrastructure composition factories (DI surface) -------------------
 
 export {

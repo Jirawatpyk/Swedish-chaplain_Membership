@@ -30,7 +30,6 @@ import { redactStack } from '@/lib/redact-stack';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
-import { asEventId } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ErasePiiDialog } from '@/components/events/erase-pii-dialog';
