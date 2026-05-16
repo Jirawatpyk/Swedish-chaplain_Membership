@@ -145,6 +145,20 @@ export async function processChargeRefunded(
   // charge → same PaymentIntent → same invoice, so reading the first
   // DB-existing refund is sufficient.
   let refundedInvoiceId: string | undefined;
+  // F5R3 H-3 (2026-05-16) — schema-drift detection: Stripe's
+  // `charge.refunded` event ALWAYS carries at least one refund per the
+  // API contract. Receiving zero refundIds means the webhook-verifier
+  // projection drifted (Stripe API changed, fixture malformed, etc.).
+  // Pre-fix the for-loop just silently no-op'd → markProcessed → 200
+  // ack → no forensic signal. Now we bump a counter so SRE alerts on
+  // sustained empty-payload rate. Still mark processed (Stripe stops
+  // retrying) but the schema drift is no longer invisible.
+  if (input.refundIds.length === 0) {
+    paymentsMetrics.webhookDuplicateIgnored(
+      input.tenantId,
+      'charge.refunded.empty_refund_ids',
+    );
+  }
   try {
     await deps.paymentsRepo.withTx(async (tx) => {
       for (const refundId of input.refundIds) {
@@ -155,6 +169,26 @@ export async function processChargeRefunded(
         );
         if (existing && refundedInvoiceId === undefined) {
           refundedInvoiceId = existing.invoiceId;
+        }
+        // F5R3 H-3 (2026-05-16) — already-finalised idempotent path:
+        // Stripe re-delivered a `charge.refunded` for a refund that
+        // our DB has already marked `succeeded` or `failed` (e.g.
+        // issueRefund's Phase B happy-path landed BEFORE this
+        // webhook arrived, or Stripe re-sent due to its own retry
+        // logic). Pre-fix this was a silent no-op — chronic
+        // duplicate deliveries from Stripe clock-drift or webhook
+        // misconfiguration were invisible. Bump the duplicate
+        // counter with a granular event_type so SRE can alert on
+        // sustained high duplicate rate (>0.1% of `charge.refunded`
+        // throughput = re-delivery anomaly worth paging).
+        if (
+          existing &&
+          (existing.status === 'succeeded' || existing.status === 'failed')
+        ) {
+          paymentsMetrics.webhookDuplicateIgnored(
+            input.tenantId,
+            'charge.refunded.already_finalised',
+          );
         }
         // H-1 (review 2026-04-27): if `issueRefund`'s Phase B
         // double-faulted, the in-app row stays `pending` and the

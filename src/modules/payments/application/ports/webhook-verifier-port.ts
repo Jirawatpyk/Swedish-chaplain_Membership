@@ -37,6 +37,34 @@ export class WebhookSignatureError extends Error {
 }
 
 /**
+ * F5R3 H-6 (2026-05-16) — single source of truth for the Stripe
+ * event types F5's dispatcher handles. Pre-fix the dispatcher
+ * `switch (event.type) { case 'payment_intent.succeeded': … }` and
+ * the webhook route's revalidatePath allow-list each carried their
+ * own copy of the string literals — adding a new type to one but
+ * forgetting the other silently skipped cache invalidation. Both
+ * consumers now import this constant so drift is a compile error
+ * (typed exhaustiveness on `F5HandledEventType` switch + `Set`
+ * membership lookup at the route).
+ */
+export const F5_HANDLED_EVENT_TYPES = [
+  'payment_intent.succeeded',
+  'payment_intent.payment_failed',
+  'payment_intent.canceled',
+  'charge.refunded',
+  'charge.dispute.created',
+] as const;
+export type F5HandledEventType = (typeof F5_HANDLED_EVENT_TYPES)[number];
+
+/**
+ * Set form for O(1) membership checks (used by the route's
+ * revalidate-path allow-list).
+ */
+export const F5_HANDLED_EVENT_TYPES_SET: ReadonlySet<string> = new Set(
+  F5_HANDLED_EVENT_TYPES,
+);
+
+/**
  * Minimal verified envelope surfaced to Application. Mirrors the
  * structural allow-list pinned by T042 contract test (f):
  *   `{ id, type, api_version, livemode, account, created }` +

@@ -114,7 +114,20 @@ function summariseF4Error<E extends {
   // customer's payment is `succeeded` but F4 invoice may still be
   // `issued`. Without the counter this silent data divergence was only
   // visible by manually correlating audit-summary text.
-  if (detail.startsWith('unknown_f4_error_shape')) {
+  //
+  // F5R3 H-2 (2026-05-16) — ALSO bump when `code` itself fell through
+  // to the generic `'f4_error'` literal (both `e.code` and `e.kind`
+  // were absent / wrong shape). Pre-fix only the `detail`-fallback path
+  // bumped the counter — a partial F4 error shape with `detail` present
+  // but `code`+`kind` missing silently returned `code: 'f4_error'`. The
+  // dispatcher's PERMANENT_SUB_USE_CASE_DETAILS set does NOT include
+  // `'f4_error'`, so it classified as transient → Stripe 72h retry
+  // storm on a permanently-malformed error shape. The two-path emit
+  // closes both halves of the silent-misclassification window.
+  if (
+    detail.startsWith('unknown_f4_error_shape') ||
+    code === 'f4_error'
+  ) {
     paymentsMetrics.f4BridgeUnknownErrorShape(bridgeOp);
   }
   return { code, detail };

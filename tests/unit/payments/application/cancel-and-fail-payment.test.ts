@@ -431,6 +431,103 @@ describe('cancelPayment (T059)', () => {
         c[1].summary.startsWith('Phase B narrow race:'),
     );
     expect(narrowRaceCall, 'expected narrow-race audit emit').toBeDefined();
+    // F5R3 H-8 (2026-05-16) — pin retention=5y on narrow-race emit so
+    // a future retentionFor drift doesn't silently downgrade the
+    // forensic class.
+    expect(narrowRaceCall![1].retentionYears).toBe(5);
+  });
+
+  // ===========================================================================
+  // F5R3 H-8 (2026-05-16) — Phase B branch coverage gaps
+  // ===========================================================================
+  // R2-CRIT-1 added 3 Phase B branches:
+  //   (a) succeeded webhook race (covered above)
+  //   (b) updateStatus narrow race (covered above)
+  //   (c) Phase B webhook-beat to CANCELED (idempotent ack) ← NEW
+  //   (d) Phase B fresh==null (lockForUpdate miss after Phase A) ← NEW
+  //   (e) currentStatus field pin on the error variant ← NEW
+  //
+  // Each below pins a single branch with one assertion focus so a
+  // regression maps cleanly to the affected branch.
+  // ---------------------------------------------------------------------------
+
+  it('R3-H8: Phase B webhook-beat to CANCELED — idempotent ok + cross-tenant-probe forensic audit', async () => {
+    const d = deps();
+    // Phase A sees pending; Phase B sees canceled (webhook landed and
+    // completed the cancel between phases — benign idempotent class,
+    // distinct from the succeeded-race silent-overwrite vulnerability).
+    (d.paymentsRepo.lockForUpdate as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(PENDING)
+      .mockResolvedValueOnce({ ...PENDING, status: 'canceled' as const });
+
+    const r = await cancelPayment(d, BASE_INPUT);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('canceled');
+
+    // updateStatus MUST NOT fire — Phase B observed canceled.
+    expect(d.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+
+    // R2-M2 forensic audit so ops can quantify clock-skew /
+    // out-of-order webhook delivery volume.
+    const calls = (d.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const probeCall = calls.find(
+      (c) =>
+        c[1]?.eventType === 'payment_cross_tenant_probe' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.startsWith('Phase B webhook-beat:'),
+    );
+    expect(probeCall, 'expected webhook-beat probe audit emit').toBeDefined();
+  });
+
+  it('R3-H8: Phase B lockForUpdate returns null (unexpected miss) → payment_not_found err + probe audit', async () => {
+    const d = deps();
+    // Phase A returns pending; Phase B finds the row deleted /
+    // unlocked / cross-tenant-moved → reasonable response is
+    // payment_not_found + forensic probe (DB intervention class).
+    (d.paymentsRepo.lockForUpdate as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(PENDING)
+      .mockResolvedValueOnce(null);
+
+    const r = await cancelPayment(d, BASE_INPUT);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('payment_not_found');
+
+    // updateStatus MUST NOT fire — Phase B observed null.
+    expect(d.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+
+    const calls = (d.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const missCall = calls.find(
+      (c) =>
+        c[1]?.eventType === 'payment_cross_tenant_probe' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.includes('Phase B unexpected lockForUpdate miss'),
+    );
+    expect(missCall, 'expected Phase B miss probe audit emit').toBeDefined();
+  });
+
+  it('R3-H8: payment_not_cancelable error variant carries currentStatus field (route maps to 409)', async () => {
+    const d = deps();
+    // Set Phase A to return non-pending so the canTransition gate
+    // fails at Phase A — this is the SAME error code as Phase B race
+    // (payment_not_cancelable) but distinct trigger. We pin the
+    // currentStatus payload on BOTH variants of the same error code.
+    (d.paymentsRepo.lockForUpdate as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ ...PENDING, status: 'succeeded' as const });
+
+    const r = await cancelPayment(d, BASE_INPUT);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('payment_not_cancelable');
+    if (r.error.code !== 'payment_not_cancelable') return;
+    // currentStatus is what the route includes in its 409 response
+    // body; a regression that drops this field returns 409 with
+    // undefined → frontend toast falls to missing-translation key.
+    expect(r.error.currentStatus).toBe('succeeded');
   });
 });
 

@@ -78,6 +78,21 @@ export interface PaymentsRepo {
    * re-lock; without this guard the adapter silently overwrote a
    * succeeded payment with `canceled`, breaking SC-013 invariant
    * (charged customer + DB says canceled).
+   *
+   * F5R3 H-4 (2026-05-16) — type-design reviewer flagged the loose
+   * return-nullability contract: callers without `expectedCurrentStatus`
+   * must currently defend against a `null` they cannot actually
+   * receive (the adapter throws on zero match in that path). A
+   * function-overload split (with-expected → `Promise<Payment | null>`
+   * vs without-expected → `Promise<Payment>`) was attempted but TS
+   * couldn't statically prove the adapter's runtime-throw narrows the
+   * union — the impl had to return `Promise<Payment | null>` to
+   * satisfy the wider overload, defeating the purpose. The unified
+   * `expectedCurrentStatus?` form is preserved; H-4 closed as
+   * "design-debt accepted" with this docstring as the only artifact.
+   * Mitigation: every caller passing `expectedCurrentStatus` MUST
+   * also handle the `null` race branch (enforced by code-review +
+   * `if (updated !== null)` patterns at every call site).
    */
   updateStatus(
     tx: unknown,

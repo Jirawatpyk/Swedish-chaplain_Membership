@@ -16,8 +16,16 @@ export type {
   RetrievedPaymentIntent,
   CreatedRefund,
 } from './processor-gateway-port';
-export type { WebhookVerifierPort, VerifiedStripeEvent } from './webhook-verifier-port';
-export { WebhookSignatureError } from './webhook-verifier-port';
+export type {
+  WebhookVerifierPort,
+  VerifiedStripeEvent,
+  F5HandledEventType,
+} from './webhook-verifier-port';
+export {
+  WebhookSignatureError,
+  F5_HANDLED_EVENT_TYPES,
+  F5_HANDLED_EVENT_TYPES_SET,
+} from './webhook-verifier-port';
 export type {
   InvoicingBridgePort,
   InvoiceForPaymentDTO,

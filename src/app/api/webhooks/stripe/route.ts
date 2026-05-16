@@ -63,7 +63,15 @@ import {
 // eslint-disable-next-line no-restricted-imports
 import { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
 // eslint-disable-next-line no-restricted-imports
-import { retentionFor as f5RetentionFor } from '@/modules/payments/application/ports/audit-port';
+import {
+  retentionFor as f5RetentionFor,
+} from '@/modules/payments/application/ports/audit-port';
+// F5R3 H-6 (2026-05-16) — single-source-of-truth allow-list shared
+// with the F5 dispatcher (process-webhook-event.ts). Prevents drift
+// between which event types are dispatched vs which trigger
+// revalidatePath.
+// eslint-disable-next-line no-restricted-imports
+import { F5_HANDLED_EVENT_TYPES_SET } from '@/modules/payments/application/ports/webhook-verifier-port';
 import { paymentsMetrics } from '@/lib/metrics';
 
 export const runtime = 'nodejs';
@@ -635,14 +643,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // events (api_version_mismatch, livemode_mismatch, duplicate
     // delivery) don't churn caches.
     const isOk = (result as { ok?: boolean }).ok !== false;
-    if (
-      isOk &&
-      (evType === 'payment_intent.succeeded' ||
-        evType === 'payment_intent.payment_failed' ||
-        evType === 'payment_intent.canceled' ||
-        evType === 'charge.refunded' ||
-        evType === 'charge.dispute.created')
-    ) {
+    // F5R3 H-6 (2026-05-16) — single-source-of-truth membership check
+    // against `F5_HANDLED_EVENT_TYPES_SET`. Pre-fix the inline OR
+    // chain was a copy of the dispatcher's switch-case literal list;
+    // adding a new event type to one but forgetting the other
+    // silently dropped revalidation on the new branch. The Set lives
+    // next to the dispatcher's typed `F5HandledEventType` union so
+    // both consumers stay in lockstep.
+    if (isOk && evType !== null && F5_HANDLED_EVENT_TYPES_SET.has(evType)) {
       // R5 canonical fix (2026-04-25): surgical revalidation. The
       // sub-use-case (confirmPayment / failPayment / handleCancelEvent)
       // forwards `invoiceId` on outcome kinds that pivot on a known

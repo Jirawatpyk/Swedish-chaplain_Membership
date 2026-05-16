@@ -100,9 +100,19 @@ export type ConfirmPaymentOutcome =
 // review-20260428-102639.md S7 closure — `invoice_not_found` removed
 // from this union: code path emits `ok({kind:'invoice_not_found'})`,
 // not `err`. The dead variant misled exhaustive-switch tests.
+//
+// F5R3 H-7 (2026-05-16) — `illegal_transition` and
+// `invariant_violation_duplicate_succeeded` ALSO removed for the same
+// reason. R4 H-3 / R4 I-3 made both into ack paths returning
+// `ok({kind:'already_succeeded'})` with the original literal preserved
+// only on the `_shared.emitTerminalStateAck` audit payload's
+// `mismatch_kind` field (string-literal union, unrelated to this Result
+// error union). No `err({code:'illegal_transition'})` or
+// `err({code:'invariant_violation_duplicate_succeeded'})` site exists
+// anywhere in the codebase — keeping these variants here let future
+// maintainers writing exhaustive-switch consumers add unreachable
+// branches that look load-bearing.
 export type ConfirmPaymentError =
-  | { readonly code: 'illegal_transition'; readonly from: string }
-  | { readonly code: 'invariant_violation_duplicate_succeeded' }
   | { readonly code: 'processor_unavailable'; readonly reason: string }
   | { readonly code: 'bridge_error'; readonly detail: string };
 
