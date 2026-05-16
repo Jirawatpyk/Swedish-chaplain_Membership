@@ -1,0 +1,20 @@
+﻿
+> swecham-membership@0.1.0 test:e2e C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> playwright test --workers=1 "--grep" "EventCreate CSV import" "--workers=1" "--project=chromium" "--retries=0"
+
+[e2e global setup] cleared Upstash rate-limit buckets
+[e2e global setup] reset F5 issued-invoice fixture b070ff99-e7f1-48c4-a87c-f04cada85036
+[e2e seed broadcasts] OK broadcast=68d72e12-eb7f-46ac-94c5-d948bcebda36 halted="Fogmaker Thailand Demo"
+[e2e seed renewals] OK upcoming=1c0cf660-0b13-4b19-b0c5-ad11aeae33e6 lapsed=c6e76762-8448-49a8-bb6e-646732112d05 suggestion=4e9f68d9-0a5c-4dee-9922-8156ae7ee1a5 member=b317dece-9e23-4ffa-84d5-12c059ba9624 expires=2026-06-15T10:01:42.792Z
+[e2e seed F6] OK — tenant=swecham events=3 registrations=10 (3 non_member + 3 unmatched + 4 matched) — badges covered: Partnership benefit + Cultural event + Over quota + Not counted — payment statuses: paid + pending + refunded + free
+
+Running 2 tests using 1 worker
+
+[E2E response] GET http://localhost:3100/api/admin/events?pageSize=100 → 200 {"items":[],"pagination":{"page":1,"pageSize":100,"totalCount":0},"emptyStateContext":{"integrationConfigured":true,"everReceivedDelivery":false,"totalArchived":0}}
+[E2E debug] POST /api/admin/events resolved → 201 (URL http://localhost:3100/api/admin/events)
+[E2E response] POST http://localhost:3100/api/admin/events → 201 {"kind":"created","event":{"eventId":"6ea2d92c-8ee8-499d-8ab8-48b6e1162370","externalId":"e2e-gt-mp86g2c0","name":"E2E Grant Thornton mp86g2c0","startDate":"2026-03-15T06:00:00.000Z","category":"Workshop"}}
+[E2E response] POST http://localhost:3100/api/admin/events/import → 200 {"kind":"completed","recordId":"4757a44a-b65c-4ee2-ab30-91f55788d536","sourceFormat":"eventcreate_csv","errorCsvAvailable":true,"historyPersisted":true,"auditCompletionEmitted":true,"summary":{"rowsTotal":30,"rowsProcessed":21,"rowsAlreadyImported":0,"rowsSkipped":4,"rowsFailed":5,"rowsStateChanged":0,"eventsCreated":1,"eventsUpdated":20,"matchCounts":{"member_contact":0,"member_domain":1,"member_fuzzy":0,"non_member":20,"unmatched":0},"errorRows":[{"rowNumber":8,"reason":"Skipped: Status=Cancel
+  ✓  1 [chromium] › tests\e2e\csv-eventcreate-import.spec.ts:54:7 › F6.1 EventCreate CSV import — manual-gate E2E › happy path — admin uploads Grant Thornton fixture via event-picker + inline modal → result card surfaces (33.6s)
+  ✓  2 [chromium] › tests\e2e\csv-eventcreate-import.spec.ts:166:7 › F6.1 EventCreate CSV import — manual-gate E2E › history page renders for an admin — table OR empty-state visible (15.3s)
+
+  2 passed (1.4m)

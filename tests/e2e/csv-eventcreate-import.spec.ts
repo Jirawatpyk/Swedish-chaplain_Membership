@@ -54,6 +54,32 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
   test('happy path — admin uploads Grant Thornton fixture via event-picker + inline modal → result card surfaces', async ({
     page,
   }) => {
+    // Diagnostic instrumentation (T060 debug): capture all POST/GET to
+    // /api/admin/events* + browser console errors so failures surface
+    // the actual server response instead of just "dialog stayed open".
+    page.on('console', (msg) => {
+      if (msg.type() === 'error' || msg.type() === 'warning') {
+        console.log(`[E2E browser ${msg.type()}]`, msg.text());
+      }
+    });
+    page.on('response', async (resp) => {
+      const url = resp.url();
+      if (url.includes('/api/admin/events')) {
+        let bodySnippet = '';
+        try {
+          bodySnippet = (await resp.text()).slice(0, 500);
+        } catch {
+          bodySnippet = '<could not read body>';
+        }
+        console.log(
+          `[E2E response] ${resp.request().method()} ${url} → ${resp.status()} ${bodySnippet}`,
+        );
+      }
+    });
+    page.on('pageerror', (err) => {
+      console.log('[E2E pageerror]', err.message);
+    });
+
     await signInAsAdmin(page);
     await page.goto('/admin/events/import');
 
@@ -92,7 +118,21 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
     await dialog.getByLabel(/^category/i).fill('Workshop');
 
     // Submit (createEvent use-case → POST /api/admin/events → 201).
+    // T060 debug: wait for the POST to complete so we capture status
+    // BEFORE asserting dialog state. This makes timing deterministic
+    // and surfaces server errors (400 validation / 429 rate-limit /
+    // 500 db_error) directly via the response listener above.
+    const createResponsePromise = page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/admin/events') &&
+        resp.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
     await dialog.getByRole('button', { name: /^create event$/i }).click();
+    const createResponse = await createResponsePromise;
+    console.log(
+      `[E2E debug] POST /api/admin/events resolved → ${createResponse.status()} (URL ${createResponse.url()})`,
+    );
     await expect(dialog).toBeHidden({ timeout: 15_000 });
 
     // Combobox should now show the just-created event as selected.

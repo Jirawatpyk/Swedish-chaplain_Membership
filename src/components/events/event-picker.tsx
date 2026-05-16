@@ -151,9 +151,33 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   const formatter = useFormatter();
   const popoverContentId = useId();
   const [open, setOpen] = useState(false);
-  const [events, setEvents] = useState<ReadonlyArray<EventPickerOption>>(
-    props.events ?? [],
-  );
+  const [fetchedEvents, setFetchedEvents] = useState<
+    ReadonlyArray<EventPickerOption>
+  >(props.events ?? []);
+  // T060 debug fix (2026-05-16): track locally-added events (via
+  // `addPickerEventRef`) SEPARATELY from the fetched list so a
+  // race-condition fetch overwrite cannot wipe out a freshly-created
+  // event. Pattern:
+  //   - mount-effect fetch resolves later → `setFetchedEvents(...)`
+  //   - inline-modal onCreated → `setLocallyAddedEvents(prev =>
+  //       [event, ...prev])`
+  //   - displayed `events` = locallyAdded ⊕ fetched (deduped)
+  // Without this split, the previously-observed race was: user clicks
+  // "Create new event" + submits before the mount-fetch resolves →
+  // POST 201 fires `addEvent` (state has new event) → mount-fetch then
+  // resolves with stale list → `setEvents(stale)` overwrites → button
+  // re-renders to "Choose an event…" placeholder.
+  const [locallyAddedEvents, setLocallyAddedEvents] = useState<
+    ReadonlyArray<EventPickerOption>
+  >([]);
+  const events = useMemo<ReadonlyArray<EventPickerOption>>(() => {
+    if (locallyAddedEvents.length === 0) return fetchedEvents;
+    const fetchedIds = new Set(fetchedEvents.map((e) => e.eventId));
+    const onlyLocal = locallyAddedEvents.filter(
+      (e) => !fetchedIds.has(e.eventId),
+    );
+    return [...onlyLocal, ...fetchedEvents];
+  }, [fetchedEvents, locallyAddedEvents]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Shared cancellation ref consumed by both the mount-effect and the
@@ -202,7 +226,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             name: e.name,
             startDate: e.startDate,
           }));
-        if (!signal.cancelled) setEvents(normalised);
+        if (!signal.cancelled) setFetchedEvents(normalised);
       } catch (e) {
         // S-1 (Round 1 — silent-failure-hunter): preserve console
         // diagnostic for dev so "why isn't my picker loading?" is
@@ -236,7 +260,10 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   useEffect(() => {
     if (registerAddEvent === undefined) return;
     registerAddEvent((event) => {
-      setEvents((prev) =>
+      // Write to the locallyAddedEvents state — fetch-overwrite-safe
+      // (the mount-effect setFetchedEvents path cannot wipe items
+      // from this list). Dedup against existing locally-added items.
+      setLocallyAddedEvents((prev) =>
         prev.some((e) => e.eventId === event.eventId)
           ? prev
           : [event, ...prev],
@@ -385,7 +412,12 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             // any prior one. setError(null) is handled inside loadEvents.
             loadCancelRef.current.cancelled = true;
             loadCancelRef.current = { cancelled: false };
-            setEvents([]);
+            // Clear the fetched list ONLY — preserve locallyAddedEvents
+            // (those represent events the user created via the inline
+            // modal in this session; refresh shouldn't remove them).
+            // T060 debug fix (2026-05-16) — see fetchedEvents/locally
+            // AddedEvents split rationale above.
+            setFetchedEvents([]);
             void loadEvents(loadCancelRef.current);
           }}
           className="min-h-9"
