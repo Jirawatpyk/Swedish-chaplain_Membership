@@ -129,6 +129,16 @@ export interface ImportSummary {
   readonly rowsSkipped: number;
   /** F6.1 — explicit count = `errorRows.length` minus skipped (parser failures + savepoint failures). */
   readonly rowsFailed: number;
+  /**
+   * F6.1 Phase 4 US2 (T031) — count of re-uploaded rows whose
+   * `payment_status` (Notes-inferred) differed from the persisted
+   * value AND was successfully updated. Excludes refunded transitions
+   * (those flow through `markRefunded` + the FR-018 quota credit-back
+   * branch — counted separately by the existing `quota_credit_back_refund`
+   * audit). Surfaced on the `csv_import_completed` audit payload so
+   * post-launch the operator can review state-change frequency.
+   */
+  readonly rowsStateChanged: number;
   readonly eventsCreated: number;
   readonly eventsUpdated: number;
   readonly matchCounts: Readonly<Record<MatchType, number>>;
@@ -267,6 +277,13 @@ export interface ImportCsvInput {
    * regardless of concurrency.
    */
   readonly batchConcurrency?: number;
+  /**
+   * T053 (F6.1 Phase 6) — when `false`, skip EventCreate adapter
+   * detection + force the generic-CSV path. Composition layer reads
+   * `env.features.f6EventCreateAdapter` and passes through. Default
+   * `true` (omitted ⇒ normal detection runs).
+   */
+  readonly adapterEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +350,26 @@ export interface ImportCsvDeps {
 }
 
 // ---------------------------------------------------------------------------
+// F6.1 Phase 4 US2 (T033) — Cancellation pre-existence marker
+// ---------------------------------------------------------------------------
+//
+// Thrown inside a SAVEPOINT to roll back a first-time-Cancellation row
+// (no prior registration exists — the FR-018 refund branch had nothing
+// to flip, and the row that `insertOnConflictDoNothing` just created
+// is a useless refunded ghost). The outer catch maps to a `skipped`
+// row outcome (counted in `rowsSkipped`, NOT `rowsFailed`), audit-quiet
+// — first-time cancellation is expected behaviour, not a failure.
+
+class CancellationSkipMarker extends Error {
+  constructor(
+    public readonly rowNumber: number,
+    public readonly email: string,
+  ) {
+    super(`Cancellation skip marker (rowNumber=${rowNumber})`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Per-row outcome (use-case-internal — never escapes)
 // ---------------------------------------------------------------------------
 
@@ -351,6 +388,19 @@ type RowOutcome =
       readonly reason: string;
     }
   | { readonly kind: 'duplicate'; readonly rowNumber: number }
+  | {
+      /**
+       * F6.1 Phase 4 US2 (T031) — receipt-duplicate row whose
+       * `payment_status` (Notes-inferred) differed from the persisted
+       * value AND was successfully UPDATEd to the new value. Counted
+       * in `rowsStateChanged` (NOT `rowsAlreadyImported`); surfaced on
+       * the `csv_import_completed` audit payload.
+       */
+      readonly kind: 'state_changed';
+      readonly rowNumber: number;
+      readonly previousPaymentStatus: string;
+      readonly newPaymentStatus: string;
+    }
   | {
       readonly kind: 'inserted';
       readonly rowNumber: number;
@@ -378,6 +428,99 @@ type RowOutcome =
  */
 function isSkippedParserRow(reason: string): boolean {
   return reason.startsWith('Skipped:');
+}
+
+/**
+ * F6.1 Phase 4 US2 (T031) — receipt-duplicate state-change detection.
+ *
+ * On re-upload, the idempotency receipt rowHash matches the first
+ * upload's hash (event_external_id, email, registered_at) regardless
+ * of payment_status. When admins fix the Notes column between runs
+ * (e.g., `verifying payment` → `Paid`), the receipt dedup catches the
+ * second arrival as duplicate; this helper unblocks the case by
+ * looking up the persisted row, comparing payment_status, and
+ * applying an UPDATE if they differ.
+ *
+ * Returns:
+ *   - `null` when no state change is needed (truly idempotent
+ *     duplicate) — caller returns `{kind:'duplicate'}`.
+ *   - `{kind:'state_changed', ...}` when an UPDATE was applied.
+ *
+ * Out-of-scope:
+ *   - Refund transitions (paid → refunded): would route through
+ *     `markRefunded` + FR-018 credit-back, but the receipt is
+ *     bypassed entirely for Cancellation rows (`intendedStateChange`
+ *     flag at the parser level), so refunds never reach this branch.
+ *     Company / ticket_type changes: Q2 "no locked-field semantics"
+ *     cut — out of scope.
+ *
+ * Failure handling: any error (DB / lookup miss / pseudonymised row)
+ * falls back to `null` (admin gets `rowsAlreadyImported++`) — the
+ * state-change is a best-effort enhancement, not a correctness
+ * invariant. The persisted row stays at its old value; next re-upload
+ * tries again.
+ */
+async function maybeApplyStateChange(
+  parsed: ParsedOkRow,
+  input: ImportCsvInput,
+  ports: ImportCsvTxScopedPorts,
+): Promise<RowOutcome | null> {
+  // Skip refund transitions — handled by the intendedStateChange
+  // Cancellation path which bypasses the receipt entirely.
+  if (parsed.row.payment_status === 'refunded') return null;
+
+  // Defensive: unit-test mocks may omit `findByEventAndEmail` /
+  // `updatePaymentStatus` (test cares only about the duplicate-hit
+  // path, not state-change). Falling back to `null` preserves the
+  // pre-T031 behaviour for those tests.
+  const repo = ports.registrationsRepo;
+  if (
+    typeof repo?.findByEventAndEmail !== 'function' ||
+    typeof repo?.updatePaymentStatus !== 'function'
+  ) {
+    return null;
+  }
+
+  try {
+    const existing = await repo.findByEventAndEmail(
+      input.tenantId,
+      input.selectedEvent.eventId,
+      parsed.row.attendee_email,
+    );
+    if (!existing.ok || existing.value === null) {
+      // Lookup failed OR no persisted row found (rare race: receipt
+      // committed but registration roll-back). Fall back to duplicate
+      // semantics; next re-upload retries.
+      return null;
+    }
+    const persisted = existing.value;
+    if (persisted.ticket.paymentStatus === parsed.row.payment_status) {
+      // Same status — truly a no-op duplicate.
+      return null;
+    }
+
+    const update = await repo.updatePaymentStatus(
+      input.tenantId,
+      persisted.registrationId,
+      parsed.row.payment_status,
+    );
+    if (!update.ok) {
+      // Update failed — treat as duplicate (don't fail the row).
+      return null;
+    }
+    return {
+      kind: 'state_changed',
+      rowNumber: parsed.rowNumber,
+      previousPaymentStatus: update.value.previousPaymentStatus,
+      newPaymentStatus: parsed.row.payment_status,
+    };
+  } catch {
+    // Defensive — any error in the state-change path falls back to
+    // duplicate semantics. Idempotency is preserved; the operator
+    // sees `rowsAlreadyImported` instead of `rowsStateChanged`. Next
+    // re-upload retries the detection.
+    return null;
+  }
 }
 
 function zeroMatchCounts(): Record<MatchType, number> {
@@ -434,25 +577,48 @@ async function processOneRowInSavepoint(
     return await batchPorts.runRowInSavepoint(async (ports) => {
       // (a) Idempotency receipt — silent skip on duplicate per round-2
       //     R3 (CSV duplicates from admin re-upload; not webhook replay).
-      const receipt = await ports.idempotencyStore.tryInsert({
-        tenantId: input.tenantId,
-        source: 'eventcreate_csv',
-        requestId: parsed.rowHash,
-      });
-      if (!receipt.ok) {
-        // Surface the precise stage to dashboards via TxStageError so
-        // SREs alerting on `failureStage='idempotency_receipt'` see
-        // the idempotency-store outage as its own class — not folded
-        // into the catch-all `'unknown'` bucket. Closes the audit-port
-        // taxonomy gap where the CSV path never actually exercised
-        // the `'idempotency_receipt'` stage despite it being declared.
-        throw new TxStageError(
-          'idempotency_receipt',
-          `idempotency receipt insert failed: ${receipt.error.message}`,
-        );
-      }
-      if (!receipt.value.wasFresh) {
-        return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
+      //
+      // F6.1 Phase 4 US2 (T033) — Cancellation rows BYPASS the receipt
+      // entirely: a previous Attending row for the same attendee shares
+      // the same rowHash (the canonical key omits payment_status), so the
+      // receipt would dedupe the cancel re-upload. Bypassing routes the
+      // row straight into `processAttendeeInTx` so the FR-018 refund
+      // branch can flip an existing paid row + emit the credit-back
+      // audit. First-time Cancellation rows (no prior registration) land
+      // as a refunded ghost row — harmless side effect: no quota effect,
+      // no audit emit (matchedMember+counted gates remain in effect).
+      if (!parsed.intendedStateChange) {
+        const receipt = await ports.idempotencyStore.tryInsert({
+          tenantId: input.tenantId,
+          source: 'eventcreate_csv',
+          requestId: parsed.rowHash,
+        });
+        if (!receipt.ok) {
+          // Surface the precise stage to dashboards via TxStageError so
+          // SREs alerting on `failureStage='idempotency_receipt'` see
+          // the idempotency-store outage as its own class — not folded
+          // into the catch-all `'unknown'` bucket.
+          throw new TxStageError(
+            'idempotency_receipt',
+            `idempotency receipt insert failed: ${receipt.error.message}`,
+          );
+        }
+        if (!receipt.value.wasFresh) {
+          // T031 (F6.1 Phase 4 US2) — receipt duplicate doesn't always
+          // mean "no-op". When the incoming row's payment_status differs
+          // from the persisted row (e.g. admin re-uploaded after fixing
+          // the Notes cell), apply a state-change UPDATE before returning.
+          // Refund transitions go through markRefunded + the FR-018
+          // credit-back path; non-refund payment_status changes go
+          // through updatePaymentStatus (no quota effect).
+          const stateChange = await maybeApplyStateChange(
+            parsed,
+            input,
+            ports,
+          );
+          if (stateChange !== null) return stateChange;
+          return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
+        }
       }
 
       // (b) + (c) Map CsvRow → ProcessAttendeeInTxInput + run shared
@@ -507,6 +673,20 @@ async function processOneRowInSavepoint(
         ports,
       );
 
+      // F6.1 Phase 4 US2 (T033) — first-time Cancellation has no prior
+      // registration to refund. Roll back the savepoint (undo the
+      // refunded ghost row that `insertOnConflictDoNothing` just
+      // created) by raising the marker error; the outer catch maps it
+      // to `kind:'skipped'` so the row flows into `rowsSkipped` (NOT
+      // `rowsFailed` / `rowsProcessed`). Audit-quiet: no
+      // `csv_import_row_failed` emit.
+      if (parsed.intendedStateChange && result.isNewRegistration) {
+        throw new CancellationSkipMarker(
+          parsed.rowNumber,
+          parsed.row.attendee_email,
+        );
+      }
+
       return {
         kind: 'inserted' as const,
         rowNumber: parsed.rowNumber,
@@ -515,6 +695,17 @@ async function processOneRowInSavepoint(
       };
     });
   } catch (e) {
+    // F6.1 Phase 4 US2 (T033) — first-time Cancellation (no prior
+    // registration). Savepoint rolled back; surface as a `skipped`
+    // outcome so the row flows into `rowsSkipped` instead of
+    // `rowsFailed`.
+    if (e instanceof CancellationSkipMarker) {
+      return {
+        kind: 'skipped',
+        rowNumber: e.rowNumber,
+        reason: `Skipped: Status=Cancelled without prior registration for ${e.email} (no-op)`,
+      };
+    }
     // Savepoint rolled back; outer tx + other rows preserved. Preserve
     // `TxStageError.stage` taxonomy on BOTH the `RowOutcome.row_failed`
     // field AND the `csv_import_row_failed` audit payload so dashboards
@@ -822,6 +1013,11 @@ export async function importCsv(
       ...(input.columnMapping !== undefined && {
         columnMapping: input.columnMapping,
       }),
+      // T053 — pass through `adapterEnabled` from composition. The
+      // importer treats `undefined` as `true` (normal detection).
+      ...(input.adapterEnabled !== undefined && {
+        adapterEnabled: input.adapterEnabled,
+      }),
     });
   } catch (e) {
     return {
@@ -861,6 +1057,28 @@ export async function importCsv(
     input.tenantId,
     sourceFormat,
   );
+
+  // T052 (F6.1 Phase 6) — per-upload aggregate pino log of unknown
+  // EventCreate columns (FR-012). Emitted ONCE per import (not per
+  // row) ONLY when the adapter detected unknown columns; the product
+  // team reviews these to track EventCreate schema evolution + decide
+  // whether to add a column to the EVENTCREATE_KNOWN_COLUMNS set in
+  // the adapter. Excludes the generic-CSV path because Phase 7's
+  // strict schema silently drops unknown columns (no equivalent
+  // observability requirement).
+  if (sourceFormat === 'eventcreate_csv' && unknownColumns.length > 0) {
+    logger.info(
+      {
+        event: 'f6_eventcreate_adapter_unknown_columns',
+        tenantId: input.tenantId,
+        // Cap at 50 distinct names defensively — chamber CSVs rarely
+        // have >30 columns so 50 is comfortable headroom.
+        distinctUnknownColumns: unknownColumns.slice(0, 50),
+        unknownColumnCount: unknownColumns.length,
+      },
+      '[F6.1] EventCreate CSV import contained unknown columns — review for future adapter extension',
+    );
+  }
 
   // F6.1 — Phase 2: collect rows from the async stream into an array.
   // SC-006 envelope is 1,000 rows; bench at 5,000 rows shows peak heap
@@ -1002,6 +1220,7 @@ export async function importCsv(
     rowsProcessed: 0,
     rowsAlreadyImported: 0,
     rowsSkipped: 0,
+    rowsStateChanged: 0,
     eventsCreated: 0,
     eventsUpdated: 0,
     matchCounts: zeroMatchCounts(),
@@ -1044,6 +1263,12 @@ export async function importCsv(
             break;
           case 'duplicate':
             summary.rowsAlreadyImported += 1;
+            break;
+          case 'state_changed':
+            // T031: receipt-duplicate that triggered an UPDATE of
+            // payment_status. Count separately from `rowsAlreadyImported`
+            // so admins see the re-upload had EFFECT (not silent skip).
+            summary.rowsStateChanged += 1;
             break;
           case 'inserted':
             summary.rowsProcessed += 1;
@@ -1318,6 +1543,7 @@ export async function importCsv(
         rowsAlreadyImported: summary.rowsAlreadyImported,
         rowsSkipped: summary.rowsSkipped,
         rowsFailed,
+        rowsStateChanged: summary.rowsStateChanged,
         eventsCreated: summary.eventsCreated,
         eventsUpdated: summary.eventsUpdated,
         matchCounts: summary.matchCounts,
@@ -1341,6 +1567,7 @@ export async function importCsv(
       rowsAlreadyImported: summary.rowsAlreadyImported,
       rowsSkipped: summary.rowsSkipped,
       rowsFailed,
+      rowsStateChanged: summary.rowsStateChanged,
       eventsCreated: summary.eventsCreated,
       eventsUpdated: summary.eventsUpdated,
       matchCounts: summary.matchCounts,

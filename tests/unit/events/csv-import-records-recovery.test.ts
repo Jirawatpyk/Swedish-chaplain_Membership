@@ -135,6 +135,7 @@ function makeDeps(scenario: RecoveryScenario): ImportCsvDeps {
                 payment_status: 'paid' as const,
               },
               pdpaConsentAcknowledged: null,
+              intendedStateChange: false,
             };
           })(),
         ),

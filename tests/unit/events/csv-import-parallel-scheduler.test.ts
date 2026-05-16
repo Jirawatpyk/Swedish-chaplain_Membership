@@ -109,6 +109,7 @@ function makeConcurrencyTrackingDeps(): {
                   payment_status: 'paid' as const,
                 },
                 pdpaConsentAcknowledged: null,
+                intendedStateChange: false,
               };
             }
           })(),

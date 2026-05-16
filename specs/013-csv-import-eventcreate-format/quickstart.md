@@ -87,7 +87,7 @@ This follows TDD discipline + Constitution Principle II (failing tests first).
 21. `src/components/events/event-picker.tsx` — dropdown + filename-hint fuzzy match + **inline "Create event" modal** (P8/P-R2-5: reuses existing F6 `createEvent` use-case verbatim — no new use-case).
 22. `src/components/events/event-mismatch-warning-dialog.tsx` — renders prior-imports list + "Continue anyway" (sets `force_proceed=true` and re-submits) / "Cancel" actions per FR-019b (critique pass-2 X-R2-1).
 23. Extend `csv-mapping-form.tsx` — 4-phase wizard (event-picker → upload → submitting → completed) + warning dialog branch when outcome is `event_mismatch_warning`. Phase 7's structural 10-row preview retained inside the upload phase.
-24. `src/components/events/csv-import-history-table.tsx` — paginated table with TanStack Table v8 (already used in F3).
+24. `src/components/events/csv-import-history-table.tsx` — paginated table using shadcn `<Table>` primitives + server-driven pagination via Next.js `<Link>` navigation. TanStack Table v8 NOT required at SweCham scale (1 tenant × ~50 imports/yr) because sorting/filtering is server-driven via query params (`?page=N&perPage=M&eventId=...&actorUserId=...`); the client-side cell virtualisation TanStack would provide is unnecessary at <100 rows/page. Revisit if multi-tenant volume demands client-side sort/filter without server round-trip.
 
 ### Day 8 — i18n + a11y
 

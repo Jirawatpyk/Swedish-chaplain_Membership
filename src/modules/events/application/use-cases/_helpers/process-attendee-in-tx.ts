@@ -567,33 +567,47 @@ export async function processAttendeeInTx(
     // the row already has both flags = false from the INSERT.
   }
 
-  // 6. Refund credit-back branch — Phase 6 wave-3 (FR-018 / US4 AS4).
+  // 6. Refund credit-back branch — Phase 6 wave-3 (FR-018 / US4 AS4) +
+  //    F6.1 Phase 4 US2 (T033) cancellation cascade.
   //    When the SAME (tenant, event, externalId) re-arrives with
-  //    `payment_status='refunded'` AND the existing row was previously
-  //    counted (`counted_against_*=true` on at least one scope), flip
-  //    the row to refunded + zero out counted_against_* + emit one
-  //    `quota_credit_back_refund` audit per previously-true scope.
+  //    `payment_status='refunded'`, flip the row to refunded + zero out
+  //    counted_against_* + emit one `quota_credit_back_refund` audit per
+  //    previously-true scope.
+  //
+  //    The matchedMember + counted_against_* gates ONLY guard the quota
+  //    credit-back audit emit (they're meaningless without matched member
+  //    or counted state); the markRefunded flip itself ALWAYS runs when
+  //    an existing non-refunded row is re-uploaded as Cancelled. This
+  //    enables T032: a Cancellation re-upload of an unmatched / non-
+  //    benefit-event attendee still flips payment_status to refunded
+  //    (the CSV admin audit trail captures the row state regardless of
+  //    quota scope).
   const existingReg = regInsert.value.registration;
   const isRefundTransition =
     !regInsert.value.isNewRegistration &&
     input.attendee.paymentStatus === 'refunded' &&
-    existingReg.ticket.paymentStatus !== 'refunded' &&
-    matchedMemberId !== null &&
-    (existingReg.quotaEffect.countedAgainstPartnership ||
-      existingReg.quotaEffect.countedAgainstCulturalQuota);
+    existingReg.ticket.paymentStatus !== 'refunded';
   if (isRefundTransition) {
     reportStage('quota_decrement');
-    try {
-      await ports.advisoryLockAcquirer.acquire(
-        buildQuotaLockKey(input.tenantId, matchedMemberId, event.eventId),
-      );
-    } catch (e) {
-      throw new TxStageError(
-        'quota_decrement',
-        `refund advisory-lock acquisition failed: ${
-          (e as Error)?.message ?? 'unknown'
-        }`,
-      );
+    // Advisory lock + quota-credit-back audit emit are conditional on
+    // matched member; the markRefunded flip is unconditional.
+    const hasMatchedQuotaScope =
+      matchedMemberId !== null &&
+      (existingReg.quotaEffect.countedAgainstPartnership ||
+        existingReg.quotaEffect.countedAgainstCulturalQuota);
+    if (hasMatchedQuotaScope) {
+      try {
+        await ports.advisoryLockAcquirer.acquire(
+          buildQuotaLockKey(input.tenantId, matchedMemberId!, event.eventId),
+        );
+      } catch (e) {
+        throw new TxStageError(
+          'quota_decrement',
+          `refund advisory-lock acquisition failed: ${
+            (e as Error)?.message ?? 'unknown'
+          }`,
+        );
+      }
     }
 
     const flip = await registrationsRepo.markRefunded(
@@ -614,67 +628,77 @@ export async function processAttendeeInTx(
     }
 
     const prev = flip.value.previousQuotaEffect;
-    let lookupResult:
-      | Awaited<ReturnType<typeof ports.quotaAccountingPort.queryAllotments>>
-      | null = null;
-    if (prev.countedAgainstPartnership || prev.countedAgainstCulturalQuota) {
-      lookupResult = await ports.quotaAccountingPort.queryAllotments({
+    type QueryAllotmentsResult = Awaited<
+      ReturnType<typeof ports.quotaAccountingPort.queryAllotments>
+    >;
+    type AllotmentSnapshot = Extract<QueryAllotmentsResult, { readonly ok: true }>['value'];
+    let allotmentSnapshot: AllotmentSnapshot | null = null;
+    if (
+      matchedMemberId !== null &&
+      (prev.countedAgainstPartnership || prev.countedAgainstCulturalQuota)
+    ) {
+      const r = await ports.quotaAccountingPort.queryAllotments({
         tenantId: input.tenantId,
         memberId: matchedMemberId,
         eventId: event.eventId,
         fiscalYear: deriveFiscalYear(event.startDate.toISOString(), 1),
       });
-      if (!lookupResult.ok) {
+      if (!r.ok) {
         throw new TxStageError(
           'quota_decrement',
           `refund credit-back allotment lookup failed: ${
-            lookupResult.error.kind === 'db_error'
-              ? lookupResult.error.message
-              : lookupResult.error.kind
+            r.error.kind === 'db_error' ? r.error.message : r.error.kind
           }`,
         );
       }
+      allotmentSnapshot = r.value;
     }
-    const baseRefundAudit = {
-      tenantId: input.tenantId,
-      actorType: input.actorContext.actorType,
-      actorUserId: input.actorContext.actorUserId,
-      occurredAt: new Date(),
-    };
-    if (prev.countedAgainstPartnership) {
-      const { allotments, consumed } = lookupResult!.value;
-      const allotmentAfter =
-        allotments.partnershipPerEvent -
-        consumed.partnershipConsumedForEvent;
-      await emitOrThrow(audit, {
-        ...baseRefundAudit,
-        eventType: 'quota_credit_back_refund',
-        summary: `partnership credit-back via refund: registration ${existingReg.registrationId} flipped paid→refunded`,
-        payload: {
-          severity: 'info',
-          registrationId: existingReg.registrationId,
-          memberId: matchedMemberId,
-          scope: 'partnership',
-          allotmentAfter,
-        },
-      });
-    }
-    if (prev.countedAgainstCulturalQuota) {
-      const { allotments, consumed } = lookupResult!.value;
-      const allotmentAfter =
-        allotments.culturalPerYear - consumed.culturalConsumedForYear;
-      await emitOrThrow(audit, {
-        ...baseRefundAudit,
-        eventType: 'quota_credit_back_refund',
-        summary: `cultural credit-back via refund: registration ${existingReg.registrationId} flipped paid→refunded`,
-        payload: {
-          severity: 'info',
-          registrationId: existingReg.registrationId,
-          memberId: matchedMemberId,
-          scope: 'cultural',
-          allotmentAfter,
-        },
-      });
+    // Audit emit only when a matched member + counted scope existed —
+    // otherwise there's no allotment to credit back (the row flip itself
+    // is already complete; CSV-import history captures the cancellation
+    // forensically via `csv_import_completed`).
+    if (matchedMemberId !== null && allotmentSnapshot !== null) {
+      const baseRefundAudit = {
+        tenantId: input.tenantId,
+        actorType: input.actorContext.actorType,
+        actorUserId: input.actorContext.actorUserId,
+        occurredAt: new Date(),
+      };
+      if (prev.countedAgainstPartnership) {
+        const { allotments, consumed } = allotmentSnapshot;
+        const allotmentAfter =
+          allotments.partnershipPerEvent -
+          consumed.partnershipConsumedForEvent;
+        await emitOrThrow(audit, {
+          ...baseRefundAudit,
+          eventType: 'quota_credit_back_refund',
+          summary: `partnership credit-back via refund: registration ${existingReg.registrationId} flipped paid→refunded`,
+          payload: {
+            severity: 'info',
+            registrationId: existingReg.registrationId,
+            memberId: matchedMemberId,
+            scope: 'partnership',
+            allotmentAfter,
+          },
+        });
+      }
+      if (prev.countedAgainstCulturalQuota) {
+        const { allotments, consumed } = allotmentSnapshot;
+        const allotmentAfter =
+          allotments.culturalPerYear - consumed.culturalConsumedForYear;
+        await emitOrThrow(audit, {
+          ...baseRefundAudit,
+          eventType: 'quota_credit_back_refund',
+          summary: `cultural credit-back via refund: registration ${existingReg.registrationId} flipped paid→refunded`,
+          payload: {
+            severity: 'info',
+            registrationId: existingReg.registrationId,
+            memberId: matchedMemberId,
+            scope: 'cultural',
+            allotmentAfter,
+          },
+        });
+      }
     }
     // POST-refund state: both flags false.
     quotaEffect = {

@@ -505,6 +505,10 @@ async function* iterateRows(
       // explicit tri-state, so emit `null` rather than rely on a
       // boundary coalesce in the use-case.
       pdpaConsentAcknowledged: null,
+      // Generic-CSV path has no Cancellation surface (the EventCreate
+      // Status='Cancelled' classification only fires on the adapter
+      // path). Always false here.
+      intendedStateChange: false,
     };
   }
 }
@@ -579,8 +583,18 @@ async function* iterateEventCreateRows(
 
     const translated = translateEventCreateRow(cells);
 
-    // FR-007 Status filter — non-Attending rows skipped (not failed).
-    if (!translated.isAttending) {
+    // F6.1 Phase 4 US2 (T033) — FR-007 Status filter is split into 3 paths:
+    //   1. Attending      → ok:true with the row's inferred payment_status
+    //   2. Cancellation   → ok:true with payment_status='refunded' +
+    //                       intendedStateChange=true so the use-case
+    //                       bypasses the idempotency receipt and routes
+    //                       the row through `processAttendeeInTx`'s FR-018
+    //                       refund branch (flips existing paid → refunded
+    //                       + emits quota_credit_back_refund when matched).
+    //   3. Skipped        → ok:false reason="Skipped: …" — flows into
+    //                       `rowsSkipped` counter; never reaches the
+    //                       per-row tx pipeline.
+    if (!translated.isAttending && !translated.isCancellation) {
       yield {
         ok: false,
         rowNumber: lineNumber,
@@ -596,8 +610,13 @@ async function* iterateEventCreateRows(
     // ['paid','pending','refunded','free'] — `unknown` maps to 'paid'
     // default (Phase 7 schema default) to keep the row valid; a later
     // pass can re-classify via metadata if needed.
-    const paymentStatus =
-      translated.inferredPaymentStatus === 'unknown'
+    //
+    // Cancellation rows OVERRIDE the inferred payment_status to
+    // 'refunded' so the FR-018 refund branch fires deterministically
+    // regardless of what Notes said before cancellation.
+    const paymentStatus = translated.isCancellation
+      ? 'refunded'
+      : translated.inferredPaymentStatus === 'unknown'
         ? undefined
         : translated.inferredPaymentStatus;
 
@@ -637,6 +656,9 @@ async function* iterateEventCreateRows(
       row: parsed.data,
       rowHash: computeRowHash(parsed.data),
       pdpaConsentAcknowledged: translated.pdpaConsentAcknowledged,
+      // F6.1 Phase 4 US2 (T033) — Cancellation rows flag for receipt
+      // bypass + FR-018 routing in the use-case.
+      intendedStateChange: translated.isCancellation,
     };
   }
 }
@@ -689,6 +711,9 @@ async function* iterateGenericRowsWithEventContext(
       // Generic-CSV format has no PDPA column — required tri-state at
       // the port boundary, so emit explicit `null`.
       pdpaConsentAcknowledged: null,
+      // Generic-CSV format has no Cancellation surface (no EventCreate
+      // Status semantics). Always false here.
+      intendedStateChange: false,
     };
   }
 }
@@ -783,8 +808,17 @@ export const streamingCsvImporter: CsvImporter = {
     // FR-001 / R2). If detected, route through the EventCreate adapter
     // path; otherwise fall through to the generic Phase 7 path with
     // event-context override applied post-validation.
+    //
+    // T053 (F6.1 Phase 6) — when `adapterEnabled === false` (set by the
+    // route handler from `FEATURE_F6_EVENTCREATE_ADAPTER=false`), skip
+    // detection entirely + force the generic-CSV path. This is the
+    // rollback safety net per Spec § Rollback Plan: tenants whose
+    // EventCreate header drift breaks the adapter can flip the sub-flag
+    // to fall back to the Phase 7 strict schema (which surfaces
+    // missing-required-columns as `invalid_header`).
     const headerCells = headerTokens.cells;
-    if (detectEventCreateFormat(headerCells)) {
+    const adapterEnabled = input.adapterEnabled !== false;
+    if (adapterEnabled && detectEventCreateFormat(headerCells)) {
       const unknownColumns = collectUnknownEventCreateColumns(headerCells);
       const bodyLines = rawLines.slice(1);
       return ok({

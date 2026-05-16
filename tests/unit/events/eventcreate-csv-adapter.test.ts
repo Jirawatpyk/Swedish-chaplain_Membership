@@ -215,8 +215,16 @@ describe('classifyEventCreateStatus', () => {
     expect(classifyEventCreateStatus('Attending')).toBe('Attending');
   });
 
-  it('returns Skipped for other Status values', () => {
-    expect(classifyEventCreateStatus('Cancelled')).toBe('Skipped');
+  // F6.1 Phase 4 US2 (T033) — Cancelled / Canceled rows now flow through
+  // the parser as `Cancellation` (intendedStateChange=true downstream)
+  // so the FR-018 refund branch can flip a previously-paid registration.
+  // All other non-Attending values remain `Skipped`.
+  it('returns Cancellation for "Cancelled" and "Canceled"', () => {
+    expect(classifyEventCreateStatus('Cancelled')).toBe('Cancellation');
+    expect(classifyEventCreateStatus('Canceled')).toBe('Cancellation');
+  });
+
+  it('returns Skipped for other non-Attending Status values', () => {
     expect(classifyEventCreateStatus('Waitlisted')).toBe('Skipped');
     expect(classifyEventCreateStatus('No Show')).toBe('Skipped');
     expect(classifyEventCreateStatus('Pending')).toBe('Skipped');

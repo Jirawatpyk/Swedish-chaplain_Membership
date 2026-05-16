@@ -405,6 +405,96 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     async updateMatchAndQuota() {
       return err({ kind: 'not_implemented', method: 'updateMatchAndQuota', futureTask: 'Phase 9 T104' });
     },
+    async findByEventAndEmail(
+      tenantId: TenantId,
+      eventId: EventId,
+      emailLower: string,
+    ): Promise<Result<EventRegistrationAggregate | null, RegistrationsRepositoryError>> {
+      try {
+        const rows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.eventId, eventId),
+              eq(eventRegistrations.attendeeEmailLower, emailLower.toLowerCase()),
+            ),
+          )
+          .limit(1);
+        if (rows.length === 0) return ok(null);
+        return ok(toAggregate(rows[0]!));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
+    },
+
+    async updatePaymentStatus(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+      nextPaymentStatus: PaymentStatus,
+    ): Promise<
+      Result<
+        {
+          readonly registration: EventRegistrationAggregate;
+          readonly previousPaymentStatus: PaymentStatus;
+        },
+        RegistrationsRepositoryError
+      >
+    > {
+      try {
+        const prevRows = await executor
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+            ),
+          )
+          .limit(1);
+        if (prevRows.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations.updatePaymentStatus: row not found — caller passed a registrationId with no matching row in this tenant',
+          });
+        }
+        const prevRow = prevRows[0]!;
+        if (prevRow.piiPseudonymisedAt !== null) {
+          return err({ kind: 'pseudonymised_row_rejected', registrationId });
+        }
+        const previousPaymentStatus = prevRow.paymentStatus as PaymentStatus;
+        // Idempotent — same status is a no-op UPDATE; still return ok
+        // so callers can check the previousPaymentStatus === next case
+        // without branching on the Result.
+        const updated = await executor
+          .update(eventRegistrations)
+          .set({ paymentStatus: nextPaymentStatus })
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations.updatePaymentStatus: row vanished between SELECT and UPDATE',
+          });
+        }
+        return ok({
+          registration: toAggregate(updated[0]!),
+          previousPaymentStatus,
+        });
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
+    },
+
     async markRefunded(
       tenantId: TenantId,
       registrationId: RegistrationId,

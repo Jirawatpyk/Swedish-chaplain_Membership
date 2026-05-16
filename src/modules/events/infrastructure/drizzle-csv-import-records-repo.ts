@@ -14,16 +14,21 @@
  *
  * Source-of-truth contract: data-model.md § 1 + § 4.
  */
-import { and, desc, eq, gt, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, gt, isNotNull, lt, ne, sql } from 'drizzle-orm';
 import { err, ok } from '@/lib/result';
-import type { TenantTx } from '@/lib/db';
+import { db as defaultDb, type TenantTx } from '@/lib/db';
+import type { TenantId } from '@/modules/members';
+import type { UserId } from '@/modules/auth';
 import type { EventId } from '../domain/branded-types';
 import type { CsvImportRecordId } from '../domain/csv-import-record-id';
 import { csvImportRecords } from './schema';
 import { wrapRepoError } from './sanitize-db-error';
 import type {
   CsvImportRecordsRepository,
+  CsvImportRecordsAdminRepository,
   CsvImportRecordsRepoError,
+  CsvImportRecordSummary,
+  ExpiredBlobRow,
 } from '../application/ports/csv-import-records-repo';
 
 // Re-export port types so route/composition callers can keep a single
@@ -31,12 +36,17 @@ import type {
 // application/ports layer (T022 Clean-Arch refactor).
 export type {
   CsvImportRecordsRepository,
+  CsvImportRecordsAdminRepository,
   CsvImportRecordsRepoError,
   CsvImportRecordOutcome as CsvImportOutcome,
+  CsvImportRecordSummary,
+  ExpiredBlobRow,
   InsertCsvImportRecordInput,
   UpdateOutcomeInput,
   SetErrorCsvBlobInput,
   FindByFingerprintInput,
+  ListByTenantInput,
+  ListByTenantResult,
   PriorImportMatch,
 } from '../application/ports/csv-import-records-repo';
 
@@ -171,6 +181,186 @@ export function makeDrizzleCsvImportRecordsRepository(
         return err(wrapDbError(e));
       }
     },
+
+    async listByTenant(input) {
+      try {
+        const perPage = Math.max(1, Math.min(100, input.perPage));
+        const page = Math.max(1, input.page);
+        const offset = (page - 1) * perPage;
+
+        const filters = [eq(csvImportRecords.tenantId, input.tenantId)];
+        if (input.eventIdFilter !== undefined) {
+          filters.push(eq(csvImportRecords.eventId, input.eventIdFilter));
+        }
+        if (input.actorUserIdFilter !== undefined) {
+          filters.push(
+            eq(csvImportRecords.actorUserId, input.actorUserIdFilter),
+          );
+        }
+        const whereClause = and(...filters);
+
+        const rows = await executor
+          .select()
+          .from(csvImportRecords)
+          .where(whereClause)
+          .orderBy(desc(csvImportRecords.uploadedAt))
+          .limit(perPage)
+          .offset(offset);
+
+        const totalRows = await executor
+          .select({ value: count() })
+          .from(csvImportRecords)
+          .where(whereClause);
+        const totalRecords = totalRows[0]?.value ?? 0;
+
+        return ok({
+          records: rows.map(rowToSummary),
+          totalRecords: Number(totalRecords),
+        });
+      } catch (e) {
+        return err(wrapDbError(e));
+      }
+    },
+
+    async findById(tenantId, recordId) {
+      try {
+        const rows = await executor
+          .select()
+          .from(csvImportRecords)
+          .where(
+            and(
+              eq(csvImportRecords.tenantId, tenantId),
+              eq(csvImportRecords.recordId, recordId),
+            ),
+          )
+          .limit(1);
+        const row = rows[0];
+        if (!row) return err({ kind: 'not_found' });
+        return ok(rowToSummary(row));
+      } catch (e) {
+        return err(wrapDbError(e));
+      }
+    },
+
+    async clearErrorCsvBlob(tenantId, recordId) {
+      try {
+        await executor
+          .update(csvImportRecords)
+          .set({
+            errorCsvBlobUrl: null,
+            errorCsvExpiresAt: null,
+          })
+          .where(
+            and(
+              eq(csvImportRecords.tenantId, tenantId),
+              eq(csvImportRecords.recordId, recordId),
+            ),
+          );
+        return ok(undefined);
+      } catch (e) {
+        return err(wrapDbError(e));
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 Phase 5 US5 (T041 + T049) — admin-bypass adapter
+// ---------------------------------------------------------------------------
+//
+// Bypasses the tenant-scope GUC; executes against the owner role
+// (BYPASSRLS) so cross-tenant queries succeed. Matches the F4
+// receipt-pdf-reconcile cron pattern (route-level bulk-read without
+// runInTenantTx).
+
+export function makeDrizzleCsvImportRecordsAdminRepository(
+  database: typeof defaultDb = defaultDb,
+): CsvImportRecordsAdminRepository {
+  return {
+    async findByIdAcrossTenants(recordId) {
+      try {
+        const rows = await database
+          .select({ tenantId: csvImportRecords.tenantId })
+          .from(csvImportRecords)
+          .where(eq(csvImportRecords.recordId, recordId))
+          .limit(1);
+        const row = rows[0];
+        if (!row) return ok(null);
+        return ok({ tenantId: row.tenantId as TenantId });
+      } catch (e) {
+        return err(wrapDbError(e));
+      }
+    },
+
+    async listExpiredErrorCsvBlobsAllTenants(cutoff, limit) {
+      try {
+        const rows = await database
+          .select({
+            recordId: csvImportRecords.recordId,
+            tenantId: csvImportRecords.tenantId,
+            errorCsvBlobUrl: csvImportRecords.errorCsvBlobUrl,
+            errorCsvExpiresAt: csvImportRecords.errorCsvExpiresAt,
+          })
+          .from(csvImportRecords)
+          .where(
+            and(
+              isNotNull(csvImportRecords.errorCsvBlobUrl),
+              isNotNull(csvImportRecords.errorCsvExpiresAt),
+              lt(csvImportRecords.errorCsvExpiresAt, cutoff),
+            ),
+          )
+          .limit(limit);
+        return ok(
+          rows
+            .filter(
+              (r): r is typeof r & { errorCsvBlobUrl: string; errorCsvExpiresAt: Date } =>
+                r.errorCsvBlobUrl !== null && r.errorCsvExpiresAt !== null,
+            )
+            .map<ExpiredBlobRow>((r) => ({
+              recordId: r.recordId as CsvImportRecordId,
+              tenantId: r.tenantId as TenantId,
+              errorCsvBlobUrl: r.errorCsvBlobUrl,
+              errorCsvExpiresAt: r.errorCsvExpiresAt,
+            })),
+        );
+      } catch (e) {
+        return err(wrapDbError(e));
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helper — Drizzle row → port-shaped summary
+// ---------------------------------------------------------------------------
+
+type CsvImportRecordRow = typeof csvImportRecords.$inferSelect;
+
+/**
+ * Drizzle's inferSelect widens enum + CHECK-constrained `TEXT` columns
+ * to plain `string`. The DB enforces `source_format IN ('eventcreate_csv',
+ * 'generic_csv')` and the `outcome` CHECK; rows that don't conform never
+ * reach the application layer. Narrowing here is therefore a safe cast.
+ */
+function rowToSummary(row: CsvImportRecordRow): CsvImportRecordSummary {
+  return {
+    recordId: row.recordId as CsvImportRecordId,
+    tenantId: row.tenantId as TenantId,
+    actorUserId: row.actorUserId as UserId,
+    eventId: row.eventId as EventId,
+    uploadedAt: row.uploadedAt,
+    sourceFormat: row.sourceFormat as CsvImportRecordSummary['sourceFormat'],
+    originalFilename: row.originalFilename,
+    originalSizeBytes: row.originalSizeBytes,
+    rowsTotal: row.rowsTotal,
+    rowsProcessed: row.rowsProcessed,
+    rowsAlreadyImported: row.rowsAlreadyImported,
+    rowsSkipped: row.rowsSkipped,
+    rowsFailed: row.rowsFailed,
+    outcome: row.outcome as CsvImportRecordSummary['outcome'],
+    durationMs: row.durationMs,
+    errorCsvBlobUrl: row.errorCsvBlobUrl,
+    errorCsvExpiresAt: row.errorCsvExpiresAt,
   };
 }
 

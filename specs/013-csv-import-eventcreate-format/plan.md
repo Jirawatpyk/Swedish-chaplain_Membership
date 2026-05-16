@@ -136,7 +136,7 @@ specs/013-csv-import-eventcreate-format/
 │   ├── csv-import-eventcreate-api.md   # Extended Phase 7 contract for EventCreate adapter mode + event_not_selected error
 │   ├── csv-import-history-api.md       # GET /api/admin/events/import/history
 │   ├── error-csv-signed-url-api.md     # GET /api/admin/events/import/<recordId>/error-csv → 307 redirect to signed Blob URL
-│   └── audit-port.md           # Extension of F6 audit-port: 2 new event types
+│   └── audit-port.md           # Extension of F6 audit-port: 3 new event types
 ├── checklists/
 │   └── requirements.md         # Already exists (5/5 clarifications resolved)
 └── tasks.md                    # Phase 2 output (/speckit.tasks — NOT created here)
@@ -221,7 +221,7 @@ docs/runbooks/
 
 ## Re-evaluation after Phase 1 (post-design — 2026-05-15)
 
-- [X] **Constitution Check still passing?** — YES. All 10 gates remain PASS. Phase 1 artifacts introduced no Constitution-impacting design choices beyond what plan.md already committed. **2** new audit event types (`csv_import_error_csv_downloaded` / `csv_import_cross_tenant_probe`) documented in `contracts/audit-port.md`; the `csv_import_error_csv_downloaded` event closes the PDPA Article 30 (record of processing) audit trail requirement that Q4's signed-URL pattern necessarily creates. (`csv_import_refund_review_signalled` dropped per Clarifications Session 2026-05-15 post-critique Q2.)
+- [X] **Constitution Check still passing?** — YES. All 10 gates remain PASS. Phase 1 artifacts introduced no Constitution-impacting design choices beyond what plan.md already committed. **3** new audit event types (`csv_import_error_csv_downloaded` / `csv_import_cross_tenant_probe` / `csv_import_event_mismatch_overridden`) documented in `contracts/audit-port.md`; the `csv_import_error_csv_downloaded` event closes the PDPA Article 30 (record of processing) audit trail requirement that Q4's signed-URL pattern necessarily creates; `csv_import_event_mismatch_overridden` added by critique pass-2 X-R2-1 for FR-019c forensic trail. (`csv_import_refund_review_signalled` dropped per Clarifications Session 2026-05-15 post-critique Q2.)
 - [X] **Are any contracts violating dependency rule?** — NO. The new `ErrorCsvStore` Application port (data-model.md § 4) has Domain types in its input/output only; the `VercelBlobErrorCsvStore` Infrastructure implementation depends inward on the port. No `@vercel/blob` types leak past Infrastructure. No F4 cross-module calls remain after Q2 cut — F4 module is untouched by this feature.
 - [X] **Cross-tenant integration test design covers EventCreate adapter mode?** — YES. Two new integration tests are explicitly planned:
   - `tests/integration/events/csv-import-cross-tenant-eventcreate.test.ts` — uploads an EventCreate-format CSV under Tenant B credentials, asserts Tenant A's `event_registrations` + `csv_import_records` tables remain empty (extends Phase 7 R-S01 to the adapter path).

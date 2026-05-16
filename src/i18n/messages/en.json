@@ -2695,6 +2695,49 @@
           "priorImportRow": "Uploaded {uploadedAt}",
           "cancelCta": "Cancel",
           "continueCta": "Continue anyway"
+        },
+        "history": {
+          "pageTitle": "CSV import history",
+          "pageSubtitle": "Past attendee imports for this chamber. Download the error rows from any import to fix in Excel and re-upload.",
+          "tableAriaLabel": "CSV import history table",
+          "columns": {
+            "uploadedAt": "Uploaded",
+            "event": "Event",
+            "actor": "Actor",
+            "sourceFormat": "Source",
+            "outcome": "Outcome",
+            "rowsProcessed": "Processed",
+            "rowsSkipped": "Skipped",
+            "rowsFailed": "Failed",
+            "actions": "Actions"
+          },
+          "sourceFormat": {
+            "eventcreate_csv": "EventCreate",
+            "generic_csv": "Generic"
+          },
+          "outcome": {
+            "completed": "Completed",
+            "timeout": "Timed out",
+            "partial_failure": "Partial",
+            "invalid_header": "Invalid header",
+            "event_not_found": "Event not found",
+            "event_not_owned_by_tenant": "Wrong tenant",
+            "unexpected_error": "Failed"
+          },
+          "downloadErrorCsv": "Download error CSV",
+          "downloadErrorCsvAriaLabel": "Download error CSV for import {recordId}",
+          "expiredBadge": "Expired",
+          "expiredTooltip": "The error CSV for this import expired after 30 days. Re-run the import to regenerate.",
+          "noErrorRows": "No errors",
+          "emptyState": "No imports yet. Use the upload page to bring in a CSV.",
+          "loadError": "Could not load CSV import history. Reload to try again.",
+          "pagination": {
+            "previous": "Previous",
+            "next": "Next",
+            "pageOf": "Page {page} of {totalPages}",
+            "showing": "Showing {from}–{to} of {totalRecords}"
+          },
+          "backToImport": "Back to import"
         }
       }
     },

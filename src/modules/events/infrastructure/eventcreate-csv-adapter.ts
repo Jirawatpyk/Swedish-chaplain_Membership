@@ -177,13 +177,25 @@ export function inferPaymentStatus(
 // Cancelled` trigger the cancellation cascade (US2 — T033, deferred to
 // US5+ session).
 
-export type EventCreateRowStatus = 'Attending' | 'Skipped';
+/**
+ * F6.1 Phase 4 US2 (T033) — Cancellation cascade. `Attending` rows
+ * proceed normally; `Cancellation` rows pass through with
+ * `payment_status='refunded'` so the FR-018 refund branch in
+ * `processAttendeeInTx` can flip an existing paid row + emit the
+ * credit-back audit; all other statuses (Waitlisted / Pending /
+ * No Show / custom) are surfaced as `Skipped` and flow into
+ * `rowsSkipped` per FR-007.
+ */
+export type EventCreateRowStatus = 'Attending' | 'Cancellation' | 'Skipped';
 
 export function classifyEventCreateStatus(
   rawStatus: string | null | undefined,
 ): EventCreateRowStatus {
   if (rawStatus === null || rawStatus === undefined) return 'Skipped';
-  return rawStatus.trim() === 'Attending' ? 'Attending' : 'Skipped';
+  const trimmed = rawStatus.trim();
+  if (trimmed === 'Attending') return 'Attending';
+  if (trimmed === 'Cancelled' || trimmed === 'Canceled') return 'Cancellation';
+  return 'Skipped';
 }
 
 // ---------------------------------------------------------------------------
@@ -204,6 +216,14 @@ export function classifyEventCreateStatus(
 export interface EventCreateAttendeeRow {
   /** True if status was `Attending`; false otherwise (row will be skipped). */
   readonly isAttending: boolean;
+  /**
+   * F6.1 Phase 4 US2 (T033) — true when Status='Cancelled'/'Canceled'.
+   * Mutually exclusive with `isAttending`. The parser surfaces these rows
+   * as `ok:true` with `payment_status='refunded'` + `intendedStateChange=true`
+   * so the use-case bypasses the idempotency receipt + the FR-018 refund
+   * branch in `processAttendeeInTx` flips an existing paid row.
+   */
+  readonly isCancellation: boolean;
   /** Lowercased + mailto-stripped + trimmed for idempotency hashing. */
   readonly attendeeEmail: string;
   /** Title-case normalized full name. */
@@ -241,9 +261,11 @@ export function translateEventCreateRow(
   const pdpa = cells.get('Personal Data Protection Consent');
 
   const email = stripMailtoPrefix(emailRaw).trim().toLowerCase();
+  const classification = classifyEventCreateStatus(status);
 
   return {
-    isAttending: classifyEventCreateStatus(status) === 'Attending',
+    isAttending: classification === 'Attending',
+    isCancellation: classification === 'Cancellation',
     attendeeEmail: email,
     attendeeName: normalizeAttendeeName(first, last),
     attendeeCompany: company && company.length > 0 ? company : undefined,

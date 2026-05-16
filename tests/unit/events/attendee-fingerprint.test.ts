@@ -29,8 +29,14 @@ function makeRow(
   email: string,
   opts: { isAttending?: boolean } = {},
 ): EventCreateAttendeeRow {
+  const attending = opts.isAttending ?? true;
   return {
-    isAttending: opts.isAttending ?? true,
+    isAttending: attending,
+    // T033 (F6.1 Phase 4 US2) — Cancellation flag is mutually exclusive
+    // with `isAttending` per the adapter contract. Fingerprint tests
+    // use `Skipped` for non-attending (not `Cancelled`) so this stays
+    // false even when isAttending=false.
+    isCancellation: false,
     attendeeEmail: email,
     attendeeName: 'Test',
     attendeeCompany: undefined,
@@ -38,7 +44,7 @@ function makeRow(
     ticketType: undefined,
     inferredPaymentStatus: 'paid',
     pdpaConsentAcknowledged: null,
-    rawStatus: opts.isAttending === false ? 'Cancelled' : 'Attending',
+    rawStatus: attending ? 'Attending' : 'Waitlisted',
   };
 }
 

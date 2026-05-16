@@ -784,12 +784,17 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
 
   /**
    * R6 TEST-R6-03 — non-member existing row (matchedMemberId === null).
-   * Non-members never had quota counted, so the refund branch must
-   * short-circuit without calling markRefunded or emitting credit-back
-   * audits. Locks the 5-condition guard's `matchedMemberId !== null`
-   * predicate.
+   *
+   * F6.1 Phase 4 US2 (T033) — semantics adjusted: the row-flip itself
+   * (markRefunded) NOW runs even for non-member rows so the CSV
+   * cancellation cascade can flip an unmatched attendee's payment
+   * status to refunded. The `quota_credit_back_refund` audit remains
+   * gated on matchedMember + counted_against_* — non-members never had
+   * quota counted, so no credit-back audit emits.
+   *
+   * This test pins both invariants after the F6.1 relaxation.
    */
-  it('isRefundTransition non-member (matchedMemberId=null) → guard short-circuits, no refund processing (TEST-R6-03)', async () => {
+  it('isRefundTransition non-member (matchedMemberId=null) → flip runs, no quota credit-back audit (TEST-R6-03 / F6.1 T033)', async () => {
     const existingRegNonMember = {
       tenantId: 'test',
       registrationId: 'reg-non-member',
@@ -818,6 +823,20 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     ).mockResolvedValueOnce(
       ok({ registration: existingRegNonMember, isNewRegistration: false }),
     );
+    // F6.1 T033 — markRefunded now runs for non-member refund transitions
+    // (the row flip is unconditional; quota credit-back audit remains
+    // member-gated). Provide a successful return so the call site doesn't
+    // throw `TxStageError('quota_decrement')` on an undefined Result.
+    (ports.registrationsRepo.markRefunded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        registration: { ...existingRegNonMember, ticket: { ...existingRegNonMember.ticket, paymentStatus: 'refunded' as const } },
+        previousQuotaEffect: {
+          countedAgainstPartnership: false,
+          countedAgainstCulturalQuota: false,
+        },
+        previousPaymentStatus: 'paid' as const,
+      }),
+    );
     (ports.attendeeMatcher.match as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       ok({
         resolution: { type: 'non_member', matchedMemberId: null, matchedContactId: null },
@@ -843,7 +862,9 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     );
 
     expect(result.ok).toBe(true);
-    expect(ports.registrationsRepo.markRefunded).not.toHaveBeenCalled();
+    // F6.1 T033 — markRefunded IS called even for non-member rows.
+    expect(ports.registrationsRepo.markRefunded).toHaveBeenCalledTimes(1);
+    // No quota credit-back audit (non-member never had counted_against_*).
     const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
     const creditBackCalls = emitCalls.filter(
       ([entry]) =>

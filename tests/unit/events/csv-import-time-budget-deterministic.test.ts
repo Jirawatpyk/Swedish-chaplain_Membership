@@ -122,6 +122,7 @@ describe('NEW-L — deterministic time-budget short-circuit (no flaky env-depend
                     payment_status: 'paid' as const,
                   },
                   pdpaConsentAcknowledged: null,
+                  intendedStateChange: false,
                 };
               }
             })(),
@@ -206,6 +207,7 @@ describe('NEW-L — deterministic time-budget short-circuit (no flaky env-depend
                     payment_status: 'paid' as const,
                   },
                   pdpaConsentAcknowledged: null,
+                  intendedStateChange: false,
                 };
               }
             })(),

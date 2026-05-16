@@ -20,17 +20,37 @@
  */
 import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { eventcreateMetrics } from '@/lib/metrics';
+import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import {
   importCsv,
   makeImportCsvDeps,
   asEventId,
+  asCsvImportRecordId,
+  type CsvImportRecordId,
+  type EventId,
+  listCsvImportRecords,
+  type ListCsvImportRecordsOutput,
+  type ListCsvImportRecordsError,
+  generateErrorCsvSignedUrl,
+  type GenerateErrorCsvSignedUrlOutcome,
+  sweepExpiredErrorCsvBlobs,
+  type SweepExpiredErrorCsvBlobsOutput,
+  makeDrizzleCsvImportRecordsRepository,
+  makeDrizzleCsvImportRecordsAdminRepository,
+  vercelBlobErrorCsvStore,
+  makeStandaloneAuditDeps,
   type ImportCsvOutcome,
   type ImportSummary,
   type SelectedEventForImport,
 } from '@/modules/events';
+import type { F6AuditEntry, F6AuditEventType, F6AuditPort } from '@/modules/events/application/ports/audit-port';
 import type { UserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
+import { runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
+import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
+import type { Result } from '@/lib/result';
 
 // ---------------------------------------------------------------------------
 // Rate-limit
@@ -162,6 +182,12 @@ export async function runImportCsv(
       ...(input.columnMapping !== undefined && {
         columnMapping: input.columnMapping,
       }),
+      // T053 (F6.1 Phase 6) — sub-flag rollback safety net. When OFF,
+      // the parser skips EventCreate detection + forces generic-CSV
+      // path even if the header matches the 6 EventCreate columns.
+      // Read once at composition time so a flag flip drains in seconds
+      // for new requests; in-flight imports complete normally per E14.
+      adapterEnabled: env.features.f6EventCreateAdapter,
     },
     deps,
   );
@@ -208,6 +234,141 @@ interface EventLookupRow extends Record<string, unknown> {
   readonly start_date: string;
   readonly category: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// F6.1 Phase 5 US5 — runListCsvImportRecords composition wrapper (T040)
+// ---------------------------------------------------------------------------
+
+export interface RunListCsvImportRecordsInput {
+  readonly tenantSlug: string;
+  readonly page: number;
+  readonly perPage: number;
+  /** Validated-string event_id; branded inside the wrapper. */
+  readonly eventIdFilter?: string;
+  /** Validated-string actor user_id (no branding required — UserId is string). */
+  readonly actorUserIdFilter?: UserId;
+}
+
+export async function runListCsvImportRecords(
+  input: RunListCsvImportRecordsInput,
+): Promise<Result<ListCsvImportRecordsOutput, ListCsvImportRecordsError>> {
+  return runInTenant(asTenantContext(input.tenantSlug), async (tx) => {
+    const repo = makeDrizzleCsvImportRecordsRepository(tx);
+    return listCsvImportRecords(
+      {
+        tenantId: asTenantId(input.tenantSlug),
+        page: input.page,
+        perPage: input.perPage,
+        ...(input.eventIdFilter !== undefined && {
+          eventIdFilter: asEventId(input.eventIdFilter),
+        }),
+        ...(input.actorUserIdFilter !== undefined && {
+          actorUserIdFilter: input.actorUserIdFilter,
+        }),
+      },
+      { csvImportRecordsRepo: repo },
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 Phase 5 US5 — runGenerateErrorCsvSignedUrl wrapper (T041)
+// ---------------------------------------------------------------------------
+
+export interface RunGenerateErrorCsvSignedUrlInput {
+  readonly tenantSlug: string;
+  readonly actorUserId: UserId;
+  /** Validated-UUID recordId; branded inside the wrapper. */
+  readonly recordId: string;
+  readonly sourceIp: string;
+}
+
+export async function runGenerateErrorCsvSignedUrl(
+  input: RunGenerateErrorCsvSignedUrlInput,
+): Promise<GenerateErrorCsvSignedUrlOutcome> {
+  return runInTenant(asTenantContext(input.tenantSlug), async (tx) => {
+    const repo = makeDrizzleCsvImportRecordsRepository(tx);
+    const adminRepo = makeDrizzleCsvImportRecordsAdminRepository();
+    // The audit port writes inside the current tx scope (`emit`).
+    // Use the standalone audit port for cross-tenant probe events
+    // (those must commit independently of the calling tx).
+    const audit = makePinoAuditPort(tx);
+    const standalone = makeStandaloneAuditDeps();
+    // Compose a hybrid F6AuditPort that uses `emit` for success path
+    // (in-tx commit) AND routes cross-tenant probe + downloaded audits
+    // through standalone-tx so they survive even when the calling tx
+    // is later aborted.
+    const hybrid: F6AuditPort = {
+      ...audit,
+      emit: async (entry) => {
+        // Both probe + downloaded emits go through the standalone
+        // tx so a parent-tx rollback (rare on read-only paths) does
+        // not lose the audit row. Aligns with the audit-trust
+        // invariants from F4/F5/F7.
+        return standalone.emitStandalone(entry as F6AuditEntry<F6AuditEventType>);
+      },
+    };
+    const outcome = await generateErrorCsvSignedUrl(
+      {
+        tenantId: asTenantId(input.tenantSlug),
+        actorUserId: input.actorUserId,
+        recordId: asCsvImportRecordId(input.recordId),
+        sourceIp: input.sourceIp,
+      },
+      {
+        csvImportRecordsRepo: repo,
+        csvImportRecordsAdminRepo: adminRepo,
+        errorCsvStore: vercelBlobErrorCsvStore,
+        audit: hybrid,
+        logger,
+        onDownloadSuccess: (tenantId) =>
+          eventcreateMetrics.csvErrorCsvDownloaded(tenantId),
+      },
+    );
+    if (!outcome.ok) {
+      // The use-case is typed `Promise<Result<…, never>>` so this is unreachable;
+      // throw to surface the unexpected type-system violation visibly.
+      throw new Error('runGenerateErrorCsvSignedUrl: unreachable err branch');
+    }
+    return outcome.value;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// F6.1 Phase 5 US5 — runSweepExpiredErrorCsvBlobs wrapper (T049)
+// ---------------------------------------------------------------------------
+
+export interface RunSweepExpiredErrorCsvBlobsInput {
+  readonly limit?: number;
+}
+
+export async function runSweepExpiredErrorCsvBlobs(
+  input: RunSweepExpiredErrorCsvBlobsInput,
+): Promise<SweepExpiredErrorCsvBlobsOutput> {
+  const adminRepo = makeDrizzleCsvImportRecordsAdminRepository();
+  const outcome = await sweepExpiredErrorCsvBlobs(input, {
+    csvImportRecordsAdminRepo: adminRepo,
+    errorCsvStore: vercelBlobErrorCsvStore,
+    withTenantScope: async (tenantId, fn) => {
+      return runInTenant(asTenantContext(tenantId), async (tx) => {
+        const repo = makeDrizzleCsvImportRecordsRepository(tx);
+        return fn(repo);
+      });
+    },
+    logger,
+  });
+  if (!outcome.ok) {
+    throw new Error('runSweepExpiredErrorCsvBlobs: unreachable err branch');
+  }
+  return outcome.value;
+}
+
+// Suppress unused-import lint when no consumer triggers the type-only
+// imports above (TenantTx, EventId, CsvImportRecordId are used only as
+// type re-exports in some compile paths).
+type _UnusedTypes = TenantTx | EventId | CsvImportRecordId;
+const _unused: _UnusedTypes | undefined = undefined;
+void _unused;
 
 /**
  * F6.1 (Feature 013 · T023) — Single-query event fetch by id WITHOUT

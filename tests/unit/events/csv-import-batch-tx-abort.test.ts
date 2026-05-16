@@ -110,6 +110,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
                     payment_status: 'paid' as const,
                   },
                   pdpaConsentAcknowledged: null,
+                  intendedStateChange: false,
                 };
               }
             })(),
@@ -216,6 +217,7 @@ describe('NEW-A regression — ghost-row invariant on COMMIT-time failure', () =
                     payment_status: 'paid' as const,
                   },
                   pdpaConsentAcknowledged: null,
+                  intendedStateChange: false,
                 };
               }
             })(),

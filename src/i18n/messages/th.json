@@ -2695,6 +2695,49 @@
           "priorImportRow": "อัปโหลดเมื่อ {uploadedAt}",
           "cancelCta": "ยกเลิก",
           "continueCta": "ดำเนินการต่อ"
+        },
+        "history": {
+          "pageTitle": "ประวัติการนำเข้า CSV",
+          "pageSubtitle": "รายการนำเข้าผู้เข้าร่วมในอดีตของหอการค้านี้ ดาวน์โหลด CSV เฉพาะแถวที่ผิดพลาดเพื่อนำไปแก้ใน Excel และอัปโหลดใหม่",
+          "tableAriaLabel": "ตารางประวัติการนำเข้า CSV",
+          "columns": {
+            "uploadedAt": "อัปโหลดเมื่อ",
+            "event": "อีเวนต์",
+            "actor": "ผู้ดำเนินการ",
+            "sourceFormat": "รูปแบบที่มา",
+            "outcome": "ผลลัพธ์",
+            "rowsProcessed": "ประมวลผล",
+            "rowsSkipped": "ข้าม",
+            "rowsFailed": "ล้มเหลว",
+            "actions": "การกระทำ"
+          },
+          "sourceFormat": {
+            "eventcreate_csv": "EventCreate",
+            "generic_csv": "ทั่วไป"
+          },
+          "outcome": {
+            "completed": "สำเร็จ",
+            "timeout": "หมดเวลา",
+            "partial_failure": "บางส่วนล้มเหลว",
+            "invalid_header": "หัวคอลัมน์ไม่ถูกต้อง",
+            "event_not_found": "ไม่พบอีเวนต์",
+            "event_not_owned_by_tenant": "ผิดผู้เช่า",
+            "unexpected_error": "ล้มเหลว"
+          },
+          "downloadErrorCsv": "ดาวน์โหลด CSV ของแถวผิดพลาด",
+          "downloadErrorCsvAriaLabel": "ดาวน์โหลด CSV ของแถวผิดพลาดสำหรับการนำเข้า {recordId}",
+          "expiredBadge": "หมดอายุแล้ว",
+          "expiredTooltip": "ไฟล์ CSV ของแถวผิดพลาดสำหรับการนำเข้าครั้งนี้หมดอายุหลังจาก 30 วัน หากต้องการดาวน์โหลด ให้นำเข้าใหม่อีกครั้ง",
+          "noErrorRows": "ไม่มีข้อผิดพลาด",
+          "emptyState": "ยังไม่มีการนำเข้า ใช้หน้าอัปโหลดเพื่อนำเข้า CSV",
+          "loadError": "ไม่สามารถโหลดประวัติการนำเข้า CSV ได้ โปรดลองใหม่",
+          "pagination": {
+            "previous": "ก่อนหน้า",
+            "next": "ถัดไป",
+            "pageOf": "หน้า {page} จาก {totalPages}",
+            "showing": "แสดง {from}–{to} จาก {totalRecords}"
+          },
+          "backToImport": "กลับไปหน้านำเข้า"
         }
       }
     },

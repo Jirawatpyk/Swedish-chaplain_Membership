@@ -467,4 +467,27 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
       '/admin/events/import (event-mismatch warning dialog open)',
     );
   });
+
+  // T048 (F6.1 · Feature 013 — Phase 5 US5) — history page axe scan.
+  // 4th visual state beyond Phase 7's coverage. Validates table role +
+  // pagination nav + download button labels remain WCAG 2.1 AA clean.
+  test.skip(
+    !ADMIN_EMAIL || !ADMIN_PASSWORD,
+    'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to enable',
+  );
+  test('@a11y F6.1 — /admin/events/import/history (paginated history table)', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import/history');
+    // Wait for either the table or the empty-state region to render.
+    const tableOrEmpty = page
+      .locator('[data-testid="csv-import-history-table"], [data-testid="csv-import-history-empty"]')
+      .first();
+    await expect(tableOrEmpty).toBeVisible({ timeout: 30_000 });
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import/history (history list)',
+    );
+  });
 });

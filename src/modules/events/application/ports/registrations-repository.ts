@@ -162,6 +162,53 @@ export interface RegistrationsRepository {
     emailLower: string,
   ): Promise<Result<ReadonlyArray<EventRegistrationAggregate>, RegistrationsRepositoryError>>;
 
+  /**
+   * F6.1 Phase 4 US2 (T031) — lookup an existing registration by
+   * `(tenantId, eventId, attendee_email_lower)` for the re-upload
+   * state-change detection path. Called by `processOneRowInSavepoint`
+   * on idempotency-receipt duplicate-hit so we can compare the
+   * incoming row's fields (payment_status, company) against the
+   * persisted row + apply an UPDATE when they differ. Returns null
+   * when no matching row exists (should not happen if the receipt was
+   * a real duplicate, but defensive on the boundary).
+   *
+   * Index: piggybacks on the existing `(tenant_id, event_id,
+   * attendee_email_lower)` lookup pattern used by Phase 4 attendee
+   * table. No new index required.
+   */
+  findByEventAndEmail(
+    tenantId: TenantId,
+    eventId: EventId,
+    emailLower: string,
+  ): Promise<
+    Result<EventRegistrationAggregate | null, RegistrationsRepositoryError>
+  >;
+
+  /**
+   * F6.1 Phase 4 US2 (T031) — non-refund payment_status state change
+   * on re-upload. Used by `processOneRowInSavepoint` when the incoming
+   * row's inferred payment_status (from EventCreate Notes) differs
+   * from the persisted row's status AND the new value is NOT
+   * `'refunded'` (refund transitions go through `markRefunded` for
+   * the quota credit-back path).
+   *
+   * Idempotent: re-running with the same status is a no-op UPDATE.
+   * REJECTS rows where `piiPseudonymisedAt IS NOT NULL` per FR-014.
+   */
+  updatePaymentStatus(
+    tenantId: TenantId,
+    registrationId: RegistrationId,
+    nextPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus,
+  ): Promise<
+    Result<
+      {
+        readonly registration: EventRegistrationAggregate;
+        readonly previousPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
+      },
+      RegistrationsRepositoryError
+    >
+  >;
+
   countConsumedByMember(
     input: CountConsumedByMemberInput,
   ): Promise<Result<number, RegistrationsRepositoryError>>;

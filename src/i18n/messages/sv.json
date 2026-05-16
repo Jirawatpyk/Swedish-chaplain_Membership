@@ -2695,6 +2695,49 @@
           "priorImportRow": "Uppladdat {uploadedAt}",
           "cancelCta": "Avbryt",
           "continueCta": "Fortsätt ändå"
+        },
+        "history": {
+          "pageTitle": "CSV-importhistorik",
+          "pageSubtitle": "Tidigare deltagarimporter för denna kammare. Ladda ner felraderna från en tidigare import för att rätta i Excel och ladda upp på nytt.",
+          "tableAriaLabel": "Tabell över CSV-importhistorik",
+          "columns": {
+            "uploadedAt": "Uppladdat",
+            "event": "Evenemang",
+            "actor": "Aktör",
+            "sourceFormat": "Källformat",
+            "outcome": "Resultat",
+            "rowsProcessed": "Bearbetade",
+            "rowsSkipped": "Hoppade över",
+            "rowsFailed": "Misslyckade",
+            "actions": "Åtgärder"
+          },
+          "sourceFormat": {
+            "eventcreate_csv": "EventCreate",
+            "generic_csv": "Generisk"
+          },
+          "outcome": {
+            "completed": "Klar",
+            "timeout": "Tidsgräns nådd",
+            "partial_failure": "Delvis fel",
+            "invalid_header": "Ogiltig rubrik",
+            "event_not_found": "Evenemang saknas",
+            "event_not_owned_by_tenant": "Fel kammare",
+            "unexpected_error": "Misslyckades"
+          },
+          "downloadErrorCsv": "Ladda ner fel-CSV",
+          "downloadErrorCsvAriaLabel": "Ladda ner fel-CSV för importen {recordId}",
+          "expiredBadge": "Utgången",
+          "expiredTooltip": "Fel-CSV-filen för denna import utgick efter 30 dagar. Kör om importen för att återskapa filen.",
+          "noErrorRows": "Inga fel",
+          "emptyState": "Inga importer ännu. Använd uppladdningssidan för att ta in en CSV.",
+          "loadError": "Kunde inte läsa in CSV-importhistorik. Ladda om sidan för att försöka igen.",
+          "pagination": {
+            "previous": "Föregående",
+            "next": "Nästa",
+            "pageOf": "Sida {page} av {totalPages}",
+            "showing": "Visar {from}–{to} av {totalRecords}"
+          },
+          "backToImport": "Tillbaka till import"
         }
       }
     },

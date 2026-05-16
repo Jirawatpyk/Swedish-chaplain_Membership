@@ -50,6 +50,23 @@ export type ParsedRow =
        * between parser and use-case.
        */
       readonly pdpaConsentAcknowledged: PdpaConsentAcknowledged;
+      /**
+       * F6.1 Phase 4 US2 (T033) — Cancellation cascade marker. TRUE only
+       * for EventCreate rows whose `Status` was `Cancelled` (or
+       * `Canceled`); FALSE for Attending rows + every generic-CSV row.
+       *
+       * When TRUE, the use-case BYPASSES the idempotency receipt insert
+       * and routes the row through `processAttendeeInTx` directly so the
+       * FR-018 refund branch can flip an existing paid row + emit the
+       * `quota_credit_back_refund` audit. Rows where no prior
+       * registration exists land as a refunded ghost row (harmless —
+       * no quota effect, no audit).
+       *
+       * Required boolean (no `undefined`) per `exactOptionalPropertyTypes`
+       * so the use-case can rely on plain `parsed.intendedStateChange`
+       * truthiness without a `?? false` coalesce.
+       */
+      readonly intendedStateChange: boolean;
     }
   | {
       readonly ok: false;
@@ -118,6 +135,15 @@ export interface SelectedEventContext {
  */
 export interface ParseStreamFormattedInput extends CsvParseInput {
   readonly eventContext: SelectedEventContext;
+  /**
+   * T053 (F6.1 Phase 6) — `FEATURE_F6_EVENTCREATE_ADAPTER` sub-flag.
+   * When `false`, the parser SKIPS EventCreate detection and forces
+   * the generic-CSV path even if the header has the 6 EventCreate
+   * required columns. Used by the route handler as the rollback
+   * safety net per Spec § Rollback Plan. Default `true` (omitted ⇒
+   * normal EventCreate detection runs).
+   */
+  readonly adapterEnabled?: boolean;
 }
 
 /**

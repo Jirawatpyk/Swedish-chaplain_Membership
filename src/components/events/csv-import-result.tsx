@@ -26,8 +26,10 @@
  *   - data-testid hooks for the E2E spec (T091).
  */
 import { useTranslations } from 'next-intl';
-import { TriangleAlert } from 'lucide-react';
+import { Download, TriangleAlert } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { MatchStatusBadge } from './match-status-badge';
 import type { MatchType } from '@/modules/events';
 
@@ -59,6 +61,14 @@ export interface CsvImportResultPayload {
    * back-compat).
    */
   readonly historyPersisted?: boolean;
+  /**
+   * F6.1 Phase 5 US5 (T045) — when `true`, surface a persistent
+   * "Download error CSV" link to the signed-URL endpoint. The link
+   * resolves to a 15-min Vercel Blob signed URL via the 307 redirect
+   * at `/api/admin/events/import/{recordId}/error-csv`. Hidden when
+   * absent or false (Phase 7 imports OR imports with no failed rows).
+   */
+  readonly errorCsvAvailable?: boolean;
 }
 
 interface CsvImportResultProps {
@@ -84,6 +94,7 @@ function formatDuration(ms: number): string {
 
 export function CsvImportResult({ result }: CsvImportResultProps) {
   const t = useTranslations('admin.events.import.result');
+  const tHistory = useTranslations('admin.events.import.history');
   const tMatch = useTranslations('admin.events.matchType');
 
   return (
@@ -163,6 +174,26 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
               {t('recordIdLabel')}:{' '}
               <span className="font-mono select-all">{result.recordId}</span>
             </p>
+            {/* F6.1 T045 — persistent download link to the signed-URL
+                endpoint. Only rendered when the import committed an
+                error-CSV blob (rowsFailed > 0 + blob upload succeeded).
+                Browser follows the 307 redirect from the server. */}
+            {result.errorCsvAvailable ? (
+              <a
+                href={`/api/admin/events/import/${result.recordId}/error-csv`}
+                className={cn(
+                  buttonVariants({ variant: 'outline' }),
+                  'min-h-11 self-start',
+                )}
+                data-testid="result-download-error-csv"
+                aria-label={tHistory('downloadErrorCsvAriaLabel', {
+                  recordId: result.recordId.slice(0, 8),
+                })}
+              >
+                <Download aria-hidden="true" className="mr-2 size-4" />
+                {tHistory('downloadErrorCsv')}
+              </a>
+            ) : null}
           </div>
         ) : null}
 

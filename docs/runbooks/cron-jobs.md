@@ -44,6 +44,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
 | **F6 idempotency sweep** | **`POST /api/cron/eventcreate/sweep-idempotency-receipts`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/cron/eventcreate/pseudonymise-non-member-pii`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
+| **F6.1 error-CSV blob TTL sweep** (T058) | **`GET /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
 accommodates them). **5-minute-cadence jobs** are mandatory cron-job.org
@@ -529,6 +530,80 @@ partial index `event_regs_pseudonymise_eligibility_idx` excludes them).
 - **Expected response codes**: as above
 - **On-call response**: a sustained `outcome=pseudonymised` count of 0 for >30 days when registrations existed older than 2 years indicates a sweep regression. Cross-reference against retention audit (`pii_pseudonymisation_sweep_run` event in audit_log).
 - **Handler module**: `src/app/api/cron/eventcreate/pseudonymise-non-member-pii/route.ts` (Phase 10 T113)
+
+## F6.1 — error-CSV blob TTL sweep (NEW — F6.1 Phase 5 US5 / T058)
+
+Daily TTL sweep that deletes expired error-CSV blobs (`error_csv_expires_at < NOW()`)
+from Vercel Blob storage + clears `error_csv_blob_url` + `error_csv_expires_at` on
+the matching `csv_import_records` row. PDPA Section 37 minimization compliance —
+the 30-day TTL is set when the import use-case writes the blob; this cron enforces it.
+
+**Lineage**: research.md R6 + critique E5 + operator gate T058 (per spec §
+Operational notes). Vercel Hobby plan does NOT host this cron natively
+(only 1 daily slot, occupied by F4 outbox purge). cron-job.org owns the
+trigger; the handler at `src/app/api/internal/retention/sweep-error-csv-blobs/route.ts`
+is the recipient.
+
+### Setup steps (one-time, reproducible)
+
+1. Sign in to https://cron-job.org with the SweCham ops account.
+2. Create job:
+   - **Title**: `Chamber-OS · F6.1 error-CSV blob TTL sweep`
+   - **URL**: `https://swecham.zyncdata.app/api/internal/retention/sweep-error-csv-blobs`
+   - **Method**: GET
+   - **Schedule**: `0 22 * * *` UTC (= 05:00 Asia/Bangkok daily)
+   - **Headers**:
+     - Key: `Authorization`
+     - Value: `Bearer ${CRON_SECRET}` (read from Vercel env; ≥16 chars)
+   - **Timeout**: 30 seconds (idempotent scan; bounded at limit=100 rows/run)
+   - **Retry on failure**: OFF (per F4/F5/F7/F8 convention — the sweep is
+     idempotent + the next 24h tick is the natural retry; cron-job.org's
+     default retry storm on 500 would hammer the endpoint during a Blob
+     outage)
+   - **Email alert**: enable "Alert on ≥2 consecutive failures" to the
+     maintainer-on-duty inbox (Spec § Operational notes E5 / T058)
+3. Commit the cron-job.org job ID to this file (replace `<TODO>` after
+   creation): **Job ID: `<TODO — operator fills in after T058 setup>`**
+
+### Expected response codes
+
+| HTTP code | Body | Operator action |
+|-----------|------|-----------------|
+| 200 + `sweptCount` ≥ 0 | `{ok:true, candidatesScanned, sweptCount, skippedCount, cutoff, durationMs}` | Success — log shows steady-state daily volume |
+| 200 + `skippedCount > 0` sustained | Blob delete OR DB clear failed for some rows | Inspect pino `f6_error_csv_sweep_blob_delete_failed` / `f6_error_csv_sweep_clear_failed`; next-day re-run retries |
+| 401 | Bearer mismatch | Rotate `CRON_SECRET` in Vercel + update cron-job.org header |
+| 500 + `sweep_cron_failed` | Use-case threw at outer level (rare) | Check Vercel runtime logs; manual recovery via § Manual recovery |
+| 503 | Currently unreachable — handler does NOT check feature flags (cron always runs) | Should not occur; if observed, investigate |
+
+### Manual recovery
+
+If cron-job.org is offline OR email alert fires for ≥2 consecutive day failures:
+
+```powershell
+# Replace YOUR_CRON_SECRET with the value from Vercel env.
+curl -X GET `
+     -H "Authorization: Bearer YOUR_CRON_SECRET" `
+     https://swecham.zyncdata.app/api/internal/retention/sweep-error-csv-blobs
+```
+
+The sweep is idempotent. SLA target: blob deletion within 35 days max
+(5-day grace beyond the 30-day TTL; PDPA Section 37 minimization still
+satisfied). See [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md)
+for the full operational runbook.
+
+### Alert rules
+
+- cron-job.org's "consecutive failures ≥ 2" email alert is the primary signal.
+- Secondary: `eventcreate_csv_error_csv_downloaded_total{tenant}` rate suddenly
+  surging (admins repeatedly fetching error CSVs that should have expired) may
+  indicate the sweep is silently failing to delete blobs — cross-reference with
+  the `f6_error_csv_sweep_completed` pino info log emit cadence.
+
+### Handler module
+
+`src/app/api/internal/retention/sweep-error-csv-blobs/route.ts` (F6.1 Phase 5 US5 / T050)
+
+---
 
 ## Owner
 

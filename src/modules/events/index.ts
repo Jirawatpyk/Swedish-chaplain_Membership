@@ -405,6 +405,70 @@ export type {
   SelectedEventForImport,
 } from './application/use-cases/import-csv';
 
+// F6.1 (Feature 013 · Phase 5 US5) — history listing + signed-URL
+// download + TTL sweep use-cases. The route + composition layers in
+// `src/lib/events-csv-import-deps.ts` consume these via this barrel.
+
+export {
+  asCsvImportRecordId,
+  tryCsvImportRecordId,
+  type CsvImportRecordId,
+} from './domain/csv-import-record-id';
+
+export { listCsvImportRecords } from './application/use-cases/list-csv-import-records';
+export type {
+  ListCsvImportRecordsInput,
+  ListCsvImportRecordsOutput,
+  ListCsvImportRecordsRowView,
+  ListCsvImportRecordsError,
+  ListCsvImportRecordsDeps,
+} from './application/use-cases/list-csv-import-records';
+
+export { generateErrorCsvSignedUrl } from './application/use-cases/generate-error-csv-signed-url';
+export type {
+  GenerateErrorCsvSignedUrlInput,
+  GenerateErrorCsvSignedUrlOutcome,
+  GenerateErrorCsvSignedUrlDeps,
+} from './application/use-cases/generate-error-csv-signed-url';
+
+export { sweepExpiredErrorCsvBlobs } from './application/use-cases/sweep-expired-error-csv-blobs';
+export type {
+  SweepExpiredErrorCsvBlobsInput,
+  SweepExpiredErrorCsvBlobsOutput,
+  SweepExpiredErrorCsvBlobsDeps,
+} from './application/use-cases/sweep-expired-error-csv-blobs';
+
+export type {
+  CsvImportRecordsRepository,
+  CsvImportRecordsAdminRepository,
+  CsvImportRecordsRepoError,
+  CsvImportRecordSummary,
+  ListByTenantInput,
+  ListByTenantResult,
+  PriorImportMatch,
+  ExpiredBlobRow,
+  InsertCsvImportRecordInput,
+  UpdateOutcomeInput,
+  SetErrorCsvBlobInput,
+  FindByFingerprintInput,
+} from './application/ports/csv-import-records-repo';
+
+export type {
+  ErrorCsvStore,
+  ErrorCsvStoreError,
+} from './application/ports/error-csv-store';
+
+// F6.1 Phase 5 US5 — Drizzle + Vercel-Blob adapter factories. Exposed
+// at the barrel so `src/lib/events-csv-import-deps.ts` composition
+// layer can wire them without reaching directly into infrastructure
+// (per Constitution Principle III; `src/lib/**` is the documented
+// composition seam).
+export {
+  makeDrizzleCsvImportRecordsRepository,
+  makeDrizzleCsvImportRecordsAdminRepository,
+} from './infrastructure/drizzle-csv-import-records-repo';
+export { vercelBlobErrorCsvStore } from './infrastructure/vercel-blob-error-csv-store';
+
 // F6.1 (Feature 013 · T026 full impl) — admin-manual event creation.
 // Closes the "no way to seed events" gap that EventCreate API-gating
 // opened (project_eventcreate_api_gated memory).
