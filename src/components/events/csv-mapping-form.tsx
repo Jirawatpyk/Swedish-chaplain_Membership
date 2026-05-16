@@ -57,6 +57,24 @@ const REQUIRED_COLUMNS = [
   'attendee_email',
   'attendee_name',
 ] as const;
+/**
+ * F6.1 (FR-001) — EventCreate adapter signature columns (case-sensitive
+ * exact match). When ALL six are present, the server-side parser
+ * switches to EventCreate adapter mode and translates the 29-col native
+ * format into the canonical row shape. Client-side preview must
+ * recognise this so it does NOT flag the generic REQUIRED_COLUMNS as
+ * "missing" when the file is in EventCreate format — staff-review
+ * T060 follow-up (2026-05-16): missing this detection caused the
+ * Confirm button to stay disabled on Grant Thornton fixture uploads.
+ */
+const EVENTCREATE_REQUIRED_COLUMNS = [
+  'Basic Info',
+  'Status',
+  'First Name',
+  'Last Name',
+  'Email',
+  'Attendee ID',
+] as const;
 // AS1 (spec.md US5 line 129) lists 7 canonical columns the preview SHOULD
 // surface — the 5 required above plus the 2 optional below. We render
 // optional columns in muted style so admins see them as "detected,
@@ -99,7 +117,18 @@ function sniffPreview(text: string): PreviewData {
         .map((c) => c.trim().replace(/^"(.*)"$/, '$1')),
     );
   const headerSet = new Set(header);
-  const missingRequired = REQUIRED_COLUMNS.filter((c) => !headerSet.has(c));
+  // F6.1 FR-001 — if the file is in EventCreate native format (all 6
+  // adapter columns present), the server adapter translates it into
+  // the canonical schema. Client-side preview MUST treat this as
+  // valid (no missing required columns) so the Confirm button is
+  // not gated on the generic-CSV schema. Staff-review T060 fix
+  // (2026-05-16).
+  const isEventCreateFormat = EVENTCREATE_REQUIRED_COLUMNS.every((c) =>
+    headerSet.has(c),
+  );
+  const missingRequired = isEventCreateFormat
+    ? []
+    : REQUIRED_COLUMNS.filter((c) => !headerSet.has(c));
   return { detectedColumns: header, rows, missingRequired };
 }
 
