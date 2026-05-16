@@ -786,8 +786,39 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
     async pseudonymiseRow() {
       return err({ kind: 'not_implemented', method: 'pseudonymiseRow', futureTask: 'Phase 10 T113' });
     },
-    async hardDelete() {
-      return err({ kind: 'not_implemented', method: 'hardDelete', futureTask: 'Phase 10 T110' });
+    async hardDelete(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+    ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>> {
+      // Phase 10 T110 — admin erasure hard delete. Caller (use-case)
+      // already verified the row exists + path-eventId matches BEFORE
+      // emitting the `pii_erasure_requested` audit + acquiring the
+      // advisory lock, so by the time this DELETE runs, the row IS
+      // expected to be present. An empty `returning()` therefore
+      // indicates a concurrent erasure / RLS misconfiguration —
+      // surface as `invariant_violation` (same shape as markRefunded's
+      // post-SELECT-vanish guard).
+      try {
+        const deleted = await executor
+          .delete(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+            ),
+          )
+          .returning();
+        if (deleted.length === 0) {
+          return err({
+            kind: 'invariant_violation',
+            invariant:
+              'event_registrations.hardDelete: row vanished between findById and DELETE — likely a concurrent erasure',
+          });
+        }
+        return ok(toAggregate(deleted[0]!));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
   };
 }

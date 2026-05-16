@@ -209,6 +209,7 @@ function makeDeps(o: MockOverrides = {}): {
       emit: emitMock as never,
       emitRolledBack: vi.fn() as never,
       emitStandalone: vi.fn() as never,
+      findPriorErasureCompletion: vi.fn() as never,
     },
   };
   return {

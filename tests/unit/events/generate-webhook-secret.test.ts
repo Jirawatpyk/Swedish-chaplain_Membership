@@ -49,6 +49,7 @@ function makeAudit(
     emit: vi.fn().mockResolvedValue(ok('audit-id' as AuditEventId)),
     emitRolledBack: vi.fn(),
     emitStandalone: vi.fn(),
+    findPriorErasureCompletion: vi.fn().mockResolvedValue(ok(false)),
     ...overrides,
   };
 }

@@ -810,4 +810,32 @@ export interface F6AuditPort {
   emitStandalone<T extends F6AuditEventType>(
     entry: F6AuditEntry<T>,
   ): Promise<Result<AuditEventId, AuditEmitError>>;
+
+  /**
+   * Phase 10 T110 — idempotency probe for the `eraseAttendeePii` use-case.
+   *
+   * Returns `true` if a `pii_erasure_completed` audit row exists for
+   * the given `(tenantId, registrationId)` pair. The use-case calls this
+   * when `findById(registrationId)` returns null, distinguishing
+   * "registration was previously erased" (return `Result.ok({alreadyErased:
+   * true})`) from "registration never existed" (return `Result.err({kind:
+   * 'registration_not_found'})`).
+   *
+   * Query shape:
+   *   SELECT 1 FROM audit_log
+   *   WHERE tenant_id = $1
+   *     AND event_type = 'pii_erasure_completed'
+   *     AND payload->>'registrationId' = $2
+   *   LIMIT 1
+   *
+   * Uses the same `AuditEmitError` discriminator for return-error symmetry
+   * with the emit methods — wraps Postgres-level read failures into the
+   * `db_error` variant. The use-case treats this as a hard error (rolls
+   * back the tx + returns `audit_emit_failed`) per the strict-tx ACID
+   * invariant of FR-037.
+   */
+  findPriorErasureCompletion(
+    tenantId: TenantId,
+    registrationId: RegistrationId,
+  ): Promise<Result<boolean, AuditEmitError>>;
 }

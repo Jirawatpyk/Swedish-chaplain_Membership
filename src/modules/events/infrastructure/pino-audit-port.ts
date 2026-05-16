@@ -40,6 +40,8 @@ import type {
   AuditEmitError,
 } from '../application/ports/audit-port';
 import type { AuditEventId } from '@/modules/auth';
+import type { TenantId } from '@/modules/members';
+import type { RegistrationId } from '../domain/branded-types';
 import { sanitizeDbErrorMessage } from './sanitize-db-error';
 
 /**
@@ -397,6 +399,42 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
             /* truly nothing left */
           }
         }
+        return err({
+          kind: 'db_error',
+          message: sanitizeDbErrorMessage(e),
+        });
+      }
+    },
+
+    async findPriorErasureCompletion(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+    ): Promise<Result<boolean, AuditEmitError>> {
+      // Phase 10 T110 idempotency probe — see audit-port.ts contract.
+      // Uses the caller's tx so the SELECT honours the same RLS scope as
+      // the surrounding strict-tx unit. `payload->>'registrationId'` is
+      // text comparison; both sides cast via `String(...)` upstream so
+      // brand-stripping is harmless.
+      try {
+        const result = await executor.execute(sql`
+          SELECT 1
+          FROM audit_log
+          WHERE tenant_id = ${tenantId}
+            AND event_type = 'pii_erasure_completed'::audit_event_type
+            AND payload->>'registrationId' = ${String(registrationId)}
+          LIMIT 1
+        `);
+        const rows = result as unknown as ReadonlyArray<unknown>;
+        return ok(rows.length > 0);
+      } catch (e) {
+        logFullError(
+          {
+            caller: 'findPriorErasureCompletion',
+            tenantId,
+            eventType: 'pii_erasure_completed',
+          },
+          e,
+        );
         return err({
           kind: 'db_error',
           message: sanitizeDbErrorMessage(e),

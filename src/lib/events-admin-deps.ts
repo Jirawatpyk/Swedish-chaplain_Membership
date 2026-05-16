@@ -48,6 +48,7 @@ import { loadEventDetail } from '@/modules/events/application/use-cases/load-eve
 import { toggleEventCategory } from '@/modules/events/application/use-cases/toggle-event-category';
 import { archiveEvent } from '@/modules/events/application/use-cases/archive-event';
 import { relinkRegistration } from '@/modules/events/application/use-cases/relink-registration';
+import { eraseAttendeePii } from '@/modules/events/application/use-cases/erase-attendee-pii';
 import type {
   ListEventsInput,
   ListEventsOutput,
@@ -73,6 +74,11 @@ import type {
   RelinkRegistrationOutput,
   RelinkRegistrationError,
 } from '@/modules/events/application/use-cases/relink-registration';
+import type {
+  EraseAttendeePiiInput,
+  EraseAttendeePiiOutput,
+  EraseAttendeePiiError,
+} from '@/modules/events/application/use-cases/erase-attendee-pii';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
 import { makeDrizzleQuotaAccountingAdapter } from '@/modules/events/infrastructure/drizzle-quota-accounting-adapter';
@@ -358,5 +364,46 @@ export async function runRelinkRegistration(
   return runInTenantWithRollbackOnErr(ctx, async (tx) => {
     const deps = makeRelinkRegistrationDeps(tx, ctx);
     return relinkRegistration({ ...input, tenantId }, deps);
+  });
+}
+
+/**
+ * Phase 10 T110 — composes the erase-attendee-pii deps bag for FR-032a
+ * admin erasure. Bundles every port the use-case consumes: events +
+ * registrations repos (for the find→delete path), the advisory-lock
+ * acquirer (same `eventcreate-quota:` namespace as ingest/archive/toggle
+ * so a concurrent ingest blocks until this erasure commits), and the
+ * audit emitter (now also queried for the prior-erasure idempotency
+ * probe via the new `findPriorErasureCompletion` method). All bound to
+ * the caller's tx.
+ */
+export function makeEraseAttendeePiiDeps(executor: TenantTx) {
+  return {
+    eventsRepo: makeDrizzleEventsRepository(executor),
+    registrationsRepo: makeDrizzleRegistrationsRepository(executor),
+    advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(executor),
+    audit: makePinoAuditPort(executor),
+  };
+}
+
+/**
+ * Phase 10 T110 — route-facing wrapper for `eraseAttendeePii`. Uses
+ * `runInTenantWithRollbackOnErr` so any mid-flight failure (lock
+ * contention, audit-emit DB blip, hardDelete invariant violation)
+ * rolls back the entire tx — the `pii_erasure_requested` + credit-back
+ * audit rows are undone alongside the registration row state,
+ * preserving FR-037 strict-tx ACID the same way archive + toggle +
+ * relink do. The macro `pii_erasure_completed` audit thus represents
+ * a TRUE successful erasure, never a "we tried but bailed" half-state.
+ */
+export async function runEraseAttendeePii(
+  tenantSlug: string,
+  input: Omit<EraseAttendeePiiInput, 'tenantId'>,
+): Promise<Result<EraseAttendeePiiOutput, EraseAttendeePiiError>> {
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  return runInTenantWithRollbackOnErr(ctx, async (tx) => {
+    const deps = makeEraseAttendeePiiDeps(tx);
+    return eraseAttendeePii({ ...input, tenantId }, deps);
   });
 }
