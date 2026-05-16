@@ -54,6 +54,7 @@
  * already-issued and returns the persisted invoice (short-circuit).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
@@ -303,10 +304,11 @@ export async function issueInvoice(
         documentNumber: docNum.value.raw,
         issueDate,
         dueDate,
-        subtotalSatang: subtotal.satang,
+        // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
+        subtotalSatang: asSatang(subtotal.satang),
         vatRate: settings.vatRate.raw,
-        vatSatang: vat.satang,
-        totalSatang: total.satang,
+        vatSatang: asSatang(vat.satang),
+        totalSatang: asSatang(total.satang),
         proRatePolicySnapshot: settings.proRatePolicy,
         netDaysSnapshot: settings.defaultNetDays,
         tenantIdentitySnapshot: tenantSnap,

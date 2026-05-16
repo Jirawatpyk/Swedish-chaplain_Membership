@@ -33,6 +33,7 @@
  * (the same way Drizzle's withTx does in production).
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing/domain/f4-invoice-paid-event';
@@ -126,7 +127,7 @@ function makeSettings(): TenantInvoiceSettingsView {
     tenantId: TENANT_ID,
     currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
-    registrationFeeSatang: 500000n,
+    registrationFeeSatang: asSatang(500000n),
     invoiceNumberPrefix: 'SC',
     creditNoteNumberPrefix: 'CN',
     receiptNumberingMode: 'combined',

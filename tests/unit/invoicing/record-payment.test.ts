@@ -21,6 +21,7 @@
  * adapter call.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
@@ -116,7 +117,7 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
     tenantId: 'test-swecham',
     currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
-    registrationFeeSatang: 500000n,
+    registrationFeeSatang: asSatang(500000n),
     invoiceNumberPrefix: 'SC',
     creditNoteNumberPrefix: 'CN',
     receiptNumberingMode: 'combined',

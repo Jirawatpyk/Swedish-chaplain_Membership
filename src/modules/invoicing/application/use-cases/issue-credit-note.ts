@@ -37,6 +37,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { addSatang, asSatang, type Satang } from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
@@ -96,10 +97,10 @@ export type IssueCreditNoteError =
   | { code: 'settings_missing' }
   | {
       code: 'credit_exceeds_remainder';
-      invoiceTotalSatang: bigint;
-      alreadyCreditedSatang: bigint;
-      proposedSatang: bigint;
-      remainingSatang: bigint;
+      invoiceTotalSatang: Satang;
+      alreadyCreditedSatang: Satang;
+      proposedSatang: Satang;
+      remainingSatang: Satang;
     }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -251,12 +252,19 @@ export async function issueCreditNote(
           },
           'issueCreditNote: vat calculation failed after remainder guard (unreachable — investigate)',
         );
+        // F5R3 H-5 (2026-05-16) — brand Money.satang reads + subtract
+        // result at the err-payload escape point. Subtraction can
+        // legitimately be 0 (fully credited); cap negative at 0n then
+        // brand. `subSatang` would throw on underflow but we want a
+        // clamped 0 here for the SC-013 invariant ("remaining ≥ 0").
+        const subSafe = (a: bigint, b: bigint): Satang =>
+          asSatang(a >= b ? a - b : 0n);
         return err({
           code: 'credit_exceeds_remainder',
-          invoiceTotalSatang: loaded.total.satang,
-          alreadyCreditedSatang: loaded.creditedTotal.satang,
-          proposedSatang: proposed.satang,
-          remainingSatang: loaded.total.satang - loaded.creditedTotal.satang,
+          invoiceTotalSatang: asSatang(loaded.total.satang),
+          alreadyCreditedSatang: asSatang(loaded.creditedTotal.satang),
+          proposedSatang: asSatang(proposed.satang),
+          remainingSatang: subSafe(loaded.total.satang, loaded.creditedTotal.satang),
         });
       }
       const { creditAmount, vat, total } = vatCalc.value;
@@ -355,9 +363,10 @@ export async function issueCreditNote(
           issueDate,
           issuedByUserId: input.actorUserId,
           reason: input.reason,
-          creditAmountSatang: creditAmount.satang,
-          vatSatang: vat.satang,
-          totalSatang: total.satang,
+          // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
+          creditAmountSatang: asSatang(creditAmount.satang),
+          vatSatang: asSatang(vat.satang),
+          totalSatang: asSatang(total.satang),
           tenantIdentitySnapshot: loaded.tenantIdentitySnapshot,
           memberIdentitySnapshot: loaded.memberIdentitySnapshot,
           pdf: {
@@ -383,8 +392,13 @@ export async function issueCreditNote(
       }
 
       // J. Rollup: bump credited_total_satang + flip invoice status.
-      const newCreditedTotal = loaded.creditedTotal.satang + total.satang;
-      const fullyCredited = newCreditedTotal === loaded.total.satang;
+      // F5R3 H-5 (2026-05-16) — branded arithmetic via addSatang
+      // preserves the Satang brand into the port input.
+      const newCreditedTotal = addSatang(
+        asSatang(loaded.creditedTotal.satang),
+        asSatang(total.satang),
+      );
+      const fullyCredited = newCreditedTotal === asSatang(loaded.total.satang);
       try {
         await deps.invoiceRepo.applyCreditNoteRollup(tx, {
           tenantId: input.tenantId,

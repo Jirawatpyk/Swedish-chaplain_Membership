@@ -1,6 +1,7 @@
 /**
  * T032 — Tenant invoice settings repository port (F4).
  */
+import type { Satang } from '@/lib/money';
 import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import type { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import type { ProRatePolicy } from '@/modules/invoicing/domain/value-objects/pro-rate-policy';
@@ -15,7 +16,7 @@ export interface TenantInvoiceSettingsView {
    */
   readonly currencyCode: string;
   readonly vatRate: VatRate;
-  readonly registrationFeeSatang: bigint;
+  readonly registrationFeeSatang: Satang;
   readonly invoiceNumberPrefix: string;
   readonly creditNoteNumberPrefix: string;
   /**
@@ -53,7 +54,7 @@ export interface TenantInvoiceSettingsPatch {
    */
   readonly currencyCode?: string;
   readonly vatRate?: string;
-  readonly registrationFeeSatang?: bigint;
+  readonly registrationFeeSatang?: Satang;
   readonly legalNameTh?: string;
   readonly legalNameEn?: string;
   readonly taxId?: string;

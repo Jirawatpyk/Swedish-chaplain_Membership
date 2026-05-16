@@ -36,6 +36,7 @@
  * gross → vat + net via its credit-note-vat policy.
  */
 import { type Result } from '@/lib/result';
+import type { Satang } from '@/lib/money';
 import {
   issueCreditNote,
   type IssueCreditNoteError,
@@ -49,7 +50,7 @@ export interface IssueCreditNoteFromRefundInput {
   /** F5 refund row id — populates `credit_notes.source_refund_id`. */
   readonly refundId: string;
   /** Gross satang amount (incl. VAT) — matches F5 refund row. */
-  readonly amountSatang: bigint;
+  readonly amountSatang: Satang;
   /** Free-form reason — surfaces as the CN's `reason` column + PDF body. */
   readonly reason: string;
   readonly actorUserId: string;

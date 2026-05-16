@@ -1,3 +1,5 @@
+import type { Satang } from '@/lib/money';
+
 /**
  * T009 (F8 Phase 2 Wave A) — F4InvoicePaidEvent
  *
@@ -97,14 +99,14 @@ export interface F4InvoicePaidEvent {
    * `Invoice.total.satang`. Listeners doing arithmetic should keep
    * the `bigint` representation rather than coercing to `number`.
    */
-  readonly amountSatang: bigint;
+  readonly amountSatang: Satang;
   /**
    * VAT portion, in satang. From `Invoice.vat.satang`. Useful to
    * downstream listeners that need to split net vs VAT for accounting
    * exports (e.g. F8 renewal-cycle bookkeeping). Net = `amountSatang -
    * vatSatang`.
    */
-  readonly vatSatang: bigint;
+  readonly vatSatang: Satang;
   /**
    * Currency code. F4 is THB-only today (literal type on `Invoice.currency`);
    * listeners must still pattern-match on this field so future widening

@@ -34,6 +34,7 @@
  * F8 onPaidCallback path.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -66,8 +67,8 @@ const F4_PAID_DEFAULTS: Pick<
   | 'triggeredBy'
 > = {
   paidAt: '2026-05-07T08:00:00Z',
-  amountSatang: 5_000_000n,
-  vatSatang: 350_000n,
+  amountSatang: asSatang(5_000_000n),
+  vatSatang: asSatang(350_000n),
   currency: 'THB',
   paymentMethod: 'stripe_card',
   triggeredBy: 'webhook',

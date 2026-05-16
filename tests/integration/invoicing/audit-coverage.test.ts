@@ -26,6 +26,7 @@
  * registered at DB level and emitted when code writes the row).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -144,7 +145,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeSatang: 0n,
+        registrationFeeSatang: asSatang(0n),
         legalNameTh: 'ทดสอบ',
         legalNameEn: 'Test',
         taxId: '0000000000000',
@@ -300,7 +301,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         descriptionTh: 'ค่าสมาชิก ปี 2026',
         descriptionEn: 'Membership 2026',
         unitPriceSatang: 1_000_000n,
-        totalSatang: 1_000_000n,
+        totalSatang: asSatang(1_000_000n),
         position: 1,
       });
     });
@@ -351,7 +352,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         descriptionTh: 'ค่าสมาชิก ปี 2026',
         descriptionEn: 'Membership 2026',
         unitPriceSatang: 1_000_000n,
-        totalSatang: 1_000_000n,
+        totalSatang: asSatang(1_000_000n),
         position: 1,
       });
     });
@@ -365,7 +366,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       tenantId: tenant.ctx.slug,
       currencyCode: 'THB',
       vatRate: VatRate.ofUnsafe('0.0700'),
-      registrationFeeSatang: 0n,
+      registrationFeeSatang: asSatang(0n),
       invoiceNumberPrefix: 'AC',
       creditNoteNumberPrefix: 'ACN',
       receiptNumberingMode: 'combined',
@@ -470,7 +471,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         descriptionTh: 'ค่าสมาชิก ปี 2026',
         descriptionEn: 'Membership 2026',
         unitPriceSatang: 1_000_000n,
-        totalSatang: 1_000_000n,
+        totalSatang: asSatang(1_000_000n),
         position: 1,
       });
     });

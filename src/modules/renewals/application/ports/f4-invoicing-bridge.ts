@@ -1,3 +1,5 @@
+import type { Satang } from '@/lib/money';
+
 /**
  * F8 → F4 invoice-creation bridge port (Phase 5 Wave B — T122).
  *
@@ -39,7 +41,7 @@ export type IssueInvoiceForRenewalResult =
       readonly status: 'issued';
       readonly invoiceId: string;
       readonly invoiceNumber: string;
-      readonly totalSatang: bigint;
+      readonly totalSatang: Satang;
     }
   | {
       readonly status: 'create_failed';

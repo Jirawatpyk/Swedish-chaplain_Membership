@@ -14,6 +14,7 @@
  * receives raw logo bytes (FR-034).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { z } from 'zod';
 import type {
   TenantSettingsRepo,
@@ -89,7 +90,8 @@ export async function updateTenantInvoiceSettings(
     ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
     ...(input.vatRate !== undefined && { vatRate: input.vatRate }),
     ...(input.registrationFeeSatang !== undefined && {
-      registrationFeeSatang: input.registrationFeeSatang,
+      // F5R3 H-5 (2026-05-16) — brand at HTTP-boundary update.
+      registrationFeeSatang: asSatang(input.registrationFeeSatang),
     }),
     ...(input.legalNameTh !== undefined && { legalNameTh: input.legalNameTh }),
     ...(input.legalNameEn !== undefined && { legalNameEn: input.legalNameEn }),

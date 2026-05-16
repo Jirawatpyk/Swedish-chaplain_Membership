@@ -19,6 +19,7 @@ import {
   makeCreateInvoiceDraftDeps,
   makeIssueInvoiceDeps,
 } from '@/modules/invoicing';
+import { asSatang } from '@/lib/money';
 import type {
   F4InvoicingForRenewalBridge,
   IssueInvoiceForRenewalInput,
@@ -80,8 +81,9 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     // documentNumber + total are non-null after `issued` per F4's
     // status-discriminated invariant. Defensive nullish coalescing
     // just in case the upstream type widens.
+    // F5R3 H-5 (2026-05-16) — brand at F4→F8 bridge boundary.
     const totalSatang =
-      issued.total !== null ? BigInt(issued.total.satang) : 0n;
+      issued.total !== null ? asSatang(BigInt(issued.total.satang)) : asSatang(0n);
     const invoiceNumber =
       issued.documentNumber !== null ? String(issued.documentNumber) : '';
     return {

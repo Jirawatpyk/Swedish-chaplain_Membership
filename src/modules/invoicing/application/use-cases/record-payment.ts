@@ -20,6 +20,7 @@
  * the live member's tax_id AFTER issue do NOT flow into the receipt.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
@@ -616,8 +617,10 @@ export async function recordPayment(
         invoiceId,
         memberId: loaded.memberId,
         paidAt: updated.paidAt ?? deps.clock.nowIso(),
-        amountSatang: loaded.total!.satang,
-        vatSatang: loaded.vat!.satang,
+        // F5R3 H-5 (2026-05-16) — brand at Money escape into the
+        // F4InvoicePaidEvent payload broadcast to F8 onPaid callbacks.
+        amountSatang: asSatang(loaded.total!.satang),
+        vatSatang: asSatang(loaded.vat!.satang),
         currency: loaded.currency,
         paymentMethod: eventPaymentMethod,
         triggeredBy: eventTrigger,

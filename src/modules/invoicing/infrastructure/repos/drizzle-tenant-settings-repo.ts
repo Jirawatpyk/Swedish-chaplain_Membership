@@ -12,6 +12,7 @@
  * caller-provided columns so unrelated fields stay stable.
  */
 import { eq, sql } from 'drizzle-orm';
+import { asSatang } from '@/lib/money';
 import type {
   TenantSettingsRepo,
   TenantInvoiceSettingsView,
@@ -46,7 +47,8 @@ function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoic
     tenantId: row.tenantId,
     currencyCode: row.currencyCode,
     vatRate: VatRate.ofUnsafe(row.vatRate),
-    registrationFeeSatang: BigInt(row.registrationFeeSatang as unknown as string),
+    // F5R3 H-5 (2026-05-16) — brand at DB→Domain boundary.
+    registrationFeeSatang: asSatang(BigInt(row.registrationFeeSatang as unknown as string)),
     invoiceNumberPrefix: row.invoiceNumberPrefix,
     creditNoteNumberPrefix: row.creditNoteNumberPrefix,
     receiptNumberingMode: row.receiptNumberingMode === 'separate' ? 'separate' : 'combined',

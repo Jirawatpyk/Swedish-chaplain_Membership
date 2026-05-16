@@ -25,6 +25,7 @@
  * to exercise yet.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -93,7 +94,7 @@ async function seedTenantForIssuance(
       tenantId: tenant.ctx.slug,
       currencyCode: 'THB',
       vatRate: '0.0700',
-      registrationFeeSatang: 0n,
+      registrationFeeSatang: asSatang(0n),
       legalNameTh: 'ทดสอบ',
       legalNameEn: 'Test',
       taxId: '0000000000000',
@@ -149,7 +150,7 @@ async function insertDraft(
       descriptionTh: `ค่าสมาชิก ปี ${planYear}`,
       descriptionEn: `Membership ${planYear}`,
       unitPriceSatang: 1_000_000n,
-      totalSatang: 1_000_000n,
+      totalSatang: asSatang(1_000_000n),
       position: 1,
     });
   });
@@ -165,7 +166,7 @@ function makeIssueDeps(
     tenantId: tenant.ctx.slug,
     currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
-    registrationFeeSatang: 0n,
+    registrationFeeSatang: asSatang(0n),
     invoiceNumberPrefix: 'T',
     creditNoteNumberPrefix: 'TC',
     receiptNumberingMode: 'combined',

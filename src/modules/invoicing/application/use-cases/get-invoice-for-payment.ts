@@ -26,6 +26,7 @@
  * decides whether ownership matters.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang, type Satang } from '@/lib/money';
 import { getInvoice, type GetInvoiceDeps } from './get-invoice';
 import type { InvoiceStatus } from '../../domain/invoice';
 
@@ -60,7 +61,7 @@ export interface GetInvoiceForPaymentInput {
 export interface InvoiceForPayment {
   readonly id: string;
   readonly status: InvoiceStatus;
-  readonly totalSatang: bigint;
+  readonly totalSatang: Satang;
   readonly memberId: string;
   readonly tenantId: string;
 }
@@ -99,7 +100,8 @@ export async function getInvoiceForPayment(
   return ok({
     id: invoice.invoiceId,
     status: invoice.status,
-    totalSatang: invoice.total.satang,
+    // F5R3 H-5 (2026-05-16) — brand at Money VO escape point.
+    totalSatang: asSatang(invoice.total.satang),
     memberId: invoice.memberId,
     tenantId: input.tenantId,
   });

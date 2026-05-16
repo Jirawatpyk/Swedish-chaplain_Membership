@@ -7,6 +7,7 @@
  * `InvoiceRepo.applyCreditNoteRollup` so the two writes share one SQL
  * roundtrip and one commit point.
  */
+import type { Satang } from '@/lib/money';
 import type { CreditNote, CreditNoteId } from '@/modules/invoicing/domain/credit-note';
 import type { InvoiceId } from '@/modules/invoicing/domain/invoice';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
@@ -29,9 +30,9 @@ export interface CreditNoteRepo {
       readonly issueDate: string;
       readonly issuedByUserId: string;
       readonly reason: string;
-      readonly creditAmountSatang: bigint;
-      readonly vatSatang: bigint;
-      readonly totalSatang: bigint;
+      readonly creditAmountSatang: Satang;
+      readonly vatSatang: Satang;
+      readonly totalSatang: Satang;
       readonly tenantIdentitySnapshot: unknown;
       readonly memberIdentitySnapshot: unknown;
       readonly pdf: {
@@ -100,7 +101,7 @@ export interface CreditNoteRepo {
       readonly originalInvoiceId: string;
       readonly originalInvoiceNumberRaw: string | null;
       readonly memberLegalName: string;
-      readonly totalSatang: bigint;
+      readonly totalSatang: Satang;
       readonly reason: string;
     }[];
     readonly total: number;

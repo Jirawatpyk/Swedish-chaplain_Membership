@@ -5,6 +5,7 @@
  * critical mutating path collecting member payment intent).
  */
 import { describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import {
   confirmRenewal,
   selfServiceFailureReason,
@@ -100,7 +101,7 @@ function fakeDeps(args: {
         status: 'issued',
         invoiceId: 'inv-1',
         invoiceNumber: 'INV-2026-0001',
-        totalSatang: 5_000_000n,
+        totalSatang: asSatang(5_000_000n),
       },
   );
   const emitInTxMock = vi.fn(args.emitInTxImpl ?? (async () => {}));

@@ -10,18 +10,19 @@
  *
  * Pure TypeScript — no framework/ORM imports.
  */
+import { asSatang, type Satang } from '@/lib/money';
 import type { Money } from '@/modules/invoicing/domain/value-objects/money';
 
 export type CreditRemainderError = {
   readonly kind: 'credit_exceeds_remainder';
   /** Invoice total (satang, incl. VAT). */
-  readonly invoiceTotalSatang: bigint;
+  readonly invoiceTotalSatang: Satang;
   /** Sum of prior credit-note totals (satang). */
-  readonly alreadyCreditedSatang: bigint;
+  readonly alreadyCreditedSatang: Satang;
   /** Proposed new credit-note total (satang). */
-  readonly proposedSatang: bigint;
+  readonly proposedSatang: Satang;
   /** Remaining creditable amount (satang). */
-  readonly remainingSatang: bigint;
+  readonly remainingSatang: Satang;
 };
 
 export function enforceCreditCannotExceedRemainder(input: {
@@ -35,10 +36,13 @@ export function enforceCreditCannotExceedRemainder(input: {
       ok: false,
       error: {
         kind: 'credit_exceeds_remainder',
-        invoiceTotalSatang: input.invoiceTotal.satang,
-        alreadyCreditedSatang: input.alreadyCredited.satang,
-        proposedSatang: input.proposed.satang,
-        remainingSatang: remaining < 0n ? 0n : remaining,
+        // F5R3 H-5 (2026-05-16) — brand Money.satang reads at the
+        // error-payload escape point. Money VO internal storage stays
+        // bigint; the brand applies where money leaves the VO surface.
+        invoiceTotalSatang: asSatang(input.invoiceTotal.satang),
+        alreadyCreditedSatang: asSatang(input.alreadyCredited.satang),
+        proposedSatang: asSatang(input.proposed.satang),
+        remainingSatang: asSatang(remaining < 0n ? 0n : remaining),
       },
     };
   }

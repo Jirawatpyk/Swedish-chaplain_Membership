@@ -17,6 +17,7 @@
  * Pure TypeScript — no framework/ORM imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang, type Satang } from '@/lib/money';
 import type { Money } from './value-objects/money';
 import type { DocumentNumber } from './value-objects/document-number';
 import type { FiscalYear } from './value-objects/fiscal-year';
@@ -101,9 +102,9 @@ export interface CreditNote {
 
 export type CreditNoteBalanceError = {
   readonly kind: 'vat_balance_violated';
-  readonly creditAmountSatang: bigint;
-  readonly vatSatang: bigint;
-  readonly totalSatang: bigint;
+  readonly creditAmountSatang: Satang;
+  readonly vatSatang: Satang;
+  readonly totalSatang: Satang;
 };
 
 /**
@@ -125,9 +126,10 @@ export function assertCreditNoteVatBalance(
   if (parts.creditAmount.satang + parts.vat.satang !== parts.total.satang) {
     return err({
       kind: 'vat_balance_violated',
-      creditAmountSatang: parts.creditAmount.satang,
-      vatSatang: parts.vat.satang,
-      totalSatang: parts.total.satang,
+      // F5R3 H-5 (2026-05-16) — brand Money.satang reads at error-payload escape.
+      creditAmountSatang: asSatang(parts.creditAmount.satang),
+      vatSatang: asSatang(parts.vat.satang),
+      totalSatang: asSatang(parts.total.satang),
     });
   }
   return ok(undefined);

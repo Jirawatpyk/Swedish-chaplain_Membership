@@ -10,6 +10,7 @@
  *   - Atomic state+audit (Principle VIII reverse-direction)
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import {
   markCycleCompleteFromInvoicePaid,
   markCycleCompleteInTx,
@@ -66,8 +67,8 @@ function buildEvent(overrides: Partial<F4InvoicePaidEvent> = {}): F4InvoicePaidE
     invoiceId: INVOICE_UUID,
     memberId: MEMBER_ID,
     paidAt: '2026-05-07T10:00:00Z',
-    amountSatang: 5_000_000n,
-    vatSatang: 350_000n,
+    amountSatang: asSatang(5_000_000n),
+    vatSatang: asSatang(350_000n),
     currency: 'THB',
     paymentMethod: 'stripe_card',
     triggeredBy: 'webhook',
