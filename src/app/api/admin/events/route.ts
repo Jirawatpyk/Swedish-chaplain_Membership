@@ -28,11 +28,13 @@ import {
   runCreateEvent,
   createEventRateLimitCheck,
 } from '@/lib/events-create-deps';
-import { asUserId } from '@/modules/auth';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { problemResponse } from '@/lib/http/problem-response';
 import { clampPageSize, coerceBoolean } from './_lib/query-helpers';
-import { emitEventsRoleViolation } from './_lib/role-violation-audit';
+import {
+  emitEventsRoleViolation,
+  adminOnlyWriterGuard,
+} from './_lib/role-violation-audit';
 
 const CreateEventBodySchema = z.object({
   externalId: z
@@ -247,24 +249,17 @@ export async function POST(request: NextRequest) {
   // were uncorrelated.
   const requestId = crypto.randomUUID();
 
-  const session = await getCurrentSession();
-  if (!session) return new NextResponse(null, { status: 404 });
-  const role = session.user.role;
-  if (role !== 'admin') {
-    // manager + member → 404 + role_violation_blocked audit. The
-    // helper accepts only `'member'` for the actorRole field — pass
-    // through role narrowing.
-    if (role === 'manager' || role === 'member') {
-      await emitEventsRoleViolation(request, {
-        actorUserId: session.user.id,
-        actorRole: role,
-        attemptedRoute: '/api/admin/events',
-        attemptedAction: 'create_event',
-        eventId: null,
-      });
-    }
-    return new NextResponse(null, { status: 404 });
-  }
+  // FR-035 admin-only writer guard: manager → 403 + audit, member → 404
+  // + audit, no-session/unknown → 404. Distinct from the GET (list)
+  // path above which allows manager-read. See `adminOnlyWriterGuard`
+  // doc-comment for the full FR-035 matrix.
+  const guard = await adminOnlyWriterGuard(request, {
+    attemptedRoute: '/api/admin/events',
+    attemptedAction: 'create_event',
+    eventId: null,
+  });
+  if (guard.kind === 'deny') return guard.response;
+  const actorUserId = guard.actorUserId;
 
   let tenantCtx: ReturnType<typeof resolveTenantFromRequest>;
   try {
@@ -285,7 +280,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Rate-limit (30/hr per tenant+actor).
-  const rl = await createEventRateLimitCheck(tenantCtx.slug, session.user.id);
+  const rl = await createEventRateLimitCheck(tenantCtx.slug, actorUserId);
   if (!rl.success) {
     const retryAfter = retryAfterSecondsFromRl({ reset: rl.resetAtUnixMs });
     return problemResponse(
@@ -329,7 +324,7 @@ export async function POST(request: NextRequest) {
   try {
     outcome = await runCreateEvent({
       tenantSlug: tenantCtx.slug,
-      actorUserId: asUserId(session.user.id),
+      actorUserId,
       externalId: parsed.data.externalId,
       name: parsed.data.name,
       startDate: new Date(parsed.data.startDate),

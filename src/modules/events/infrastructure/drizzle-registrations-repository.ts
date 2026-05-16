@@ -402,8 +402,91 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         return err(wrapRepoError('registrations', e));
       }
     },
-    async updateMatchAndQuota() {
-      return err({ kind: 'not_implemented', method: 'updateMatchAndQuota', futureTask: 'Phase 9 T104' });
+    async updateMatchAndQuota(
+      tenantId: TenantId,
+      registrationId: RegistrationId,
+      nextMatch,
+      nextQuotaEffect,
+    ): Promise<Result<EventRegistrationAggregate, RegistrationsRepositoryError>> {
+      try {
+        // F6 Phase 9 / T104 admin relink path. FR-014 — pseudonymised
+        // rows are immutable (defence-in-depth at the DB layer; the
+        // Application use-case also pre-checks). The `pii_pseudonymised_at
+        // IS NULL` clause makes the UPDATE a no-op for purged rows;
+        // the probe below discriminates not-found vs pseudonymised so
+        // the caller surfaces the right error kind to admins.
+        //
+        // Note on CHECK constraints (migrations 0128 + 0136):
+        //   - match_type ∈ {member_contact, member_domain, member_fuzzy,
+        //     non_member, unmatched}
+        //   - non_member/unmatched MUST have null member_id + null
+        //     contact_id + counted_*=false
+        //   - matched_member_id is non-null only for member_* types
+        // The Application caller (`relink-registration`) always writes
+        // match_type='member_contact' + a real memberId + null
+        // contactId; the resulting row satisfies both constraints
+        // because match_type is NOT in the (non_member, unmatched)
+        // forbid list and matched_member_id is non-null.
+        const updated = await executor
+          .update(eventRegistrations)
+          .set({
+            matchType: nextMatch.type,
+            matchedMemberId: nextMatch.matchedMemberId,
+            matchedContactId: nextMatch.matchedContactId,
+            countedAgainstPartnership: nextQuotaEffect.countedAgainstPartnership,
+            countedAgainstCulturalQuota: nextQuotaEffect.countedAgainstCulturalQuota,
+          })
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenantId),
+              eq(eventRegistrations.registrationId, registrationId),
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+            ),
+          )
+          .returning();
+        if (updated.length === 0) {
+          // Discriminate row-missing vs pseudonymised (mirrors
+          // `setQuotaEffect` above). Best-effort under READ COMMITTED:
+          // a concurrent retention sweep or `hardDelete` could race
+          // between the UPDATE (which matched 0 rows because
+          // pii_pseudonymised_at became non-null) and this probe SELECT
+          // (which could see the row pseudonymised, or now-deleted by
+          // FR-032a `erase-attendee-pii`). The classification is
+          // therefore advisory — both 409 outcomes are admin-actionable
+          // ("retry / refresh"), so the rare misclassification is not a
+          // correctness hazard.
+          const probe = await executor
+            .select({
+              piiPseudonymisedAt: eventRegistrations.piiPseudonymisedAt,
+            })
+            .from(eventRegistrations)
+            .where(
+              and(
+                eq(eventRegistrations.tenantId, tenantId),
+                eq(eventRegistrations.registrationId, registrationId),
+              ),
+            )
+            .limit(1);
+          if (probe.length === 0) {
+            // Row vanished between findById (step 1 of the relink
+            // use-case) and this UPDATE — most likely a concurrent
+            // `erase-attendee-pii` (FR-032a) won the race. Treat as a
+            // discriminated repo error; the route maps it to a 500
+            // with full pino context for SRE triage, OR (post-FR-032a
+            // ship) we can promote to `registration_not_found` once
+            // the erasure flow is live and the race becomes expected.
+            return err({
+              kind: 'invariant_violation',
+              invariant:
+                'event_registrations.updateMatchAndQuota: row vanished between findById and UPDATE — likely concurrent erasure (FR-032a) or schema drift; admin should retry',
+            });
+          }
+          return err({ kind: 'pseudonymised_row_rejected', registrationId });
+        }
+        return ok(toAggregate(updated[0]!));
+      } catch (e) {
+        return err(wrapRepoError('registrations', e));
+      }
     },
     async findByEventAndEmail(
       tenantId: TenantId,

@@ -6,10 +6,10 @@
  * transaction (FR-019). See `toggleEventCategory` use-case for the
  * algorithm.
  *
- * Authz: **admin only** (FR-035). Manager + member → 404 (surface-
- * level access denial via the same shape used by `route.ts` sibling).
- * Role violation emits a `role_violation_blocked` audit before the
- * 404.
+ * Authz: **admin only** (FR-035). Manager → 403 + audit (action-level
+ * deny: manager sees the events surface but cannot mutate). Member →
+ * 404 + audit (surface-disclosure: member has no access at all). See
+ * `adminOnlyWriterGuard` doc-comment for the full FR-035 matrix.
  *
  * Body: `{ "newValue": true | false }` — strict zod schema below.
  *
@@ -26,11 +26,10 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runToggleEventCategory } from '@/lib/events-admin-deps';
-import { asUserId } from '@/modules/auth';
-import { emitEventsRoleViolation } from '../../_lib/role-violation-audit';
+import { asEventId } from '@/modules/events';
+import { adminOnlyWriterGuard } from '../../_lib/role-violation-audit';
 
 /**
  * Phase 6 staff-review-4 PERF-R6-01 — pin Node runtime + raise function
@@ -61,22 +60,15 @@ export async function POST(
     return new NextResponse(null, { status: 404 });
   }
 
-  const session = await getCurrentSession();
-  if (!session) return new NextResponse(null, { status: 404 });
-  const role = session.user.role;
-  // Admin-only (FR-035) — manager and member both → 404 + audit
-  if (role !== 'admin') {
-    if (role === 'manager' || role === 'member') {
-      await emitEventsRoleViolation(request, {
-        actorUserId: session.user.id,
-        actorRole: role,
-        attemptedRoute: `/api/admin/events/${eventId}/toggle-partner-benefit`,
-        attemptedAction: 'toggle_partner_benefit',
-        eventId,
-      });
-    }
-    return new NextResponse(null, { status: 404 });
-  }
+  // FR-035 admin-only writer guard: manager → 403 + audit, member → 404
+  // + audit. See `adminOnlyWriterGuard` doc-comment for full matrix.
+  const guard = await adminOnlyWriterGuard(request, {
+    attemptedRoute: `/api/admin/events/${eventId}/toggle-partner-benefit`,
+    attemptedAction: 'toggle_partner_benefit',
+    eventId,
+  });
+  if (guard.kind === 'deny') return guard.response;
+  const actorUserId = guard.actorUserId;
 
   let body: unknown;
   try {
@@ -116,10 +108,10 @@ export async function POST(
   let result: Awaited<ReturnType<typeof runToggleEventCategory>>;
   try {
     result = await runToggleEventCategory(tenantCtx.slug, {
-      eventId: eventId as never,
+      eventId: asEventId(eventId),
       flag: 'is_partner_benefit',
       newValue: parsed.data.newValue,
-      actorUserId: asUserId(session.user.id),
+      actorUserId,
       occurredAt: new Date(),
     });
   } catch (e) {

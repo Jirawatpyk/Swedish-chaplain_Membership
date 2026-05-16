@@ -2477,13 +2477,35 @@
             "match": "Match",
             "ticket": "Ticket",
             "quota": "Quota",
-            "registered": "Registered"
+            "registered": "Registered",
+            "actions": "Actions"
           },
           "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}",
           "copyEmail": "Copy email",
           "copyEmailAria": "Copy {email} to clipboard",
           "copyEmailSuccess": "Email copied to clipboard",
           "copyEmailFailed": "Could not copy — please copy manually"
+        },
+        "relink": {
+          "relinkCta": "Relink",
+          "triggerAriaLabel": "Relink {attendee} ({email}) to a different member",
+          "dialogTitle": "Relink {attendee} to a member",
+          "dialogDescription": "Choose the member this attendance belongs to. The current match will be credited back and the new member's quota will be re-evaluated. This action is auditable.",
+          "searchSrLabel": "Search members",
+          "searchPlaceholder": "Search by company or contact…",
+          "searchPrompt": "Start typing to search members.",
+          "searching": "Searching members…",
+          "noResults": "No members match.",
+          "searchFailed": "Could not load members. Check your connection and try again.",
+          "pendingAnnouncement": "Relinking attendance…",
+          "successToast": "Relinked to {companyName}",
+          "noopToast": "No change",
+          "noopToastDescription": "This attendance was already linked to {companyName}.",
+          "errorToast": "Could not relink — please try again",
+          "errorToastConflict": "Cannot relink right now — the event state may have changed. Please refresh and try again.",
+          "notFoundToast": "Target member is no longer available",
+          "disallowedShort": "PII purged — cannot relink",
+          "disallowedPseudonymised": "Cannot relink — attendee PII has been retention-purged. The original attendee identity is no longer recoverable. Manually re-import the registration via CSV if you have the original data."
         },
         "archive": {
           "archiveCta": "Archive event",
@@ -2508,7 +2530,8 @@
           "quota_over_quota_warning": "Over-quota warning",
           "event_partner_benefit_toggled": "Partner-benefit flag toggled",
           "event_cultural_event_toggled": "Cultural-event flag toggled",
-          "event_archived": "Event archived"
+          "event_archived": "Event archived",
+          "registration_relinked": "Attendance relinked"
         },
         "toggles": {
           "flagPartnerBenefit": "Flag as partner benefit",

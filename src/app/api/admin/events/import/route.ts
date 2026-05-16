@@ -45,7 +45,13 @@ import {
 import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { makeStandaloneAuditDeps } from '@/modules/events';
-import { adminOnlyGuard } from '../../integrations/eventcreate/_lib/role-violation-audit';
+// FR-035 — CSV import is a write action on /admin/events/** so it
+// uses the events-family writer guard (manager 403, member 404), NOT
+// the integrations-family `adminOnlyGuard` (404-for-all surface-
+// disclosure for secret-bearing surfaces). Pre-Phase-9 drift: this
+// route previously used the integration guard which conflated the two
+// surface families.
+import { adminOnlyWriterGuard } from '../_lib/role-violation-audit';
 
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -68,10 +74,14 @@ export async function POST(request: NextRequest): Promise<Response> {
     return new NextResponse(null, { status: 404 });
   }
 
-  // 2. RBAC — admin-only; manager/member/no-session all → 404 with
-  // `role_violation_blocked` audit (emitted async + non-blocking).
-  const guard = await adminOnlyGuard(request, {
+  // 2. FR-035 admin-only writer guard: manager → 403 + audit, member
+  // → 404 + audit, no-session/unknown → 404. CSV import is an
+  // `/admin/events/**` write per spec.md:250, so it gets the writer-
+  // guard semantics (manager sees the events surface but cannot
+  // mutate) instead of the integration-family 404-for-all pattern.
+  const guard = await adminOnlyWriterGuard(request, {
     attemptedRoute: ROUTE,
+    eventId: null,
     attemptedAction: 'csv_import',
   });
   if (guard.kind === 'deny') return guard.response;
@@ -374,9 +384,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     outcome = await runImportCsv({
       tenantSlug,
-      // H-15 fix (2026-05-15): brand at the composition-adapter
-      // boundary; runImportCsv input now requires UserId, not string.
-      actorUserId: asUserId(guard.actorUserId),
+      // Round-2 types-H2 — adminOnlyWriterGuard now returns branded
+      // `UserId`, so no re-wrap is needed (H-15 fix's `asUserId(...)`
+      // was redundant after the guard's return-type tightening).
+      actorUserId: guard.actorUserId,
       bytes,
       selectedEvent: eventLookup.event,
       forceProceed,

@@ -46,13 +46,20 @@ import type {
   MatchType,
   RegistrationId,
   AttendeeEmail,
+  EventId,
 } from '@/modules/events';
+import type { MemberId } from '@/modules/members';
 import { MatchStatusBadge } from './match-status-badge';
 import { QuotaEffectBadge } from './quota-effect-badge';
+import { RelinkRegistrationDialog } from './relink-registration-dialog';
 
 export type AttendeeRow = {
-  // brand types propagated through the
-  // Server→Client prop boundary. Compile-only — no runtime cost.
+  // Brand types propagated through the Server→Client prop boundary.
+  // Compile-only — no runtime cost. Round-1 review fix (type-H3):
+  // `currentMatchedMemberId` is now branded `MemberId | null` so the
+  // brand survives all the way to the dialog → fetch URL composition
+  // (template-literal coercion happens at the URL boundary, not at
+  // the component prop boundary).
   readonly registrationId: RegistrationId;
   readonly attendeeEmail: AttendeeEmail;
   readonly attendeeName: string;
@@ -65,12 +72,36 @@ export type AttendeeRow = {
   readonly countedAgainstCulturalQuota: boolean;
   readonly isOverQuota: boolean;
   readonly registeredAt: string;
+  /**
+   * F6 Phase 9 / US6 — admin relink target. `null` when the row is
+   * `non_member` / `unmatched`.
+   */
+  readonly currentMatchedMemberId: MemberId | null;
+  /**
+   * F6 Phase 9 / US6 / FR-014 round-2 R4 — true when the row's PII has
+   * been retention-purged; the per-row relink action is replaced by an
+   * inline disallowed message.
+   */
+  readonly isPseudonymised: boolean;
 };
 
 type Props = {
   readonly rows: readonly AttendeeRow[];
   readonly unmatchedOnly: boolean;
   readonly initialSearch: string;
+  /**
+   * F6 Phase 9 / US6 — required by the relink dialog so it can POST to
+   * the per-event route. Branded `EventId | null` (Round-1 type-H3
+   * fix) — `null` only on the manager read-only render path which
+   * hides the Actions column entirely.
+   */
+  readonly eventId: EventId | null;
+  /**
+   * F6 Phase 9 / US6 — hides the Actions column when false (manager
+   * read-only view per FR-035). When `eventId` is null this is also
+   * forced to false defensively.
+   */
+  readonly canRelink: boolean;
 };
 
 function formatRegisteredAt(iso: string, locale: string): string {
@@ -90,8 +121,18 @@ function formatTicketPrice(thb: number | null, locale: string): string {
   }).format(thb);
 }
 
-export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
+export function AttendeeTable({
+  rows,
+  unmatchedOnly,
+  initialSearch,
+  eventId,
+  canRelink,
+}: Props) {
   const t = useTranslations('admin.events.detail.attendees');
+  // Defensive AND — never render the Actions column if eventId is
+  // missing even when canRelink was passed true (the dialog would
+  // POST to /api/admin/events//... and 404 immediately).
+  const showActions = canRelink && eventId !== null;
   const tMatchType = useTranslations('admin.events.matchType');
   const tMatchTypeTip = useTranslations('admin.events.matchTypeTooltip');
   const tQuota = useTranslations('admin.events.quotaEffect');
@@ -259,7 +300,12 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
           <p className="text-muted-foreground">{t('empty')}</p>
         </div>
       ) : (
-        <Table className="min-w-[580px]">
+        // min-w sizing: 5 base columns (Attendee + Match + Ticket +
+        // Quota + Registered) ~580px; Phase 9 adds an optional Actions
+        // column (~80px when `showActions=true`). Bump to 660px so the
+        // table fills its viewport on the admin-render path without
+        // forcing horizontal scroll on mid-size laptop viewports.
+        <Table className={cn(showActions ? 'min-w-[660px]' : 'min-w-[580px]')}>
           <TableCaption className="sr-only">{t('tableCaption')}</TableCaption>
           <TableHeader>
             <TableRow>
@@ -268,6 +314,13 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
               <TableHead>{t('columns.ticket')}</TableHead>
               <TableHead>{t('columns.quota')}</TableHead>
               <TableHead>{t('columns.registered')}</TableHead>
+              {showActions && (
+                <TableHead>
+                  <span className="sr-only">
+                    {t('columns.actions')}
+                  </span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -325,8 +378,24 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                           : 'text-muted-foreground',
                       )}
                     >
-                      {formatTicketPrice(r.ticketPriceThb, locale)}
-                      <span aria-hidden="true"> · </span>
+                      {/*
+                        F6.1 UX-fix 2026-05-16 — when `ticketPriceThb`
+                        is null (common for EventCreate CSV imports
+                        because EventCreate's adapter maps only Name /
+                        Email / Notes / Status per FR-005-FR-010 and
+                        does NOT carry structured ticket pricing),
+                        drop the leading "— · " so the cell reads just
+                        "Paid" instead of "— · Paid". Avoids a
+                        malformed-pair visual ("dash bullet status")
+                        that previously made the column look broken
+                        on every EventCreate-format row.
+                      */}
+                      {r.ticketPriceThb !== null && (
+                        <>
+                          {formatTicketPrice(r.ticketPriceThb, locale)}
+                          <span aria-hidden="true"> · </span>
+                        </>
+                      )}
                       {tPay(r.paymentStatus)}
                     </span>
                   </div>
@@ -372,6 +441,18 @@ export function AttendeeTable({ rows, unmatchedOnly, initialSearch }: Props) {
                 <TableCell className="text-muted-foreground">
                   {formatRegisteredAt(r.registeredAt, locale)}
                 </TableCell>
+                {showActions && eventId !== null && (
+                  <TableCell className="text-right">
+                    <RelinkRegistrationDialog
+                      registrationId={r.registrationId}
+                      eventId={eventId}
+                      attendeeName={r.attendeeName}
+                      attendeeEmail={r.attendeeEmail}
+                      currentMatchedMemberId={r.currentMatchedMemberId}
+                      isPseudonymised={r.isPseudonymised}
+                    />
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

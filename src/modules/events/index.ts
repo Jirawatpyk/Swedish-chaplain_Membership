@@ -308,6 +308,15 @@ export {
 } from './application/use-cases/archive-event';
 
 export {
+  relinkRegistration,
+  type RelinkRegistrationInput,
+  type RelinkRegistrationOutput,
+  type RelinkRegistrationError,
+  type RelinkRegistrationDeps,
+  type RelinkQuotaImpact,
+} from './application/use-cases/relink-registration';
+
+export {
   forceExpireGraceSecret,
   type ForceExpireGraceSecretInput,
   type ForceExpireGraceSecretOutput,

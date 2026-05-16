@@ -2477,13 +2477,35 @@
             "match": "Matchning",
             "ticket": "Biljett",
             "quota": "Kvot",
-            "registered": "Registrerad"
+            "registered": "Registrerad",
+            "actions": "Åtgärder"
           },
           "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}",
           "copyEmail": "Kopiera e-post",
           "copyEmailAria": "Kopiera {email} till urklipp",
           "copyEmailSuccess": "E-post kopierad till urklipp",
           "copyEmailFailed": "Kunde inte kopiera — kopiera manuellt"
+        },
+        "relink": {
+          "relinkCta": "Länka om",
+          "triggerAriaLabel": "Länka om {attendee} ({email}) till en annan medlem",
+          "dialogTitle": "Länka om {attendee} till en medlem",
+          "dialogDescription": "Välj den medlem som detta deltagande tillhör. Den tidigare matchningen krediteras tillbaka och den nya medlemmens kvot omvärderas. Åtgärden är spårbar.",
+          "searchSrLabel": "Sök medlemmar",
+          "searchPlaceholder": "Sök efter företag eller kontakt…",
+          "searchPrompt": "Börja skriva för att söka medlemmar.",
+          "searching": "Söker medlemmar…",
+          "noResults": "Inga medlemmar matchar.",
+          "searchFailed": "Kunde inte ladda medlemmar. Kontrollera anslutningen och försök igen.",
+          "pendingAnnouncement": "Länkar om deltagande…",
+          "successToast": "Omlänkad till {companyName}",
+          "noopToast": "Ingen ändring",
+          "noopToastDescription": "Detta deltagande var redan länkat till {companyName}.",
+          "errorToast": "Kunde inte länka om — försök igen",
+          "errorToastConflict": "Kan inte länka om just nu — händelsestatus kan ha ändrats. Uppdatera sidan och försök igen.",
+          "notFoundToast": "Målmedlem är inte längre tillgänglig",
+          "disallowedShort": "PII raderad — kan inte länka om",
+          "disallowedPseudonymised": "Kan inte länka om — deltagarens PII har raderats enligt lagringspolicyn. Den ursprungliga identiteten kan inte återställas. Importera registreringen igen via CSV om du har originaldata."
         },
         "archive": {
           "archiveCta": "Arkivera evenemang",
@@ -2508,7 +2530,8 @@
           "quota_over_quota_warning": "Varning för överskriden kvot",
           "event_partner_benefit_toggled": "Partnerförmånsmarkering uppdaterad",
           "event_cultural_event_toggled": "Kulturevenemangsmarkering uppdaterad",
-          "event_archived": "Evenemang arkiverat"
+          "event_archived": "Evenemang arkiverat",
+          "registration_relinked": "Deltagande omlänkad"
         },
         "toggles": {
           "flagPartnerBenefit": "Markera som partnerförmån",

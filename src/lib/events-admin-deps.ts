@@ -47,6 +47,7 @@ import { listEvents } from '@/modules/events/application/use-cases/list-events';
 import { loadEventDetail } from '@/modules/events/application/use-cases/load-event-detail';
 import { toggleEventCategory } from '@/modules/events/application/use-cases/toggle-event-category';
 import { archiveEvent } from '@/modules/events/application/use-cases/archive-event';
+import { relinkRegistration } from '@/modules/events/application/use-cases/relink-registration';
 import type {
   ListEventsInput,
   ListEventsOutput,
@@ -67,6 +68,11 @@ import type {
   ArchiveEventOutput,
   ArchiveEventError,
 } from '@/modules/events/application/use-cases/archive-event';
+import type {
+  RelinkRegistrationInput,
+  RelinkRegistrationOutput,
+  RelinkRegistrationError,
+} from '@/modules/events/application/use-cases/relink-registration';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
 import { makeDrizzleQuotaAccountingAdapter } from '@/modules/events/infrastructure/drizzle-quota-accounting-adapter';
@@ -300,4 +306,57 @@ export async function runArchiveEvent(
       Math.max(0, performance.now() - startedAt),
     );
   }
+}
+
+/**
+ * Phase 9 / US6 — composes the relink-registration deps bag. Bundles
+ * every port the use-case consumes: events + registrations repos for
+ * the load + UPDATE path, the F2/F3 plan-and-member quota-accounting
+ * adapter for the credit-back-then-decrement computation, the per-
+ * (tenant, member, event) advisory-lock acquirer (same
+ * `eventcreate-quota:` namespace as ingest/archive/toggle so concurrent
+ * paths serialise correctly), and the audit emitter. All bound to the
+ * caller's tx.
+ */
+export function makeRelinkRegistrationDeps(
+  executor: TenantTx,
+  ctx: ReturnType<typeof asTenantContext>,
+) {
+  const registrationsRepo = makeDrizzleRegistrationsRepository(executor);
+  return {
+    eventsRepo: makeDrizzleEventsRepository(executor),
+    registrationsRepo,
+    quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+      executor,
+      ctx,
+      registrationsRepo,
+    ),
+    advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(executor),
+    audit: makePinoAuditPort(executor),
+  };
+}
+
+/**
+ * Phase 9 / US6 — route-facing wrapper for `relinkRegistration`. Uses
+ * `runInTenantWithRollbackOnErr` so a mid-flight failure (lock
+ * contention, audit-emit DB blip, quota-lookup error after credit-back
+ * audits have already been emitted) rolls back the entire tx — the
+ * registration row, every audit row, and every quota-derived count
+ * snap back to the pre-relink state, preserving FR-037 strict-tx ACID
+ * the same way archive + toggle do.
+ *
+ * NOTE: no duration histogram yet — Phase 10's observability batch
+ * (T124–T130) owns metric wiring. Phase 9's contract is the surface
+ * + correctness; metrics land later.
+ */
+export async function runRelinkRegistration(
+  tenantSlug: string,
+  input: Omit<RelinkRegistrationInput, 'tenantId'>,
+): Promise<Result<RelinkRegistrationOutput, RelinkRegistrationError>> {
+  const ctx = asTenantContext(tenantSlug);
+  const tenantId: TenantId = asTenantId(tenantSlug);
+  return runInTenantWithRollbackOnErr(ctx, async (tx) => {
+    const deps = makeRelinkRegistrationDeps(tx, ctx);
+    return relinkRegistration({ ...input, tenantId }, deps);
+  });
 }

@@ -30,7 +30,7 @@ const runCreateEventMock = vi.fn();
 const createEventRateLimitCheckMock = vi.fn();
 const getCurrentSessionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
-const emitEventsRoleViolationMock = vi.fn();
+const emitStandaloneMock = vi.fn();
 
 vi.mock('@/lib/events-create-deps', () => ({
   runCreateEvent: (...args: unknown[]) => runCreateEventMock(...args),
@@ -47,13 +47,23 @@ vi.mock('@/lib/tenant-context', () => ({
     resolveTenantFromRequestMock(...args),
 }));
 
-vi.mock(
-  '@/app/api/admin/events/_lib/role-violation-audit',
-  () => ({
-    emitEventsRoleViolation: (...args: unknown[]) =>
-      emitEventsRoleViolationMock(...args),
-  }),
-);
+// FR-035 E1 closure (post-Phase-9 verify) — mock the AUDIT BOUNDARY
+// (makeStandaloneAuditDeps.emitStandalone), not the helper, so the
+// real `adminOnlyWriterGuard` + `emitEventsRoleViolation` chain runs
+// end-to-end against mocked auth + audit ports. Mirrors the
+// `csv-import-api.test.ts` pattern so the F6 test suite uses a
+// uniform mock structure across route-contract files.
+vi.mock('@/modules/events', async () => {
+  const actual = await vi.importActual<typeof import('@/modules/events')>(
+    '@/modules/events',
+  );
+  return {
+    ...actual,
+    makeStandaloneAuditDeps: () => ({
+      emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
+    }),
+  };
+});
 
 vi.mock('@/lib/env', async () => {
   const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
@@ -102,7 +112,7 @@ beforeEach(() => {
     success: true,
     resetAtUnixMs: Date.now() + 3_600_000,
   });
-  emitEventsRoleViolationMock.mockResolvedValue(undefined);
+  emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
 });
 
 afterEach(() => {
@@ -266,46 +276,54 @@ describe('Round 1 CR-1 / TESTS-C-1 — POST /api/admin/events', () => {
     });
   });
 
-  describe('404 — RBAC matrix (surface-disclosure)', () => {
-    it('returns 404 for manager session + emits role_violation_blocked audit', async () => {
+  describe('FR-035 RBAC matrix (post-Phase-9 E1 closure — manager 403, member 404)', () => {
+    it('returns 403 for manager session + emits role_violation_blocked audit (action-level deny per spec.md:250)', async () => {
       getCurrentSessionMock.mockResolvedValue(MANAGER_SESSION);
       const { POST } = await loadRoute();
       const res = await POST(jsonRequest(validBody));
 
-      expect(res.status).toBe(404);
-      expect(emitEventsRoleViolationMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          actorRole: 'manager',
-          attemptedAction: 'create_event',
-        }),
-      );
+      // Spec.md FR-035 + plan.md:72 — manager "sees the surface, just
+      // cannot perform the mutation" → 403 with RFC 7807 body.
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { title?: string };
+      expect(body.title).toBe('Forbidden');
+      // Audit row emitted via the real adminOnlyWriterGuard → real
+      // emitEventsRoleViolation → mocked makeStandaloneAuditDeps.emitStandalone.
+      expect(emitStandaloneMock).toHaveBeenCalled();
+      const emittedEntry = emitStandaloneMock.mock.calls[0]?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(emittedEntry?.['eventType']).toBe('role_violation_blocked');
+      expect(emittedEntry?.['actorType']).toBe('manager');
+      const payload = emittedEntry?.['payload'] as Record<string, unknown> | undefined;
+      expect(payload?.['actorRole']).toBe('manager');
+      expect(payload?.['attemptedAction']).toBe('create_event');
       expect(runCreateEventMock).not.toHaveBeenCalled();
     });
 
-    it('returns 404 for member session + emits role_violation_blocked audit', async () => {
+    it('returns 404 for member session + emits role_violation_blocked audit (surface-disclosure per spec.md:250)', async () => {
       getCurrentSessionMock.mockResolvedValue(MEMBER_SESSION);
       const { POST } = await loadRoute();
       const res = await POST(jsonRequest(validBody));
 
       expect(res.status).toBe(404);
-      expect(emitEventsRoleViolationMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          actorRole: 'member',
-          attemptedAction: 'create_event',
-        }),
-      );
+      // Member-404 path emits the audit too, just with actorRole=member.
+      expect(emitStandaloneMock).toHaveBeenCalled();
+      const emittedEntry = emitStandaloneMock.mock.calls[0]?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(emittedEntry?.['eventType']).toBe('role_violation_blocked');
+      expect(emittedEntry?.['actorType']).toBe('member');
       expect(runCreateEventMock).not.toHaveBeenCalled();
     });
 
-    it('returns 404 with NO audit emit for no-session', async () => {
+    it('returns 404 with NO audit emit for no-session (no actor to attribute)', async () => {
       getCurrentSessionMock.mockResolvedValue(null);
       const { POST } = await loadRoute();
       const res = await POST(jsonRequest(validBody));
 
       expect(res.status).toBe(404);
-      expect(emitEventsRoleViolationMock).not.toHaveBeenCalled();
+      expect(emitStandaloneMock).not.toHaveBeenCalled();
       expect(runCreateEventMock).not.toHaveBeenCalled();
     });
   });

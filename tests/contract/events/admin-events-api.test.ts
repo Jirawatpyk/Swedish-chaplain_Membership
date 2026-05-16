@@ -702,6 +702,10 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       countedAgainstCulturalQuota: true,
       isOverQuota: false,
       registeredAt: '2026-06-01T10:23:15Z',
+      // F6 Phase 9 / US6 — added to the DTO so the admin relink dialog
+      // can render the FR-014 disallowed branch without a second
+      // round-trip. Fixture defaults to false (non-pseudonymised row).
+      isPseudonymised: false,
     };
   }
 

@@ -517,26 +517,31 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
     });
   });
 
-  describe('FR-035 RBAC — admin-only mutation (manager + member + no-session all → 404 surface-disclosure)', () => {
-    // F6 admin-mutation routes uniformly return 404 for ANY non-admin
-    // (per `adminOnlyGuard` precedent in
-    // src/app/api/admin/integrations/eventcreate/_lib/role-violation-audit.ts).
-    // Distinction from list/detail routes (FR-021 manager-read allowed)
-    // — those return 200; mutations return 404 with no role oracle.
+  describe('FR-035 RBAC matrix (post-Phase-9 E1 closure — manager 403, member 404)', () => {
+    // CSV import is a write action on /admin/events/** per spec.md:250.
+    // Pre-Phase-9 implementation used the `/admin/integrations/**`
+    // 404-for-all guard (drift from spec). Closed in the verify-pass
+    // remediation by switching to `adminOnlyWriterGuard`: manager gets
+    // 403 (action-level deny — they see the events surface but can't
+    // mutate), member gets 404 (surface-disclosure).
 
-    it('404 — manager attempts CSV import → 404 + role_violation_blocked audit', async () => {
+    it('403 — manager attempts CSV import → 403 + role_violation_blocked audit (action-level deny per spec.md:250)', async () => {
       getCurrentSessionMock.mockResolvedValue(MANAGER_SESSION);
 
       const { POST } = await loadImportRoute();
       const res = await POST(buildRequest());
 
-      expect(res.status).toBe(404);
-      // Manager 404 path emits role_violation_blocked
+      // Spec.md FR-035 + plan.md:72.
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { title?: string };
+      expect(body.title).toBe('Forbidden');
+      // Manager 403 path emits role_violation_blocked with actorRole=manager.
       expect(emitStandaloneMock).toHaveBeenCalled();
       const emittedEntry = emitStandaloneMock.mock.calls[0]?.[0] as
         | Record<string, unknown>
         | undefined;
       expect(emittedEntry?.['eventType']).toBe('role_violation_blocked');
+      expect(emittedEntry?.['actorType']).toBe('manager');
       expect(runImportCsvMock).not.toHaveBeenCalled();
     });
 
@@ -547,8 +552,12 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       const res = await POST(buildRequest());
 
       expect(res.status).toBe(404);
-      // 404 path emits role_violation_blocked too (FR-035)
+      // 404 path emits role_violation_blocked too with actorRole=member.
       expect(emitStandaloneMock).toHaveBeenCalled();
+      const emittedEntry = emitStandaloneMock.mock.calls[0]?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(emittedEntry?.['actorType']).toBe('member');
       expect(runImportCsvMock).not.toHaveBeenCalled();
     });
 

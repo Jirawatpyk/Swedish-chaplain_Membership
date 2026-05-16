@@ -120,6 +120,13 @@ export interface EventDetailRegistration {
   readonly countedAgainstCulturalQuota: boolean;
   readonly isOverQuota: boolean;
   readonly registeredAt: string;
+  /**
+   * F6 Phase 9 / US6 — true when `pii_pseudonymised_at != NULL`. The
+   * admin relink dialog renders the inline disallowed message per
+   * FR-014 round-2 R4 for these rows; quota counts + match metadata
+   * remain visible for forensic continuity.
+   */
+  readonly isPseudonymised: boolean;
 }
 
 export interface LoadEventDetailOutput {
@@ -228,6 +235,11 @@ export async function loadEventDetail(
         (event.isPartnerBenefit || event.isCulturalEvent) &&
         isNonQuotaMatchType(r.match.type),
       registeredAt: r.registeredAt.toISOString(),
+      // F6 Phase 9 / US6 — surface the pseudonymisation marker so the
+      // relink dialog can render the FR-014 disallowed branch without
+      // a second DTO round-trip. The Domain predicate keeps the
+      // null-vs-Date logic in one place (`event-registration.ts`).
+      isPseudonymised: r.piiPseudonymisedAt !== null,
     }),
   );
 

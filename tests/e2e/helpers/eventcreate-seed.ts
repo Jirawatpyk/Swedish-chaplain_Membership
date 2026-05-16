@@ -605,3 +605,350 @@ export async function seedF6Events(
     await client.end();
   }
 }
+
+// ===========================================================================
+// `seedF6RelinkFixture` — seeds a dedicated event + 3 registrations for the
+// Phase 9 / US6 relink-attendee E2E spec. Distinct from `seedF6Events` so
+// the relink test owns its rows and does not perturb the list/detail spec's
+// match-rate expectations.
+//
+// The three registrations cover US6 AS1, AS2, and the FR-014 pseudonymised
+// disallowed branch (round-2 R4):
+//   1. non_member row — admin relinks to E2E_MEMBER (AS1).
+//   2. matched + counted member-contact row — admin relinks to a different
+//      member; verifies the row's match badge updates (AS2; the quota
+//      credit-back math is owned by the live-Neon integration test).
+//   3. row with `pii_pseudonymised_at = NOW()` — the inline disallowed
+//      message replaces the Relink CTA per FR-014.
+//
+// Returns the IDs the spec needs to drive precise selectors.
+// ===========================================================================
+
+const EXT_EVENT_RELINK = 'e2e-f6-event-relink';
+const EXT_REG_RELINK_NONMEMBER = 'e2e-f6-reg-relink-nonmember';
+const EXT_REG_RELINK_COUNTED = 'e2e-f6-reg-relink-counted';
+const EXT_REG_RELINK_PSEUDONYMISED = 'e2e-f6-reg-relink-pseudonymised';
+
+export interface SeedRelinkFixtureResult {
+  readonly tenantId: string;
+  readonly eventId: string;
+  readonly nonMemberRegistrationId: string;
+  readonly countedRegistrationId: string;
+  readonly pseudonymisedRegistrationId: string;
+  /**
+   * E2E member resolved from `E2E_MEMBER_EMAIL`. The relink E2E uses this
+   * to search the picker for a known target member. `null` when the env
+   * var is missing — the spec gates with `test.skip` in that case.
+   */
+  readonly e2eMemberId: string | null;
+  readonly e2eMemberCompany: string | null;
+  /**
+   * Round-1 test-M6 closure — distinct synthetic "Relink Target" member
+   * so the AS2 E2E can exercise the **A→B** transition (spec.md:146)
+   * instead of the trivial A→A noop short-circuit. Created with a
+   * deterministic UUID + company name keyed off `seedRelinkTargetMember`
+   * so picker queries can find it reliably.
+   */
+  readonly relinkTargetMemberId: string;
+  readonly relinkTargetCompany: string;
+}
+
+export async function seedF6RelinkFixture(
+  tenantSlug: string = TENANT_ID,
+): Promise<SeedRelinkFixtureResult | null> {
+  const client = openClient();
+  if (!client) return null;
+  try {
+    // 1. Webhook config — enabled so /admin/events/[id] passes the
+    //    `everReceivedDelivery` guard. Reusing the F6 fixture secret keeps
+    //    the integration-test pre-condition aligned with seedF6Events.
+    await client.sql`
+      INSERT INTO tenant_webhook_configs (
+        tenant_id, source,
+        webhook_secret_active, webhook_secret_grace, grace_rotated_at,
+        enabled, last_received_at
+      ) VALUES (
+        ${tenantSlug}, 'eventcreate',
+        ${F6_E2E_FIXTURE_SECRET}, NULL, NULL,
+        TRUE, NOW()
+      )
+      ON CONFLICT (tenant_id, source) DO UPDATE
+        SET enabled = TRUE,
+            last_received_at = NOW(),
+            webhook_secret_active = EXCLUDED.webhook_secret_active
+    `;
+
+    // 2. Dedicated relink event — partner_benefit=true so AS2's
+    //    member-contact row carries a counted partnership flag.
+    const eventRows = await client.sql<Array<{ event_id: string }>>`
+      INSERT INTO events (
+        tenant_id, source, external_id,
+        name, description, start_date, end_date, location, category,
+        eventcreate_url,
+        is_partner_benefit, is_cultural_event, archived_at, metadata
+      ) VALUES (
+        ${tenantSlug}, 'eventcreate', ${EXT_EVENT_RELINK},
+        'E2E F6 Relink Fixture Event',
+        'Seeded by tests/e2e/helpers/eventcreate-seed.ts (seedF6RelinkFixture)',
+        '2026-07-15T18:00:00Z', '2026-07-15T22:00:00Z',
+        'Bangkok', 'networking',
+        'https://events.example/e2e-f6-relink',
+        TRUE, FALSE, NULL, '{}'::jsonb
+      )
+      ON CONFLICT (tenant_id, source, external_id) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            start_date = EXCLUDED.start_date,
+            end_date = EXCLUDED.end_date,
+            location = EXCLUDED.location,
+            category = EXCLUDED.category,
+            eventcreate_url = EXCLUDED.eventcreate_url,
+            is_partner_benefit = EXCLUDED.is_partner_benefit,
+            is_cultural_event = EXCLUDED.is_cultural_event,
+            archived_at = EXCLUDED.archived_at,
+            last_updated_at = NOW()
+      RETURNING event_id::text AS event_id
+    `;
+    const eventId = eventRows[0]?.event_id;
+    if (!eventId) {
+      throw new Error('[e2e seed F6 relink] events upsert returned no rows');
+    }
+
+    // 3. Resolve the E2E member (used as the counted member in AS2's
+    //    fixture row AND as the relink target in AS1). Falls back to
+    //    skipping the matched fixture row when the env is missing —
+    //    the spec gates with `test.skip` in that path.
+    const memberEmail = process.env.E2E_MEMBER_EMAIL;
+    let e2eMemberId: string | null = null;
+    let e2eContactId: string | null = null;
+    let e2eMemberCompany: string | null = null;
+    if (memberEmail) {
+      const memberRows = await client.sql<
+        Array<{
+          member_id: string;
+          contact_id: string | null;
+          company_name: string;
+        }>
+      >`
+        SELECT m.member_id::text AS member_id,
+               pc.contact_id::text AS contact_id,
+               m.company_name AS company_name
+        FROM users u
+        JOIN contacts c
+          ON c.linked_user_id = u.id AND c.tenant_id = ${tenantSlug}
+        JOIN members m
+          ON m.member_id = c.member_id AND m.tenant_id = ${tenantSlug}
+        LEFT JOIN contacts pc
+          ON pc.member_id = m.member_id
+         AND pc.tenant_id = ${tenantSlug}
+         AND pc.is_primary = TRUE
+         AND pc.removed_at IS NULL
+        WHERE u.email = ${memberEmail}
+        LIMIT 1
+      `;
+      if (memberRows[0]) {
+        e2eMemberId = memberRows[0].member_id;
+        e2eContactId = memberRows[0].contact_id;
+        e2eMemberCompany = memberRows[0].company_name;
+      }
+    }
+
+    // 4a. Non-member row — AS1 target.
+    const nonMemberRows = await client.sql<Array<{ registration_id: string }>>`
+      INSERT INTO event_registrations (
+        tenant_id, event_id, external_id,
+        attendee_email, attendee_name, attendee_company,
+        match_type, matched_member_id, matched_contact_id,
+        ticket_type, ticket_price_thb, payment_status,
+        counted_against_partnership, counted_against_cultural_quota,
+        metadata, registered_at
+      ) VALUES (
+        ${tenantSlug}, ${eventId}, ${EXT_REG_RELINK_NONMEMBER},
+        'relink-target@e2e-f6-relink.example', 'Relink Target Non-member',
+        'Relink Co.',
+        'non_member', NULL, NULL,
+        'Standard ticket', 50000, 'paid',
+        FALSE, FALSE, '{}'::jsonb, '2026-06-15T10:00:00Z'
+      )
+      ON CONFLICT (tenant_id, event_id, external_id) DO UPDATE
+        SET attendee_email = EXCLUDED.attendee_email,
+            attendee_name = EXCLUDED.attendee_name,
+            attendee_company = EXCLUDED.attendee_company,
+            match_type = 'non_member',
+            matched_member_id = NULL,
+            matched_contact_id = NULL,
+            payment_status = EXCLUDED.payment_status,
+            counted_against_partnership = FALSE,
+            counted_against_cultural_quota = FALSE,
+            pii_pseudonymised_at = NULL
+      RETURNING registration_id::text AS registration_id
+    `;
+    const nonMemberRegistrationId = nonMemberRows[0]?.registration_id;
+    if (!nonMemberRegistrationId) {
+      throw new Error(
+        '[e2e seed F6 relink] non_member registration upsert returned no rows',
+      );
+    }
+
+    // 4b. Matched + counted member-contact row — AS2 target. Requires
+    //     both a member_id AND contact_id to satisfy the CHECK constraint
+    //     `event_registrations_member_contact_requires_ids`. Falls back
+    //     to a non_member-shaped row when no e2e-member is resolvable so
+    //     the upsert still succeeds (AS2 will then skip gracefully).
+    const useMatched = e2eMemberId !== null && e2eContactId !== null;
+    const countedRows = await client.sql<Array<{ registration_id: string }>>`
+      INSERT INTO event_registrations (
+        tenant_id, event_id, external_id,
+        attendee_email, attendee_name, attendee_company,
+        match_type, matched_member_id, matched_contact_id,
+        ticket_type, ticket_price_thb, payment_status,
+        counted_against_partnership, counted_against_cultural_quota,
+        metadata, registered_at
+      ) VALUES (
+        ${tenantSlug}, ${eventId}, ${EXT_REG_RELINK_COUNTED},
+        ${memberEmail ?? 'counted-fallback@e2e-f6-relink.example'},
+        'E2E Counted Member',
+        ${e2eMemberCompany ?? 'E2E Member Co.'},
+        ${useMatched ? 'member_contact' : 'non_member'},
+        ${useMatched ? e2eMemberId : null}::uuid,
+        ${useMatched ? e2eContactId : null}::uuid,
+        'Member ticket', 0, 'free',
+        ${useMatched}, FALSE,
+        '{}'::jsonb, '2026-06-15T09:00:00Z'
+      )
+      ON CONFLICT (tenant_id, event_id, external_id) DO UPDATE
+        SET attendee_email = EXCLUDED.attendee_email,
+            attendee_name = EXCLUDED.attendee_name,
+            attendee_company = EXCLUDED.attendee_company,
+            match_type = EXCLUDED.match_type,
+            matched_member_id = EXCLUDED.matched_member_id,
+            matched_contact_id = EXCLUDED.matched_contact_id,
+            payment_status = EXCLUDED.payment_status,
+            counted_against_partnership = EXCLUDED.counted_against_partnership,
+            counted_against_cultural_quota = EXCLUDED.counted_against_cultural_quota,
+            pii_pseudonymised_at = NULL
+      RETURNING registration_id::text AS registration_id
+    `;
+    const countedRegistrationId = countedRows[0]?.registration_id;
+    if (!countedRegistrationId) {
+      throw new Error(
+        '[e2e seed F6 relink] counted registration upsert returned no rows',
+      );
+    }
+
+    // 4c. Pseudonymised row — FR-014 disallowed-message branch. The row
+    //     LOOKS like a non_member but has `pii_pseudonymised_at` set so
+    //     the relink dialog renders the disallowed text instead of the
+    //     CTA. Email + name + company carry hash-shaped placeholders so
+    //     no real PII leaks even if the fixture is inspected.
+    const pseudoRows = await client.sql<Array<{ registration_id: string }>>`
+      INSERT INTO event_registrations (
+        tenant_id, event_id, external_id,
+        attendee_email, attendee_name, attendee_company,
+        match_type, matched_member_id, matched_contact_id,
+        ticket_type, ticket_price_thb, payment_status,
+        counted_against_partnership, counted_against_cultural_quota,
+        metadata, registered_at, pii_pseudonymised_at
+      ) VALUES (
+        ${tenantSlug}, ${eventId}, ${EXT_REG_RELINK_PSEUDONYMISED},
+        'pseudo-aaaaaaaaaaaaaaaa@e2e-f6-relink.example',
+        'pseudo-bbbbbbbbbbbbbbbb',
+        'pseudo-cccccccccccccccc',
+        'non_member', NULL, NULL,
+        'Standard ticket', 30000, 'paid',
+        FALSE, FALSE, '{}'::jsonb,
+        '2024-04-01T10:00:00Z', NOW()
+      )
+      ON CONFLICT (tenant_id, event_id, external_id) DO UPDATE
+        SET attendee_email = EXCLUDED.attendee_email,
+            attendee_name = EXCLUDED.attendee_name,
+            attendee_company = EXCLUDED.attendee_company,
+            match_type = 'non_member',
+            matched_member_id = NULL,
+            matched_contact_id = NULL,
+            payment_status = EXCLUDED.payment_status,
+            pii_pseudonymised_at = NOW()
+      RETURNING registration_id::text AS registration_id
+    `;
+    const pseudonymisedRegistrationId = pseudoRows[0]?.registration_id;
+    if (!pseudonymisedRegistrationId) {
+      throw new Error(
+        '[e2e seed F6 relink] pseudonymised registration upsert returned no rows',
+      );
+    }
+
+    // 5. Round-1 test-M6 — distinct relink-target member so AS2 can
+    //    exercise A→B (not A→A noop). Deterministic UUID + searchable
+    //    company name. UPSERT keyed on the company so the seed is
+    //    idempotent across re-runs. Fall back to plan_id lookup from
+    //    the e2e member (if resolved) OR the chamber's default plan
+    //    so the member row satisfies the `members.plan_id` FK.
+    const RELINK_TARGET_COMPANY = 'Relink Target E2E Co';
+    const RELINK_TARGET_EMAIL = 'relink-target-e2e@chamber.example';
+    // Pick any active plan from this tenant so the FK is satisfied.
+    // If the tenant has no plans (rare in a freshly-bootstrapped CI
+    // tenant), fall back to inserting WITHOUT plan_id and let the
+    // CHECK constraint accept NULL (members.plan_id is nullable for
+    // historical members per the F2 schema).
+    const planLookupRows = await client.sql<Array<{ plan_id: string }>>`
+      SELECT plan_id
+      FROM membership_plans
+      WHERE tenant_id = ${tenantSlug} AND status = 'active'
+      LIMIT 1
+    `;
+    const fallbackPlanId = planLookupRows[0]?.plan_id ?? null;
+    const upsertedRelinkTarget = await client.sql<Array<{ member_id: string }>>`
+      INSERT INTO members (
+        tenant_id, company_name, country, plan_id, plan_year, status
+      ) VALUES (
+        ${tenantSlug}, ${RELINK_TARGET_COMPANY}, 'TH',
+        ${fallbackPlanId}, 2026, 'active'
+      )
+      ON CONFLICT (tenant_id, company_name) DO UPDATE
+        SET status = 'active'
+      RETURNING member_id::text AS member_id
+    `;
+    const relinkTargetMemberId = upsertedRelinkTarget[0]?.member_id;
+    if (!relinkTargetMemberId) {
+      throw new Error(
+        '[e2e seed F6 relink] relinkTarget member upsert returned no rows',
+      );
+    }
+    // Primary contact for the target member — required so the picker
+    // surfaces a "Relink Target E2E Co · primary contact" hit when
+    // the AS2 spec searches by company-name substring.
+    await client.sql`
+      INSERT INTO contacts (
+        tenant_id, member_id, first_name, last_name, email, is_primary
+      ) VALUES (
+        ${tenantSlug}, ${relinkTargetMemberId}::uuid,
+        'Relink', 'Target', ${RELINK_TARGET_EMAIL}, TRUE
+      )
+      ON CONFLICT (tenant_id, email) WHERE removed_at IS NULL DO UPDATE
+        SET first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            is_primary = TRUE
+    `;
+
+    console.log(
+      `[e2e seed F6 relink] OK — tenant=${tenantSlug} event=${eventId} ` +
+        `registrations=3 (non_member + counted + pseudonymised) ` +
+        `e2eMember=${e2eMemberId ?? 'unresolved'} ` +
+        `relinkTarget=${relinkTargetMemberId} (${RELINK_TARGET_COMPANY})`,
+    );
+
+    return {
+      tenantId: tenantSlug,
+      eventId,
+      nonMemberRegistrationId,
+      countedRegistrationId,
+      pseudonymisedRegistrationId,
+      e2eMemberId,
+      e2eMemberCompany,
+      relinkTargetMemberId,
+      relinkTargetCompany: RELINK_TARGET_COMPANY,
+    };
+  } finally {
+    await client.end();
+  }
+}

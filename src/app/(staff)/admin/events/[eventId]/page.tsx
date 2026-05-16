@@ -296,10 +296,20 @@ export default async function AdminEventDetailPage({
               countedAgainstCulturalQuota: r.countedAgainstCulturalQuota,
               isOverQuota: r.isOverQuota,
               registeredAt: r.registeredAt,
+              // Round-1 type-H3 — pass branded MemberId | null straight
+              // through; the prop boundary preserves the brand. No
+              // String() coercion needed.
+              currentMatchedMemberId: r.matchedMemberId,
+              isPseudonymised: r.isPseudonymised,
             })) satisfies AttendeeRow[]
           }
           unmatchedOnly={unmatchedOnly}
           initialSearch={q ?? ''}
+          // F6 Phase 9 / US6 — admin-only column; manager render path
+          // hides it. Archived events disable relink because the
+          // use-case short-circuits with `event_archived`.
+          eventId={event.eventId}
+          canRelink={currentUser.role === 'admin' && !event.archivedAt}
         />
         <TablePagination
           page={pagination.page}

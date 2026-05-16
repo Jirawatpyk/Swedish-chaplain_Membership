@@ -38,11 +38,37 @@ export type RequestId = string & { readonly __brand: 'RequestId' };
 // --- Smart constructors ----------------------------------------------------
 
 /**
- * Branded-type smart constructors — keep validation centralised so callers
- * never construct invalid branded values. `asX` throws on invalid input;
- * `tryX` returns `null`. Use `as*` at trust boundaries where input is
- * known-good (post-zod-validation, post-DB-read); use `try*` at boundaries
- * where input could be malformed (raw HTTP query parsing).
+ * Branded-type smart constructors.
+ *
+ * **Trust convention** (Round-2 types-H1 hardening):
+ * - `as*` = **caller asserts the value is pre-validated**. The
+ *   constructor performs only a length-non-zero sanity check —
+ *   sufficient to catch the empty-string-passed-by-accident class,
+ *   NOT a substitute for caller-side validation. UUID-shaped IDs
+ *   (`EventId`, `RegistrationId`) MUST be validated by the caller
+ *   first (zod regex on body fields, UUID_V4 regex on path params,
+ *   or post-Postgres-read where Drizzle's `uuid` type guarantees the
+ *   shape).
+ * - `try*` = **constructor validates**, returns null on failure.
+ *   Use at raw-input boundaries (URL query parsing, untrusted
+ *   webhook payload fields).
+ *
+ * Why `as*` is length-only and not UUID-validated:
+ * 1. Hot paths — every Drizzle row read brands a UUID; a regex check
+ *    on each would add non-zero overhead on read-heavy queries
+ *    (e.g., the attendee table render at 50 rows × 4 brand calls).
+ * 2. DB type system already guarantees the shape — Postgres `uuid`
+ *    columns cannot store malformed values.
+ * 3. Route handlers already inline UUID_V4 regex on path params
+ *    BEFORE calling `as*`, so the constructor's regex would be
+ *    redundant.
+ *
+ * Strengthening (rename to `asXUnchecked` OR add regex) was
+ * considered in Round 2 and rejected on cost-vs-benefit grounds
+ * (the agent flag was correct that the contract is implicit; this
+ * doc-comment makes it explicit). Future audits should treat `as*`
+ * as the moral equivalent of `as EventId` cast with a runtime
+ * non-empty assertion.
  */
 
 export function asEventId(value: string): EventId {
