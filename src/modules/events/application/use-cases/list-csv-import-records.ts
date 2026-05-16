@@ -65,6 +65,16 @@ export interface ListCsvImportRecordsDeps {
   readonly csvImportRecordsRepo: CsvImportRecordsRepository;
   /** Injectable for tests; defaults to `new Date()` at call time. */
   readonly clock?: () => Date;
+  /**
+   * R2-CR-4 — optional structured logger. Composition layer wires
+   * `@/lib/logger`; tests can inject a spy. Used to emit `logger.fatal`
+   * on an unknown repo error kind so SREs see a future port-shape
+   * regression on dashboards (the route-layer 500 alone is not enough
+   * signal).
+   */
+  readonly logger?: {
+    fatal(meta: Record<string, unknown>, msg: string): void;
+  };
 }
 
 export async function listCsvImportRecords(
@@ -99,7 +109,7 @@ export async function listCsvImportRecords(
       actorUserIdFilter: input.actorUserIdFilter,
     }),
   });
-  if (!result.ok) return err(mapRepoError(result.error));
+  if (!result.ok) return err(mapRepoError(result.error, deps.logger));
 
   // --- Compute errorCsvAvailable per row -------------------------------
   const now = deps.clock?.() ?? new Date();
@@ -129,13 +139,18 @@ export async function listCsvImportRecords(
   });
 }
 
-function mapRepoError(e: CsvImportRecordsRepoError): ListCsvImportRecordsError {
+function mapRepoError(
+  e: CsvImportRecordsRepoError,
+  logger?: ListCsvImportRecordsDeps['logger'],
+): ListCsvImportRecordsError {
   if (e.kind === 'db_error') return { code: 'db_error', message: e.message };
-  // silent-failure I-9 (R1): an unknown error kind (e.g. `not_implemented`,
-  // `not_found`) flowing here means the repo port grew a new variant
-  // that this caller hasn't been taught about. Log fatal so SREs see
-  // the regression on dashboards — generic 500 from the route is
-  // acceptable as a fallback, but the application-layer signal must
-  // be loud.
+  // R2-CR-4 (R2): unknown error kind = the repo port grew a new variant
+  // that this caller hasn't been taught about. Emit logger.fatal so
+  // SREs see the regression on dashboards. The route maps the generic
+  // 'db_error' to 500, which is the correct user-facing surface.
+  logger?.fatal(
+    { event: 'f6_csv_list_repo_unknown_error_kind', errKind: e.kind },
+    '[F6.1] listCsvImportRecords repo returned unknown error kind — port-shape regression',
+  );
   return { code: 'db_error', message: `unexpected repo error: ${e.kind}` };
 }

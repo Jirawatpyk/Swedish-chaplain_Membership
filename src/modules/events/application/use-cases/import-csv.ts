@@ -20,7 +20,7 @@
  *
  * Pure Application — no framework imports (Constitution Principle III).
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { asLockKey } from '../ports/advisory-lock-acquirer';
@@ -322,18 +322,23 @@ export interface ImportCsvDeps {
 // row outcome (counted in `rowsSkipped`, NOT `rowsFailed`), audit-quiet
 // — first-time cancellation is expected behaviour, not a failure.
 
-// CR-10 (R1 — silent-failure): Symbol brand prevents collision with
-// any future Error subclass also named `CancellationSkipMarker`
-// (3rd-party lib, cross-realm vm contexts, etc.). The brand is
-// constant-identity so `instanceof` AND brand-equality both pass.
+// CR-10 (R1) — Symbol brand prevents collision with any future Error
+// subclass named `CancellationSkipMarker` (3rd-party lib, cross-realm
+// vm contexts). `instanceof` AND brand-equality both must hold.
 const CANCELLATION_SKIP_BRAND = Symbol('f6.csv-skip.cancellation');
 
+/**
+ * R2-CR-1 (PDPA / GDPR Art. 5(1)(c) data minimisation): the marker
+ * carries a SHA-256 hex prefix of `attendee_email_lower`, NOT the raw
+ * email. Audit payload `attendeeEmailHash` and `errorRows.reason` both
+ * read from this field — neither surface is permitted to leak raw PII.
+ */
 class CancellationSkipMarker extends Error {
-  static readonly brand = CANCELLATION_SKIP_BRAND;
   readonly _csvSkipBrand = CANCELLATION_SKIP_BRAND;
   constructor(
     public readonly rowNumber: number,
-    public readonly email: string,
+    /** SHA-256 hex prefix (≤16 chars) of attendee_email_lower — PII-safe correlator. */
+    public readonly emailHash: string,
   ) {
     super(`Cancellation skip marker (rowNumber=${rowNumber})`);
   }
@@ -342,8 +347,20 @@ class CancellationSkipMarker extends Error {
 function isCancellationSkip(e: unknown): e is CancellationSkipMarker {
   return (
     e instanceof CancellationSkipMarker &&
-    (e as CancellationSkipMarker)._csvSkipBrand === CANCELLATION_SKIP_BRAND
+    e._csvSkipBrand === CANCELLATION_SKIP_BRAND
   );
+}
+
+/**
+ * R2-CR-1: hash `attendee_email_lower` → SHA-256 hex prefix (16 chars).
+ * Used for the cancellation-skip forensic correlator + state-change
+ * catch logging. NEVER store the raw email in audit payloads or logs.
+ */
+function hashAttendeeEmail(email: string): string {
+  return createHash('sha256')
+    .update(email.toLowerCase())
+    .digest('hex')
+    .slice(0, 16);
 }
 
 // ---------------------------------------------------------------------------
@@ -562,16 +579,28 @@ async function maybeApplyStateChange(
       newPaymentStatus: parsed.row.payment_status,
     };
   } catch (e) {
-    // CR-8 (R1 — silent-failure): never swallow silently. Log
-    // structured error + emit metric. State-change path failure
-    // means admin's payment_status fix is silently dropped — must
-    // be visible to SRE alerting.
+    // R2-CR-2: strict-audit invariant — re-throw audit-emit failures so
+    // the savepoint rolls back the UPDATE (PDPA Art. 30 / GDPR Art. 30
+    // require state-change forensic trace; committing the UPDATE
+    // without the audit row is a Reliability/Privacy regression).
+    if (e instanceof TxStageError && e.stage === 'audit_emit') {
+      eventcreateMetrics.csvImportAuditEmitFailed(
+        input.tenantId,
+        'csv_import_row_state_changed',
+      );
+      throw e;
+    }
+    // CR-8 (R1) — never swallow silently. Log structured error + emit
+    // metric. State-change path failure means admin's payment_status
+    // fix is silently dropped — must be visible to SRE alerting.
+    // R2-CR-3 (R2 — silent-failure-hunter): forensic log MUST NOT
+    // surface raw attendee email; hash it for cross-request correlation.
     logger.error(
       {
         event: 'f6_csv_state_change_threw',
         tenantId: input.tenantId,
         rowNumber: parsed.rowNumber,
-        attendeeEmail: parsed.row.attendee_email,
+        attendeeEmailHash: hashAttendeeEmail(parsed.row.attendee_email),
         err: e instanceof Error ? e.message : String(e),
       },
       '[F6.1] state-change probe threw — row falls back to duplicate; admin re-upload required',
@@ -739,9 +768,11 @@ async function processOneRowInSavepoint(
       // `rowsFailed` / `rowsProcessed`). Audit-quiet: no
       // `csv_import_row_failed` emit.
       if (parsed.intendedStateChange && result.isNewRegistration) {
+        // R2-CR-1: hash at the throw site so neither the audit payload
+        // nor the errorRows reason can ever surface the raw email.
         throw new CancellationSkipMarker(
           parsed.rowNumber,
-          parsed.row.attendee_email,
+          hashAttendeeEmail(parsed.row.attendee_email),
         );
       }
 
@@ -758,16 +789,17 @@ async function processOneRowInSavepoint(
     // outcome so the row flows into `rowsSkipped` instead of
     // `rowsFailed`.
     if (isCancellationSkip(e)) {
-      // CR-10 (R1 — silent-failure): emit a low-severity forensic
-      // event so support can reconstruct WHY this row appears in
-      // `rowsSkipped` (vs the EventCreate Status filter). Audit emit
-      // failure is non-blocking — this is informational forensics,
-      // not a strict-audit-invariant surface.
-      await safeEmitCancellationNoPrior(deps, input, e.rowNumber, e.email);
+      // CR-10 (R1) — emit low-severity forensic event so support can
+      // reconstruct WHY this row appears in `rowsSkipped`. Audit emit
+      // failure is non-blocking (informational forensics, not a
+      // strict-audit surface).
+      // R2-CR-1: `e.emailHash` is the SHA-256 prefix (16 hex chars);
+      // both audit payload + errorRows.reason consume the hash only.
+      await safeEmitCancellationNoPrior(deps, input, e.rowNumber, e.emailHash);
       return {
         kind: 'skipped',
         rowNumber: e.rowNumber,
-        reason: `Skipped: Status=Cancelled without prior registration for ${e.email} (no-op)`,
+        reason: `Skipped: Status=Cancelled without prior registration (emailHash=${e.emailHash}, no-op)`,
       };
     }
     // Savepoint rolled back; outer tx + other rows preserved. Preserve

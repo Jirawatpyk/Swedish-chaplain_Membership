@@ -264,7 +264,12 @@ export async function runListCsvImportRecords(
           actorUserIdFilter: input.actorUserIdFilter,
         }),
       },
-      { csvImportRecordsRepo: repo },
+      {
+        csvImportRecordsRepo: repo,
+        // R2-CR-4: thread logger so the use-case can emit logger.fatal
+        // on an unknown repo error kind (port-shape regression signal).
+        logger,
+      },
     );
   });
 }

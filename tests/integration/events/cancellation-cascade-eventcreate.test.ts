@@ -309,6 +309,13 @@ describe('T032 — Cancellation cascade on EventCreate adapter (live Neon)', () 
     expect(payload['severity']).toBe('info');
     expect(payload['rowNumber']).toBe(2); // header is row 1; first data row is row 2
 
+    // R2-CR-1 (R2): attendeeEmailHash MUST be a 16-char SHA-256 hex
+    // prefix, NEVER the raw email. PDPA Art. 5(1)(c) data minimisation.
+    const emailHash = payload['attendeeEmailHash'];
+    expect(typeof emailHash).toBe('string');
+    expect(emailHash).toMatch(/^[0-9a-f]{16}$/);
+    expect(String(emailHash)).not.toContain('@');
+
     // row_failed MUST NOT have been emitted (rowsFailed semantics differ)
     const failedRows = await db
       .select({ id: auditLog.id })
