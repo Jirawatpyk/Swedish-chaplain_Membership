@@ -365,5 +365,27 @@ describe('streamingCsvImporter — adapterEnabled (T053 sub-flag)', () => {
     if (result.ok) return;
     expect(result.error.kind).toBe('invalid_header');
   });
+
+  // R2-SUG (R2 — pr-test-analyzer S-R2-03): adapterEnabled=false still
+  // parses a genuine generic-CSV header successfully. Locks the
+  // fallback path so a regression that ALWAYS routed to EventCreate
+  // would be caught by this control case.
+  it('adapterEnabled false + generic-shaped CSV → parses successfully via generic schema', async () => {
+    const GENERIC_HEADER =
+      'event_external_id,event_name,event_start,attendee_email,attendee_name';
+    const GENERIC_ROW =
+      'gen_event_1,Generic Workshop,2026-04-10T13:00:00Z,gen@example.test,Generic Attendee';
+    const GENERIC_BYTES = new TextEncoder().encode(
+      `${GENERIC_HEADER}\r\n${GENERIC_ROW}\r\n`,
+    );
+    const result = await streamingCsvImporter.parseStreamWithFormat({
+      bytes: GENERIC_BYTES,
+      eventContext: EVENT_CONTEXT,
+      adapterEnabled: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.format).toBe('generic_csv');
+  });
 });
 

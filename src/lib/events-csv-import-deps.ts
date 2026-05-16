@@ -57,6 +57,39 @@ import type { Result } from '@/lib/result';
 const F6_CSV_IMPORT_MAX_PER_HOUR = 5;
 const F6_CSV_IMPORT_WINDOW_SECONDS = 3600;
 
+/**
+ * R2 SUGGESTION (simplifier) — collapse the duplicated `if (!outcome.ok)
+ * { logger.fatal(...); throw }` pattern shared by the 2 composition
+ * wrappers (`runGenerateErrorCsvSignedUrl` + `runSweepExpiredErrorCsvBlobs`).
+ *
+ * The wrapped use-cases are typed `Promise<Result<T, never>>`, so this
+ * branch is structurally unreachable. If a future refactor adds an
+ * Err variant, this helper emits the structured event tag + context
+ * via `logger.fatal` BEFORE throwing so SREs can find the regression
+ * without parsing a raw stack trace.
+ */
+function unwrapNeverErr<T>(
+  outcome: Result<T, never>,
+  context: {
+    readonly event: string;
+    readonly wrapperName: string;
+    readonly extra?: Record<string, unknown>;
+  },
+): T {
+  if (!outcome.ok) {
+    logger.fatal(
+      {
+        event: context.event,
+        ...(context.extra ?? {}),
+        outcomeErr: outcome.error,
+      },
+      `[F6.1] type-system invariant violated — ${context.wrapperName} returned Err on a never-typed channel`,
+    );
+    throw new Error(`${context.wrapperName}: unreachable err branch`);
+  }
+  return outcome.value;
+}
+
 export interface CsvImportRateLimitResult {
   readonly success: boolean;
   /** Unix-ms timestamp when the bucket resets. */
@@ -326,24 +359,14 @@ export async function runGenerateErrorCsvSignedUrl(
           eventcreateMetrics.csvErrorCsvDownloaded(tenantId),
       },
     );
-    // CR-5 / silent-failure I-5 (R1 R2): use-case is typed
-    // `Result<…, never>` so this branch is structurally unreachable.
-    // If a future refactor adds an Err variant, `logger.fatal` emits
-    // the structured event tag + tenant context BEFORE we throw so SREs
-    // can find the regression without a raw stack trace.
-    if (!outcome.ok) {
-      logger.fatal(
-        {
-          event: 'f6_unreachable_err_branch_in_signed_url_deps',
-          tenantSlug: input.tenantSlug,
-          recordId: input.recordId,
-          outcomeErr: outcome.error,
-        },
-        '[F6.1] type-system invariant violated — runGenerateErrorCsvSignedUrl returned Err on a never-typed channel',
-      );
-      throw new Error('runGenerateErrorCsvSignedUrl: unreachable err branch');
-    }
-    return outcome.value;
+    return unwrapNeverErr(outcome, {
+      event: 'f6_unreachable_err_branch_in_signed_url_deps',
+      wrapperName: 'runGenerateErrorCsvSignedUrl',
+      extra: {
+        tenantSlug: input.tenantSlug,
+        recordId: input.recordId,
+      },
+    });
   });
 }
 
@@ -375,17 +398,10 @@ export async function runSweepExpiredErrorCsvBlobs(
       eventcreateMetrics.csvErrorCsvSweepClearFailed(tenantId),
     onScanFailed: () => eventcreateMetrics.csvSweepScanFailed(),
   });
-  if (!outcome.ok) {
-    logger.fatal(
-      {
-        event: 'f6_unreachable_err_branch_in_sweep_deps',
-        outcomeErr: outcome.error,
-      },
-      '[F6.1] type-system invariant violated — runSweepExpiredErrorCsvBlobs returned Err on a never-typed channel',
-    );
-    throw new Error('runSweepExpiredErrorCsvBlobs: unreachable err branch');
-  }
-  return outcome.value;
+  return unwrapNeverErr(outcome, {
+    event: 'f6_unreachable_err_branch_in_sweep_deps',
+    wrapperName: 'runSweepExpiredErrorCsvBlobs',
+  });
 }
 
 /**

@@ -328,6 +328,15 @@ export interface ImportCsvDeps {
 const CANCELLATION_SKIP_BRAND = Symbol('f6.csv-skip.cancellation');
 
 /**
+ * R2-SUG-4 (R2 — type-design + simplifier): branded SHA-256 hex prefix
+ * so a future caller cannot accidentally pass a raw email into a slot
+ * that expects a hash. Only `hashAttendeeEmail` can construct values
+ * of this type — TypeScript blocks plain-string assignment at compile
+ * time.
+ */
+type EmailHashPrefix = string & { readonly __emailHashPrefix: unique symbol };
+
+/**
  * R2-CR-1 (PDPA / GDPR Art. 5(1)(c) data minimisation): the marker
  * carries a SHA-256 hex prefix of `attendee_email_lower`, NOT the raw
  * email. Audit payload `attendeeEmailHash` and `errorRows.reason` both
@@ -337,14 +346,16 @@ class CancellationSkipMarker extends Error {
   readonly _csvSkipBrand = CANCELLATION_SKIP_BRAND;
   constructor(
     public readonly rowNumber: number,
-    /** SHA-256 hex prefix (≤16 chars) of attendee_email_lower — PII-safe correlator. */
-    public readonly emailHash: string,
+    /** SHA-256 hex prefix (16 chars) of attendee_email_lower — PII-safe correlator. */
+    public readonly emailHash: EmailHashPrefix,
   ) {
     super(`Cancellation skip marker (rowNumber=${rowNumber})`);
   }
 }
 
 function isCancellationSkip(e: unknown): e is CancellationSkipMarker {
+  // `instanceof` already narrows `e` to CancellationSkipMarker — no
+  // cast needed for the brand-equality check.
   return (
     e instanceof CancellationSkipMarker &&
     e._csvSkipBrand === CANCELLATION_SKIP_BRAND
@@ -355,12 +366,14 @@ function isCancellationSkip(e: unknown): e is CancellationSkipMarker {
  * R2-CR-1: hash `attendee_email_lower` → SHA-256 hex prefix (16 chars).
  * Used for the cancellation-skip forensic correlator + state-change
  * catch logging. NEVER store the raw email in audit payloads or logs.
+ * R2-SUG-4 branded return makes this the only legal source of
+ * `EmailHashPrefix` values.
  */
-function hashAttendeeEmail(email: string): string {
+function hashAttendeeEmail(email: string): EmailHashPrefix {
   return createHash('sha256')
     .update(email.toLowerCase())
     .digest('hex')
-    .slice(0, 16);
+    .slice(0, 16) as EmailHashPrefix;
 }
 
 // ---------------------------------------------------------------------------
@@ -1023,12 +1036,12 @@ function recordAuditEmitFailure(
     | 'csv_import_row_state_changed',
   logEvent: string,
   logMessage: string,
-  // R1 S-5 (silent-failure): context now carries `actorUserId` so
-  // forensics can attribute the audit-emit failure to the specific
-  // admin who triggered it. Each call-site MUST include it explicitly
-  // (TypeScript-enforced via the Readonly<Record<string, unknown>>
-  // type — string indexer permits but the audit caller does the
-  // discipline at the call site).
+  // R2 (comment-analyzer): each call-site MUST include `actorUserId`
+  // in the context so forensics can attribute the audit-emit failure
+  // to the triggering admin. Convention-only — the
+  // `Readonly<Record<string, unknown>>` type does NOT enforce it.
+  // (If the call-site count is later bounded, switch to a discriminated
+  // union to lift this to a compile error.)
   context: Readonly<Record<string, unknown>>,
 ): void {
   eventcreateMetrics.csvImportAuditEmitFailed(tenantId, eventType);
@@ -1105,7 +1118,10 @@ async function safeEmitCancellationNoPrior(
   deps: ImportCsvDeps,
   input: ImportCsvInput,
   rowNumber: number,
-  emailHash: string,
+  // R2-SUG-4 (R2 — type-design): branded type so the caller cannot
+  // accidentally pass a raw email. Only `hashAttendeeEmail` returns
+  // `EmailHashPrefix`; TypeScript compile-time check at the call site.
+  emailHash: EmailHashPrefix,
 ): Promise<void> {
   try {
     const result = await deps.emitStandalone({
@@ -1160,7 +1176,7 @@ export async function importCsv(
   const recordId = input.recordId ?? asCsvImportRecordId(randomUUID());
 
   // F6.1 — Phase 1: parse the CSV stream with format detection.
-  // The new `parseStreamWithFormat` method detects EventCreate vs
+  // The `parseStreamWithFormat` method detects EventCreate vs
   // generic format from the header, translates EventCreate rows via
   // the T010 adapter, and merges `selectedEvent` into every row.
   const eventContext = {

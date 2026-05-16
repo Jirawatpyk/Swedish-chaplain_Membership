@@ -6,7 +6,7 @@
  *   - Happy path: 2 expired rows → both deleted + cleared
  *   - Scan failure → `scanFailed:true` + ERROR log + onScanFailed metric
  *   - Blob delete `blob_not_found` → idempotent success (still counted as swept)
- *   - Blob delete `storage_error` → skipped + ERROR log + retry on next run
+ *   - Blob delete `storage_error` → skipped + WARN log + retry on next run
  *   - clearErrorCsvBlob err result → skipped + onSweepClearFailed metric
  *   - withTenantScope throws → skipped + onSweepClearFailed metric
  *   - Mixed run: some succeed, some skip → counts correct
