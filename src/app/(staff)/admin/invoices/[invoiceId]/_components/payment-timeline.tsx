@@ -110,46 +110,47 @@ function formatTimestamp(date: Date, locale: string): string {
   });
 }
 
+/**
+ * F5R1-S8 — record-driven event visual table. The previous two
+ * switch statements (`eventIcon` + `eventIconClass`) duplicated the
+ * 8-value SyntheticEventType key list across ~40 lines. The
+ * `Record<SyntheticEventType, ...>` shape forces compile-time
+ * exhaustiveness: if a new SyntheticEventType variant is added, the
+ * Record literal must list it OR the file fails to compile.
+ *
+ * emerald-600 + dark:emerald-400 keeps the success-icon contrast
+ * ≥ 4.5:1 in both themes (WCAG 1.4.11) — pre-fix emerald-600 alone
+ * failed dark-mode on `bg-card`.
+ */
+const EVENT_VISUAL: Record<
+  SyntheticEventType,
+  { icon: typeof BanknoteIcon; cls: string }
+> = {
+  payment_initiated: { icon: BanknoteIcon, cls: 'text-foreground' },
+  payment_succeeded: {
+    icon: CheckCircle2Icon,
+    cls: 'text-emerald-600 dark:text-emerald-400',
+  },
+  payment_failed: { icon: XCircleIcon, cls: 'text-destructive' },
+  payment_canceled: { icon: XOctagonIcon, cls: 'text-muted-foreground' },
+  invoice_paid: {
+    icon: CheckCircle2Icon,
+    cls: 'text-emerald-600 dark:text-emerald-400',
+  },
+  refund_initiated: { icon: RefreshCcwIcon, cls: 'text-foreground' },
+  refund_succeeded: {
+    icon: ArrowDownToLineIcon,
+    cls: 'text-emerald-600 dark:text-emerald-400',
+  },
+  refund_failed: { icon: XCircleIcon, cls: 'text-destructive' },
+};
+
 function eventIcon(type: SyntheticEventType) {
-  switch (type) {
-    case 'payment_initiated':
-      return BanknoteIcon;
-    case 'payment_succeeded':
-      return CheckCircle2Icon;
-    case 'payment_failed':
-      return XCircleIcon;
-    case 'payment_canceled':
-      return XOctagonIcon;
-    case 'invoice_paid':
-      return CheckCircle2Icon;
-    case 'refund_initiated':
-      return RefreshCcwIcon;
-    case 'refund_succeeded':
-      return ArrowDownToLineIcon;
-    case 'refund_failed':
-      return XCircleIcon;
-    default:
-      return InfoIcon;
-  }
+  return EVENT_VISUAL[type]?.icon ?? InfoIcon;
 }
 
 function eventIconClass(type: SyntheticEventType): string {
-  switch (type) {
-    case 'payment_succeeded':
-    case 'invoice_paid':
-    case 'refund_succeeded':
-      // Verify-fix U-I2 (2026-04-26): emerald-600 alone fails dark-mode
-      // contrast on `bg-card` — paired with `dark:text-emerald-400` so
-      // the success icon stays ≥ 4.5:1 in both themes (WCAG 1.4.11).
-      return 'text-emerald-600 dark:text-emerald-400';
-    case 'payment_failed':
-    case 'refund_failed':
-      return 'text-destructive';
-    case 'payment_canceled':
-      return 'text-muted-foreground';
-    default:
-      return 'text-foreground';
-  }
+  return EVENT_VISUAL[type]?.cls ?? 'text-foreground';
 }
 
 function buildStripeDashboardUrl(

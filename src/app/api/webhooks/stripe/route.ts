@@ -501,6 +501,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       type: String(
         rawDataObject?.['type'] ?? rawDataObject?.['object'] ?? '',
       ),
+      // F5R1-IMP5 docstring — `latestChargeId` is absent from the
+      // envelope when `extractLatestChargeId` returns undefined,
+      // which covers BOTH "field missing" AND "field present but
+      // not a string/object-with-id" (verifier's defensive null
+      // projection for object-form charges). Downstream consumers
+      // MUST NOT trust this field — `confirmPayment` + `failPayment`
+      // both re-fetch the PI via `retrievePaymentIntent` for card
+      // metadata. Documented here so a future consumer doesn't
+      // start trusting the envelope without re-verifying via the
+      // gateway.
       ...(latestCharge !== undefined && {
         latestChargeId: latestCharge,
       }),
