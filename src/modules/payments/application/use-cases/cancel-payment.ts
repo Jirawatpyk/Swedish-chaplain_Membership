@@ -206,22 +206,42 @@ export async function cancelPayment(
 
   // ---------------- Phase B: re-lock + commit + audit ----------------
   return await deps.paymentsRepo.withTx(async (tx) => {
-    // Re-acquire FOR UPDATE. If a webhook flipped the row to
-    // 'succeeded' (race against an in-flight payment_intent.succeeded
-    // delivery), Stripe's cancel call would have returned an error
-    // earlier — so reaching here with state !== 'canceled' AND
-    // !canTransition('canceled') is genuinely unexpected. Most
-    // common race: the webhook beat us to 'canceled' (Stripe sends
-    // payment_intent.canceled after our SDK call returns); idempotent
-    // no-op + 200-style success in that case.
+    // Re-acquire FOR UPDATE. Possible states observed under contention:
+    //   1. status='canceled' — webhook beat us; idempotent ack.
+    //   2. status='succeeded' — concurrent payment_intent.succeeded
+    //      webhook landed first (PromptPay & out-of-order card
+    //      deliveries). Stripe's cancel call may still have returned
+    //      ok if the PI was non-terminal at the SDK boundary. Falling
+    //      through to updateStatus would silently overwrite the
+    //      succeeded row → SC-013 break. Re-check canTransition; on
+    //      illegal transition emit forensic audit + err.
+    //   3. status='pending' — happy path, proceed with update.
     const fresh = await deps.paymentsRepo.lockForUpdate(
       tx,
       input.paymentId,
       input.tenantId,
     );
     if (!fresh) {
-      // Theoretically impossible (Phase A saw the row + RLS context
-      // hasn't changed) but defence-in-depth. Audit + err.
+      // F5R2-H1: Phase A saw the row, RLS context unchanged — the
+      // most plausible cause of a Phase B miss is a manual DB
+      // intervention or a future SaaS migration touching the row.
+      // Stripe has already canceled the PI by this point; the local
+      // row's absence is the only forensic signal ops will have. Emit
+      // a probe audit on `null` tx so the row survives the err return.
+      await deps.audit.emit(null, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        summary: `Phase B unexpected lockForUpdate miss after Phase A success on payment ${input.paymentId} — Stripe cancel may have already settled`,
+        payload: {
+          acting_tenant_id: input.tenantId,
+          probing_actor_id: input.actorUserId,
+          target_entity: 'payment',
+          target_id: input.paymentId,
+        },
+        retentionYears: retentionFor('payment_cross_tenant_probe'),
+      });
       return err<CancelPaymentError>({ code: 'payment_not_found' });
     }
 
@@ -238,13 +258,72 @@ export async function cancelPayment(
       });
     }
 
+    // F5R2-CRIT-1 — defence-in-depth re-check. Phase A already
+    // verified canTransition under its own lock; here we re-check
+    // because the world may have changed during the Stripe call.
+    // Most likely culprit: a payment_intent.succeeded webhook flipped
+    // the row to 'succeeded' between Phase A release and Phase B
+    // re-lock. canTransition('succeeded', 'canceled') is err
+    // (succeeded is post-terminal-fund-movement; cannot return funds
+    // by transitioning to canceled — that requires a refund). Emit
+    // forensic audit + return payment_not_cancelable so the route
+    // surfaces a 409 to the member.
+    const transition = canTransition(fresh.status, 'canceled');
+    if (!transition.ok) {
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_cancel_attempt_failed',
+        actorUserId: input.actorUserId,
+        summary: `Phase B race: payment ${fresh.id} status=${fresh.status} after Stripe cancel call returned ok — Stripe Dashboard reconciliation may be needed`,
+        payload: {
+          payment_id: fresh.id,
+          invoice_id: fresh.invoiceId,
+          actor_type: 'member',
+          processor_error_kind: 'permanent',
+        },
+        retentionYears: retentionFor('payment_cancel_attempt_failed'),
+      });
+      return err<CancelPaymentError>({
+        code: 'payment_not_cancelable',
+        currentStatus: fresh.status,
+      });
+    }
+
     const completedAt = new Date(deps.clock.nowMs());
-    await deps.paymentsRepo.updateStatus(tx, {
+    // F5R2-CRIT-1 — pass `expectedCurrentStatus` so the repo's WHERE
+    // clause includes `status = fresh.status`. If a webhook lands
+    // between this canTransition check and the UPDATE statement (a
+    // narrow but possible window), the repo returns null instead of
+    // silently overwriting. We treat null as the same race class as
+    // the canTransition failure above.
+    const updated = await deps.paymentsRepo.updateStatus(tx, {
       paymentId: fresh.id,
       tenantId: input.tenantId,
       nextStatus: 'canceled',
+      expectedCurrentStatus: fresh.status,
       completedAt,
     });
+    if (updated === null) {
+      await deps.audit.emit(tx, {
+        tenantId: input.tenantId,
+        requestId: input.requestId,
+        eventType: 'payment_cancel_attempt_failed',
+        actorUserId: input.actorUserId,
+        summary: `Phase B narrow race: updateStatus zero-match for payment ${fresh.id} (status changed mid-Phase-B)`,
+        payload: {
+          payment_id: fresh.id,
+          invoice_id: fresh.invoiceId,
+          actor_type: 'member',
+          processor_error_kind: 'permanent',
+        },
+        retentionYears: retentionFor('payment_cancel_attempt_failed'),
+      });
+      return err<CancelPaymentError>({
+        code: 'payment_not_cancelable',
+        currentStatus: fresh.status,
+      });
+    }
 
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,

@@ -46,6 +46,7 @@ import { baseHeaders } from '@/lib/payments-route-helpers';
 import {
   processWebhookEvent,
   makeProcessWebhookEventDeps,
+  type ProcessWebhookEventError,
 } from '@/modules/payments';
 import {
   resolveTenantByProcessorAccountId,
@@ -656,19 +657,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if ((result as { ok?: boolean }).ok === false) {
+    if (!result.ok) {
       // Pipe `kind` discriminator into pino so ops dashboards can
       // filter dispatch failures by class (sub_use_case_error vs
       // dispatch_threw vs unknown_event_type_threw) without re-parsing
       // log lines.
-      const errorObj = (result as {
-        error?: {
-          kind?: string;
-          detail?: string;
-          permanence?: 'transient' | 'permanent';
-        };
-      }).error;
-      const permanence = errorObj?.permanence ?? 'transient';
+      //
+      // F5R2-CRIT-2 — narrow the result.error via the actual
+      // `ProcessWebhookEventError` type via `!result.ok` Result-union
+      // narrowing (the typed Result helper). Compile-time guarantee:
+      // `permanence` is required on every err() site in
+      // process-webhook-event.ts, so reading it directly cannot
+      // return undefined. The pre-fix `(result as {ok?:boolean}).ok
+      // === false` cast + `errorObj?.permanence ?? 'transient'`
+      // defaulting was a safety net that erased the type-level
+      // guarantee — if a future refactor accidentally dropped
+      // `permanence` from one err site, the route would silently
+      // mis-classify it as transient → Stripe 72h retry storm
+      // regression. Importing + narrowing on the proper type makes
+      // that regression a build error.
+      const dispatchError: ProcessWebhookEventError = result.error;
+      const permanence = dispatchError.permanence;
       logger.error(
         {
           eventId: evId,
@@ -676,8 +685,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tenantId,
           correlationId,
           requestId,
-          dispatchFailureKind: errorObj?.kind ?? 'unknown',
-          dispatchFailureDetail: errorObj?.detail ?? 'unknown',
+          dispatchFailureKind: dispatchError.kind,
+          dispatchFailureDetail: dispatchError.detail,
           permanence,
         },
         'stripe-webhook.dispatch_failed',
@@ -687,10 +696,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // counters need this to fire on sustained dispatch failures
       // (permanence + kind labels split transient infra outages from
       // permanent F4 schema-drift class).
-      paymentsMetrics.webhookDispatchFailed(
-        permanence,
-        errorObj?.kind ?? 'unknown',
-      );
+      paymentsMetrics.webhookDispatchFailed(permanence, dispatchError.kind);
 
       // F5R1-IMP2 — permanent errors must NOT cause Stripe retries
       // (72h retry storm + audit-log pollution). 200-ack with a
@@ -699,14 +705,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Stripe's webhook delivery log. Transient errors stay 500 so
       // Stripe retries through the outage window.
       if (permanence === 'permanent') {
+        // F5R2-C2 — drop `detail` from response body to avoid leaking
+        // F4 bridge taxonomy / internal error codes to the Stripe
+        // Dashboard webhook delivery log (visible to anyone with
+        // Stripe read access). The forensic detail is captured in the
+        // pino log line + the metric counter above. (Adding a 5y
+        // audit row for permanent dispatch failures is tracked
+        // separately as HIGH — requires migration for a new
+        // `webhook_dispatch_permanent_failure` event type.)
+        // Use baseHeaders() for consistent Cache-Control: no-store
+        // across all branches (F5R2-L2 — PCI F-01 cache hygiene).
         return NextResponse.json(
           {
             ok: true,
             dispatched: false,
             reason: 'permanent_failure_acknowledged',
-            detail: errorObj?.detail,
           },
-          { status: 200, headers: { 'X-Correlation-Id': correlationId } },
+          { status: 200, headers: baseHeaders(correlationId) },
         );
       }
       return jsonInternalError('dispatch_failed', correlationId);

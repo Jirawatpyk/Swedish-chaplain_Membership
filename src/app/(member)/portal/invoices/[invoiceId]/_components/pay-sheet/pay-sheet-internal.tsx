@@ -748,10 +748,19 @@ export function PaySheetInternal({
         );
       case 'failure':
         return (
-          // `role="alert"` (which InlineAlert sets) is implicitly
-          // assertive but `<PaymentFailurePanel>` ALSO pins
-          // aria-live="assertive" + aria-atomic for AT compatibility
-          // across NVDA / VoiceOver / TalkBack.
+          // F5R2-CRIT-3 — PaymentFailurePanel passes role="status" to
+          // InlineAlert (overriding the primitive's role="alert"
+          // default) so the only announcement comes from the parent
+          // polite live region (data-testid="pay-sheet-aria-announcer"
+          // below). Pre-fix the panel inherited InlineAlert's
+          // role="alert" → assertive interrupt — combined with the
+          // polite announcer this produced a double-announce on every
+          // card failure (WCAG 4.1.3 violation). The pre-fix comment
+          // claiming the panel "pins aria-live='assertive' + aria-
+          // atomic for AT compatibility" was both stale (no such
+          // pinning happens after UX12) AND backwards (the polite
+          // announcer is the canonical channel; the panel must NOT
+          // self-announce).
           <PaymentFailurePanel
             reason={payState.reason}
             ctaLabel={t('retry.cta')}

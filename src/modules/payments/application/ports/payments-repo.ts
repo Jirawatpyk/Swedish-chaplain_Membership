@@ -60,19 +60,38 @@ export interface PaymentsRepo {
     },
   ): Promise<Payment>;
 
-  /** Update status + terminal fields. */
+  /**
+   * Update status + terminal fields.
+   *
+   * F5R2-CRIT-1 — `expectedCurrentStatus` is a defence-in-depth WHERE
+   * clause (`payments.status = expectedCurrentStatus`). When provided
+   * AND the row's current status no longer matches (e.g., a webhook
+   * flipped pending→succeeded between the caller's lockForUpdate and
+   * this update), the UPDATE matches zero rows and the adapter returns
+   * `null` so the caller can detect the race. When omitted, the
+   * adapter throws on zero-match (preserves existing call-site
+   * semantics for sites that re-check via canTransition under their
+   * own lock).
+   *
+   * The cancel-payment Phase B race that motivated the addition: a
+   * succeeded webhook lands between Phase A release and Phase B
+   * re-lock; without this guard the adapter silently overwrote a
+   * succeeded payment with `canceled`, breaking SC-013 invariant
+   * (charged customer + DB says canceled).
+   */
   updateStatus(
     tx: unknown,
     input: {
       readonly paymentId: PaymentId;
       readonly tenantId: string;
       readonly nextStatus: PaymentStatus;
+      readonly expectedCurrentStatus?: PaymentStatus;
       readonly processorChargeId?: string | null;
       readonly card?: CardMetadata | null;
       readonly failureReasonCode?: string | null;
       readonly completedAt: Date;
     },
-  ): Promise<Payment>;
+  ): Promise<Payment | null>;
 
   /**
    * Resume lookup: find the single pending payment for an (invoice, actor)

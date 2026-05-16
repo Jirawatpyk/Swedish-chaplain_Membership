@@ -57,7 +57,19 @@ export type FailPaymentOutcome =
 
 export type FailPaymentError =
   | { readonly code: 'illegal_transition'; readonly from: string }
-  | { readonly code: 'processor_unavailable'; readonly reason: string };
+  | { readonly code: 'processor_unavailable'; readonly reason: string }
+  /**
+   * F5R2-CRIT-2 — dedicated permanent code for tenant-settings-missing.
+   * Mirrors the confirm-payment pattern (`bridge_error` /
+   * `tenant_settings_missing` detail). The dispatcher's
+   * `categorisePermanence` reads `error.code`, so reusing
+   * `'processor_unavailable'` for this configuration gap caused the
+   * dispatcher to classify it as transient → Stripe retries 72h on a
+   * config gap that cannot self-heal. The dedicated `bridge_error`
+   * code is in `PERMANENT_SUB_USE_CASE_DETAILS` → permanent → Stripe
+   * stops retrying + ops sees a forensic 200-ack audit row.
+   */
+  | { readonly code: 'bridge_error'; readonly detail: string };
 
 export interface FailPaymentDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -113,7 +125,12 @@ async function failPaymentBody(
 ): Promise<Result<FailPaymentOutcome, FailPaymentError>> {
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
-    return err({ code: 'processor_unavailable', reason: 'tenant_settings_missing' });
+    // F5R2-CRIT-2 — return dedicated bridge_error code (in PERMANENT
+    // sub-use-case-details set) so dispatcher classifies as permanent
+    // → route returns 200 + forensic audit instead of 500 → Stripe
+    // stops retrying. Pre-fix this path triggered a 72h Stripe retry
+    // storm on a configuration gap.
+    return err({ code: 'bridge_error', detail: 'tenant_settings_missing' });
   }
 
   return await deps.paymentsRepo.withTx(async (tx) => {

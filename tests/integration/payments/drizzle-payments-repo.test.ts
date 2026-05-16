@@ -271,6 +271,12 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         card: null,
         completedAt: now,
       });
+      // F5R2-CRIT-1 — `updateStatus` returns `Payment | null` now;
+      // null only when `expectedCurrentStatus` was passed and missed.
+      // This call omits `expectedCurrentStatus` so the throw-on-zero
+      // path applies and a non-null Payment is guaranteed.
+      expect(updated).not.toBeNull();
+      if (!updated) throw new Error('expected non-null updated');
       expect(updated.status).toBe('succeeded');
       expect(updated.card).toBeNull();
       expect(updated.processorChargeId).toBe('ch_test_1');
