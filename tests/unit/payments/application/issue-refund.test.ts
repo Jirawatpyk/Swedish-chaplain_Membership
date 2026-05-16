@@ -10,6 +10,7 @@
  * interfaces.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
 import { issueRefund } from '@/modules/payments/application/use-cases/issue-refund';
 import type { IssueRefundDeps, IssueRefundInput } from '@/modules/payments/application/use-cases/issue-refund';
@@ -35,7 +36,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     memberId: 'mbr-1',
     method: 'card',
     status: 'succeeded',
-    amountSatang: 5_350_000n,
+    amountSatang: asSatang(5_350_000n),
     currency: 'THB',
     processorPaymentIntentId: 'pi_test_xxx',
     processorChargeId: 'ch_test_xxx',
@@ -55,7 +56,7 @@ function baseInput(overrides: Partial<IssueRefundInput> = {}): IssueRefundInput 
   return {
     tenantId: TENANT_ID,
     paymentId: PAYMENT_ID,
-    amountSatang: 350_000n,
+    amountSatang: asSatang(350_000n),
     reason: 'Tier downgrade — partial refund',
     actorUserId: ACTOR_ID,
     correlationId: CORR_ID,
@@ -87,7 +88,7 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
       tenantId: TENANT_ID,
       paymentId: asPaymentId(PAYMENT_ID),
       invoiceId: 'inv-1',
-      amountSatang: 350_000n,
+      amountSatang: asSatang(350_000n),
       status: 'pending' as const,
       processorRefundId: null,
     })),
@@ -95,7 +96,7 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     findByProcessorRefundId: vi.fn(),
     getRefundContextForUpdate: vi.fn(async () => ({
       pendingCount: 0,
-      succeededSumSatang: 0n,
+      succeededSumSatang: asSatang(0n),
       nextSeq: 1,
     })),
   };
@@ -118,7 +119,7 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     retrievePaymentIntent: vi.fn(),
     cancelPaymentIntent: vi.fn(),
     createRefund: vi.fn(async () =>
-      ok({ id: 're_test_xxx', status: 'succeeded', amountSatang: 350_000n }),
+      ok({ id: 're_test_xxx', status: 'succeeded', amountSatang: asSatang(350_000n) }),
     ),
   };
   const invoicingBridge = {
@@ -217,7 +218,7 @@ describe('issueRefund (T108) — error branches', () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 1,
-      succeededSumSatang: 0n,
+      succeededSumSatang: asSatang(0n),
       nextSeq: 1,
     });
 
@@ -231,11 +232,11 @@ describe('issueRefund (T108) — error branches', () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 0,
-      succeededSumSatang: 5_000_000n,
+      succeededSumSatang: asSatang(5_000_000n),
       nextSeq: 1,
     });
 
-    const r = await issueRefund(deps, baseInput({ amountSatang: 1_000_000n }));
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(1_000_000n) }));
     // payment.amount=5,350,000 - sum=5,000,000 → remaining=350,000 < 1,000,000
     expect(r.ok).toBe(false);
     if (!r.ok) {
@@ -337,7 +338,7 @@ describe('issueRefund (T108) — happy paths', () => {
 
   it('partial refund — payment.status → partially_refunded', async () => {
     const deps = makeDeps();
-    const r = await issueRefund(deps, baseInput({ amountSatang: 350_000n }));
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
 
     expect(r.ok).toBe(true);
     if (r.ok) {
@@ -378,7 +379,7 @@ describe('issueRefund (T108) — happy paths', () => {
       makePayment({ method: 'promptpay', card: null, processorChargeId: null }),
     );
 
-    const r = await issueRefund(deps, baseInput({ amountSatang: 350_000n }));
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.refund.status).toBe('succeeded');
@@ -406,7 +407,7 @@ describe('issueRefund (T108) — happy paths', () => {
       }),
     );
 
-    const r = await issueRefund(deps, baseInput({ amountSatang: 5_350_000n }));
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(5_350_000n) }));
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.payment.status).toBe('refunded');
@@ -422,7 +423,7 @@ describe('issueRefund (T108) — happy paths', () => {
     );
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 0,
-      succeededSumSatang: 5_000_000n,
+      succeededSumSatang: asSatang(5_000_000n),
       nextSeq: 2,
     });
     asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
@@ -432,7 +433,7 @@ describe('issueRefund (T108) — happy paths', () => {
       }),
     );
 
-    const r = await issueRefund(deps, baseInput({ amountSatang: 350_000n }));
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(350_000n) }));
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.payment.status).toBe('refunded');
@@ -447,11 +448,11 @@ describe('issueRefund (T108) — happy paths', () => {
     );
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 0,
-      succeededSumSatang: 2_000_000n,
+      succeededSumSatang: asSatang(2_000_000n),
       nextSeq: 2,
     });
 
-    const r = await issueRefund(deps, baseInput({ amountSatang: 1_000_000n }));
+    const r = await issueRefund(deps, baseInput({ amountSatang: asSatang(1_000_000n) }));
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.value.payment.status).toBe('partially_refunded');
@@ -464,7 +465,7 @@ describe('issueRefund (T108) — happy paths', () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 0,
-      succeededSumSatang: 0n,
+      succeededSumSatang: asSatang(0n),
       nextSeq: 3,
     });
 

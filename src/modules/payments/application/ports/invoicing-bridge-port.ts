@@ -10,11 +10,12 @@
  */
 import type { Result } from '@/lib/result';
 import type { InvoiceStatus, F4InvoicePaidEvent } from '@/modules/invoicing';
+import type { Satang } from '@/lib/money';
 
 export interface InvoiceForPaymentDTO {
   readonly id: string;
   readonly status: InvoiceStatus;
-  readonly totalSatang: bigint;
+  readonly totalSatang: Satang;
   readonly memberId: string;
   readonly tenantId: string;
 }
@@ -116,7 +117,7 @@ export interface InvoicingBridgePort {
     readonly tenantId: string;
     readonly invoiceId: string;
     readonly refundId: string;
-    readonly amountSatang: bigint;
+    readonly amountSatang: Satang;
     readonly reason: string;
     readonly actorUserId: string;
     readonly requestId: string | null;

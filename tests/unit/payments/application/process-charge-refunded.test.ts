@@ -19,6 +19,7 @@
  *   - retentionYears = 10 (out_of_band_refund_detected is forensic 10y)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import {
   processChargeRefunded,
   type ProcessChargeRefundedDeps,
@@ -47,7 +48,7 @@ function makeDeps(): ProcessChargeRefundedDeps {
         id: asPaymentId('pmt_test'),
         tenantId: TENANT_ID,
         status: 'succeeded' as const,
-        amountSatang: 100_000n,
+        amountSatang: asSatang(100_000n),
       })),
       updateStatus: vi.fn(async () => ({})),
     } as unknown as ProcessChargeRefundedDeps['paymentsRepo'],
@@ -61,7 +62,7 @@ function makeDeps(): ProcessChargeRefundedDeps {
       // succeeded-sum to compute the parent's next status.
       getRefundContextForUpdate: vi.fn(async () => ({
         pendingCount: 0,
-        succeededSumSatang: 50_000n,
+        succeededSumSatang: asSatang(50_000n),
         nextSeq: 1,
       })),
     } as unknown as ProcessChargeRefundedDeps['refundsRepo'],
@@ -88,7 +89,7 @@ function makeInput(
     eventId: 'evt_test_charge_refunded',
     chargeId: 'ch_test_001',
     refundIds: [],
-    amountSatang: 100_000n,
+    amountSatang: asSatang(100_000n),
     processorEnv: 'test',
     ...partial,
   };
@@ -142,7 +143,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
         tenantId: TENANT_ID,
         paymentId: asPaymentId('pmt_test'),
         invoiceId: `inv-${refundId}`,
-        amountSatang: 50_000n,
+        amountSatang: asSatang(50_000n),
         status: 'succeeded' as const,
         processorRefundId: refundId,
       }),
@@ -170,7 +171,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
         tenantId: TENANT_ID,
         paymentId: asPaymentId('pmt_test'),
         invoiceId: `inv-${refundId}`,
-        amountSatang: 50_000n,
+        amountSatang: asSatang(50_000n),
         status: 'pending' as const,
         processorRefundId: refundId,
       }),
@@ -216,7 +217,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
           tenantId: TENANT_ID,
           paymentId: asPaymentId('pmt_test'),
           invoiceId: `inv-${refundId}`,
-          amountSatang: 50_000n,
+          amountSatang: asSatang(50_000n),
           status: 'succeeded' as const,
           processorRefundId: refundId,
         };
@@ -247,7 +248,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
         tenantId: TENANT_ID,
         paymentId: asPaymentId('pmt_test'),
         invoiceId: `inv-${refundId}`,
-        amountSatang: 50_000n,
+        amountSatang: asSatang(50_000n),
         status: 'succeeded' as const,
         processorRefundId: refundId,
       }),
@@ -270,7 +271,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
       makeInput({
         refundIds: ['re_oob'],
         chargeId: 'ch_oob_test',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
       }),
     );
     expect(result.ok).toBe(true);
@@ -359,7 +360,7 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
         tenantId: TENANT_ID,
         paymentId: asPaymentId('pmt_test'),
         invoiceId: `inv-${refundId}`,
-        amountSatang: 50_000n,
+        amountSatang: asSatang(50_000n),
         status: 'succeeded' as const,
         processorRefundId: refundId,
       }),

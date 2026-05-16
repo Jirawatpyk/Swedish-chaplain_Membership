@@ -14,6 +14,7 @@
  * set by T053 (vitest.config.ts).
  */
 import { describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import {
   asPaymentId,
   parsePaymentId,
@@ -263,7 +264,7 @@ function makePayment(overrides: Partial<Payment>): Payment {
     memberId: '00000000-0000-0000-0000-000000000002',
     method: 'card',
     status: 'pending',
-    amountSatang: 5_350_000n,
+    amountSatang: asSatang(5_350_000n),
     currency: 'THB',
     processorPaymentIntentId: 'pi_test_1',
     processorChargeId: null,

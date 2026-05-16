@@ -32,6 +32,7 @@
  * Mocking policy: live Postgres only. No SUT mocks.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
@@ -172,7 +173,7 @@ describe('concurrent cross-method cancel — partial unique index safety', () =>
         invoiceId,
         memberId,
         method: 'card',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorPaymentIntentId: piA,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -188,7 +189,7 @@ describe('concurrent cross-method cancel — partial unique index safety', () =>
         invoiceId,
         memberId,
         method: 'promptpay',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorPaymentIntentId: piB,
         processorEnvironment: 'test',
         attemptSeq: 1,

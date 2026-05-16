@@ -14,6 +14,7 @@
  * Mocking policy: this file hits live Postgres. No SUT mocks.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -200,7 +201,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorPaymentIntentId: pi,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -241,7 +242,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 999_000n,
+        amountSatang: asSatang(999_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -264,7 +265,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 1_000_000n,
+        amountSatang: asSatang(1_000_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 2,
@@ -316,7 +317,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 250_000n,
+        amountSatang: asSatang(250_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -366,7 +367,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'card',
-        amountSatang: 3_200_000n,
+        amountSatang: asSatang(3_200_000n),
         processorPaymentIntentId: pi,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -401,7 +402,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'card',
-        amountSatang: 3_200_000n,
+        amountSatang: asSatang(3_200_000n),
         processorPaymentIntentId: pi,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -560,7 +561,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'card',
-        amountSatang: 250_000n,
+        amountSatang: asSatang(250_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 1,

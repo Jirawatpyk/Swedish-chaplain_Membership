@@ -40,6 +40,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { asSatang } from '@/lib/money';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { webhookVerifier, WebhookSignatureError } from '@/lib/stripe-webhook-verifier';
 import { baseHeaders } from '@/lib/payments-route-helpers';
@@ -587,11 +588,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : typeof lastPaymentErrorRawCode === 'string'
           ? { lastPaymentErrorCode: lastPaymentErrorRawCode }
           : {}),
+      // F5R3 H-5 (2026-05-16) — brand at Stripe→Application boundary.
       ...(typeof amountVal === 'number' && {
-        amountSatang: BigInt(amountVal),
+        amountSatang: asSatang(BigInt(amountVal)),
       }),
       ...(typeof amountVal === 'bigint' && {
-        amountSatang: amountVal,
+        amountSatang: asSatang(amountVal),
       }),
     },
   };

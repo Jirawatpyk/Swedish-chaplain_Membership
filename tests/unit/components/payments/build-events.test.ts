@@ -17,6 +17,7 @@
  * Pure function → no Vitest mocks needed.
  */
 import { describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { buildEvents } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline';
 import { asPaymentId, type Payment } from '@/modules/payments/domain/payment';
 import {
@@ -37,7 +38,7 @@ function makeCardPayment(overrides: Partial<Payment> = {}): Payment {
     memberId: 'mem-1',
     method: 'card',
     status: 'pending',
-    amountSatang: 1_000_000n,
+    amountSatang: asSatang(1_000_000n),
     currency: 'THB',
     processorPaymentIntentId: 'pi_test',
     processorChargeId: null,
@@ -59,7 +60,7 @@ function makeRefund(overrides: Partial<RefundActivityDto> = {}): RefundActivityD
     paymentId: 'pmt_test_card',
     invoiceId: 'inv-1',
     status: 'pending',
-    amountSatang: 100_000n,
+    amountSatang: asSatang(100_000n),
     reason: 'duplicate payment',
     initiatedAt: T1,
     completedAt: null,

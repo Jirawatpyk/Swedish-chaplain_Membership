@@ -3,6 +3,7 @@
  * Target: 100% branch coverage (Constitution Principle II).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
 import { confirmPayment, type ConfirmPaymentDeps } from '@/modules/payments';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
@@ -31,7 +32,7 @@ const PENDING_PAYMENT: Payment = {
   memberId: 'mem_01J_MEM',
   method: 'card',
   status: 'pending',
-  amountSatang: 5_350_000n,
+  amountSatang: asSatang(5_350_000n),
   currency: 'THB',
   processorPaymentIntentId: PAYMENT_INTENT_ID,
   processorChargeId: null,
@@ -74,7 +75,7 @@ function makeDeps(): ConfirmPaymentDeps {
     ),
     cancelPaymentIntent: vi.fn(),
     createRefund: vi.fn(async () =>
-      ok({ id: 're_test_auto', status: 'succeeded', amountSatang: 5_350_000n }),
+      ok({ id: 're_test_auto', status: 'succeeded', amountSatang: asSatang(5_350_000n) }),
     ),
   };
   const invoicingBridge = {
@@ -82,7 +83,7 @@ function makeDeps(): ConfirmPaymentDeps {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'issued' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -194,7 +195,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'paid' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -221,7 +222,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'void' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -236,7 +237,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'credited' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -262,7 +263,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'paid' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -300,7 +301,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'paid' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -453,7 +454,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'issued' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),

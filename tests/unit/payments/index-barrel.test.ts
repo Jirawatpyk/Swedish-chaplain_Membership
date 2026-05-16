@@ -22,7 +22,7 @@ describe('payments barrel — public API contract', () => {
   // timeout to 60s so CPU contention on dev laptops does not flake
   // the suite. Isolated barrel-only runs complete at ~7s — this
   // timeout is a ceiling, not a target.
-  it('exposes every expected Domain + Application + composition-root export', { timeout: 60_000 }, async () => {
+  it('exposes every expected Domain + Application + composition-root export', { timeout: 90_000 }, async () => {
     const mod = await import('@/modules/payments');
 
     // --- Domain ---------------------------------------------------------
@@ -84,7 +84,7 @@ describe('payments barrel — public API contract', () => {
     }
   });
 
-  it('composition factories return the expected Deps keys', { timeout: 60_000 }, async () => {
+  it('composition factories return the expected Deps keys', { timeout: 90_000 }, async () => {
     const mod = await import('@/modules/payments');
 
     // InitiatePaymentDeps shape

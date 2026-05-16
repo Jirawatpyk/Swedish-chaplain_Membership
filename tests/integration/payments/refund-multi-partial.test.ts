@@ -30,6 +30,7 @@
  * the success envelope unchanged.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -127,7 +128,7 @@ function buildHybridDeps(tenantId: string): IssueRefundDeps {
         ok({
           id: `re_${randomUUID().replace(/-/g, '').slice(0, 24)}`,
           status: 'succeeded',
-          amountSatang: 0n,
+          amountSatang: asSatang(0n),
         }),
       ),
     },
@@ -391,7 +392,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
     const r1 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,
-      amountSatang: 1_000_000n,
+      amountSatang: asSatang(1_000_000n),
       reason: 'first partial',
       actorUserId: user.userId,
       correlationId: 'corr-r1',
@@ -411,7 +412,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
     const r2 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,
-      amountSatang: 1_500_000n,
+      amountSatang: asSatang(1_500_000n),
       reason: 'second partial',
       actorUserId: user.userId,
       correlationId: 'corr-r2',
@@ -431,7 +432,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       {
         tenantId: tenant.ctx.slug,
         paymentId,
-        amountSatang: 3_000_000n,
+        amountSatang: asSatang(3_000_000n),
         reason: 'over-limit attempt',
         actorUserId: user.userId,
         correlationId: 'corr-r3',
@@ -456,7 +457,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
     const r4 = await issueRefund(deps, {
       tenantId: tenant.ctx.slug,
       paymentId,
-      amountSatang: 2_850_000n,
+      amountSatang: asSatang(2_850_000n),
       reason: 'final exhausting partial',
       actorUserId: user.userId,
       correlationId: 'corr-r4',
@@ -528,7 +529,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       issueRefund(deps, {
         tenantId: tenant.ctx.slug,
         paymentId: racePaymentId,
-        amountSatang: 1_000_000n,
+        amountSatang: asSatang(1_000_000n),
         reason: 'race A',
         actorUserId: user.userId,
         correlationId: 'corr-race-a',
@@ -537,7 +538,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       issueRefund(deps, {
         tenantId: tenant.ctx.slug,
         paymentId: racePaymentId,
-        amountSatang: 1_000_000n,
+        amountSatang: asSatang(1_000_000n),
         reason: 'race B',
         actorUserId: user.userId,
         correlationId: 'corr-race-b',

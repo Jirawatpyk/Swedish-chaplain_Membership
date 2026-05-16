@@ -9,6 +9,7 @@
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import {
   REFUND_STATUSES,
   TERMINAL_REFUND_STATUSES,
@@ -132,7 +133,7 @@ function makeRefund(overrides: Partial<Refund>): Refund {
     tenantId: 'tnt-1',
     paymentId: asPaymentId('pmt_01JABCDEFGHIJKLMNOPQRSTUV'),
     invoiceId: 'inv-1',
-    amountSatang: 350_000n,
+    amountSatang: asSatang(350_000n),
     reason: 'tier downgrade',
     status: 'pending',
     processorRefundId: null,

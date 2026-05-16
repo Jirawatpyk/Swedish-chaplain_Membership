@@ -4,6 +4,7 @@
  * cover every error branch + happy path.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
 import {
   failPayment,
@@ -40,7 +41,7 @@ const PENDING: Payment = {
   memberId: 'mem_1',
   method: 'card',
   status: 'pending',
-  amountSatang: 100_000n,
+  amountSatang: asSatang(100_000n),
   currency: 'THB',
   processorPaymentIntentId: PAYMENT_INTENT_ID,
   processorChargeId: null,

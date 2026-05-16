@@ -22,6 +22,7 @@ import type Stripe from 'stripe';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
+import { asSatang, satangToProcessorAmount } from '@/lib/money';
 import type {
   ProcessorGatewayPort,
   ProcessorGatewayError,
@@ -285,7 +286,11 @@ export const stripeGateway: ProcessorGatewayPort = {
       // the createPaymentIntent response. Card flows use
       // client-side confirmation via Stripe Elements.
       const createParams: Stripe.PaymentIntentCreateParams = {
-        amount: Number(input.amountSatang),
+        // F5R3 H-5 (2026-05-16) — single auditable boundary cast via
+        // `satangToProcessorAmount`. The MAX_SAFE_INTEGER guard above
+        // still applies (returns typed permanent error before reaching
+        // this point); the helper revalidates as belt-and-suspenders.
+        amount: satangToProcessorAmount(input.amountSatang),
         currency: input.currency,
         payment_method_types: [...input.paymentMethodTypes],
         metadata: { ...input.metadata },
@@ -505,7 +510,8 @@ export const stripeGateway: ProcessorGatewayPort = {
             reason: `refund amountSatang ${input.amountSatang} exceeds Number.MAX_SAFE_INTEGER — cannot serialise to Stripe API without precision loss`,
           });
         }
-        params.amount = Number(input.amountSatang);
+        // F5R3 H-5 (2026-05-16) — single auditable boundary cast.
+        params.amount = satangToProcessorAmount(input.amountSatang);
       }
       if (input.reason !== undefined) {
         params.reason = input.reason as Stripe.RefundCreateParams.Reason;
@@ -530,7 +536,8 @@ export const stripeGateway: ProcessorGatewayPort = {
       return ok({
         id: refund.id,
         status: refund.status ?? 'pending',
-        amountSatang: BigInt(refund.amount),
+        // F5R3 H-5 (2026-05-16) — brand at the Stripe→Domain boundary.
+        amountSatang: asSatang(BigInt(refund.amount)),
       });
     } catch (e) {
       return err(

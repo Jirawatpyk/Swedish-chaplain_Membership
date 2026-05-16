@@ -6,6 +6,7 @@
  * PLUS the resume-idempotency path.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
 import {
   initiatePayment,
@@ -69,7 +70,7 @@ const SETTINGS_OK: TenantPaymentSettings = {
 const INVOICE_DTO = {
   id: INVOICE_ID,
   status: 'issued' as const,
-  totalSatang: 5_350_000n,
+  totalSatang: asSatang(5_350_000n),
   memberId: MEMBER_ID,
   tenantId: TENANT_ID,
 };
@@ -104,7 +105,7 @@ function makeDeps(
       memberId: MEMBER_ID,
       method: 'card' as const,
       status: 'pending' as const,
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB' as const,
       processorPaymentIntentId: 'pi_test_new',
       processorChargeId: null,
@@ -249,7 +250,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_metric_observe',
       processorChargeId: null,
@@ -325,7 +326,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing',
       processorChargeId: null,
@@ -369,7 +370,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing',
       processorChargeId: null,
@@ -413,7 +414,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing',
       processorChargeId: null,
@@ -463,7 +464,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card', // <-- pending row is for card
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing_card',
       processorChargeId: null,
@@ -547,7 +548,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'promptpay',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing_promptpay',
       processorChargeId: null,
@@ -589,7 +590,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing_card',
       processorChargeId: null,
@@ -652,7 +653,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing_retryable',
       processorChargeId: null,
@@ -709,7 +710,7 @@ describe('initiatePayment (T055)', () => {
       memberId: MEMBER_ID,
       method: 'card',
       status: 'pending',
-      amountSatang: 5_350_000n,
+      amountSatang: asSatang(5_350_000n),
       currency: 'THB',
       processorPaymentIntentId: 'pi_existing_already_canceled',
       processorChargeId: null,
@@ -873,7 +874,7 @@ describe('initiatePayment (T055)', () => {
       ok({
         id: 'inv_paid',
         status: 'paid' as const,
-        totalSatang: 535_000n,
+        totalSatang: asSatang(535_000n),
         memberId: 'mem_test',
         tenantId: 'tnt_abc',
       }),

@@ -18,6 +18,7 @@
  * idempotency header propagation via Stripe's HTTP layer).
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import Stripe from 'stripe';
@@ -113,7 +114,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     );
 
     const ok = await stripeGateway.createPaymentIntent({
-      amountSatang: 50000n,
+      amountSatang: asSatang(50000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: { invoice_id: 'inv_test' },
@@ -217,7 +218,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
 
     const result = await stripeGateway.createRefund({
       paymentIntentId: 'pi_refund_e3',
-      amountSatang: 10000n,
+      amountSatang: asSatang(10000n),
       reason: 'requested_by_customer',
       metadata: { refund_id: 'rfn_e3' },
       idempotencyKey: 'rfn-rfn_e3',
@@ -255,7 +256,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     );
 
     await stripeGateway.createPaymentIntent({
-      amountSatang: 20000n,
+      amountSatang: asSatang(20000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: {},
@@ -309,7 +310,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       ),
     );
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 1000n,
+      amountSatang: asSatang(1000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: {},
@@ -340,7 +341,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       ),
     );
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 1000n,
+      amountSatang: asSatang(1000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: {},
@@ -412,7 +413,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       ),
     );
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 1000n,
+      amountSatang: asSatang(1000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: {},
@@ -445,7 +446,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       ),
     );
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 1000n,
+      amountSatang: asSatang(1000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: {},
@@ -540,7 +541,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
     );
     const result = await stripeGateway.createRefund({
       paymentIntentId: 'pi_partial',
-      amountSatang: 5000n,
+      amountSatang: asSatang(5000n),
       reason: 'requested_by_customer',
       metadata: { rfn: 'rfn_partial_001' },
       idempotencyKey: 'rfn-partial-001',
@@ -581,7 +582,7 @@ describe('stripeGateway — MSW-mocked Stripe API', () => {
       }),
     );
     await stripeGateway.createPaymentIntent({
-      amountSatang: 1000n,
+      amountSatang: asSatang(1000n),
       currency: 'thb',
       paymentMethodTypes: ['card'],
       metadata: {},

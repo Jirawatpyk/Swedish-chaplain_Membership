@@ -24,6 +24,7 @@
  * `event.data.object` stays behind the Infrastructure boundary.
  */
 import type Stripe from 'stripe';
+import { asSatang } from '@/lib/money';
 import type {
   WebhookVerifierPort,
   VerifiedStripeEvent,
@@ -74,7 +75,9 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
   let refundIds: readonly string[] | undefined;
   let lastPaymentErrorCode: string | null | undefined;
   let disputeId: string | null | undefined;
-  let amountSatang: bigint | undefined;
+  // F5R3 H-5 (2026-05-16) — projected as branded Satang at the
+  // Stripe→Application boundary; downstream code never re-validates.
+  let amountSatang: import('@/lib/money').Satang | undefined;
 
   if (objectType === 'payment_intent') {
     const lc = raw['latest_charge'];
@@ -97,7 +100,7 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
     lastPaymentErrorCode =
       lpe && typeof lpe.code === 'string' ? lpe.code : null;
     if (typeof raw['amount'] === 'number') {
-      amountSatang = BigInt(raw['amount'] as number);
+      amountSatang = asSatang(BigInt(raw['amount'] as number));
     }
   } else if (objectType === 'charge') {
     const refunds = raw['refunds'] as
@@ -110,12 +113,12 @@ function project(event: Stripe.Event): VerifiedStripeEvent {
         .filter((v): v is string => v !== null);
     }
     if (typeof raw['amount'] === 'number') {
-      amountSatang = BigInt(raw['amount'] as number);
+      amountSatang = asSatang(BigInt(raw['amount'] as number));
     }
   } else if (objectType === 'dispute') {
     disputeId = rawId;
     if (typeof raw['amount'] === 'number') {
-      amountSatang = BigInt(raw['amount'] as number);
+      amountSatang = asSatang(BigInt(raw['amount'] as number));
     }
   }
 

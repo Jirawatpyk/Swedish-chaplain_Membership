@@ -34,6 +34,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import Stripe from 'stripe';
@@ -94,7 +95,7 @@ describe('PromptPay server-locked amount (T089 / FR-009)', () => {
     // Canonical promptpay call — same shape initiate-payment.ts builds
     // when method='promptpay' is requested.
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 53500n,
+      amountSatang: asSatang(53500n),
       currency: 'thb',
       paymentMethodTypes: ['promptpay'],
       metadata: { invoice_id: 'inv_t089', tenant_id: 'swecham' },
@@ -138,7 +139,7 @@ describe('PromptPay server-locked amount (T089 / FR-009)', () => {
     // `permanent` error — NOT throw — so the Result<T,E> contract
     // at the boundary is preserved.
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 53500n,
+      amountSatang: asSatang(53500n),
       currency: 'thb',
       paymentMethodTypes: ['promptpay', 'card'],
       metadata: { invoice_id: 'inv_t089' },
@@ -180,7 +181,7 @@ describe('PromptPay server-locked amount (T089 / FR-009)', () => {
     );
 
     const result = await stripeGateway.createPaymentIntent({
-      amountSatang: 53500n,
+      amountSatang: asSatang(53500n),
       currency: 'thb',
       paymentMethodTypes: ['promptpay'],
       metadata: { invoice_id: 'inv_t089' },

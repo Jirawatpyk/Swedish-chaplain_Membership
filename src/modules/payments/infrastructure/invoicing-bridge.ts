@@ -19,6 +19,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { paymentsMetrics } from '@/lib/metrics';
+import { asSatang } from '@/lib/money';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
@@ -42,7 +43,10 @@ function mapF4InvoiceForPayment(
   return {
     id: v.id,
     status: v.status,
-    totalSatang: v.totalSatang,
+    // F5R3 H-5 (2026-05-16) — brand at F4→F5 bridge boundary. F4
+    // still holds invoice totals as bare `bigint`; future F4 migration
+    // to Satang will make this cast a no-op (the brand is structural).
+    totalSatang: asSatang(v.totalSatang),
     memberId: v.memberId,
     tenantId: v.tenantId,
   };

@@ -39,6 +39,7 @@
  * Pure Application — no framework / ORM imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { addSatang, asSatang, satangToProcessorAmount, subSatang, type Satang } from '@/lib/money';
 import type {
   AuditPort,
   ClockPort,
@@ -68,7 +69,8 @@ import { SpanStatusCode } from '@opentelemetry/api';
 export interface IssueRefundInput {
   readonly tenantId: string;
   readonly paymentId: string;       // route-side raw — parsed inside
-  readonly amountSatang: bigint;    // > 0
+  // F5R3 H-5 (2026-05-16) — branded Satang prevents unit confusion.
+  readonly amountSatang: Satang;    // > 0
   readonly reason: string;          // 1..500 chars; single-line (no CR/LF)
   readonly actorUserId: string;     // admin UUID from session
   readonly correlationId: string;
@@ -80,7 +82,7 @@ export interface IssueRefundSuccess {
     readonly id: string;
     readonly paymentId: string;
     readonly invoiceId: string;
-    readonly amountSatang: bigint;
+    readonly amountSatang: Satang;
     readonly reason: string;
     readonly status: 'succeeded';
     readonly processorRefundId: string;
@@ -91,8 +93,8 @@ export interface IssueRefundSuccess {
   readonly payment: {
     readonly id: string;
     readonly status: 'partially_refunded' | 'refunded';
-    readonly refundedAmountSatang: bigint;
-    readonly remainingRefundableSatang: bigint;
+    readonly refundedAmountSatang: Satang;
+    readonly remainingRefundableSatang: Satang;
   };
   readonly invoice: {
     readonly id: string;
@@ -222,7 +224,7 @@ export async function issueRefund(
       attributes: {
         'payments.payment_id': input.paymentId,
         'payments.tenant_id': input.tenantId,
-        'payments.amount_satang': Number(input.amountSatang),
+        'payments.amount_satang': satangToProcessorAmount(input.amountSatang),
       },
     },
     async (span) => {
@@ -269,7 +271,7 @@ async function issueRefundBody(
   // Phase A — prepareRefund tx: lock, validate, insert pending, audit init
   // -------------------------------------------------------------------------
   type PreparedRefund =
-    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly succeededSumBefore: bigint }
+    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly succeededSumBefore: Satang }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
 
   const prepared: PreparedRefund = await deps.paymentsRepo.withTx(async (tx) => {
@@ -448,7 +450,12 @@ async function issueRefundBody(
   // Phase B (success) — finalise refund + payment status + audit succeeded
   // -------------------------------------------------------------------------
   const completedAt = new Date(deps.clock.nowMs());
-  const newSucceededSum = prepared.succeededSumBefore + input.amountSatang;
+  // F5R3 H-5 (2026-05-16) — use branded arithmetic helpers; addSatang
+  // preserves the brand so downstream comparisons stay typed.
+  const newSucceededSum = addSatang(
+    prepared.succeededSumBefore,
+    input.amountSatang,
+  );
   const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
   const nextPaymentStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
 
@@ -619,9 +626,11 @@ async function issueRefundBody(
       id: paymentId,
       status: nextPaymentStatus,
       refundedAmountSatang: newSucceededSum,
+      // F5R3 H-5 — branded arithmetic; subSatang throws on underflow
+      // which is impossible here (isFullyRefunded gate above).
       remainingRefundableSatang: isFullyRefunded
-        ? 0n
-        : prepared.payment.amountSatang - newSucceededSum,
+        ? asSatang(0n)
+        : subSatang(prepared.payment.amountSatang, newSucceededSum),
     },
     invoice: {
       id: prepared.payment.invoiceId,

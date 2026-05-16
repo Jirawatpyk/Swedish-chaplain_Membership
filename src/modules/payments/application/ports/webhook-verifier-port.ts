@@ -90,7 +90,7 @@ export interface VerifiedStripeEvent {
     readonly refundIds?: readonly string[];
     readonly lastPaymentErrorCode?: string | null;
     readonly disputeId?: string | null;
-    readonly amountSatang?: bigint;
+    readonly amountSatang?: import('@/lib/money').Satang;
   };
 }
 

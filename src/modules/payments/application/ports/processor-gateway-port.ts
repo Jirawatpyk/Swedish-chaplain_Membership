@@ -79,14 +79,15 @@ export interface RetrievedPaymentIntent {
 export interface CreatedRefund {
   readonly id: string;                   // `re_…`
   readonly status: string;               // 'pending' | 'succeeded' | 'failed'
-  readonly amountSatang: bigint;
+  readonly amountSatang: Satang;
 }
 
 import type { Result } from '@/lib/result';
+import type { Satang } from '@/lib/money';
 
 export interface ProcessorGatewayPort {
   createPaymentIntent(input: {
-    readonly amountSatang: bigint;
+    readonly amountSatang: Satang;
     readonly currency: 'thb';
     readonly paymentMethodTypes: readonly ('card' | 'promptpay')[];
     readonly metadata: Readonly<Record<string, string>>;
@@ -113,7 +114,7 @@ export interface ProcessorGatewayPort {
 
   createRefund(input: {
     readonly paymentIntentId: string;
-    readonly amountSatang?: bigint;     // omit for full refund
+    readonly amountSatang?: Satang;     // omit for full refund
     readonly reason?: string;
     readonly metadata: Readonly<Record<string, string>>;
     readonly idempotencyKey: string;

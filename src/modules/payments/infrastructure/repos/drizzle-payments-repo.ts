@@ -17,6 +17,7 @@
  * (promptpay → null; card+pending+all-NULL → null; otherwise full VO).
  */
 import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { asSatang, type Satang } from '@/lib/money';
 import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
 import {
   asPaymentId,
@@ -65,12 +66,21 @@ function assertRefundStatus(s: string, rowId: string): RefundStatus {
 // Drizzle's `bigint('mode': 'bigint')` should return native bigint, but
 // pg drivers historically returned strings; the previous double-cast
 // silently truncated values >2^53 if the driver returned `number`.
-function toBigintSatang(raw: unknown, rowId: string): bigint {
-  if (typeof raw === 'bigint') return raw;
-  if (typeof raw === 'string' || typeof raw === 'number') return BigInt(raw);
-  throw new Error(
-    `drizzle-payments-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
-  );
+//
+// F5R3 H-5 (2026-05-16) — return type tightened to branded `Satang`.
+// `asSatang` validates non-negative at the DB→Domain boundary; if
+// the DB ever returns a negative money value (impossible per
+// invariants) the trap is here, not propagated upstream.
+function toBigintSatang(raw: unknown, rowId: string): Satang {
+  let value: bigint;
+  if (typeof raw === 'bigint') value = raw;
+  else if (typeof raw === 'string' || typeof raw === 'number') value = BigInt(raw);
+  else {
+    throw new Error(
+      `drizzle-payments-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
+    );
+  }
+  return asSatang(value);
 }
 
 function rowToRefundActivity(row: RefundRow): RefundActivityDto {

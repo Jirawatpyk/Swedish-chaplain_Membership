@@ -8,6 +8,7 @@
 import type { Payment, PaymentStatus, PaymentId, CardMetadata } from '../../domain/payment';
 import type { PaymentMethod } from '../../domain/value-objects/payment-method';
 import type { RefundStatus } from '../../domain/refund';
+import type { Satang } from '@/lib/money';
 
 export interface PaymentsRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
@@ -50,7 +51,7 @@ export interface PaymentsRepo {
       readonly invoiceId: string;
       readonly memberId: string;
       readonly method: PaymentMethod;
-      readonly amountSatang: bigint;
+      readonly amountSatang: Satang;
       readonly processorPaymentIntentId: string;
       readonly processorEnvironment: 'test' | 'live';
       readonly attemptSeq: number;
@@ -213,7 +214,7 @@ export interface RefundActivityDto {
   // lockstep — adding a new refund status (e.g. 'voided') becomes a
   // compile-error here automatically instead of silent drift.
   readonly status: RefundStatus;
-  readonly amountSatang: bigint;
+  readonly amountSatang: Satang;
   readonly reason: string;
   readonly initiatedAt: Date;
   readonly completedAt: Date | null;
