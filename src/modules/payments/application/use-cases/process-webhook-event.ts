@@ -41,9 +41,12 @@ import {
 } from '../ports';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
-import { confirmPayment, type ConfirmPaymentOutcome } from './confirm-payment';
-import { failPayment, type FailPaymentOutcome } from './fail-payment';
-import { handleCancelEvent, type HandleCancelEventOutcome } from './handle-cancel-event';
+// F5R3 MED-6 (2026-05-16) — outcome type imports dropped along with
+// the `extractInvoiceId` helper. The inlined `'invoiceId' in
+// result.value` narrowing only needs the use-case function imports.
+import { confirmPayment } from './confirm-payment';
+import { failPayment } from './fail-payment';
+import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -322,7 +325,8 @@ export async function processWebhookEvent(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'webhook_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene; see confirm-payment.ts.
+          message: e instanceof Error ? e.constructor.name : 'webhook_threw',
         });
         throw e;
         /* v8 ignore stop */

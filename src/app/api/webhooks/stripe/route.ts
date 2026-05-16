@@ -88,7 +88,10 @@ export const dynamic = 'force-dynamic';
  */
 const MAX_WEBHOOK_BODY_BYTES = 64 * 1024;
 
-const OK_RECEIVED = { received: true } as const;
+// F5R3 SIMPLIFY-L1 (2026-05-16) — single-use OK_RECEIVED const
+// inlined at the call site (one place). `as const` preserved no
+// observable behaviour through NextResponse.json's runtime
+// stringification.
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -210,7 +213,7 @@ async function insertRejectedProcessorEvent(input: {
 }
 
 function jsonOk(correlationId: string): NextResponse {
-  return NextResponse.json(OK_RECEIVED, {
+  return NextResponse.json({ received: true }, {
     status: 200,
     headers: baseHeaders(correlationId),
   });

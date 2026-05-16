@@ -91,10 +91,9 @@ describe('F5 audit_event_type ↔ F5AuditEventType parity', () => {
     );
     // Every F6 `webhook_*` event EXCEPT `webhook_signature_rejected`
     // (which F5 owns and emits via auditReject).
-    const expectedF6Webhooks = new Set(
-      F6_AUDIT_EVENT_TYPES.filter(
-        (e: string) =>
-          e.startsWith('webhook_') && e !== 'webhook_signature_rejected',
+    const expectedF6Webhooks = new Set<string>(
+      (F6_AUDIT_EVENT_TYPES as readonly string[]).filter(
+        (e) => e.startsWith('webhook_') && e !== 'webhook_signature_rejected',
       ),
     );
 

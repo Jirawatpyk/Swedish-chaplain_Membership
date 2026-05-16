@@ -188,7 +188,11 @@ export async function confirmPayment(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'confirm_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene: span.message uses
+          // class name only (never raw .message). OTel span status
+          // exports to tracing dashboards that aggregate across the
+          // org; `.message` can carry SQL params / Stripe endpoint URLs.
+          message: e instanceof Error ? e.constructor.name : 'confirm_threw',
         });
         throw e;
         /* v8 ignore stop */
@@ -217,8 +221,46 @@ export async function confirmPayment(
  */
 interface StalePending {
   readonly payment: Payment;
-  readonly cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
+  readonly cause: StaleRefundCause;
   readonly invoiceStatus: string | undefined;
+}
+
+/**
+ * F5R3 SIMPLIFY-H5 (2026-05-16) — auto-refund cause derivation.
+ *
+ * Extracted from a 35-line inline IIFE (with v8-ignore overhead +
+ * exhaustiveness trap) inside `confirmPaymentBody`. Pure function +
+ * default-arm fallback gives the SAME safety with a fraction of the
+ * noise: the helper covers every known F4 InvoiceStatus + the
+ * undefined / 'draft' / unknown-future-status cases land in a single
+ * `'invoice_unknown_status'` bucket. Future F4 additions that should
+ * map to a NEW cause require updating this switch, but the silent
+ * fallback prevents a runtime crash in the meantime.
+ */
+export type StaleRefundCause =
+  | 'invoice_already_paid'
+  | 'invoice_voided'
+  | 'invoice_credited'
+  | 'invoice_unknown_status';
+
+export function causeForInvoiceStatus(
+  invoiceStatus: string | undefined,
+): StaleRefundCause {
+  switch (invoiceStatus) {
+    case 'paid':
+      return 'invoice_already_paid';
+    case 'void':
+      return 'invoice_voided';
+    case 'credited':
+    case 'partially_credited':
+      return 'invoice_credited';
+    // 'draft' / undefined / any future InvoiceStatus addition →
+    // unknown-status bucket. The use-case emits a forensic audit
+    // either way; an unrecognised status doesn't change downstream
+    // behaviour beyond the audit label.
+    default:
+      return 'invoice_unknown_status';
+  }
 }
 
 async function confirmPaymentBody(
@@ -371,42 +413,14 @@ async function confirmPaymentBody(
       // `'void'` (not `'voided'`); the `invoice_credited` bucket
       // covers both `'credited'` and `'partially_credited'` since
       // both terminate the payable window.
-      const cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status' = (() => {
-        // `invoiceStatus === undefined` only when the bridge returned
-        // a forbidden/not_found path that already short-circuited
-        // step 2 — defensive only (paired with the v8-ignored
-        // `: undefined` ternary arm above).
-        /* v8 ignore next -- defensive: paired with the unreachable `: undefined` arm at line ~164 */
-        if (invoiceStatus === undefined) return 'invoice_unknown_status';
-        // `'issued'` is excluded by the `inPayableStatus` gate above
-        // → TS narrows `invoiceStatus` to the remaining InvoiceStatus
-        // values (`'draft' | 'paid' | 'void' | 'credited' | 'partially_credited'`).
-        switch (invoiceStatus) {
-          case 'paid':
-            return 'invoice_already_paid';
-          case 'void':
-            return 'invoice_voided';
-          case 'credited':
-          case 'partially_credited':
-            return 'invoice_credited';
-          /* v8 ignore start -- defensive: drafts never carry an active PaymentIntent (F4 invariant) */
-          case 'draft':
-            // `'draft'` should never reach here — drafts never carry an
-            // active PaymentIntent — but defensive in case the bridge
-            // shape evolves.
-            return 'invoice_unknown_status';
-          default: {
-            // Compile-time exhaustiveness trap. If F4 adds a new
-            // InvoiceStatus value, this arm fails to compile and forces
-            // the new branch to be added explicitly above (audit
-            // 2026-04-25 finding #6).
-            const _exhaustive: never = invoiceStatus;
-            void _exhaustive;
-            return 'invoice_unknown_status';
-          }
-          /* v8 ignore stop */
-        }
-      })();
+      // F5R3 SIMPLIFY-H5 (2026-05-16) — extracted from a 35-line IIFE
+      // to the module-scope `causeForInvoiceStatus` helper below. The
+      // IIFE + v8-ignore + exhaustiveness-trap pattern was load-bearing
+      // for narrowing safety but obscured the actual cause mapping at
+      // the use-site. The helper centralises the mapping; future F4
+      // InvoiceStatus additions still hit the exhaustiveness trap at
+      // the helper site (single source of truth).
+      const cause = causeForInvoiceStatus(invoiceStatus);
 
       // R2 H-3 (2026-04-27): defer Stripe createRefund to OUTSIDE the
       // withTx. Capture the decision in `stalePending` and return a

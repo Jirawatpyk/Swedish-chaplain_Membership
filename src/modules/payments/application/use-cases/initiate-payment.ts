@@ -215,7 +215,8 @@ export async function initiatePayment(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'initiate_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene; see confirm-payment.ts.
+          message: e instanceof Error ? e.constructor.name : 'initiate_threw',
         });
         throw e;
         /* v8 ignore stop */

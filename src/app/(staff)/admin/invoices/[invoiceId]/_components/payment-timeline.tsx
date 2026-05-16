@@ -23,7 +23,6 @@ import {
   BanknoteIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
-  InfoIcon,
   RefreshCcwIcon,
   XCircleIcon,
   XOctagonIcon,
@@ -145,13 +144,15 @@ const EVENT_VISUAL: Record<
   refund_failed: { icon: XCircleIcon, cls: 'text-destructive' },
 };
 
-function eventIcon(type: SyntheticEventType) {
-  return EVENT_VISUAL[type]?.icon ?? InfoIcon;
-}
-
-function eventIconClass(type: SyntheticEventType): string {
-  return EVENT_VISUAL[type]?.cls ?? 'text-foreground';
-}
+// F5R3 SIMPLIFY-H4 (2026-05-16) — `eventIcon` + `eventIconClass`
+// helpers deleted. `EVENT_VISUAL` is `Record<SyntheticEventType, …>`
+// so `EVENT_VISUAL[event.type]` is non-nullable at the type level —
+// the `?? InfoIcon` / `?? 'text-foreground'` fallbacks were dead
+// code that misled readers into thinking a new SyntheticEventType
+// variant could compile without updating EVENT_VISUAL. Record<T,V>
+// exhaustiveness already prevents that. Call sites now inline
+// `const visual = EVENT_VISUAL[event.type]` then read `visual.icon`
+// + `visual.cls` directly.
 
 function buildStripeDashboardUrl(
   environment: 'test' | 'live',
@@ -479,7 +480,8 @@ export async function PaymentTimeline({
         ) : (
           <ol className="flex flex-col gap-3">
             {events.map((event) => {
-              const Icon = eventIcon(event.type);
+              const visual = EVENT_VISUAL[event.type];
+              const Icon = visual.icon;
               return (
                 <li
                   key={event.id}
@@ -487,7 +489,7 @@ export async function PaymentTimeline({
                   className="flex items-start gap-3 rounded-md border bg-card px-3 py-2.5"
                 >
                   <Icon
-                    className={`mt-0.5 size-4 shrink-0 ${eventIconClass(event.type)}`}
+                    className={`mt-0.5 size-4 shrink-0 ${visual.cls}`}
                     aria-hidden="true"
                   />
                   <div className="flex-1 text-sm">
