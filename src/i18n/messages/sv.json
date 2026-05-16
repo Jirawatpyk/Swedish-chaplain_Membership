@@ -1241,6 +1241,26 @@
         "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
         "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)"
       },
+      "csvExport": {
+        "trigger": "Exportera CSV",
+        "dialog": {
+          "title": "Exportera betalda fakturor till CSV",
+          "description": "För månatlig thailändsk momsdeklaration (ภ.พ.30). CSV-filen innehåller alla betalda fakturor vars betalningsdatum ligger inom intervallet nedan."
+        },
+        "fields": {
+          "from": "Från",
+          "to": "Till"
+        },
+        "actions": {
+          "cancel": "Avbryt",
+          "download": "Ladda ner CSV"
+        },
+        "errors": {
+          "invalidDate": "Välj giltiga datum.",
+          "rangeInverted": "Från-datumet måste vara samma dag eller före Till-datumet.",
+          "rangeTooWide": "Intervallet får inte överstiga ett år."
+        }
+      },
       "new": {
         "title": "Nytt fakturautkast",
         "description": "Välj medlem och plan. Förhandsgranska före utfärdande.",

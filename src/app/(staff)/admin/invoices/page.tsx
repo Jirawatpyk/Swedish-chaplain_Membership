@@ -38,6 +38,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { InvoicesTable, type InvoicesTableRow } from './_components/invoice-table';
 import { InvoiceFilters } from './_components/invoice-filters';
+import { CsvExportDialog } from './_components/csv-export-dialog';
 
 const VALID_STATUSES = new Set([
   'draft',
@@ -297,23 +298,21 @@ export default async function AdminInvoicesPage({
 
   return (
     <TableContainer>
-      {/* TODO(phase-3): CSV export of paid invoices for Thai VAT
-          monthly filing (ภพ.30 prep workflow). Approved scope deferred
-          2026-05-15 — see `.claude/plans/jolly-shimmying-sundae.md`
-          § "Phase 3 — CSV Export of paid invoices" for column shape +
-          UTF-8 BOM + audit event `invoices_csv_exported` design. */}
       <PageHeader
         title={t('list.title')}
         subtitle={t('list.description')}
         actions={
           isAdmin ? (
-            <Link
-              href="/admin/invoices/new"
-              className={buttonVariants({ variant: 'default' })}
-            >
-              <PlusIcon className="size-4" />
-              {t('list.actions.new')}
-            </Link>
+            <div className="flex items-center gap-2">
+              <CsvExportDialog />
+              <Link
+                href="/admin/invoices/new"
+                className={buttonVariants({ variant: 'default' })}
+              >
+                <PlusIcon className="size-4" />
+                {t('list.actions.new')}
+              </Link>
+            </div>
           ) : null
         }
       />

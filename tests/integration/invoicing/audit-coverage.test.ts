@@ -92,6 +92,8 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   'tenant_receipt_prefix_changed',
   // R8-M1-code — invoice-PDF download surface (closes asymmetry with receipt).
   'invoice_pdf_downloaded',
+  // Phase 3 — CSV export of paid invoices (added 2026-05-16).
+  'invoices_csv_exported',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -227,10 +229,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     `);
     const dbEnum = new Set(rows.map((r) => r.enumlabel));
 
-    // The full 23 F4 types — taken from F4AuditEventType union.
+    // The full 24 F4 types — taken from F4AuditEventType union.
     // Growth: 16 → 17 (`invoice_pdf_regenerated` 2026-04-20) → 22
     // (T166 async worker + receipt downloads + tenant_receipt_prefix_changed
-    // 2026-04-25/05-10) → 23 (R8 `invoice_pdf_downloaded` 2026-05-15).
+    // 2026-04-25/05-10) → 23 (R8 `invoice_pdf_downloaded` 2026-05-15) →
+    // 24 (Phase 3 `invoices_csv_exported` 2026-05-16).
     const allF4Types: ReadonlyArray<F4AuditEventType> = [
       'invoice_draft_created',
       'invoice_draft_updated',
@@ -255,8 +258,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'receipt_pdf_downloaded',
       'tenant_receipt_prefix_changed',
       'invoice_pdf_downloaded',
+      'invoices_csv_exported',
     ] as const;
-    expect(allF4Types).toHaveLength(23);
+    expect(allF4Types).toHaveLength(24);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -639,6 +643,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts (positive emit on admin + member success; no-emit on drafts; audit-throw-aborts-blob safety) + this file (MVP_AUDIT_TYPES_EMITTED enum probe)',
         since: '2026-05-15',
       },
+      // Phase 3 of the F4 receipt-surface plan — CSV export for Thai
+      // VAT monthly filing. 5y retention (derivative report).
+      invoices_csv_exported: {
+        status: 'covered',
+        where:
+          'tests/unit/invoicing/export-paid-invoices-csv.test.ts (audit emit on success with from/to/row_count payload) + this file (enum probe)',
+        since: '2026-05-16',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -671,6 +683,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'tenant_receipt_prefix_changed',
       // R8-M1-code — invoice-PDF download surface (closes asymmetry).
       'invoice_pdf_downloaded',
+      // Phase 3 — CSV export of paid invoices (added 2026-05-16).
+      'invoices_csv_exported',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a

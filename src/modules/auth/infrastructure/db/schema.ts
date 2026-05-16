@@ -252,6 +252,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     asymmetry: receipts already logged downloads; invoices didn't.
   //     10y retention (tax-doc touch, parity with peers). ---
   'invoice_pdf_downloaded',
+  // --- F4 receipt-surface plan Phase 3 (migration 0149, 2026-05-16) —
+  //     emitted by `exportPaidInvoicesCsv` after a successful CSV
+  //     stream. Operational/audit class → 5y retention (derivative
+  //     report, not §86/§87 document). Payload: from, to, row_count,
+  //     actor_user_id, route. ---
+  'invoices_csv_exported',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

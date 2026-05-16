@@ -1241,6 +1241,26 @@
         "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
         "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)"
       },
+      "csvExport": {
+        "trigger": "Export CSV",
+        "dialog": {
+          "title": "Export paid invoices to CSV",
+          "description": "For Thai VAT monthly filing (ภพ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
+        },
+        "fields": {
+          "from": "From",
+          "to": "To"
+        },
+        "actions": {
+          "cancel": "Cancel",
+          "download": "Download CSV"
+        },
+        "errors": {
+          "invalidDate": "Please choose valid dates.",
+          "rangeInverted": "From-date must be on or before To-date.",
+          "rangeTooWide": "Range cannot exceed 1 year."
+        }
+      },
       "new": {
         "title": "New invoice draft",
         "description": "Select a member and plan. You can preview before issuing.",

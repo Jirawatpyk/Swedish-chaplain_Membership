@@ -80,7 +80,17 @@ export type F4AuditEventType =
    * the F3 timeline filter; actor_member_id enables a JOIN to the
    * members table without re-resolving the actor.
    */
-  | 'invoice_pdf_downloaded';
+  | 'invoice_pdf_downloaded'
+  /**
+   * Phase 3 of the F4 receipt-surface plan — emitted by
+   * `exportPaidInvoicesCsv` after a successful CSV stream generation
+   * (Thai VAT monthly-filing workflow). Operational/audit class →
+   * 5y retention (Constitution VIII). NOT a tax-document touch
+   * itself: the CSV is a derivative report; the underlying
+   * invoice/receipt rows already carry their own 10y events.
+   * Payload: `from`, `to`, `row_count`, `actor_user_id`, `route`.
+   */
+  | 'invoices_csv_exported';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -128,6 +138,9 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   // R8-M1-code — tax-document touch (invoice PDF bytes accessed); 10y
   // per Thai RD §86/4 + §87/3, parity with peers.
   invoice_pdf_downloaded: 10,
+  // Phase 3 — derivative export, not a §86/§87 tax document; 5y
+  // operational retention per Constitution VIII.
+  invoices_csv_exported: 5,
 };
 
 /** Single-source helper — call at every F4 emit site. */

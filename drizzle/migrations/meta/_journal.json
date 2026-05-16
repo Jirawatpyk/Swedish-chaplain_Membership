@@ -1051,6 +1051,13 @@
 			"when": 1795334400000,
 			"tag": "0148_audit_payment_cancel_attempt_failed",
 			"breakpoints": true
+		},
+		{
+			"idx": 149,
+			"version": "7",
+			"when": 1795420800000,
+			"tag": "0149_audit_invoices_csv_exported",
+			"breakpoints": true
 		}
 	]
 }

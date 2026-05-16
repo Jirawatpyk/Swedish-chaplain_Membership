@@ -153,6 +153,16 @@ export {
 } from './application/use-cases/get-receipt-pdf-signed-url';
 
 export {
+  exportPaidInvoicesCsv,
+  exportPaidInvoicesCsvSchema,
+  type ExportPaidInvoicesCsvInput,
+  type ExportPaidInvoicesCsvOutput,
+  type ExportPaidInvoicesCsvError,
+  type ExportPaidInvoicesCsvDeps,
+  type PaymentMethodLookupPort,
+} from './application/use-cases/export-paid-invoices-csv';
+
+export {
   previewInvoiceDraft,
   type PreviewInvoiceDraftInput,
   type PreviewInvoiceDraftError,
@@ -321,6 +331,7 @@ export {
   makeListInvoicesByMemberDeps,
   makeGetInvoicePdfSignedUrlDeps,
   makeGetReceiptPdfSignedUrlDeps,
+  makeExportPaidInvoicesCsvDeps,
   makePreviewInvoiceDraftDeps,
   makeDeleteInvoiceDraftDeps,
   makeGetInvoiceDeps,

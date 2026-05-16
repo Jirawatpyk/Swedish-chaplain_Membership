@@ -36,6 +36,11 @@ import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
 import type { GetReceiptPdfSignedUrlDeps } from './use-cases/get-receipt-pdf-signed-url';
+import type { ExportPaidInvoicesCsvDeps } from './use-cases/export-paid-invoices-csv';
+import {
+  listSucceededPaymentMethods,
+  makeListSucceededPaymentMethodsDeps,
+} from '@/modules/payments';
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
 import type { GetInvoiceDeps } from './use-cases/get-invoice';
@@ -96,6 +101,38 @@ export function makeGetReceiptPdfSignedUrlDeps(tenantId: string): GetReceiptPdfS
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     blob: vercelBlobAdapter,
     audit: f4AuditAdapter,
+  };
+}
+
+/**
+ * Phase 3 (F4 receipt-surface plan) — composition for the CSV export
+ * use-case. The `paymentMethodLookup` port is wired here with the F5
+ * `listSucceededPaymentMethods` use-case so that the use-case file
+ * itself imports zero F5 symbols (Constitution III: cross-module
+ * wiring belongs to the composition root, not the use-case).
+ *
+ * Lookup-port failure semantics: F5's `listSucceededPaymentMethods`
+ * returns a `Result` whose error union is `never`, so this closure
+ * cannot throw under current types. If F5 ever widens the error, the
+ * `result.ok` check below short-circuits to an empty map — the CSV
+ * still renders, just every row falls back to `'manual'` in the
+ * Payment Method column rather than failing the whole export.
+ */
+export function makeExportPaidInvoicesCsvDeps(
+  tenantId: string,
+): ExportPaidInvoicesCsvDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    audit: f4AuditAdapter,
+    paymentMethodLookup: async (tid, invoiceIds) => {
+      const result = await listSucceededPaymentMethods(
+        makeListSucceededPaymentMethodsDeps(tid),
+        { tenantId: tid, invoiceIds },
+      );
+      return result.ok
+        ? result.value
+        : new Map<string, 'card' | 'promptpay'>();
+    },
   };
 }
 
