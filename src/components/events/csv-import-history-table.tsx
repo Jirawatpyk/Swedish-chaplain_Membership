@@ -36,6 +36,15 @@ import { cn } from '@/lib/utils';
 export interface CsvImportHistoryRow {
   readonly recordId: string;
   readonly uploadedAt: string;
+  /**
+   * Pre-formatted display string for `uploadedAt` (locale + Asia/Bangkok
+   * TZ). Staff-review T060 follow-up (2026-05-16): function props from
+   * a Server Component to a Client Component are rejected at the RSC
+   * boundary in Next.js 15+ App Router ("Functions cannot be passed
+   * directly to Client Components"). Pre-format on the server, pass
+   * the resulting string here. The component renders this verbatim.
+   */
+  readonly uploadedAtDisplay: string;
   readonly sourceFormat: 'eventcreate_csv' | 'generic_csv';
   readonly originalFilename: string;
   readonly originalSizeBytes: number;
@@ -74,19 +83,22 @@ interface CsvImportHistoryTableProps {
   readonly rows: ReadonlyArray<CsvImportHistoryRow>;
   readonly pagination: CsvImportHistoryPagination;
   /**
-   * Server-side URL builder for pagination links — keeps the component
-   * pure and lets the server component own search-params shape.
+   * Pre-built href for the previous-page Link, or `null` when already on
+   * page 1. Staff-review T060 follow-up (2026-05-16): replaces the prior
+   * `pageHref: (page) => string` function prop that violated the RSC
+   * Server→Client boundary. The Server Component builds these strings
+   * during render and passes them as serializable values.
    */
-  readonly pageHref: (page: number) => string;
-  /** Locale-formatted timestamp (e.g. `Intl.DateTimeFormat` on the server). */
-  readonly formatTimestamp: (isoString: string) => string;
+  readonly prevPageHref: string | null;
+  /** Pre-built href for the next-page Link, or `null` on the last page. */
+  readonly nextPageHref: string | null;
 }
 
 export function CsvImportHistoryTable({
   rows,
   pagination,
-  pageHref,
-  formatTimestamp,
+  prevPageHref,
+  nextPageHref,
 }: CsvImportHistoryTableProps) {
   const t = useTranslations('admin.events.import.history');
 
@@ -144,7 +156,7 @@ export function CsvImportHistoryTable({
           {rows.map((row) => (
             <TableRow key={row.recordId} data-testid="csv-import-history-row">
               <TableCell className="font-mono text-caption">
-                {formatTimestamp(row.uploadedAt)}
+                {row.uploadedAtDisplay}
               </TableCell>
               <TableCell className="max-w-[16rem] truncate">
                 <span className="font-mono text-caption" title={row.originalFilename}>
@@ -238,9 +250,9 @@ export function CsvImportHistoryTable({
           })}
         </p>
         <div className="flex items-center gap-2">
-          {pagination.page > 1 ? (
+          {prevPageHref !== null ? (
             <Link
-              href={pageHref(pagination.page - 1)}
+              href={prevPageHref}
               prefetch={false}
               className={cn(
                 buttonVariants({ variant: 'outline' }),
@@ -262,9 +274,9 @@ export function CsvImportHistoryTable({
               totalPages: pagination.totalPages,
             })}
           </span>
-          {pagination.page < pagination.totalPages ? (
+          {nextPageHref !== null ? (
             <Link
-              href={pageHref(pagination.page + 1)}
+              href={nextPageHref}
               prefetch={false}
               className={cn(
                 buttonVariants({ variant: 'outline' }),

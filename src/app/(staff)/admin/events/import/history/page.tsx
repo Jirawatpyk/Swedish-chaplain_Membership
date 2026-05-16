@@ -97,6 +97,12 @@ export default async function CsvImportHistoryPage({
   // Bangkok TZ is mandatory — Vercel runtime is UTC; without an
   // explicit timeZone all rendered timestamps drift 7 h behind. The
   // shared helper also handles Thai Buddhist Era display for th-TH.
+  //
+  // Staff-review T060 follow-up (2026-05-16): pre-format on the server
+  // because function props from a Server Component to a Client
+  // Component are rejected at the RSC serialization boundary in
+  // Next.js 15+ App Router. The Client Component renders the
+  // pre-formatted string verbatim.
   const formatTimestamp = (iso: string): string =>
     formatLocalisedDate(iso, locale, {
       year: 'numeric',
@@ -110,6 +116,7 @@ export default async function CsvImportHistoryPage({
   const rows: CsvImportHistoryRow[] = result.value.rows.map((row) => ({
     recordId: row.record.recordId,
     uploadedAt: row.record.uploadedAt.toISOString(),
+    uploadedAtDisplay: formatTimestamp(row.record.uploadedAt.toISOString()),
     sourceFormat: row.record.sourceFormat,
     originalFilename: row.record.originalFilename,
     originalSizeBytes: row.record.originalSizeBytes,
@@ -126,12 +133,22 @@ export default async function CsvImportHistoryPage({
     errorCsvExpiresAt: row.record.errorCsvExpiresAt?.toISOString() ?? null,
   }));
 
-  const pageHref = (targetPage: number): string => {
+  // Staff-review T060 follow-up (2026-05-16): pre-compute prev/next
+  // pagination URLs on the server (serializable strings) instead of
+  // passing a `pageHref(page) => string` function prop. Only the two
+  // neighbouring pages are ever linked, so per-page URL pre-building
+  // is bounded + cheap.
+  const buildPageHref = (targetPage: number): string => {
     const params = new URLSearchParams();
     params.set('page', String(targetPage));
     if (perPage !== 30) params.set('perPage', String(perPage));
     return `/admin/events/import/history?${params.toString()}`;
   };
+  const { page: currentPage, totalPages } = result.value.pagination;
+  const prevPageHref =
+    currentPage > 1 ? buildPageHref(currentPage - 1) : null;
+  const nextPageHref =
+    currentPage < totalPages ? buildPageHref(currentPage + 1) : null;
 
   return (
     <TableContainer>
@@ -150,8 +167,8 @@ export default async function CsvImportHistoryPage({
       <CsvImportHistoryTable
         rows={rows}
         pagination={result.value.pagination}
-        pageHref={pageHref}
-        formatTimestamp={formatTimestamp}
+        prevPageHref={prevPageHref}
+        nextPageHref={nextPageHref}
       />
     </TableContainer>
   );

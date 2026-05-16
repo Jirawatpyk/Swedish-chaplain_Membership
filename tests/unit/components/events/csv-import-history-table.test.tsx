@@ -93,6 +93,7 @@ function makeRow(
   return {
     recordId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
     uploadedAt: '2026-05-16T07:00:00.000Z',
+    uploadedAtDisplay: '2026-05-16 14:00',
     sourceFormat: 'eventcreate_csv',
     originalFilename: `fixture-${outcome}.csv`,
     originalSizeBytes: 1024,
@@ -122,8 +123,8 @@ function renderTable(rows: ReadonlyArray<CsvImportHistoryRow>) {
       <CsvImportHistoryTable
         rows={rows}
         pagination={pagination}
-        pageHref={(page) => `/admin/events/import/history?page=${page}`}
-        formatTimestamp={(iso) => new Date(iso).toISOString()}
+        prevPageHref={null}
+        nextPageHref={null}
       />
     </NextIntlClientProvider>,
   );
