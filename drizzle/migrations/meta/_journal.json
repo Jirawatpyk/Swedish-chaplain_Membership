@@ -1086,6 +1086,13 @@
 			"when": 1796025600000,
 			"tag": "0154_csv_import_records_running_outcome",
 			"breakpoints": true
+		},
+		{
+			"idx": 155,
+			"version": "7",
+			"when": 1796112000000,
+			"tag": "0155_audit_csv_import_error_csv_manually_erased",
+			"breakpoints": true
 		}
 	]
 }

@@ -333,7 +333,7 @@ WHERE tenant_id = '<TENANT_SLUG>'
 
 ### Notes
 
-- The audit event `csv_import_error_csv_manually_erased` is NOT in the canonical F6.1 audit-event taxonomy (it is a DSR-time manual emit). Track in DPO log alongside the F6 erasure events.
+- The audit event `csv_import_error_csv_manually_erased` is admitted by the Postgres `audit_event_type` enum (migration 0155, staff-review L-R3v2-6 2026-05-16) but is NOT in the TypeScript application-port taxonomy (`src/modules/events/application/ports/audit-port.ts`) — it is a DSR-time manual emit via raw SQL INSERT only, never emitted programmatically. The manual INSERT in step 3 above WILL succeed once migration 0155 is applied. Track in DPO log alongside the F6 erasure events.
 - The natural 30-day TTL sweep cron will deliver the same outcome if the DSR can wait — only act manually when the DSR response deadline forces it. **Deadline reference** (staff-review M-NEW-4 2026-05-16): PDPA §30 grants 30 days from receipt, extendable by 30 days with written notice; GDPR Art. 12(3) grants 1 month, extendable to 3 months total with notification to the data subject within the first month. Chamber-OS defaults to the PDPA 30-day clock as the tighter constraint for Thailand-resident subjects.
 - The `attendee_fingerprint` on `csv_import_records` is a SHA-256 first-16-hex truncation. **Staff-review M-NEW-6 (2026-05-16) — legal-position caveat**: the fingerprint is not reversible by a third party, but the chamber (as controller) can re-derive it from a known email in O(1) time. EDPB guidance on pseudonymisation (`Art. 11 GDPR`) distinguishes general-public inference (disproportionate effort, exemption applies) from controller-assisted inference (not disproportionate, exemption does NOT clearly apply). For a TARGETED DSR where the requester's email is known, the Art. 11 exemption is legally borderline — DPO should consult counsel on whether to zero-out `csv_import_records.attendee_fingerprint` alongside the `event_registrations` erasure. The lowest-risk path is to wait for the 30-day natural sweep window (after which the fingerprint is no longer queried by the safety-net code path); if the DSR clock requires earlier action, NULL the column explicitly.
 
@@ -354,7 +354,16 @@ DPO review should confirm:
 1. All DSRs received in the period have a closed ticket
 2. Each closed ticket has corresponding `pii_erasure_requested` +
    `pii_erasure_completed` audit_log rows
-3. The 30-day GDPR deadline was met for EU residents
+3. The applicable response deadline was met (staff-review L-R3v2-8
+   2026-05-16: previously this read "30-day GDPR deadline" which
+   conflated the two regimes). The two applicable clocks are:
+   - **PDPA §30** (Thailand-resident subjects): 30 days from receipt,
+     extendable by 30 days with written notice to the data subject.
+   - **GDPR Art. 12(3)** (EU/EEA-resident subjects): 1 month from
+     receipt, extendable to 3 months total with notification within
+     the first month.
+   Chamber-OS defaults to the tighter PDPA clock for dual-jurisdiction
+   subjects, matching the deadline reference in §F6.1 above.
 4. Quota credit-backs were correctly attributed
 
 ## Related documents
