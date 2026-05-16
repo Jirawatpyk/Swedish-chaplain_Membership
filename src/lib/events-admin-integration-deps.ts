@@ -73,12 +73,15 @@ import {
   signWebhookRequest,
   asSecretLastFour,
   makeDrizzleTenantWebhookConfigRepository,
-  makePinoAuditPort,
   type WebhookSecret,
   type TenantWebhookConfigAggregate,
   type SecretLastFour,
   type TenantWebhookConfigRepositoryError,
 } from '@/modules/events';
+// Direct deep-import: `makePinoAuditPort` is intentionally not on the
+// barrel (Constitution Principle III — Infrastructure adapters not
+// re-exported). Composition layer is the only legal consumer.
+import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
 // Phase 5 review-fix S-07 (2026-05-13) — `tenantWebhookConfigs`
 // import dropped after the barrel re-export was removed; the file
 // no longer needs the raw schema reference. Tests now reach

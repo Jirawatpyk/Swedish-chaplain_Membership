@@ -1,71 +1,24 @@
 /**
- * `importCsv` use-case (F6 Application — Phase 7 / User Story 5).
+ * `importCsv` use-case (F6 Application).
  *
- * Orchestrates the CSV bulk-import path. Reuses the shared
- * `processAttendeeInTx` helper so the CSV pipeline produces
- * byte-equivalent rows to the Phase 3 webhook pipeline — FR-027 by
- * construction, not parallel implementation drift.
+ * Orchestrates CSV bulk-import via the shared `processAttendeeInTx`
+ * helper so the CSV pipeline yields byte-equivalent rows to the
+ * webhook pipeline (FR-027 by construction).
  *
- * Algorithm (post-batched-tx refactor 2026-05-15, H-7 docblock fix):
- *   1. Parse the CSV stream via `CsvImporter.parseStream` (streaming
- *      hand-rolled parser).
- *      - Header-level error  → return `{kind:'invalid_header', missingColumns}`.
- *      - Per-row parse error → buffer into `errorRows[]` (no DB work);
- *        `csv_import_row_failed` audit fires per parser-rejected row
- *        before the batch tx opens.
- *   2. Split successfully parsed rows into batches of `batchSize`
- *      (default 100, per tasks.md T094 spec "batched 100 rows per tx;
- *      per-row failure isolation"). Run `batchConcurrency` workers
- *      (default 3 — caps connection-pool pressure; each batch holds
- *      1 Drizzle connection for its full duration). Workers pull
- *      batches off a shared queue via atomic `nextBatchIdx++`.
- *   3. Per batch (one Drizzle outer tx per 100 rows):
- *      a. Open `runInTenantTx` once — SET LOCAL ROLE chamber_app +
- *         SET LOCAL app.current_tenant propagate through every
- *         savepoint within the tx.
- *      b. For each row, call `batchPorts.runRowInSavepoint(...)` →
- *         Drizzle nested-tx → Postgres SAVEPOINT for per-row
- *         isolation. On row-fn throw, the savepoint rolls back;
- *         outer tx + other rows in the batch are preserved.
- *      c. Per-row sequence inside the savepoint:
- *           - Idempotency receipt INSERT with `source='eventcreate_csv'`
- *             + `request_id=parsed.rowHash`. ON CONFLICT → return
- *             `duplicate` outcome (NO audit per csv-import-api contracts R3).
- *           - Map `CsvRow` → `ProcessAttendeeInTxInput` + call shared
- *             helper → event upsert + match + registration insert +
- *             quota + refund + match-resolution audit.
- *      d. Aggregate counters: rowsProcessed / rowsAlreadyImported /
- *         eventsCreated / eventsUpdated / matchCounts / errorRows.
- *   4. **Time-budget semantics (H-6 clarification 2026-05-15)**:
- *      `timeBudgetMs` (default 55_000) gates "may a worker start the
- *      NEXT batch?" — it does NOT mid-flight cancel a running batch.
- *      Once a worker has started a batch, it runs to completion. So
- *      total wall-clock can exceed timeBudget by up to
- *      `max(batchDurationMs)` (~25-50s on cross-region Neon, ~3-5s
- *      on prod-region). At the SC-006 1k-row envelope this is fine;
- *      callers running larger imports should tighten timeBudget
- *      explicitly. On budget breach the use-case returns
- *      `{kind:'timeout'}` AFTER all in-flight batches drain;
- *      committed rows persist (idempotency makes re-upload safe).
- *   5. After all batches commit: emit `csv_import_completed` audit
- *      (one per import, standalone-tx) with the full summary payload.
- *      Audit-emit failure is observable via two channels — `logger.error`
- *      writes a stderr line (Vercel Fluid Compute captures it) AND
- *      `eventcreateMetrics.csvImportAuditEmitFailed` increments an
- *      OTel counter so SREs alert on `rate > 0`. The route returns 200
- *      regardless ("DB committed" invariant — rows already persisted).
+ * Pipeline: parse stream → split into 100-row batches → run 3 parallel
+ * workers → each batch = 1 outer tx with per-row SAVEPOINT isolation →
+ * emit `csv_import_completed` audit (standalone tx).
+ *
+ * Time-budget semantics: `timeBudgetMs` (default 55_000) gates "may a
+ * worker start the NEXT batch?" — it does NOT mid-flight cancel a
+ * running batch. Wall-clock can exceed budget by up to one batch's
+ * duration; on breach the use-case returns `{kind:'timeout'}` after
+ * in-flight batches drain. Committed rows persist (idempotent re-upload).
+ *
+ * Spec authority: contracts/csv-import-api.md § Processing semantics;
+ * FR-026 / FR-027 / FR-028 / FR-029 / SC-006; research.md R8.
  *
  * Pure Application — no framework imports (Constitution Principle III).
- * Tx + tenant boundary is owned by Infrastructure via the injected
- * `runInTenantTx` factory; the use-case never touches Drizzle directly.
- *
- * Spec authority:
- *   - FR-026, FR-027 (CSV + webhook equivalence), FR-028 (result
- *     summary), FR-029 (row idempotency), SC-006 (1k rows / <60s).
- *   - contracts/csv-import-api.md § Processing semantics.
- *   - research.md R8 (streaming parse + inline processing + no queue).
- *   - tasks.md T094 line 225: "batched 100 rows per tx; per-row
- *     failure isolation".
  */
 import { randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
@@ -157,16 +110,23 @@ export type ImportCsvOutcome =
       readonly errorCsvAvailable: boolean;
       readonly summary: ImportSummary;
       /**
-       * F6.1 (Round 2 — silent-failure-hunter I-4): `true` when the
-       * `csv_import_records` row was successfully persisted (placeholder
-       * INSERT or CR-5 recovery INSERT). `false` when BOTH the
-       * placeholder and recovery INSERT failed — the rows committed
-       * are still safe, but admins quoting `recordId` to support will
-       * not find a matching history row. The UI surface SHOULD degrade
-       * the recordId chip / hide the "view history" link when this is
-       * `false`.
+       * `true` when the `csv_import_records` row was successfully
+       * persisted (placeholder INSERT or CR-5 recovery INSERT). `false`
+       * when BOTH the placeholder and recovery INSERT failed — the
+       * rows committed are still safe, but admins quoting `recordId`
+       * to support will not find a matching history row. The UI surface
+       * SHOULD degrade the recordId chip / hide the "view history"
+       * link when this is `false`.
        */
       readonly historyPersisted: boolean;
+      /**
+       * silent-failure I-10 (R1 R2): `true` when the per-import
+       * `csv_import_completed` audit row was written. `false` when
+       * the standalone-tx emit failed — DB side effects committed
+       * but the audit trail is incomplete for THIS import. UI should
+       * surface a degraded audit-trail chip.
+       */
+      readonly auditCompletionEmitted: boolean;
     }
   | {
       readonly kind: 'invalid_header';
@@ -178,17 +138,18 @@ export type ImportCsvOutcome =
       readonly recordId: CsvImportRecordId;
       readonly sourceFormat: CsvAdapterMode;
       /**
-       * TYPE-D4 (Round 1 — type-design-analyzer): carry partial summary
-       * + errorCsvAvailable on the timeout path so admins are not blind
-       * to which rows committed. The DB-side `csv_import_records` row
-       * IS updated with `outcome='timeout'` + partial counts; this
-       * field exposes the same data to the route handler before US5
-       * history page ships.
+       * Carry partial summary + errorCsvAvailable on the timeout path
+       * so admins are not blind to which rows committed. The DB-side
+       * `csv_import_records` row IS updated with `outcome='timeout'` +
+       * partial counts; this field exposes the same data to the route
+       * handler.
        */
       readonly summary: ImportSummary;
       readonly errorCsvAvailable: boolean;
       /** See `completed.historyPersisted`. Same semantics. */
       readonly historyPersisted: boolean;
+      /** See `completed.auditCompletionEmitted`. Same semantics. */
+      readonly auditCompletionEmitted: boolean;
     }
   | {
       /**
@@ -303,11 +264,12 @@ export interface ImportCsvTxScopedPorts extends ProcessAttendeeInTxPorts {
    * receives a fresh set of tx-scoped ports bound to the savepoint.
    *
    * Implementation note: Drizzle's `tx.transaction(...)` creates a
-   * SAVEPOINT when called inside an existing transaction (per Drizzle
-   * docs § Transactions / nested). Per Postgres semantics, SET LOCAL
-   * propagates through savepoints — the outer tx's
-   * `app.current_tenant` GUC remains active inside the savepoint, so
-   * RLS continues to enforce tenant isolation.
+   * SAVEPOINT when called inside an existing transaction. Per Postgres
+   * semantics, SET LOCAL propagates through savepoints — the outer
+   * tx's `app.current_tenant` GUC remains active inside the savepoint,
+   * so RLS continues to enforce tenant isolation. This is regression-
+   * pinned by tests/integration/events/csv-savepoint-isolation.test.ts
+   * which asserts the GUC propagation end-to-end on live Neon.
    */
   readonly runRowInSavepoint: <T>(
     fn: (spPorts: ImportCsvTxScopedPorts) => Promise<T>,
@@ -957,17 +919,13 @@ async function processBatch(
     );
     // Parallel fan-out (vs serial `await` loop) — 100x faster forensic
     // emit on N=100-row batches. `safeEmitRowFailed` swallows internal
-    // errors so `Promise.allSettled` is defensive; `Promise.all` would
-    // also work today, kept as `allSettled` in case the internal
-    // swallow is later refactored away.
-    // The filter callback's positional index `i` is the position in
-    // `dbRows` — which is ALSO the index into `tentativeOutcomes` by
-    // construction (filled in the inner loop at line ~420:
-    // `tentativeOutcomes[i] = await processOneRowInSavepoint(dbRows[i]...)`).
+    // errors, but we still inspect `Promise.allSettled` results so a
+    // future refactor that removes the internal swallow doesn't drop
+    // signal silently (silent-failure I-8 close).
     // Skip emit when a row already emitted via its savepoint catch —
     // otherwise SRE dashboards over-count and forensic reviewers see
     // contradictory failureStage narratives for the same rowNumber.
-    await Promise.allSettled(
+    const fanOutResults = await Promise.allSettled(
       dbRows
         .filter((_dbRow, i) => tentativeOutcomes[i]?.kind !== 'row_failed')
         .map(({ row }) =>
@@ -980,6 +938,18 @@ async function processBatch(
           ),
         ),
     );
+    for (const r of fanOutResults) {
+      if (r.status === 'rejected') {
+        logger.error(
+          {
+            event: 'f6_csv_batch_fan_out_rejected',
+            tenantId: input.tenantId,
+            err: r.reason instanceof Error ? r.reason.message : String(r.reason),
+          },
+          '[F6] batch-tx-abort fan-out emit rejected — internal swallow regressed; forensic trail at risk',
+        );
+      }
+    }
     for (let i = 0; i < dbRows.length; i++) {
       const { index, row } = dbRows[i]!;
       const tentative = tentativeOutcomes[i];
@@ -1004,13 +974,9 @@ async function processBatch(
 }
 
 /**
- * Record an audit-emit failure (either `Result.err` or thrown exception)
- * to the dedicated `csvImportAuditEmitFailed` counter + a structured
- * `logger.error`. C-2 (Round 1 comment-analyzer): updated for the 6
- * call sites — row-failed × {err, throw}, completed × {err, throw},
- * mismatch-override × {err, throw} (CR-4 Round 1 wired override paths
- * to use this helper instead of inline-duplicated emit + mislabelled
- * 'csv_import_completed' metric label).
+ * Record an audit-emit failure (Result.err OR thrown exception) into
+ * the dedicated csvImportAuditEmitFailed counter + a structured
+ * logger.error so SREs alert on rate>0 without losing forensic context.
  */
 function recordAuditEmitFailure(
   tenantId: TenantId,
@@ -1730,7 +1696,9 @@ export async function importCsv(
   }
   // F6.1 — Phase 4e: emit per-import `csv_import_completed` audit on
   // both completed AND timeout paths with `sourceFormat` extension.
-  await emitImportCompletedAudit({
+  // silent-failure I-10 (R1 R2): capture emit success so the outcome
+  // can surface the audit-trail gap to the UI (degraded chip).
+  const auditCompletionEmitted = await emitImportCompletedAudit({
     deps,
     input,
     summary: {
@@ -1768,6 +1736,7 @@ export async function importCsv(
       },
       errorCsvAvailable,
       historyPersisted,
+      auditCompletionEmitted,
     };
   }
 
@@ -1777,6 +1746,7 @@ export async function importCsv(
     sourceFormat,
     errorCsvAvailable,
     historyPersisted,
+    auditCompletionEmitted,
     summary: {
       rowsTotal,
       rowsProcessed: summary.rowsProcessed,
@@ -1913,7 +1883,10 @@ interface EmitImportCompletedAuditArgs {
 
 async function emitImportCompletedAudit(
   args: EmitImportCompletedAuditArgs,
-): Promise<void> {
+): Promise<boolean> {
+  // silent-failure I-10 (R1 R2): returns true on successful emit, false
+  // on Result.err OR throw. Caller threads into the outcome so the UI
+  // can degrade the audit-trail chip when forensic record is lost.
   const { deps, input, summary, durationMs, timedOut, sourceFormat } = args;
   const completedAuditContext = {
     rowsProcessed: summary.rowsProcessed,
@@ -1953,16 +1926,27 @@ async function emitImportCompletedAudit(
         'csv_import_completed',
         'f6_csv_import_completed_audit_emit_failed',
         '[F6] csv_import_completed audit emit failed — entire-import forensic record lost; DB side effects committed but no audit row exists',
-        { ...completedAuditContext, auditErrKind: result.error.kind },
+        {
+          actorUserId: input.actorUserId,
+          ...completedAuditContext,
+          auditErrKind: result.error.kind,
+        },
       );
+      return false;
     }
+    return true;
   } catch (e) {
     recordAuditEmitFailure(
       input.tenantId,
       'csv_import_completed',
       'f6_csv_import_completed_audit_emit_threw',
       '[F6] csv_import_completed audit emitter threw — entire-import forensic record lost',
-      { ...completedAuditContext, err: e instanceof Error ? e.message : String(e) },
+      {
+        actorUserId: input.actorUserId,
+        ...completedAuditContext,
+        err: e instanceof Error ? e.message : String(e),
+      },
     );
+    return false;
   }
 }

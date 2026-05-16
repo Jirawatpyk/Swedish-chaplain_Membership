@@ -387,7 +387,7 @@ export async function processAttendeeInTx(
   //    via the explicit `TxStageError('event_upsert', ...)` below
   //    because the audit taxonomy doesn't expose a `match_attendee`
   //    enum value. No redundant `reportStage` here — the stage is
-  //    still `event_upsert` from line 323.
+  //    still `event_upsert` from the preceding reportStage call above.
   const matchResult = await attendeeMatcher.match({
     tenantId: input.tenantId,
     attendeeEmail: asAttendeeEmail(input.attendee.email),

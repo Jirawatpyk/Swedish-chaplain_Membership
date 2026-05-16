@@ -100,7 +100,11 @@ export async function GET(
   }
 
   // 5. Dispatch use-case.
-  const sourceIp = parseSourceIp(request);
+  // simplifier M6 (R1 R2): inline one-call XFF parse — first hop +
+  // trim. Empty string when header missing so the audit payload stays
+  // typed as `string` (not nullable); analysts read empty = unknown.
+  const sourceIp =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? '';
   const outcome = await runGenerateErrorCsvSignedUrl({
     tenantSlug,
     actorUserId: asUserId(guard.actorUserId),
@@ -149,9 +153,3 @@ export async function GET(
   }
 }
 
-function parseSourceIp(request: NextRequest): string {
-  const xff = request.headers.get('x-forwarded-for') ?? '';
-  if (xff.length === 0) return '';
-  const first = xff.split(',')[0]?.trim();
-  return first ?? '';
-}

@@ -323,9 +323,21 @@ export async function runGenerateErrorCsvSignedUrl(
           eventcreateMetrics.csvErrorCsvDownloaded(tenantId),
       },
     );
+    // CR-5 / silent-failure I-5 (R1 R2): use-case is typed
+    // `Result<…, never>` so this branch is structurally unreachable.
+    // If a future refactor adds an Err variant, `logger.fatal` emits
+    // the structured event tag + tenant context BEFORE we throw so SREs
+    // can find the regression without a raw stack trace.
     if (!outcome.ok) {
-      // The use-case is typed `Promise<Result<…, never>>` so this is unreachable;
-      // throw to surface the unexpected type-system violation visibly.
+      logger.fatal(
+        {
+          event: 'f6_unreachable_err_branch_in_signed_url_deps',
+          tenantSlug: input.tenantSlug,
+          recordId: input.recordId,
+          outcomeErr: outcome.error,
+        },
+        '[F6.1] type-system invariant violated — runGenerateErrorCsvSignedUrl returned Err on a never-typed channel',
+      );
       throw new Error('runGenerateErrorCsvSignedUrl: unreachable err branch');
     }
     return outcome.value;
@@ -361,6 +373,13 @@ export async function runSweepExpiredErrorCsvBlobs(
     onScanFailed: () => eventcreateMetrics.csvSweepScanFailed(),
   });
   if (!outcome.ok) {
+    logger.fatal(
+      {
+        event: 'f6_unreachable_err_branch_in_sweep_deps',
+        outcomeErr: outcome.error,
+      },
+      '[F6.1] type-system invariant violated — runSweepExpiredErrorCsvBlobs returned Err on a never-typed channel',
+    );
     throw new Error('runSweepExpiredErrorCsvBlobs: unreachable err branch');
   }
   return outcome.value;

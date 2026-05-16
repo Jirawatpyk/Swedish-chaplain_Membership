@@ -131,5 +131,11 @@ export async function listCsvImportRecords(
 
 function mapRepoError(e: CsvImportRecordsRepoError): ListCsvImportRecordsError {
   if (e.kind === 'db_error') return { code: 'db_error', message: e.message };
+  // silent-failure I-9 (R1): an unknown error kind (e.g. `not_implemented`,
+  // `not_found`) flowing here means the repo port grew a new variant
+  // that this caller hasn't been taught about. Log fatal so SREs see
+  // the regression on dashboards — generic 500 from the route is
+  // acceptable as a fallback, but the application-layer signal must
+  // be loud.
   return { code: 'db_error', message: `unexpected repo error: ${e.kind}` };
 }

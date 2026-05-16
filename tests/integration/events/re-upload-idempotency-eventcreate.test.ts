@@ -336,4 +336,112 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     expect(payload['newPaymentStatus']).toBe('paid');
     expect(payload['severity']).toBe('info');
   });
+
+  // test-analyzer I-6 (R1 R2) — Cancellation + state-change interleave.
+  // When the same row carries Status=Cancelled (intendedStateChange=true,
+  // payment_status=refunded) AND a different Notes value vs. the prior
+  // upload (which would otherwise trigger maybeApplyStateChange), the
+  // Cancellation routing wins: the row bypasses the idempotency receipt
+  // and reaches processAttendeeInTx where the FR-018 refund branch
+  // unconditionally flips paid→refunded. The Notes-inferred fork is
+  // shielded (intendedStateChange path doesn't call maybeApplyStateChange).
+  it('I-6: same row Cancelled + Notes change → cancellation wins (refunded), Notes change shielded', async () => {
+    const eventId = randomUUID();
+    const externalId = `event-${eventId.slice(0, 8)}`;
+    await db.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId,
+      source: 'eventcreate',
+      externalId,
+      name: 'Interleave Test',
+      startDate: new Date('2026-05-12T13:00:00Z'),
+      category: null,
+    });
+
+    const buildRow = (status: 'Attending' | 'Cancelled', notes: string): Uint8Array => {
+      const header =
+        'Basic Info,Status,First Name,Last Name,Email,Phone Number,Phone Number Consent,Registration Date,Added Date,Last Updated Date,Attendee Edited Date,Ticket,Guest Of,Checked In,Attendee ID,Order ID,VIP,Notes,Assigned Table,Tags,Company Name,Registration Category,Personal Data Protection Consent,Last Email Sent,Last Email Sent Date,Unsubscribed';
+      const cells = [
+        'Workshop',
+        status,
+        'Inter',
+        'Leave',
+        'interleave@example.test',
+        '',
+        '',
+        '2026-04-12T09:00:00Z',
+        '2026-04-12T09:00:00Z',
+        '2026-04-12T09:00:00Z',
+        '2026-04-12T09:00:00Z',
+        'Standard',
+        '',
+        'No',
+        'interleave-001',
+        'ord-il',
+        'No',
+        notes,
+        '',
+        '',
+        'Inter Co',
+        'Member',
+        '',
+        '',
+        '',
+        'No',
+      ];
+      const row = cells
+        .map((c) => (/[",\r\n]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c))
+        .join(',');
+      return new TextEncoder().encode(`${header}\r\n${row}\r\n`);
+    };
+
+    const selectedEvent = {
+      eventId,
+      externalId,
+      name: 'Interleave Test',
+      startDate: new Date('2026-05-12T13:00:00Z'),
+      category: null,
+    };
+
+    // 1st upload: Attending + Paid → registration row created (paid).
+    const r1 = await runImportCsv({
+      tenantSlug: tenant.ctx.slug,
+      actorUserId: actor.userId,
+      bytes: buildRow('Attending', 'Paid'),
+      selectedEvent,
+      originalFilename: 'interleave-1.csv',
+    });
+    expect(r1.kind).toBe('completed');
+    if (r1.kind !== 'completed') return;
+    expect(r1.summary.rowsProcessed).toBe(1);
+
+    // 2nd upload: Cancelled + Notes='pending' — the Cancellation
+    // signal beats the Notes-inferred state-change. Row flips to
+    // 'refunded' (FR-018), NOT 'pending'.
+    const r2 = await runImportCsv({
+      tenantSlug: tenant.ctx.slug,
+      actorUserId: actor.userId,
+      bytes: buildRow('Cancelled', 'pending'),
+      selectedEvent,
+      originalFilename: 'interleave-2.csv',
+      forceProceed: true,
+    });
+    expect(r2.kind).toBe('completed');
+    if (r2.kind !== 'completed') return;
+
+    const finalReg = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(eventRegistrations)
+        .where(
+          and(
+            eq(eventRegistrations.tenantId, tenant.ctx.slug),
+            eq(eventRegistrations.eventId, eventId),
+          ),
+        ),
+    );
+    expect(finalReg).toHaveLength(1);
+    // Cancellation wins — payment_status is 'refunded', not 'pending'.
+    expect(finalReg[0]?.paymentStatus).toBe('refunded');
+  });
 });

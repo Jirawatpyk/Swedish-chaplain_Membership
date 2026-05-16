@@ -411,6 +411,12 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
       emailLower: string,
     ): Promise<Result<EventRegistrationAggregate | null, RegistrationsRepositoryError>> {
       try {
+        // S-11 (R1 R2 — code-reviewer): deterministic ordering when
+        // duplicates exist on (tenant, event, email_lower). The unique
+        // constraint is on (tenant, event, external_id) — a future bug
+        // where two attendees share an email would otherwise return
+        // ANY matching row non-deterministically. ORDER BY registered_at
+        // then registrationId pins selection to the oldest registration.
         const rows = await executor
           .select()
           .from(eventRegistrations)
@@ -421,6 +427,7 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
               eq(eventRegistrations.attendeeEmailLower, emailLower.toLowerCase()),
             ),
           )
+          .orderBy(asc(eventRegistrations.registeredAt), asc(eventRegistrations.registrationId))
           .limit(1);
         if (rows.length === 0) return ok(null);
         return ok(toAggregate(rows[0]!));

@@ -260,6 +260,33 @@ describe('T036 — CSV import records history (live Neon)', () => {
     expect(result.value.pagination.page).toBe(9999);
     expect(result.value.pagination.totalRecords).toBeGreaterThan(0);
   });
+
+  // test-analyzer I-2 (R1 R2) — Cross-tenant eventIdFilter leak path.
+  // The repo composes (tenantId, eventId) AND-filters at the application
+  // layer. Tenant A passing Tenant B's eventId MUST return zero rows
+  // AND zero totalRecords — `totalRecords > 0` would leak "this eventId
+  // exists somewhere" via timing/count side-channel.
+  it('I-2: cross-tenant eventIdFilter probe → empty rows + totalRecords=0 (no count leak)', async () => {
+    const eventA = await seedEvent(tenantA, 'Iso A2');
+    const eventB = await seedEvent(tenantB, 'Iso B2');
+    await seedImportRecord(tenantA, eventA.eventId, actorA.userId);
+    await seedImportRecord(tenantB, eventB.eventId, actorB.userId);
+    await seedImportRecord(tenantB, eventB.eventId, actorB.userId);
+
+    // Tenant A asks for "imports with eventId = <Tenant B's eventId>"
+    const result = await runListCsvImportRecords({
+      tenantSlug: tenantA.ctx.slug,
+      page: 1,
+      perPage: 100,
+      eventIdFilter: eventB.eventId,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.rows).toHaveLength(0);
+    // Critical: totalRecords MUST be 0 — leaking >0 would tell Tenant A
+    // "this eventId exists in some tenant", a count-side-channel probe.
+    expect(result.value.pagination.totalRecords).toBe(0);
+  });
 });
 
 // Suppress unused warnings via reference.
