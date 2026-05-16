@@ -48,17 +48,23 @@ export default defineConfig({
     // bugs (assertion failures + syntax errors land in <100ms
     // regardless) and absorbs the cold-import variance.
     testTimeout: 30_000,
-    // Staff-review R3 follow-up (2026-05-16): bump hookTimeout from the
-    // vitest default 10s to 30s so beforeAll-based route-module pre-
-    // warm hooks (used in tests/contract/events/admin-events-api +
-    // admin-integration-eventcreate-api to dodge first-test cold-start
-    // timeouts under `pnpm test:coverage` instrumentation) have the
-    // same headroom as test bodies. Cold-start variance for routes
-    // that transitively import Drizzle schemas + tenant context can
-    // reach 15-20s under coverage instrumentation + parallel CPU
-    // contention; 30s leaves comfortable margin without masking real
-    // bugs (genuine setup failures land in <500ms).
-    hookTimeout: 30_000,
+    // Staff-review R3v2 (2026-05-16): hookTimeout was initially bumped
+    // from the vitest default 10s to 30s in commit `21888223` to
+    // support beforeAll-based route-module pre-warm hooks. **R3v2
+    // staff-review identified 30s as INSUFFICIENT** for the slowest
+    // contract files under `pnpm test:coverage` v8 instrumentation:
+    //
+    //   File                              | first-test normal | 2× cov | 3× cov
+    //   csv-import-api.test.ts            |    29.3 s         | 58.6 s |  87.9 s
+    //   csv-import-eventcreate-format.ts  |    23.3 s         | 46.6 s |  69.9 s
+    //
+    // At 29.3 s normal-mode, csv-import-api had a 700 ms safety margin
+    // before the 30 s ceiling — any CPU contention under coverage
+    // overruns it. Bumping to 60_000 covers up to ~2× cold-start (the
+    // realistic worst case in CI parallelism). Fail-fast signal
+    // preserved — genuine setup failures (mock-shape errors, missing
+    // modules) land in <500 ms regardless of ceiling.
+    hookTimeout: 60_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary', 'lcov'],
@@ -399,7 +405,10 @@ export default defineConfig({
           statements: 100,
         },
         'src/modules/events/domain/csv-import-record-id.ts': {
-          // Direct: covered by generate-error-csv-signed-url.test.ts +
+          // Direct: tests/unit/events/csv-import-record-id.test.ts
+          // (13 tests, R3 addition — asCsvImportRecordId throw paths +
+          // tryCsvImportRecordId unknown-type branches). Also covered
+          // transitively by generate-error-csv-signed-url.test.ts +
           // sweep-expired-error-csv-blobs.test.ts (branded type +
           // asCsvImportRecordId producer).
           lines: 100,

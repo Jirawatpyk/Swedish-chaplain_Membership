@@ -16,7 +16,7 @@
  *
  * Turns GREEN: T052 route handler + T043/T047 use-cases land.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { signWebhookBody, makeWebhookPayload } from '../../integration/events/helpers/sign-webhook';
@@ -54,6 +54,15 @@ vi.mock('@/lib/events-webhook-deps', () => ({
   loadTenantWebhookConfig: (...args: unknown[]) => loadTenantWebhookConfigMock(...args),
   resolveTenantFromSlug: (...args: unknown[]) => resolveTenantFromSlugMock(...args),
 }));
+
+// Staff-review R3v2 (2026-05-16): pre-warm the webhook route module
+// — file total 19.3s in normal mode (19 tests, HMAC + Drizzle imports
+// transitively). Under `pnpm test:coverage` v8 instrumentation the
+// first test's cold-import would race the 30s testTimeout in parallel
+// runs. `beforeAll` amortises into the 60s hookTimeout.
+beforeAll(async () => {
+  await loadRoute();
+});
 
 beforeEach(() => {
   // Sensible defaults so most happy-path tests don't have to repeat

@@ -19,7 +19,7 @@
  *
  * Mocks at module-boundary so no DB, no Upstash, no audit emit is hit.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // ---------------------------------------------------------------------------
@@ -85,6 +85,15 @@ const MEMBER_SESSION = {
   session: { id: 'sess-member', userId: 'mem' } as unknown,
   user: { id: 'mem', role: 'member' as const, email: 'mem@test' },
 };
+
+// Staff-review R3v2 (2026-05-16): pre-warm the create-event route
+// module — file total 20.7s in normal mode (17 tests). Under
+// `pnpm test:coverage` v8 instrumentation the first test's
+// cold-import would race the 30s testTimeout in parallel runs.
+// `beforeAll` amortises into the 60s hookTimeout (vitest.config.ts).
+beforeAll(async () => {
+  await loadRoute();
+});
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });

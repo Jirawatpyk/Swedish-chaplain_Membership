@@ -260,6 +260,17 @@ For each row above:
 #
 # Prereq: env loaded — either `.env.local` is populated locally or
 # run `vercel env pull .env.local` first.
+#
+# Staff-review L-R3v2-7 (2026-05-16): VERIFY that VERCEL_BLOB_API_URL
+# is NOT set in `.env.local` before running this script in production.
+# That env var is an @vercel/blob SDK test-only override that redirects
+# del() to an arbitrary host. `vercel env pull` will NOT include it
+# (it's not a project env var), so a clean pull is safe. But a stale
+# `.env.local` from a local dev session that tested against a Vercel
+# Blob emulator could leak the production BLOB_READ_WRITE_TOKEN to
+# that emulator if the script is run with the override still active.
+# Quick check: `grep VERCEL_BLOB_API_URL .env.local` MUST return zero
+# lines before invocation.
 
 pnpm tsx scripts/erase-error-blob.ts "<error_csv_blob_url>"
 

@@ -3,6 +3,16 @@
  *
  * Manual DSR-time erasure of a single F6.1 error-CSV Vercel Blob.
  *
+ * **Architecture note (staff-review L-R3v2-2 2026-05-16)**: this script
+ * operates OUTSIDE `runInTenant` and bypasses the application's
+ * tenant-context guard. That is INTENTIONAL — DSR cascades are
+ * admin-driven, the Blob URL is the canonical capability for a single
+ * specific tenant's data, and there is no tenant-scoped DB write here
+ * (the companion `UPDATE csv_import_records` SQL in the runbook is run
+ * separately under tenant scope). Equivalent to the daily sweep cron
+ * which also uses an admin-bypass repo for the bulk scan + per-row
+ * tenant-scoped DB write.
+ *
  * Closes staff-review H-NEW-1 (2026-05-16): the prior runbook used
  * `vercel blob del <url>` CLI syntax which (a) is not the correct
  * subcommand (`delete`, not `del`), and (b) the `--token` flag refers

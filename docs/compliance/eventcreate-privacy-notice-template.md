@@ -177,11 +177,11 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > ดูได้ที่ edpb.europa.eu) สิทธินี้มีอยู่อย่างเป็นอิสระจากการ
 > ติดต่อเจ้าหน้าที่คุ้มครองข้อมูลของหอการค้าด้านบน
 >
-> **การตัดสินใจอัตโนมัติ**: ไม่มีการตัดสินใจอัตโนมัติหรือการทำ
-> Profiling ที่ส่งผลทางกฎหมายหรือผลกระทบที่มีนัยสำคัญต่อท่าน การ
-> จับคู่ผู้เข้าร่วมงานกับบันทึกสมาชิก (ที่มีอยู่แล้ว) จะอยู่ภายใต้
-> การตรวจสอบของผู้ดูแลระบบของหอการค้า และสามารถแก้ไขการเชื่อมโยง
-> ได้ตามคำขอ
+> **การตัดสินใจอัตโนมัติ**: ไม่มีการตัดสินใจอัตโนมัติหรือการจัดทำ
+> โปรไฟล์ (Profiling) ที่ส่งผลทางกฎหมายหรือผลกระทบที่มีนัยสำคัญต่อ
+> ท่าน การจับคู่ผู้เข้าร่วมงานกับบันทึกสมาชิก (ที่มีอยู่แล้ว) จะอยู่
+> ภายใต้การตรวจสอบของผู้ดูแลระบบของหอการค้า และสามารถแก้ไขการ
+> เชื่อมโยงได้ตามคำขอ
 >
 > **ฐานทางกฎหมาย**: หอการค้าประมวลผลข้อมูลของท่านโดยอาศัยฐาน
 > "ประโยชน์โดยชอบด้วยกฎหมาย" (PDPA §24(5); GDPR Art. 6(1)(f)) — เพื่อ
@@ -274,12 +274,11 @@ counsel can sign off on the wording BEFORE Phase 5 ships the wizard UI.
 > **[DPO email]**.
 >
 > Du har också rätt att lämna in ett klagomål till din nationella
-> tillsynsmyndighet för dataskydd — för EU-bosatta: din
-> medlemsstats dataskyddsmyndighet (i Sverige:
-> Integritetsskyddsmyndigheten / IMY, www.imy.se); för
-> Thailand-bosatta: Personal Data Protection Committee
-> (www.pdpc.or.th). Denna rätt finns oberoende av kontakt med
-> Handelskammarens dataskyddsombud ovan.
+> dataskyddsmyndighet — för EU-bosatta: din medlemsstats
+> dataskyddsmyndighet (i Sverige: Integritetsskyddsmyndigheten /
+> IMY, www.imy.se); för Thailand-bosatta: Personal Data Protection
+> Committee (www.pdpc.or.th). Denna rätt finns oberoende av
+> kontakt med Handelskammarens dataskyddsombud ovan.
 >
 > **Automatiserat beslutsfattande**: Inget automatiserat
 > beslutsfattande eller profilering med rättsliga eller på liknande

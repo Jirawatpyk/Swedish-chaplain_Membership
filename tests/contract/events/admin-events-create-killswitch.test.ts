@@ -6,7 +6,7 @@
  * this together with the happy-path suite makes subsequent tests see the
  * kill-switch-off env, breaking 429/500 assertions.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 // R2 (Round 2 — pr-test-analyzer C1): the kill-switch test must mock an
@@ -61,8 +61,18 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+// Staff-review R3v2 (2026-05-16): pre-warm the route module + bump
+// testTimeout. The file has a single test whose 26.8s file-total IS
+// the cold-import cost (only 1 it() body). Under `pnpm test:coverage`
+// 2× instrumentation = ~54s; 3× = ~80s. Pre-warm into the 60s
+// hookTimeout (vitest.config.ts) + bump testTimeout to 90s to cover
+// the worst-case CI run.
+beforeAll(async () => {
+  await import('@/app/api/admin/events/route');
+});
+
 describe('Round 1 CR-1 — kill-switch isolation', () => {
-  vi.setConfig({ testTimeout: 60_000 });
+  vi.setConfig({ testTimeout: 90_000 });
 
   it('returns 404 when FEATURE_F6_EVENTCREATE is false (even with admin session)', async () => {
     // R2 fix: stub an authenticated admin session so the ONLY 404
