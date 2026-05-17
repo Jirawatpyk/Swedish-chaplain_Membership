@@ -8,7 +8,19 @@
  * `drizzle/migrations/0001_audit_log_append_only.sql`. Defense in depth.
  *
  * `summary` is truncated to AUDIT_SUMMARY_MAX_LENGTH (500 chars) before
- * insert per spec FR-012 U1.
+ * insert per spec FR-012 FR-012.
+ *
+ * **Never-throws contract** — both `append` and `appendInTx` catch any
+ * DB error and degrade to `logger.error` + `authMetrics.auditMissing`.
+ * The append-only audit row is diagnostic; the upstream mutation has
+ * already committed (or, for `appendInTx`, the surrounding caller-owned
+ * tx will still commit if the audit insert is the LAST step and we
+ * swallow). Constitution Principle VIII authorises this trade-off:
+ * losing an audit row to a transient Neon hiccup is preferable to
+ * masking a successful user-facing action behind a 500.
+ *
+ * Tests pin both behaviours:
+ *   tests/unit/auth/infrastructure/audit-repo-never-throws.test.ts
  */
 import { db, type DbTx } from '@/lib/db';
 import { auditLog } from './schema';
@@ -18,6 +30,8 @@ import {
   type AuditEventType,
 } from '@/modules/auth/domain/audit-event';
 import type { UserId } from '@/modules/auth/domain/branded';
+import { logger } from '@/lib/logger';
+import { authMetrics } from '@/lib/metrics';
 
 export interface AppendAuditEvent {
   readonly eventType: AuditEventType;
@@ -76,10 +90,34 @@ function buildAuditRow(event: AppendAuditEvent) {
 // implementation. Matches the rest of the codebase's adapter style.
 export const auditRepo: AuditRepo = {
   async append(event: AppendAuditEvent): Promise<void> {
-    await db.insert(auditLog).values(buildAuditRow(event));
+    try {
+      await db.insert(auditLog).values(buildAuditRow(event));
+    } catch (error) {
+      // Honor the never-throws contract — log + metric + swallow.
+      // The upstream mutation has already committed; surfacing a 500
+      // here would mask a successful user-facing action.
+      logger.error(
+        { err: error, eventType: event.eventType, requestId: event.requestId },
+        'audit.append.failed',
+      );
+      authMetrics.auditMissing(event.eventType);
+    }
   },
 
   async appendInTx(tx, event) {
-    await tx.insert(auditLog).values(buildAuditRow(event));
+    try {
+      await tx.insert(auditLog).values(buildAuditRow(event));
+    } catch (error) {
+      // Same swallow policy as `append`. The caller's tx is still
+      // valid; the audit row is the only thing lost. For Path C use
+      // cases that REQUIRE atomic audit (`create-user.ts`), callers
+      // should still wrap the use case in `db.transaction` and rely
+      // on the row insert being the final tx step before commit.
+      logger.error(
+        { err: error, eventType: event.eventType, requestId: event.requestId },
+        'audit.appendInTx.failed',
+      );
+      authMetrics.auditMissing(event.eventType);
+    }
   },
 };

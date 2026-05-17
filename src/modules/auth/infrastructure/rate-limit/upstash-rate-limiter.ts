@@ -141,8 +141,18 @@ class UpstashRateLimiter implements RateLimiter {
         fellBack: false,
       };
     } catch (error) {
+      // A2 — log the bucket KIND only, never the full key. Call-site
+      // keys embed secrets in the value (`signin:email:<email>`,
+      // `heartbeat:session:<sessionId>`, `change-pw:user:<userId>`)
+      // and pino's path-based redaction cannot scrub them — the
+      // sensitive content is inside the string value of a non-redacted
+      // field name. Replace with a discriminator that captures the
+      // bucket kind for diagnostics without leaking the per-user secret.
+      // CLAUDE.md § Secrets & confidential data forbids raw session
+      // IDs / emails / user IDs in logs.
+      const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
       logger.warn(
-        { err: error, key, max, windowSeconds, fallback: true },
+        { err: error, keyKind, max, windowSeconds, fallback: true },
         'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();
