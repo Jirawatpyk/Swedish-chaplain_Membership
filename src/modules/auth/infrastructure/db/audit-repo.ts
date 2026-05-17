@@ -24,12 +24,15 @@
  * transaction, the tx enters `ABORT` state. Every subsequent
  * statement AND the COMMIT itself will fail. We swallow the JS-level
  * throw locally so it does NOT bubble to the caller, but the
- * surrounding tx is poisoned. Callers MUST place the audit emit as
- * the LAST statement before the caller's COMMIT — any later
- * statement WILL fail. Verified by ordering in create-user.ts,
- * redeem-invite.ts, reset-password.ts (audit row is always the
- * final tx-step). The audit loss happens together with a full
- * roll-back of the surrounding state-change, which is a safe
+ * surrounding tx is poisoned. Callers MUST place audit emit(s) at
+ * the TAIL of the tx — no non-audit statement may follow. Verified
+ * by ordering in create-user.ts and redeem-invite.ts (single
+ * trailing emit). I3 (Round 4): reset-password.ts emits two
+ * back-to-back at the tail (`password_reset_completed` +
+ * conditional `concurrent_sessions_revoked`); if the first one
+ * poisons the tx, the second one's INSERT also fails on ABORT
+ * state and is also swallowed (double `auditMissing` metric). In
+ * every case the surrounding state-change is fully rolled back —
  * fail-closed outcome consistent with Constitution Principle VIII.
  *
  * Tests pin both behaviours:
