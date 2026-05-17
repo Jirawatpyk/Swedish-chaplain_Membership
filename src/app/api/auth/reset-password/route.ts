@@ -10,7 +10,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { resetPassword, asTokenId } from '@/modules/auth';
+import { resetPassword, asResetTokenId } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const result = await resetPassword({
-    token: asTokenId(parsed.data.token),
+    token: asResetTokenId(parsed.data.token),
     newPassword: parsed.data.newPassword,
     sourceIp: getClientIp(request),
     requestId,

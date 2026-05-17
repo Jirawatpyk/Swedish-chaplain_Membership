@@ -19,7 +19,7 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
  
-import { isInvitationValid, asTokenId } from '@/modules/auth';
+import { isInvitationValid, asInvitationTokenId } from '@/modules/auth';
 
 /**
  * Invitation redemption page (T136) at URL `/invite/[token]`.
@@ -45,7 +45,9 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
   let email: string | null = null;
   let tokenDead = false;
   try {
-    const invitation = await tokenRepo.findInvitationById(asTokenId(token));
+    const invitation = await tokenRepo.findInvitationById(
+      asInvitationTokenId(token),
+    );
     if (!invitation || !isInvitationValid(invitation, new Date())) {
       tokenDead = true;
     } else {

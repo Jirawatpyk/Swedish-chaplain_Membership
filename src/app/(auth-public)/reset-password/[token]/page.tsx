@@ -17,7 +17,7 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 // decision below and is the documented escape hatch.
  
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
-import { isResetTokenValid, asTokenId } from '@/modules/auth';
+import { isResetTokenValid, asResetTokenId } from '@/modules/auth';
 
 /**
  * Reset-password page (T107) at URL `/reset-password/[token]`.
@@ -55,7 +55,7 @@ export default async function ResetPasswordPage({
   // tokens (missing, already-consumed, expired past TTL).
   let tokenDead = false;
   try {
-    const record = await tokenRepo.findResetById(asTokenId(token));
+    const record = await tokenRepo.findResetById(asResetTokenId(token));
     if (!record || !isResetTokenValid(record, new Date())) {
       tokenDead = true;
     }

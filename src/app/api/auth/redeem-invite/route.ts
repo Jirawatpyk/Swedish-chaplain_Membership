@@ -8,7 +8,7 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { redeemInvite, asTokenId } from '@/modules/auth';
+import { redeemInvite, asInvitationTokenId } from '@/modules/auth';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const result = await redeemInvite({
-    token: asTokenId(parsed.data.token),
+    token: asInvitationTokenId(parsed.data.token),
     password: parsed.data.password,
     displayName: parsed.data.displayName ?? null,
     sourceIp: getClientIp(request),

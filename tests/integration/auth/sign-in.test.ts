@@ -51,7 +51,10 @@ describe('integration: sign-in happy path', () => {
       .where(eq(sessions.userId, testUser.userId));
 
     expect(sessionRows).toHaveLength(1);
-    expect(sessionRows[0]?.id).toBe(result.value.session.id);
+    // E3 — DB row id is sha256(plaintext); Session.id returned by the
+    // repo is the plaintext (used as the cookie value).
+    const { sha256Hex } = await import('@/lib/crypto');
+    expect(sessionRows[0]?.id).toBe(sha256Hex(result.value.session.id));
     expect(sessionRows[0]?.sourceIp).toBe('203.0.113.10');
 
     // 2. last_sign_in_at updated on the user row

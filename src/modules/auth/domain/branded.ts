@@ -13,7 +13,47 @@ export type Brand<T, B extends string> = T & { readonly [brand]: B };
 
 export type UserId = Brand<string, 'UserId'>;
 export type SessionId = Brand<string, 'SessionId'>;
+/**
+ * @deprecated E1 (post-ship 2026-05-17) — use the per-purpose brands
+ * `ResetTokenId`, `InvitationTokenId`, `EmailVerificationTokenHash`,
+ * or `EmailRevertTokenHash`. The generic `TokenId` survives only
+ * because Domain `Invitation` + `PasswordResetToken` aggregates still
+ * carry a single `id` field — switching those to discriminated unions
+ * is a separate refactor. New code should NOT introduce raw `TokenId`
+ * boundaries; use the per-purpose brand at the route handler and let
+ * the Application layer narrow.
+ */
 export type TokenId = Brand<string, 'TokenId'>;
+/**
+ * Plaintext password-reset token id (64-hex). Returned to the caller
+ * by `forgotPassword` (delivered in the reset email URL) and accepted
+ * back from the user via `POST /api/auth/reset-password`. The DB
+ * stores `sha256(plaintext)` (E2) so a row read alone cannot grant
+ * reset-link capability.
+ */
+export type ResetTokenId = Brand<string, 'ResetTokenId'>;
+/**
+ * Plaintext invitation token id (64-hex). Returned to the inviter
+ * (delivered in the invitation email URL) and accepted back from the
+ * invitee via `POST /api/auth/redeem-invite`. Same hash-at-rest
+ * pattern as `ResetTokenId` (E2).
+ */
+export type InvitationTokenId = Brand<string, 'InvitationTokenId'>;
+/**
+ * Hash of an F3 email-change verification token (64-hex). The brand
+ * exists for symmetry with `EmailRevertTokenHash` — F3 routes
+ * compute the hash inline today; the brand surfaces intent at the
+ * type level.
+ */
+export type EmailVerificationTokenHash = Brand<
+  string,
+  'EmailVerificationTokenHash'
+>;
+/**
+ * Hash of an F3 email-change revert token (64-hex). Same shape and
+ * rationale as `EmailVerificationTokenHash`.
+ */
+export type EmailRevertTokenHash = Brand<string, 'EmailRevertTokenHash'>;
 export type AuditEventId = Brand<string, 'AuditEventId'>;
 export type EmailAddress = Brand<string, 'EmailAddress'>;
 
@@ -39,6 +79,24 @@ export function asSessionId(value: string): SessionId {
 
 export function asTokenId(value: string): TokenId {
   return value as TokenId;
+}
+
+export function asResetTokenId(value: string): ResetTokenId {
+  return value as ResetTokenId;
+}
+
+export function asInvitationTokenId(value: string): InvitationTokenId {
+  return value as InvitationTokenId;
+}
+
+export function asEmailVerificationTokenHash(
+  value: string,
+): EmailVerificationTokenHash {
+  return value as EmailVerificationTokenHash;
+}
+
+export function asEmailRevertTokenHash(value: string): EmailRevertTokenHash {
+  return value as EmailRevertTokenHash;
 }
 
 export function asAuditEventId(value: string): AuditEventId {

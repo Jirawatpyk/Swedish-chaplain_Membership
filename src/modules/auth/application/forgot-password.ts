@@ -154,14 +154,22 @@ export async function forgotPassword(
   const now = deps.now();
 
   // 4. Invalidate existing unconsumed tokens and create a fresh one.
+  //    E2 — `createReset` now returns `{ plaintext, token }`. The
+  //    plaintext is delivered in the email URL; the persisted row
+  //    stores `sha256(plaintext)` as id. We only log the hash via
+  //    `token.id` (safe for audit correlation).
   await deps.tokens.invalidateAllUnconsumedForUser(user.id, now);
-  const token = await deps.tokens.createReset({ userId: user.id, now });
+  const { plaintext, token } = await deps.tokens.createReset({
+    userId: user.id,
+    now,
+  });
+  void token; // referenced by audit emit below; keep for clarity.
 
   // 5. Send the email. Failure is logged but does NOT change the HTTP
   //    response (enumeration safety).
   const built = deps.buildResetPasswordEmail({
     toEmail: user.email,
-    token: token.id,
+    token: plaintext,
     locale: input.locale,
   });
   const sendResult = await deps.email.send({

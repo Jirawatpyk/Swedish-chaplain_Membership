@@ -36,7 +36,11 @@ import {
 } from '@/modules/auth/application/reset-password';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
-import { asPasswordHash, asTokenId } from '@/modules/auth/domain/branded';
+import {
+  asPasswordHash,
+  asResetTokenId,
+  type ResetTokenId,
+} from '@/modules/auth/domain/branded';
 import { ok } from '@/lib/result';
 import {
   createActiveTestUser,
@@ -57,7 +61,43 @@ const unlimitedLimiter = {
     remaining: 99,
     reset: Date.now() + 60_000,
   }),
+  peek: async () => ({
+    success: true,
+    limit: 100,
+    remaining: 99,
+    reset: Date.now() + 60_000,
+  }),
 };
+
+/**
+ * E2 — `forgotPassword` does not return the plaintext token (it goes
+ * into the email URL, which we stub). For integration tests that need
+ * the plaintext to drive a subsequent `resetPassword(plaintext)` call,
+ * we wire a `buildResetPasswordEmail` spy that captures the plaintext
+ * passed by the use case. This is a test-only seam — production code
+ * passes the plaintext directly to `buildResetPasswordEmail` which
+ * embeds it in the URL.
+ */
+function makeCapturingEmailBuilder() {
+  let capturedPlaintext: string | null = null;
+  const builder = (input: { token: string; toEmail: string; locale?: string }) => {
+    capturedPlaintext = input.token;
+    return {
+      subject: 'test',
+      html: `<a href="https://example.test/${input.token}">reset</a>`,
+      text: `reset: ${input.token}`,
+    };
+  };
+  return {
+    builder,
+    getPlaintext: (): ResetTokenId => {
+      if (!capturedPlaintext) {
+        throw new Error('plaintext not captured — was buildResetPasswordEmail called?');
+      }
+      return asResetTokenId(capturedPlaintext);
+    },
+  };
+}
 
 describe('integration: forgot-password → reset-password happy path', () => {
   let user: TestUser;
@@ -83,6 +123,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
   it('active user receives a token and reset completes end-to-end', async () => {
     const requestId = `it-reset-${Date.now()}`;
+    const capture = makeCapturingEmailBuilder();
 
     // 1. Request reset
     const forgotResult = await forgotPassword(
@@ -95,11 +136,12 @@ describe('integration: forgot-password → reset-password happy path', () => {
         ...defaultForgotPasswordDeps,
         email: stubEmailSender,
         limiter: unlimitedLimiter as never,
+        buildResetPasswordEmail: capture.builder as never,
       },
     );
     expect(forgotResult.ok).toBe(true);
 
-    // 2. Token row exists
+    // 2. Token row exists (id = sha256(plaintext) per E2)
     const tokenRows = await db
       .select()
       .from(passwordResetTokens)
@@ -122,11 +164,12 @@ describe('integration: forgot-password → reset-password happy path', () => {
       );
     expect(reqRows.length).toBeGreaterThanOrEqual(1);
 
-    // 4. Redeem token with a strong password
+    // 4. Redeem token with a strong password — pass the plaintext
+    //    captured from the email builder (E2 hash-at-rest model).
     const newPassword = `Reset-${Date.now()}-Xq!2026`;
     const resetRes = await resetPassword(
       {
-        token: asTokenId(freshToken.id),
+        token: capture.getPlaintext(),
         newPassword,
         sourceIp: '203.0.113.9',
         requestId: `${requestId}-redeem`,
@@ -187,6 +230,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
   it('replay: consumed token cannot be reused', async () => {
     const requestId = `it-replay-${Date.now()}`;
+    const capture = makeCapturingEmailBuilder();
 
     const forgotResult = await forgotPassword(
       {
@@ -198,21 +242,16 @@ describe('integration: forgot-password → reset-password happy path', () => {
         ...defaultForgotPasswordDeps,
         email: stubEmailSender,
         limiter: unlimitedLimiter as never,
+        buildResetPasswordEmail: capture.builder as never,
       },
     );
     expect(forgotResult.ok).toBe(true);
 
-    const tokenRows = await db
-      .select()
-      .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.userId, user.userId))
-      .orderBy(passwordResetTokens.createdAt);
-    const freshest = tokenRows[tokenRows.length - 1];
-    if (!freshest) throw new Error('no token row');
+    const plaintext = capture.getPlaintext();
 
     const first = await resetPassword(
       {
-        token: asTokenId(freshest.id),
+        token: plaintext,
         newPassword: `First-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.9',
         requestId: `${requestId}-first`,
@@ -223,7 +262,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
     const second = await resetPassword(
       {
-        token: asTokenId(freshest.id),
+        token: plaintext,
         newPassword: `Second-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.9',
         requestId: `${requestId}-second`,
@@ -241,7 +280,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
     // e.g. if a crash left a row behind) does not collide with this
     // insert. Tokens are 64 hex chars; we concatenate a timestamp +
     // a random half and pad to 64.
-    const expiredId = `${Date.now().toString(16)}${Math.random()
+    const plaintextExpired = `${Date.now().toString(16)}${Math.random()
       .toString(16)
       .slice(2)
       .replace(/[^0-9a-f]/g, '0')}`
@@ -249,8 +288,12 @@ describe('integration: forgot-password → reset-password happy path', () => {
       .padEnd(64, '0')
       .slice(0, 64);
     const pastDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // 2 h ago
+    // E2 — DB primary key is sha256(plaintext); insert the hash so
+    // the repo can find it via `findResetById(plaintext)` which
+    // hashes incoming before SQL.
+    const { sha256Hex } = await import('@/lib/crypto');
     await db.insert(passwordResetTokens).values({
-      id: expiredId,
+      id: sha256Hex(plaintextExpired),
       userId: user.userId,
       createdAt: pastDate,
       expiresAt: new Date(pastDate.getTime() + 60 * 60 * 1000), // +1 h → still past
@@ -258,7 +301,7 @@ describe('integration: forgot-password → reset-password happy path', () => {
 
     const result = await resetPassword(
       {
-        token: asTokenId(expiredId),
+        token: asResetTokenId(plaintextExpired),
         newPassword: `Expired-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.9',
         requestId: `it-expired-${Date.now()}`,

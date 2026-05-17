@@ -5,11 +5,21 @@
  * characters — same shape as session ids. Collision risk is negligible
  * (≈ 2⁻¹²⁸).
  *
- * Both the reset-token half (T097, spec US3) and the invitation half
- * (T121, spec US4) ship inside F1 so that the token generation +
- * persistence primitives are shared. `createInvitation`,
- * `findInvitationById`, and `markInvitationConsumed` power the invite
- * lifecycle (spec FR-009 / FR-010).
+ * **E2 (post-ship 2026-05-17) — hash-at-rest** (mirrors F3 email-change
+ * token pattern): the PLAINTEXT 64-hex value is returned to the caller
+ * exactly once on create (for delivery in the email URL). The DB stores
+ * `sha256Hex(plaintext)` as the row primary key. All lookup methods
+ * (`findResetById`, `findInvitationById`, `mark*Consumed`) accept the
+ * plaintext from the user-supplied URL and hash internally before the
+ * SQL `WHERE id = $hash` clause. Consequence: a DB read alone (SQLi,
+ * leaked backup, support-engineer read access) does NOT yield usable
+ * reset-link or invitation-link capability.
+ *
+ * Migration impact at deploy: migration 0159 TRUNCATEs the
+ * `password_reset_tokens` table and unconsumed `invitations` rows.
+ * Live reset links delivered before deploy stop working; pending
+ * invitations must be re-sent by an admin. Acceptable at SweCham
+ * scale (≤1 admin + ~131 members; one-time operational cost).
  */
 import { and, eq, isNull } from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
@@ -20,8 +30,12 @@ import {
   type PasswordResetTokenRow,
 } from './schema';
 import {
+  asInvitationTokenId,
+  asResetTokenId,
   asTokenId,
   asUserId,
+  type InvitationTokenId,
+  type ResetTokenId,
   type TokenId,
   type UserId,
 } from '@/modules/auth/domain/branded';
@@ -32,9 +46,14 @@ import {
   type Invitation,
   type PasswordResetToken,
 } from '@/modules/auth/domain/token';
+import { sha256Hex } from '@/lib/crypto';
 
 function toDomainReset(row: PasswordResetTokenRow): PasswordResetToken {
   return {
+    // Note: row.id is the hash (E2). Domain `id` field continues to
+    // carry whatever the DB row's id is — callers MUST NOT treat it
+    // as a URL value. The plaintext is returned separately by
+    // `createReset` for that purpose.
     id: asTokenId(row.id),
     userId: asUserId(row.userId),
     createdAt: row.createdAt,
@@ -56,26 +75,70 @@ function toDomainInvitation(row: InvitationRow): Invitation {
 }
 
 /**
- * Generate a cryptographically-random 64-hex token id. Uses Web Crypto
- * so the function is Edge-safe (even though this file also imports
- * Drizzle — callers from Edge can still use the generator via a
- * re-export if needed).
+ * Generate a cryptographically-random 64-hex plaintext token. Uses Web
+ * Crypto so the function is Edge-safe (even though this file also
+ * imports Drizzle — callers from Edge can still use the generator via
+ * a re-export if needed). Internal to this module; callers receive
+ * the appropriately-branded type via `createReset` / `createInvitation`.
  */
-export function generateTokenId(): TokenId {
+function generatePlaintextToken(): string {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return asTokenId(hex);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Legacy alias kept for backwards compatibility with the F1 invite
+ * route which generates a token id outside the repo. New code should
+ * use `createReset` / `createInvitation` which generate + hash + return
+ * the plaintext as part of one operation.
+ *
+ * @deprecated Pre-E2 callers used this to mint a TokenId and pass it
+ * to a separate persistence step. The hash-at-rest model needs the
+ * plaintext NOT to be persisted, so the caller cannot mint outside the
+ * repo. If a test or migration needs this, prefer the in-repo helpers.
+ */
+export function generateTokenId(): TokenId {
+  return asTokenId(generatePlaintextToken());
+}
+
+export interface CreateResetResult {
+  /**
+   * Plaintext token id — delivered to the user via the reset-password
+   * email URL. The repo NEVER persists this; callers MUST treat it as
+   * a write-once value.
+   */
+  readonly plaintext: ResetTokenId;
+  /**
+   * Domain entity reflecting the persisted row. `token.id` is the
+   * hash (NOT the plaintext) — safe to log and to use as an
+   * audit-trail correlation key.
+   */
+  readonly token: PasswordResetToken;
+}
+
+export interface CreateInvitationResult {
+  readonly plaintext: InvitationTokenId;
+  readonly invitation: Invitation;
 }
 
 export interface TokenRepo {
-  createReset(args: { userId: UserId; now: Date }): Promise<PasswordResetToken>;
-  findResetById(id: TokenId): Promise<PasswordResetToken | null>;
+  /** Mint a reset token. Returns plaintext (for email) + Domain entity. */
+  createReset(args: { userId: UserId; now: Date }): Promise<CreateResetResult>;
+  /** Look up a reset token by its user-supplied plaintext id (hashed internally). */
+  findResetById(plaintext: ResetTokenId): Promise<PasswordResetToken | null>;
   /** Tx-scoped variant of `findResetById` (Path C — A4). */
-  findResetByIdInTx(tx: DbTx, id: TokenId): Promise<PasswordResetToken | null>;
-  markResetConsumed(id: TokenId, now: Date): Promise<void>;
+  findResetByIdInTx(
+    tx: DbTx,
+    plaintext: ResetTokenId,
+  ): Promise<PasswordResetToken | null>;
+  markResetConsumed(plaintext: ResetTokenId, now: Date): Promise<void>;
   /** Tx-scoped variant of `markResetConsumed` (Path C — A4). */
-  markResetConsumedInTx(tx: DbTx, id: TokenId, now: Date): Promise<void>;
+  markResetConsumedInTx(
+    tx: DbTx,
+    plaintext: ResetTokenId,
+    now: Date,
+  ): Promise<void>;
   /**
    * Mark every still-unconsumed reset token for a user as consumed.
    * Used by `forgotPassword` to invalidate a stale token before issuing
@@ -97,12 +160,11 @@ export interface TokenRepo {
     invitedByUserId: UserId;
     intendedRole: Role;
     now: Date;
-  }): Promise<Invitation>;
+  }): Promise<CreateInvitationResult>;
   /**
    * Tx-scoped variant of `createInvitation`. Used by `createUser` so
    * the invitation insert commits atomically with the matching user +
-   * outbox rows — pre-Path-C these lived in 3 separate connections,
-   * which created the W1 audit-atomicity regression class.
+   * outbox rows.
    */
   createInvitationInTx(
     tx: DbTx,
@@ -112,13 +174,25 @@ export interface TokenRepo {
       intendedRole: Role;
       now: Date;
     },
-  ): Promise<Invitation>;
-  findInvitationById(id: TokenId): Promise<Invitation | null>;
+  ): Promise<CreateInvitationResult>;
+  findInvitationById(
+    plaintext: InvitationTokenId,
+  ): Promise<Invitation | null>;
   /** Tx-scoped variant of `findInvitationById` (Path C — A3). */
-  findInvitationByIdInTx(tx: DbTx, id: TokenId): Promise<Invitation | null>;
-  markInvitationConsumed(id: TokenId, now: Date): Promise<void>;
+  findInvitationByIdInTx(
+    tx: DbTx,
+    plaintext: InvitationTokenId,
+  ): Promise<Invitation | null>;
+  markInvitationConsumed(
+    plaintext: InvitationTokenId,
+    now: Date,
+  ): Promise<void>;
   /** Tx-scoped variant of `markInvitationConsumed` (Path C — A3). */
-  markInvitationConsumedInTx(tx: DbTx, id: TokenId, now: Date): Promise<void>;
+  markInvitationConsumedInTx(
+    tx: DbTx,
+    plaintext: InvitationTokenId,
+    now: Date,
+  ): Promise<void>;
 }
 
 // Object-literal implementation — no class wrapper; see audit-repo.ts
@@ -127,13 +201,14 @@ export const tokenRepo: TokenRepo = {
   async createReset(args: {
     userId: UserId;
     now: Date;
-  }): Promise<PasswordResetToken> {
-    const id = generateTokenId();
+  }): Promise<CreateResetResult> {
+    const plaintext = generatePlaintextToken();
+    const hash = sha256Hex(plaintext);
     const expiresAt = new Date(args.now.getTime() + RESET_TOKEN_TTL_MS);
     const rows = await db
       .insert(passwordResetTokens)
       .values({
-        id,
+        id: hash,
         userId: args.userId,
         createdAt: args.now,
         expiresAt,
@@ -141,47 +216,47 @@ export const tokenRepo: TokenRepo = {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('token-repo.createReset: no row returned');
-    return toDomainReset(row);
+    return {
+      plaintext: asResetTokenId(plaintext),
+      token: toDomainReset(row),
+    };
   },
 
-  async findResetById(id: TokenId): Promise<PasswordResetToken | null> {
+  async findResetById(plaintext) {
     const rows = await db
       .select()
       .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.id, id))
+      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)))
       .limit(1);
     const row = rows[0];
     return row ? toDomainReset(row) : null;
   },
 
-  async findResetByIdInTx(tx, id) {
+  async findResetByIdInTx(tx, plaintext) {
     const rows = await tx
       .select()
       .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.id, id))
+      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)))
       .limit(1);
     const row = rows[0];
     return row ? toDomainReset(row) : null;
   },
 
-  async markResetConsumed(id: TokenId, now: Date): Promise<void> {
+  async markResetConsumed(plaintext, now) {
     await db
       .update(passwordResetTokens)
       .set({ consumedAt: now })
-      .where(eq(passwordResetTokens.id, id));
+      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)));
   },
 
-  async markResetConsumedInTx(tx, id, now) {
+  async markResetConsumedInTx(tx, plaintext, now) {
     await tx
       .update(passwordResetTokens)
       .set({ consumedAt: now })
-      .where(eq(passwordResetTokens.id, id));
+      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)));
   },
 
-  async invalidateAllUnconsumedForUser(
-    userId: UserId,
-    now: Date,
-  ): Promise<number> {
+  async invalidateAllUnconsumedForUser(userId, now) {
     const result = await db
       .update(passwordResetTokens)
       .set({ consumedAt: now })
@@ -209,18 +284,14 @@ export const tokenRepo: TokenRepo = {
     return result.length;
   },
 
-  async createInvitation(args: {
-    userId: UserId;
-    invitedByUserId: UserId;
-    intendedRole: Role;
-    now: Date;
-  }): Promise<Invitation> {
-    const id = generateTokenId();
+  async createInvitation(args) {
+    const plaintext = generatePlaintextToken();
+    const hash = sha256Hex(plaintext);
     const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
     const rows = await db
       .insert(invitations)
       .values({
-        id,
+        id: hash,
         userId: args.userId,
         invitedByUserId: args.invitedByUserId,
         intendedRole: args.intendedRole,
@@ -230,16 +301,20 @@ export const tokenRepo: TokenRepo = {
       .returning();
     const row = rows[0];
     if (!row) throw new Error('token-repo.createInvitation: no row returned');
-    return toDomainInvitation(row);
+    return {
+      plaintext: asInvitationTokenId(plaintext),
+      invitation: toDomainInvitation(row),
+    };
   },
 
   async createInvitationInTx(tx, args) {
-    const id = generateTokenId();
+    const plaintext = generatePlaintextToken();
+    const hash = sha256Hex(plaintext);
     const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
     const rows = await tx
       .insert(invitations)
       .values({
-        id,
+        id: hash,
         userId: args.userId,
         invitedByUserId: args.invitedByUserId,
         intendedRole: args.intendedRole,
@@ -250,40 +325,43 @@ export const tokenRepo: TokenRepo = {
     const row = rows[0];
     if (!row)
       throw new Error('token-repo.createInvitationInTx: no row returned');
-    return toDomainInvitation(row);
+    return {
+      plaintext: asInvitationTokenId(plaintext),
+      invitation: toDomainInvitation(row),
+    };
   },
 
-  async findInvitationById(id: TokenId): Promise<Invitation | null> {
+  async findInvitationById(plaintext) {
     const rows = await db
       .select()
       .from(invitations)
-      .where(eq(invitations.id, id))
+      .where(eq(invitations.id, sha256Hex(plaintext)))
       .limit(1);
     const row = rows[0];
     return row ? toDomainInvitation(row) : null;
   },
 
-  async findInvitationByIdInTx(tx, id) {
+  async findInvitationByIdInTx(tx, plaintext) {
     const rows = await tx
       .select()
       .from(invitations)
-      .where(eq(invitations.id, id))
+      .where(eq(invitations.id, sha256Hex(plaintext)))
       .limit(1);
     const row = rows[0];
     return row ? toDomainInvitation(row) : null;
   },
 
-  async markInvitationConsumed(id: TokenId, now: Date): Promise<void> {
+  async markInvitationConsumed(plaintext, now) {
     await db
       .update(invitations)
       .set({ consumedAt: now })
-      .where(eq(invitations.id, id));
+      .where(eq(invitations.id, sha256Hex(plaintext)));
   },
 
-  async markInvitationConsumedInTx(tx, id, now) {
+  async markInvitationConsumedInTx(tx, plaintext, now) {
     await tx
       .update(invitations)
       .set({ consumedAt: now })
-      .where(eq(invitations.id, id));
+      .where(eq(invitations.id, sha256Hex(plaintext)));
   },
 };

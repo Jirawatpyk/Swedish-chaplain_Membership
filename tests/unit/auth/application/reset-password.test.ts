@@ -52,6 +52,7 @@ import type { ResetPasswordDeps } from '@/modules/auth/application/reset-passwor
 import type { UserAccount } from '@/modules/auth/domain/user';
 import {
   asUserId,
+  asResetTokenId,
   asTokenId,
   asPasswordHash,
   asEmailAddress,
@@ -70,6 +71,7 @@ import { authMetrics } from '@/lib/metrics';
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-rp-001');
 const TOKEN_ID = asTokenId('token-reset-abc-123');
+const PLAINTEXT_TOKEN = asResetTokenId('token-reset-abc-123');
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash-for-reset');
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
@@ -104,7 +106,9 @@ function makeToken(
 }
 
 const BASE_INPUT = {
-  token: TOKEN_ID,
+  // E1 — input.token is plaintext (ResetTokenId); repo hashes
+  // internally. Use cases only see the plaintext brand.
+  token: PLAINTEXT_TOKEN,
   newPassword: 'BrandNewPass!789',
   sourceIp: '2.3.4.5',
   requestId: 'req-rp-001',

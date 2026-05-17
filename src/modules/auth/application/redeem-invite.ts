@@ -32,7 +32,7 @@ import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { authMetrics } from '@/lib/metrics';
 import { db } from '@/lib/db';
-import type { TokenId } from '@/modules/auth/domain/branded';
+import type { InvitationTokenId } from '@/modules/auth/domain/branded';
 import {
   classifyTokenFailure,
   isInvitationValid,
@@ -61,10 +61,11 @@ import { defaultRedeemInviteDeps } from '@/lib/auth-deps';
 
 export interface RedeemInviteInput {
   /**
-   * Branded token id. Route handler applies `asTokenId()` after
-   * zod parsing, so the use case never sees a raw string.
+   * Branded plaintext invitation token id. Route handler applies
+   * `asInvitationTokenId()` after zod parsing. E2 — the repo hashes
+   * this before any SQL lookup; the use case never sees the hash.
    */
-  readonly token: TokenId;
+  readonly token: InvitationTokenId;
   readonly password: string;
   readonly displayName?: string | null;
   readonly sourceIp: string;

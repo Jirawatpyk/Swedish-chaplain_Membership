@@ -43,7 +43,7 @@ import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { authMetrics } from '@/lib/metrics';
 import { db } from '@/lib/db';
-import type { TokenId } from '@/modules/auth/domain/branded';
+import type { ResetTokenId } from '@/modules/auth/domain/branded';
 import {
   classifyTokenFailure,
   isResetTokenValid,
@@ -72,12 +72,12 @@ import { portalSignInPath } from '@/lib/portal-paths';
 
 export interface ResetPasswordInput {
   /**
-   * Branded token id. The route handler applies the brand via
-   * `asTokenId()` right after the zod-validated body is parsed, so
-   * the use case never sees a raw `string` and does not need to
-   * re-wrap it.
+   * Branded plaintext reset-token id. The route handler applies
+   * `asResetTokenId()` right after the zod-validated body is parsed,
+   * so the use case never sees a raw `string`. E2 — the repo hashes
+   * this before any SQL lookup; the use case never sees the hash.
    */
-  readonly token: TokenId;
+  readonly token: ResetTokenId;
   readonly newPassword: string;
   readonly sourceIp: string;
   readonly requestId: string;

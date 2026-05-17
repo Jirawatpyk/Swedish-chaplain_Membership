@@ -101,7 +101,12 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     createInvitation: vi.fn(),
     createInvitationInTx: vi
       .fn()
-      .mockResolvedValue({ id: INVITATION_ID, userId: PENDING_USER.id }),
+      .mockResolvedValue({
+        // E2 — createInvitationInTx now returns { plaintext, invitation }
+        // shape. Tests don't care about the hash so we reuse the same id.
+        plaintext: INVITATION_ID,
+        invitation: { id: INVITATION_ID, userId: PENDING_USER.id },
+      }),
     findInvitationById: vi.fn(),
     markInvitationConsumed: vi.fn(),
     createReset: vi.fn(),

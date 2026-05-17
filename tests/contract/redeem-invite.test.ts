@@ -20,6 +20,7 @@ const setCookieMock = vi.fn(async (id: string) => { void id; });
 vi.mock('@/modules/auth', () => ({
   redeemInvite: (...args: unknown[]) => redeemInviteMock(...args),
   asTokenId: (s: string) => s,
+  asInvitationTokenId: (s: string) => s,
 }));
 
 vi.mock('@/lib/auth-cookies', () => ({

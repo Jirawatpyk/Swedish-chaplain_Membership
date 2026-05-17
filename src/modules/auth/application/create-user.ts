@@ -46,7 +46,12 @@ import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db, type DbTx } from '@/lib/db';
-import { asEmailAddress, type TokenId, type UserId } from '@/modules/auth/domain/branded';
+import {
+  asEmailAddress,
+  type InvitationTokenId,
+  type TokenId,
+  type UserId,
+} from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
@@ -108,7 +113,13 @@ export type CreateUserError =
  */
 export interface EnqueueInvitationRequest {
   readonly toEmail: string;
-  readonly token: TokenId;
+  /**
+   * Plaintext invitation token id — composed into the activation URL
+   * delivered by email. The DB stores `sha256(plaintext)` as the
+   * invitation row id (E2 hash-at-rest); this field is the value the
+   * user receives + types back into the redeem-invite endpoint.
+   */
+  readonly token: InvitationTokenId;
   readonly role: Role;
   readonly locale?: EmailLocale | undefined;
   /**
@@ -186,20 +197,27 @@ export async function createUser(
         displayName: input.displayName ?? null,
       });
 
-      // 3. Create invitation.
-      const invitation = await deps.tokens.createInvitationInTx(tx, {
-        userId: user.id,
-        invitedByUserId: input.actorUserId,
-        intendedRole: input.role,
-        now,
-      });
+      // 3. Create invitation. E2 — `createInvitationInTx` returns
+      //    `{ plaintext, invitation }`. Plaintext goes into the
+      //    outbox payload (the email URL); the persisted row stores
+      //    `sha256(plaintext)` as id. `invitation.id` is the hash —
+      //    safe for return as `invitationId` (audit correlation only).
+      const { plaintext, invitation } = await deps.tokens.createInvitationInTx(
+        tx,
+        {
+          userId: user.id,
+          invitedByUserId: input.actorUserId,
+          intendedRole: input.role,
+          now,
+        },
+      );
 
       // 4. Enqueue outbox — atomic with steps 1-3. If this returns err
       //    the throw triggers rollback, so users + invitations inserts
       //    are undone without needing a compensating delete path.
       const enqueueResult = await deps.enqueueInvitationInTx(tx, {
         toEmail: user.email,
-        token: invitation.id,
+        token: plaintext,
         role: input.role,
         locale: input.locale,
         tenantId: input.tenantId,
@@ -232,6 +250,9 @@ export async function createUser(
       });
 
       return { user, invitationId: invitation.id };
+      // ↑ `invitation.id` is the hash; safe for caller use (audit
+      //   correlation + admin "Invitation #abcd" rendering). NEVER
+      //   exposed via API responses or URLs.
     });
 
     // observability.md § 4.3 — invitation volume by role. Post-commit

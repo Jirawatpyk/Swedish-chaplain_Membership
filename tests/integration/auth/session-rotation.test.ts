@@ -62,12 +62,15 @@ describe('integration: session id rotation on sign-in', () => {
 
     // Both session rows should be present — F1 does NOT revoke other
     // sessions on sign-in (that would defeat multi-device use).
+    // E3 — DB row ids are sha256(plaintext); the values returned by
+    // `signIn` are plaintexts (the cookie values).
+    const { sha256Hex } = await import('@/lib/crypto');
     const rows = await db
       .select({ id: sessions.id })
       .from(sessions)
       .where(eq(sessions.userId, testUser.userId));
     const ids = rows.map((r) => r.id);
-    expect(ids).toContain(firstId);
-    expect(ids).toContain(secondId);
+    expect(ids).toContain(sha256Hex(firstId));
+    expect(ids).toContain(sha256Hex(secondId));
   });
 });
