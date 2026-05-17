@@ -3,6 +3,7 @@
     "signIn": {
       "title": "Logga in",
       "cardDescription": "Personalportal",
+      "memberCardDescription": "Medlemsportal",
       "emailLabel": "E-post",
       "passwordLabel": "Lösenord",
       "submit": "Logga in",

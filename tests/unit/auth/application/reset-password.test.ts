@@ -123,8 +123,7 @@ function makeDeps(
       findById: vi.fn().mockResolvedValue(makeUser()),
       // *InTx variants used inside the tx
       setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
-      clearLockInTx: vi.fn().mockResolvedValue(undefined),
-      clearFailedCountInTx: vi.fn().mockResolvedValue(undefined),
+      clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
     } as unknown as ResetPasswordDeps['users'],
     tokens: {
       findResetById: vi.fn().mockResolvedValue(makeToken()),
@@ -273,8 +272,7 @@ describe('resetPassword use case', () => {
       users: {
         findById: vi.fn().mockResolvedValue(null),
         setPasswordHashInTx: vi.fn(),
-        clearLockInTx: vi.fn(),
-        clearFailedCountInTx: vi.fn(),
+        clearLockAndFailedCountInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -289,8 +287,7 @@ describe('resetPassword use case', () => {
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ status: 'disabled' })),
         setPasswordHashInTx: vi.fn(),
-        clearLockInTx: vi.fn(),
-        clearFailedCountInTx: vi.fn(),
+        clearLockAndFailedCountInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -305,8 +302,7 @@ describe('resetPassword use case', () => {
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ status: 'pending' })),
         setPasswordHashInTx: vi.fn(),
-        clearLockInTx: vi.fn(),
-        clearFailedCountInTx: vi.fn(),
+        clearLockAndFailedCountInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -420,8 +416,7 @@ describe('resetPassword use case', () => {
         setPasswordHashInTx: vi.fn().mockImplementation(async () => {
           callOrder.push('setPasswordHashInTx');
         }),
-        clearLockInTx: vi.fn().mockResolvedValue(undefined),
-        clearFailedCountInTx: vi.fn().mockResolvedValue(undefined),
+        clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
     });
     await resetPassword(BASE_INPUT, deps);
@@ -433,17 +428,14 @@ describe('resetPassword use case', () => {
     );
   });
 
-  it('calls clearLockInTx and clearFailedCountInTx on success', async () => {
+  it('calls clearLockAndFailedCountInTx on success (G8 merge)', async () => {
     const deps = makeDeps();
     await resetPassword(BASE_INPUT, deps);
-    expect(deps.users.clearLockInTx).toHaveBeenCalledWith(
+    expect(deps.users.clearLockAndFailedCountInTx).toHaveBeenCalledWith(
       expect.anything(),
       USER_ID,
     );
-    expect(deps.users.clearFailedCountInTx).toHaveBeenCalledWith(
-      expect.anything(),
-      USER_ID,
-    );
+    expect(deps.users.clearLockAndFailedCountInTx).toHaveBeenCalledTimes(1);
   });
 
   it('calls invalidateAllUnconsumedForUserInTx with the correct userId', async () => {
@@ -462,8 +454,7 @@ describe('resetPassword use case', () => {
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ role: 'admin' })),
         setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
-        clearLockInTx: vi.fn().mockResolvedValue(undefined),
-        clearFailedCountInTx: vi.fn().mockResolvedValue(undefined),
+        clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -479,8 +470,7 @@ describe('resetPassword use case', () => {
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ role: 'manager' })),
         setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
-        clearLockInTx: vi.fn().mockResolvedValue(undefined),
-        clearFailedCountInTx: vi.fn().mockResolvedValue(undefined),
+        clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);

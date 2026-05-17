@@ -154,4 +154,24 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  // G4 (Round 2): the B3 outer try/catch must surface infra throws as
+  // a structured 500 with requestId — never as opaque Next.js HTML.
+  // Pin the contract so a future refactor that swallows the catch (or
+  // forgets requestId) fails CI.
+  it('500 with requestId when the use case throws an infra error', async () => {
+    redeemInviteMock.mockRejectedValueOnce(
+      new Error('neon: connection terminated unexpectedly'),
+    );
+
+    const { POST } = await import('@/app/api/auth/redeem-invite/route');
+    const res = await POST(
+      makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('server-error');
+    expect(body.requestId).toBe('test-req-id');
+  });
 });

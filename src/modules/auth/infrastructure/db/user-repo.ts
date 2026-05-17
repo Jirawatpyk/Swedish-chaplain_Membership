@@ -126,10 +126,14 @@ export interface UserRepo {
   activate(id: UserId, now: Date): Promise<void>;
   /** Tx-scoped variant of `activate` (Path C — A3). */
   activateInTx(tx: DbTx, id: UserId, now: Date): Promise<void>;
-  /** Tx-scoped variant of `clearLock` (Path C — A4). */
-  clearLockInTx(tx: DbTx, id: UserId): Promise<void>;
-  /** Tx-scoped variant of `clearFailedCount` (Path C — A4). */
-  clearFailedCountInTx(tx: DbTx, id: UserId): Promise<void>;
+  /**
+   * Tx-scoped clear of BOTH `failed_sign_in_count` and `locked_until`
+   * in a single UPDATE (Path C — A4). G8 (Round 2): merged from the
+   * formerly-separate `clearLockInTx` + `clearFailedCountInTx` which
+   * wrote byte-identical SET clauses; the back-to-back call from
+   * reset-password issued two redundant UPDATEs per password reset.
+   */
+  clearLockAndFailedCountInTx(tx: DbTx, id: UserId): Promise<void>;
   /** Transition active → disabled. */
   disable(id: UserId): Promise<void>;
   /** Transition disabled → active. */
@@ -196,10 +200,17 @@ export const userRepo: UserRepo = {
   },
 
   async findByIdInTx(tx, id) {
+    // G1 (Round 2, 2026-05-17) — `.for('update')` honours the
+    // interface JSDoc claim "locks the row" so a concurrent disable
+    // / role-change between the read and the subsequent UPDATE
+    // inside the tx blocks (or sees the post-commit state on retry).
+    // Pre-G1 the bare SELECT did NOT take a row lock and the
+    // documented race window was open.
     const rows = await tx
       .select()
       .from(users)
       .where(eq(users.id, id))
+      .for('update')
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
@@ -340,17 +351,10 @@ export const userRepo: UserRepo = {
       .where(eq(users.id, id));
   },
 
-  async clearLockInTx(tx, id) {
+  async clearLockAndFailedCountInTx(tx, id) {
     await tx
       .update(users)
       .set({ lockedUntil: null, failedSignInCount: 0 })
-      .where(eq(users.id, id));
-  },
-
-  async clearFailedCountInTx(tx, id) {
-    await tx
-      .update(users)
-      .set({ failedSignInCount: 0, lockedUntil: null })
       .where(eq(users.id, id));
   },
 

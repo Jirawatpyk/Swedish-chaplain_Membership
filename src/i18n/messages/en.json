@@ -3,6 +3,7 @@
     "signIn": {
       "title": "Sign in",
       "cardDescription": "Staff portal",
+      "memberCardDescription": "Member portal",
       "emailLabel": "Email",
       "passwordLabel": "Password",
       "submit": "Sign in",

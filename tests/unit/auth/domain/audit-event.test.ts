@@ -55,6 +55,16 @@ describe('AUDIT_EVENT_TYPES', () => {
     expect(AUDIT_EVENT_TYPES).toContain('payment_processor_retrieve_failed');
     expect(AUDIT_EVENT_TYPES).toContain('payment_invoice_not_found');
   });
+
+  it('includes F1 post-ship B5 events (migration 0158, G7 enumeration)', () => {
+    // Pre-G7 the count-only assertion at the top of this file could
+    // pass even if one of these names was renamed and a new one added
+    // — the count would stay 30. Enumerating the names here makes a
+    // rename or removal a CI failure.
+    expect(AUDIT_EVENT_TYPES).toContain('password_change_failed');
+    expect(AUDIT_EVENT_TYPES).toContain('password_reset_email_failed');
+    expect(AUDIT_EVENT_TYPES).toContain('password_malformed_hash_detected');
+  });
 });
 
 describe('AUDIT_SUMMARY_MAX_LENGTH', () => {

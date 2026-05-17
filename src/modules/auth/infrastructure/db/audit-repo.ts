@@ -108,11 +108,20 @@ export const auditRepo: AuditRepo = {
     try {
       await tx.insert(auditLog).values(buildAuditRow(event));
     } catch (error) {
-      // Same swallow policy as `append`. The caller's tx is still
-      // valid; the audit row is the only thing lost. For Path C use
-      // cases that REQUIRE atomic audit (`create-user.ts`), callers
-      // should still wrap the use case in `db.transaction` and rely
-      // on the row insert being the final tx step before commit.
+      // G2 (Round 2, 2026-05-17) — Postgres semantics: when ANY
+      // statement throws inside an active transaction, the tx
+      // enters `ABORT` state. Every subsequent statement AND the
+      // COMMIT itself will fail with
+      //   "ERROR: current transaction is aborted, commands ignored
+      //   until end of transaction block".
+      // We swallow the throw locally so it doesn't bubble to the
+      // caller, but the underlying tx is poisoned. Therefore:
+      //   appendInTx MUST be the LAST statement before the caller's
+      //   COMMIT — any later statement (mutation, metric write, or
+      //   another audit) will fail.
+      // For Path C use cases that REQUIRE atomic audit
+      // (create-user.ts, redeem-invite.ts:212, reset-password.ts:215),
+      // this constraint is honored by ordering: audit-emit goes last.
       logger.error(
         { err: error, eventType: event.eventType, requestId: event.requestId },
         'audit.appendInTx.failed',

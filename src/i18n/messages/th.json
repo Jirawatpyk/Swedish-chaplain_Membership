@@ -3,6 +3,7 @@
     "signIn": {
       "title": "เข้าสู่ระบบ",
       "cardDescription": "พอร์ทัลเจ้าหน้าที่",
+      "memberCardDescription": "พอร์ทัลสมาชิก",
       "emailLabel": "อีเมล",
       "passwordLabel": "รหัสผ่าน",
       "submit": "เข้าสู่ระบบ",

@@ -65,9 +65,7 @@ export default async function MemberSignInPage({
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>
-              Thailand-Swedish Chamber of Commerce — member portal
-            </CardDescription>
+            <CardDescription>{t('memberCardDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             <SignInForm portal="member" returnTo={validatedReturnTo} />

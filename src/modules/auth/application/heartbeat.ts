@@ -30,6 +30,7 @@ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo'
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { defaultHeartbeatDeps } from '@/lib/auth-deps';
+import { sha256Hex } from '@/lib/crypto';
 
 // --- Public types -------------------------------------------------------------
 
@@ -67,8 +68,14 @@ export async function heartbeat(
   input: HeartbeatInput,
   deps: HeartbeatDeps = defaultHeartbeatDeps,
 ): Promise<Result<HeartbeatSuccess, HeartbeatError>> {
+  // F1 (Round 2 C1, 2026-05-17) — hash the session id before composing
+  // the rate-limit key. Pre-fix the plaintext bearer credential was
+  // stored verbatim inside Upstash Redis as part of the bucket key,
+  // shifting (not closing) the E3 hash-at-rest blast radius from
+  // Postgres to Upstash. Hashing here matches the E3 contract: the
+  // plaintext lives only in the user's browser cookie.
   const rl = await deps.limiter.check(
-    `heartbeat:session:${input.sessionId}`,
+    `heartbeat:session:${sha256Hex(input.sessionId)}`,
     RATE_LIMIT.max,
     RATE_LIMIT.windowSeconds,
   );

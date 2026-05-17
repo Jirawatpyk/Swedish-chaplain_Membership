@@ -74,9 +74,12 @@ describe('heartbeat use case', () => {
     // updateLastSeen called exactly once with the test session id + NOW
     expect(stubs._updateLastSeen).toHaveBeenCalledTimes(1);
     expect(stubs._updateLastSeen).toHaveBeenCalledWith(TEST_SESSION_ID, NOW);
-    // Rate-limit key is namespaced on the session id (per-tab budget)
+    // Rate-limit key is namespaced on the SHA-256 of the session id
+    // (F1 Round 2 C1 — was plaintext, switched to hash to prevent the
+    // plaintext bearer leaking into Upstash Redis).
+    const { sha256Hex } = await import('@/lib/crypto');
     expect(stubs._check).toHaveBeenCalledWith(
-      `heartbeat:session:${TEST_SESSION_ID}`,
+      `heartbeat:session:${sha256Hex(TEST_SESSION_ID)}`,
       60,
       60,
     );

@@ -17,7 +17,7 @@
  *        a) `markResetConsumedInTx` (consume-then-set, W-01 ordering)
  *        b) `invalidateAllUnconsumedForUserInTx` (single-live-token)
  *        c) `setPasswordHashInTx`
- *        d) `clearLockInTx` + `clearFailedCountInTx`
+ *        d) `clearLockAndFailedCountInTx` (single UPDATE — G8)
  *        e) `deleteByUserIdInTx` (revoke all sessions)
  *        f) `appendInTx('password_reset_completed')` + optional
  *           `appendInTx('concurrent_sessions_revoked')`
@@ -194,10 +194,11 @@ export async function resetPassword(
       await deps.tokens.markResetConsumedInTx(tx, input.token, now);
       await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, now);
 
-      // 6b. Persist new password + clear lockout state.
+      // 6b. Persist new password + clear lockout state (G8 — single
+      //     UPDATE for lockedUntil+failedSignInCount; pre-G8 the two
+      //     calls below issued byte-identical UPDATEs back-to-back).
       await deps.users.setPasswordHashInTx(tx, user.id, hashed, now);
-      await deps.users.clearLockInTx(tx, user.id);
-      await deps.users.clearFailedCountInTx(tx, user.id);
+      await deps.users.clearLockAndFailedCountInTx(tx, user.id);
 
       // 6c. Revoke every existing session for this user.
       const killedInTx = await deps.sessions.deleteByUserIdInTx(tx, user.id);

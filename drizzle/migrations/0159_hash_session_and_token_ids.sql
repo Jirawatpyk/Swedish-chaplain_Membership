@@ -50,8 +50,49 @@
 --   - `SELECT count(*) FROM sessions;` should be 0 immediately after.
 --   - `SELECT count(*) FROM password_reset_tokens WHERE consumed_at IS NULL;` should be 0.
 --   - `SELECT count(*) FROM invitations WHERE consumed_at IS NULL;` should be 0.
+--   - `SELECT * FROM audit_log WHERE request_id = 'migration-0159' ORDER BY timestamp;`
+--     should show one `session_forcibly_ended` row per revoked session +
+--     two summary rows for the token/invitation invalidations.
+--
+-- AUDIT TRAIL (F4 Round 2 HIGH2):
+-- Per Constitution Principle VIII (Reliability) + Principle X (Append-only
+-- audit), every user-facing state change MUST have an audit row. The
+-- TRUNCATE below is a bulk state change affecting every live user; we
+-- emit one `session_forcibly_ended` row per revoked session BEFORE the
+-- TRUNCATE so the audit log retains forensic evidence of the deploy-day
+-- rotation. Without these rows, a future "why was I signed out on
+-- 2026-05-17?" enquiry has no trail (pino logs roll off in 30 days).
 
 BEGIN;
+
+-- Forensic audit BEFORE bulk invalidation. Six months from now, an
+-- admin querying "what happened on the deploy day?" sees a clean trail.
+INSERT INTO audit_log (event_type, actor_user_id, target_user_id, summary, request_id)
+  SELECT
+    'session_forcibly_ended'::audit_event_type,
+    'system:bootstrap',
+    user_id,
+    'migration 0159 — session revoked for hash-at-rest rotation',
+    'migration-0159'
+  FROM sessions;
+
+-- One summary row per bulk-invalidation surface, for cases where
+-- per-row enumeration would be expensive or noisy. `target_user_id`
+-- NULL because the row references the bulk action, not a single user.
+INSERT INTO audit_log (event_type, actor_user_id, summary, request_id)
+  VALUES
+    (
+      'password_reset_failed'::audit_event_type,
+      'system:bootstrap',
+      'migration 0159 — all pending reset tokens invalidated (hash-at-rest rotation)',
+      'migration-0159'
+    ),
+    (
+      'invitation_redemption_failed'::audit_event_type,
+      'system:bootstrap',
+      'migration 0159 — all unconsumed invitations deleted (hash-at-rest rotation)',
+      'migration-0159'
+    );
 
 TRUNCATE TABLE sessions;
 TRUNCATE TABLE password_reset_tokens;

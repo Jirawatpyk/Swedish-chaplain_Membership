@@ -41,6 +41,7 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { defaultChangePasswordDeps } from '@/lib/auth-deps';
@@ -122,11 +123,36 @@ export async function changePassword(
     return err({ code: 'wrong-current-password' });
   }
 
-  // 3. Verify current password
-  const currentOk = await deps.hasher.verify(
-    found.passwordHash,
-    input.currentPassword,
-  );
+  // 3. Verify current password. F3 (Round 2 HIGH1, 2026-05-17) — catch
+  //    MalformedHashError separately so a DB-corruption incident does
+  //    NOT bubble as an opaque 500 with no audit row. Pre-fix the
+  //    B4 catch existed only in sign-in; change-password silently
+  //    propagated the throw past the wrong-current branch.
+  let currentOk: boolean;
+  try {
+    currentOk = await deps.hasher.verify(
+      found.passwordHash,
+      input.currentPassword,
+    );
+  } catch (verifyError) {
+    if (verifyError instanceof MalformedHashError) {
+      await deps.audit.append({
+        eventType: 'password_malformed_hash_detected',
+        actorUserId: input.user.id,
+        targetUserId: input.user.id,
+        sourceIp: input.sourceIp,
+        summary:
+          'stored password hash is malformed — user cannot change password until reset',
+        requestId: input.requestId,
+      });
+      // Surface as wrong-current so the UI route is consistent with
+      // sign-in's malformed-hash UX. The user should then use
+      // /forgot-password which writes a fresh hash (E2 hash-at-rest
+      // path) overwriting the corrupt row.
+      return err({ code: 'wrong-current-password' });
+    }
+    throw verifyError;
+  }
   if (!currentOk) {
     // 3a. NOW consume the bucket (B2). Wrong-current is the only
     //     event that should count against the user's brute-force
