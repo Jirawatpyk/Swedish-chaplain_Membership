@@ -101,12 +101,33 @@ curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
 
 **Why**: per analyze finding U-1, if T122 composition root swap is forgotten, F8 stays on stub forever. Code-level test (Wave 3 `f8-port-wiring.test.ts`) verifies in CI; this gate confirms the SAME code-path is active in production.
 
-**Protocol**:
-1. After `FEATURE_F6_EVENTCREATE=true` is deployed to production.
-2. Seed (via existing F3 admin UI or scripts) 1 member with event attendance recorded via webhook ingest (or CSV import) — at least 2 attendances in the last 90 days.
-3. Trigger F8 at-risk-score recomputation via `pnpm tsx scripts/recompute-at-risk-score.ts --memberId <id>` OR via the F8 admin cron coordinator.
-4. Query the F8 at-risk-score table for that member; assert `eventAttendanceFactor.skipped !== true` (means the bridge IS connected).
-5. Record evidence (member-id + factor-value + timestamp) in retrospective.md § F8 Live-Wired Verification.
+**Protocol** (R9 automation — replaces prior 5-step manual procedure):
+
+**Layer 1 — Automated wiring verification (REQUIRED, 5 seconds)**:
+```bash
+# On staging or prod with FEATURE_F6_EVENTCREATE=true in env:
+pnpm verify:f6-f8
+```
+Expected output: `✅ PASS — port behaviour matches flag (REAL ADAPTER)` + `isAvailable(): true`.
+Exit code 0 confirms:
+- Composition root (`renewals-deps.ts:61-63`) selected `drizzleEventAttendeesAdapter` (NOT stub).
+- Adapter reaches Neon (DATABASE_URL set + reachable).
+- `isAvailable()` returns true (matches flag-on state).
+
+If exit code != 0 OR output shows `eventAttendeesStub`: **STOP** — flip `FEATURE_F6_EVENTCREATE=false` immediately and investigate composition root before retry.
+
+**Layer 2 — End-to-end behavioural assertion (REQUIRED, ~5 minutes)**:
+1. Seed (via existing F3 admin UI or scripts) 1 member with event attendance recorded via webhook ingest (or CSV import) — at least 2 attendances in the last 90 days.
+2. Trigger F8 at-risk-score recomputation via `pnpm tsx scripts/recompute-at-risk-score.ts --memberId <id>` OR via the F8 admin cron coordinator.
+3. Query the F8 at-risk-score table for that member; assert `eventAttendanceFactor.skipped !== true` (means the bridge IS connected end-to-end, not just at port-availability layer).
+4. Record evidence (member-id + factor-value + timestamp) in retrospective.md § F8 Live-Wired Verification.
+
+**Why both layers**: Layer 1 catches the silent-failure class (composition root mis-swap) in <5s without DB seed. Layer 2 catches the harder class (port wired but query returns garbage) but requires fixture data + minutes of operator work. Run Layer 1 FIRST and bail out cheaply if it fails.
+
+**Verified working in dev** (R9 closure):
+- Flag-ON path: `FEATURE_F6_EVENTCREATE=true` → real adapter selected → isAvailable=true ✓
+- Flag-OFF path: `FEATURE_F6_EVENTCREATE=false` → stub selected → isAvailable=false ✓ (expected dark mode)
+- 7/7 `tests/integration/events/f8-port-wiring.test.ts` GREEN on live Neon Singapore
 
 ---
 
