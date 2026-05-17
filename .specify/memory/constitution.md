@@ -1,6 +1,22 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.4.1 → 1.4.2  (PATCH: add canonical
+                "co-sign footer YAML template" pattern as a Principle IX
+                solo-maintainer-substitute precedent. Triggered by F6
+                R10 retrospective recommendation #4 (T150 + T151 closure
+                that co-signed 5 quality checklists using a structured
+                YAML-style footer documenting signer + date + branch
+                HEAD + verification method + per-category evidence +
+                Constitution gate). The pattern was already established
+                via the F6 T150 (security) + T151 (reliability + UX +
+                observability + integration) co-signs — this amendment
+                promotes the 5-checklist precedent from convention to
+                canonical template so future feature checklists adopt
+                it consistently. PATCH bump: no principle removed,
+                renumbered, or redefined; existing rules unchanged.
+                Solo-maintainer substitute applies.)
+
 Version change: 1.4.0 → 1.4.1  (PATCH: add canonical
                 "silent-failure prevention via observable verification"
                 pattern as a Principle VIII precedent. Triggered by F6
@@ -117,6 +133,22 @@ History:
                          the canonical record. The default ≥2-reviewers + no-
                          direct-push rules remain unchanged for multi-maintainer
                          projects.
+  - 1.4.2 (2026-05-18) — PATCH precedent. Principle IX gains a
+                         "Co-sign footer template" sub-section
+                         documenting the canonical YAML-style footer
+                         structure for solo-maintainer-substitute
+                         co-signs on quality checklists. Template
+                         enables retroactive audit (signer + date +
+                         branch HEAD + verification method + per-
+                         category evidence + Constitution gate).
+                         Precedents: F6 T150 (security 38/38) + T151
+                         (reliability 35/35 + UX 40/40 + observability
+                         39/39 + integration 35/35) all use this
+                         structure. Triggered by F6 R10 retrospective
+                         recommendation #4. PATCH bump: no principle
+                         removed, renumbered, or redefined; existing
+                         rules unchanged. Solo-maintainer substitute
+                         applies.
   - 1.4.1 (2026-05-18) — PATCH precedent. Principle VIII gains a "Reusable
                          pattern — silent-failure prevention via observable
                          verification" sub-section documenting the canonical
@@ -579,6 +611,54 @@ The codebase MUST maintain strict, automated quality gates.
   directly throughout, but a multi-maintainer project must use PRs for every
   change. Reverts to the default rule when a second maintainer joins.
 
+**Co-sign footer template** (v1.4.2 canonical precedent for solo-maintainer
+substitute documentation): when a solo maintainer co-signs a feature's quality
+checklist (security / reliability / UX / observability / integration), the co-sign
+MUST be appended as a YAML-style footer at the bottom of the checklist file using
+this structure (verbatim field order; field values per-checklist):
+
+```yaml
+## Co-Sign Footer
+
+**T{nnn} Operator Gate — {Checklist Name} Co-Sign**
+
+- **Co-signer**: {AI maintainer identity or human name}
+- **Date**: YYYY-MM-DD
+- **Branch**: {git branch}
+- **Branch HEAD at co-sign**: `{git sha}` ({commit subject})
+- **Verification method**: {how each item was verified — e.g., read-only
+  category-by-category audit via Explore agent, automated gate, manual probe}
+- **Result**: **N/N PASS** · M DEFERRED · K N/A (+ rationale line per non-PASS)
+- **Key evidence per category**: bulleted list, one per category, each citing
+  file:line OR §FR-xxx OR commit SHA
+- **Constitution v1.4.x**: per-principle PASS/PARTIAL/N/A with 1-line rationale
+
+**Co-sign verdict**: {Checklist Name} (CHK{nnn}-CHK{mmm}) is **CO-SIGNED** [with
+N documented deferrals to F6.2 / next feature].
+
+— Signed in good faith based on {verification-method-summary}. Any future
+{class-of-regression} surfaced post-co-sign requires new round + re-sign.
+```
+
+This template enables retroactive audit of every co-sign decision: a future
+maintainer (or compliance reviewer) reading the footer can verify (a) what was
+checked, (b) how it was checked, (c) what the branch state was at co-sign time,
+(d) which Constitution principles were satisfied. The "Verification method"
+field is load-bearing — it distinguishes between "bulk sed [X] without spot-check"
+(insufficient) vs "category-by-category audit via Explore agent" (sufficient).
+
+Precedents (all F6 R10 cycle, commits `5bf7aef0` + `1add8c47` + `a51917cd`):
+- **T150** — `checklists/security.md` 38/38 PASS
+- **T151** — `checklists/reliability.md` 35/35 PASS
+- **T151** — `checklists/ux.md` 40/40 PASS
+- **T151** — `checklists/observability.md` 39/39 PASS (1 deferred → closed in same commit)
+- **T151** — `checklists/integration.md` 35/35 PASS
+
+The template is MANDATORY for any solo-maintainer-substitute co-sign of a
+quality checklist. Where ≥2 human maintainers are available, the conventional
+PR review-approval chain replaces the co-sign footer; no template is required
+in that case.
+
 **Rationale**: Automated gates catch what humans miss and keep the bar constant as the
 team grows. For solo-dev projects the default ≥2-reviewers rule creates a
 chicken-and-egg: there is no reviewer #2, so auth-sensitive work cannot ship under the
@@ -788,4 +868,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.4.1 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-05-18
+**Version**: 1.4.2 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-05-18
