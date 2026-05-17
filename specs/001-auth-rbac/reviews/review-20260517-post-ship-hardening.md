@@ -425,3 +425,42 @@ Verification (Phase P, all green):
 **Verdict**: 🟢 **All 25 Round 3 findings closed.** F1 hardening loop has now run to a fixed point — three rounds (26 + 22 + 25 = 73 findings cumulative) with the trailing round's residue absorbed in two commits. Net code change across Rounds 2+3: ~870 LOC added (helpers + tests + branded type expansion) / ~210 LOC removed (dead aliases + inlined dup blocks).
 
 Pre-flag-flip operator gates unchanged: manual SR walkthrough, reduced-motion E2E, cross-browser staging traces.
+
+---
+
+## Round 4 (2026-05-17 late night) — Final Closure
+
+A fourth review pass ran six agents (code, tests, errors, types, simplify, comments) against the Round 3 commits (`a9252d3f`, `cac40822`, `8d80b5b8`). Verdict: **0 CRITICAL / 0 BLOCKING** — but 3 IMPORTANT + 6 SUGGESTIONS surfaced as either self-introduced regressions in Round 3 or half-done items that did not earn the "closure" label.
+
+Per the user directive "แก้ไขทั้งหมด" (fix all), all 9 findings were closed across 4 commits (`afb6155f`, `dd821a9c`, `5e3077ed`, `bb9b4fdf`).
+
+### IMPORTANT (3)
+
+* **I1** (`refinePasswordPair` signature → 3 `as unknown as` casts removed): Round 3's O1 helper generic collapsed `ZodObject<RawShape>` to its raw shape, forcing `as unknown as z.ZodType<FormValues>` in 3 forms. New shape `<T extends z.ZodRawShape>(schema: z.ZodObject<T>, ...)` preserves the per-field types so the casts disappear. The casts had not existed pre-O1; Round 3 introduced them.
+* **I2** (`SessionToken` rename completion): Round 3's N7 added `SessionToken` + `asSessionToken` to the public barrel but every internal consumer (auth-cookies, session.ts, heartbeat, sign-out, session-repo, change-password) still imported the `@deprecated SessionId` / `asSessionId` aliases. Round 4 migrates 6 prod files + 6 test files and deletes both aliases.
+* **I3** (audit-repo K1 file-header truthful wording for reset-password): Round 3's N2 reworded the header to "audit row is always the FINAL tx-step" — true for create-user.ts and redeem-invite.ts, but reset-password.ts emits TWO trailing `appendInTx` calls. Reworded to "audit emit(s) at the TAIL of the tx; reset-password chains two — both swallow + double `auditMissing` metric if the first poisons the tx".
+
+### SUGGESTIONS (6)
+
+* **S1**: `parseHex64<T>` → `parseHex64<T extends string>` (theoretical foot-gun close).
+* **S2**: change-password MalformedHashError test now pins `summary: expect.stringContaining('malformed')` for parity with sign-in O6.
+* **S3**: `ValidatedBrandName` literal union dropped `export` keyword (zero external consumers).
+* **S4**: sign-out `finally` clause wraps `clearSessionCookie()` in try/catch so platform cookie-store failures surface as structured 500 with `requestId` (the last B3 hole).
+* **S5**: `ParseTokenResult<T>` discriminator switched from `ok: boolean` to literal `kind: 'parsed' | 'link-invalid'` (exhaustiveness for future variants).
+* **S6**: parse-token-id.test.ts brand-error length assertion swapped from `.toContain('5')` to `.toMatch(/got length 5\b/)` (anti-brittle).
+
+### Phase P Verification (all green)
+
+* `pnpm lint`: 0 errors / 0 warnings.
+* `pnpm tsc --noEmit`: clean.
+* `pnpm check:i18n`: 2902 keys × EN+TH+SV (no new keys in Round 4).
+* `pnpm vitest run tests/unit/auth tests/unit/components tests/contract`: **1509/1510 passed** (162 files; 1 known parallel-load flake on `invite-with-member.test.ts` passes 15/15 when re-run alone — same flake as Round 3; not a Round 4 regression).
+* `pnpm test:integration tests/integration/{auth,middleware,audit}`: **150/150 passed** on live Neon `ap-southeast-1` (29 files, 188s).
+
+### Verdict
+
+🟢 **F1 hardening loop has reached fixed point.** Cumulative finding closure across 4 review rounds: **26 + 22 + 25 + 9 = 82 findings**, zero outstanding. No Round 5 expected; the trailing-round residue has shrunk monotonically (26 → 22 → 25 → 9 → 0) and the remaining items in Round 4 were all polish / self-introduced regressions rather than escape paths.
+
+Net Round 4 code delta: **−10 LOC** (cast removals + dead-alias deletion outweigh the audit-repo doc tightening + sign-out try/catch). Net test delta: **+5 LOC** (S2 + S6 pin tightening). Net doc delta: **+15 LOC** (this section + I3 truthful wording).
+
+Pre-flag-flip operator gates unchanged: manual SR walkthrough, reduced-motion E2E, cross-browser staging traces.
