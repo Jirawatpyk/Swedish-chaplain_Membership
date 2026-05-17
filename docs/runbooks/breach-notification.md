@@ -88,13 +88,13 @@ Failure to notify within these windows triggers regulatory fines + reputational 
    - Containment actions taken.
 
 3. **Forensic preservation**.
-   - Snapshot relevant audit_log rows BEFORE any cleanup: `pg_dump --table audit_log --where "emitted_at > $window_start" > /tmp/breach-audit-$timestamp.sql`.
+   - Snapshot relevant audit_log rows BEFORE any cleanup: `pg_dump --table audit_log --where ""timestamp" > $window_start" > /tmp/breach-audit-$timestamp.sql`.
    - Capture Vercel access logs + Sentry traces for the relevant time window (Vercel Logs export is 7-day retention max — pull within 24h of awareness).
    - Capture Neon query logs (separate retention from app logs).
 
 4. **Scope determination** (run AFTER containment + within 4h):
-   - Cross-tenant probe attempts: `SELECT * FROM audit_log WHERE event_type LIKE '%cross_tenant_probe' AND emitted_at > $window_start;` — verify NONE succeeded (RLS denial returns 0 rows; probe audit fires regardless).
-   - Credential compromise: `SELECT user_id, count(*) FROM audit_log WHERE event_type IN ('password_reset_failed', 'sign_in_failed') AND emitted_at > $window_start GROUP BY user_id ORDER BY count DESC;`
+   - Cross-tenant probe attempts: `SELECT * FROM audit_log WHERE event_type LIKE '%cross_tenant_probe' AND "timestamp" > $window_start;` — verify NONE succeeded (RLS denial returns 0 rows; probe audit fires regardless).
+   - Credential compromise: `SELECT user_id, count(*) FROM audit_log WHERE event_type IN ('password_reset_failed', 'sign_in_failed') AND "timestamp" > $window_start GROUP BY user_id ORDER BY count DESC;`
    - F7 list exposure: `SELECT broadcast_id, custom_recipient_emails FROM broadcasts WHERE tenant_id = $tenant AND segment_type = 'custom' AND submitted_at > $window_start;` — cross-check each email against tenant member graph.
 
 5. **Notification drafting** (DPO-led).

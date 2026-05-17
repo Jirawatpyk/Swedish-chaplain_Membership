@@ -57,12 +57,12 @@ This is a **breach** under PDPA §37 + GDPR Art. 33 if any data subject's data w
 
 4. **Forensic preservation**.
    - Snapshot Vercel access logs + Stripe/Resend delivery logs for the suspected exposure window.
-   - Snapshot audit_log: `SELECT * FROM audit_log WHERE emitted_at > $window_start ORDER BY emitted_at DESC;`.
+   - Snapshot audit_log: `SELECT * FROM audit_log WHERE "timestamp" > $window_start ORDER BY "timestamp" DESC;`.
    - Identify timestamp of secret first exposure (e.g., git-commit time for accidental commit, deploy-log timestamp for leaked deploy log).
 
 5. **Scope determination**.
    - For each compromised secret, enumerate what an attacker could have done with it:
-     - F4 Blob token → could have downloaded any tenant's PDF documents (10y retention!) — query `audit_log WHERE event_type = 'invoice_pdf_resent' OR event_type LIKE 'pdf_*' AND emitted_at BETWEEN $exposure_start AND $rotation`.
+     - F4 Blob token → could have downloaded any tenant's PDF documents (10y retention!) — query `audit_log WHERE event_type = 'invoice_pdf_resent' OR event_type LIKE 'pdf_*' AND "timestamp" BETWEEN $exposure_start AND $rotation`.
      - Stripe key → could have created refunds, paid fictitious invoices. Cross-check Stripe Dashboard against `payments` + `refunds` tables.
      - Resend keys → could have sent emails impersonating the chamber. Cross-check Resend Dashboard sent log against `broadcasts` (F7) + F1 transactional outbox.
      - Etc.

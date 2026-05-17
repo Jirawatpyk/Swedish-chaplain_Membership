@@ -315,6 +315,70 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       expect(summary['durationMs']).toBe(12_345);
     });
 
+    it('R7.B1 / Staff R2 R030 — safetyNetFailedOpen=true surfaces in completed 200 response body for admin UX', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'completed',
+        recordId: 'rec-r7-b1',
+        sourceFormat: 'eventcreate_csv',
+        errorCsvAvailable: false,
+        historyPersisted: true,
+        auditCompletionEmitted: true,
+        safetyNetFailedOpen: true,
+        summary: {
+          rowsProcessed: 10,
+          rowsAlreadyImported: 0,
+          eventsCreated: 1,
+          eventsUpdated: 0,
+          matchCounts: {
+            member_contact: 0,
+            member_domain: 0,
+            member_fuzzy: 0,
+            non_member: 5,
+            unmatched: 5,
+          },
+          errorRows: [],
+          durationMs: 1000,
+        },
+      });
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { safetyNetFailedOpen?: boolean };
+      expect(body.safetyNetFailedOpen).toBe(true);
+    });
+
+    it('R7.B1 — safetyNetFailedOpen=false (happy path) surfaces explicit false (not undefined)', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'completed',
+        recordId: 'rec-r7-b1-happy',
+        sourceFormat: 'eventcreate_csv',
+        errorCsvAvailable: false,
+        historyPersisted: true,
+        auditCompletionEmitted: true,
+        safetyNetFailedOpen: false,
+        summary: {
+          rowsProcessed: 5,
+          rowsAlreadyImported: 0,
+          eventsCreated: 0,
+          eventsUpdated: 1,
+          matchCounts: {
+            member_contact: 3,
+            member_domain: 0,
+            member_fuzzy: 0,
+            non_member: 1,
+            unmatched: 1,
+          },
+          errorRows: [],
+          durationMs: 500,
+        },
+      });
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { safetyNetFailedOpen?: boolean };
+      expect(body.safetyNetFailedOpen).toBe(false);
+    });
+
     it('still 200 when some rows failed — errorRows[] surfaces row numbers + reasons', async () => {
       runImportCsvMock.mockResolvedValue({
         kind: 'completed',

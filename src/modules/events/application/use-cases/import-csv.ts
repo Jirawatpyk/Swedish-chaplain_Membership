@@ -1928,7 +1928,19 @@ function serializeErrorRowsToCsv(
 function sanitiseFormulaPrefix(s: string): string {
   if (s.length === 0) return s;
   const first = s.charAt(0);
-  if (first === '=' || first === '+' || first === '-' || first === '@') {
+  // R7.S / Staff R2 R044 closure — extended guard chars: `\t` and
+  // `\r` are LibreOffice Calc formula triggers per OWASP CSV-Injection
+  // cheatsheet. Today benign (server-generated `reason` strings don't
+  // start with whitespace) but defense-in-depth for when user-input
+  // surfaces are added (e.g., `rawRowExcerpt` in a future feature).
+  if (
+    first === '=' ||
+    first === '+' ||
+    first === '-' ||
+    first === '@' ||
+    first === '\t' ||
+    first === '\r'
+  ) {
     return `'${s}`;
   }
   return s;

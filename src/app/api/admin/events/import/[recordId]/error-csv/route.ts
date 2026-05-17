@@ -39,8 +39,13 @@ import { eventcreateMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth';
 import { adminOnlyGuard } from '../../../../integrations/eventcreate/_lib/role-violation-audit';
 
+// R7.W / Staff R2 R037 closure — UUID v4 ONLY (variant nibble `4`).
+// Aligns with `asCsvImportRecordId` validation. Prior version accepted
+// v1-5 (`[1-5]`) but the brand constructor rejected anything except v4,
+// so a v1/v3/v5 UUID passed the route's pre-check but threw 500 inside
+// the brand call downstream. Now the route returns clean 404 instead.
 const UUID_V4_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const NOT_FOUND_PROBLEM_TYPE =
   'https://chamber-os.app/errors/error-csv-not-available';

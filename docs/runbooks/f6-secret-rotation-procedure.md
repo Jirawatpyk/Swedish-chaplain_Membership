@@ -13,7 +13,7 @@
 ## Pre-flight checks
 
 - [ ] Confirm chamber admin is available for a 30-minute window — they must update Zapier within the 24h grace period or live webhooks will fail.
-- [ ] Verify `audit_log` is healthy: `SELECT MAX(emitted_at) FROM audit_log WHERE tenant_id = $1` — if > 5 minutes stale, rotate AFTER audit recovery.
+- [ ] Verify `audit_log` is healthy: `SELECT MAX("timestamp") FROM audit_log WHERE tenant_id = $1` — if > 5 minutes stale, rotate AFTER audit recovery.
 - [ ] Notify DPO if rotation is incident-driven (PDPA Section 37 breach evaluation may be required).
 
 ## Procedure

@@ -52,7 +52,7 @@ This is fundamentally an **admin capacity issue** — the platform can scale arb
    - p95 > 48h → SLA banner shows red (SC-002 breach).
 
 3. **Identify queue blockers**.
-   - Are admins logging in? Audit log: `SELECT actor_user_id, count(*) FROM audit_log WHERE event_type IN ('broadcast_approved', 'broadcast_rejected') AND emitted_at > now() - interval '7 days' GROUP BY 1;`
+   - Are admins logging in? Audit log: `SELECT actor_user_id, count(*) FROM audit_log WHERE event_type IN ('broadcast_approved', 'broadcast_rejected') AND "timestamp" > now() - interval '7 days' GROUP BY 1;`
    - If only 1 admin is approving → engage chamber admin for capacity.
    - If 0 admin activity → escalate to chamber business owner; admins may have lost portal access.
 

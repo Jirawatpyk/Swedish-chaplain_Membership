@@ -784,6 +784,35 @@ export async function POST(
           });
         }
 
+        // --- Step 8.6: Detect sentinel-pattern fall-through -------------
+        // R7.W / Staff R2 R033 — when the externalIds match the test-
+        // sentinel pattern BUT `chamberTestMetadata` is missing /
+        // malformed, the request reaches here despite the R008 short-
+        // circuit not firing. The HMAC was valid (otherwise we'd have
+        // rejected at Step 7), so this is an authenticated edge case:
+        // either Zapier misconfiguration (literal `__test_webhook__`
+        // as externalId) or insider probing for sentinel-pattern
+        // detectability. Emit a structured warn + bump a counter so
+        // SREs see the bypass-attempt rate. Do NOT fail the request —
+        // the regular ingest pipeline handles the "real" registration
+        // safely; this log surfaces the anomaly without breaking flow.
+        if (
+          eventExternalId === '__test_webhook__' &&
+          attendeeExternalId.startsWith('__test_webhook__-')
+        ) {
+          logger.warn(
+            {
+              event: 'f6_sentinel_pattern_without_metadata',
+              tenantSlug,
+              requestId,
+              eventExternalId,
+              attendeeExternalIdPrefix: '__test_webhook__-',
+              hasChamberTestMetadata: false,
+            },
+            '[F6] Sentinel externalId pattern detected without chamberTestMetadata — possible Zap misconfiguration or insider probing; proceeding with regular ingest',
+          );
+        }
+
         // --- Step 9: Dispatch to ingest use-case ------------------------
         const deps = makeIngestWebhookAttendeeDeps();
         const result = await ingestWebhookAttendee(

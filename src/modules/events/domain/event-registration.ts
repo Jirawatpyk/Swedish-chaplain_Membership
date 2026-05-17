@@ -90,15 +90,14 @@ export type MatchResolutionView =
  * calls this function at the row→aggregate boundary.
  */
 /**
- * R6.S / Round 5 staff-review R022 — `raw: MatchResolution` is kept
- * intentionally for OUT-OF-TREE consumers (e.g. an F6.2 super-admin
- * forensics dashboard that catches this error far from the read site
- * + needs the full nullity matrix to render). In-tree, the catch site
- * at `drizzle-registrations-repository.toAggregate` reads identifiers
- * from the source `row` directly — so `raw` is redundant for the
- * current call graph but cheap to maintain. The boolean fields
- * (memberId-set vs null) survive on `error.message` as a fallback if
- * a future caller drops `raw`.
+ * R6.S / R022 / Staff R2 R046 closure — `raw: MatchResolution` is
+ * retained at minimal cost (~16 bytes per throw). In-tree, the catch
+ * site at `drizzle-registrations-repository.toAggregate` reads
+ * identifiers from the source `row` directly, so `raw` is redundant
+ * for the current call graph. Boolean nullity-matrix is preserved on
+ * `error.message` as a fallback. Future catchers (UI tooltip
+ * renderers, future error-class consumers) may benefit from the
+ * structured raw shape — keeping the field is YAGNI-acceptable.
  */
 export class MatchResolutionInvariantError extends Error {
   constructor(public readonly raw: MatchResolution) {

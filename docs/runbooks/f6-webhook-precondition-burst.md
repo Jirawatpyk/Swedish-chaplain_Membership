@@ -29,14 +29,14 @@
    SELECT payload->>'preconditionKind' AS kind, COUNT(*)
    FROM audit_log
    WHERE event_type = 'webhook_ingest_precondition_failed'
-     AND emitted_at > NOW() - INTERVAL '15 minutes'
+     AND "timestamp" > NOW() - INTERVAL '15 minutes'
      AND tenant_id = $1
    GROUP BY 1 ORDER BY 2 DESC;
    ```
 2. **Check ingest_disabled state**: `SELECT enabled, ingest_paused_at, ingest_paused_by FROM tenant_webhook_configs WHERE tenant_id = $1`. If `enabled=false` → cause (1). Confirm with admin via email/chat that the pause was intentional.
 3. **Verify feature flag**: `env.features.f6EventCreate` — if false in prod env vars → cause (2). Coordinate with maintainer.
-4. **Profile body sizes**: `SELECT AVG((payload->>'bodyBytes')::int), MAX((payload->>'bodyBytes')::int) FROM audit_log WHERE event_type='webhook_ingest_precondition_failed' AND payload->>'preconditionKind' = 'body_oversized' AND emitted_at > NOW() - INTERVAL '1 hour'`. If max > 5 MB → suspect attacker; if 1-2 MB → suspect Zap adding large attachments.
-5. **Check idempotency replay rate**: `SELECT COUNT(DISTINCT request_id) FROM audit_log WHERE event_type='webhook_ingest_precondition_failed' AND payload->>'preconditionKind' = 'request_id_replay' AND emitted_at > NOW() - INTERVAL '1 hour'`. Compare against unique requestIds — if ratio > 10:1 → Zap retry storm.
+4. **Profile body sizes**: `SELECT AVG((payload->>'bodyBytes')::int), MAX((payload->>'bodyBytes')::int) FROM audit_log WHERE event_type='webhook_ingest_precondition_failed' AND payload->>'preconditionKind' = 'body_oversized' AND "timestamp" > NOW() - INTERVAL '1 hour'`. If max > 5 MB → suspect attacker; if 1-2 MB → suspect Zap adding large attachments.
+5. **Check idempotency replay rate**: `SELECT COUNT(DISTINCT request_id) FROM audit_log WHERE event_type='webhook_ingest_precondition_failed' AND payload->>'preconditionKind' = 'request_id_replay' AND "timestamp" > NOW() - INTERVAL '1 hour'`. Compare against unique requestIds — if ratio > 10:1 → Zap retry storm.
 
 ## Mitigations
 

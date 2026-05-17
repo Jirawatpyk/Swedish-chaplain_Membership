@@ -2837,12 +2837,21 @@ export const eventcreateMetrics = {
    *   - Runbook `f6-match-rate-degradation-triage.md`
    */
   matchRateGauge(tenantId: string, value: number): void {
-    observeGauge(
-      'eventcreate_match_rate_gauge',
-      'F6 rolling 30-day per-tenant match rate (fraction in [0.0, 1.0]) — SC-002',
-      { tenant: tenantId },
-      Math.max(0, Math.min(1, value)),
-    );
+    // R7.S / Staff R2 R043 closure — wrap `observeGauge` in
+    // `safeMetric` to match the project convention across all F6
+    // metric helpers. Failure mode previously bubbled an OTel SDK
+    // shutdown throw to the cron coordinator's per-tenant catch,
+    // which converted it to an error in the response — fine but
+    // inconsistent with the ~80 other call sites. `safeMetric`
+    // swallows + console.warns instead.
+    safeMetric(() => {
+      observeGauge(
+        'eventcreate_match_rate_gauge',
+        'F6 rolling 30-day per-tenant match rate (fraction in [0.0, 1.0]) — SC-002',
+        { tenant: tenantId },
+        Math.max(0, Math.min(1, value)),
+      );
+    });
   },
 
   /**

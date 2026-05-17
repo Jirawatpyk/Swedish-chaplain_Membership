@@ -11,7 +11,7 @@ The Phase 4 admin detail route emits `logger.warn` with `admin_event_detail_not_
 ## Symptoms
 
 - Vercel alert fires with subject `F6 ENUMERATION SUSPECTED`.
-- `audit_log WHERE event_type='admin_event_detail_not_found' AND actor_user_id = $1 ORDER BY emitted_at DESC LIMIT 50` shows 10+ distinct `event_id_hash` values inside a 5-minute window.
+- `audit_log WHERE event_type='admin_event_detail_not_found' AND actor_user_id = $1 ORDER BY "timestamp" DESC LIMIT 50` shows 10+ distinct `event_id_hash` values inside a 5-minute window.
 - Sometimes accompanies bulk requests for non-existent events from the same actor.
 
 ## Root causes (most → least likely)
@@ -27,10 +27,10 @@ The Phase 4 admin detail route emits `logger.warn` with `admin_event_detail_not_
 1. **Profile actor**: 
    ```sql
    SELECT actor_user_id, COUNT(DISTINCT payload->>'eventIdHash') AS unique_hashes,
-          MIN(emitted_at) AS first, MAX(emitted_at) AS last
+          MIN("timestamp") AS first, MAX("timestamp") AS last
    FROM audit_log 
    WHERE event_type = 'admin_event_detail_not_found'
-     AND emitted_at > NOW() - INTERVAL '1 hour'
+     AND "timestamp" > NOW() - INTERVAL '1 hour'
    GROUP BY 1 HAVING COUNT(DISTINCT payload->>'eventIdHash') >= 10
    ORDER BY unique_hashes DESC;
    ```

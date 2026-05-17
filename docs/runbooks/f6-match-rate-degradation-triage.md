@@ -20,20 +20,20 @@
 
 ## Triage steps
 
-1. **Cross-link with F3 onboarding pace**: query F3 `audit_log WHERE event_type IN ('member_created','contact_added') GROUP BY DATE(emitted_at)` for the affected period. If F3 onboarding count dropped → cause (1).
+1. **Cross-link with F3 onboarding pace**: query F3 `audit_log WHERE event_type IN ('member_created','contact_added') GROUP BY DATE("timestamp")` for the affected period. If F3 onboarding count dropped → cause (1).
 2. **Profile match-type distribution**: 
    ```sql
    SELECT payload->>'matchType', COUNT(*)
    FROM audit_log
    WHERE event_type = 'match_resolution_completed'
-     AND emitted_at > NOW() - INTERVAL '7 days'
+     AND "timestamp" > NOW() - INTERVAL '7 days'
      AND tenant_id = $1
    GROUP BY 1 ORDER BY 2 DESC;
    ```
    Compare against the 30-day baseline. A sudden `non_member` spike with `member_domain` drop → cause (2).
 3. **Audit F3 domain entries**: `SELECT COUNT(*) FROM contacts WHERE domain IS NOT NULL`. If recently shrunk → cause (2).
-4. **Look for F3 archive burst**: `SELECT COUNT(*) FROM audit_log WHERE event_type='member_archived' AND emitted_at > NOW() - INTERVAL '30 days' AND tenant_id = $1`. If > 10 in 7 days → cause (4).
-5. **Sample failed matches**: `SELECT payload->>'attendeeEmail', payload->>'matchType' FROM audit_log WHERE event_type='match_resolution_completed' AND payload->>'matchType' IN ('non_member','unmatched') ORDER BY emitted_at DESC LIMIT 20`. Look for clusters of similar email domains → cause (2) or (5).
+4. **Look for F3 archive burst**: `SELECT COUNT(*) FROM audit_log WHERE event_type='member_archived' AND "timestamp" > NOW() - INTERVAL '30 days' AND tenant_id = $1`. If > 10 in 7 days → cause (4).
+5. **Sample failed matches**: `SELECT payload->>'attendeeEmail', payload->>'matchType' FROM audit_log WHERE event_type='match_resolution_completed' AND payload->>'matchType' IN ('non_member','unmatched') ORDER BY "timestamp" DESC LIMIT 20`. Look for clusters of similar email domains → cause (2) or (5).
 
 ## Mitigations
 

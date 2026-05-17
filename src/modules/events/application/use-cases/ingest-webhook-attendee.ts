@@ -58,8 +58,10 @@
  * cognitive load when comparing F4/F5/F6 use-case shapes.
  *
  * Defer to F6.2: tighten this port + `CreateEventDeps.runInTenantTx` +
- * `ImportCsvDeps.runInTenantTx` to `TenantId`. Estimated effort: 4
- * sites × ~15 min = 1 hour. Not a Round 5/6 priority.
+ * `ImportCsvDeps.runInTenantTx` to `TenantId`. Estimated effort: 3
+ * sites × ~15 min = 45 min (Staff R2 R047 closure — earlier estimate
+ * of "4 sites" was off-by-one; grep confirms 3 distinct files).
+ * Not a Round 5/6 priority.
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';

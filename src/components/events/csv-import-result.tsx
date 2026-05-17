@@ -84,6 +84,15 @@ export interface CsvImportResultPayload {
    * as `true` (back-compat).
    */
   readonly auditCompletionEmitted?: boolean;
+  /**
+   * R7.B1 / Staff R2 R030 closure — `true` when the FR-019b safety-net
+   * query (event-mismatch detector) failed during this upload. The
+   * import proceeded fail-open (no priorImports lookup ran), so the
+   * routine "looks like you uploaded this to event X before" guard
+   * was unavailable. Admin should manually verify event selection.
+   * Optional/undefined => treat as `false` (back-compat).
+   */
+  readonly safetyNetFailedOpen?: boolean;
 }
 
 interface CsvImportResultProps {
@@ -210,6 +219,25 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
                 />
                 <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
                   {t('auditDegraded')}
+                </p>
+              </div>
+            ) : null}
+            {/* R7.B1 / Staff R2 R030 — FR-019b safety-net fail-open chip */}
+            {/* When true, the duplicate-protection query was unavailable */}
+            {/* and the import proceeded without it. Admin should */}
+            {/* manually verify the event selection. */}
+            {result.safetyNetFailedOpen === true ? (
+              <div
+                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 dark:border-amber-700 dark:bg-amber-950/40"
+                role="status"
+                data-testid="result-safety-net-unavailable"
+              >
+                <TriangleAlert
+                  aria-hidden="true"
+                  className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+                />
+                <p className="text-caption font-medium text-amber-900 dark:text-amber-200">
+                  {t('safetyNetUnavailable')}
                 </p>
               </div>
             ) : null}

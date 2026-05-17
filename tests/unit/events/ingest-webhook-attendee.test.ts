@@ -446,7 +446,15 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     const acquireCalls = (
       ports.advisoryLockAcquirer.acquire as ReturnType<typeof vi.fn>
     ).mock.calls;
-    expect(acquireCalls[0]?.[0]).toMatch(/^eventcreate-quota:test-chamber:[^:]+:[^:]+$/);
+    // R7.W / Staff R2 R032 — pin both shape AND positional field
+    // order so a regression swapping member/event order in
+    // `buildQuotaLockKey()` is caught. Member position is UUID-shaped
+    // (36 chars hex+hyphen); event position is the seed's `evt-1`
+    // sentinel — distinct character classes guarantee positional
+    // assertion (UUID cannot match `evt-1` and vice versa).
+    expect(acquireCalls[0]?.[0]).toMatch(
+      /^eventcreate-quota:test-chamber:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:evt-[a-z0-9-]+$/i,
+    );
     // The audit port should have received a quota_credit_back_refund
     // emit for partnership scope.
     const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;

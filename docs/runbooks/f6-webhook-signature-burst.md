@@ -21,7 +21,7 @@
 ## Triage steps
 
 1. **Confirm scope**: Vercel logs → filter `event:f6_webhook_signature_outcome AND signature_outcome != verified` for the last 1 hour. If single tenant → cause (1) / (5). If multiple tenants → cause (3).
-2. **Pull last 10 rejected deliveries**: query `audit_log WHERE event_type = 'webhook_signature_rejected' AND tenant_id = $1 ORDER BY emitted_at DESC LIMIT 10`. Look at `payload.rejectionReason` field for the precise sub-cause.
+2. **Pull last 10 rejected deliveries**: query `audit_log WHERE event_type = 'webhook_signature_rejected' AND tenant_id = $1 ORDER BY "timestamp" DESC LIMIT 10`. Look at `payload.rejectionReason` field for the precise sub-cause.
 3. **Probe the test webhook**: ask the admin to click "Send test webhook" in `/admin/integrations/eventcreate`. A success indicates the ACTIVE secret works → cause (5) on the Zap side. A failure indicates the secret is rotated and stale → cause (1).
 4. **Inspect signature header**: `audit_log.payload.signaturePresent` + `signatureFreshnessSeconds` — if `freshness > 300` → cause (3). If `secretIdentifier` does not match either active or grace → cause (2).
 5. **Look for cross-tenant probes**: `audit_log WHERE event_type = 'cross_tenant_probe'` for the same window. If present → cause (5).

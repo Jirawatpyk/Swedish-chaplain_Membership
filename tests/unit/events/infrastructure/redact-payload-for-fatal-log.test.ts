@@ -148,6 +148,8 @@ describe('Phase H4.1 — redactPayloadForFatalLog exhaustive allowlist verificat
       'eventsCreated', 'eventsUpdated', 'errorRowCount', 'timedOut', 'sourceFormat',
       // CSV import override forensics
       'recordId', 'currentEventId', 'overriddenAt',
+      // R7.S / Staff R2 R042 — PII erasure latency primitive
+      'completedWithinSecondsOfRequest',
       // Identifiers (non-PII)
       'registrationId', 'eventId', 'matchType',
       // Actor classification (non-PII)
@@ -275,19 +277,25 @@ describe('Phase H4.1 — redactPayloadForFatalLog exhaustive allowlist verificat
   it('R6.S / R026 — allowlist-deny-by-default: arbitrary unknown fields are dropped', () => {
     // Guards against a future refactor flipping the redactor from
     // allowlist-deny-by-default to denylist-allow-by-default. The
-    // negative assertion ensures unknown fields NEVER survive even if
-    // they look benign (e.g. a future audit payload accidentally
-    // introduces a `userEmail` or `internalNotes` field).
+    // LOAD-BEARING assertion is `Object.keys(out).length === 0` —
+    // it proves NO unknown field survived (not just the 4 specific
+    // probes). The 4 probes include a PII-shape probe so a denylist
+    // regression would surface even on PII-looking-but-unknown fields.
     const out = redactPayloadForFatalLog({
       unknownFieldNeverInAllowlist: 'this should be dropped',
       anotherFakeField: 42,
       maliciousLookalike: 'severity-like-string-but-wrong-key',
+      // R7.S / R040 — PII-shape probe ensures a denylist regression
+      // would surface even when the unknown field name looks like
+      // intentional user data (not just dummy).
+      userEmail: 'leak@example.com',
     });
     expect(out).not.toHaveProperty('unknownFieldNeverInAllowlist');
     expect(out).not.toHaveProperty('anotherFakeField');
     expect(out).not.toHaveProperty('maliciousLookalike');
-    // Confirm the empty allowlist intersection results in an empty
-    // projection (no `_shape` sentinel — that's reserved for non-object
+    expect(out).not.toHaveProperty('userEmail');
+    // Load-bearing assertion — empty allowlist intersection ⇒ empty
+    // projection (no `_shape` sentinel; that's reserved for non-object
     // inputs).
     expect(Object.keys(out)).toHaveLength(0);
   });

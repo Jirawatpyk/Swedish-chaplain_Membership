@@ -156,9 +156,11 @@ export const testWebhookRateLimitCheck = makeF6RateLimitCheck(
  * download log).
  *
  * Constitution Principle I sub-clause 4: forensic-trail integrity is
- * preserved — every download attempt that hits the cap still emits a
- * `csv_import_error_csv_download_rate_limit_exceeded` metric so SREs
- * can alert on sustained spikes (P3 — possible insider exfiltration).
+ * preserved — every download attempt that hits the cap still emits an
+ * OTel counter `eventcreate_csv_error_csv_download_rate_limit_exceeded_total`
+ * (TS method `eventcreateMetrics.csvErrorCsvDownloadRateLimitExceeded`
+ * in `src/lib/metrics.ts`) so SREs can alert on sustained spikes
+ * (P3 — possible insider exfiltration).
  */
 const ERROR_CSV_DOWNLOAD_MAX_PER_HOUR = 20;
 export const errorCsvDownloadRateLimitCheck = makeF6RateLimitCheck(

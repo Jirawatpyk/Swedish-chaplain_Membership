@@ -444,6 +444,12 @@ export async function POST(request: NextRequest): Promise<Response> {
           // R2-I-1: surface audit-completion status so UI can degrade
           // the audit-trail chip when the per-import audit row was lost.
           auditCompletionEmitted: outcome.auditCompletionEmitted,
+          // R7.B1 / Staff R2 R030 closure — surface FR-019b safety-net
+          // fail-open state so admin UI can render a "duplicate-protection
+          // unavailable" chip. When true, the safety-net query
+          // (event-mismatch detector) failed and the import proceeded
+          // without it; admin should manually verify event selection.
+          safetyNetFailedOpen: outcome.safetyNetFailedOpen,
           summary: outcome.summary,
         },
         { status: 200 },
@@ -486,6 +492,10 @@ export async function POST(request: NextRequest): Promise<Response> {
             historyPersisted: outcome.historyPersisted,
             // R2-I-1: same audit-trail signal on the timeout path.
             auditCompletionEmitted: outcome.auditCompletionEmitted,
+            // R7.B1 / Staff R2 R030 — same safety-net signal on timeout
+            // path so partial-import admin retry can still verify event
+            // selection when duplicate-protection was unavailable.
+            safetyNetFailedOpen: outcome.safetyNetFailedOpen,
             summary: outcome.summary,
           },
         },

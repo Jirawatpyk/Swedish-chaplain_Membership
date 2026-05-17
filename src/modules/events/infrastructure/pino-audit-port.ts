@@ -268,6 +268,12 @@ const REDACT_ALLOWED_KEYS = new Set<string>([
   'recordId',
   'currentEventId',
   'overriddenAt',
+  // R7.S / Staff R2 R042 closure — pii_erasure_completed latency
+  // primitive (R005 fix). Non-PII number (seconds), forensically
+  // useful for PDPA §30 / GDPR Art. 17 SC-012 timely-erasure metric.
+  // Defense-in-depth — today routes through tx-bound `emit` not
+  // `emitStandalone`, but future re-wiring could expose this path.
+  'completedWithinSecondsOfRequest',
   // Identifiers (non-PII)
   'registrationId',
   'eventId',

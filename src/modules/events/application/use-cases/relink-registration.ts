@@ -554,9 +554,16 @@ export async function relinkRegistration(
   if (event.isPartnerBenefit) {
     if (newConsumed.partnershipConsumedForEvent < newAllotments.partnershipPerEvent) {
       nextPartnership = true;
-      const allotmentAfter =
+      // R7.W / Staff R2 R036 — symmetric Math.max guard with the
+      // credit-back branch above. The outer if-guard ensures
+      // consumed < perEvent so the subtraction is always ≥1, but the
+      // explicit Math.max(0, ...) keeps the defense-in-depth invariant
+      // visible at every allotmentAfter site (closes R19 asymmetry).
+      const allotmentAfter = Math.max(
+        0,
         newAllotments.partnershipPerEvent -
-        (newConsumed.partnershipConsumedForEvent + 1);
+          (newConsumed.partnershipConsumedForEvent + 1),
+      );
       const r = await emitQuotaScopeAudit(deps.audit, baseAudit, {
         scope: 'partnership',
         action: 'decremented',
@@ -585,9 +592,12 @@ export async function relinkRegistration(
   if (event.isCulturalEvent) {
     if (newConsumed.culturalConsumedForYear < newAllotments.culturalPerYear) {
       nextCultural = true;
-      const allotmentAfter =
+      // R7.W / R036 — same defensive Math.max guard as partnership branch.
+      const allotmentAfter = Math.max(
+        0,
         newAllotments.culturalPerYear -
-        (newConsumed.culturalConsumedForYear + 1);
+          (newConsumed.culturalConsumedForYear + 1),
+      );
       const r = await emitQuotaScopeAudit(deps.audit, baseAudit, {
         scope: 'cultural',
         action: 'decremented',

@@ -226,7 +226,10 @@ describe('R3.2.2 — MatchResolutionInvariantError shape', () => {
   // across all 5 match-type variants; we assert the helper either
   // succeeds (round-trips identifiers) OR throws
   // `MatchResolutionInvariantError` (no silent coercion).
-  it('R6.S / R029 property — asMatchResolutionView either succeeds OR throws (never silently coerces)', () => {
+  it('R6.S / R029 / Staff R2 R041 property — asMatchResolutionView either succeeds OR throws (never silently coerces)', () => {
+    // R041 closure — bumped numRuns from 200 to 500 to improve cell
+    // coverage probability across the 5×2×2=20-shape input space
+    // (each shape now hit ~25 times on average instead of ~10).
     fc.assert(
       fc.property(
         fc.constantFrom(
@@ -254,7 +257,7 @@ describe('R3.2.2 — MatchResolutionInvariantError shape', () => {
           }
         },
       ),
-      { numRuns: 200 },
+      { numRuns: 500 },
     );
   });
 

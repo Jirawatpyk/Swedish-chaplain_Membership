@@ -87,6 +87,29 @@ function makePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * R7.S / Staff R2 R038 closure — seed-dependency contract for AS1.
+ *
+ * AS1 happy-path asserts `body.matched === 'non_member'` because:
+ *   1. No F3 contact row exists for `e2e-test@example.com` in the
+ *      `swecham` tenant (grep across `tests/e2e/helpers/`,
+ *      `scripts/seed-e2e-user.ts`, `src/` returns 0 occurrences as of
+ *      2026-05-17).
+ *   2. Default `makePayload` omits `companyName`, so no fuzzy match.
+ *   3. No member has `email_domain LIKE '%example.com'`.
+ *
+ * If a future task seeds `e2e-test@example.com` as a contact email,
+ * AS1 will start failing with "expected `non_member` got `member_*`".
+ * Root cause: the seed change, NOT the receiver code path. Either:
+ *   (a) Update this assertion to `'member_contact'` and acknowledge
+ *       the seed change in the comment, OR
+ *   (b) Change the test payload to use a different attendee email
+ *       guaranteed not to match any seeded contact.
+ *
+ * member_contact happy-path coverage lives at
+ * `tests/integration/events/match-attendee-to-member.test.ts:109+`
+ * which seeds explicit contacts to test the FR-002 match rule.
+ */
 test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
   test('AS1 — signed payload + valid timestamp → 200 + deterministic match + audit', async ({ request }) => {
     // R6.B2 / Round 5 staff-review R002 closure — the prior assertion
