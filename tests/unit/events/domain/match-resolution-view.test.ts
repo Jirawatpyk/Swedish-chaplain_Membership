@@ -1,6 +1,14 @@
 /**
  * R3.2.2 / CG-2 — Unit tests for `asMatchResolutionView` throw paths.
  *
+ * R10.1 / QA F-1 closure (2026-05-17) — member_contact discriminant
+ * relaxed to accept `matchedContactId: ContactId | null`. The
+ * admin-relink path per FR-014 produces `member_contact + null
+ * contactId` (relink is by-member, not by-contact). The
+ * matchedMemberId-null case is still rejected. CG-2 case list
+ * updated: removed "member_contact + matchedContactId=null →
+ * throws"; added "admin-relink shape returns narrowed view".
+ *
  * Phase H3.2 added `asMatchResolutionView()` which throws
  * `MatchResolutionInvariantError` if the underlying flat
  * `MatchResolution` violates the per-variant invariant (e.g.
@@ -100,13 +108,20 @@ describe('R3.2.2 — asMatchResolutionView happy paths', () => {
 });
 
 describe('R3.2.2 — asMatchResolutionView invariant-violation throws', () => {
-  it('member_contact with matchedContactId=null → throws MatchResolutionInvariantError', () => {
-    const bad: MatchResolution = {
+  // R10.1 / QA F-1 closure — `member_contact + matchedContactId=null`
+  // is now a VALID shape (admin-relink path per FR-014). The
+  // matchedMemberId-null case below is the only remaining
+  // member_contact throw branch.
+  it('R10.1 — member_contact with matchedContactId=null is VALID (admin-relink shape per FR-014) → returns narrowed view', () => {
+    const adminRelinkShape: MatchResolution = {
       type: 'member_contact',
       matchedMemberId: MEMBER_ID,
       matchedContactId: null,
     };
-    expect(() => asMatchResolutionView(bad)).toThrow(MatchResolutionInvariantError);
+    const view = asMatchResolutionView(adminRelinkShape);
+    expect(view.type).toBe('member_contact');
+    expect(view.matchedMemberId).toBe(MEMBER_ID);
+    expect(view.matchedContactId).toBeNull();
   });
 
   it('member_contact with matchedMemberId=null → throws', () => {
@@ -197,10 +212,15 @@ describe('R3.2.2 — asMatchResolutionView invariant-violation throws', () => {
 
 describe('R3.2.2 — MatchResolutionInvariantError shape', () => {
   it('error name and raw + message are preserved for forensic-log reading', () => {
+    // R10.1 / QA F-1 closure — the original `member_contact +
+    // matchedContactId=null` probe is now a VALID shape (admin-relink
+    // path per FR-014). Switched to `member_contact + matchedMemberId=
+    // null` which is still a valid throw branch (member match without
+    // a member is incoherent). Message assertions adjusted accordingly.
     const bad: MatchResolution = {
       type: 'member_contact',
-      matchedMemberId: MEMBER_ID,
-      matchedContactId: null,
+      matchedMemberId: null,
+      matchedContactId: CONTACT_ID,
     };
 
     let captured: MatchResolutionInvariantError | null = null;
@@ -216,8 +236,8 @@ describe('R3.2.2 — MatchResolutionInvariantError shape', () => {
     expect(captured!.name).toBe('MatchResolutionInvariantError');
     expect(captured!.raw).toEqual(bad);
     expect(captured!.message).toContain('type=member_contact');
-    expect(captured!.message).toContain('matchedContactId=null');
-    expect(captured!.message).toContain('matchedMemberId=set');
+    expect(captured!.message).toContain('matchedMemberId=null');
+    expect(captured!.message).toContain('matchedContactId=set');
   });
 
   // R6.S / Round 5 staff-review R029 closure — property tests covering

@@ -27,9 +27,10 @@ import {
 import { asTenantId, type MemberId } from '@/modules/members';
 import type { AuditEventId, UserId } from '@/modules/auth';
 
+// R10.4 / QA F-4 closure — UUIDs fixed to UUID v4 shape post-R3 H3.3.
 const TENANT_ID = asTenantId('test-emit-helper');
-const EVENT_ID = asEventId('00000000-0000-0000-0000-000000000aaa');
-const REG_ID = asRegistrationId('00000000-0000-0000-0000-000000000bbb');
+const EVENT_ID = asEventId('00000000-0000-4000-8000-000000000aaa');
+const REG_ID = asRegistrationId('00000000-0000-4000-8000-000000000bbb');
 const MEMBER_ID = '00000000-0000-0000-0000-000000000ccc' as MemberId;
 const ACTOR_ID = '00000000-0000-0000-0000-000000000ddd' as UserId;
 

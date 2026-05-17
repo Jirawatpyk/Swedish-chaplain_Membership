@@ -46,10 +46,13 @@ import type {
   ExternalAttendeeId,
 } from '@/modules/events';
 
+// R10.4 / QA F-4 closure — UUIDs fixed to UUID v4 shape post-R3 H3.3
+// validator tightening (commit 7c70a224 added strict v4 validation to
+// asEventId + asRegistrationId at HTTP/CSV boundaries).
 const TENANT_ID = asTenantId('test-swecham-archive');
-const EVENT_ID = asEventId('00000000-0000-0000-0000-000000000a01');
-const REG_ID_1 = asRegistrationId('00000000-0000-0000-0000-000000000a11');
-const REG_ID_2 = asRegistrationId('00000000-0000-0000-0000-000000000a12');
+const EVENT_ID = asEventId('00000000-0000-4000-8000-000000000a01');
+const REG_ID_1 = asRegistrationId('00000000-0000-4000-8000-000000000a11');
+const REG_ID_2 = asRegistrationId('00000000-0000-4000-8000-000000000a12');
 const MEMBER_ID_1 = '00000000-0000-0000-0000-000000000b01' as MemberId;
 const MEMBER_ID_2 = '00000000-0000-0000-0000-000000000b02' as MemberId;
 const ACTOR_USER_ID = '00000000-0000-0000-0000-000000000c01' as UserId;

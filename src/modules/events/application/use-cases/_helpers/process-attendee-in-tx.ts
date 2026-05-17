@@ -362,6 +362,18 @@ async function emitMatchResolutionAudit(
   };
   switch (resolution.type) {
     case 'member_contact':
+      // R10.1 / QA F-1 — `MatchResolutionView.member_contact` was
+      // relaxed to accept matchedContactId: ContactId | null for the
+      // admin-relink path (FR-014). Webhook ingest reaches this code
+      // path via the `match-attendee-to-member.ts` flow which always
+      // populates matchedContactId (via contacts.email lookup), so the
+      // null case is a programming invariant violation if it ever
+      // fires here. Throw loudly with the registrationId for forensic.
+      if (resolution.matchedContactId === null) {
+        throw new Error(
+          `F6 invariant: emitMatchResolutionAudit called with member_contact + matchedContactId=null on the webhook-ingest path (registrationId=${registrationId}). Admin-relink emits a different audit event type; this should be unreachable.`,
+        );
+      }
       await emitOrThrow(audit, {
         ...base,
         eventType: 'attendee_matched_member_contact',

@@ -1,0 +1,5 @@
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m5635 passed[39m[22m[2m | [22m[90m1 todo[39m[90m (5637)[39m
+[2m   Start at [22m 22:17:08
+[2m   Duration [22m 685.20s[2m (transform 371.71s, setup 544.06s, collect 2463.03s, tests 1258.87s, environment 1090.49s, prepare 468.92s)[22m
+
+ ELIFECYCLE  Test failed. See above for more details.

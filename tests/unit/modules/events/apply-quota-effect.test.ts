@@ -38,10 +38,15 @@ import {
 import { asTenantId, type MemberId } from '@/modules/members';
 import type { AuditEventId } from '@/modules/auth';
 
+// R10.4 / QA F-4 closure — fixed UUIDs to UUID v4 shape (version
+// digit `4` at position 13 + variant digit `8` at position 17).
+// Pre-R3 H3.3 the validator accepted any 36-char UUID-shape; R3
+// tightened `asEventId` + `asRegistrationId` to UUID v4 (commit
+// 7c70a224). `asEventIdUnchecked` exists for hot-path Drizzle reads.
 const TENANT_ID = asTenantId('test-swecham-quota');
-const MEMBER_ID = '00000000-0000-0000-0000-000000000001' as MemberId;
-const EVENT_ID = asEventId('00000000-0000-0000-0000-000000000010');
-const REG_ID = asRegistrationId('00000000-0000-0000-0000-000000000020');
+const MEMBER_ID = '00000000-0000-4000-8000-000000000001' as MemberId;
+const EVENT_ID = asEventId('00000000-0000-4000-8000-000000000010');
+const REG_ID = asRegistrationId('00000000-0000-4000-8000-000000000020');
 const FY = 2026;
 
 function makeDeps(

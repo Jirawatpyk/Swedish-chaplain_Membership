@@ -63,9 +63,17 @@ export interface MatchResolution {
  */
 export type MatchResolutionView =
   | {
+      // R10.1 / QA F-1 closure — `member_contact` accepts EITHER:
+      // - both IDs non-null (webhook ingest path: matched via specific
+      //   contact email)
+      // - matchedMemberId non-null + matchedContactId null (admin
+      //   manual-relink path per FR-014 — relink is by-member, not
+      //   by-contact, so no specific contact is associated).
+      // The matchedMemberId-null case is still rejected (member match
+      // without a member is incoherent).
       readonly type: 'member_contact';
       readonly matchedMemberId: MemberId;
-      readonly matchedContactId: ContactId;
+      readonly matchedContactId: ContactId | null;
     }
   | {
       readonly type: 'member_domain' | 'member_fuzzy';
@@ -110,7 +118,11 @@ export class MatchResolutionInvariantError extends Error {
 
 export function asMatchResolutionView(m: MatchResolution): MatchResolutionView {
   if (m.type === 'member_contact') {
-    if (m.matchedMemberId !== null && m.matchedContactId !== null) {
+    // R10.1 / QA F-1 closure — accept BOTH (webhook ingest) AND
+    // matchedContactId=null (admin-relink per FR-014). The
+    // matchedMemberId-null case is still rejected because
+    // `member_contact` without a member is structurally meaningless.
+    if (m.matchedMemberId !== null) {
       return {
         type: 'member_contact',
         matchedMemberId: m.matchedMemberId,

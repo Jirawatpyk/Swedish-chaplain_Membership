@@ -1,0 +1,3 @@
+> tsx scripts/check-layout-container-usage.ts
+
+check:layout — OK (98 page/loading files; pairs consistent).

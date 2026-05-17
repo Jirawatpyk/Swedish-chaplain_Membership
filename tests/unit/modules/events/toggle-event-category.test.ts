@@ -53,9 +53,10 @@ import type {
   ExternalAttendeeId,
 } from '@/modules/events';
 
+// R10.4 / QA F-4 closure — UUIDs fixed to UUID v4 shape post-R3 H3.3.
 const TENANT_ID = asTenantId('test-swecham-toggle-unit');
-const EVENT_ID = asEventId('00000000-0000-0000-0000-000000000c01');
-const REG_ID_1 = asRegistrationId('00000000-0000-0000-0000-000000000c11');
+const EVENT_ID = asEventId('00000000-0000-4000-8000-000000000c01');
+const REG_ID_1 = asRegistrationId('00000000-0000-4000-8000-000000000c11');
 const MEMBER_ID_1 = '00000000-0000-0000-0000-000000000d01' as MemberId;
 const ACTOR_USER_ID = '00000000-0000-0000-0000-000000000e01' as UserId;
 

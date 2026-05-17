@@ -130,8 +130,13 @@ describe('pino-audit-port.emitStandalone', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('db_error');
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
-    // The sanitised message must mention the slug-invariant
-    expect(result.error.message).toMatch(/slug invariant violated/);
+    // R10.3 / QA F-3 closure — assertion aligned with actual
+    // `InvalidTenantSlugError` message format at
+    // `src/modules/tenants/domain/tenant-context.ts:51-52` which
+    // produces: "Invalid tenant slug: ... Must match [a-z0-9-]{1,63}
+    // (lowercase alphanumeric + hyphen, 1..63 chars)."
+    // Defensive code is unchanged — only the test expectation aligned.
+    expect(result.error.message).toMatch(/Invalid tenant slug|Must match \[a-z0-9-\]/);
     // logFullError preserves the unsanitised error name + stack server-side
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -139,7 +144,7 @@ describe('pino-audit-port.emitStandalone', () => {
         caller: 'emitStandalone',
         err: expect.objectContaining({
           name: expect.any(String),
-          message: expect.stringContaining('slug invariant violated'),
+          message: expect.stringMatching(/Invalid tenant slug|Must match \[a-z0-9-\]/),
         }),
       }),
       expect.any(String),

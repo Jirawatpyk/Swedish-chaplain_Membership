@@ -94,11 +94,16 @@ describe('R5.2.1 — drizzleRegistrationsRepository.toAggregate read-time invari
     expect(metricSpy).not.toHaveBeenCalled();
   });
 
-  it('INVARIANT VIOLATION — member_contact with matchedContactId=null → bumps metric + emits structured log + re-throws', () => {
+  it('INVARIANT VIOLATION — member_contact with matchedMemberId=null → bumps metric + emits structured log + re-throws', () => {
+    // R10.1 / QA F-1 closure — `member_contact + matchedContactId=null`
+    // is now a VALID shape (admin-relink path per FR-014). Switched
+    // the probe to `member_contact + matchedMemberId=null` which is
+    // still a valid throw branch (member match without a member is
+    // structurally meaningless).
     const badRow = makeRow({
       matchType: 'member_contact',
-      matchedMemberId: MEMBER_ID,
-      matchedContactId: null, // <-- violates invariant
+      matchedMemberId: null, // <-- violates invariant (member-less member_contact)
+      matchedContactId: CONTACT_ID,
     });
 
     expect(() => _toAggregateForTesting(badRow)).toThrow(MatchResolutionInvariantError);
@@ -113,8 +118,8 @@ describe('R5.2.1 — drizzleRegistrationsRepository.toAggregate read-time invari
         registrationId: REG_ID,
         eventId: EVT_ID,
         matchType: 'member_contact',
-        matchedMemberId: 'set',
-        matchedContactId: null,
+        matchedMemberId: null,
+        matchedContactId: 'set',
       }),
       expect.stringContaining('READ time'),
     );
