@@ -46,7 +46,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   if (failed) {
-    return NextResponse.json({ error: 'server-error' }, { status: 500 });
+    // M1 (Round 3) — include requestId in body for client-side log
+    // correlation. Matches the B3 pattern in the other 7 auth routes.
+    return NextResponse.json(
+      { error: 'server-error', requestId },
+      { status: 500 },
+    );
   }
 
   logger.info({ requestId, hadSession }, 'sign_out completed');

@@ -90,13 +90,24 @@ function buildAuditRow(event: AppendAuditEvent) {
  * both `append` and `appendInTx`. Eliminates the silent-drift risk
  * where one path's swallow policy diverges from the other.
  *
- * Caller invariants (preserved from A1 + G2):
- *   - For `append` (top-level db): the upstream mutation already
- *     committed, so swallowing here is safe.
- *   - For `appendInTx`: the surrounding tx is in ABORT state after
- *     this throw (Postgres semantics). Callers MUST place the audit
- *     emit as the LAST statement before COMMIT — see G2 JSDoc on
- *     `appendInTx` for details.
+ * Caller invariants:
+ *   - `append` (top-level db): the upstream mutation already
+ *     committed before this row was attempted, so swallowing here
+ *     is safe — the audit row is the only thing lost. A1 contract.
+ *   - `appendInTx`: when Postgres throws inside an active
+ *     transaction, the tx enters `ABORT` state. Every subsequent
+ *     statement AND the COMMIT itself will fail with
+ *     "ERROR: current transaction is aborted, commands ignored
+ *     until end of transaction block". We swallow the JS-level
+ *     throw locally so it does NOT bubble, but the surrounding tx
+ *     is still poisoned. Therefore:
+ *       appendInTx MUST be the LAST statement before the caller's
+ *       COMMIT — any later statement (mutation, metric write,
+ *       another audit) WILL fail. Verified by ordering in
+ *       create-user.ts, redeem-invite.ts, reset-password.ts.
+ *     M4 (Round 3): formerly read "see G2 JSDoc on appendInTx for
+ *     details" but the interface method has no JSDoc detail block;
+ *     rationale inlined here.
  */
 async function tryAppend(
   inserter: () => Promise<unknown>,

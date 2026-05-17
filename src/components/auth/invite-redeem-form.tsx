@@ -147,12 +147,19 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   };
 
   if (linkInvalid) {
+    // M3 (Round 3) — recovery CTA added. Pre-fix this was alert-only;
+    // user had no next-step affordance. No self-service link target
+    // (invitations are admin-issued only) so we render as a guidance
+    // line rather than a clickable button.
     return (
       <div
         className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
         role="alert"
       >
         <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
+        <p className="text-sm text-muted-foreground">
+          {t('errors.contactAdminCta')}
+        </p>
       </div>
     );
   }

@@ -77,7 +77,8 @@
       "submit": "Aktivera konto",
       "errors": {
         "tokenExpired": "Den här inbjudan har gått ut. Be en administratör skicka en ny.",
-        "tokenUsed": "Den här inbjudan har redan använts."
+        "tokenUsed": "Den här inbjudan har redan använts.",
+        "contactAdminCta": "Kontakta en administratör för att begära en ny inbjudan."
       }
     },
     "idleWarning": {

@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { SignInForm } from '@/components/auth/sign-in-form';
+import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
@@ -75,13 +76,7 @@ export default async function MemberSignInPage({
           </CardHeader>
           <CardContent className="space-y-4">
             {showSecurityBanner ? (
-              <div
-                role="status"
-                aria-live="polite"
-                className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
-              >
-                {t('securityUpdateBanner')}
-              </div>
+              <SecurityUpdateBanner message={t('securityUpdateBanner')} />
             ) : null}
             <SignInForm portal="member" returnTo={validatedReturnTo} />
           </CardContent>

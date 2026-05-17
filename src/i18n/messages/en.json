@@ -77,7 +77,8 @@
       "submit": "Activate account",
       "errors": {
         "tokenExpired": "This invitation has expired. Ask an administrator to send a new one.",
-        "tokenUsed": "This invitation has already been used."
+        "tokenUsed": "This invitation has already been used.",
+        "contactAdminCta": "Contact an administrator to request a new invitation."
       }
     },
     "idleWarning": {
