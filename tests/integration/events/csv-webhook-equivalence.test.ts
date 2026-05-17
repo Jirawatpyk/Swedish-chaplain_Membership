@@ -86,96 +86,76 @@ interface FixtureAttendee {
   readonly registeredAt: string;
 }
 
+// R10.2 (rewrite) — single-event fixture compatible with F6.1 CSV API.
+// The F6.1 CSV import requires a single `selectedEvent` per batch
+// (admin picks ONE event for the whole CSV upload). The original
+// multi-event design (5 events × 5 attendees = 25 rows) produced
+// 5 events on the webhook path vs 1 event on the CSV path — broken
+// equivalence by construction. Now: 1 event × 5 attendees = 5 rows,
+// one attendee per match-type bucket. Both paths produce 1 event +
+// 5 registrations with byte-identical state (modulo bookkeeping
+// timestamps + UUIDs).
+//
+// The 5 match-type buckets are NOT actually exercised here (no F3
+// member seed), so all rows resolve as `non_member` / `unmatched` —
+// `csv-webhook-equivalence-5match.test.ts` covers the full 5/5
+// match-type byte-equivalence with F3 members seeded.
+// R10.2 (rewrite) — fixture uses a non-partner / non-cultural event
+// because webhook ingest auto-derives `isPartnerBenefit` /
+// `isCulturalEvent` from the payload's `category` field, while CSV
+// import takes them from the pre-seeded DB row. Aligning on the
+// default-false state avoids the auto-derivation divergence and
+// keeps the snapshot-equivalence assertion focused on the matcher
+// + registration row shape (not the category mapping).
+const FIXTURE_EVENT = {
+  externalId: 'event_eq_single',
+  name: 'Equivalence Test Event',
+  start: '2026-06-21T18:00:00+07:00',
+  isPartner: false,
+  isCultural: false,
+} as const;
+
 function buildFixture(): ReadonlyArray<FixtureAttendee> {
   const fixture: FixtureAttendee[] = [];
-  // 5 events × 5 attendees = 25 rows. Each event has 5 attendees
-  // (one per match-type bucket). Smaller than the original 100-row
-  // spec target so the test fits under the per-test timeout budget
-  // on cross-region Neon Singapore RTT (each webhook ingest = ~5
-  // queries × 50ms = ~250ms). The equivalence guarantee is
-  // by-construction (shared `processAttendeeInTx` helper) so a
-  // smaller fixture exercises the same invariants without scaling
-  // the integration cost.
-  const events_config: Array<{
-    externalId: string;
-    name: string;
-    start: string;
-    isPartner: boolean;
-    isCultural: boolean;
-  }> = [
-    {
-      externalId: 'event_eq_1',
-      name: 'Midsummer 2026',
-      start: '2026-06-21T18:00:00+07:00',
-      isPartner: true,
-      isCultural: false,
-    },
-    {
-      externalId: 'event_eq_2',
-      name: 'Diwali 2026',
-      start: '2026-11-12T18:00:00+07:00',
-      isPartner: false,
-      isCultural: true,
-    },
-    {
-      externalId: 'event_eq_3',
-      name: 'Networking Mixer',
-      start: '2026-08-15T18:00:00+07:00',
-      isPartner: false,
-      isCultural: false,
-    },
-    {
-      externalId: 'event_eq_4',
-      name: 'Annual Conference',
-      start: '2026-10-01T09:00:00+07:00',
-      isPartner: true,
-      isCultural: false,
-    },
-    {
-      externalId: 'event_eq_5',
-      name: 'New Year Gala',
-      start: '2026-12-31T18:00:00+07:00',
-      isPartner: false,
-      isCultural: true,
-    },
-  ];
-
-  for (const evt of events_config) {
-    for (let i = 0; i < 5; i++) {
-      const bucket = i % 5;
-      fixture.push({
-        eventExternalId: evt.externalId,
-        eventName: evt.name,
-        eventStart: evt.start,
-        isPartnerBenefit: evt.isPartner,
-        isCulturalEvent: evt.isCultural,
-        attendeeExternalId: `${evt.externalId}_att_${i}`,
-        // Match-type bucket assignment — see fixture seed-member docs
-        // for which company-name patterns produce member_contact /
-        // member_domain / member_fuzzy / non_member / unmatched
-        // resolutions.
-        attendeeEmail:
-          bucket === 0
-            ? `contact_${i}@equivalence-test.swecham`
-            : bucket === 1
-              ? `member_${i}@member-domain.test`
-              : bucket === 2
-                ? `fuzzy_${i}@unrelated-domain.com`
-                : bucket === 3
-                  ? `outsider_${i}@gmail.com`
-                  : `ambiguous_${i}@gmail.com`,
-        attendeeName: `Test Attendee ${i}`,
-        attendeeCompany:
-          bucket === 2
-            ? 'Fogmaker International AB'
-            : bucket === 4
-              ? 'Ambiguous Co Ltd Pte'
-              : null,
-        ticketType: bucket === 0 ? 'Member Free' : 'Non-Member',
-        paymentStatus: 'paid',
-        registeredAt: '2026-06-01T10:00:00Z',
-      });
-    }
+  // 1 event × 5 attendees (one per match-type bucket).
+  const evt = FIXTURE_EVENT;
+  for (let i = 0; i < 5; i++) {
+    const bucket = i % 5;
+    fixture.push({
+      eventExternalId: evt.externalId,
+      eventName: evt.name,
+      eventStart: evt.start,
+      isPartnerBenefit: evt.isPartner,
+      isCulturalEvent: evt.isCultural,
+      attendeeExternalId: `${evt.externalId}_att_${i}`,
+      // Match-type bucket assignment — see fixture seed-member docs
+      // for which company-name patterns produce member_contact /
+      // member_domain / member_fuzzy / non_member / unmatched
+      // resolutions. Without F3 seed (see beforeAll comment), all
+      // rows resolve to `non_member` / `unmatched` buckets — that's
+      // intentional. The equivalence claim holds regardless of
+      // which buckets land because both paths share the same matcher.
+      attendeeEmail:
+        bucket === 0
+          ? `contact_${i}@equivalence-test.swecham`
+          : bucket === 1
+            ? `member_${i}@member-domain.test`
+            : bucket === 2
+              ? `fuzzy_${i}@unrelated-domain.com`
+              : bucket === 3
+                ? `outsider_${i}@gmail.com`
+                : `ambiguous_${i}@gmail.com`,
+      attendeeName: `Test Attendee ${i}`,
+      attendeeCompany:
+        bucket === 2
+          ? 'Fogmaker International AB'
+          : bucket === 4
+            ? 'Ambiguous Co Ltd Pte'
+            : null,
+      ticketType: bucket === 0 ? 'Member Free' : 'Non-Member',
+      paymentStatus: 'paid',
+      registeredAt: '2026-06-01T10:00:00Z',
+    });
   }
   return fixture;
 }
@@ -335,33 +315,26 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
     }
   });
 
-  // R10.2 / QA F-2 closure (2026-05-17) — these 2 tests were designed
-  // against a multi-event CSV fixture (5 events × 5 attendees = 25
-  // rows). The F6.1 CSV API requires a single `selectedEvent` per
-  // import call (admin picks ONE event for the whole CSV upload), so
-  // a 25-row multi-event fixture produces 1 event with 25 attendees
-  // on the CSV path vs 5 events × 5 attendees on the webhook path —
-  // assertion `5 to be 25` reflects this incompatibility.
+  // R10.2 (rewrite, 2026-05-17) — single-event fixture compatible
+  // with F6.1 CSV API. Both paths produce 1 event + 5 registrations
+  // with byte-identical state (modulo bookkeeping timestamps + UUIDs).
   //
-  // FR-027 byte-equivalence guarantee STILL HOLDS via:
-  //   - shared `processAttendeeInTx` helper (both paths run identical
-  //     attendee-processing logic by construction)
-  //   - `tests/integration/events/csv-webhook-equivalence-5match.test.ts`
-  //     verifies all 5 MatchType variants produce byte-identical
-  //     registration rows across both paths (1/1 GREEN @ live Neon)
-  //
-  // Rewriting these 2 tests for a single-event fixture is tracked as
-  // F6.2 backlog (parity assertion delta is minimal vs 5match test;
-  // worth the rewrite for explicit cross-path snapshot evidence but
-  // non-blocking for ship-day).
-  it.skip(
-    'Path A (webhook) ↔ Path B (CSV) produce hash-equivalent events + registrations snapshots [SKIPPED — F6.2 backlog rewrite for single-event CSV API]',
+  // FR-027 byte-equivalence guarantee verified by direct cross-path
+  // snapshot comparison. Complements `csv-webhook-equivalence-5match.
+  // test.ts` which exercises the full 5/5 MatchType variants with F3
+  // members seeded; this test exercises the bookkeeping-column parity
+  // across the matcher-default `non_member` / `unmatched` buckets
+  // without needing F3 seed.
+  it(
+    'Path A (webhook) ↔ Path B (CSV) produce hash-equivalent events + registrations snapshots',
     { timeout: 90_000 },
     async () => {
     const fixture = buildFixture();
-    expect(fixture.length).toBe(25);
+    expect(fixture.length).toBe(5);
 
     // Path A — webhook (one ingestWebhookAttendee call per attendee).
+    // Webhook auto-creates the event row from the first delivery's
+    // event payload; subsequent deliveries upsert the same event.
     const webhookDeps = makeIngestWebhookAttendeeDeps();
     for (const att of fixture) {
       const payload = fixtureToWebhookPayload(att, tenantA.ctx.slug);
@@ -378,15 +351,15 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
       expect(result.ok).toBe(true);
     }
 
-    // Path B — CSV (one importCsv call with the 25-row CSV).
+    // Path B — CSV. Pre-seed an IDENTICAL event row (same externalId,
+    // name, startDate, flags) so the CSV path's 1 event matches the
+    // webhook path's 1 event for snapshot comparison. F6.1 CSV API
+    // requires the selectedEvent to already exist via the events
+    // table (admin picks via combobox); we seed it directly to mimic
+    // that precondition.
     const csvBytes = fixtureToCsv(fixture);
     const { runImportCsv } = await import('@/lib/events-csv-import-deps');
 
-    // R10.2 / QA F-2 closure — seed a REAL user + REAL event before
-    // calling runImportCsv. Migration 0139 enforces FK constraints
-    // csv_import_records_actor_fk + csv_import_records_event_fk; the
-    // previous synthetic UUIDs hit FK violations and the insert
-    // silently failed (test timed out + audit_log empty).
     const csvActor = await createActiveTestUser('admin');
     const csvActorUserId = asUserId(csvActor.userId);
 
@@ -396,11 +369,14 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
         tenantId: tenantB.ctx.slug,
         eventId: seededCsvEventId,
         source: 'eventcreate',
-        externalId: 'csv-equiv-seed-event',
-        name: 'CSV Equivalence Test Event (R10.2 seed)',
-        startDate: new Date('2026-06-15T10:00:00Z'),
-        isPartnerBenefit: false,
-        isCulturalEvent: false,
+        // Match the webhook-created event shape so the cross-path
+        // snapshot comparison succeeds. Webhook ingest sets these
+        // fields from the payload's event sub-object.
+        externalId: FIXTURE_EVENT.externalId,
+        name: FIXTURE_EVENT.name,
+        startDate: new Date(FIXTURE_EVENT.start),
+        isPartnerBenefit: FIXTURE_EVENT.isPartner,
+        isCulturalEvent: FIXTURE_EVENT.isCultural,
       });
     });
 
@@ -411,11 +387,18 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
       selectedEvent: {
         ...f6CsvTestSelectedEventStub,
         eventId: asEventId(seededCsvEventId),
+        externalId: FIXTURE_EVENT.externalId,
+        name: FIXTURE_EVENT.name,
+        startDate: new Date(FIXTURE_EVENT.start),
+        // category from FIXTURE_EVENT shape — used by CSV import to
+        // surface in the result summary. isPartnerBenefit /
+        // isCulturalEvent live on the DB row (seeded above) and CSV
+        // import reads them from DB, not from `selectedEvent`.
       },
     });
     expect(csvResult.kind).toBe('completed');
     if (csvResult.kind === 'completed') {
-      expect(csvResult.summary.rowsProcessed).toBe(25);
+      expect(csvResult.summary.rowsProcessed).toBe(5);
       expect(csvResult.summary.errorRows).toHaveLength(0);
     }
 
@@ -446,9 +429,7 @@ describe('F6 CSV ↔ webhook hash-equivalence over enumerated columns (FR-027 / 
     expect(summariseRegistrations(regsA)).toEqual(summariseRegistrations(regsB));
   });
 
-  // Same skip rationale as the snapshot test above — multi-event
-  // fixture is incompatible with single-event CSV API. F6.2 backlog.
-  it.skip('Audit-event taxonomy parity — same event-type sequence on both paths (modulo verb-level markers) [SKIPPED — F6.2 backlog rewrite for single-event CSV API]', { timeout: 30_000 }, async () => {
+  it('Audit-event taxonomy parity — same event-type sequence on both paths (modulo verb-level markers)', { timeout: 30_000 }, async () => {
     // Aggregate audit-event-type COUNTS for each tenant (order-
     // independent — webhook emits one extra `webhook_receipt_verified`
     // per ingest, CSV emits one `csv_import_completed` for the whole
