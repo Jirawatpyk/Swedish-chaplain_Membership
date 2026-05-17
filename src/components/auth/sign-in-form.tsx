@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import { safeReturnTo } from '@/lib/return-url';
 
@@ -135,10 +136,13 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
           autoComplete="username"
           spellCheck={false}
           aria-invalid={errors.email ? 'true' : undefined}
+          aria-describedby={errors.email ? 'email-error' : undefined}
           {...register('email')}
         />
         {errors.email ? (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
+          <p id="email-error" role="alert" className="text-sm text-destructive">
+            {errors.email.message}
+          </p>
         ) : null}
       </div>
 
@@ -152,15 +156,21 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
             {t('forgotPassword')}
           </a>
         </div>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="current-password"
           aria-invalid={errors.password ? 'true' : undefined}
+          aria-describedby={errors.password ? 'password-error' : undefined}
           {...register('password')}
         />
         {errors.password ? (
-          <p className="text-sm text-destructive">{errors.password.message}</p>
+          <p
+            id="password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {errors.password.message}
+          </p>
         ) : null}
       </div>
 
@@ -176,7 +186,10 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       <Button type="submit" className="w-full" size="lg" disabled={submitting}>
         {submitting ? (
           <>
-            <Loader2Icon className="size-4 animate-spin" aria-hidden />
+            <Loader2Icon
+              className="size-4 motion-safe:animate-spin"
+              aria-hidden
+            />
             {t('submitting')}
           </>
         ) : (

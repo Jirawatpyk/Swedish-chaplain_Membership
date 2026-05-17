@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
@@ -141,15 +142,21 @@ export function ChangePasswordForm() {
     <form onSubmit={handleFormSubmit} className="space-y-4" noValidate>
       <div className="space-y-2">
         <Label htmlFor="current-password">{t('currentPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="current-password"
-          type="password"
           autoComplete="current-password"
           aria-invalid={errors.currentPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.currentPassword ? 'current-password-error' : undefined
+          }
           {...register('currentPassword')}
         />
         {errors.currentPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="current-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.currentPassword.message}
           </p>
         ) : null}
@@ -157,16 +164,26 @@ export function ChangePasswordForm() {
 
       <div className="space-y-2">
         <Label htmlFor="new-password">{t('newPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="new-password"
-          type="password"
           autoComplete="new-password"
           aria-invalid={errors.newPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.newPassword
+              ? 'new-password-error'
+              : 'new-password-strength'
+          }
           {...register('newPassword')}
         />
-        <PasswordStrength level={strength} />
+        <div id="new-password-strength">
+          <PasswordStrength level={strength} />
+        </div>
         {errors.newPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="new-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.newPassword.message}
           </p>
         ) : null}
@@ -174,15 +191,21 @@ export function ChangePasswordForm() {
 
       <div className="space-y-2">
         <Label htmlFor="confirm-password">{tReset('confirmPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="confirm-password"
-          type="password"
           autoComplete="new-password"
           aria-invalid={errors.confirmPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.confirmPassword ? 'confirm-password-error' : undefined
+          }
           {...register('confirmPassword')}
         />
         {errors.confirmPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="confirm-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.confirmPassword.message}
           </p>
         ) : null}
@@ -191,7 +214,10 @@ export function ChangePasswordForm() {
       <Button type="submit" className="w-full" size="lg" disabled={submitting}>
         {submitting ? (
           <>
-            <Loader2Icon className="size-4 animate-spin" aria-hidden />
+            <Loader2Icon
+              className="size-4 motion-safe:animate-spin"
+              aria-hidden
+            />
             {t('submit')}
           </>
         ) : (

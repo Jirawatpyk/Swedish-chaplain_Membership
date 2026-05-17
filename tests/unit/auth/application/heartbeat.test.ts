@@ -32,12 +32,14 @@ describe('heartbeat use case', () => {
     return {
       sessions: {
         // Only updateLastSeen is called by the use case — other methods
-        // can be stubs.
+        // (incl. *InTx variants added in A3/A4) are stubs.
         create: vi.fn(),
+        createInTx: vi.fn(),
         findById: vi.fn(),
         updateLastSeen,
         delete: vi.fn(),
         deleteByUserId: vi.fn(),
+        deleteByUserIdInTx: vi.fn(),
         deleteByUserIdExcept: vi.fn(),
       },
       limiter: { check },

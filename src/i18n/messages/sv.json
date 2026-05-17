@@ -17,13 +17,18 @@
     "signOut": {
       "label": "Logga ut"
     },
+    "passwordReveal": {
+      "show": "Visa lösenord",
+      "hide": "Dölj lösenord"
+    },
     "forgotPassword": {
       "title": "Återställ ditt lösenord",
       "description": "Ange din e-post så skickar vi en återställningslänk.",
       "emailLabel": "E-post",
       "submit": "Skicka återställningslänk",
       "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
-      "resend": "Fick du inget mejl? Skicka igen"
+      "resend": "Fick du inget mejl? Skicka igen",
+      "resendCountdown": "Skicka igen ({seconds}s)"
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",

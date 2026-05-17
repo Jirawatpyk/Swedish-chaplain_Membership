@@ -131,10 +131,13 @@ export function ForgotPasswordForm() {
           autoComplete="username"
           disabled={submitting || submitted}
           aria-invalid={errors.email ? 'true' : undefined}
+          aria-describedby={errors.email ? 'email-error' : undefined}
           {...register('email')}
         />
         {errors.email ? (
-          <p className="text-sm text-destructive">{errors.email.message}</p>
+          <p id="email-error" role="alert" className="text-sm text-destructive">
+            {errors.email.message}
+          </p>
         ) : null}
       </div>
 
@@ -151,7 +154,10 @@ export function ForgotPasswordForm() {
         <Button type="submit" className="w-full" size="lg" disabled={submitting}>
           {submitting ? (
             <>
-              <Loader2Icon className="size-4 animate-spin" aria-hidden />
+              <Loader2Icon
+                className="size-4 motion-safe:animate-spin"
+                aria-hidden
+              />
               {t('submit')}
             </>
           ) : (
@@ -168,7 +174,7 @@ export function ForgotPasswordForm() {
           disabled={remaining > 0 || submitting}
         >
           {remaining > 0
-            ? `${t('resend')} (${remaining}s)`
+            ? t('resendCountdown', { seconds: remaining })
             : t('resend')}
         </Button>
       )}

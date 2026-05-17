@@ -17,13 +17,18 @@
     "signOut": {
       "label": "Sign out"
     },
+    "passwordReveal": {
+      "show": "Show password",
+      "hide": "Hide password"
+    },
     "forgotPassword": {
       "title": "Reset your password",
       "description": "Enter your email and we'll send you a reset link.",
       "emailLabel": "Email",
       "submit": "Send reset link",
       "submitted": "If that email matches an account, a reset link is on the way.",
-      "resend": "Didn't get the email? Resend"
+      "resend": "Didn't get the email? Resend",
+      "resendCountdown": "Resend ({seconds}s)"
     },
     "resetPassword": {
       "title": "Choose a new password",
