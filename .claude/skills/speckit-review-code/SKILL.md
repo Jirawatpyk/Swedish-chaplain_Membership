@@ -33,6 +33,27 @@ Otherwise, fall back to the default: execute the `{SCRIPT}` with `--json` to det
 
 **Code Quality**: Evaluate significant issues like code duplication, missing critical error handling, accessibility problems, and inadequate test coverage.
 
+**Read-Time Invariants vs Writer Paths**: When the change introduces or strengthens a **read-time invariant** (a function that throws on unexpected data shape — e.g., a discriminated-union refinement that rejects null fields, a brand validator tightened to reject non-UUIDv4 strings, a CHECK constraint added to a column), audit **all writer call sites** before approving:
+
+1. **Enumerate writer call sites**: for each variant or shape the invariant rejects, search the codebase for code that constructs that shape.
+   - `grep -rn "type: '${variant_name}'" src/` — direct construction
+   - SQL migrations + ORM-emit-sites for direct DB writes
+   - API handlers + Application use-cases that build the type
+
+2. **Verify each writer**: trace from construction point through any transforms to the persistence/output point. Confirm the discriminant + every other invariant field combination matches an accepted branch in the read-time validator.
+
+3. **If any writer produces a shape the invariant rejects → 🔴 BLOCKER**:
+   - The mismatch ships RED on `main` the moment the invariant lands.
+   - Resolution options:
+     - **Relax invariant** — if the writer's shape is correct per spec (preferred when writer matches an explicit FR contract).
+     - **Change writer** — if the writer's shape was incorrect (preferred when invariant matches the canonical contract).
+     - **Add new variant** — if both writer and reader have valid use cases for distinct shapes.
+
+**Concrete examples from project history** (precedents for the check):
+
+- **R3 / R10 — `asMatchResolutionView`**: Round 3 added a throw on `member_contact + matchedContactId=null`. Phase 9's `relink-registration.ts:648-652` writer produced exactly this shape per FR-014 (admin manual relink is by-member, not by-contact). 4 US6 acceptance tests lived RED on `main` for ~3 weeks. R10.1 resolution: relaxed invariant to accept the writer's shape. Prevention: this checklist.
+- **R3 H3.3 — `asEventId` / `asRegistrationId` UUID-v4 tightening**: Round 3 tightened brand validators from any-36-char-UUID-shape to strict UUID v4. 4 unit/modules/events test files used v0 UUID fixtures (`00000000-0000-0000-0000-...`). Tests RED ~3 weeks. R10.4 resolution: update fixtures to v4 shape (`00000000-0000-4000-8000-...`). Prevention: same checklist also applies to test fixtures, not just source-code writers.
+
 ## Issue Confidence Scoring
 
 Rate each issue from 0-100:
