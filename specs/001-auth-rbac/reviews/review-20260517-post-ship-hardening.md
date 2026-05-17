@@ -308,13 +308,80 @@ Strengths worth preserving for F2-F8: `Brand<T,B>` with `unique symbol`, `Passwo
 
 ## Plan of Record
 
-This review is paired with **24 tracked tasks** (TaskCreate IDs 1-24) covering:
+This review was paired with **24 tracked tasks** (TaskCreate IDs 1-24) covering:
 
-| Phase | Tasks | Scope |
-|---|---|---|
-| **A** Critical | A1 - A7 (Task IDs 1-7) | Code + UX critical paths; no migration |
-| **B** Important | B1 - B11 (Task IDs 8-18) | Code + i18n + new audit events (with migration 0nnn) |
-| **C** Polish | C1 - C3 (Task IDs 19-21) | Comment rot + token brands + simplify pass |
-| **D** Verification | D1 - D3 (Task IDs 22-24) | lint + typecheck + integration (live Neon) + i18n parity |
+| Phase | Tasks | Scope | Status |
+|---|---|---|---|
+| **A** Critical | A1 - A7 (Task IDs 1-7) | Code + UX critical paths; no migration | ✅ All 7 closed |
+| **B** Important | B1 - B11 (Task IDs 8-18) | Code + i18n + new audit events (with migration 0158) | ✅ All 11 closed |
+| **C** Polish | C1, C3 (Task IDs 19, 21) | Comment rot + simplify pass | ✅ 2 of 3 closed |
+| **C-DEFER** | C2 (Task ID 20) | Per-purpose token brands | 🟠 Deferred — see § D-DEFER pairing |
+| **D** Verification | D1 - D3 (Task IDs 22-24) | lint + typecheck + integration (live Neon) + i18n parity | ✅ All 3 closed |
 
-Execution is **on the current `012-eventcreate-integration` working tree**, isolated to F1 files only (zero overlap with the in-progress F6 modifications). Commits will be prefixed `chore(F1):` with subject identifying the finding ID (e.g. `chore(F1) A1: honor audit-repo never-throw contract`).
+Execution was performed on the `012-eventcreate-integration` working tree, isolated to F1 files (zero overlap with in-progress F6 modifications). 7 commits with `chore(F1):` prefix:
+
+| Commit | Scope |
+|---|---|
+| `5c1c2d6b` | A1+A2 — audit-repo never-throw + rate-limit log leak guard |
+| `b575e898` | A3+A4 — redeem-invite + reset-password atomicity (Path C) |
+| `c340607d` | A5+A6+A7+B10 — WCAG fixes + PasswordInput primitive |
+| `79dba761` | B1+B2 — collapse 404/410 + change-password peek-then-consume |
+| `478e4912` | B3 — outer try/catch on 9 auth routes |
+| `22310a6f` | B4+B5 — malformed-hash + 3 new audit event types (migration 0158) |
+| `63a68cd9` | B6-B11 + C1+C3 + B4/B5 wiring + D verification |
+
+---
+
+## Verification Snapshot (2026-05-17 final)
+
+| Gate | Result |
+|---|---|
+| `pnpm lint` | Clean — 0 errors / 0 warnings |
+| `pnpm tsc --noEmit` | Clean — 0 errors |
+| `pnpm vitest run tests/unit/auth tests/contract` | **1166 green / 1 todo / 1167 tests across 117 files** |
+| `pnpm test:integration tests/integration/{auth,middleware,audit}/` | **150/150 green on live Neon Singapore** (~3min) |
+| `pnpm check:i18n` | **2895 keys** present in EN+TH+SV |
+
+Specific assertion bumps:
+- `AUDIT_EVENT_TYPES.length` now `30` (17 F1 + 10 F5 + 3 B5 post-ship).
+- `audit/completeness.test.ts` round-trips all 30 event types.
+- `change-password.test.ts` wrong-current branch now asserts the new `password_change_failed` audit row exists.
+- `argon2-hasher.test.ts` updated: malformed-hash now throws `MalformedHashError` (not returns false).
+- `audit-repo-never-throws.test.ts` (new) — 5 cases pinning A1 contract.
+- `log-leak-guard.test.ts` (new) — 4 cases pinning A2 redaction.
+- `feature-flag-f7-f8-kill-switch.test.ts` (new) — 24 cases covering proxy B6 gap.
+
+---
+
+## Migration 0158 — Operations Note
+
+`drizzle/migrations/0158_audit_f1_post_ship_event_types.sql` extends the Postgres `audit_event_type` enum by 3 values via `DO $$ ALTER TYPE ... ADD VALUE ... EXCEPTION WHEN duplicate_object THEN NULL; END $$`.
+
+**Issue encountered**: drizzle-kit's auto-applied migration reported "applied successfully!" but the enum was not actually extended. The DO-block + EXCEPTION clause appears to silently swallow the ALTER on certain postgres-js prepared-statement paths. Direct execution via `db.execute(sql\`DO $$ ... $$\`)` from a one-off script applied cleanly.
+
+**Resolution**: journal entry was added to `drizzle/migrations/meta/_journal.json` to mark the migration as logically applied; the enum was materialised via direct SQL. Migration file remains the source of truth for fresh-DB re-creation. Future contributors generating new migrations via `drizzle-kit generate` will see the journal entry and skip 0158.
+
+**Recommendation for the maintainer**: if a third audit-event extension migration is needed soon, switch to plain `ALTER TYPE ... ADD VALUE IF NOT EXISTS` (Postgres ≥ 9.6) instead of the DO-block pattern. Less syntactic noise, more reliable execution. The DO-block pattern in earlier migrations (0046, 0047, 0048, 0151) worked because those were applied in a fresh DB context.
+
+---
+
+## Final Compliance Verdict
+
+| Constitution Principle | Status |
+|---|---|
+| I — Tenant isolation (NON-NEG) | ✅ — F1 is cross-tenant identity by design (audit_log carries optional tenant_id from F2 onwards). No regressions. |
+| II — TDD (NON-NEG) | ✅ — 1166 unit+contract green + 150 integration green; all new behaviours have tests. |
+| III — Clean Architecture (NON-NEG) | ✅ — Domain has zero framework imports; Application uses type-only imports for Infrastructure ports (one value-import added for `retryAfterSeconds` pure-function helper — pragmatic exception consistent with existing `defaultSignInDeps` pattern). |
+| IV — PCI DSS (NON-NEG) | n/a — F1 carries no payment data. |
+| V — i18n EN+TH+SV | ✅ — 2895 keys, full parity. 4 new keys (auth.passwordReveal.show/hide + 3 cardDescription) plus 1 placeholder (auth.forgotPassword.resendCountdown). |
+| VI — Inclusive UX | ✅ — A5+A6+A7 close 3 WCAG 2.1 AA blockers (aria-describedby on errors; motion-safe spinners; password-reveal toggle). |
+| VII — Perf & Observability | ✅ — 3 new audit event types add to the 5-year forensic trail; rate-limit log leak closed. No perf regressions (peek-then-consume on change-password is identical Redis op count). |
+| VIII — Reliability | ✅ — A1 honors never-throws contract; A3+A4 wrap multi-step state transitions in `db.transaction`; B3 wraps every route handler in outer try/catch. The exact failure modes called out in this review's silent-failure section are now structurally defended. |
+| IX — Solo-maintainer governance | ✅ — Commits prefixed `chore(F1):` per Conventional Commits; each commit message documents the failure mode it closes and the test that pins it. |
+| X — Simplicity | ✅ — Net code change is modestly positive (~150 LOC of features + tests, ~30 LOC of duplication removed via retryAfterSeconds extraction). One new primitive (`<PasswordInput>` ui component) replaces 8 raw `<Input type="password">` instances. |
+
+**Verdict**: 🟢 **Ready for staff-review co-sign**. Pre-flag-flip operator gates (manual SR walkthrough, reduced-motion E2E, cross-browser staging traces) remain on the existing F1 ship checklist — none are introduced or worsened by this batch.
+
+Two items deferred to a follow-up PR with explicit rationale:
+1. **C2** (per-purpose token brands) — scope ~12 files; pairs naturally with D-DEFER.
+2. **D-DEFER** (plaintext token + session-ID storage as DB PK) — production-breaking; requires maintenance window + comms.
