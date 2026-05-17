@@ -84,7 +84,10 @@ describe('parseResetTokenId', () => {
     } catch (e) {
       expect(e).toBeInstanceOf(MalformedTokenError);
       expect((e as Error).message).toContain('ResetTokenId');
-      expect((e as Error).message).toContain('5');
+      // S6 (Round 4) — word-boundary regex so a future message
+      // rewrite that contains other literal digits cannot mask
+      // a length-mismatch regression.
+      expect((e as Error).message).toMatch(/got length 5\b/);
       return;
     }
     throw new Error('expected throw');

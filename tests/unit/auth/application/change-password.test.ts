@@ -403,6 +403,10 @@ describe('changePassword use case', () => {
         eventType: 'password_malformed_hash_detected',
         actorUserId: USER_ID,
         targetUserId: USER_ID,
+        // S2 (Round 4) — pin parity with the O6 sign-in test:
+        // operators that alert on `summary LIKE '%malformed%'`
+        // expect the substring to appear here too.
+        summary: expect.stringContaining('malformed'),
       }),
     );
   });

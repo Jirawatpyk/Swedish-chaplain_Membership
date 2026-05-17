@@ -52,7 +52,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     parsed.data.token,
     { requestId, routeName: 'reset-password' },
   );
-  if (!parsedTokenResult.ok) return parsedTokenResult.response;
+  if (parsedTokenResult.kind === 'link-invalid') return parsedTokenResult.response;
 
   const result = await resetPassword({
     token: parsedTokenResult.value,

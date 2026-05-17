@@ -53,7 +53,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     parsed.data.token,
     { requestId, routeName: 'redeem-invite' },
   );
-  if (!parsedTokenResult.ok) return parsedTokenResult.response;
+  if (parsedTokenResult.kind === 'link-invalid') return parsedTokenResult.response;
 
   const result = await redeemInvite({
     token: parsedTokenResult.value,
