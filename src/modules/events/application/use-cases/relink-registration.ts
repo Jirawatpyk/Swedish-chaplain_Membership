@@ -158,7 +158,7 @@ export interface RelinkRegistrationInput {
   readonly actorUserId: UserId;
   readonly occurredAt: Date;
   /**
-   * H1 closure — eventId from the URL path. The use-case
+   * eventId from the URL path. The use-case
    * verifies that `registration.eventId === eventIdFromPath` BEFORE
    * any mutation (lock acquisition / audit emission / DB write). A
    * mismatch returns `event_path_mismatch` and the route maps to 404,
@@ -229,7 +229,7 @@ export type RelinkRegistrationError =
     }
   | {
       /**
-       * H1 closure — URL path's eventId does not match the
+       * URL path's eventId does not match the
        * registration's stored event_id. Returned BEFORE any mutation
        * so `runInTenantWithRollbackOnErr` rolls back cleanly. Route
        * maps to 404 (treat as not-found; the URL is malformed

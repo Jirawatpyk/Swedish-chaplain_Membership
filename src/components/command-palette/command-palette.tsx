@@ -47,7 +47,7 @@ import {
 } from '@/components/ui/command';
 // Type-only import of Role from the deep domain path — importing from
 // the auth barrel would chain-pull argon2 into the client bundle.
-// eslint-disable-next-line no-restricted-imports
+ 
 import type { Role } from '@/modules/auth/domain/role';
 import { PaletteGroups } from './groups';
 import type { PaletteSearchResponse } from './registry';

@@ -26,7 +26,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { gateF6Cron } from '@/lib/events-cron-deps';
 import { asTenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import {
@@ -64,11 +64,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // (constant-time bearer compare + IP rate-limit + cron_bearer_auth_rejected
   // audit emit) instead of inline verifyCronBearer. Restores forensic
   // coverage parity with the sweep-error-csv-blobs cron precedent.
-  const gate = await gateCronBearerOrRespond(request, {
-    route: ROUTE,
-    metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(ROUTE),
-    rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(ROUTE),
-  });
+  const gate = await gateF6Cron(request, ROUTE);
   if (gate) return gate;
 
   if (!env.features.f6EventCreate) {
@@ -160,16 +156,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // If ANY tenant errored, return HTTP 500 so cron-job.org's
-  // "≥2 consecutive non-200" alert fires. The per-tenant array is
-  // preserved in the response body for forensic correlation. Mirrors
-  // the sweep-error-csv-blobs scan-failure precedent.
-  const anyErrored = perTenant.some((t) => t.outcome === 'error');
-  if (anyErrored) {
-    return NextResponse.json(
-      { ok: false, error: 'pseudonymise_sweep_per_tenant_errors', perTenant },
-      { status: 500 },
-    );
-  }
+  // Per F8 coordinator convention (docs/runbooks/cron-jobs.md:327-328):
+  // per-tenant errors degrade to `tenants_failed > 0` in a 200 response;
+  // only scan-level errors (auth, env misconfig, tenant list query)
+  // return 500. Verified against 4 F8 coordinators + F5
+  // sweep-stale-pending-refunds + F4 receipt-pdf-reconcile + F6.1
+  // sweep-error-csv-blobs — all return 200 with per-tenant counters in
+  // the body. SRE alerting fires via the
+  // `eventcreate_pii_pseudonymisation_sweep_rows_total{outcome=error}`
+  // OTel counter (incremented per tenant in the catch + Result.err
+  // branches above), not via HTTP status. Round 1 A3 fix erroneously
+  // returned 500 on per-tenant errors; Round 2 R2-I2 reverts to align.
   return NextResponse.json({ ok: true, perTenant }, { status: 200 });
 }

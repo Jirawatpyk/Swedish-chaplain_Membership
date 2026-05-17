@@ -37,31 +37,25 @@ import { createHash } from 'node:crypto';
 import { and, count, eq, lt, lte, ne } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
-/* eslint-disable no-restricted-imports --
- * Cron job: direct UPDATE on `notifications_outbox` + auditLog — this
- * is the operational drain path, not a user flow. Same escape hatch
- * as /api/cron/lockout-cleanup. */
+ 
 import {
   auditLog,
   notificationsOutbox,
   type NotificationsOutboxRow,
 } from '@/modules/auth/infrastructure/db/schema';
-/* eslint-enable no-restricted-imports */
+ 
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { outboxMetrics, invoicingMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
-/* eslint-disable no-restricted-imports --
- * Cron dispatcher is operational infrastructure — the same escape
- * hatch /api/cron/lockout-cleanup uses. Auth + members infra are
- * not yet exposed through their barrels. */
+ 
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { buildEmailVerificationEmail } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildEmailChangeRevertEmail } from '@/modules/members/infrastructure/email/email-change-revert-email';
 import type { EmailLocale } from '@/modules/members/infrastructure/email/email-verification-email';
 import { buildInvitationEmail } from '@/modules/auth/infrastructure/email/invitation-email';
 import { isRole } from '@/modules/auth/domain/role';
-/* eslint-enable no-restricted-imports */
+ 
 import {
   buildInvoiceAutoEmail,
   type InvoiceAutoEmailEventType,

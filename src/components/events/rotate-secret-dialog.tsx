@@ -41,7 +41,7 @@ export function RotateSecretDialog({
   onRotationAcknowledged,
 }: RotateSecretDialogProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseC.rotate');
-  // H2 fix — `formatGraceTimestamp` shared
+  // `formatGraceTimestamp` shared
   // helper renders ISO timestamps with the chamber's Bangkok timezone
   // + locale-correct date/time format. Previously the raw ISO leaked
   // through to the TH/SV post-rotation dialog body via the i18n

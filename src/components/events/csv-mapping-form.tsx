@@ -757,11 +757,21 @@ function PreviewPanel({
             {cancelLabel}
           </Button>
         </div>
-        {submitDisabled && submitDisabledReason !== null ? (
-          <p className="text-caption text-muted-foreground" aria-live="polite">
-            {submitDisabledReason}
-          </p>
-        ) : null}
+        {/* H7.2 / IMP-R2-4 — stable outer mount of the aria-live region
+            so NVDA/JAWS register the observer on first render. Content
+            varies conditionally; min-h prevents layout collapse to 0px
+            when there's no reason. Mirrors the precedent at the
+            phase-state live region near the top of this component. */}
+        <p
+          className="text-caption text-muted-foreground"
+          aria-live="polite"
+          aria-atomic="true"
+          style={{ minHeight: '1lh' }}
+        >
+          {submitDisabled && submitDisabledReason !== null
+            ? submitDisabledReason
+            : ''}
+        </p>
       </div>
     </div>
   );

@@ -582,9 +582,13 @@ async function maybeApplyStateChange(
         },
       });
     } catch (rawThrow) {
+      // H8.1 — thread the raw exception via Error.cause so SRE
+      // forensics see the underlying error class (PostgresError,
+      // AbortError, etc.) in addition to the message + failureStage.
       throw new TxStageError(
         'audit_emit',
         `csv_import_row_state_changed audit emit threw: ${rawThrow instanceof Error ? rawThrow.message : String(rawThrow)}`,
+        rawThrow instanceof Error ? { cause: rawThrow } : undefined,
       );
     }
     if (!auditResult.ok) {

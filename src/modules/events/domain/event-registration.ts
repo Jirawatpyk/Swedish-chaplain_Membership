@@ -66,14 +66,26 @@ export type MatchResolutionView =
     };
 
 /**
- * Refine a `MatchResolution` to its variant-narrowed form. Returns null
- * if the underlying data violates the DB CHECK invariant (defensive —
- * the DB rejects writes that violate this; this returns null so
- * callers can fail gracefully without throwing).
+ * Refine a `MatchResolution` to its variant-narrowed form. Throws
+ * `Error` if the underlying data violates the DB CHECK invariant at
+ * migration 0136 — invariant violation at READ-time is an in-memory
+ * bug (DB rejects writes that violate this), so we fail loudly rather
+ * than silently returning null.
+ *
+ * Round 2 R2-S1 / H3.2 — the aggregate field `EventRegistrationAggregate.match`
+ * is now typed as `MatchResolutionView`, and the Drizzle repo mapper
+ * calls this function at the row→aggregate boundary.
  */
-export function asMatchResolutionView(
-  m: MatchResolution,
-): MatchResolutionView | null {
+export class MatchResolutionInvariantError extends Error {
+  constructor(public readonly raw: MatchResolution) {
+    super(
+      `MatchResolution invariant violated at read-time: type=${raw.type} matchedMemberId=${raw.matchedMemberId === null ? 'null' : 'set'} matchedContactId=${raw.matchedContactId === null ? 'null' : 'set'}`,
+    );
+    this.name = 'MatchResolutionInvariantError';
+  }
+}
+
+export function asMatchResolutionView(m: MatchResolution): MatchResolutionView {
   if (m.type === 'member_contact') {
     if (m.matchedMemberId !== null && m.matchedContactId !== null) {
       return {
@@ -82,7 +94,7 @@ export function asMatchResolutionView(
         matchedContactId: m.matchedContactId,
       };
     }
-    return null;
+    throw new MatchResolutionInvariantError(m);
   }
   if (m.type === 'member_domain' || m.type === 'member_fuzzy') {
     if (m.matchedMemberId !== null && m.matchedContactId === null) {
@@ -92,13 +104,13 @@ export function asMatchResolutionView(
         matchedContactId: null,
       };
     }
-    return null;
+    throw new MatchResolutionInvariantError(m);
   }
   // non_member | unmatched
   if (m.matchedMemberId === null && m.matchedContactId === null) {
     return { type: m.type, matchedMemberId: null, matchedContactId: null };
   }
-  return null;
+  throw new MatchResolutionInvariantError(m);
 }
 
 export interface Ticket {
@@ -126,7 +138,15 @@ export interface EventRegistrationAggregate {
   readonly externalId: ExternalAttendeeId;
 
   readonly attendee: Attendee;
-  readonly match: MatchResolution;
+  /**
+   * H3.2 — tightened from `MatchResolution` to `MatchResolutionView`.
+   * The Drizzle repo mapper calls `asMatchResolutionView()` at the
+   * row→aggregate boundary; readers pattern-match on `match.type` and
+   * get the per-variant invariant (e.g. `member_contact` →
+   * `matchedMemberId` and `matchedContactId` are both non-null at
+   * compile time).
+   */
+  readonly match: MatchResolutionView;
   readonly ticket: Ticket;
   readonly quotaEffect: QuotaEffect;
 

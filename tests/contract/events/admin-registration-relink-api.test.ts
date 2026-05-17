@@ -158,6 +158,20 @@ describe('Phase B B8 — POST /api/admin/events/[eventId]/registrations/[registr
       const body = (await res.json()) as Record<string, unknown>;
       expect(body['noop']).toBe(false);
       expect(body['newMatchedMemberId']).toBe(VALID_NEW_MEMBER_ID);
+      // R2-I5 regression-net: pin use-case dispatch shape. Critical
+      // field: `eventIdFromPath` — Round-2 code-H1 silent-success bug
+      // (per relink/route.ts:191-198 doc-comment) would re-emerge if a
+      // future refactor drops this input. The pre-mutation check inside
+      // the use-case relies on it.
+      expect(runRelinkRegistrationMock).toHaveBeenCalledWith(
+        TENANT_SLUG,
+        expect.objectContaining({
+          registrationId: VALID_REGISTRATION_ID,
+          newMatchedMemberId: VALID_NEW_MEMBER_ID,
+          eventIdFromPath: VALID_EVENT_ID,
+          actorUserId: ADMIN_USER_ID,
+        }),
+      );
     });
 
     it('returns 200 with noop=true for A→A short-circuit', async () => {
@@ -185,6 +199,10 @@ describe('Phase B B8 — POST /api/admin/events/[eventId]/registrations/[registr
       const { POST } = await loadRoute();
       const res = await POST(jsonRequest({}), withParams(VALID_PARAMS));
       expect(res.status).toBe(400);
+      // R2-I4 regression-net: use-case must NEVER be dispatched on
+      // validation rejection — proves the route short-circuited at the
+      // body-parse stage.
+      expect(runRelinkRegistrationMock).not.toHaveBeenCalled();
     });
 
     it('400 on non-v4 UUID newMatchedMemberId', async () => {
@@ -194,6 +212,7 @@ describe('Phase B B8 — POST /api/admin/events/[eventId]/registrations/[registr
         withParams(VALID_PARAMS),
       );
       expect(res.status).toBe(400);
+      expect(runRelinkRegistrationMock).not.toHaveBeenCalled();
     });
 
     it('400 on malformed JSON', async () => {
@@ -205,6 +224,7 @@ describe('Phase B B8 — POST /api/admin/events/[eventId]/registrations/[registr
       });
       const res = await POST(req, withParams(VALID_PARAMS));
       expect(res.status).toBe(400);
+      expect(runRelinkRegistrationMock).not.toHaveBeenCalled();
     });
   });
 
@@ -278,7 +298,12 @@ describe('Phase B B8 — POST /api/admin/events/[eventId]/registrations/[registr
   });
 
   describe('404 path-param rejection', () => {
-    it('404 on non-v4 UUID eventId', async () => {
+    it('404 on non-v4 UUID eventId — guard runs FIRST then UUID check', async () => {
+      // H1.2 reorder: adminOnlyWriterGuard runs before UUID regex now.
+      // Admin session → guard passes → UUID check fails → 404.
+      // R2-I4 critical assertion: use-case must NEVER be dispatched.
+      // A regression that removed the guard would still hit this 404
+      // via the UUID branch — but the assertion below catches that.
       const { POST } = await loadRoute();
       const res = await POST(
         jsonRequest({ newMatchedMemberId: VALID_NEW_MEMBER_ID }),
@@ -288,6 +313,15 @@ describe('Phase B B8 — POST /api/admin/events/[eventId]/registrations/[registr
         }),
       );
       expect(res.status).toBe(404);
+      expect(runRelinkRegistrationMock).not.toHaveBeenCalled();
+      // Guard pre-empted UUID check → it did not blame the admin actor
+      // (no role_violation since admin role passes).
+      const violation = emitStandaloneMock.mock.calls.find(
+        (c) =>
+          (c[0] as Record<string, unknown>)['eventType'] ===
+          'role_violation_blocked',
+      );
+      expect(violation).toBeUndefined();
     });
   });
 

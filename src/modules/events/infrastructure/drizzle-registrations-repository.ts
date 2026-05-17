@@ -39,7 +39,10 @@ import type {
   RegistrationsRepositoryError,
   CountConsumedByMemberInput,
 } from '../application/ports/registrations-repository';
-import type { EventRegistrationAggregate } from '../domain/event-registration';
+import {
+  asMatchResolutionView,
+  type EventRegistrationAggregate,
+} from '../domain/event-registration';
 import type {
   EventId,
   RegistrationId,
@@ -83,11 +86,15 @@ function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
       name: row.attendeeName,
       company: row.attendeeCompany,
     },
-    match: {
+    // H3.2 — narrow to MatchResolutionView at the boundary. The DB
+    // CHECK at migration 0136 guarantees the pair invariant; a thrown
+    // MatchResolutionInvariantError here means an in-memory row that
+    // disagrees with the schema (should be impossible in production).
+    match: asMatchResolutionView({
       type: row.matchType as MatchType,
       matchedMemberId: row.matchedMemberId as MemberId | null,
       matchedContactId: row.matchedContactId as ContactId | null,
-    },
+    }),
     ticket: {
       type: row.ticketType,
       priceThb: row.ticketPriceThb,

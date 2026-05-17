@@ -53,12 +53,24 @@ import { wrapRepoError } from './sanitize-db-error';
 import type { TenantId } from '@/modules/members';
 
 function toAggregate(row: TenantWebhookConfigRow): TenantWebhookConfigAggregate {
+  // H3.1 — DB CHECK constraint (migration 0129) guarantees both grace
+  // columns are NULL or both non-NULL together. Map to the discriminated
+  // GraceState union once at the boundary so downstream readers
+  // pattern-match on `grace.active` for compile-time-guaranteed pair
+  // access.
+  const rawGraceSecret = row.webhookSecretGrace as WebhookSecret | null;
+  const rawGraceRotatedAt = row.graceRotatedAt
+    ? new Date(row.graceRotatedAt)
+    : null;
+  const grace =
+    rawGraceSecret !== null && rawGraceRotatedAt !== null
+      ? ({ active: true, secret: rawGraceSecret, rotatedAt: rawGraceRotatedAt } as const)
+      : ({ active: false } as const);
   return {
     tenantId: row.tenantId as TenantId,
     source: row.source as Source,
     activeSecret: row.webhookSecretActive as WebhookSecret,
-    graceSecret: row.webhookSecretGrace as WebhookSecret | null,
-    graceRotatedAt: row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
+    grace,
     enabled: row.enabled,
     createdAt: new Date(row.createdAt),
     lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt) : null,

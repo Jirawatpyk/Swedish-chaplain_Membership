@@ -16,12 +16,10 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { getTranslations } from 'next-intl/server';
 import { AlertTriangle } from 'lucide-react';
 import { and, count, eq, gte, lt } from 'drizzle-orm';
-/* eslint-disable no-restricted-imports --
- * Shell component reads operational outbox state for admin awareness.
- * Same escape-hatch pattern as the cron dispatcher. */
+ 
 import { db } from '@/lib/db';
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
-/* eslint-enable no-restricted-imports */
+ 
 import { logger } from '@/lib/logger';
 import {
   Tooltip,

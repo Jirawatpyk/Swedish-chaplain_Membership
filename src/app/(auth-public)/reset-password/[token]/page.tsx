@@ -15,7 +15,7 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 // which pre-validation MUST NOT do (T-04 enumeration defence).
 // This direct infrastructure read is scoped to the single display
 // decision below and is the documented escape hatch.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { isResetTokenValid, asTokenId } from '@/modules/auth';
 

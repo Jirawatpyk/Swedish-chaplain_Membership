@@ -618,6 +618,41 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // H3.3 — `*Unchecked` branded-type constructors skip the UUID v4
+    // regex. They are INFRASTRUCTURE-ONLY: only Drizzle row-read
+    // adapters (where the DB type system guarantees UUID shape via
+    // `uuid DEFAULT gen_random_uuid()`) may use them. Every other
+    // caller MUST use the validated default (`asEventId` /
+    // `asRegistrationId`) which enforces the regex at the HTTP / CSV
+    // boundary.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/modules/events/infrastructure/**",
+      "src/modules/events/domain/branded-types.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/modules/events",
+              importNames: [
+                "asEventIdUnchecked",
+                "asRegistrationIdUnchecked",
+                "tryEventIdUnchecked",
+                "tryRegistrationIdUnchecked",
+              ],
+              message:
+                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+                "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

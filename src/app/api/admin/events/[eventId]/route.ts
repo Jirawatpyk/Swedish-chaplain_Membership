@@ -241,6 +241,18 @@ export async function GET(
       // leak surface), so we treat the 404 as info-level by default.
       // Confirmed cross-tenant signal would be emitted elsewhere with
       // discriminating evidence (e.g., a SQL-injected slug).
+      //
+      // H8.2 / NEW-I3 — `probedTenantId` and `signedTenantId` are
+      // ALWAYS identical at this callsite (both set to `tenantCtx.slug`).
+      // The redundant pair is intentional: it matches the
+      // `cross_tenant_probe` payload shape exactly so SRE dashboards
+      // can union the two event types on the same WHERE clause and
+      // discriminate by severity. A future feature that adds
+      // rate-gated probing (e.g. admin enumerating >100 events/min
+      // within a tenant) could promote info-level → warn-level on the
+      // same payload shape — but that's a F6.2 concern, not a bug in
+      // this route. This route literally cannot observe cross-tenant
+      // evidence (RLS hides rows from other tenants completely).
       await safeEmitStandalone(
         makeStandaloneAuditDeps(),
         {

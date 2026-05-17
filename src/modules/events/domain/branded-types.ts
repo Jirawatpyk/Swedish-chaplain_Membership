@@ -109,52 +109,53 @@ export type RequestId = string & { readonly __brand: 'RequestId' };
  */
 
 /**
- * Phase C C3 — UUID v4 regex shared with `csv-import-record-id.ts` for
- * boundary validation of EventId/RegistrationId brands. Use the
- * validated constructors at HTTP/CSV/external trust boundaries (route
- * handlers, CSV adapters); use the `Unchecked` variants for hot-path
- * Drizzle row reads where the DB already guarantees the shape via
- * `uuid DEFAULT gen_random_uuid()`.
+ * Phase C C3 / Phase H3.3 — UUID v4 regex shared with
+ * `csv-import-record-id.ts`. After H3.3:
+ *
+ * - **Default constructors** `asEventId` / `asRegistrationId` validate
+ *   UUID v4 shape. Use at HTTP / CSV / external trust boundaries.
+ * - **Unchecked variants** `asEventIdUnchecked` / `asRegistrationIdUnchecked`
+ *   skip the regex for hot-path Drizzle row reads where the DB column
+ *   `uuid DEFAULT gen_random_uuid()` already guarantees the shape.
+ *   These are confined by ESLint rule to `src/modules/events/infrastructure/**`.
+ *
+ * - `asExternalEventId` / `asExternalAttendeeId` stay UNCHANGED — these
+ *   are EventCreate slug-strings, NOT UUIDs. Length-only check is correct.
  */
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/** Default — validates UUID v4 shape. Use at HTTP / CSV / external boundaries. */
 export function asEventId(value: string): EventId {
-  if (!value || value.length === 0) {
-    throw new Error('EventId must be a non-empty string');
-  }
-  return value as EventId;
-}
-
-/**
- * Validated variant — checks UUID v4 shape. Use at HTTP/CSV boundaries
- * where the input has not already been regex-checked at the caller.
- */
-export function asEventIdValidated(value: string): EventId {
   if (typeof value !== 'string' || !UUID_V4_PATTERN.test(value)) {
     throw new Error(`EventId must be a UUID v4 (got ${value.length} chars)`);
   }
   return value as EventId;
 }
 
-export function tryEventId(value: unknown): EventId | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
+/**
+ * Unchecked variant — skips UUID v4 regex. Reserved for hot-path
+ * Drizzle row reads (DB column is `uuid DEFAULT gen_random_uuid()`).
+ * ESLint banned outside `src/modules/events/infrastructure/**`.
+ */
+export function asEventIdUnchecked(value: string): EventId {
+  if (!value || value.length === 0) {
+    throw new Error('EventId must be a non-empty string');
+  }
   return value as EventId;
 }
 
-export function tryEventIdValidated(value: unknown): EventId | null {
+export function tryEventId(value: unknown): EventId | null {
   if (typeof value !== 'string' || !UUID_V4_PATTERN.test(value)) return null;
   return value as EventId;
 }
 
-export function asRegistrationId(value: string): RegistrationId {
-  if (!value || value.length === 0) {
-    throw new Error('RegistrationId must be a non-empty string');
-  }
-  return value as RegistrationId;
+export function tryEventIdUnchecked(value: unknown): EventId | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  return value as EventId;
 }
 
-export function asRegistrationIdValidated(value: string): RegistrationId {
+export function asRegistrationId(value: string): RegistrationId {
   if (typeof value !== 'string' || !UUID_V4_PATTERN.test(value)) {
     throw new Error(
       `RegistrationId must be a UUID v4 (got ${value.length} chars)`,
@@ -163,15 +164,22 @@ export function asRegistrationIdValidated(value: string): RegistrationId {
   return value as RegistrationId;
 }
 
-export function tryRegistrationId(value: unknown): RegistrationId | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
+export function asRegistrationIdUnchecked(value: string): RegistrationId {
+  if (!value || value.length === 0) {
+    throw new Error('RegistrationId must be a non-empty string');
+  }
   return value as RegistrationId;
 }
 
-export function tryRegistrationIdValidated(
+export function tryRegistrationId(value: unknown): RegistrationId | null {
+  if (typeof value !== 'string' || !UUID_V4_PATTERN.test(value)) return null;
+  return value as RegistrationId;
+}
+
+export function tryRegistrationIdUnchecked(
   value: unknown,
 ): RegistrationId | null {
-  if (typeof value !== 'string' || !UUID_V4_PATTERN.test(value)) return null;
+  if (typeof value !== 'string' || value.length === 0) return null;
   return value as RegistrationId;
 }
 

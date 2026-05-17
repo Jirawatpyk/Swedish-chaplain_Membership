@@ -83,11 +83,20 @@ import type { FailureStage } from '../../ports/audit-port';
 export type { FailureStage };
 
 export class TxStageError extends Error {
+  /**
+   * H8.1 / NEW-I5 — thread the original Error via `options.cause`
+   * (Node 16.9+ / ES2022 Error.cause) so SRE forensics see the raw
+   * exception's `.name` (e.g. 'PostgresError', 'AbortError') alongside
+   * the failureStage. Pino's default `err` serialiser surfaces
+   * `cause.name` + `cause.message` automatically.
+   */
   constructor(
     public readonly stage: FailureStage,
     message: string,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
+    this.name = 'TxStageError';
   }
 }
 

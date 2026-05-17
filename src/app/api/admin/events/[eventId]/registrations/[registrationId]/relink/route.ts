@@ -68,34 +68,29 @@ export async function POST(
   }
 
   const { eventId, registrationId } = await ctx.params;
-  // Length-cap path params to bound audit / log row sizes; UUID-v4
-  // regex ensures the path actually identifies a registration row +
-  // event row (any non-UUID is a probe attempt). Same defensive
-  // posture as the archive route.
+  // Length-cap path params first (cheap bound check; sanitises the
+  // audit-route string used by the guard below). UUID-v4 regex check
+  // runs AFTER auth — see B5/R2-I1: an unauthenticated probe should
+  // never reach the regex (info-disclosure asymmetry). Matches the
+  // erase sibling route's guard ordering.
   if (
     !eventId ||
     eventId.length > 200 ||
-    !UUID_V4.test(eventId) ||
     !registrationId ||
-    registrationId.length > 200 ||
-    !UUID_V4.test(registrationId)
+    registrationId.length > 200
   ) {
     return new NextResponse(null, { status: 404 });
   }
 
-  // Round-1 review fix (M-1 / requestId correlation) — generate a
-  // requestId at the top so every 500 path can correlate logs ↔
-  // response body via `requestId`. Mirrors the create-event route's
-  // `requestId` block (see `src/app/api/admin/events/route.ts` § POST
-  // handler init — section-anchor citation instead of line number per
-  // Round-2 comments-M2).
+  // Generate a requestId at the top so every 500 path can correlate
+  // logs ↔ response body via `requestId`. Mirrors the create-event
+  // route's `requestId` block.
   const requestId = crypto.randomUUID();
 
-  // FR-035 admin-only writer guard: manager → 403 + audit, member → 404
-  // + audit, no-session/unknown → 404. See `adminOnlyWriterGuard`
-  // doc-comment for the full FR-035 matrix. `requestId` threaded for
-  // log/response correlation across guard + route 500 paths
-  // (Round-2 err-M5 polish).
+  // FR-035 admin-only writer guard runs BEFORE the UUID-shape check so
+  // an unauthenticated probe never reaches the regex (no information
+  // disclosure asymmetry; matches sibling erase route). Manager → 403
+  // + audit, member → 404 + audit, no-session/unknown → 404.
   const guard = await adminOnlyWriterGuard(request, {
     attemptedRoute: `/api/admin/events/${eventId}/registrations/${registrationId}/relink`,
     attemptedAction: 'relink_registration',
@@ -104,6 +99,10 @@ export async function POST(
   });
   if (guard.kind === 'deny') return guard.response;
   const actorUserId = guard.actorUserId;
+
+  if (!UUID_V4.test(eventId) || !UUID_V4.test(registrationId)) {
+    return new NextResponse(null, { status: 404 });
+  }
 
   // Parse + validate body
   let body: unknown;

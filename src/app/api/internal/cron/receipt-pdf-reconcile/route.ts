@@ -80,10 +80,10 @@ import {
 // Drizzle table objects; doing so would invite raw-SQL coupling from
 // product code. This route is operational infrastructure, not a user
 // flow, so the carve-out is acceptable.
-/* eslint-disable no-restricted-imports */
+ 
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-/* eslint-enable no-restricted-imports */
+ 
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

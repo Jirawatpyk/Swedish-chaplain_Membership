@@ -61,9 +61,9 @@ import {
 // Application — no Principle III violation). Convention across other
 // composition-root files (page.tsx + api/.../route.ts) is to silence
 // `no-restricted-imports` on the specific composition-root line.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
-// eslint-disable-next-line no-restricted-imports
+ 
 import {
   retentionFor as f5RetentionFor,
 } from '@/modules/payments/application/ports/audit-port';
@@ -71,7 +71,7 @@ import {
 // with the F5 dispatcher (process-webhook-event.ts). Prevents drift
 // between which event types are dispatched vs which trigger
 // revalidatePath.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { F5_HANDLED_EVENT_TYPES_SET } from '@/modules/payments/application/ports/webhook-verifier-port';
 import { paymentsMetrics } from '@/lib/metrics';
 

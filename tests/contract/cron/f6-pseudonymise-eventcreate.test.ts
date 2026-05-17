@@ -138,16 +138,23 @@ describe('Phase B B11 — POST /api/internal/retention/pseudonymise-eventcreate'
     expect(perTenant[0]?.['outcome']).toBe('success');
   });
 
-  it('Phase A A3 closure — returns 500 when any tenant errored', async () => {
+  it('R2-I2 F8 convention — returns 200 with per-tenant error in body (NOT 500)', async () => {
+    // Per docs/runbooks/cron-jobs.md:327-328 F8 coordinator convention:
+    // per-tenant errors degrade to `tenants_failed > 0` in 200; only
+    // scan-level errors (auth, env, tenant-list query) return 500.
+    // SRE alerting fires via the OTel error counter, not HTTP status.
     pseudonymiseStaleNonMemberPiiMock.mockResolvedValue({
       ok: false,
       error: { kind: 'db_error', message: 'simulated failure' },
     });
     const { POST } = await loadRoute();
     const res = await POST(makeRequest());
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body['ok']).toBe(false);
-    expect(body['error']).toBe('pseudonymise_sweep_per_tenant_errors');
+    expect(body['ok']).toBe(true);
+    const perTenant = body['perTenant'] as ReadonlyArray<Record<string, unknown>>;
+    expect(perTenant.length).toBeGreaterThan(0);
+    expect(perTenant[0]?.['outcome']).toBe('error');
+    expect(perTenant[0]?.['message']).toContain('simulated failure');
   });
 });

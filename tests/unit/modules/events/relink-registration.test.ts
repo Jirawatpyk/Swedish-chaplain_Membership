@@ -146,8 +146,12 @@ function makeDeps(o: MockOverrides = {}): {
       (async () =>
         ok(
           makeRegistration({
+            // H3.2 — `member_contact` requires both matchedMemberId
+            // AND matchedContactId non-null per MatchResolutionView.
+            // Use `member_domain` for the contactless member-match
+            // variant (same quota semantics in this test).
             match: {
-              type: 'member_contact',
+              type: 'member_domain',
               matchedMemberId: MEMBER_B,
               matchedContactId: null,
             },

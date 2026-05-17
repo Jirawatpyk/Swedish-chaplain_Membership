@@ -2827,6 +2827,7 @@
           "emptyStateTitle": "Inga importer ännu",
           "emptyStateBody": "Tidigare importer visas här efter uppladdning av en CSV-fil.",
           "emptyStateCta": "Ladda upp CSV",
+          "autoRefreshing": "Uppdateras automatiskt var 5:e sekund medan importer pågår",
           "backToImport": "Tillbaka till import"
         }
       }

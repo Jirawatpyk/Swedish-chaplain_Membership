@@ -167,16 +167,6 @@ function emitMatchingQuotaMetric(entry: F6AuditEntry): void {
 export const F6_DEFAULT_RETENTION_YEARS = 5 as const;
 
 /**
- * Cap + sanitize DB error messages before they reach the audit Result
- * payload. Postgres errors include table names, column names,
- * constraint names that should not leak through the Application layer.
- * Defense-in-depth alongside pino REDACT_PATHS.
- *
- * IMPORTANT: this strips for the OUTBOUND payload only. The full error
- * (with stack) is logged via `logger.error` at the catch site BEFORE
- * sanitisation so SREs can debug root causes server-side.
- */
-/**
  * Preserve full error info (name + message + stack) in a structured log
  * line BEFORE the sanitised Result is returned to Application. Pairs
  * with `sanitizeDbErrorMessage` — sanitisation protects the outbound
@@ -211,30 +201,75 @@ function logFullError(
  * caller drift (current callers don't carry PII, but the contract is
  * shared infrastructure).
  */
+/**
+ * Allowlist for {@link redactPayloadForFatalLog}.
+ *
+ * Organised by purpose so future maintainers can reason about each
+ * field's forensic value vs PII-leak risk:
+ *
+ *   - Forensic context (always safe): severity, source, scope, requestId
+ *   - Probe/attack signals (non-PII identifiers): sourceIp, attemptedRoute,
+ *     probedTenantId, signedTenantId
+ *   - Signature failure details: signatureLastFour, timestampSkewSeconds,
+ *     bodyLengthBytes
+ *   - Operation outcomes: errorName, failureStage, stage, rowNumber,
+ *     rowsCleared, durationMs
+ *   - Identifiers (non-PII UUIDs): registrationId, eventId, matchType
+ *   - Actor classification (non-PII role labels): actorType, actorUserId,
+ *     dispatchedByActorUserId, dispatchedByActorRole
+ *   - State signals: graceSecretUsed, graceSecretAgeHours, reason
+ *
+ * Anything NOT on this list is dropped — protects against PII fields
+ * like `attendeeEmail`, `attendeeName`, `attendeeCompany`, `errorMessage`,
+ * `errorStack`, `reasonText`, `rawRowExcerpt`, `errors[]` reaching the
+ * `pino.fatal` log when DB-write fails. Exhaustively cross-checked
+ * against the 43-event F6 payload union — see test
+ * `tests/unit/events/infrastructure/redact-payload-for-fatal-log.test.ts`.
+ */
+const REDACT_ALLOWED_KEYS = new Set<string>([
+  // Forensic context
+  'severity',
+  'requestId',
+  'source',
+  'scope',
+  // Probe/attack signals
+  'sourceIp',
+  'attemptedRoute',
+  'probedTenantId',
+  'signedTenantId',
+  // Signature failure details
+  'signatureLastFour',
+  'timestampSkewSeconds',
+  'bodyLengthBytes',
+  // Operation outcomes
+  'errorName',
+  'failureStage',
+  'stage',
+  'rowNumber',
+  'rowsCleared',
+  'durationMs',
+  // Identifiers (non-PII)
+  'registrationId',
+  'eventId',
+  'matchType',
+  // Actor classification (non-PII)
+  'actorType',
+  'actorUserId',
+  'dispatchedByActorUserId',
+  'dispatchedByActorRole',
+  // State signals
+  'graceSecretUsed',
+  'graceSecretAgeHours',
+  'reason',
+]);
+
 function redactPayloadForFatalLog(payload: unknown): Record<string, unknown> {
   if (typeof payload !== 'object' || payload === null) {
     return { _shape: 'non-object' };
   }
-  const ALLOWED_KEYS = new Set<string>([
-    'severity',
-    'requestId',
-    'source',
-    'scope',
-    'errorName',
-    'failureStage',
-    'rowNumber',
-    'rowsCleared',
-    'registrationId',
-    'eventId',
-    'matchType',
-    'graceSecretUsed',
-    'reason',
-    'actorType',
-    'actorUserId',
-  ]);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
-    if (ALLOWED_KEYS.has(k)) {
+    if (REDACT_ALLOWED_KEYS.has(k)) {
       // Only primitives — drop nested objects which may contain PII.
       if (
         typeof v === 'string' ||
@@ -248,6 +283,9 @@ function redactPayloadForFatalLog(payload: unknown): Record<string, unknown> {
   }
   return out;
 }
+
+/** Re-exported for H4.1 snapshot test (43-event union allowlist parity). */
+export { REDACT_ALLOWED_KEYS, redactPayloadForFatalLog };
 
 async function insertAuditRow(
   executor: TenantTx | Database,

@@ -18,7 +18,7 @@ import type {
   EventsRepository,
   RegistrationsRepository,
 } from '@/modules/events';
-import { asTenantId } from '@/modules/members';
+import { asTenantId, asMemberId, asContactId } from '@/modules/members';
 import { asEventId, asExternalEventId, asRegistrationId, asExternalAttendeeId, asAttendeeEmail } from '@/modules/events';
 
 const VALID_UUID = 'a1b2c3d4-1234-4abc-89de-fedcba987654';
@@ -159,11 +159,30 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
         name: 'Test',
         company: null,
       },
-      match: {
-        type: matchType,
-        matchedMemberId: null,
-        matchedContactId: null,
-      },
+      // H3.2 — narrowed per-variant invariant. The test parameter
+      // `matchType` is the only varying field; the per-variant ID
+      // pairs are uniform here because the test uses
+      // `quotaEffect.countedAgainst* = false` for ALL matchTypes (the
+      // member-match types in this fixture don't carry a member id;
+      // the over-quota predicate cares about the match-type label).
+      match:
+        matchType === 'member_contact'
+          ? {
+              type: 'member_contact' as const,
+              matchedMemberId: asMemberId(VALID_UUID),
+              matchedContactId: asContactId(VALID_UUID),
+            }
+          : matchType === 'member_domain' || matchType === 'member_fuzzy'
+            ? {
+                type: matchType,
+                matchedMemberId: asMemberId(VALID_UUID),
+                matchedContactId: null,
+              }
+            : {
+                type: matchType,
+                matchedMemberId: null,
+                matchedContactId: null,
+              },
       ticket: {
         type: null,
         priceThb: null,

@@ -495,7 +495,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   );
 }
 
-// Round 2 refactor — `formatGraceTimestamp` extracted to
+// `formatGraceTimestamp` extracted to
 // `src/lib/format-grace-timestamp.ts` so the rotate-secret dialog and
 // any future grace-window surface share one implementation (Bangkok-
 // pinned timezone, defensive Invalid Date fallback).

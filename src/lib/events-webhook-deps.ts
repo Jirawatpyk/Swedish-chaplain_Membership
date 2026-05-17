@@ -109,12 +109,22 @@ export async function loadTenantWebhookConfig(
 
   if (rows.length === 0) return null;
   const row = rows[0]!;
+  // H3.1 — construct GraceState union at the boundary. DB CHECK at
+  // migration 0129 guarantees the pair invariant; map both NULL → not
+  // active, both non-NULL → active.
+  const rawGraceSecret = row.webhookSecretGrace as unknown as
+    | TenantWebhookConfigAggregate['activeSecret']
+    | null;
+  const rawGraceRotatedAt = row.graceRotatedAt ? new Date(row.graceRotatedAt) : null;
+  const grace: TenantWebhookConfigAggregate['grace'] =
+    rawGraceSecret !== null && rawGraceRotatedAt !== null
+      ? { active: true, secret: rawGraceSecret, rotatedAt: rawGraceRotatedAt }
+      : { active: false };
   return {
     tenantId: ctx.slug as unknown as TenantWebhookConfigAggregate['tenantId'],
     source: row.source as 'eventcreate',
     activeSecret: row.webhookSecretActive as unknown as TenantWebhookConfigAggregate['activeSecret'],
-    graceSecret: row.webhookSecretGrace as unknown as TenantWebhookConfigAggregate['graceSecret'],
-    graceRotatedAt: row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
+    grace,
     enabled: row.enabled,
     createdAt: new Date(row.createdAt),
     lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt) : null,

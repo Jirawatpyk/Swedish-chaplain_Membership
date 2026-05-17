@@ -41,7 +41,7 @@ import {
 // Direct infra import for GET — same escape-hatch pattern used by
 // /admin/settings/invoicing/page.tsx (SSR read). Keeps GET a thin
 // projection over the repo without a trivial use-case wrapper.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';

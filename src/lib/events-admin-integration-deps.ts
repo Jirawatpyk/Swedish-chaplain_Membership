@@ -1,4 +1,4 @@
-/**
+﻿/**
  * F6 admin-integration composition adapter (Phase 5 T074).
  *
  * Bridges `src/app/api/admin/integrations/eventcreate/**` route handlers
@@ -35,7 +35,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
-// Phase 5 review-fix S-06 (2026-05-13) — use-cases + their error
+// 06 (2026-05-13) — use-cases + their error
 // types now flow through the public barrel instead of deep-importing
 // from `application/use-cases/*`. Same runtime behaviour; cleaner
 // boundary for the rest of the project to follow.
@@ -83,7 +83,7 @@ import {
 // JSDoc intent; ESLint exemption for src/lib/** is no longer needed
 // for this seam).
 import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
-// Phase 5 review-fix S-07 (2026-05-13) — `tenantWebhookConfigs`
+// 07 (2026-05-13) — `tenantWebhookConfigs`
 // import dropped after the barrel re-export was removed; the file
 // no longer needs the raw schema reference. Tests now reach
 // `@/modules/events/infrastructure/schema` directly.
@@ -94,7 +94,7 @@ import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
 
 const ROTATE_MAX_PER_HOUR = 3;
 const TEST_WEBHOOK_MAX_PER_HOUR = 10;
-// Phase 5 review-fix W-01 (2026-05-13) — generate-secret rate limit.
+// 01 (2026-05-13) — generate-secret rate limit.
 // Fresh tenant onboarding is a one-shot action; 3/hour matches the
 // rotate-secret budget and prevents an attacker with a compromised
 // admin session from hammering the endpoint (each call costs an
@@ -327,10 +327,9 @@ export async function runLoadIntegrationConfig(
       };
     });
 
-    const graceActiveUntil =
-      cfg.graceRotatedAt !== null
-        ? new Date(cfg.graceRotatedAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
-        : null;
+    const graceActiveUntil = cfg.grace.active
+      ? new Date(cfg.grace.rotatedAt.getTime() + 24 * 60 * 60 * 1000).toISOString()
+      : null;
 
     return {
       secretConfigured: true,
@@ -510,12 +509,12 @@ export async function runRunTestWebhook(
       { event: 'f6_test_webhook_config_load_failed', tenantSlug, errKind: cfg.error.kind },
       '[F6] test-webhook config load failed',
     );
-    // Phase 5 review-fix W-07 — count failure outcomes too.
+    // count failure outcomes too.
     safeEmitTestInvokedMetric(tenantSlug, 'failure');
     return err({ kind: 'config_load_failed', errKind: cfg.error.kind });
   }
   if (cfg.value === null) {
-    // Phase 5 review-fix W-07 — count failure outcomes too.
+    // count failure outcomes too.
     safeEmitTestInvokedMetric(tenantSlug, 'failure');
     return err({ kind: 'config_missing' });
   }
@@ -532,7 +531,7 @@ export async function runRunTestWebhook(
     {
       signRequest: signWebhookRequest,
       httpFetch: async (url, init) => {
-        // Phase 5 review-fix W-02 (2026-05-13) — 10s AbortSignal
+        // 02 (2026-05-13) — 10s AbortSignal
         // timeout. Without this, a stuck receiver (advisory-lock
         // contention, Neon connectivity glitch, cold function start
         // targeting itself) blocks the admin route until Vercel
@@ -593,7 +592,7 @@ export async function runRunTestWebhook(
     },
   );
 
-  // Phase 5 review-fix W-07 (2026-05-13) — emit test-invoked metric
+  // 07 (2026-05-13) — emit test-invoked metric
   // on every completed round-trip. We classify by `result.ok` AND by
   // the inner `RunTestWebhookOutcome.ok` (the use-case returns
   // `Result.ok` even when the receiver returned 4xx/5xx — the outer
@@ -793,7 +792,7 @@ export async function runToggleIngest(
 // strict-R1 freshness logic that this file used to host.
 // ---------------------------------------------------------------------------
 
-// Phase 5 review-fix S-07 (2026-05-13) — the `tenantWebhookConfigs`
+// 07 (2026-05-13) — the `tenantWebhookConfigs`
 // raw-table re-export was removed. Tests that probe the table
 // directly import from `@/modules/events/infrastructure/schema` (the
 // canonical location); the public surface should NOT widen to

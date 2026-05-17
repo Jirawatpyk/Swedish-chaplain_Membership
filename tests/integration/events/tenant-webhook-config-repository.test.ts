@@ -55,8 +55,7 @@ describe('T073 — drizzle tenant-webhook-config repository', () => {
       expect(insertResult.ok).toBe(true);
       if (!insertResult.ok) throw new Error('unreachable');
       expect(insertResult.value.activeSecret).toBe(SECRET_A);
-      expect(insertResult.value.graceSecret).toBeNull();
-      expect(insertResult.value.graceRotatedAt).toBeNull();
+      expect(insertResult.value.grace).toEqual({ active: false });
       expect(insertResult.value.enabled).toBe(true);
 
       const lookup = await repo.findByTenantSource(
@@ -118,8 +117,11 @@ describe('T073 — drizzle tenant-webhook-config repository', () => {
       expect(rotated.ok).toBe(true);
       if (!rotated.ok) throw new Error('unreachable');
       expect(rotated.value.activeSecret).toBe(SECRET_NEW);
-      expect(rotated.value.graceSecret).toBe(firstActive);
-      expect(rotated.value.graceRotatedAt).toBeInstanceOf(Date);
+      expect(rotated.value.grace.active).toBe(true);
+      if (rotated.value.grace.active) {
+        expect(rotated.value.grace.secret).toBe(firstActive);
+        expect(rotated.value.grace.rotatedAt).toBeInstanceOf(Date);
+      }
       expect(rotated.value.lastRotatedAt).toBeInstanceOf(Date);
       expect(rotated.value.lastRotatedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
     });
@@ -219,8 +221,7 @@ describe('T073 — drizzle tenant-webhook-config repository', () => {
       );
       expect(after.ok).toBe(true);
       if (!after.ok) throw new Error('unreachable');
-      expect(after.value!.graceSecret).toBeNull();
-      expect(after.value!.graceRotatedAt).toBeNull();
+      expect(after.value!.grace).toEqual({ active: false });
     });
   });
 

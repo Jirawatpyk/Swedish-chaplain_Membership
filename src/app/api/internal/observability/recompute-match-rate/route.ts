@@ -28,7 +28,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { gateCronBearerOrRespond } from '@/lib/cron-auth';
+import { gateF6Cron } from '@/lib/events-cron-deps';
 import { asTenantContext } from '@/modules/tenants';
 
 export const runtime = 'nodejs';
@@ -50,11 +50,7 @@ async function listKnownTenants(): Promise<ReadonlyArray<string>> {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Security review 2026-05-17 closure: use shared gateCronBearerOrRespond
   // for audit + IP rate-limit consistency.
-  const gate = await gateCronBearerOrRespond(request, {
-    route: ROUTE,
-    metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(ROUTE),
-    rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(ROUTE),
-  });
+  const gate = await gateF6Cron(request, ROUTE);
   if (gate) return gate;
 
   if (!env.features.f6EventCreate) {

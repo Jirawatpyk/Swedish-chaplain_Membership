@@ -43,7 +43,7 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
 | **F6 idempotency sweep** | **`POST /api/cron/eventcreate/sweep-idempotency-receipts`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
-| **F6 PII pseudonymisation sweep** | **`POST /api/cron/eventcreate/pseudonymise-non-member-pii`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
+| **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
 | **F6.1 error-CSV blob TTL sweep** (T058) | **`GET /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
 | **F6 recompute match-rate gauge** (Phase 10 T126) | **`POST /api/internal/observability/recompute-match-rate`** | **`0 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | [f6-match-rate-degradation-triage.md](./f6-match-rate-degradation-triage.md) — refreshes `eventcreate_match_rate_gauge` per tenant; powers SC-002 dashboard |
 
@@ -522,7 +522,7 @@ Idempotent — re-runs on already-pseudonymised rows are no-ops (the
 partial index `event_regs_pseudonymise_eligibility_idx` excludes them).
 
 - **Title**: `Chamber-OS · F6 non-member PII pseudonymisation sweep`
-- **URL**: `${BASE}/api/cron/eventcreate/pseudonymise-non-member-pii`
+- **URL**: `${BASE}/api/internal/retention/pseudonymise-eventcreate`
 - **Method**: POST
 - **Schedule**: `0 4 * * *` (daily 04:00 Asia/Bangkok — 30 min after idempotency sweep)
 - **Auth**: `Authorization: Bearer ${CRON_SECRET}`
@@ -530,7 +530,7 @@ partial index `event_regs_pseudonymise_eligibility_idx` excludes them).
 - **Retry on failure**: OFF (handler emits `eventcreate_pii_pseudonymisation_sweep_rows_total{outcome=pseudonymised|skipped}`; idempotent — natural daily retry suffices.)
 - **Expected response codes**: as above
 - **On-call response**: a sustained `outcome=pseudonymised` count of 0 for >30 days when registrations existed older than 2 years indicates a sweep regression. Cross-reference against retention audit (`pii_pseudonymisation_sweep_run` event in audit_log).
-- **Handler module**: `src/app/api/cron/eventcreate/pseudonymise-non-member-pii/route.ts` (Phase 10 T113)
+- **Handler module**: `src/app/api/internal/retention/pseudonymise-eventcreate/route.ts` (Phase 10 T113)
 
 ## F6.1 — error-CSV blob TTL sweep (NEW — F6.1 Phase 5 US5 / T058)
 

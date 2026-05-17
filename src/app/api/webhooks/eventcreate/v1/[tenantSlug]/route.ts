@@ -483,13 +483,16 @@ export async function POST(
         }
 
         // --- Step 7: Signature verify ------------------------------------
+        // The verifier port input takes the loose pair (its own shape,
+        // separate from the aggregate type). Decompose the aggregate's
+        // GraceState union back to nullable pair at the boundary.
         const verifyOutcome = verifyWebhookSignature({
           rawBody,
           signatureHeader: request.headers.get('x-chamber-signature'),
           timestampHeader: request.headers.get('x-chamber-timestamp'),
           activeSecret: webhookConfig.activeSecret,
-          graceSecret: webhookConfig.graceSecret,
-          graceRotatedAt: webhookConfig.graceRotatedAt,
+          graceSecret: webhookConfig.grace.active ? webhookConfig.grace.secret : null,
+          graceRotatedAt: webhookConfig.grace.active ? webhookConfig.grace.rotatedAt : null,
           now: new Date(),
           maxSkewSeconds: 300,
           verifier: cryptoWebhookSignatureVerifier,
@@ -566,9 +569,9 @@ export async function POST(
         // surprises in SRE dashboards.
         if (
           verifyOutcome.usedGraceSecret &&
-          webhookConfig.graceRotatedAt !== null
+          webhookConfig.grace.active
         ) {
-          const graceAgeMs = Date.now() - webhookConfig.graceRotatedAt.getTime();
+          const graceAgeMs = Date.now() - webhookConfig.grace.rotatedAt.getTime();
           const graceSecretAgeHours = Math.max(
             0,
             Math.floor(graceAgeMs / (60 * 60 * 1000)),
@@ -581,7 +584,7 @@ export async function POST(
               actorType: 'zapier_webhook',
               actorUserId: null,
               occurredAt: new Date(),
-              summary: `webhook accepted on grace secret (age ${graceSecretAgeHours}h, last4=${webhookConfig.graceSecret?.slice(-4) ?? 'unknown'})`,
+              summary: `webhook accepted on grace secret (age ${graceSecretAgeHours}h, last4=${webhookConfig.grace.secret.slice(-4)})`,
               payload: {
                 severity: 'warn',
                 requestId,

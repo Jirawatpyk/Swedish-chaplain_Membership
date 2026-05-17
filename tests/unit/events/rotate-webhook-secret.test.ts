@@ -59,8 +59,10 @@ function makeAggregate(active: WebhookSecret, grace: WebhookSecret | null, now: 
     tenantId: TENANT,
     source: 'eventcreate',
     activeSecret: active,
-    graceSecret: grace,
-    graceRotatedAt: grace ? now : null,
+    grace:
+      grace !== null
+        ? ({ active: true as const, secret: grace, rotatedAt: now })
+        : ({ active: false as const }),
     enabled: true,
     createdAt: new Date('2026-05-13T00:00:00Z'),
     lastReceivedAt: null,

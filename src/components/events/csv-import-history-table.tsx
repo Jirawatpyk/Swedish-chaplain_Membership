@@ -22,7 +22,7 @@ import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ChevronLeft, ChevronRight, Download, FileX2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, FileX2, RefreshCcw } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -111,6 +111,21 @@ export function CsvImportHistoryTable({
   // every 5s for up to 2 minutes (24 ticks) — long-running imports
   // beyond that warrant a manual reload, which keeps the polling cost
   // bounded.
+  //
+  // Round 2 R2-I6 hardening — added a visible polling chip + sr-only
+  // aria-live region so the auto-refresh is no longer silent. WCAG
+  // 4.1.3 Status Messages: SR users hear "Auto-refreshing..." when
+  // the polling effect starts. The stable outer mount pattern (live
+  // region always present, content varies on `hasRunningRow`) follows
+  // the precedent at `csv-mapping-form.tsx:404-417` so NVDA/JAWS
+  // register the observer before the announcement fires.
+  //
+  // Scaling concern (NEW-S2): if N admin tabs open simultaneously, N ×
+  // poll rate. At SweCham scale (~3 staff) bounded fine. Post-F6.1 if
+  // traffic scales to >5 concurrent admin sessions, adopt the
+  // BroadcastChannel leader-election pattern at
+  // `src/app/(member)/portal/invoices/[invoiceId]/_components/optimistic-paid.ts:64-71`
+  // to elect one tab as the poller; others subscribe silently.
   const hasRunningRow = rows.some((r) => r.outcome === 'running');
   useEffect(() => {
     if (!hasRunningRow) return;
@@ -154,6 +169,25 @@ export function CsvImportHistoryTable({
 
   return (
     <div className="flex flex-col gap-4">
+      {/* R2-I6 — stable outer mount of the polling indicator. The
+          aria-live region is always present (NVDA/JAWS register the
+          observer on first render); content varies on `hasRunningRow`
+          so screen readers announce when polling starts. The visible
+          chip mirrors the sr-only message for sighted users. */}
+      <div className="flex items-center justify-end gap-2 min-h-[1.5rem]" aria-live="polite" aria-atomic="true">
+        {hasRunningRow ? (
+          <span
+            className="text-caption text-muted-foreground flex items-center gap-1"
+            data-testid="csv-import-history-auto-refresh"
+          >
+            <RefreshCcw
+              aria-hidden="true"
+              className="size-3 animate-spin motion-reduce:animate-none"
+            />
+            {t('autoRefreshing')}
+          </span>
+        ) : null}
+      </div>
       <Table aria-label={t('tableAriaLabel')} data-testid="csv-import-history-table">
         <TableHeader>
           <TableRow>

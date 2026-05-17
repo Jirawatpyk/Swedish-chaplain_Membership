@@ -44,7 +44,7 @@ import { getInvoicePaymentActivity } from '../_lib/cached-payment-activity';
 // detail page (settings repo, credit-note repo) — F1 has no
 // Application-layer `getStaffUser` use-case yet, and we only need a
 // read-only `userId → email` resolution for actor display.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';

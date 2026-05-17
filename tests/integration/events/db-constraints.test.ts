@@ -84,6 +84,19 @@ function baseRow(matchType: string, overrides: Record<string, unknown> = {}) {
  * which carries `.code === '23514'` + the constraint name in
  * `.constraint_name` or in the error message.
  */
+/**
+ * H4.2 — strict matcher pinning the EXACT constraint name. Previous
+ * permissive regex (`/check.*constraint|event_registrations_non_member_no_quota/i`)
+ * would also pass if a SIBLING CHECK constraint (e.g. a future
+ * `event_registrations_quota_nonneg`) fired — defeating the
+ * "DROP CONSTRAINT slipped into a later migration" defence-in-depth
+ * rationale that migration 0136 was added for. Now we require either:
+ *   (a) `cause.constraint_name === 'event_registrations_non_member_no_quota'` (preferred — PostgresError exposes this directly)
+ *   (b) `cause.message` contains the constraint name token (fallback if Drizzle wrap strips constraint_name)
+ * AND SQLSTATE `23514` (check_violation) — both conditions, not OR.
+ */
+const TARGET_CONSTRAINT_NAME = 'event_registrations_non_member_no_quota';
+
 async function expectCheckConstraintViolation(fn: () => Promise<unknown>) {
   let caught: unknown = null;
   try {
@@ -93,13 +106,19 @@ async function expectCheckConstraintViolation(fn: () => Promise<unknown>) {
   }
   expect(caught).not.toBeNull();
   const err = caught as { cause?: unknown; message?: string };
-  const cause = err.cause as { code?: string; message?: string } | undefined;
+  const cause = err.cause as
+    | { code?: string; message?: string; constraint_name?: string }
+    | undefined;
   const fullMessage = `${err.message ?? ''} ${cause?.message ?? ''}`;
   const causeCode = cause?.code ?? null;
-  const matchedCheck =
-    causeCode === '23514' ||
-    /check.*constraint|event_registrations_non_member_no_quota/i.test(fullMessage);
-  expect(matchedCheck).toBe(true);
+  const constraintName = cause?.constraint_name ?? null;
+  // SQLSTATE 23514 = check_violation; required.
+  expect(causeCode).toBe('23514');
+  // Constraint name MUST be the target (or appear in message as fallback).
+  const matchedTargetConstraint =
+    constraintName === TARGET_CONSTRAINT_NAME ||
+    fullMessage.includes(TARGET_CONSTRAINT_NAME);
+  expect(matchedTargetConstraint).toBe(true);
 }
 
 describe('Phase B B10 — migration 0136 event_registrations_non_member_no_quota CHECK', () => {
@@ -148,6 +167,27 @@ describe('Phase B B10 — migration 0136 event_registrations_non_member_no_quota
             .values(baseRow('unmatched', {
               countedAgainstCulturalQuota: true,
             }) as typeof eventRegistrations.$inferInsert);
+        }),
+      );
+    });
+
+    it('H4.2 — rejects UPDATE that flips unmatched → has matched_member_id', async () => {
+      // First INSERT a valid `unmatched` row (no member, no quota), then
+      // attempt to flip it to have a matched_member_id without changing
+      // match_type. CHECK constraint must fire on UPDATE too.
+      const validRowId = randomUUID();
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(eventRegistrations).values({
+          ...baseRow('unmatched', { registrationId: validRowId }),
+        } as typeof eventRegistrations.$inferInsert);
+      });
+      await expectCheckConstraintViolation(() =>
+        runInTenant(tenant.ctx, async (tx) => {
+          await tx.execute(sql`
+            UPDATE event_registrations
+            SET matched_member_id = ${randomUUID()}
+            WHERE registration_id = ${validRowId}
+          `);
         }),
       );
     });

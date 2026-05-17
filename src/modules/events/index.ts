@@ -88,9 +88,13 @@ export {
 
 export {
   asEventId,
+  asEventIdUnchecked,
   tryEventId,
+  tryEventIdUnchecked,
   asRegistrationId,
+  asRegistrationIdUnchecked,
   tryRegistrationId,
+  tryRegistrationIdUnchecked,
   asExternalEventId,
   tryExternalEventId,
   asExternalAttendeeId,

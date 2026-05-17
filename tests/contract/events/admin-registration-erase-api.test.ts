@@ -161,6 +161,18 @@ describe('Phase B B7 — POST /api/admin/events/[eventId]/registrations/[registr
         partnership: 1,
         cultural: 0,
       });
+      // R2-I5 regression-net: pin use-case dispatch shape. A regression
+      // that drops `reasonText` or swaps `eventId`/`registrationId`
+      // would have passed the status + body checks above. Now caught.
+      expect(runEraseAttendeePiiMock).toHaveBeenCalledWith(
+        TENANT_SLUG,
+        expect.objectContaining({
+          eventId: VALID_EVENT_ID,
+          registrationId: VALID_REGISTRATION_ID,
+          actorUserId: ADMIN_USER_ID,
+          reasonText: 'GDPR Art. 17 request',
+        }),
+      );
     });
 
     it('returns 200 with alreadyErased=true on idempotent re-erase', async () => {

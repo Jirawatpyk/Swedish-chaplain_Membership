@@ -99,12 +99,13 @@ export async function rotateWebhookSecret(
 
   // Previous active is now in the grace column (the repository's
   // atomic UPDATE shifted it across in step 1). Pull last4 from there
-  // for the audit payload. `graceSecret` is guaranteed non-null on a
-  // successful rotation per the DB invariant (`grace_secret IS NULL ⟺
-  // grace_rotated_at IS NULL`).
+  // for the audit payload. After H3.1 the aggregate's `grace` field
+  // is a GraceState union — on successful rotation it MUST be
+  // `{ active: true }` (the DB CHECK + atomic UPDATE both enforce
+  // that grace_secret + grace_rotated_at are set together).
   const previousSecretLastFour: SecretLastFour | 'none' = rotateResult.value
-    .graceSecret
-    ? asSecretLastFour(rotateResult.value.graceSecret)
+    .grace.active
+    ? asSecretLastFour(rotateResult.value.grace.secret)
     : 'none';
 
   // 24h grace window per FR-008 + R7.

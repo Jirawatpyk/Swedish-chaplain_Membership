@@ -27,12 +27,18 @@ import type { WebhookSecret } from './branded-types';
 import type { Source } from './value-objects/source';
 
 /**
- * Phase C C1 — typed view of the grace-secret pair invariant.
- * The aggregate keeps the two-field shape for migration-friendliness
- * (47 reader sites + DB columns) but `getGraceState(cfg)` returns a
- * discriminated union that callers can pattern-match for compile-time
- * invariant expression. The DB CHECK on `tenant_webhook_configs`
- * enforces `(graceSecret IS NULL) = (graceRotatedAt IS NULL)`.
+ * Phase C / Phase H3.1 — `GraceState` discriminated union encodes the
+ * grace-secret pair invariant at the type level. The aggregate field
+ * `grace: GraceState` replaces the previous loose pair (`graceSecret +
+ * graceRotatedAt`) so callers pattern-match on `state.active` for
+ * compile-time-enforced narrowing.
+ *
+ * Underlying DB columns (`webhook_secret_grace`, `grace_rotated_at`)
+ * remain two nullable columns paired by a CHECK constraint at
+ * migration 0129; the Drizzle row→aggregate mapper constructs the
+ * union once at the boundary. The repo writers continue to write
+ * both columns atomically (rotate sets both, clearExpiredGrace clears
+ * both) — the DB CHECK enforces the pair invariant at write time.
  */
 export type GraceState =
   | { readonly active: false }
@@ -47,8 +53,12 @@ export interface TenantWebhookConfigAggregate {
   readonly source: Source;
 
   readonly activeSecret: WebhookSecret;
-  readonly graceSecret: WebhookSecret | null;
-  readonly graceRotatedAt: Date | null;
+  /**
+   * Grace-secret state — discriminated union. When `active: true`,
+   * `secret` + `rotatedAt` are compile-time guaranteed non-null and
+   * paired. When `active: false`, both DB columns are NULL.
+   */
+  readonly grace: GraceState;
 
   readonly enabled: boolean;
 
@@ -58,37 +68,16 @@ export interface TenantWebhookConfigAggregate {
 }
 
 /**
- * Pattern-matchable derivation of the grace-secret invariant. Use this
- * in code paths where the pair is consumed together so the compiler
- * narrows access via `state.active`. Existing callers reading the
- * two-field shape directly remain valid (DB CHECK enforces the
- * invariant at write time).
- */
-export function getGraceState(
-  cfg: Pick<TenantWebhookConfigAggregate, 'graceSecret' | 'graceRotatedAt'>,
-): GraceState {
-  if (cfg.graceSecret === null || cfg.graceRotatedAt === null) {
-    return { active: false };
-  }
-  return {
-    active: true,
-    secret: cfg.graceSecret,
-    rotatedAt: cfg.graceRotatedAt,
-  };
-}
-
-/**
  * 24h grace window per FR-008 + R7. Pure predicate — `now` is injected
  * for deterministic testing rather than read from `Date.now()` inside.
  */
 export const GRACE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function isGraceSecretActive(
-  cfg: Pick<TenantWebhookConfigAggregate, 'graceSecret' | 'graceRotatedAt'>,
+  cfg: Pick<TenantWebhookConfigAggregate, 'grace'>,
   now: Date,
 ): boolean {
-  const state = getGraceState(cfg);
-  if (!state.active) return false;
-  const ageMs = now.getTime() - state.rotatedAt.getTime();
+  if (!cfg.grace.active) return false;
+  const ageMs = now.getTime() - cfg.grace.rotatedAt.getTime();
   return ageMs <= GRACE_WINDOW_MS;
 }
