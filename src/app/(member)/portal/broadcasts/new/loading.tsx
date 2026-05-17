@@ -41,8 +41,11 @@ export default function ComposeLoading(): React.ReactElement {
         </div>
         <Skeleton className="h-32 w-full" />
         <div className="flex justify-end gap-2">
-          <Skeleton className="h-10 w-28" />
-          <Skeleton className="h-10 w-32" />
+          {/* E1 UX hardening — match the real `<Button>` h-9 (36 px)
+              per shadcn-customizations.md instead of h-10 → eliminates
+              the 4 px CLS when the form mounts. */}
+          <Skeleton className="h-9 w-28" />
+          <Skeleton className="h-9 w-32" />
         </div>
       </div>
     </FormContainer>

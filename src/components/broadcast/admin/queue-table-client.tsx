@@ -416,20 +416,22 @@ export function QueueTableClient({
   // applied at `src/app/(staff)/admin/layout.tsx` header). The bar sits
   // BELOW the shell header rather than under it. Falls back to 0px in
   // portal contexts where the variable isn't defined.
+  // A5 UX hardening — bulk-bar `aria-label` was the unresolved template
+  // string `"{count} selected"`; SR users heard the literal placeholder.
+  // Interpolate the count before passing as label.
+  const bulkSelectedLabel = columnLabels.bulkSelected.replace(
+    '{count}',
+    String(selectedIds.length),
+  );
   const bulkBar =
     !readOnly && selectedIds.length > 0 ? (
       <div
         role="region"
-        aria-label={columnLabels.bulkSelected}
+        aria-label={bulkSelectedLabel}
         className="sticky z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
         style={{ top: 'var(--top-bar-height, 0px)' }}
       >
-        <span className="text-sm font-medium">
-          {columnLabels.bulkSelected.replace(
-            '{count}',
-            String(selectedIds.length),
-          )}
-        </span>
+        <span className="text-sm font-medium">{bulkSelectedLabel}</span>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -484,8 +486,26 @@ export function QueueTableClient({
     );
   }
 
+  // A6 UX hardening — padding-row virtualisation preserves the
+  // `<table>/<tr>/<td>` DOM so screen readers in table-grid mode can
+  // still navigate by row/column. Previously the virtualised path
+  // used `position: absolute` on each `<tr>`, which breaks the
+  // browser's table-layout algorithm and silently degrades SR
+  // navigation. The TanStack docs recommend the padding-row pattern
+  // for table virtualisation.
+  //
+  // Strategy: compute the unrendered space above the first visible
+  // row + below the last visible row, and emit two `<tr>` spacer
+  // rows holding that space via explicit `height` styles. The
+  // visible `<tr>`s sit between them with normal flow layout.
   const totalSize = virtualizer.getTotalSize();
   const virtualItems = virtualizer.getVirtualItems();
+  const paddingTop = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
+  const lastItem = virtualItems[virtualItems.length - 1];
+  const paddingBottom =
+    virtualItems.length > 0 && lastItem !== undefined
+      ? totalSize - lastItem.end
+      : 0;
   return (
     <>
       {bulkBar}
@@ -500,16 +520,17 @@ export function QueueTableClient({
           <thead className="sticky top-0 z-10 bg-muted/95 text-xs uppercase tracking-wide backdrop-blur">
             {headerRow}
           </thead>
-          <tbody style={{ height: `${totalSize}px`, position: 'relative' }}>
+          <tbody>
+            {paddingTop > 0 ? (
+              <tr aria-hidden="true">
+                <td style={{ height: `${paddingTop}px` }} />
+              </tr>
+            ) : null}
             {virtualItems.map((vRow) => {
               const row = rowModel.rows[vRow.index];
               if (!row) return null;
               return (
-                <tr
-                  key={row.id}
-                  className="absolute left-0 right-0 border-t"
-                  style={{ transform: `translateY(${vRow.start}px)` }}
-                >
+                <tr key={row.id} className="border-t">
                   {row.getVisibleCells().map((cell) => {
                     const alignRight = cell.column.id === 'recipientCount';
                     return (
@@ -524,6 +545,11 @@ export function QueueTableClient({
                 </tr>
               );
             })}
+            {paddingBottom > 0 ? (
+              <tr aria-hidden="true">
+                <td style={{ height: `${paddingBottom}px` }} />
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>

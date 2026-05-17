@@ -165,7 +165,12 @@ export function ApproveDialog({
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('description')}</AlertDialogDescription>
         </AlertDialogHeader>
-        <fieldset className="space-y-3" aria-disabled={pending}>
+        {/* C3 UX hardening — removed `aria-disabled` on the fieldset.
+            HTML `disabled` on a `<fieldset>` disables all descendant
+            form controls natively + sets `aria-disabled` implicitly.
+            The duplicated attribute risked confusing future maintainers
+            who might think two different semantics were intended. */}
+        <fieldset className="space-y-3" disabled={pending}>
           <RadioGroup
             value={decision}
             onValueChange={(v) =>

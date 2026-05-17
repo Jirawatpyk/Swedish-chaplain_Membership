@@ -13,27 +13,12 @@ import {
   type EnrichedQueueRow,
 } from './queue-table-client';
 import type { BroadcastStatus } from '@/modules/broadcasts';
+import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
 
-type BadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'destructive'
-  | 'outline'
-  | 'ghost';
-
-const STATUS_STYLE: Record<
-  BroadcastStatus,
-  { variant: BadgeVariant; className?: string }
-> = {
-  draft: { variant: 'outline', className: 'text-muted-foreground' },
-  submitted: { variant: 'secondary' },
-  approved: { variant: 'default' },
-  sending: { variant: 'default', className: 'motion-safe:animate-pulse' },
-  sent: { variant: 'default' },
-  rejected: { variant: 'destructive' },
-  cancelled: { variant: 'outline', className: 'text-muted-foreground' },
-  failed_to_dispatch: { variant: 'destructive' },
-};
+// Status → badge variant mapping moved to
+// `src/components/broadcast/status-badge-mapping.ts` (H4 UX hardening)
+// so admin queue, admin detail, and member portal surfaces share one
+// source of truth.
 
 export interface QueueRow {
   readonly broadcastId: string;
@@ -117,7 +102,7 @@ export async function QueueTable({
       };
     }
 
-    const style = STATUS_STYLE[row.status];
+    const style = getBroadcastStatusBadgeProps(row.status);
     const enriched: EnrichedQueueRow = {
       broadcastId: row.broadcastId,
       subject: row.subject,

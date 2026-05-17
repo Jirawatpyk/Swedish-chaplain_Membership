@@ -1520,7 +1520,7 @@
           "fromDate": "Från",
           "toDate": "Till",
           "apply": "Tillämpa filter",
-          "reset": "Återställ"
+          "reset": "Återställ filter"
         },
         "columns": {
           "submittedAt": "Inskickad",
@@ -1573,6 +1573,12 @@
           "submittedAt": "Inskickad",
           "scheduledFor": "Schemalagd till",
           "actorRole": "Aktörsroll"
+        },
+        "segmentType": {
+          "all_members": "Alla medlemmar",
+          "tier": "Per medlemsnivå",
+          "event_attendees_last_90d": "Deltagare (senaste 90 dagarna)",
+          "custom": "Anpassad mottagarlista"
         },
         "audit": {
           "title": "Livscykelstidslinje",

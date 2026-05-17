@@ -27,6 +27,7 @@ export default async function AdminBroadcastDetailPage({
 }): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.review');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
+  const tSegment = await getTranslations('admin.broadcasts.review.segmentType');
   const session = await requireSession('staff');
   const isReadOnlyManager = session.user.role === 'manager';
 
@@ -56,9 +57,14 @@ export default async function AdminBroadcastDetailPage({
     memberRows[0]?.company_name ?? broadcast.requestedByMemberId;
 
   const locale = await getLocale();
+  // H2 UX hardening — pin `timeZone: 'Asia/Bangkok'` so admin sees
+  // Bangkok wall-time regardless of the server / browser TZ. Without
+  // this, Vercel functions in `sin1` would format as Singapore-local
+  // (+8) and a UTC dev environment would format as +0, drifting from
+  // the contract the queue + schedule picker advertise.
   const fmt = new Intl.DateTimeFormat(
     locale === 'th' ? 'th-TH-u-ca-buddhist' : locale,
-    { dateStyle: 'medium', timeStyle: 'short' },
+    { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' },
   );
 
   // UX I14 — defence-in-depth: re-sanitise stored bodyHtml at render
@@ -72,43 +78,64 @@ export default async function AdminBroadcastDetailPage({
 
   return (
     <DetailContainer>
+      {/* B3 UX hardening — wrap the status badge in `role="status"` so
+          assistive tech announces the new state when admin approves /
+          rejects / cancels and the page server-refreshes. Sonner toast
+          already provides ephemeral feedback; this announces the
+          structural truth-of-record change too. */}
       <PageHeader
         title={broadcast.subject}
         subtitle={`${memberDisplayName} · ${t('subtitle')}`}
-        badge={<StatusBadge status={broadcast.status} />}
+        badge={
+          <span role="status" aria-live="polite">
+            <StatusBadge status={broadcast.status} />
+          </span>
+        }
       />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
 
       <section
         aria-label={t('title')}
-        className="grid gap-3 rounded-md border bg-muted/20 p-4 sm:grid-cols-2"
+        className="rounded-md border bg-muted/20 p-4"
       >
-        <Field label={t('fields.submittedBy')} value={memberDisplayName} />
-        <Field
-          label={t('fields.actorRole')}
-          value={tActor(broadcast.actorRole)}
-        />
-        <Field
-          label={t('fields.submittedAt')}
-          value={
-            broadcast.submittedAt !== null
-              ? fmt.format(broadcast.submittedAt)
-              : '—'
-          }
-        />
-        <Field
-          label={t('fields.scheduledFor')}
-          value={
-            broadcast.scheduledFor !== null
-              ? fmt.format(broadcast.scheduledFor)
-              : '—'
-          }
-        />
-        <Field label={t('fields.segment')} value={broadcast.segmentType} />
-        <Field
-          label={t('fields.recipientCount')}
-          value={String(broadcast.estimatedRecipientCount)}
-        />
+        {/* B1 UX hardening — proper `<dl>/<dt>/<dd>` semantics so the
+            label↔value pairs are announced as a unit (WCAG 1.3.1
+            meaningful sequence). Replaces the previous double-`<p>`
+            structure where SR users heard two unrelated paragraphs. */}
+        <dl className="grid gap-3 sm:grid-cols-2">
+          <Field label={t('fields.submittedBy')} value={memberDisplayName} />
+          <Field
+            label={t('fields.actorRole')}
+            value={tActor(broadcast.actorRole)}
+          />
+          <Field
+            label={t('fields.submittedAt')}
+            value={
+              broadcast.submittedAt !== null
+                ? fmt.format(broadcast.submittedAt)
+                : '—'
+            }
+          />
+          <Field
+            label={t('fields.scheduledFor')}
+            value={
+              broadcast.scheduledFor !== null
+                ? fmt.format(broadcast.scheduledFor)
+                : '—'
+            }
+          />
+          {/* B2 UX hardening — segmentType was rendered as the raw enum
+              (`all_members` etc.); resolve through i18n so EN/TH/SV all
+              show a human label. */}
+          <Field
+            label={t('fields.segment')}
+            value={tSegment(broadcast.segmentType as Parameters<typeof tSegment>[0])}
+          />
+          <Field
+            label={t('fields.recipientCount')}
+            value={String(broadcast.estimatedRecipientCount)}
+          />
+        </dl>
       </section>
 
       <section
@@ -173,12 +200,15 @@ function Field({
   readonly label: string;
   readonly value: string;
 }): React.ReactElement {
+  // B1 UX hardening — `<dl>` parent, so each Field is a `<div>` wrapping
+  // a `<dt>`/`<dd>` pair. Avoids exposing this Field as a list-item to
+  // SR users (which a bare `<dt>` outside `<dl>` would do).
   return (
     <div>
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">
+      <dt className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
-      </p>
-      <p className="mt-1 text-sm">{value}</p>
+      </dt>
+      <dd className="mt-1 text-sm">{value}</dd>
     </div>
   );
 }

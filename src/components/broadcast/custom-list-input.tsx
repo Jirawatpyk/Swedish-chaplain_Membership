@@ -31,6 +31,17 @@ export function parseLines(raw: string): ReadonlyArray<string> {
     .filter((s) => s.length > 0);
 }
 
+// G3 UX hardening — the previous counter was `aria-live="polite"` so
+// every keystroke announced "1 / 100", "2 / 100", "3 / 100" — extremely
+// disruptive when pasting an entire list. Strategy:
+//   - Visible counter is plain (no aria-live) — sighted users can see
+//     the count whenever they look.
+//   - A SEPARATE off-screen live region only emits text when crossing
+//     a meaningful threshold (≥80% cap or over cap) so SR users still
+//     get the safety net for "approaching/over the limit" without
+//     drowning in per-keystroke chatter.
+const THRESHOLD_RATIO = 0.8;
+
 export function CustomListInput({
   value,
   onChange,
@@ -39,6 +50,16 @@ export function CustomListInput({
   const t = useTranslations('portal.broadcasts.compose.fields');
   const entries = useMemo(() => parseLines(value), [value]);
   const overCap = entries.length > MAX_ENTRIES;
+  const nearCap = entries.length >= Math.floor(MAX_ENTRIES * THRESHOLD_RATIO);
+
+  // Threshold-only announcement text; '' when nothing to announce.
+  // SR consumers respect `aria-live="polite"` semantics for the
+  // hidden region — empty content does not emit.
+  const announcement = overCap
+    ? `${entries.length} / ${MAX_ENTRIES}`
+    : nearCap
+      ? `${entries.length} / ${MAX_ENTRIES}`
+      : '';
 
   return (
     <div className="space-y-2">
@@ -65,10 +86,19 @@ export function CustomListInput({
           'text-xs',
           overCap ? 'font-semibold text-destructive' : 'text-muted-foreground',
         )}
-        aria-live="polite"
       >
         {entries.length} / {MAX_ENTRIES}
       </p>
+      {/* Off-screen live region — only contains text at threshold or
+          beyond, so SR users hear "80/100" once (not after every char). */}
+      <span
+        className="sr-only"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="custom-list-threshold-announcer"
+      >
+        {announcement}
+      </span>
     </div>
   );
 }

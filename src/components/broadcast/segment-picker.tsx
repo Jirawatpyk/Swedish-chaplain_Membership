@@ -75,11 +75,15 @@ export function SegmentPicker({
           const comingSoon = COMING_SOON_SEGMENTS.has(opt);
           return (
             <div key={opt} className="flex items-center gap-2">
+              {/* E5 UX hardening — removed redundant `aria-disabled`.
+                  The HTML `disabled` attribute on RadioGroupItem already
+                  surfaces as `aria-disabled="true"` via Radix. Setting
+                  both risks fighting if Radix ever changes its
+                  defaults. */}
               <RadioGroupItem
                 id={`segment-${opt}`}
                 value={opt}
                 disabled={comingSoon || disabled}
-                aria-disabled={comingSoon || disabled}
               />
               <Label
                 htmlFor={`segment-${opt}`}

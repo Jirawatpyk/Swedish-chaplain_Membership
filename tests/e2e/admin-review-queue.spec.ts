@@ -168,7 +168,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await expect(tableOrEmpty.first()).toBeVisible({ timeout: 10_000 });
   });
 
-  test('AS1: queue filters surface (status pills + member dropdown + date range)', async ({
+  test('AS1: queue filters surface (status pills + member combobox + date range)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -177,11 +177,69 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
 
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
+    // Filter bar uses `role="search"` landmark per WAI-ARIA Authoring
+    // Practices (D1 / A3 UX hardening).
+    await expect(page.getByRole('search').first()).toBeVisible();
+    // Member filter is a shadcn Select (combobox), no longer a native
+    // <select> (D2). Trigger has role="combobox".
     await expect(
-      page.getByRole('button', { name: /apply/i }).first(),
+      page.getByRole('combobox', { name: /member/i }).first(),
     ).toBeVisible();
+    // Date range inputs still present (controlled).
     await expect(page.locator('input[name="fromDate"]').first()).toBeVisible();
     await expect(page.locator('input[name="toDate"]').first()).toBeVisible();
+  });
+
+  test('D1: filter checkboxes round-trip through URL (uncheck submitted → URL writes status_all sentinel)', async ({
+    page,
+  }) => {
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    const enabled = await isFeatureEnabled(page);
+    test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+    await page.goto('/admin/broadcasts');
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    // Default visit: "submitted" checkbox is checked, URL has no status
+    // params (server defaults to `['submitted']`).
+    const submittedCheckbox = page.locator('input[name="status"][value="submitted"]');
+    await expect(submittedCheckbox).toBeChecked();
+
+    // Click submitted → React controlled-checkbox state update is
+    // deferred via `useTransition` + `router.replace`. Playwright's
+    // strict `.uncheck()` would assert the DOM `checked` attribute
+    // flipped synchronously — but with React 19 transitions the input
+    // stays `checked` until the router transition commits. Plain
+    // `.click()` performs the same user action without that
+    // post-condition, then we wait for the URL change as the
+    // authoritative signal that the state update committed.
+    await submittedCheckbox.click();
+    await page.waitForURL(/status_all=1/, { timeout: 5_000 });
+
+    // After URL settles, ALL chips appear UNCHECKED (sentinel = "show
+    // every status" surfaces visually as a fully-empty chip strip so
+    // the user has an honest read of "no chip selected → seeing
+    // everything"). See `queue-filters.tsx` visualStatus split.
+    await expect(
+      page.locator('input[name="status"][value="submitted"]'),
+    ).not.toBeChecked();
+    await expect(
+      page.locator('input[name="status"][value="approved"]'),
+    ).not.toBeChecked();
+
+    // Click "Reset filters" → URL goes back to pristine (no params), and
+    // we're back to the default `['submitted']` view.
+    await page
+      .getByRole('button', { name: /reset filters|รีเซ็ต|återställ filter/i })
+      .first()
+      .click();
+    await page.waitForURL((u) => !new URL(u).search.includes('status'), {
+      timeout: 5_000,
+    });
+    // Confirm submitted re-ticks as the default view.
+    await expect(
+      page.locator('input[name="status"][value="submitted"]'),
+    ).toBeChecked();
   });
 
   // ---------- AS2: approve send-now ----------

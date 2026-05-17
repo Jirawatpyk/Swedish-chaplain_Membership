@@ -1520,7 +1520,7 @@
           "fromDate": "จาก",
           "toDate": "ถึง",
           "apply": "กรอง",
-          "reset": "ล้าง"
+          "reset": "รีเซ็ตเป็นค่าเริ่มต้น"
         },
         "columns": {
           "submittedAt": "ส่งเมื่อ",
@@ -1573,6 +1573,12 @@
           "submittedAt": "ส่งเมื่อ",
           "scheduledFor": "นัดส่ง",
           "actorRole": "บทบาทผู้ส่ง"
+        },
+        "segmentType": {
+          "all_members": "สมาชิกทั้งหมด",
+          "tier": "ตามระดับสมาชิก",
+          "event_attendees_last_90d": "ผู้เข้าร่วมงาน (90 วันล่าสุด)",
+          "custom": "รายชื่อกำหนดเอง"
         },
         "audit": {
           "title": "ไทม์ไลน์ลำดับการดำเนินการ",

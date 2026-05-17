@@ -86,6 +86,14 @@ export async function generateMetadata(): Promise<Metadata> {
 
 interface SearchParams {
   readonly status?: string | string[];
+  /**
+   * Sentinel — `status_all=1` means the user explicitly chose "show
+   * every status" (unchecked the last filter chip). Distinguished from
+   * "no `status` param at all" which is a fresh visit and defaults to
+   * `['submitted']` per FR-010 default-view semantics. See `queue-
+   * filters.tsx` toggleStatus() for the client-side writer.
+   */
+  readonly status_all?: string;
   readonly memberId?: string;
   readonly fromDate?: string;
   readonly toDate?: string;
@@ -109,11 +117,20 @@ export default async function AdminBroadcastsPage({
   const tenant = resolveTenantFromRequest();
   const params = await searchParams;
 
-  const statusRaw = params.status === undefined
-    ? ['submitted']
-    : Array.isArray(params.status)
-      ? params.status
-      : [params.status];
+  // Status filter resolution — three cases (D1 sentinel pattern):
+  //   1) `?status_all=1` (sentinel): explicit "show every status" →
+  //      empty filter, list all rows regardless of state.
+  //   2) `?status=X[&status=Y...]`: filter to the listed statuses.
+  //   3) no params at all: fresh visit → default to `['submitted']`
+  //      per FR-010 (admin's primary task is review of pending).
+  const explicitShowAll = params.status_all === '1';
+  const statusRaw = explicitShowAll
+    ? []
+    : params.status === undefined
+      ? ['submitted']
+      : Array.isArray(params.status)
+        ? params.status
+        : [params.status];
   const status = statusRaw.filter((s) =>
     (BROADCAST_STATUSES as readonly string[]).includes(s),
   ) as BroadcastStatus[];
@@ -250,15 +267,7 @@ export default async function AdminBroadcastsPage({
       <SlaBanner stats={slaStats} />
       <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
-      <QueueFilters
-        current={{
-          status,
-          memberId: params.memberId ?? null,
-          fromDate: params.fromDate ?? null,
-          toDate: params.toDate ?? null,
-        }}
-        memberOptions={memberOptions}
-      />
+      <QueueFilters memberOptions={memberOptions} />
       <QueueTable rows={rows} readOnly={isReadOnlyManager} />
     </TableContainer>
   );

@@ -1520,7 +1520,7 @@
           "fromDate": "From",
           "toDate": "To",
           "apply": "Apply filters",
-          "reset": "Reset"
+          "reset": "Reset filters"
         },
         "columns": {
           "submittedAt": "Submitted",
@@ -1573,6 +1573,12 @@
           "submittedAt": "Submitted at",
           "scheduledFor": "Scheduled for",
           "actorRole": "Actor role"
+        },
+        "segmentType": {
+          "all_members": "All members",
+          "tier": "By membership tier",
+          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "custom": "Custom recipient list"
         },
         "audit": {
           "title": "Lifecycle timeline",

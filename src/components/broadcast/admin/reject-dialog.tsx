@@ -147,8 +147,18 @@ export function RejectDialog({
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+          {/* C2 UX hardening — Reject IS the destructive action; paint
+              the confirm button red (ux-standards § 6.2). Default
+              `AlertDialogAction` is primary blue which understates the
+              destructive nature of sending a rejection email + freeing
+              the member's quota slot. */}
           <AlertDialogAction
             disabled={!lengthValid || pending}
+            className={cn(
+              'bg-destructive text-destructive-foreground',
+              'hover:bg-destructive/90',
+              'focus-visible:ring-destructive',
+            )}
             onClick={(e) => {
               e.preventDefault();
               onConfirm();
