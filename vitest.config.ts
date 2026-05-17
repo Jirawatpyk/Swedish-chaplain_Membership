@@ -385,6 +385,47 @@ export default defineConfig({
           branches: 94,
           functions: 100,
         },
+        'src/modules/payments/application/use-cases/load-invoice-payment-activity.ts': {
+          // Read-only projection consumed by admin invoice detail
+          // timeline. Was at 43% L / 50% F pre-2026-05-17 polish
+          // (computeRemainingRefundable pure function had ZERO tests
+          // despite money-arithmetic responsibility). Phase B follow-up
+          // added 12 cases covering: no payment, all-failed, partial
+          // refund, exact-equal refund, over-refund (defensive),
+          // failed/pending refund ignored, sibling-payment refund
+          // ignored, partially_refunded status, multiple succeeded
+          // payments (most-recent wins), null completedAt (epoch sort),
+          // immutability (no caller mutation).
+          lines: 100,
+          branches: 90,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/issue-refund.ts': {
+          // Money-movement use-case (admin-initiated refund). 16 unit
+          // tests cover error branches, Stripe+F4 failure paths, and
+          // happy paths. Remaining ~18% line gap is DB-transaction
+          // rollback paths covered by tests/integration/payments/
+          // issue-refund-*.test.ts on live Neon Singapore. Per F8
+          // deferred-with-rationale precedent (vitest.config.ts:361-373),
+          // file-level threshold locks the achieved unit-test level
+          // — branches stay at 95% to catch regression without
+          // forcing speculative integration→unit conversion.
+          lines: 80,
+          branches: 95,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/process-charge-refunded.ts': {
+          // Out-of-band refund detection — Stripe webhook
+          // `charge.refunded` arriving without a matching F5-initiated
+          // refund row triggers out_of_band_refund_detected audit.
+          // 80% line / 84% branch in unit mode. The remaining ~20% is
+          // multi-rail tenant-settings lookup paths covered by
+          // tests/integration/payments/process-charge-refunded-*.test
+          // .ts. Same deferred-with-rationale precedent.
+          lines: 75,
+          branches: 80,
+          functions: 100,
+        },
         // F3: Members Application layer — security-critical use cases
         // require 100% branch coverage per plan.md § Constitution Check II.
         'src/modules/members/application/enforce-tenant-context-on-member.ts': {
