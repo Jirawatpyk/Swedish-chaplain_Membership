@@ -27,7 +27,7 @@ test.describe('member sign-in (T140)', () => {
 
     await expect(page.getByLabel(/email/i)).toBeFocused();
     await fillField(page.getByLabel(/email/i), MEMBER_EMAIL!);
-    await fillField(page.getByLabel(/password/i), MEMBER_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), MEMBER_PASSWORD!);
 
     await Promise.all([
       page.waitForResponse(
@@ -44,7 +44,7 @@ test.describe('member sign-in (T140)', () => {
   test('member attempting /admin is bounced back to /portal', async ({ page }) => {
     await page.goto('/portal/sign-in');
     await fillField(page.getByLabel(/email/i), MEMBER_EMAIL!);
-    await fillField(page.getByLabel(/password/i), MEMBER_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/portal', { timeout: 30_000 });
 

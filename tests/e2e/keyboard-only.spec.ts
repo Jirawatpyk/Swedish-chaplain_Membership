@@ -37,11 +37,11 @@ test.describe('keyboard-only navigation (T170, SC-022)', () => {
     // if the tab order changes unexpectedly.
     for (let i = 0; i < 4; i += 1) {
       await page.keyboard.press('Tab');
-      if (await page.getByLabel(/password/i).evaluate((el) => el === document.activeElement)) {
+      if (await page.getByRole('textbox', { name: /^password$/i }).evaluate((el) => el === document.activeElement)) {
         break;
       }
     }
-    await expect(page.getByLabel(/password/i)).toBeFocused();
+    await expect(page.getByRole('textbox', { name: /^password$/i })).toBeFocused();
 
     await page.keyboard.type('wrong-password-for-keyboard-test');
 

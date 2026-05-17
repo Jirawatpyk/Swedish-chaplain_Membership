@@ -43,7 +43,7 @@ test.describe('change-password happy path (T150, SC-021)', () => {
     // Sign in
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), E2E_CHANGE_PW_EMAIL);
-    await fillField(page.getByLabel(/password/i), E2E_CHANGE_PW_PASSWORD);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), E2E_CHANGE_PW_PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 
@@ -79,7 +79,7 @@ test.describe('change-password happy path (T150, SC-021)', () => {
   test('re-sign-in with NEW password succeeds; revert to original', async ({ page }) => {
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), E2E_CHANGE_PW_EMAIL);
-    await fillField(page.getByLabel(/password/i), tempPassword);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), tempPassword);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 

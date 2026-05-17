@@ -29,7 +29,7 @@ test.beforeEach(async () => {
 async function signInAdmin(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
-  await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   // F5R6+ fix — exclude /admin/sign-in (regex substring match bug).
   await page.waitForURL(/\/admin(\/(?!sign-in)|$)/, { timeout: 10_000 });

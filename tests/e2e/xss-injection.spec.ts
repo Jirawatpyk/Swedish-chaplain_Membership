@@ -54,7 +54,7 @@ test.describe('XSS injection resistance (T177, T-08)', () => {
       // Fill hostile email + wrong password, submit, and let the server
       // return invalid-credentials so the error banner renders.
       await fillField(page.getByLabel(/email/i), payload);
-      await fillField(page.getByLabel(/password/i), 'not-the-real-password');
+      await fillField(page.getByRole('textbox', { name: /^password$/i }), 'not-the-real-password');
       // The form has its own client-side zod guard; many payloads will
       // be rejected client-side with a "please enter a valid email"
       // message, which is fine — the test only cares that the payload
@@ -72,7 +72,7 @@ test.describe('XSS injection resistance (T177, T-08)', () => {
 
       // Clear for the next payload
       await fillField(page.getByLabel(/email/i), '');
-      await fillField(page.getByLabel(/password/i), '');
+      await fillField(page.getByRole('textbox', { name: /^password$/i }), '');
     }
   });
 });

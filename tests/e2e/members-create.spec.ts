@@ -35,7 +35,7 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
   async function signIn(page: Page): Promise<void> {
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
-    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => {
       const p = new URL(u).pathname;

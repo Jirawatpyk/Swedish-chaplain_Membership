@@ -45,7 +45,7 @@ async function setLocale(context: BrowserContext, locale: Locale): Promise<void>
 async function signIn(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), email);
-  await fillField(page.getByLabel(/password/i), password);
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(
     (u) => {

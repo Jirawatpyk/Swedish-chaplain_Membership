@@ -49,14 +49,13 @@ pnpm test:e2e --grep "@a11y" --workers=1
 # Integration on staging Neon
 pnpm test:integration --filter events
 
-# Perf benches against staging
-pnpm tsx scripts/perf/eventcreate-webhook-ingest-latency.ts
-pnpm tsx scripts/perf/eventcreate-events-list-render.ts
-pnpm tsx scripts/perf/eventcreate-csv-import-memory.ts
-pnpm tsx scripts/perf/eventcreate-attendee-fuzzy-match.ts
+# Perf benches against staging — R9 B.3 orchestrator captures all
+# 4 benches in one aggregate JSON committed under perf-results/.
+# STRICT=true exits non-zero on any SLO miss (CI-gateable).
+BENCH_ENV=staging pnpm perf:f6:strict
 ```
 
-**Expected**: every command exits 0 OR documents specific deviation. Capture all 4 perf-bench JSON outputs into `specs/012-eventcreate-integration/retrospective.md § Performance (post-ship)`.
+**Expected**: every command exits 0 OR documents specific deviation. The orchestrator writes one aggregate JSON to `specs/012-eventcreate-integration/perf-results/staging-{timestamp}.json` (the `staging-*` prefix is intentionally NOT gitignored — it's the canonical pre-ship baseline; only `local-*.json` is per-developer noise). Commit the staging file with the ship-day commit + reference in `retrospective.md § Performance (post-ship)`.
 
 ---
 

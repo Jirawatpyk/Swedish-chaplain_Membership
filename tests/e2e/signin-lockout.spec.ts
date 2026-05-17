@@ -100,7 +100,7 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
       await page.waitForLoadState('networkidle');
       await fillField(page.getByLabel(/email/i), LOCKOUT_EMAIL!);
       await fillField(
-        page.getByLabel(/password/i),
+        page.getByRole('textbox', { name: /^password$/i }),
         `wrong-password-attempt-${attempt}`,
       );
 
@@ -130,7 +130,7 @@ test.describe('T-01 sign-in lockout UX (spec FR-013, SC-010)', () => {
     await page.waitForLoadState('networkidle');
     await fillField(page.getByLabel(/email/i), LOCKOUT_EMAIL!);
     await fillField(
-      page.getByLabel(/password/i),
+      page.getByRole('textbox', { name: /^password$/i }),
       'wrong-password-attempt-final',
     );
 

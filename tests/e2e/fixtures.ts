@@ -90,7 +90,11 @@ function browserEngine(page: Page): 'chromium' | 'firefox' | 'webkit' {
  * Usage:
  *
  *     await fillField(page.getByLabel(/email/i), 'user@example.com');
- *     await fillField(dialog.getByLabel(/password/i), 'secret');
+ *     // Note: prefer `getByRole('textbox', { name: /^password$/i })`
+ *     // over `getByLabel(/password/i)` — the F1 PasswordInput primitive
+ *     // adds a "Show password" toggle <button> that the label-regex
+ *     // also matches, causing strict-mode violations.
+ *     await fillField(dialog.getByRole('textbox', { name: /^password$/i }), 'secret');
  *
  * Pass the locator directly — the helper needs it to find the
  * owning page for the engine detection.

@@ -48,6 +48,10 @@ test.describe('F6.1-A CSV remap — non-canonical header admin flow', () => {
 
     // Create a CSV file with non-canonical headers in the test
     // output dir so the file-chooser has a real path.
+    // R9.B1 — ensure output dir exists (Playwright auto-creates on
+    // first attempt but the directory may be GC'd on retry leading
+    // to ENOENT on fs.writeFileSync).
+    fs.mkdirSync(testInfo.outputDir, { recursive: true });
     const csvPath = path.join(testInfo.outputDir, 'remap-fixture.csv');
     const csvContent =
       'Email Address,Full Name,Company Name,Event Code,Event Date,Status\n' +
@@ -67,7 +71,14 @@ test.describe('F6.1-A CSV remap — non-canonical header admin flow', () => {
     // What we assert: the page does NOT proceed to "import successful"
     // until the admin remaps + submits. This proves the remap flow is
     // the GATING path for non-canonical headers.
-    await expect(page.getByText(/Import/i).first()).toBeVisible();
+    //
+    // R9.B1 — target H1 heading (always visible) instead of
+    // `getByText(/Import/i).first()` which previously matched a
+    // breadcrumb `<span>` that is hidden on mobile viewports via
+    // responsive-nav collapse → false-fail.
+    await expect(
+      page.getByRole('heading', { level: 1, name: /import/i }),
+    ).toBeVisible();
 
     // Soft assertion: page is still on the import / mapping surface
     // (not the success / error result). The full interactive remap

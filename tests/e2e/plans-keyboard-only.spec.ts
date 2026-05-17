@@ -48,11 +48,11 @@ test.describe('keyboard-only plans admin — T158', () => {
     // Tab to password field (may pass through "Forgot password?" link)
     for (let i = 0; i < 4; i += 1) {
       await page.keyboard.press('Tab');
-      if (await page.getByLabel(/password/i).evaluate((el) => el === document.activeElement)) {
+      if (await page.getByRole('textbox', { name: /^password$/i }).evaluate((el) => el === document.activeElement)) {
         break;
       }
     }
-    await expect(page.getByLabel(/password/i)).toBeFocused();
+    await expect(page.getByRole('textbox', { name: /^password$/i })).toBeFocused();
     await page.keyboard.type(ADMIN_PASSWORD!);
 
     // Submit via Enter

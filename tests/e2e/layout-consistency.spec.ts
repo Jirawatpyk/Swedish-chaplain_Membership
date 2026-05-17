@@ -54,7 +54,7 @@ test.describe('F5 layout consistency @layout', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => {
       const p = new URL(u).pathname;

@@ -46,7 +46,7 @@ test.describe('plans i18n coverage — US1 @i18n', () => {
 
       await page.goto('/admin/sign-in');
       await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-      await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+      await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
       await page.getByRole('button', { name: /sign in/i }).click();
       await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 

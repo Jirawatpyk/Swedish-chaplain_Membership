@@ -54,7 +54,7 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
       await victimPage.goto('/portal/sign-in');
       await victimPage.waitForLoadState('networkidle');
       await fillField(victimPage.getByLabel(/email/i), VICTIM_EMAIL);
-      await fillField(victimPage.getByLabel(/password/i), VICTIM_PASSWORD);
+      await fillField(victimPage.getByRole('textbox', { name: /^password$/i }), VICTIM_PASSWORD);
       await victimPage.getByRole('button', { name: /sign in/i }).click();
       await victimPage.waitForURL('**/portal', { timeout: 15_000 });
       await expect(victimPage).toHaveURL(/\/portal$/);
@@ -63,7 +63,7 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
       await adminPage.goto('/admin/sign-in');
       await adminPage.waitForLoadState('networkidle');
       await fillField(adminPage.getByLabel(/email/i), ADMIN_EMAIL);
-      await fillField(adminPage.getByLabel(/password/i), ADMIN_PASSWORD);
+      await fillField(adminPage.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD);
       await adminPage.getByRole('button', { name: /sign in/i }).click();
       await adminPage.waitForURL('**/admin', { timeout: 15_000 });
       await adminPage.goto('/admin/users');

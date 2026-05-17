@@ -53,7 +53,7 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
     await page.waitForLoadState('networkidle');
 
     await fillField(page.getByLabel(/email/i), MANAGER_EMAIL!);
-    await fillField(page.getByLabel(/password/i), MANAGER_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), MANAGER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
 
     // Manager lands on /admin (staff home) — the same landing page
@@ -112,7 +112,7 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
     // but RBAC denied) — which hides the bug we want to verify.
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), MANAGER_EMAIL!);
-    await fillField(page.getByLabel(/password/i), MANAGER_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), MANAGER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 10_000 });
 

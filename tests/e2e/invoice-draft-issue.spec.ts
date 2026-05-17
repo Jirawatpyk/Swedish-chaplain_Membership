@@ -62,7 +62,7 @@ const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 async function signInAdmin(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
-  await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   // F5R6+ fix (2026-05-16) — exclude /admin/sign-in from the post-
   // login waitForURL match. The old regex `/\/admin(\/|$)/` matched
@@ -76,7 +76,7 @@ async function signInAdmin(page: import('@playwright/test').Page): Promise<void>
 async function signInManager(page: import('@playwright/test').Page): Promise<void> {
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), MANAGER_EMAIL!);
-  await fillField(page.getByLabel(/password/i), MANAGER_PASSWORD!);
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), MANAGER_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
   // F5R6+ fix (2026-05-16) — exclude /admin/sign-in from the post-
   // login waitForURL match. The old regex `/\/admin(\/|$)/` matched

@@ -383,7 +383,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
       // submit (observed mobile-safari flake 2026-05-17).
       await fillField(page.getByLabel(/email/i), process.env.E2E_ADMIN_EMAIL!);
       await fillField(
-        page.getByLabel(/password/i),
+        page.getByRole('textbox', { name: /^password$/i }),
         process.env.E2E_ADMIN_PASSWORD!,
       );
       // Bind the sign-in response wait + click together so the test
@@ -545,7 +545,7 @@ test.describe('payment card happy path — @payment @e2e (T046)', () => {
 
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
 
