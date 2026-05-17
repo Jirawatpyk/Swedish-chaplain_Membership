@@ -1,4 +1,4 @@
-/**
+﻿/**
  * `importCsv` use-case (F6 Application).
  *
  * Orchestrates CSV bulk-import via the shared `processAttendeeInTx`
@@ -83,7 +83,7 @@ export interface ImportSummary {
   /** F6.1 — explicit count = `errorRows.length` minus skipped (parser failures + savepoint failures). */
   readonly rowsFailed: number;
   /**
-   * F6.1 Phase 4 US2 (T031) — count of re-uploaded rows whose
+   * count of re-uploaded rows whose
    * `payment_status` (Notes-inferred) differed from the persisted
    * value AND was successfully updated. Excludes refunded transitions
    * (those flow through `markRefunded` + the FR-018 quota credit-back
@@ -311,7 +311,7 @@ export interface ImportCsvDeps {
 }
 
 // ---------------------------------------------------------------------------
-// F6.1 Phase 4 US2 (T033) — Cancellation pre-existence marker
+// Cancellation pre-existence marker
 // ---------------------------------------------------------------------------
 //
 // Thrown inside a SAVEPOINT to roll back a first-time-Cancellation row
@@ -395,7 +395,7 @@ type RowOutcome =
   | { readonly kind: 'duplicate'; readonly rowNumber: number }
   | {
       /**
-       * F6.1 Phase 4 US2 (T031) — receipt-duplicate row whose
+       * receipt-duplicate row whose
        * `payment_status` (Notes-inferred) differed from the persisted
        * value AND was successfully UPDATEd to the new value. Counted
        * in `rowsStateChanged` (NOT `rowsAlreadyImported`); surfaced on
@@ -436,7 +436,7 @@ function isSkippedParserRow(reason: string): boolean {
 }
 
 /**
- * F6.1 Phase 4 US2 (T031) — receipt-duplicate state-change detection.
+ * receipt-duplicate state-change detection.
  *
  * On re-upload, the idempotency receipt rowHash matches the first
  * upload's hash (event_external_id, email, registered_at) regardless
@@ -556,23 +556,37 @@ async function maybeApplyStateChange(
     // mutations of an existing PII row. In-tx emit (via the
     // savepoint-scoped audit port) so audit + UPDATE either both
     // commit or both roll back atomically.
-    const auditResult = await ports.audit.emit({
-      eventType: 'csv_import_row_state_changed',
-      tenantId: input.tenantId,
-      actorType: 'csv_import',
-      actorUserId: input.actorUserId,
-      occurredAt: new Date(),
-      summary: `CSV row ${parsed.rowNumber} payment_status ${update.value.previousPaymentStatus} → ${parsed.row.payment_status}`,
-      payload: {
-        severity: 'info',
+    // Wrap audit.emit in its own try/catch so a RAW throw (e.g., the
+    // tx handle already aborted upstream, or a Drizzle serialisation
+    // failure) is converted to TxStageError. Otherwise the outer
+    // `instanceof TxStageError` check below would miss it and fall
+    // through to the silent "treat row as duplicate" path — a PDPA
+    // Art. 30 / GDPR Art. 30 processing-records gap.
+    let auditResult: Awaited<ReturnType<typeof ports.audit.emit>>;
+    try {
+      auditResult = await ports.audit.emit({
+        eventType: 'csv_import_row_state_changed',
+        tenantId: input.tenantId,
+        actorType: 'csv_import',
         actorUserId: input.actorUserId,
-        rowNumber: parsed.rowNumber,
-        registrationId: persisted.registrationId,
-        previousPaymentStatus: update.value.previousPaymentStatus,
-        newPaymentStatus: parsed.row.payment_status,
-        rowHash: parsed.rowHash,
-      },
-    });
+        occurredAt: new Date(),
+        summary: `CSV row ${parsed.rowNumber} payment_status ${update.value.previousPaymentStatus} → ${parsed.row.payment_status}`,
+        payload: {
+          severity: 'info',
+          actorUserId: input.actorUserId,
+          rowNumber: parsed.rowNumber,
+          registrationId: persisted.registrationId,
+          previousPaymentStatus: update.value.previousPaymentStatus,
+          newPaymentStatus: parsed.row.payment_status,
+          rowHash: parsed.rowHash,
+        },
+      });
+    } catch (rawThrow) {
+      throw new TxStageError(
+        'audit_emit',
+        `csv_import_row_state_changed audit emit threw: ${rawThrow instanceof Error ? rawThrow.message : String(rawThrow)}`,
+      );
+    }
     if (!auditResult.ok) {
       // State-change audit failure: roll back the savepoint by
       // throwing — PDPA Art. 30 / GDPR Art. 30 processing-records
@@ -679,7 +693,7 @@ async function processOneRowInSavepoint(
       // (a) Idempotency receipt — silent skip on duplicate per round-2
       //     R3 (CSV duplicates from admin re-upload; not webhook replay).
       //
-      // F6.1 Phase 4 US2 (T033) — Cancellation rows BYPASS the receipt
+      // Cancellation rows BYPASS the receipt
       // entirely: a previous Attending row for the same attendee shares
       // the same rowHash (the canonical key omits payment_status), so the
       // receipt would dedupe the cancel re-upload. Bypassing routes the
@@ -774,7 +788,7 @@ async function processOneRowInSavepoint(
         ports,
       );
 
-      // F6.1 Phase 4 US2 (T033) — first-time Cancellation has no prior
+      // first-time Cancellation has no prior
       // registration to refund. Roll back the savepoint (undo the
       // refunded ghost row that `insertOnConflictDoNothing` just
       // created) by raising the marker error; the outer catch maps it
@@ -798,7 +812,7 @@ async function processOneRowInSavepoint(
       };
     });
   } catch (e) {
-    // F6.1 Phase 4 US2 (T033) — first-time Cancellation (no prior
+    // first-time Cancellation (no prior
     // registration). Savepoint rolled back; surface as a `skipped`
     // outcome so the row flows into `rowsSkipped` instead of
     // `rowsFailed`.
@@ -1211,7 +1225,7 @@ export async function importCsv(
       ...(input.columnMapping !== undefined && {
         columnMapping: input.columnMapping,
       }),
-      // T053 — pass through `adapterEnabled` from composition. The
+      // pass through `adapterEnabled` from composition. The
       // importer treats `undefined` as `true` (normal detection).
       ...(input.adapterEnabled !== undefined && {
         adapterEnabled: input.adapterEnabled,
@@ -1343,7 +1357,11 @@ export async function importCsv(
       if (result.ok) {
         priorImports = result.value;
       } else {
-        logger.warn(
+        // Elevated to logger.error per Phase B B13 — FR-019b duplicate
+        // protection has been silently disabled for this upload; SRE
+        // must see the rate on the dashboard. Outage of the safety-net
+        // query is a defence-in-depth gap, not a routine occurrence.
+        logger.error(
           {
             event: 'f6_csv_safety_net_query_failed',
             tenantId: input.tenantId,
@@ -1352,7 +1370,7 @@ export async function importCsv(
             eventExternalId: input.selectedEvent.externalId,
             err: result.error.kind,
           },
-          '[F6.1] safety-net fingerprint query failed — proceeding without warning (fail-open)',
+          '[F6.1] safety-net fingerprint query failed — proceeding without warning (fail-open; FR-019b protection disabled for this upload)',
         );
         eventcreateMetrics.csvImportSafetyNetFallback(
           input.tenantId,
@@ -1360,7 +1378,7 @@ export async function importCsv(
         );
       }
     } catch (e) {
-      logger.warn(
+      logger.error(
         {
           event: 'f6_csv_safety_net_query_threw',
           tenantId: input.tenantId,
@@ -1368,7 +1386,7 @@ export async function importCsv(
           eventExternalId: input.selectedEvent.externalId,
           err: toErrMessage(e),
         },
-        '[F6.1] safety-net fingerprint query threw — fail-open',
+        '[F6.1] safety-net fingerprint query threw — fail-open; FR-019b duplicate protection disabled for this upload',
       );
       eventcreateMetrics.csvImportSafetyNetFallback(input.tenantId, 'threw');
     }
@@ -1506,7 +1524,7 @@ export async function importCsv(
             summary.rowsAlreadyImported += 1;
             break;
           case 'state_changed':
-            // T031: receipt-duplicate that triggered an UPDATE of
+            // receipt-duplicate that triggered an UPDATE of
             // payment_status. Count separately from `rowsAlreadyImported`
             // so admins see the re-upload had EFFECT (not silent skip).
             summary.rowsStateChanged += 1;
@@ -1944,7 +1962,7 @@ interface EmitImportCompletedAuditArgs {
     readonly rowsProcessed: number;
     readonly rowsAlreadyImported: number;
     /**
-     * Staff-review H-1 (2026-05-16): subset of rowsProcessed whose
+     * Staff-review H-1: subset of rowsProcessed whose
      * state actually changed on this re-upload (Notes-driven payment
      * flip, Attending→Cancelled, etc.). Surfaced on the audit payload
      * so post-import forensic queries can distinguish no-op re-uploads

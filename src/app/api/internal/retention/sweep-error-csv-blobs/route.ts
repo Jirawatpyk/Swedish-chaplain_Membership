@@ -29,6 +29,7 @@
 import { randomUUID } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { runSweepExpiredErrorCsvBlobs } from '@/lib/events-csv-import-deps';
 
@@ -36,13 +37,22 @@ export const runtime = 'nodejs';
 
 const ROUTE = '/api/internal/retention/sweep-error-csv-blobs';
 
-export async function GET(request: NextRequest): Promise<Response> {
+// Use POST — this route mutates state (deletes Blob objects + clears DB
+// columns). GET semantics imply safe + idempotent, which web crawlers,
+// browser prefetch, and Vercel edge cache assume. cron-job.org accepts
+// POST trigger; the docs/runbooks/cron-jobs.md coordinator entry must
+// be updated on ship day.
+export async function POST(request: NextRequest): Promise<Response> {
   // CR-2 / I-2 (R1 — code-reviewer): use the shared `gateCronBearerOrRespond`
   // helper to align with F8/F4/F5/F7 cron coordinators. The helper emits
   // `cron_bearer_auth_rejected` audit + bumps the IP rate-limit on 401 +
   // returns 429 on excessive rejections — closing the silent-401 gap
   // flagged as a Constitution Principle I clause 4 violation.
-  const gate = await gateCronBearerOrRespond(request, { route: ROUTE });
+  const gate = await gateCronBearerOrRespond(request, {
+    route: ROUTE,
+    metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(ROUTE),
+    rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(ROUTE),
+  });
   if (gate) return gate;
 
   const startedAtMs = Date.now();

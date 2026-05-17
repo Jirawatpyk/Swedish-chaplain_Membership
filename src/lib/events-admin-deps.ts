@@ -83,7 +83,7 @@ import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/dri
 import { makeDrizzleRegistrationsRepository } from '@/modules/events/infrastructure/drizzle-registrations-repository';
 import { makeDrizzleQuotaAccountingAdapter } from '@/modules/events/infrastructure/drizzle-quota-accounting-adapter';
 import { makeDrizzleAdvisoryLockAcquirer } from '@/modules/events/infrastructure/drizzle-advisory-lock-acquirer';
-import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
+import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
 import type { Result } from '@/lib/result';
 
 /**

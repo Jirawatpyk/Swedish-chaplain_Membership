@@ -26,6 +26,22 @@ import type { TenantId } from '@/modules/members';
 import type { WebhookSecret } from './branded-types';
 import type { Source } from './value-objects/source';
 
+/**
+ * Phase C C1 — typed view of the grace-secret pair invariant.
+ * The aggregate keeps the two-field shape for migration-friendliness
+ * (47 reader sites + DB columns) but `getGraceState(cfg)` returns a
+ * discriminated union that callers can pattern-match for compile-time
+ * invariant expression. The DB CHECK on `tenant_webhook_configs`
+ * enforces `(graceSecret IS NULL) = (graceRotatedAt IS NULL)`.
+ */
+export type GraceState =
+  | { readonly active: false }
+  | {
+      readonly active: true;
+      readonly secret: WebhookSecret;
+      readonly rotatedAt: Date;
+    };
+
 export interface TenantWebhookConfigAggregate {
   readonly tenantId: TenantId;
   readonly source: Source;
@@ -42,6 +58,26 @@ export interface TenantWebhookConfigAggregate {
 }
 
 /**
+ * Pattern-matchable derivation of the grace-secret invariant. Use this
+ * in code paths where the pair is consumed together so the compiler
+ * narrows access via `state.active`. Existing callers reading the
+ * two-field shape directly remain valid (DB CHECK enforces the
+ * invariant at write time).
+ */
+export function getGraceState(
+  cfg: Pick<TenantWebhookConfigAggregate, 'graceSecret' | 'graceRotatedAt'>,
+): GraceState {
+  if (cfg.graceSecret === null || cfg.graceRotatedAt === null) {
+    return { active: false };
+  }
+  return {
+    active: true,
+    secret: cfg.graceSecret,
+    rotatedAt: cfg.graceRotatedAt,
+  };
+}
+
+/**
  * 24h grace window per FR-008 + R7. Pure predicate — `now` is injected
  * for deterministic testing rather than read from `Date.now()` inside.
  */
@@ -51,7 +87,8 @@ export function isGraceSecretActive(
   cfg: Pick<TenantWebhookConfigAggregate, 'graceSecret' | 'graceRotatedAt'>,
   now: Date,
 ): boolean {
-  if (cfg.graceSecret === null || cfg.graceRotatedAt === null) return false;
-  const ageMs = now.getTime() - cfg.graceRotatedAt.getTime();
+  const state = getGraceState(cfg);
+  if (!state.active) return false;
+  const ageMs = now.getTime() - state.rotatedAt.getTime();
   return ageMs <= GRACE_WINDOW_MS;
 }

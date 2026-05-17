@@ -47,6 +47,7 @@ export type SafeEmitFailLogEvent =
   | 'f6_webhook_config_load_audit_failed'
   | 'f6_webhook_sig_reject_audit_failed'
   | 'f6_admin_cross_tenant_probe_audit_failed'
+  | 'f6_admin_event_detail_not_found_probe_audit_failed'
   | 'f6_webhook_test_invoked_audit_failed'
   | 'f6_webhook_grace_used_audit_failed';
 

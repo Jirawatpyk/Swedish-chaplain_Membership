@@ -2575,7 +2575,6 @@
           "webhook_secret_generated": "Webhook secret generated",
           "webhook_secret_rotated": "Webhook secret rotated",
           "webhook_secret_force_expired": "Webhook secret force-expired",
-          "ingest_disabled_super_admin": "Ingest disabled by super-admin",
           "ingest_disabled_tenant_admin": "Ingest disabled by tenant admin",
           "csv_import_completed": "CSV import completed",
           "csv_import_row_failed": "CSV import row failed",
@@ -2589,6 +2588,7 @@
           "pii_pseudonymised": "Attendee PII pseudonymised",
           "pii_pseudonymisation_sweep_run": "PII pseudonymisation sweep run",
           "cross_tenant_probe": "Cross-tenant probe blocked",
+          "event_detail_not_found_probe": "Event detail not found (info-level probe)",
           "role_violation_blocked": "Role violation blocked"
         },
         "toggles": {

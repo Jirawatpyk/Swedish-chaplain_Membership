@@ -1,5 +1,5 @@
-/**
- * T051 — F6 audit emitter (Infrastructure).
+﻿/**
+ * F6 audit emitter (Infrastructure).
  *
  * Implements `F6AuditPort` per contracts/audit-port.md. Writes structured
  * F6 audit events to F1's shared `audit_log` table (extended by F2
@@ -31,10 +31,10 @@
  */
 import { sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
-import { db, type TenantTx } from '@/lib/db';
+import { runInTenant, type Database, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
-import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
+import { asTenantContext } from '@/modules/tenants';
 import type {
   F6AuditPort,
   F6AuditEntry,
@@ -202,8 +202,55 @@ function logFullError(
   );
 }
 
+/**
+ * PII-redacted forensic projection of an audit payload for the
+ * `emitStandalone` + `emitRolledBack` dual-write `pino.fatal` fallback
+ * paths. Only forensically-useful fields are preserved — raw email,
+ * names, company, phone never make it to the log line even if a future
+ * audit event type carries them. This is defence-in-depth against
+ * caller drift (current callers don't carry PII, but the contract is
+ * shared infrastructure).
+ */
+function redactPayloadForFatalLog(payload: unknown): Record<string, unknown> {
+  if (typeof payload !== 'object' || payload === null) {
+    return { _shape: 'non-object' };
+  }
+  const ALLOWED_KEYS = new Set<string>([
+    'severity',
+    'requestId',
+    'source',
+    'scope',
+    'errorName',
+    'failureStage',
+    'rowNumber',
+    'rowsCleared',
+    'registrationId',
+    'eventId',
+    'matchType',
+    'graceSecretUsed',
+    'reason',
+    'actorType',
+    'actorUserId',
+  ]);
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(payload as Record<string, unknown>)) {
+    if (ALLOWED_KEYS.has(k)) {
+      // Only primitives — drop nested objects which may contain PII.
+      if (
+        typeof v === 'string' ||
+        typeof v === 'number' ||
+        typeof v === 'boolean' ||
+        v === null
+      ) {
+        out[k] = v;
+      }
+    }
+  }
+  return out;
+}
+
 async function insertAuditRow(
-  executor: TenantTx | typeof db,
+  executor: TenantTx | Database,
   entry: F6AuditEntry,
 ): Promise<string> {
   // Use raw SQL because the Drizzle `auditLog` schema does not include
@@ -341,30 +388,19 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
     async emitRolledBack(
       entry: F6AuditEntry<'webhook_rolled_back'>,
     ): Promise<Result<AuditEventId, AuditEmitError>> {
-      // Separate-tx path — use the ROOT db connection, not the (already
-      // rolled-back) executor. Wrapped in its own transaction so a failure
-      // here also rolls back cleanly without affecting anything else.
+      // Separate-tx path — wraps the FR-037 rollback audit in its own
+      // tx so a primary-tx failure doesn't propagate. Uses `runInTenant`
+      // (the canonical tenant-scoped tx helper in `src/lib/db.ts`) which
+      // applies `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`
+      // and validates the slug shape at the trust boundary via
+      // `asTenantContext`. Any malformed slug throws `InvalidTenantSlugError`,
+      // caught by the outer try/catch below → falls through to the
+      // pino.fatal + stderr last-ditch chain.
       try {
-        // Belt-and-suspenders runtime regex guard on the raw GUC
-        // interpolation below. This method is a standalone-tx path —
-        // it uses root `db.transaction` directly instead of the
-        // executor passed to `makePinoAuditPort`. Callers include the
-        // `emitRolledBackStandalone` deps wrapper in `infrastructure/
-        // di.ts` plus tests + future cron/replay paths. The canonical
-        // `runInTenant` in `src/lib/db.ts` already enforces this slug
-        // shape, but standalone callers bypass runInTenant — so an
-        // unvalidated tenantId here would risk SQL injection via the
-        // `SET LOCAL app.current_tenant = '${entry.tenantId}'` line.
-        if (!TENANT_SLUG_PATTERN.test(entry.tenantId as unknown as string)) {
-          throw new Error(
-            `pino-audit-port emitRolledBack: tenantId slug invariant violated: ${entry.tenantId}`,
-          );
-        }
-        const id = await db.transaction(async (tx) => {
-          await tx.execute(sql`SET LOCAL ROLE chamber_app`);
-          await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${entry.tenantId}'`));
-          return await insertAuditRow(tx, entry);
-        });
+        const id = await runInTenant(
+          asTenantContext(String(entry.tenantId)),
+          async (tx) => insertAuditRow(tx, entry),
+        );
         return ok(id as AuditEventId);
       } catch (e) {
         logFullError(
@@ -383,7 +419,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               event: 'webhook_rolled_back',
               tenantId: entry.tenantId,
               audit_secondary_tx_failure: true,
-              payload: entry.payload,
+              payload: redactPayloadForFatalLog(entry.payload),
               dbErrorMessage: sanitizeDbErrorMessage(e),
             },
             '[F6] webhook_rolled_back audit secondary-tx failure — payload preserved per FR-037 dual-write fallback',
@@ -450,18 +486,14 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       // Generic standalone-tx emit for events NOT inside a use-case
       // strict-tx (currently: `webhook_signature_rejected` from the
       // route handler). Same dual-write fallback semantics as
-      // `emitRolledBack` but accepts any F6 event type.
+      // `emitRolledBack` but accepts any F6 event type. Uses
+      // `runInTenant` so the tx is properly tenant-scoped with role +
+      // GUC; `asTenantContext` validates the slug shape at the boundary.
       try {
-        if (!TENANT_SLUG_PATTERN.test(entry.tenantId as unknown as string)) {
-          throw new Error(
-            `pino-audit-port emitStandalone: tenantId slug invariant violated: ${entry.tenantId}`,
-          );
-        }
-        const id = await db.transaction(async (tx) => {
-          await tx.execute(sql`SET LOCAL ROLE chamber_app`);
-          await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${entry.tenantId}'`));
-          return await insertAuditRow(tx, entry);
-        });
+        const id = await runInTenant(
+          asTenantContext(String(entry.tenantId)),
+          async (tx) => insertAuditRow(tx, entry),
+        );
         // R6 SUGG-R5-2 + PERF-R6-03 — fire the matching OTel counter
         // for any quota event routed through this standalone path
         // (e.g., a future F6.1 manual-recovery script). Currently the
@@ -481,7 +513,7 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
               event: entry.eventType,
               tenantId: entry.tenantId,
               audit_secondary_tx_failure: true,
-              payload: entry.payload,
+              payload: redactPayloadForFatalLog(entry.payload),
               dbErrorMessage: sanitizeDbErrorMessage(e),
             },
             `[F6] ${entry.eventType} audit secondary-tx failure — payload preserved per FR-037 dual-write fallback`,

@@ -35,6 +35,7 @@
  *   - `invalid_response_body` — receiver 200 but body shape unexpected
  */
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { WebhookSecret } from '../../domain/branded-types';
@@ -276,8 +277,18 @@ export async function runTestWebhook(
       },
       body: rawBody,
     });
-  } catch {
+  } catch (e) {
     const deliveredAt = input.now.toISOString();
+    logger.warn(
+      {
+        event: 'f6_test_webhook_fetch_failed',
+        tenantSlug: input.tenantSlug,
+        requestId,
+        errName: e instanceof Error ? e.name : 'unknown',
+        errMessage: e instanceof Error ? e.message : String(e),
+      },
+      '[F6] test-webhook outbound fetch failed — admin sees network_error UI',
+    );
     return ok({
       ok: false,
       requestId,
@@ -307,7 +318,17 @@ export async function runTestWebhook(
   let body: unknown;
   try {
     body = await response.json();
-  } catch {
+  } catch (e) {
+    logger.warn(
+      {
+        event: 'f6_test_webhook_response_parse_failed',
+        tenantSlug: input.tenantSlug,
+        requestId,
+        errName: e instanceof Error ? e.name : 'unknown',
+        errMessage: e instanceof Error ? e.message : String(e),
+      },
+      '[F6] test-webhook response JSON parse failed — likely HTML 200 from CDN/proxy',
+    );
     return ok({
       ok: false,
       requestId,

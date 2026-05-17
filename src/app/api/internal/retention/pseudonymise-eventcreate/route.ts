@@ -64,7 +64,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // (constant-time bearer compare + IP rate-limit + cron_bearer_auth_rejected
   // audit emit) instead of inline verifyCronBearer. Restores forensic
   // coverage parity with the sweep-error-csv-blobs cron precedent.
-  const gate = await gateCronBearerOrRespond(request, { route: ROUTE });
+  const gate = await gateCronBearerOrRespond(request, {
+    route: ROUTE,
+    metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(ROUTE),
+    rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(ROUTE),
+  });
   if (gate) return gate;
 
   if (!env.features.f6EventCreate) {
@@ -128,6 +132,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         });
       } else {
         eventcreateMetrics.pseudonymisationSweepRowsTotal(tenantSlug, 'error');
+        // Mirror the catch sibling's logger.error so SRE dashboards
+        // surface the failure (Result.err branch was previously silent).
+        logger.error(
+          {
+            event: 'pseudonymise_sweep_per_tenant_use_case_err',
+            tenantSlug,
+            errKind: result.error.kind,
+            errMessage: result.error.message,
+          },
+          '[F6] pseudonymise sweep: per-tenant use-case returned Result.err',
+        );
         perTenant.push({
           tenantId: tenantSlug,
           outcome: 'error',
@@ -145,5 +160,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  // If ANY tenant errored, return HTTP 500 so cron-job.org's
+  // "≥2 consecutive non-200" alert fires. The per-tenant array is
+  // preserved in the response body for forensic correlation. Mirrors
+  // the sweep-error-csv-blobs scan-failure precedent.
+  const anyErrored = perTenant.some((t) => t.outcome === 'error');
+  if (anyErrored) {
+    return NextResponse.json(
+      { ok: false, error: 'pseudonymise_sweep_per_tenant_errors', perTenant },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ ok: true, perTenant }, { status: 200 });
 }

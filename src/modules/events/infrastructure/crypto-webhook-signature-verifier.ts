@@ -1,5 +1,5 @@
-/**
- * T044 — Crypto-based webhook signature verifier (F6 Infrastructure).
+﻿/**
+ * Crypto-based webhook signature verifier (F6 Infrastructure).
  *
  * Implements `WebhookSignatureVerifier` port per research.md R2:
  *   - HMAC-SHA256 over `${timestamp}.${rawBody}`

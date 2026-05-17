@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 /**
- * T077 — Rotate-secret dialog (F6 Phase 5 / FR-008).
+ * Rotate-secret dialog (F6 Phase 5 / FR-008).
  *
  * Wraps `ConfirmationDialog` (focus-safe — Cancel auto-focused). When
  * confirmed, POSTs to `/rotate-secret`. On success, renders the new
@@ -41,7 +41,7 @@ export function RotateSecretDialog({
   onRotationAcknowledged,
 }: RotateSecretDialogProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseC.rotate');
-  // Round 2 R-H2 fix (2026-05-13) — `formatGraceTimestamp` shared
+  // H2 fix — `formatGraceTimestamp` shared
   // helper renders ISO timestamps with the chamber's Bangkok timezone
   // + locale-correct date/time format. Previously the raw ISO leaked
   // through to the TH/SV post-rotation dialog body via the i18n
@@ -50,7 +50,7 @@ export function RotateSecretDialog({
   const [rotationResult, setRotationResult] = useState<RotationResult | null>(
     null,
   );
-  // Phase 5 review-fix W-04 (2026-05-13) — mirror the embedded
+  // mirror the embedded
   // WebhookSecretReveal's saved-checkbox state up to this dialog so
   // the Acknowledge button can gate on it. Eliminates the previous
   // dual-completion path where AT users saw both the inner Continue
@@ -59,12 +59,12 @@ export function RotateSecretDialog({
 
   async function handleConfirm() {
     try {
-      // Round 3 S-H3 — shared `adminPost` replaces the boilerplate.
+      // shared `adminPost` replaces the boilerplate.
       const res = await adminPost(
         '/api/admin/integrations/eventcreate/rotate-secret',
       );
       if (res.status === 429) {
-        // Round 3 S-M1 — shared `parseRetryAfterSeconds` returns `null`
+        // shared `parseRetryAfterSeconds` returns `null`
         // for missing/non-integer/zero/negative values, with a forensic
         // console.warn for HTTP-date form (M-err-4).
         const retryAfter = parseRetryAfterSeconds(res);
@@ -89,14 +89,14 @@ export function RotateSecretDialog({
       });
       toast.success(t('success'));
     } catch (e) {
-      // Round-6 verify-fix 2026-05-13 — surface to DevTools so devs
+      // 05-13 — surface to DevTools so devs
       // can debug network failures without manual repro.
       console.error('[F6] rotate-secret request failed', e);
       toast.error(t('failed'));
     }
   }
 
-  // Round 3 M-code-2 (2026-05-13) — accepts an `acknowledgedAlready`
+  // 2 — accepts an `acknowledgedAlready`
   // flag from the explicit Acknowledge-button paths so we don't emit
   // `onRotationAcknowledged()` twice when the dialog closes via the
   // confirm-button (which already calls it inline). The previous
@@ -108,7 +108,7 @@ export function RotateSecretDialog({
         onRotationAcknowledged();
       }
       setRotationResult(null);
-      // Phase 5 review-fix W-04 — reset the saved gate so a follow-up
+      // reset the saved gate so a follow-up
       // open of the dialog starts fresh (without this the second
       // rotation would see acknowledged=true from the prior cycle).
       setSecretAcknowledged(false);
@@ -139,7 +139,7 @@ export function RotateSecretDialog({
         }}
       >
         <div className="py-2">
-          {/* Phase 5 review-fix W-04 (2026-05-13) — single completion
+          {/* Phase 5 review-fix W-04 — single completion
               path: the embedded WebhookSecretReveal hides its internal
               Continue button and lifts its saved-checkbox state to
               this dialog, so the Acknowledge button below is the only
@@ -170,7 +170,7 @@ export function RotateSecretDialog({
       confirmLabel={t('confirm')}
       cancelLabel={t('cancel')}
       destructive
-      // F6 Phase 8 T100 (2026-05-16) — DO NOT auto-close after onConfirm.
+      // F6 Phase 8 T100 — DO NOT auto-close after onConfirm.
       // handleConfirm sets `rotationResult` so this dialog re-renders
       // into the post-rotation one-time-reveal view (the `if
       // (rotationResult)` branch above). The default

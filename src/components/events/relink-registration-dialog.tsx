@@ -1,4 +1,4 @@
-/**
+﻿/**
  * F6 Phase 9 / US6 / T106 — relink registration dialog.
  *
  * Per-row admin action mounted in `AttendeeTable`. Two visual modes:
@@ -35,43 +35,6 @@
  *   - sr-only role=status announces "Relinking …" + "Searching members …".
  *   - Loader2 animations carry `motion-reduce:animate-none` per
  *     `docs/ux-standards.md § Reduced motion`.
- *
- * Review-fix log (Round-3 deferred-fix index for the 16+ inline
- * `Round-N X-Y` tags scattered through the file body — inline tags
- * are PRESERVED to label each code change; this header is a lookup
- * table so future readers can resolve the tag IDs without needing
- * access to the original review reports):
- *
- *   Round-1 ux-H3 — server 409 `event_archived` reason → localised
- *     `errorToastConflict` (avoid echoing EN `body.detail` to TH/SV).
- *   Round-1 err-H1 — distinct `searchError` state so search-fail is
- *     distinguishable from "no results" empty state.
- *   Round-1 err-H2 — try/catch around POST in `handleSelect` keeps
- *     the dialog open on network throw (user can retry).
- *   Round-1 ux-H1 — `triggerAriaLabel` includes attendee email so SR
- *     disambiguates duplicate-name rows.
- *   Round-1 ux-H2 — `aria-hidden` on `<CommandList>` while
- *     searching+empty avoids dual-SR-announcement conflict with the
- *     spinner's role=status.
- *   Round-1 ux-M1 — short visible label + Info icon + Tooltip with
- *     the full FR-014 sentence (cell width small; portal-rendered
- *     tooltip does not affect row height).
- *   Round-1 code-M3 — `fetchSeqRef` counter guards setState writes
- *     from stale resolutions across rapid keystrokes.
- *   Round-1 err-M6 — reset-on-close effect clears stale spinner +
- *     error state so the next open starts fresh.
- *   Round-2 types-H4 — `RelinkRegistrationDialogProps` branded
- *     (RegistrationId / EventId / AttendeeEmail / MemberId | null).
- *   Round-2 type-M3 + Round-3 type-M — zod schemas with `.uuid()` +
- *     `.passthrough()` runtime-validate server responses; match wire
- *     shape (noop adds registrationId, non-noop adds quotaImpact).
- *   Round-2 comments-M — no nested `TooltipProvider`; rely on the
- *     `attendee-table.tsx § "Round-11 review fix — single
- *     TooltipProvider hoisted"` invariant.
- *   Round-3 err-LOW — 5xx response keeps dialog open (matches err-H2
- *     semantics for retry consistency).
- *   Round-3 comments-M — anchor citations (not line numbers) for
- *     cross-file references.
  */
 'use client';
 
@@ -116,7 +79,7 @@ import type {
 import type { MemberId } from '@/modules/members';
 
 export interface RelinkRegistrationDialogProps {
-  /** Round-1 type-H4 — branded for compile-time UUID safety across the prop boundary. */
+  /** Branded for compile-time UUID safety across the prop boundary. */
   readonly registrationId: RegistrationId;
   readonly eventId: EventId;
   readonly attendeeName: string;
@@ -131,7 +94,7 @@ export interface RelinkRegistrationDialogProps {
   readonly isPseudonymised: boolean;
 }
 
-// Round-1 type-M3 — runtime-validated server response shapes. zod
+// runtime-validated server response shapes. zod
 // `.safeParse()` at the fetch boundary guarantees the dialog never
 // trusts a malformed JSON body (proxy injection, mid-stream truncation,
 // future server-schema drift). Mirrors the `AuditRowSchema` defensive
@@ -141,7 +104,7 @@ const MemberSearchHitSchema = z.object({
   companyName: z.string(),
   primaryContactName: z.string().nullable(),
 });
-// Round-2 type-M3 — `items` is REQUIRED in the server response
+// `items` is REQUIRED in the server response
 // (members-search route always returns it, even empty). Marking
 // optional masked future shape regressions where the server stops
 // emitting `items` at all.
@@ -150,14 +113,14 @@ const SearchResponseSchema = z.object({
 });
 type MemberSearchHit = z.infer<typeof MemberSearchHitSchema>;
 
-// Round-2 type-M3 — schema now matches the route's wire shape exactly:
+// schema now matches the route's wire shape exactly:
 //   - noop variant carries `registrationId` (route sends it; schema
 //     previously dropped it via zod's default unknown-field strip).
 //   - non-noop variant carries `quotaImpact` (route sends the full
 //     credit-back/decrement summary).
 // `passthrough` is added on each variant so future server-side fields
 // don't trigger a parse failure during a deploy crossover window.
-// Round-3 type-M closure — tighten member-id fields to UUID
+// M closure — tighten member-id fields to UUID
 // validation matching `MemberSearchHitSchema.memberId` discipline.
 // Server emits branded `MemberId` (UUID PK from members table); a
 // future regression that leaks a non-UUID member-id (e.g., a slug,
@@ -207,13 +170,13 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
   const deferredSearch = useDeferredValue(search);
   const [results, setResults] = useState<ReadonlyArray<MemberSearchHit>>([]);
   const [searching, setSearching] = useState(false);
-  // Round-1 err-H1 — distinguishes "search returned 0 results" from
+  // distinguishes "search returned 0 results" from
   // "search request failed" so the empty-state copy doesn't tell a
   // network-degraded admin that the member they're looking for doesn't
   // exist.
   const [searchError, setSearchError] = useState(false);
   const [pending, startTransition] = useTransition();
-  // Round-1 code-M3 — fetch sequence counter prevents the spinner from
+  // fetch sequence counter prevents the spinner from
   // racing across keystrokes. Each effect run increments + captures
   // the id; the `.finally()` only flips `searching=false` when its
   // captured id is still the most recent in-flight request.
@@ -255,7 +218,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
           throw new Error(`member-search responded ${res.status}`);
         }
         const raw: unknown = await res.json();
-        // Round-1 type-M3 — runtime-validate the server response.
+        // runtime-validate the server response.
         const parsed = SearchResponseSchema.safeParse(raw);
         if (!parsed.success) {
           throw new Error(
@@ -283,7 +246,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
           return;
         }
         if (mySeq !== fetchSeqRef.current) return; // stale failure
-        // Round-1 err-H1 — surface the failure as a distinct empty
+        // surface the failure as a distinct empty
         // state (`searchFailed` copy) so the admin can distinguish
         // "no member matches this query" from "the search backend is
         // unreachable". Also log to the browser console for E2E /
@@ -307,7 +270,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
   ]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Round-1 err-M6 — reset stale spinner + error state when the
+  // reset stale spinner + error state when the
   // dialog opens fresh, so a previous session's transient failure
   // doesn't poison the next open.
   /* eslint-disable react-hooks/set-state-in-effect --
@@ -335,7 +298,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
   // of the dialog. No data-testid="relink-button-…" so the absence
   // assertion in the E2E spec holds.
   //
-  // Round-1 ux-M1 + Round-2 comments-M — short visible label + Info
+  // M1 + Round-2 comments-M — short visible label + Info
   // icon + Tooltip with the full FR-014 sentence. Keeps the visible
   // cell width small (avoiding a 185-char inline message that
   // dominates the Actions column) while preserving the canonical
@@ -343,7 +306,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
   // `data-testid='relink-disallowed-{rid}'` `aria-label`, which
   // carries the full sentence for SR users + the E2E `getByTestId`.
   //
-  // Round-2 comments-M + Round-3 — no nested `TooltipProvider`:
+  // M + Round-3 — no nested `TooltipProvider`:
   // rely on the hoisted single provider in
   // `attendee-table.tsx § "Round-11 review fix — single
   // TooltipProvider hoisted"` (anchor citation, not line number).
@@ -375,7 +338,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
 
   function handleSelect(memberId: string, companyName: string): void {
     startTransition(async () => {
-      // Round-1 err-H2 — wrap fetch+JSON in try/catch so a network
+      // wrap fetch+JSON in try/catch so a network
       // failure (offline / DNS / TLS handshake fail) surfaces as a
       // toast.error instead of an unhandled rejection that closes the
       // dialog silently. The dialog stays OPEN on a thrown failure so
@@ -409,7 +372,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
           const parsed = RelinkErrorResponseSchema.safeParse(raw);
           const reason = parsed.success ? parsed.data.reason : undefined;
           setOpen(false);
-          // Round-1 ux-H3 — the server discriminates via `reason`. The
+          // the server discriminates via `reason`. The
           // client picks the correct LOCALISED copy instead of echoing
           // the server's EN `body.detail` (which would break TH/SV).
           if (reason === 'pseudonymised_row_rejected') {
@@ -426,7 +389,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
           toast.error(t('notFoundToast'));
           router.refresh();
         } else {
-          // Round-2 err-LOW closure — 5xx keeps the dialog OPEN so
+          // LOW closure — 5xx keeps the dialog OPEN so
           // the admin can retry without re-opening the picker and
           // re-typing the search. Matches the network-throw branch
           // semantics (err-H2): both "server down" and "network
@@ -472,7 +435,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
             size="sm"
             type="button"
             data-testid={`relink-button-${props.registrationId}`}
-            // Round-1 ux-H1 — email included so SR users can
+            // email included so SR users can
             // disambiguate rows that share a name (admin view often
             // has multiple "John Smith" entries from different
             // companies).

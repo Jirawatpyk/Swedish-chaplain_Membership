@@ -167,7 +167,7 @@ export function ErasePiiDialog({
         {pending && (
           <Loader2
             aria-hidden="true"
-            className="animate-spin"
+            className="animate-spin motion-reduce:animate-none"
             data-icon="inline-end"
           />
         )}

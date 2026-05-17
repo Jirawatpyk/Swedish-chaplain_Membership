@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 /**
- * T079 — Test-webhook button (F6 Phase 5 / US3 AS2).
+ * Test-webhook button (F6 Phase 5 / US3 AS2).
  *
  * Async POST to `/api/admin/integrations/eventcreate/test-webhook`.
  * Renders three states:
@@ -24,7 +24,7 @@ import { adminPost } from '@/lib/http/admin-post';
 import type { RunTestWebhookOutcome } from '@/modules/events';
 
 /**
- * Round-6 verify-fix 2026-05-13 (type-design C1) — the UI previously
+ * 05-13 (type-design C1) — the UI previously
  * re-declared its own `TestWebhookOutcome` interface with `ok: boolean`
  * and every distinguishing field as `?:` optional. That threw away the
  * compile-time narrowing the Application-layer `RunTestWebhookOutcome`
@@ -44,7 +44,7 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
   const t = useTranslations('admin.integrations.eventcreate.phaseC.test');
   const [loading, setLoading] = useState(false);
   const [announcement, setAnnouncement] = useState('');
-  // Round 11 code-reviewer fix #1 (2026-05-14) — track the 2s cooldown
+  // reviewer fix #1 — track the 2s cooldown
   // timer in a ref so it can be cleared on unmount. Previously the
   // bare `setTimeout` inside `finally` had no cleanup; if the parent
   // unmounted this component within the 2s window (e.g. admin opens
@@ -67,7 +67,7 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
     setLoading(true);
     setAnnouncement(t('inProgress'));
     try {
-      // Round 3 S-H3 — shared `adminPost` replaces the boilerplate.
+      // shared `adminPost` replaces the boilerplate.
       const res = await adminPost(
         '/api/admin/integrations/eventcreate/test-webhook',
       );
@@ -92,7 +92,7 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
         return;
       }
       const body = (await res.json()) as TestWebhookOutcome;
-      // Round-6 verify-fix 2026-05-13 (type-design C1) — discriminated
+      // 05-13 (type-design C1) — discriminated
       // narrowing on `body.ok`. The Application-layer
       // `RunTestWebhookOutcome` guarantees `processingOutcome` /
       // `durationMs` are present on the success arm and
@@ -111,7 +111,7 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
       }
       onResolved?.(body);
     } catch (e) {
-      // Round-6 verify-fix 2026-05-13 — surface error to DevTools so
+      // 05-13 — surface error to DevTools so
       // SREs/devs can diagnose root cause (DNS / TLS / abort / timeout)
       // without manual repro. User-facing toast stays generic.
       console.error('[F6] test-webhook request failed', e);

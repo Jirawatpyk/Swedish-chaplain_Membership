@@ -18,7 +18,9 @@
  */
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ChevronLeft, ChevronRight, Download, FileX2 } from 'lucide-react';
 import {
@@ -101,6 +103,25 @@ export function CsvImportHistoryTable({
   nextPageHref,
 }: CsvImportHistoryTableProps) {
   const t = useTranslations('admin.events.import.history');
+  const router = useRouter();
+
+  // Phase G G3 — auto-refresh while any row is in 'running' state. The
+  // use-case flips 'running' → terminal outcome on completion; without
+  // polling, the admin must manually reload to see the result. Poll
+  // every 5s for up to 2 minutes (24 ticks) — long-running imports
+  // beyond that warrant a manual reload, which keeps the polling cost
+  // bounded.
+  const hasRunningRow = rows.some((r) => r.outcome === 'running');
+  useEffect(() => {
+    if (!hasRunningRow) return;
+    let ticks = 0;
+    const interval = setInterval(() => {
+      ticks += 1;
+      router.refresh();
+      if (ticks >= 24) clearInterval(interval);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [hasRunningRow, router]);
 
   if (rows.length === 0) {
     // Empty-state anatomy per ux-standards.md § 3.1 — icon + title +

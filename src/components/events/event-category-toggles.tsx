@@ -189,7 +189,7 @@ export function EventCategoryToggles({
           {activeFlag === 'partner_benefit' && (
             <Loader2
               aria-hidden="true"
-              className="animate-spin"
+              className="animate-spin motion-reduce:animate-none"
               data-icon="inline-end"
             />
           )}
@@ -214,7 +214,7 @@ export function EventCategoryToggles({
                 handleConfirm('partner_benefit', !isPartnerBenefit)
               }
               disabled={pending}
-              className="disabled:pointer-events-none disabled:opacity-50"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive disabled:pointer-events-none disabled:opacity-50"
             >
               {t('confirm')}
             </AlertDialogAction>
@@ -248,7 +248,7 @@ export function EventCategoryToggles({
           {activeFlag === 'cultural_event' && (
             <Loader2
               aria-hidden="true"
-              className="animate-spin"
+              className="animate-spin motion-reduce:animate-none"
               data-icon="inline-end"
             />
           )}
@@ -273,7 +273,7 @@ export function EventCategoryToggles({
                 handleConfirm('cultural_event', !isCulturalEvent)
               }
               disabled={pending}
-              className="disabled:pointer-events-none disabled:opacity-50"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive disabled:pointer-events-none disabled:opacity-50"
             >
               {t('confirm')}
             </AlertDialogAction>

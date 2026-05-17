@@ -573,4 +573,39 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
       '/admin/events/import/history (history list)',
     );
   });
+
+  /**
+   * A8 — dedicated server-rendered PII erasure confirmation page. The
+   * page renders inside `DetailContainer` + `PageHeader` + the
+   * `ErasePiiDialog` opened in dialog mode. WCAG-critical surface:
+   * destructive form + textarea + AlertDialog confirmation. Distinct
+   * from the inline dialog opened from the attendee table — that
+   * surface is covered by the events-list+detail E2E.
+   *
+   * Uses `seedF6RelinkFixture`'s non-member registration as a stable
+   * navigation target.
+   */
+  test('@a11y A8 — /admin/events/[eventId]/registrations/[registrationId]/erase (dedicated PII erasure page)', async ({
+    page,
+  }) => {
+    const { seedF6RelinkFixture } = await import(
+      './helpers/eventcreate-seed'
+    );
+    const fixture = await seedF6RelinkFixture();
+    test.skip(
+      fixture === null,
+      'E2E_DATABASE_URL or F6 seed prerequisites unset',
+    );
+    if (fixture === null) return;
+    await signInAsAdmin(page);
+    await page.goto(
+      `/admin/events/${fixture.eventId}/registrations/${fixture.nonMemberRegistrationId}/erase`,
+    );
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/[eventId]/registrations/[registrationId]/erase',
+    );
+  });
 });

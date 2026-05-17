@@ -2575,7 +2575,6 @@
           "webhook_secret_generated": "สร้างรหัสลับเว็บฮุค",
           "webhook_secret_rotated": "หมุนรหัสลับเว็บฮุค",
           "webhook_secret_force_expired": "บังคับหมดอายุรหัสลับ",
-          "ingest_disabled_super_admin": "ปิดการรับข้อมูลโดยซุปเปอร์แอดมิน",
           "ingest_disabled_tenant_admin": "ปิดการรับข้อมูลโดยผู้ดูแลองค์กร",
           "csv_import_completed": "นำเข้า CSV เสร็จสมบูรณ์",
           "csv_import_row_failed": "นำเข้า CSV ล้มเหลวบางแถว",
@@ -2589,6 +2588,7 @@
           "pii_pseudonymised": "ปกปิดข้อมูลส่วนบุคคลของผู้เข้าร่วม",
           "pii_pseudonymisation_sweep_run": "รอบกวาดปกปิดข้อมูลส่วนบุคคล",
           "cross_tenant_probe": "บล็อกการตรวจสอบข้ามองค์กร",
+          "event_detail_not_found_probe": "ไม่พบรายละเอียดอีเวนต์ (ระดับข้อมูล)",
           "role_violation_blocked": "บล็อกการละเมิดบทบาท"
         },
         "toggles": {

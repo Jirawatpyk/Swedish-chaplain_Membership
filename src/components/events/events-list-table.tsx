@@ -107,12 +107,19 @@ export function EventsListTable({ rows }: Props) {
            */}
           <TableHead>{t('columns.date')}</TableHead>
           <TableHead>{t('columns.name')}</TableHead>
-          <TableHead>{t('columns.category')}</TableHead>
+          {/* Phase D D3 — hide low-priority columns at <md to avoid
+              horizontal scroll on tablet portrait (768px). Name + date
+              + registrations carry the headline signal. */}
+          <TableHead className="hidden md:table-cell">
+            {t('columns.category')}
+          </TableHead>
           <TableHead className="text-right">
             {t('columns.registrations')}
           </TableHead>
-          <TableHead>{t('columns.partnerBenefit')}</TableHead>
-          <TableHead className="text-right">
+          <TableHead className="hidden md:table-cell">
+            {t('columns.partnerBenefit')}
+          </TableHead>
+          <TableHead className="hidden md:table-cell text-right">
             {t('columns.matchRate')}
           </TableHead>
         </TableRow>
@@ -141,13 +148,13 @@ export function EventsListTable({ rows }: Props) {
                   </Badge>
                 )}
               </TableCell>
-              <TableCell className="text-muted-foreground">
+              <TableCell className="hidden md:table-cell text-muted-foreground">
                 {row.category ?? '—'}
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 {row.totalRegistrations.toLocaleString(locale)}
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden md:table-cell">
                 <div className="flex flex-wrap items-center gap-1">
                   {row.isPartnerBenefit && (
                     <Badge
@@ -174,7 +181,7 @@ export function EventsListTable({ rows }: Props) {
                   )}
                 </div>
               </TableCell>
-              <TableCell className="text-right tabular-nums">
+              <TableCell className="hidden md:table-cell text-right tabular-nums">
                 {/* I5 (round-10) — stack denominator on a second line so
                     "%" and "(matched/total)" no longer compete for width;
                     band colour applies only to the %, denominator stays

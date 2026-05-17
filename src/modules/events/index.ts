@@ -451,6 +451,20 @@ export function makePseudonymiseStaleNonMemberPiiDeps(
   };
 }
 
+/**
+ * Composition factory for the F6 audit port bound to a caller-supplied
+ * TenantTx. Replaces the prior practice of `src/lib/events-*-deps.ts`
+ * deep-importing `pino-audit-port` from `./infrastructure/pino-audit-port`
+ * — those files are ESLint-exempt for the barrel guard, but the
+ * deep-import contradicted the barrel JSDoc's stated intent. Lib
+ * composition adapters should import this factory instead.
+ */
+export function makeAuditPortForTenant(
+  tx: TenantTx,
+): ReturnType<typeof _makePinoAudit> {
+  return _makePinoAudit(tx);
+}
+
 // --- 7. Infrastructure composition factories (DI surface) -------------------
 
 export {

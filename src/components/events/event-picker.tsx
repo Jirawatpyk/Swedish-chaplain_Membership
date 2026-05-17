@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 /**
  * T025 (Feature 013 · F6.1) — Event picker dropdown for CSV import.
@@ -67,6 +67,14 @@ export interface EventPickerProps {
   readonly registerAddEvent?: (
     add: (event: EventPickerOption) => void,
   ) => void;
+  /**
+   * Optional `id` of an external `<Label>` element. When set, the
+   * combobox trigger uses `aria-labelledby={triggerAriaLabelledBy}`
+   * instead of the default `aria-label={t('triggerAriaLabel')}`. This
+   * lets a form-shaped surface (e.g. csv-mapping-form) wire a visible
+   * label without producing duplicate accessible names.
+   */
+  readonly triggerAriaLabelledBy?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +162,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   const [fetchedEvents, setFetchedEvents] = useState<
     ReadonlyArray<EventPickerOption>
   >(props.events ?? []);
-  // T060 debug fix (2026-05-16): track locally-added events (via
+  // T060 debug fix: track locally-added events (via
   // `addPickerEventRef`) SEPARATELY from the fetched list so a
   // race-condition fetch overwrite cannot wipe out a freshly-created
   // event. Pattern:
@@ -325,7 +333,13 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
               // correctly via aria-haspopup, and the controls reference
               // takes effect when the popup mounts on open.
               aria-controls={popoverContentId}
-              aria-label={t('triggerAriaLabel')}
+              // Prefer an external Label association (WCAG 1.3.1 + 4.1.2)
+              // when the parent provides one. Otherwise fall back to the
+              // self-describing aria-label so the picker stays accessible
+              // when used standalone.
+              {...(props.triggerAriaLabelledBy !== undefined
+                ? { 'aria-labelledby': props.triggerAriaLabelledBy }
+                : { 'aria-label': t('triggerAriaLabel') })}
               className="min-h-11 w-full justify-between text-left font-normal"
             >
               <span className="truncate">
@@ -415,7 +429,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             // Clear the fetched list ONLY — preserve locallyAddedEvents
             // (those represent events the user created via the inline
             // modal in this session; refresh shouldn't remove them).
-            // T060 debug fix (2026-05-16) — see fetchedEvents/locally
+            // T060 debug fix — see fetchedEvents/locally
             // AddedEvents split rationale above.
             setFetchedEvents([]);
             void loadEvents(loadCancelRef.current);

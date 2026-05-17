@@ -39,7 +39,11 @@ async function listKnownTenants(): Promise<ReadonlyArray<string>> {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Security review 2026-05-17 closure: use shared gateCronBearerOrRespond
   // for audit + IP rate-limit consistency with sweep-error-csv-blobs.
-  const gate = await gateCronBearerOrRespond(request, { route: ROUTE });
+  const gate = await gateCronBearerOrRespond(request, {
+    route: ROUTE,
+    metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(ROUTE),
+    rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(ROUTE),
+  });
   if (gate) return gate;
 
   if (!env.features.f6EventCreate) {

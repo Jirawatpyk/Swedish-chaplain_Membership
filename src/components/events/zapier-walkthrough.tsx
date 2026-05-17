@@ -148,19 +148,18 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
                             </span>
                           </div>
                         ) : (
-                          <>
-                            <Image
-                              src={imgPath}
-                              alt={t(`step${step}.alt`)}
-                              width={1280}
-                              height={720}
-                              className="rounded-md border bg-muted"
-                              sizes="(max-width: 640px) 100vw, 600px"
-                            />
-                            <figcaption className="text-sm text-muted-foreground">
-                              {t('imagePlaceholderNotice')}
-                            </figcaption>
-                          </>
+                          // Real screenshot — no figcaption. The placeholder
+                          // copy at `imagePlaceholderNotice` is specific to
+                          // the stub state and would mislead admins viewing
+                          // real walkthrough images.
+                          <Image
+                            src={imgPath}
+                            alt={t(`step${step}.alt`)}
+                            width={1280}
+                            height={720}
+                            className="rounded-md border bg-muted"
+                            sizes="(max-width: 640px) 100vw, 600px"
+                          />
                         )}
                       </figure>
                     );

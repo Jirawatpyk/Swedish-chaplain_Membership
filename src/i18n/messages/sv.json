@@ -2575,7 +2575,6 @@
           "webhook_secret_generated": "Webbhok-nyckel genererad",
           "webhook_secret_rotated": "Webbhok-nyckel roterad",
           "webhook_secret_force_expired": "Webbhok-nyckel tvångsspärrad",
-          "ingest_disabled_super_admin": "Inläsning inaktiverad av superadmin",
           "ingest_disabled_tenant_admin": "Inläsning inaktiverad av kammaradministratör",
           "csv_import_completed": "CSV-import slutförd",
           "csv_import_row_failed": "CSV-import: rad misslyckades",
@@ -2589,6 +2588,7 @@
           "pii_pseudonymised": "Deltagaruppgifter pseudonymiserade",
           "pii_pseudonymisation_sweep_run": "Pseudonymiseringssvep kört",
           "cross_tenant_probe": "Tvärs-organisations-probe blockerad",
+          "event_detail_not_found_probe": "Eventdetalj hittades inte (info-nivå)",
           "role_violation_blocked": "Rollöverträdelse blockerad"
         },
         "toggles": {

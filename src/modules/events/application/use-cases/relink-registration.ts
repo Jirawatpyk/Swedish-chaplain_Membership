@@ -1,4 +1,4 @@
-/**
+﻿/**
  * T104 — `relinkRegistration` use-case (F6 Application — Phase 9 / US6).
  *
  * Admin manual-relink action per FR-014. Atomically in one ACID tx:
@@ -158,7 +158,7 @@ export interface RelinkRegistrationInput {
   readonly actorUserId: UserId;
   readonly occurredAt: Date;
   /**
-   * Round-2 code-H1 closure — eventId from the URL path. The use-case
+   * H1 closure — eventId from the URL path. The use-case
    * verifies that `registration.eventId === eventIdFromPath` BEFORE
    * any mutation (lock acquisition / audit emission / DB write). A
    * mismatch returns `event_path_mismatch` and the route maps to 404,
@@ -229,7 +229,7 @@ export type RelinkRegistrationError =
     }
   | {
       /**
-       * Round-2 code-H1 closure — URL path's eventId does not match the
+       * H1 closure — URL path's eventId does not match the
        * registration's stored event_id. Returned BEFORE any mutation
        * so `runInTenantWithRollbackOnErr` rolls back cleanly. Route
        * maps to 404 (treat as not-found; the URL is malformed

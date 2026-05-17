@@ -283,7 +283,7 @@ export async function POST(
         if (!contentType.toLowerCase().includes('application/json')) {
           eventcreateMetrics.webhookReceiptsTotal(
             tenantSlug,
-            'rejected_bad_sig',
+            'rejected_pre_auth',
             'unsupported_media_type',
           );
           span.setAttribute('f6.outcome', 'unsupported_media_type');
@@ -325,7 +325,7 @@ export async function POST(
         try {
           rawBody = await request.text();
         } catch (e) {
-          eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_bad_sig', 'malformed');
+          eventcreateMetrics.webhookReceiptsTotal(tenantSlug, 'rejected_pre_auth', 'malformed');
           logger.error(
             {
               event: 'f6_webhook_body_read_failed',
@@ -591,7 +591,7 @@ export async function POST(
             {
               tenantSlug,
               logEvent: 'f6_webhook_grace_used_audit_failed',
-              logMsg: '[F6] grace-secret-used audit emission failed (suppressed — ingest continues)',
+              logMsg: '[F6] webhook_secret_grace_used standalone audit FAILED — ingest proceeds (downstream webhook_receipt_verified.payload.graceSecretUsed=true still preserves the grace-key signal; SRE dashboard primary source is the receipt-verified event, not this standalone event)',
             },
           );
           span.setAttribute('f6.grace_secret_used', true);

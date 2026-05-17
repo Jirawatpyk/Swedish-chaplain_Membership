@@ -103,7 +103,10 @@ export const F6_AUDIT_EVENT_TYPES = [
   'webhook_secret_generated',
   'webhook_secret_rotated',
   'webhook_secret_force_expired',
-  'ingest_disabled_super_admin',
+  // `ingest_disabled_super_admin` was a planned but never-implemented
+  // FR-033 super-admin variant. Per Principle X simplicity, the dead
+  // type literal is removed; the Postgres enum value remains in
+  // migration 0132 as harmless dead state (no rows reference it).
   'ingest_disabled_tenant_admin',
   'csv_import_completed',
   'csv_import_row_failed',
@@ -112,8 +115,13 @@ export const F6_AUDIT_EVENT_TYPES = [
   'pii_erasure_completed',
   'pii_pseudonymised',
   'pii_pseudonymisation_sweep_run',
-  // Security (3)
+  // Security (4)
   'cross_tenant_probe',
+  // Phase B B2: discriminated event type for legitimate 404 lookups on
+  // soft-deleted/archived events, separated from `cross_tenant_probe`
+  // so alert rules on the latter don't fire on routine admin traffic.
+  // Severity downgraded to 'info' (per payload). Migration 0157 enum.
+  'event_detail_not_found_probe',
   'role_violation_blocked',
   'webhook_rate_limit_exceeded',
   // R6-W5 staff-review fix (2026-05-13): dedicated event type for
@@ -437,13 +445,6 @@ export interface AuditPayloads {
     /** Reason captured from the admin UI (Phase 5) or runbook entry. */
     readonly reason: string;
   };
-  ingest_disabled_super_admin: {
-    readonly severity: Severity;
-    readonly actorUserId: UserId | null;
-    readonly enabledBefore: boolean;
-    readonly enabledAfter: boolean;
-    readonly reason: string;
-  };
   ingest_disabled_tenant_admin: {
     readonly severity: Severity;
     readonly actorUserId: UserId;
@@ -536,6 +537,22 @@ export interface AuditPayloads {
 
   // --- Security (3) -----------------------------------------------------
   cross_tenant_probe: {
+    readonly severity: Severity;
+    readonly probedTenantId: TenantId;
+    readonly signedTenantId: TenantId;
+    readonly sourceIp: string;
+    readonly requestId: string | null;
+    readonly attemptedRoute: string;
+  };
+  /**
+   * Phase B B2 — discriminated form of the legitimate-404 case. The
+   * admin event-detail route emits this instead of `cross_tenant_probe`
+   * when an event isn't found in the caller's tenant scope. Severity
+   * 'info' since soft-deleted/archived event lookups are routine; SRE
+   * alerts continue to fire only on the high-severity
+   * `cross_tenant_probe` for confirmed cross-tenant signal.
+   */
+  event_detail_not_found_probe: {
     readonly severity: Severity;
     readonly probedTenantId: TenantId;
     readonly signedTenantId: TenantId;

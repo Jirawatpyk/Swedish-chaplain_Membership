@@ -78,10 +78,11 @@ import {
   type SecretLastFour,
   type TenantWebhookConfigRepositoryError,
 } from '@/modules/events';
-// Direct deep-import: `makePinoAuditPort` is intentionally not on the
-// barrel (Constitution Principle III — Infrastructure adapters not
-// re-exported). Composition layer is the only legal consumer.
-import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
+// Use `makeAuditPortForTenant` composition factory from the barrel —
+// avoids deep-import of the infrastructure adapter (matches barrel
+// JSDoc intent; ESLint exemption for src/lib/** is no longer needed
+// for this seam).
+import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
 // Phase 5 review-fix S-07 (2026-05-13) — `tenantWebhookConfigs`
 // import dropped after the barrel re-export was removed; the file
 // no longer needs the raw schema reference. Tests now reach
@@ -117,52 +118,46 @@ export interface RateLimitOutcome {
   readonly resetAtUnixMs: number;
 }
 
-export async function rotateSecretRateLimitCheck(
-  tenantSlug: string,
-  actorUserId: string,
-): Promise<RateLimitOutcome> {
-  const result = await authRateLimiter.check(
-    `f6-rotate-secret:${tenantSlug}:${actorUserId}`,
-    ROTATE_MAX_PER_HOUR,
-    WINDOW_SECONDS,
-  );
-  return { success: result.success, resetAtUnixMs: result.reset };
+/**
+ * Phase E E6 — factory for F6 admin-integration rate-limit checks.
+ * Replaces 3 near-identical wrappers (rotate / test-webhook /
+ * generate-secret) that differed only in key prefix + per-hour cap.
+ */
+function makeF6RateLimitCheck(
+  prefix: string,
+  perHour: number,
+): (tenantSlug: string, actorUserId: string) => Promise<RateLimitOutcome> {
+  return async (tenantSlug, actorUserId) => {
+    const result = await authRateLimiter.check(
+      `${prefix}:${tenantSlug}:${actorUserId}`,
+      perHour,
+      WINDOW_SECONDS,
+    );
+    return { success: result.success, resetAtUnixMs: result.reset };
+  };
 }
 
-export async function testWebhookRateLimitCheck(
-  tenantSlug: string,
-  actorUserId: string,
-): Promise<RateLimitOutcome> {
-  const result = await authRateLimiter.check(
-    `f6-test-webhook:${tenantSlug}:${actorUserId}`,
-    TEST_WEBHOOK_MAX_PER_HOUR,
-    WINDOW_SECONDS,
-  );
-  return { success: result.success, resetAtUnixMs: result.reset };
-}
+export const rotateSecretRateLimitCheck = makeF6RateLimitCheck(
+  'f6-rotate-secret',
+  ROTATE_MAX_PER_HOUR,
+);
+
+export const testWebhookRateLimitCheck = makeF6RateLimitCheck(
+  'f6-test-webhook',
+  TEST_WEBHOOK_MAX_PER_HOUR,
+);
 
 /**
- * Phase 5 review-fix W-01 (2026-05-13) — generate-secret rate limit
- * gate. 3 generations/hour per (tenant, actor). Even though
- * `generateWebhookSecret` returns 409 `secret_already_exists` after
- * the first successful call (the `tenant_webhook_configs` row exists
- * with the ON CONFLICT DO NOTHING in `insertConfig`), each additional
- * call still consumes Upstash budget shared with other admin routes
- * AND incurs a DB SELECT (conflict probe). Adding a 3/hour gate
- * matches the rotate-secret pattern and bounds the Upstash side
- * channel without affecting the legitimate one-shot onboarding flow.
+ * generate-secret rate-limit gate. 3 generations/hour per (tenant,
+ * actor). Even though `generateWebhookSecret` returns 409
+ * `secret_already_exists` after the first successful call, each
+ * additional call still consumes Upstash budget AND incurs a DB
+ * SELECT (conflict probe).
  */
-export async function generateSecretRateLimitCheck(
-  tenantSlug: string,
-  actorUserId: string,
-): Promise<RateLimitOutcome> {
-  const result = await authRateLimiter.check(
-    `f6-generate-secret:${tenantSlug}:${actorUserId}`,
-    GENERATE_SECRET_MAX_PER_HOUR,
-    WINDOW_SECONDS,
-  );
-  return { success: result.success, resetAtUnixMs: result.reset };
-}
+export const generateSecretRateLimitCheck = makeF6RateLimitCheck(
+  'f6-generate-secret',
+  GENERATE_SECRET_MAX_PER_HOUR,
+);
 
 // ---------------------------------------------------------------------------
 // GET config + recent deliveries
@@ -203,18 +198,23 @@ function extractProcessingOutcome(
   return isKnownRecentProcessingOutcome(raw) ? raw : 'unknown';
 }
 
-function extractMatchedMemberId(payload: unknown): string | null {
+/**
+ * Phase E E7 — consolidated payload-string extractor. Returns the
+ * value at `key` when it's a string, otherwise null. Replaces 2
+ * near-identical extractor helpers (matchedMemberId + registrationId).
+ */
+function getPayloadString(payload: unknown, key: string): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
-  const p = payload as Record<string, unknown>;
-  const value = p['matchedMemberId'];
+  const value = (payload as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : null;
 }
 
+function extractMatchedMemberId(payload: unknown): string | null {
+  return getPayloadString(payload, 'matchedMemberId');
+}
+
 function extractRegistrationId(payload: unknown): string | null {
-  if (typeof payload !== 'object' || payload === null) return null;
-  const p = payload as Record<string, unknown>;
-  const value = p['registrationId'];
-  return typeof value === 'string' ? value : null;
+  return getPayloadString(payload, 'registrationId');
 }
 
 export async function runLoadIntegrationConfig(

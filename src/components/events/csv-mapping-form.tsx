@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 /**
- * T096 — CSV import mapping form (F6 Phase 7).
+ * CSV import mapping form (F6 Phase 7).
  *
  * 3-phase progressive disclosure mirroring Phase 5
  * `webhook-config-wizard.tsx`:
@@ -64,7 +64,7 @@ const REQUIRED_COLUMNS = [
  * format into the canonical row shape. Client-side preview must
  * recognise this so it does NOT flag the generic REQUIRED_COLUMNS as
  * "missing" when the file is in EventCreate format — staff-review
- * T060 follow-up (2026-05-16): missing this detection caused the
+ * T060 follow-up: missing this detection caused the
  * Confirm button to stay disabled on Grant Thornton fixture uploads.
  */
 const EVENTCREATE_REQUIRED_COLUMNS = [
@@ -122,7 +122,7 @@ function sniffPreview(text: string): PreviewData {
   // the canonical schema. Client-side preview MUST treat this as
   // valid (no missing required columns) so the Confirm button is
   // not gated on the generic-CSV schema. Staff-review T060 fix
-  // (2026-05-16).
+  //.
   const isEventCreateFormat = EVENTCREATE_REQUIRED_COLUMNS.every((c) =>
     headerSet.has(c),
   );
@@ -159,6 +159,7 @@ export function CsvMappingForm() {
   }>({ open: false, priorImports: [] });
   const fileInputId = useId();
   const liveRegionId = useId();
+  const eventPickerLabelId = useId();
   // Tracks whether a previous completed phase happened so the idle
   // re-entry announcement only fires on intentional reset (not first
   // mount). Updated alongside the `setPhase({kind:'completed'})`
@@ -472,8 +473,9 @@ export function CsvMappingForm() {
                 can change selection between attempts; the picker is the
                 authoritative event binding. */}
             <div className="flex flex-col gap-2">
-              <Label>{t('eventPicker.fieldLabel')}</Label>
+              <Label id={eventPickerLabelId}>{t('eventPicker.fieldLabel')}</Label>
               <EventPicker
+                triggerAriaLabelledBy={eventPickerLabelId}
                 value={selectedEventId}
                 onChange={(eventId, event) => {
                   setSelectedEventId(eventId);

@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 /**
- * T075 — Webhook config wizard orchestrator (F6 Phase 5 / US3).
+ * Webhook config wizard orchestrator (F6 Phase 5 / US3).
  *
  * Client component that orchestrates the 3-phase progressive
  * disclosure flow:
@@ -46,7 +46,7 @@ export interface WebhookConfigWizardProps {
    * The full discriminated `IntegrationConfigView` from the loader.
    * Component narrows on `view.secretConfigured` internally.
    *
-   * Round-6 verify-fix 2026-05-13 (type-design C4) — was previously a
+   * 05-13 (type-design C4) — was previously a
    * flat-bag set of optional fields that allowed `{secretConfigured:
    * false, secretLastFour: 'abcd'}` to compile.
    */
@@ -74,13 +74,13 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   const [generated, setGenerated] = useState<GeneratedSecret | null>(null);
   const [rotateOpen, setRotateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
-  // Round 2 MED-09 fix (2026-05-13) — `<details>` keeps children in
+  // 09 fix — `<details>` keeps children in
   // the DOM regardless of open state; the controlled `guideOpen`
   // flag short-circuits the 8 walkthrough `<Image>` renders until
   // the admin actually opens the reference panel.
   const [guideOpen, setGuideOpen] = useState(false);
 
-  // Round 3 M-err-5 (2026-05-13) — post-`router.refresh()` resync
+  // 5 — post-`router.refresh()` resync
   // guard. CRIT-01's synchronous `setPhase('c-test')` flips the
   // client state ahead of the refresh, but if the server-component
   // re-render hits an error (e.g. transient Neon load failure
@@ -128,7 +128,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   async function handleGenerate() {
     setGenerating(true);
     try {
-      // Round 3 S-H3 — shared `adminPost` helper replaces the
+      // shared `adminPost` helper replaces the
       // 11-line `Content-Type + Idempotency-Key + body` boilerplate
       // that this file + rotate-secret-dialog + test-webhook-button
       // each carried verbatim.
@@ -136,7 +136,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
         '/api/admin/integrations/eventcreate/generate-secret',
       );
       if (res.status === 409) {
-        // Round 2 CRIT-01 fix (2026-05-13) — must call `setPhase('c-
+        // 01 fix — must call `setPhase('c-
         // test')` SYNCHRONOUSLY before `router.refresh()`. Next.js App
         // Router preserves client `useState` across refreshes, so the
         // `phase` state stays `'a-generate'` even after the server
@@ -152,7 +152,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
         return;
       }
       if (!res.ok) {
-        // Round 2 simplifier P1 (2026-05-13) — shared
+        // Round 2 simplifier P1 — shared
         // `parseProblemDetail` helper replaces the 11-line inline
         // ladder. Surfaces RFC 7807 `detail` for distinct 5xx/503/404
         // copy; falls back to the locale-specific generic toast.
@@ -165,7 +165,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
       setGenerated({ secret: body.secret, secretLastFour: body.secretLastFour });
       setPhase('a-reveal');
     } catch (e) {
-      // Round-6 verify-fix 2026-05-13 — surface to DevTools so devs
+      // 05-13 — surface to DevTools so devs
       // can debug network failures without manual repro.
       console.error('[F6] generate-secret request failed', e);
       toast.error(t('generateFailed'));
@@ -193,7 +193,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   // / `ingestEnabled` / `lastReceivedAt` are only available on the
   // `secretConfigured: true` branch (type-design C4).
   const configured = view.secretConfigured ? view : null;
-  // Round-6 verify-fix 2026-05-13 (UX F-01/F-02) — format ISO
+  // 05-13 (UX F-01/F-02) — format ISO
   // timestamp via `next-intl`'s `useFormatter().dateTime()` so TH/SV
   // see locale-correct date+time strings instead of the raw ISO
   // form. Falls back to the raw ISO if `Date` rejects the input.
@@ -208,7 +208,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
       {phase === 'a-generate' && !view.secretConfigured && (
         <>
           {/*
-            Round 9 banner (2026-05-14) — EventCreate API access is
+            Round 9 banner — EventCreate API access is
             gated to Corporate plan and up. Admins on Pro/Free plans
             cannot complete the Zapier flow even with a perfect
             wizard. Banner sets expectation upfront + offers CSV
@@ -228,7 +228,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                 <p className="text-muted-foreground">{t('tierNotice.body')}</p>
                 <p className="text-muted-foreground">
                   {/*
-                    Round 2 review-fix W-R10-01 (2026-05-14) —
+                    Round 2 review-fix W-R10-01 —
                     forward-reference to Phase 7 (US5 / T090–T099)
                     route. The href matches the canonical
                     `/admin/events/import` path from plan.md project
@@ -288,7 +288,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
           {walkthrough}
           <div className="flex justify-end gap-2">
             {/*
-              Round 3 H2 (2026-05-13) — Back-to-Phase-A only when the
+              Round 3 H2 — Back-to-Phase-A only when the
               one-time-reveal payload is still in memory. The reveal
               payload is set once on the 200-generate response; the
               409 / refresh paths clear it (CRIT-01 fix synchronously
@@ -367,7 +367,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
             when re-pasting the webhook URL into a second Zap or when
             onboarding a colleague.
 
-            Round 2 fixes (2026-05-13):
+            Round 2 fixes:
               - HIGH-04: `<summary>` adds `min-h-6` + `py-1` for the
                 opportunistic WCAG 2.5.8 24×24 tap-target. (The wider
                 44×44 is reserved for primary action buttons; this is
@@ -387,7 +387,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
             }
           >
             {/*
-              Phase 5 review-fix S-11 (2026-05-13) — explicit
+              Phase 5 review-fix S-11 — explicit
               `aria-expanded` on `<summary>` mirrors the native
               `<details>` open state for assistive tech that doesn't
               consume the `details` role natively. Belt-and-braces
@@ -426,7 +426,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                     aria-labelledby"` on the wrapper so screen readers
                     still announce the group's accessible name.
 
-                    Round 2 MED-08 fix (2026-05-13) — dropped
+                    Round 2 MED-08 fix — dropped
                     redundant `aria-label` on `<code>`. The accessible
                     name is already supplied via the `role="group"
                     aria-labelledby` wrapper; double-announcement
@@ -495,7 +495,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
   );
 }
 
-// Round 2 refactor (2026-05-13) — `formatGraceTimestamp` extracted to
+// Round 2 refactor — `formatGraceTimestamp` extracted to
 // `src/lib/format-grace-timestamp.ts` so the rotate-secret dialog and
 // any future grace-window surface share one implementation (Bangkok-
 // pinned timezone, defensive Invalid Date fallback).

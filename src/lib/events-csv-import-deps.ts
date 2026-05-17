@@ -48,7 +48,7 @@ import { asTenantId } from '@/modules/members';
 import { db, runInTenant } from '@/lib/db';
 import { sql } from 'drizzle-orm';
 import { asTenantContext } from '@/modules/tenants';
-import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
+import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
 import type { Result } from '@/lib/result';
 
 // ---------------------------------------------------------------------------

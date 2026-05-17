@@ -59,20 +59,20 @@ test.describe('T140 — F6 manager read-only (Constitution RBAC + FR-035)', () =
     ).toHaveCount(0);
   });
 
-  test('manager loads /admin/integrations/eventcreate (read-only)', async ({
+  test('manager request to /admin/settings/integrations/eventcreate returns 404 (FR-035)', async ({
     page,
   }) => {
     await signInAsManager(page);
-    await page.goto('/admin/integrations/eventcreate');
-    await page.waitForLoadState('domcontentloaded');
-    // Manager should NOT see Rotate / Force-expire / Test webhook
-    // mutating buttons in the wizard
-    await expect(
-      page.getByRole('button', { name: /Rotate webhook secret/i }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole('button', { name: /Generate webhook secret/i }),
-    ).toHaveCount(0);
+    // Correct URL — page lives at /admin/settings/integrations/eventcreate
+    // (not /admin/integrations/eventcreate as the previous test asserted).
+    // FR-035: page.tsx calls notFound() when session.role !== 'admin'.
+    // Surface disclosure is denied at navigation, not via hiding buttons —
+    // the prior `toHaveCount(0)` assertion passed for the WRONG reason
+    // (404 page contains zero of those buttons).
+    const response = await page.goto(
+      '/admin/settings/integrations/eventcreate',
+    );
+    expect(response?.status()).toBe(404);
   });
 
   test('direct API POST to /api/admin/events/[eventId]/archive returns 403/404', async ({

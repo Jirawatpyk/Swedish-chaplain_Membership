@@ -264,6 +264,91 @@ describe('R2-I-11 (R4) — maybeApplyStateChange strict-audit invariant', () => 
     expect(payload['severity']).toBe('info');
   });
 
+  it('Phase B B12 — RAW THROW from audit.emit (not Result.err) ALSO escapes outer catch as TxStageError → savepoint rolls back', async () => {
+    vi.clearAllMocks();
+    capturedAuditEmits = [];
+    // Build a deps variant where audit.emit THROWS (vs returns Result.err)
+    // on csv_import_row_state_changed. Without B12's inner try/catch
+    // wrapping audit.emit in TxStageError, the outer
+    // `instanceof TxStageError` check at L600 would miss the raw throw
+    // and fall through to the silent "treat as duplicate" path — a
+    // PDPA Art. 30 / GDPR Art. 30 processing-records gap.
+    const throwingDeps = (() => {
+      const base = makeDeps({ stateChangeAuditEmitFails: false });
+      // Replace the runInTenantTx to inject a throwing audit.emit only
+      // for the state-change event type.
+      const fakeBatchPorts: ImportCsvTxScopedPorts = {
+        runRowInSavepoint: (async <T>(
+          fn: (sp: ImportCsvTxScopedPorts) => Promise<T>,
+        ) => fn(fakeBatchPorts)) as ImportCsvTxScopedPorts['runRowInSavepoint'],
+        idempotencyStore: {
+          tryInsert: vi.fn(async () =>
+            ok({ wasFresh: false, originalProcessedAt: new Date() }),
+          ),
+        } as unknown as ImportCsvTxScopedPorts['idempotencyStore'],
+        advisoryLockAcquirer: {
+          acquire: vi.fn(async () => {}),
+        } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
+        registrationsRepo: {
+          findByEventAndEmail: vi.fn(async () =>
+            ok({
+              registrationId: 'reg-uuid' as never,
+              ticket: { paymentStatus: 'pending' },
+            } as never),
+          ),
+          updatePaymentStatus: vi.fn(async () =>
+            ok({
+              registration: {} as never,
+              previousPaymentStatus: 'pending' as never,
+            }),
+          ),
+        } as unknown as ImportCsvTxScopedPorts['registrationsRepo'],
+        audit: {
+          emit: vi.fn(async (entry) => {
+            const typed = entry as { readonly eventType: string };
+            if (typed.eventType === 'csv_import_row_state_changed') {
+              // RAW THROW (not Result.err). B12 wraps this in
+              // TxStageError so the outer catch fires correctly.
+              throw new Error('simulated raw throw from audit.emit');
+            }
+            return ok('audit-id' as never);
+          }),
+        } as unknown as ImportCsvTxScopedPorts['audit'],
+      } as unknown as ImportCsvTxScopedPorts;
+      return {
+        ...base,
+        runInTenantTx: vi.fn(async (_tenantId, fn) => fn(fakeBatchPorts)),
+      };
+    })();
+
+    const outcome = await importCsv(
+      {
+        tenantId: asTenantId('test-chamber-state-change-raw-throw'),
+        actorUserId: asUserId('00000000-0000-0000-0000-000000000404'),
+        bytes: VALID_CSV,
+        selectedEvent: f6CsvTestSelectedEventStub,
+      },
+      throwingDeps,
+    );
+
+    expect(outcome.kind).toBe('completed');
+    if (outcome.kind !== 'completed') return;
+    // The row MUST surface as row_failed (savepoint rolled back) — NOT
+    // duplicate (which would mean B12's TxStageError conversion was
+    // missing and the raw throw fell through silently).
+    expect(outcome.summary.rowsAlreadyImported).toBe(0);
+    expect(outcome.summary.rowsStateChanged).toBe(0);
+    expect(outcome.summary.errorRows).toHaveLength(1);
+    // The strict-audit counter MUST bump.
+    const counterCalls = (
+      eventcreateMetrics.csvImportAuditEmitFailed as ReturnType<typeof vi.fn>
+    ).mock.calls;
+    const stateChangedCall = counterCalls.find(
+      (c) => c[1] === 'csv_import_row_state_changed',
+    );
+    expect(stateChangedCall).toBeDefined();
+  });
+
   it('R2-I-3 cross-check: NO csvImportStateChangeFallback bump on the audit-emit-failure path (different metric)', async () => {
     vi.clearAllMocks();
     const deps = makeDeps({ stateChangeAuditEmitFails: true });

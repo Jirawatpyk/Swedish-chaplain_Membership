@@ -2656,7 +2656,11 @@ export const eventcreateMetrics = {
       | 'rejected_bad_sig'
       | 'rejected_timestamp_skew'
       | 'rejected_missing_header'
-      | 'rejected_malformed_timestamp',
+      | 'rejected_malformed_timestamp'
+      // Pre-auth rejection (Content-Type / body-size / etc.) — distinct
+      // from HMAC signature failure so dashboards can discriminate
+      // misconfigured Zapier zaps from actual signature drift.
+      | 'rejected_pre_auth',
     processingOutcome:
       | 'matched_member_contact'
       | 'matched_member_domain'
@@ -3298,6 +3302,46 @@ export const eventcreateMetrics = {
         'eventcreate_csv_sweep_scan_failed_total',
         'F6.1 sweep-error-csv-blobs bulk-scan failure (silent 200-OK trap)',
       ).add(1, {});
+    });
+  },
+
+  /**
+   * F6 → F8 bridge query failure counter. Emitted from
+   * `drizzleEventAttendeesQuery` when the tenant-scoped tx throws.
+   * The adapter fails open (returns `[]`) per the F8 stub contract so
+   * the at-risk scorer doesn't crash the renewal batch — this counter
+   * is the only signal SRE sees. Alert on sustained rate > 0.
+   */
+  bridgeEventAttendeesQueryFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_bridge_event_attendees_query_failed_total',
+        'F6 → F8 bridge query failed; adapter fell open to [] (silent fail-open trap)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Cron coordinator failure counters. Pass via `gateCronBearerOrRespond({
+   * metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(route),
+   * rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(route) })`
+   * on each F6 cron route. Alert rules can fire on sustained loss
+   * without parsing log strings (Constitution Principle I sub-clause 4).
+   */
+  cronAuditEmitFailed(route: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_cron_audit_emit_failed_total',
+        'F6 cron coordinator 401-path audit emit failed (cron_bearer_auth_rejected lost)',
+      ).add(1, { route });
+    });
+  },
+  cronRedisFallback(route: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_cron_redis_fallback_total',
+        'F6 cron coordinator rate-limit check fell back (Upstash unreachable)',
+      ).add(1, { route });
     });
   },
 } as const;

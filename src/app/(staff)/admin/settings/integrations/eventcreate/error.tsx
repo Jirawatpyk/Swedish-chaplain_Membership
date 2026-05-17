@@ -13,6 +13,8 @@
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { FormContainer } from '@/components/layout';
+import { PageHeader } from '@/components/layout/page-header';
 
 export default function EventCreateWizardError({
   error,
@@ -21,6 +23,7 @@ export default function EventCreateWizardError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const tPage = useTranslations('admin.integrations.eventcreate.page');
   const t = useTranslations('admin.integrations.eventcreate.page.error');
 
   useEffect(() => {
@@ -31,20 +34,30 @@ export default function EventCreateWizardError({
     console.error('[F6] integration page error boundary', error);
   }, [error]);
 
+  // Wrap in FormContainer + PageHeader so the layout is CLS-0 with the
+  // sibling page.tsx + loading.tsx (matches the `pnpm check:layout`
+  // pair contract). role="alert" announces the error immediately to
+  // assistive tech per WCAG SC 4.1.3.
   return (
-    <div className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-6">
-      <div className="space-y-1">
-        <h2 className="text-h3 font-semibold">{t('title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('body')}</p>
-        {error.digest ? (
-          <p className="text-xs font-mono text-muted-foreground">
-            {t('digest', { digest: error.digest })}
-          </p>
-        ) : null}
+    <FormContainer>
+      <PageHeader title={tPage('title')} subtitle={tPage('subtitle')} />
+      <div
+        className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-6"
+        role="alert"
+      >
+        <div className="space-y-1">
+          <h2 className="text-h3 font-semibold">{t('title')}</h2>
+          <p className="text-sm text-muted-foreground">{t('body')}</p>
+          {error.digest ? (
+            <p className="text-xs font-mono text-muted-foreground">
+              {t('digest', { digest: error.digest })}
+            </p>
+          ) : null}
+        </div>
+        <Button type="button" onClick={reset} className="min-h-11">
+          {t('retry')}
+        </Button>
       </div>
-      <Button type="button" onClick={reset} className="min-h-11">
-        {t('retry')}
-      </Button>
-    </div>
+    </FormContainer>
   );
 }

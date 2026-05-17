@@ -38,6 +38,69 @@ export interface MatchResolution {
   readonly matchedContactId: ContactId | null;
 }
 
+/**
+ * Phase C C2 — type-narrowed view per match_type variant. The aggregate
+ * keeps the existing flat shape for migration-friendliness; this
+ * discriminated union lets callers pattern-match against the
+ * per-variant invariants. The migration 0136 CHECK constraint enforces
+ * the same shape at write time:
+ *   - 'non_member' / 'unmatched' → both IDs null + both counters false
+ *   - 'member_contact' → matched_member_id + matched_contact_id present
+ *   - 'member_domain' / 'member_fuzzy' → matched_member_id only
+ */
+export type MatchResolutionView =
+  | {
+      readonly type: 'member_contact';
+      readonly matchedMemberId: MemberId;
+      readonly matchedContactId: ContactId;
+    }
+  | {
+      readonly type: 'member_domain' | 'member_fuzzy';
+      readonly matchedMemberId: MemberId;
+      readonly matchedContactId: null;
+    }
+  | {
+      readonly type: 'non_member' | 'unmatched';
+      readonly matchedMemberId: null;
+      readonly matchedContactId: null;
+    };
+
+/**
+ * Refine a `MatchResolution` to its variant-narrowed form. Returns null
+ * if the underlying data violates the DB CHECK invariant (defensive —
+ * the DB rejects writes that violate this; this returns null so
+ * callers can fail gracefully without throwing).
+ */
+export function asMatchResolutionView(
+  m: MatchResolution,
+): MatchResolutionView | null {
+  if (m.type === 'member_contact') {
+    if (m.matchedMemberId !== null && m.matchedContactId !== null) {
+      return {
+        type: 'member_contact',
+        matchedMemberId: m.matchedMemberId,
+        matchedContactId: m.matchedContactId,
+      };
+    }
+    return null;
+  }
+  if (m.type === 'member_domain' || m.type === 'member_fuzzy') {
+    if (m.matchedMemberId !== null && m.matchedContactId === null) {
+      return {
+        type: m.type,
+        matchedMemberId: m.matchedMemberId,
+        matchedContactId: null,
+      };
+    }
+    return null;
+  }
+  // non_member | unmatched
+  if (m.matchedMemberId === null && m.matchedContactId === null) {
+    return { type: m.type, matchedMemberId: null, matchedContactId: null };
+  }
+  return null;
+}
+
 export interface Ticket {
   readonly type: string | null;
   readonly priceThb: number | null;

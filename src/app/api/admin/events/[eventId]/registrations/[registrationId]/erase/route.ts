@@ -44,8 +44,11 @@ import { adminOnlyWriterGuard } from '../../../../_lib/role-violation-audit';
 export const runtime = 'nodejs';
 export const maxDuration = 30;
 
+// v4-strict pattern — matches sibling `relink/route.ts`. The DB stores
+// these IDs as `uuid DEFAULT gen_random_uuid()` which always produces
+// v4, so a non-v4 probe is a path-tampering signal worth a 404.
 const UUID_V4 =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const BodySchema = z.object({
   reasonText: z
@@ -65,6 +68,8 @@ export async function POST(
   }
 
   const { eventId, registrationId } = await ctx.params;
+  // Length-cap path params first (cheap bound check; sanitises the
+  // audit-route string below).
   if (
     !eventId ||
     eventId.length > 200 ||
@@ -73,11 +78,12 @@ export async function POST(
   ) {
     return new NextResponse(null, { status: 404 });
   }
-  if (!UUID_V4.test(eventId) || !UUID_V4.test(registrationId)) {
-    return new NextResponse(null, { status: 404 });
-  }
 
-  // FR-035 admin-only writer guard
+  // FR-035 admin-only writer guard runs BEFORE the UUID-shape check so
+  // an unauthenticated probe never reaches the regex (no information
+  // disclosure asymmetry) and the role_violation_blocked audit fires
+  // for the FULL request path. Manager → 403 + audit, member → 404 +
+  // audit, no-session/unknown → 404.
   const guard = await adminOnlyWriterGuard(request, {
     attemptedRoute: `/api/admin/events/${eventId}/registrations/${registrationId}/erase`,
     attemptedAction: 'erase_attendee_pii',
@@ -85,6 +91,10 @@ export async function POST(
   });
   if (guard.kind === 'deny') return guard.response;
   const actorUserId = guard.actorUserId;
+
+  if (!UUID_V4.test(eventId) || !UUID_V4.test(registrationId)) {
+    return new NextResponse(null, { status: 404 });
+  }
 
   // Parse + validate body
   let parsed: z.infer<typeof BodySchema>;

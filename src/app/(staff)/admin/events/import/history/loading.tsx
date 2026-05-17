@@ -19,8 +19,16 @@ export default function CsvImportHistoryLoading() {
   return (
     <TableContainer aria-busy="true">
       <PageHeader
-        title={<Skeleton className="h-7 w-56" aria-hidden />}
-        subtitle={<Skeleton className="h-4 w-80" aria-hidden />}
+        title={
+          <span aria-hidden="true" className="block">
+            <Skeleton className="h-7 w-56" />
+          </span>
+        }
+        subtitle={
+          <span aria-hidden="true" className="block">
+            <Skeleton className="h-4 w-80" />
+          </span>
+        }
       />
       <div className="flex flex-col gap-4" aria-hidden>
         {/* Table header shimmer */}

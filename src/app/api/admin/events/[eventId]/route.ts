@@ -234,17 +234,24 @@ export async function GET(
       // logEvent/logMsg shape as every other F6 standalone emit
       // (webhook config-load + signature-reject paths). Audit
       // failure still cannot block the 404 response.
+      // Phase B B2 — emit `event_detail_not_found_probe` (severity:
+      // info) instead of the high-severity `cross_tenant_probe` for
+      // legitimate 404s. RLS cannot discriminate "row missing" from
+      // "row in another tenant" without a root-db probe (itself a
+      // leak surface), so we treat the 404 as info-level by default.
+      // Confirmed cross-tenant signal would be emitted elsewhere with
+      // discriminating evidence (e.g., a SQL-injected slug).
       await safeEmitStandalone(
         makeStandaloneAuditDeps(),
         {
-          eventType: 'cross_tenant_probe',
+          eventType: 'event_detail_not_found_probe',
           tenantId: asTenantId(tenantCtx.slug),
           actorType: session.user.role === 'admin' ? 'admin' : 'manager',
           actorUserId: asUserId(session.user.id),
           occurredAt: new Date(),
-          summary: `admin event-detail 404 — possible enumeration probe (event_id_hash=${eventIdHash})`,
+          summary: `admin event-detail 404 (event_id_hash=${eventIdHash}) — info-level probe; alert only on cross_tenant_probe`,
           payload: {
-            severity: 'warn',
+            severity: 'info',
             probedTenantId: asTenantId(tenantCtx.slug),
             signedTenantId: asTenantId(tenantCtx.slug),
             sourceIp:
@@ -257,9 +264,9 @@ export async function GET(
         },
         {
           tenantSlug: tenantCtx.slug,
-          logEvent: 'f6_admin_cross_tenant_probe_audit_failed',
+          logEvent: 'f6_admin_event_detail_not_found_probe_audit_failed',
           logMsg:
-            '[F6] admin cross_tenant_probe audit emit failed (suppressed — 404 still returned)',
+            '[F6] event_detail_not_found_probe audit emit failed (suppressed — 404 still returned)',
         },
       );
       // Preserve the ephemeral pino marker too — gives SRE

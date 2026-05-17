@@ -30,6 +30,8 @@
  */
 import { and, desc, eq, gte } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { events, eventRegistrations } from './schema';
 import { sql } from 'drizzle-orm';
@@ -53,53 +55,77 @@ function deriveEventType(row: {
   return 'general';
 }
 
+/**
+ * F8-port contract: fail-open with `[]` on any throw (DB blip, RLS
+ * regression, pool exhaustion). F8's at-risk scorer expects a no-throw
+ * shape per the stub-port precedent. The metric counter
+ * `bridgeEventAttendeesQueryFailed` is the SRE signal — alert on
+ * sustained rate > 0.
+ */
 export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
   async list(input): Promise<ReadonlyArray<EventAttendanceRecord>> {
-    const ctx = asTenantContext(String(input.tenantId));
-    return runInTenant(ctx, async (tx) => {
-      const rows = await tx
-        .select({
-          memberId: eventRegistrations.matchedMemberId,
-          startDate: events.startDate,
-          eventId: events.eventId,
-          isPartnerBenefit: events.isPartnerBenefit,
-          isCulturalEvent: events.isCulturalEvent,
-        })
-        .from(eventRegistrations)
-        .innerJoin(
-          events,
-          and(
-            eq(events.tenantId, eventRegistrations.tenantId),
-            eq(events.eventId, eventRegistrations.eventId),
-          ),
-        )
-        .where(
-          and(
-            // Defense-in-depth WHERE alongside the RLS GUC set by
-            // runInTenant. The matched_member_id is the F3 member uuid.
-            eq(eventRegistrations.matchedMemberId, String(input.memberId)),
-            gte(events.startDate, input.since),
-            // Skip pseudonymised rows (FR-032 retention-purged).
-            sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
-            // Skip archived events (FR-019a quota-neutral state).
-            sql`${events.archivedAt} IS NULL`,
-          ),
-        )
-        .orderBy(desc(events.startDate))
-        .limit(input.limit);
+    try {
+      const ctx = asTenantContext(String(input.tenantId));
+      return await runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select({
+            memberId: eventRegistrations.matchedMemberId,
+            startDate: events.startDate,
+            eventId: events.eventId,
+            isPartnerBenefit: events.isPartnerBenefit,
+            isCulturalEvent: events.isCulturalEvent,
+          })
+          .from(eventRegistrations)
+          .innerJoin(
+            events,
+            and(
+              eq(events.tenantId, eventRegistrations.tenantId),
+              eq(events.eventId, eventRegistrations.eventId),
+            ),
+          )
+          .where(
+            and(
+              // Defense-in-depth WHERE alongside the RLS GUC set by
+              // runInTenant. The matched_member_id is the F3 member uuid.
+              eq(eventRegistrations.matchedMemberId, String(input.memberId)),
+              gte(events.startDate, input.since),
+              // Skip pseudonymised rows (FR-032 retention-purged).
+              sql`${eventRegistrations.piiPseudonymisedAt} IS NULL`,
+              // Skip archived events (FR-019a quota-neutral state).
+              sql`${events.archivedAt} IS NULL`,
+            ),
+          )
+          .orderBy(desc(events.startDate))
+          .limit(input.limit);
 
-      return rows
-        .filter((r) => r.memberId !== null)
-        .map((r) => ({
-          memberId: r.memberId as string,
-          attendedAt:
-            r.startDate instanceof Date
-              ? r.startDate.toISOString()
-              : new Date(r.startDate).toISOString(),
-          eventId: r.eventId,
-          eventType: deriveEventType(r),
-        }));
-    });
+        return rows
+          .filter((r) => r.memberId !== null)
+          .map((r) => ({
+            memberId: r.memberId as string,
+            attendedAt:
+              r.startDate instanceof Date
+                ? r.startDate.toISOString()
+                : new Date(r.startDate).toISOString(),
+            eventId: r.eventId,
+            eventType: deriveEventType(r),
+          }));
+      });
+    } catch (e) {
+      const errName = e instanceof Error ? e.name : 'unknown';
+      const errMessage = e instanceof Error ? e.message : String(e);
+      logger.error(
+        {
+          event: 'f6_event_attendees_query_failed',
+          tenantId: String(input.tenantId),
+          memberId: String(input.memberId),
+          errName,
+          errMessage,
+        },
+        '[F6→F8 bridge] eventAttendees query failed — falling open to [] to preserve F8 scorer no-throw contract',
+      );
+      eventcreateMetrics.bridgeEventAttendeesQueryFailed(String(input.tenantId));
+      return [];
+    }
   },
 };
 

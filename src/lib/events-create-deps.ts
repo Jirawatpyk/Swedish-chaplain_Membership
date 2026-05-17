@@ -27,7 +27,7 @@ import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/ra
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { makeDrizzleEventsRepository } from '@/modules/events/infrastructure/drizzle-events-repository';
-import { makePinoAuditPort } from '@/modules/events/infrastructure/pino-audit-port';
+import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 
 const CREATE_EVENT_MAX_PER_HOUR = 30;

@@ -1,5 +1,5 @@
-/**
- * T047 — `ingestWebhookAttendee` use-case (F6 Application).
+﻿/**
+ * `ingestWebhookAttendee` use-case (F6 Application).
  *
  * Strict-transactional ACID unit per FR-037. Orchestrates the full
  * webhook-ingest pipeline in ONE database transaction:
@@ -383,7 +383,7 @@ export async function ingestWebhookAttendee(
   } catch (e) {
     errorMessage = e instanceof Error ? e.message : String(e);
     const stage: FailureStage = e instanceof TxStageError ? e.stage : failureStage;
-    // R6-W2 staff-review fix (2026-05-13): scrub Vercel container
+    // R6-W2 staff-review fix: scrub Vercel container
     // paths + macOS /private/* + node_modules + webpack-internal:///
     // from the stack BEFORE persisting to the 5-year audit row. The
     // pre-redaction stack is never written anywhere — only the
