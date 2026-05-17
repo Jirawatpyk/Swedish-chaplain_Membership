@@ -83,6 +83,17 @@ export interface PasswordHasher {
    * system enforces the ordering.
    */
   hash(plaintext: string): Promise<PasswordHash>;
+  /**
+   * Returns `true` if `plaintext` matches `hashed`, `false` if the
+   * password is simply wrong. **THROWS `MalformedHashError`** if the
+   * stored hash is corrupted (legacy format, encoding drift, DB
+   * tamper). Callers in sign-in / change-password MUST catch the
+   * typed error specifically — both currently emit a dedicated
+   * `password_malformed_hash_detected` audit and skip the
+   * failedSignInCount/lockout path so a DB-corruption incident does
+   * NOT lock out the legitimate user. See B4 in
+   * review-20260517-post-ship-hardening.md.
+   */
   verify(hashed: PasswordHash, plaintext: string): Promise<boolean>;
   /**
    * Run a verify against a dummy hash. Used by the sign-in use case

@@ -12,13 +12,24 @@
  *     pending user's role at redeem time (tamper detection).
  */
 
-import type { TokenId, UserId } from './branded';
+import type {
+  InvitationTokenHash,
+  ResetTokenHash,
+  UserId,
+} from './branded';
 import type { Role } from './role';
 
 // --- PasswordResetToken -------------------------------------------------------
 
 export interface PasswordResetToken {
-  readonly id: TokenId;
+  /**
+   * The STORED hash (`sha256(plaintext)`, 64-hex). NEVER a URL value.
+   * I1 (Round 2) — pre-fix this was typed as the generic `TokenId`
+   * which is the same brand as the URL plaintext; a refactor that
+   * read `token.id` and emailed it would silently send a hash that
+   * the redeem endpoint cannot match.
+   */
+  readonly id: ResetTokenHash;
   readonly userId: UserId;
   readonly createdAt: Date;
   readonly expiresAt: Date; // = createdAt + 1 hour
@@ -57,7 +68,11 @@ export function classifyTokenFailure(
 // --- Invitation ---------------------------------------------------------------
 
 export interface Invitation {
-  readonly id: TokenId;
+  /**
+   * The STORED hash (`sha256(plaintext)`, 64-hex). NEVER a URL value.
+   * See `PasswordResetToken.id` for the I1 rationale.
+   */
+  readonly id: InvitationTokenHash;
   readonly userId: UserId;
   readonly invitedByUserId: UserId;
   readonly intendedRole: Role;

@@ -21,6 +21,9 @@ vi.mock('@/modules/auth', () => ({
   redeemInvite: (...args: unknown[]) => redeemInviteMock(...args),
   asTokenId: (s: string) => s,
   asInvitationTokenId: (s: string) => s,
+  // I3 (Round 2): validating parse function; in tests we pass-through.
+  parseInvitationTokenId: (s: string) => s,
+  MalformedTokenError: class MalformedTokenError extends Error {},
 }));
 
 vi.mock('@/lib/auth-cookies', () => ({

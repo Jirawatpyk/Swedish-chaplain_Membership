@@ -33,12 +33,34 @@ export type TokenId = Brand<string, 'TokenId'>;
  */
 export type ResetTokenId = Brand<string, 'ResetTokenId'>;
 /**
+ * Stored-hash form of the reset token (`sha256(ResetTokenId)`, 64-hex).
+ * Lives in `password_reset_tokens.id`. Distinct from `ResetTokenId`
+ * so the type system catches "I read the row id and used it as a URL"
+ * mistakes (I1 Round 2): without this brand a refactor that swapped
+ * `result.token.id` (hash) for `result.plaintext` (URL value) would
+ * compile and silently email a hash that the redeem endpoint cannot
+ * match.
+ */
+export type ResetTokenHash = Brand<string, 'ResetTokenHash'>;
+/**
  * Plaintext invitation token id (64-hex). Returned to the inviter
  * (delivered in the invitation email URL) and accepted back from the
  * invitee via `POST /api/auth/redeem-invite`. Same hash-at-rest
  * pattern as `ResetTokenId` (E2).
  */
 export type InvitationTokenId = Brand<string, 'InvitationTokenId'>;
+/** Stored-hash form of the invitation token. Mirrors `ResetTokenHash`. */
+export type InvitationTokenHash = Brand<string, 'InvitationTokenHash'>;
+/**
+ * Stored-hash form of a session id (`sha256(SessionId)`, 64-hex).
+ * Lives in `sessions.id`. `SessionId` itself is the PLAINTEXT cookie
+ * value returned to the caller on `sessionRepo.create`; the brand
+ * distinction (I2 Round 2) prevents `asSessionId(row.id)` — a
+ * future refactor that did that would silently break every cookie
+ * lookup because the repo's `findById(plaintext)` hashes incoming
+ * before SQL.
+ */
+export type SessionIdHash = Brand<string, 'SessionIdHash'>;
 /**
  * Hash of an F3 email-change verification token (64-hex). The brand
  * exists for symmetry with `EmailRevertTokenHash` — F3 routes
@@ -81,12 +103,63 @@ export function asTokenId(value: string): TokenId {
   return value as TokenId;
 }
 
+/**
+ * I3 (Round 2) — `MalformedTokenError` is thrown by the validating
+ * `parseHex64Token*` functions below when the input does NOT match
+ * the 64-hex shape produced by Web Crypto + `sha256Hex`. The plain
+ * `as*` constructors remain pure casts (test-fixture compatible);
+ * production code at trust boundaries should call the validating
+ * `parse*` variants so a typo'd / truncated URL surfaces the
+ * mistake at the boundary instead of silently never matching in
+ * the repo's `sha256Hex(input)` lookup.
+ */
+export class MalformedTokenError extends Error {
+  constructor(brandName: string, length: number) {
+    super(
+      `Malformed ${brandName}: expected 64 lowercase hex characters, got length ${length}`,
+    );
+    this.name = 'MalformedTokenError';
+  }
+}
+
+const HEX64 = /^[0-9a-f]{64}$/;
+
+function assertHex64(value: string, brandName: string): void {
+  if (!HEX64.test(value)) {
+    throw new MalformedTokenError(brandName, value.length);
+  }
+}
+
 export function asResetTokenId(value: string): ResetTokenId {
   return value as ResetTokenId;
 }
 
+/** Validating constructor — use at route handlers / URL parsing sites. */
+export function parseResetTokenId(value: string): ResetTokenId {
+  assertHex64(value, 'ResetTokenId');
+  return value as ResetTokenId;
+}
+
+export function asResetTokenHash(value: string): ResetTokenHash {
+  return value as ResetTokenHash;
+}
+
 export function asInvitationTokenId(value: string): InvitationTokenId {
   return value as InvitationTokenId;
+}
+
+/** Validating constructor — use at route handlers / URL parsing sites. */
+export function parseInvitationTokenId(value: string): InvitationTokenId {
+  assertHex64(value, 'InvitationTokenId');
+  return value as InvitationTokenId;
+}
+
+export function asInvitationTokenHash(value: string): InvitationTokenHash {
+  return value as InvitationTokenHash;
+}
+
+export function asSessionIdHash(value: string): SessionIdHash {
+  return value as SessionIdHash;
 }
 
 export function asEmailVerificationTokenHash(

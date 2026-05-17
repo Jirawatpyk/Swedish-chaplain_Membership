@@ -28,14 +28,24 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface StaffSignInPageProps {
-  searchParams: Promise<{ returnTo?: string | string[] }>;
+  searchParams: Promise<{
+    returnTo?: string | string[];
+    reason?: string | string[];
+  }>;
 }
 
 export default async function StaffSignInPage({ searchParams }: StaffSignInPageProps) {
-  const { returnTo: rawReturnTo } = await searchParams;
+  const { returnTo: rawReturnTo, reason: rawReason } = await searchParams;
   // searchParams can be string | string[] | undefined — coerce first.
   const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
   const validatedReturnTo = safeReturnTo(returnToCandidate, 'staff');
+  // H3 (Round 2): show a banner when ?reason=security-update is present.
+  // Operators link to this URL on deploy day after migration 0159 bulk
+  // session invalidation so users get UX context instead of an opaque
+  // "you got logged out". Allowlist of accepted reasons prevents
+  // arbitrary banner injection via query param.
+  const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
+  const showSecurityBanner = reasonCandidate === 'security-update';
 
   const current = await getCurrentSession();
   if (current && (current.user.role === 'admin' || current.user.role === 'manager')) {
@@ -58,7 +68,16 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
             <CardDescription>{t('cardDescription')}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {showSecurityBanner ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+              >
+                {t('securityUpdateBanner')}
+              </div>
+            ) : null}
             <SignInForm portal="staff" returnTo={validatedReturnTo} />
           </CardContent>
         </Card>

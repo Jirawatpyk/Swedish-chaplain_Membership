@@ -30,18 +30,29 @@ import {
   estimatePasswordStrength,
 } from './password-strength';
 
-const schema = z
-  .object({
-    displayName: z.string().min(1).max(120),
-    password: z.string().min(12).max(256),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    path: ['confirmPassword'],
-    message: 'Passwords must match',
-  });
+// H2 (Round 2) — schema built inside component so Zod error messages
+// translate per locale.
+type FormValues = {
+  displayName: string;
+  password: string;
+  confirmPassword: string;
+};
 
-type FormValues = z.infer<typeof schema>;
+function buildSchema(
+  tooShort: string,
+  passwordMismatch: string,
+): z.ZodType<FormValues> {
+  return z
+    .object({
+      displayName: z.string().min(1).max(120),
+      password: z.string().min(12, tooShort).max(256),
+      confirmPassword: z.string(),
+    })
+    .refine((data) => data.password === data.confirmPassword, {
+      path: ['confirmPassword'],
+      message: passwordMismatch,
+    });
+}
 
 export interface InviteRedeemFormProps {
   readonly token: string;
@@ -64,7 +75,12 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     setFocus,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      buildSchema(
+        tReset('errors.tooShort'),
+        tReset('errors.passwordMismatch'),
+      ),
+    ),
     defaultValues: { displayName: '', password: '', confirmPassword: '' },
     mode: 'onSubmit',
   });

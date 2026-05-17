@@ -30,7 +30,9 @@ import {
   type PasswordResetTokenRow,
 } from './schema';
 import {
+  asInvitationTokenHash,
   asInvitationTokenId,
+  asResetTokenHash,
   asResetTokenId,
   asTokenId,
   asUserId,
@@ -49,12 +51,12 @@ import {
 import { sha256Hex } from '@/lib/crypto';
 
 function toDomainReset(row: PasswordResetTokenRow): PasswordResetToken {
+  // I1 (Round 2) — `row.id` is sha256(plaintext); brand as
+  // ResetTokenHash so a caller reading `result.token.id` and treating
+  // it as a URL value fails to compile. The URL value is the
+  // `plaintext` field of `CreateResetResult`.
   return {
-    // Note: row.id is the hash (E2). Domain `id` field continues to
-    // carry whatever the DB row's id is — callers MUST NOT treat it
-    // as a URL value. The plaintext is returned separately by
-    // `createReset` for that purpose.
-    id: asTokenId(row.id),
+    id: asResetTokenHash(row.id),
     userId: asUserId(row.userId),
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
@@ -64,7 +66,7 @@ function toDomainReset(row: PasswordResetTokenRow): PasswordResetToken {
 
 function toDomainInvitation(row: InvitationRow): Invitation {
   return {
-    id: asTokenId(row.id),
+    id: asInvitationTokenHash(row.id),
     userId: asUserId(row.userId),
     invitedByUserId: asUserId(row.invitedByUserId),
     intendedRole: row.intendedRole,

@@ -4,6 +4,7 @@
       "title": "Logga in",
       "cardDescription": "Personalportal",
       "memberCardDescription": "Medlemsportal",
+      "securityUpdateBanner": "Vi har uppdaterat säkerheten. Vänligen logga in igen.",
       "emailLabel": "E-post",
       "passwordLabel": "Lösenord",
       "submit": "Logga in",
@@ -35,6 +36,7 @@
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
       "cardDescription": "Välj ett nytt lösenord för ditt konto.",
+      "requestNewLink": "Begär en ny länk",
       "newPasswordLabel": "Nytt lösenord",
       "confirmPasswordLabel": "Bekräfta nytt lösenord",
       "submit": "Uppdatera lösenord",
@@ -43,7 +45,9 @@
         "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
         "tokenUsed": "Den här återställningslänken har redan använts.",
         "weakPassword": "Välj ett starkare lösenord.",
-        "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat."
+        "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat.",
+        "tooShort": "Lösenordet måste vara minst 12 tecken",
+        "passwordMismatch": "Lösenorden måste stämma överens"
       }
     },
     "passwordStrength": {

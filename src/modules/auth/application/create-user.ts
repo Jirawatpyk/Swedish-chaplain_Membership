@@ -36,7 +36,7 @@
  *   - `TenantTx`/`DbTx` types are structurally identical; repos accept
  *     either via the `DbTx` alias.
  *
- * Error mapping: `CreateUserAbort<E>` sentinel throws inside the tx
+ * Error mapping: `TxAbort<E>` sentinel throws inside the tx
  * callback and the outer catch maps it back to the typed
  * `CreateUserError` union. Any unexpected throw (DB connection loss,
  * statement timeout) bubbles out as-is so the route returns 500.
@@ -48,8 +48,8 @@ import { authMetrics } from '@/lib/metrics';
 import { db, type DbTx } from '@/lib/db';
 import {
   asEmailAddress,
+  type InvitationTokenHash,
   type InvitationTokenId,
-  type TokenId,
   type UserId,
 } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
@@ -67,7 +67,7 @@ import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-pass
 // already holds a TenantSlug (members deps.tenant.slug), so the brand
 // is free at production callsites and tightens the API contract.
 import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
-import { CreateUserAbort } from './tx-abort';
+import { TxAbort } from './tx-abort';
 import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -95,9 +95,15 @@ export interface CreateUserInput {
 
 export interface CreateUserSuccess {
   readonly user: UserAccount;
-  /** Branded token id — carry the type across the module boundary
-   * so callers can't accidentally log or compare it as a raw string. */
-  readonly invitationId: TokenId;
+  /**
+   * The stored HASH of the invitation (`sha256(plaintext)`, 64-hex).
+   * I1 (Round 2) — was `TokenId` pre-fix; now `InvitationTokenHash`
+   * so a caller emailing `result.invitationId` as a URL value fails
+   * to compile. The URL plaintext is captured separately by the
+   * `enqueueInvitationInTx` outbox enqueue (delivered to the user
+   * via the rendered email) and is NEVER returned to the inviter.
+   */
+  readonly invitationId: InvitationTokenHash;
 }
 
 export type CreateUserError =
@@ -187,7 +193,7 @@ export async function createUser(
       //    (TOCTOU race eliminated).
       const existing = await deps.users.findByEmailInTx(tx, normalisedEmail);
       if (existing) {
-        throw new CreateUserAbort<CreateUserError>({ code: 'email-taken' });
+        throw new TxAbort<CreateUserError>({ code: 'email-taken' });
       }
 
       // 2. Create pending user.
@@ -233,7 +239,7 @@ export async function createUser(
           'create_user.invitation_enqueue_failed',
         );
         authMetrics.invitationEnqueueFailed(input.role, enqueueResult.error.code);
-        throw new CreateUserAbort<CreateUserError>({
+        throw new TxAbort<CreateUserError>({
           code: 'invitation-create-failed',
         });
       }
@@ -260,7 +266,7 @@ export async function createUser(
     authMetrics.invitationSent(input.role);
     return ok(outcome);
   } catch (e) {
-    if (e instanceof CreateUserAbort) {
+    if (e instanceof TxAbort) {
       return err(e.error as CreateUserError);
     }
     // Unexpected DB / network error. Log with context, re-raise so the

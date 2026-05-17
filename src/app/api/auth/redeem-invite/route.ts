@@ -8,7 +8,11 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { redeemInvite, asInvitationTokenId } from '@/modules/auth';
+import {
+  redeemInvite,
+  parseInvitationTokenId,
+  MalformedTokenError,
+} from '@/modules/auth';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
@@ -45,8 +49,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // I3 (Round 2) — parse instead of cast (see reset-password/route.ts).
+  let parsedToken;
+  try {
+    parsedToken = parseInvitationTokenId(parsed.data.token);
+  } catch (parseErr) {
+    if (parseErr instanceof MalformedTokenError) {
+      logger.warn(
+        { requestId, reason: 'malformed-token' },
+        'redeem-invite.link-invalid',
+      );
+      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
+    }
+    throw parseErr;
+  }
+
   const result = await redeemInvite({
-    token: asInvitationTokenId(parsed.data.token),
+    token: parsedToken,
     password: parsed.data.password,
     displayName: parsed.data.displayName ?? null,
     sourceIp: getClientIp(request),

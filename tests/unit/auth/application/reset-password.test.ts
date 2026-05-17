@@ -52,6 +52,7 @@ import type { ResetPasswordDeps } from '@/modules/auth/application/reset-passwor
 import type { UserAccount } from '@/modules/auth/domain/user';
 import {
   asUserId,
+  asResetTokenHash,
   asResetTokenId,
   asTokenId,
   asPasswordHash,
@@ -71,7 +72,9 @@ import { authMetrics } from '@/lib/metrics';
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-rp-001');
 const TOKEN_ID = asTokenId('token-reset-abc-123');
+const TOKEN_HASH = asResetTokenHash('token-reset-hash-abc-123');
 const PLAINTEXT_TOKEN = asResetTokenId('token-reset-abc-123');
+void TOKEN_ID; // kept for backwards-compat with downstream contract tests
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash-for-reset');
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
@@ -96,7 +99,10 @@ function makeToken(
   overrides: Partial<PasswordResetToken> = {},
 ): PasswordResetToken {
   return {
-    id: TOKEN_ID,
+    // I1 (Round 2) — Domain `id` is now ResetTokenHash (the stored
+    // hash), not the URL plaintext. Tests use a fixed fake hash; the
+    // repo would normally fill this from sha256Hex(plaintext).
+    id: TOKEN_HASH,
     userId: USER_ID,
     createdAt: new Date(NOW.getTime() - 10 * 60 * 1000),
     expiresAt: new Date(NOW.getTime() + 50 * 60 * 1000),

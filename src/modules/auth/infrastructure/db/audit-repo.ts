@@ -8,7 +8,7 @@
  * `drizzle/migrations/0001_audit_log_append_only.sql`. Defense in depth.
  *
  * `summary` is truncated to AUDIT_SUMMARY_MAX_LENGTH (500 chars) before
- * insert per spec FR-012 FR-012.
+ * insert per spec FR-012.
  *
  * **Never-throws contract** — both `append` and `appendInTx` catch any
  * DB error and degrade to `logger.error` + `authMetrics.auditMissing`.
@@ -85,48 +85,52 @@ function buildAuditRow(event: AppendAuditEvent) {
   };
 }
 
+/**
+ * K1 (Round 2) — shared try/catch/log/metric/swallow helper used by
+ * both `append` and `appendInTx`. Eliminates the silent-drift risk
+ * where one path's swallow policy diverges from the other.
+ *
+ * Caller invariants (preserved from A1 + G2):
+ *   - For `append` (top-level db): the upstream mutation already
+ *     committed, so swallowing here is safe.
+ *   - For `appendInTx`: the surrounding tx is in ABORT state after
+ *     this throw (Postgres semantics). Callers MUST place the audit
+ *     emit as the LAST statement before COMMIT — see G2 JSDoc on
+ *     `appendInTx` for details.
+ */
+async function tryAppend(
+  inserter: () => Promise<unknown>,
+  event: AppendAuditEvent,
+  op: 'append' | 'appendInTx',
+): Promise<void> {
+  try {
+    await inserter();
+  } catch (error) {
+    logger.error(
+      { err: error, eventType: event.eventType, requestId: event.requestId },
+      `audit.${op}.failed`,
+    );
+    authMetrics.auditMissing(event.eventType);
+  }
+}
+
 // Object-literal implementation — no class wrapper because the repo
 // has no internal state and the interface has exactly one
 // implementation. Matches the rest of the codebase's adapter style.
 export const auditRepo: AuditRepo = {
-  async append(event: AppendAuditEvent): Promise<void> {
-    try {
-      await db.insert(auditLog).values(buildAuditRow(event));
-    } catch (error) {
-      // Honor the never-throws contract — log + metric + swallow.
-      // The upstream mutation has already committed; surfacing a 500
-      // here would mask a successful user-facing action.
-      logger.error(
-        { err: error, eventType: event.eventType, requestId: event.requestId },
-        'audit.append.failed',
-      );
-      authMetrics.auditMissing(event.eventType);
-    }
+  async append(event) {
+    await tryAppend(
+      () => db.insert(auditLog).values(buildAuditRow(event)),
+      event,
+      'append',
+    );
   },
 
   async appendInTx(tx, event) {
-    try {
-      await tx.insert(auditLog).values(buildAuditRow(event));
-    } catch (error) {
-      // G2 (Round 2, 2026-05-17) — Postgres semantics: when ANY
-      // statement throws inside an active transaction, the tx
-      // enters `ABORT` state. Every subsequent statement AND the
-      // COMMIT itself will fail with
-      //   "ERROR: current transaction is aborted, commands ignored
-      //   until end of transaction block".
-      // We swallow the throw locally so it doesn't bubble to the
-      // caller, but the underlying tx is poisoned. Therefore:
-      //   appendInTx MUST be the LAST statement before the caller's
-      //   COMMIT — any later statement (mutation, metric write, or
-      //   another audit) will fail.
-      // For Path C use cases that REQUIRE atomic audit
-      // (create-user.ts, redeem-invite.ts:212, reset-password.ts:215),
-      // this constraint is honored by ordering: audit-emit goes last.
-      logger.error(
-        { err: error, eventType: event.eventType, requestId: event.requestId },
-        'audit.appendInTx.failed',
-      );
-      authMetrics.auditMissing(event.eventType);
-    }
+    await tryAppend(
+      () => tx.insert(auditLog).values(buildAuditRow(event)),
+      event,
+      'appendInTx',
+    );
   },
 };

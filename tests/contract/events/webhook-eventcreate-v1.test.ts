@@ -31,6 +31,10 @@ const auditEmitStandaloneMock = vi.fn();
 const ratelimitCheckMock = vi.fn();
 const loadTenantWebhookConfigMock = vi.fn();
 const resolveTenantFromSlugMock = vi.fn();
+// R8.W / Staff R3 R055 — capture pino logger.warn calls so the sentinel-
+// pattern fall-through test can assert that the warn-log fires only
+// when both externalIds match AND chamberTestMetadata is missing.
+const loggerWarnMock = vi.fn();
 
 vi.mock('@/modules/events', async () => {
   const actual = await vi.importActual<typeof import('@/modules/events')>('@/modules/events');
@@ -54,6 +58,26 @@ vi.mock('@/lib/events-webhook-deps', () => ({
   loadTenantWebhookConfig: (...args: unknown[]) => loadTenantWebhookConfigMock(...args),
   resolveTenantFromSlug: (...args: unknown[]) => resolveTenantFromSlugMock(...args),
 }));
+
+// R8.W / Staff R3 R055 — mock logger to capture sentinel warn-log
+// emissions. Partial mock pattern: spread actual then override `logger`.
+vi.mock('@/lib/logger', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/logger')>(
+    '@/lib/logger',
+  );
+  return {
+    ...actual,
+    logger: {
+      ...actual.logger,
+      warn: (...args: unknown[]) => loggerWarnMock(...args),
+      // Preserve other levels — route uses .info / .error / .fatal too.
+      info: actual.logger.info.bind(actual.logger),
+      error: actual.logger.error.bind(actual.logger),
+      fatal: actual.logger.fatal.bind(actual.logger),
+      debug: actual.logger.debug.bind(actual.logger),
+    },
+  };
+});
 
 // Staff-review R3v2 (2026-05-16): pre-warm the webhook route module
 // — file total 19.3s in normal mode (19 tests, HMAC + Drizzle imports
@@ -153,6 +177,82 @@ describe('T036 — F6 webhook receiver contract (HTTP outcome matrix)', () => {
     expect(body.ok).toBe(true);
     expect(body.matched).toBe('member_contact');
     expect(body.registrationId).toBe('01H2DEF');
+  });
+
+  // R8.W / Staff R3 R055 — sentinel-pattern fall-through warn-log
+  // coverage. Pins behaviour at route.ts:799-815. Future regression
+  // (e.g. AND flipped to OR, or `attendeeExternalId.startsWith` check
+  // removed) would silently regress without these tests.
+  describe('R055 — sentinel-pattern fall-through detection (R033)', () => {
+    it('warn-log fires when BOTH externalIds match sentinel pattern AND chamberTestMetadata is absent', async () => {
+      ingestWebhookAttendeeMock.mockResolvedValue({
+        ok: true,
+        value: {
+          matched: 'member_contact',
+          matchedMemberId: 'usr_x',
+          eventCreated: false,
+          registrationId: 'reg_y',
+          quotaEffect: null,
+          ingestLatencyMs: 80,
+        },
+      });
+      const { POST } = await loadRoute();
+      const payload = makeWebhookPayload({
+        event: { externalId: '__test_webhook__' },
+        attendee: { externalId: '__test_webhook__-001' },
+        // chamberTestMetadata NOT provided → triggers warn
+      });
+      const res = await POST(buildRequest(payload), {
+        params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+      });
+      expect(res.status).toBe(200);
+      const warnCall = loggerWarnMock.mock.calls.find(
+        ([ctx]) =>
+          ctx !== null &&
+          typeof ctx === 'object' &&
+          (ctx as { event?: string }).event ===
+            'f6_sentinel_pattern_without_metadata',
+      );
+      expect(warnCall).toBeDefined();
+      const ctx = warnCall![0] as Record<string, unknown>;
+      // R051 forensic-correlation requirement: sourceIp must be present.
+      expect(ctx['sourceIp']).toBeDefined();
+      expect(ctx['hasChamberTestMetadata']).toBe(false);
+      expect(ctx['eventExternalId']).toBe('__test_webhook__');
+    });
+
+    it('warn-log does NOT fire when ONLY eventExternalId matches sentinel (asymmetric AND-guard)', async () => {
+      ingestWebhookAttendeeMock.mockResolvedValue({
+        ok: true,
+        value: {
+          matched: 'unmatched',
+          matchedMemberId: null,
+          eventCreated: true,
+          registrationId: 'reg_z',
+          quotaEffect: null,
+          ingestLatencyMs: 90,
+        },
+      });
+      const { POST } = await loadRoute();
+      // Event has sentinel pattern, attendee does NOT — AND-guard
+      // means warn must NOT fire (R033 detects only the BOTH case).
+      const payload = makeWebhookPayload({
+        event: { externalId: '__test_webhook__' },
+        attendee: { externalId: 'att_real_user_123' },
+      });
+      const res = await POST(buildRequest(payload), {
+        params: Promise.resolve({ tenantSlug: TENANT_SLUG }),
+      });
+      expect(res.status).toBe(200);
+      const warnCall = loggerWarnMock.mock.calls.find(
+        ([ctx]) =>
+          ctx !== null &&
+          typeof ctx === 'object' &&
+          (ctx as { event?: string }).event ===
+            'f6_sentinel_pattern_without_metadata',
+      );
+      expect(warnCall).toBeUndefined();
+    });
   });
 
   it('401 Unauthorized — signature reject returns generic body (no oracle)', async () => {

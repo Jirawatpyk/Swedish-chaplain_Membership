@@ -31,18 +31,29 @@ import {
   estimatePasswordStrength,
 } from './password-strength';
 
-const schema = z
-  .object({
-    currentPassword: z.string().min(1),
-    newPassword: z.string().min(12).max(256),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    path: ['confirmPassword'],
-    message: 'Passwords must match',
-  });
+// H2 (Round 2) — schema built inside component so Zod error messages
+// translate per locale.
+type FormValues = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
 
-type FormValues = z.infer<typeof schema>;
+function buildSchema(
+  tooShort: string,
+  passwordMismatch: string,
+): z.ZodType<FormValues> {
+  return z
+    .object({
+      currentPassword: z.string().min(1),
+      newPassword: z.string().min(12, tooShort).max(256),
+      confirmPassword: z.string(),
+    })
+    .refine((data) => data.newPassword === data.confirmPassword, {
+      path: ['confirmPassword'],
+      message: passwordMismatch,
+    });
+}
 
 export function ChangePasswordForm() {
   const t = useTranslations('auth.changePassword');
@@ -59,7 +70,12 @@ export function ChangePasswordForm() {
     reset,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      buildSchema(
+        tReset('errors.tooShort'),
+        tReset('errors.passwordMismatch'),
+      ),
+    ),
     defaultValues: {
       currentPassword: '',
       newPassword: '',

@@ -28,8 +28,7 @@
  *     (migration 0151).
  *   - B5 (post-ship 2026-05-17): added three operational events for
  *     wrong-current-password, malformed-hash detection, and
- *     password-reset email send failures. See migration 0nnn (TBD)
- *     and the rationale comments inline below.
+ *     password-reset email send failures (migration 0158).
  */
 
 import type { AuditEventId, UserId } from './branded';
@@ -79,7 +78,7 @@ export const AUDIT_EVENT_TYPES = [
   //     200-ack forensic trail. 5y retention. Honours the
   //     process-webhook-event.ts:156 docstring promise.
   'webhook_dispatch_permanent_failure',
-  // --- B5 (post-ship 2026-05-17, migration 0nnn) ---
+  // --- B5 (post-ship 2026-05-17, migration 0158) ---
   // `password_change_failed` — emitted on the wrong-current-password
   //   branch in change-password.ts. Pre-B5 this branch only logged at
   //   warn and incremented authMetrics; an attacker with a stolen

@@ -455,6 +455,16 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     expect(acquireCalls[0]?.[0]).toMatch(
       /^eventcreate-quota:test-chamber:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:evt-[a-z0-9-]+$/i,
     );
+    // R8.S / Staff R3 R062 — identity-equality on lock-key positional
+    // parts. The regex above relies on the fact that `eventId` fixture
+    // is the literal string `evt-1` (NOT a UUID). A future fixture
+    // normalisation that branded eventIds to UUIDs would erase the
+    // positional anchor — both positions would match the UUID slot.
+    // Pin identity here so a fixture refactor breaks the assertion
+    // visibly (FAIL with a clear "got X, expected memberId Y" message).
+    const lockKeyPair = acquireCalls[0]?.[0]?.split(':') ?? [];
+    expect(lockKeyPair[2]).toBe(memberIdLiteral);
+    expect(lockKeyPair[3]).toBe(existingRegPaidPartnership.eventId);
     // The audit port should have received a quota_credit_back_refund
     // emit for partnership scope.
     const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;

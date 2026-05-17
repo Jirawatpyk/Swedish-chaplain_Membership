@@ -32,17 +32,25 @@ import {
   estimatePasswordStrength,
 } from './password-strength';
 
-const schema = z
-  .object({
-    newPassword: z.string().min(12, 'Must be at least 12 characters').max(256),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    path: ['confirmPassword'],
-    message: 'Passwords must match',
-  });
+// H2 (Round 2) — schema built inside the component so error messages
+// translate per locale. Pre-fix the Zod messages were hardcoded EN
+// and TH/SV users saw English on client-side validation failures.
+type FormValues = { newPassword: string; confirmPassword: string };
 
-type FormValues = z.infer<typeof schema>;
+function buildSchema(
+  tooShort: string,
+  passwordMismatch: string,
+): z.ZodType<FormValues> {
+  return z
+    .object({
+      newPassword: z.string().min(12, tooShort).max(256),
+      confirmPassword: z.string(),
+    })
+    .refine((data) => data.newPassword === data.confirmPassword, {
+      path: ['confirmPassword'],
+      message: passwordMismatch,
+    });
+}
 
 export interface ResetPasswordFormProps {
   readonly token: string;
@@ -63,7 +71,9 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     setFocus,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      buildSchema(t('errors.tooShort'), t('errors.passwordMismatch')),
+    ),
     defaultValues: { newPassword: '', confirmPassword: '' },
     mode: 'onSubmit',
   });
@@ -144,7 +154,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
           href="/forgot-password"
           className="inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
         >
-          {t('submit')}
+          {t('requestNewLink')}
         </a>
       </div>
     );

@@ -4,6 +4,7 @@
       "title": "Sign in",
       "cardDescription": "Staff portal",
       "memberCardDescription": "Member portal",
+      "securityUpdateBanner": "We've updated our security. Please sign in again.",
       "emailLabel": "Email",
       "passwordLabel": "Password",
       "submit": "Sign in",
@@ -35,6 +36,7 @@
     "resetPassword": {
       "title": "Choose a new password",
       "cardDescription": "Choose a new password for your account.",
+      "requestNewLink": "Request a new link",
       "newPasswordLabel": "New password",
       "confirmPasswordLabel": "Confirm new password",
       "submit": "Update password",
@@ -43,7 +45,9 @@
         "tokenExpired": "This reset link has expired. Request a new one.",
         "tokenUsed": "This reset link has already been used.",
         "weakPassword": "Choose a stronger password.",
-        "passwordBreached": "This password appears in a known data breach. Choose a different one."
+        "passwordBreached": "This password appears in a known data breach. Choose a different one.",
+        "tooShort": "Password must be at least 12 characters",
+        "passwordMismatch": "Passwords must match"
       }
     },
     "passwordStrength": {

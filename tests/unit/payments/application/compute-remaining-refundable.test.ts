@@ -51,7 +51,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
 
 function makeRefund(overrides: Partial<RefundActivityDto> = {}): RefundActivityDto {
   return {
-    id: 'rf_test',
+    refundId: 'rf_test',
     paymentId: 'pay_test',
     status: 'succeeded',
     amountSatang: asSatang(100_000n),
@@ -103,8 +103,8 @@ describe('computeRemainingRefundable — pure refund-remainder projection', () =
     const r = computeRemainingRefundable({
       payments: [makePayment({ amountSatang: asSatang(1_000_000n) })],
       refunds: [
-        makeRefund({ id: 'rf_1', amountSatang: asSatang(200_000n) }),
-        makeRefund({ id: 'rf_2', amountSatang: asSatang(300_000n) }),
+        makeRefund({ refundId: 'rf_1', amountSatang: asSatang(200_000n) }),
+        makeRefund({ refundId: 'rf_2', amountSatang: asSatang(300_000n) }),
       ],
     });
     expect(r!.remainingSatang).toBe(500_000n);
@@ -130,8 +130,8 @@ describe('computeRemainingRefundable — pure refund-remainder projection', () =
     const r = computeRemainingRefundable({
       payments: [makePayment({ amountSatang: asSatang(1_000_000n) })],
       refunds: [
-        makeRefund({ id: 'rf_failed', status: 'failed', amountSatang: asSatang(200_000n) }),
-        makeRefund({ id: 'rf_pending', status: 'requested', amountSatang: asSatang(300_000n) }),
+        makeRefund({ refundId: 'rf_failed', status: 'failed', amountSatang: asSatang(200_000n) }),
+        makeRefund({ refundId: 'rf_pending', status: 'pending', amountSatang: asSatang(300_000n) }),
       ],
     });
     expect(r!.remainingSatang).toBe(1_000_000n);
@@ -142,7 +142,7 @@ describe('computeRemainingRefundable — pure refund-remainder projection', () =
       payments: [makePayment({ id: 'pay_a' as Payment['id'], amountSatang: asSatang(1_000_000n) })],
       refunds: [
         makeRefund({ paymentId: 'pay_OTHER', amountSatang: asSatang(500_000n) }),
-        makeRefund({ paymentId: 'pay_a', amountSatang: asSatang(200_000n), id: 'rf_match' }),
+        makeRefund({ paymentId: 'pay_a', amountSatang: asSatang(200_000n), refundId: 'rf_match' }),
       ],
     });
     expect(r!.remainingSatang).toBe(800_000n);

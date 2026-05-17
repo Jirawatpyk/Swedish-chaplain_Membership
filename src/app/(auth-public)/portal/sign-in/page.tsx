@@ -32,15 +32,21 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface MemberSignInPageProps {
-  searchParams: Promise<{ returnTo?: string | string[] }>;
+  searchParams: Promise<{
+    returnTo?: string | string[];
+    reason?: string | string[];
+  }>;
 }
 
 export default async function MemberSignInPage({
   searchParams,
 }: MemberSignInPageProps) {
-  const { returnTo: rawReturnTo } = await searchParams;
+  const { returnTo: rawReturnTo, reason: rawReason } = await searchParams;
   const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
   const validatedReturnTo = safeReturnTo(returnToCandidate, 'member');
+  // H3 (Round 2): see admin/sign-in/page.tsx for rationale.
+  const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
+  const showSecurityBanner = reasonCandidate === 'security-update';
 
   const current = await getCurrentSession();
   if (current) {
@@ -67,7 +73,16 @@ export default async function MemberSignInPage({
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
             <CardDescription>{t('memberCardDescription')}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {showSecurityBanner ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="rounded-md border border-primary/30 bg-primary/5 p-3 text-sm"
+              >
+                {t('securityUpdateBanner')}
+              </div>
+            ) : null}
             <SignInForm portal="member" returnTo={validatedReturnTo} />
           </CardContent>
         </Card>

@@ -315,10 +315,20 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       expect(summary['durationMs']).toBe(12_345);
     });
 
+    // R7.B1 / R030 safety-net tests moved to dedicated `200 OK —
+    // degraded-state surfaces` describe block below (Staff R3 R059).
+  });
+
+  // R8.W / Staff R3 R059 — sibling describe block for degraded-state
+  // surfaces (still HTTP 200 but NOT semantically "happy path"). The
+  // safety-net fail-open scenario belongs here, not in "happy path".
+  describe('200 OK — degraded-state surfaces', () => {
     it('R7.B1 / Staff R2 R030 — safetyNetFailedOpen=true surfaces in completed 200 response body for admin UX', async () => {
       runImportCsvMock.mockResolvedValue({
         kind: 'completed',
-        recordId: 'rec-r7-b1',
+        // R8.S / Staff R3 R067 — valid UUIDv4 future-proofs against
+        // `asCsvImportRecordId(outcome.recordId)` brand validation.
+        recordId: '00000000-0000-4000-8000-000000000001',
         sourceFormat: 'eventcreate_csv',
         errorCsvAvailable: false,
         historyPersisted: true,
@@ -350,7 +360,8 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
     it('R7.B1 — safetyNetFailedOpen=false (happy path) surfaces explicit false (not undefined)', async () => {
       runImportCsvMock.mockResolvedValue({
         kind: 'completed',
-        recordId: 'rec-r7-b1-happy',
+        // R8.S / Staff R3 R067 — valid UUIDv4.
+        recordId: '00000000-0000-4000-8000-000000000002',
         sourceFormat: 'eventcreate_csv',
         errorCsvAvailable: false,
         historyPersisted: true,
@@ -378,6 +389,44 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       const body = (await res.json()) as { safetyNetFailedOpen?: boolean };
       expect(body.safetyNetFailedOpen).toBe(false);
     });
+
+    // R8.S / Staff R3 R061 — mutual-exclusivity between
+    // `event_mismatch_warning` envelope and `safetyNetFailedOpen` field.
+    // The event-mismatch warning surface is mutually exclusive with the
+    // safety-net fail-open surface: the warning fires when the safety
+    // net SUCCEEDED and found prior imports; the fail-open chip fires
+    // when the safety net FAILED. A regression accidentally threading
+    // safetyNetFailedOpen into the warning envelope (or vice versa)
+    // would silently scramble the admin UX.
+    it('R8.S R061 — event_mismatch_warning envelope does NOT carry safetyNetFailedOpen field', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'event_mismatch_warning',
+        priorImports: [
+          {
+            recordId: '00000000-0000-4000-8000-bbbbbbbbbbbb',
+            eventId: '00000000-0000-4000-8000-cccccccccccc',
+            uploadedAt: new Date('2026-04-01T10:00:00Z'),
+          },
+        ],
+      });
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Record<string, unknown>;
+      // Mutual-exclusivity: warning envelope MUST NOT carry the field.
+      // Regression guard against future code that spreads both into the
+      // same response shape.
+      expect(body['safetyNetFailedOpen']).toBeUndefined();
+      // Confirm the envelope DOES carry the warning-specific fields.
+      expect(body['kind']).toBe('event_mismatch_warning');
+      expect(Array.isArray(body['priorImports'])).toBe(true);
+    });
+  });
+
+  // Re-open the original happy-path block to keep remaining tests in
+  // their proper scope (the `it('still 200 when some rows failed', ...)`
+  // test below is `errorRows` happy-path coverage, not degraded-state).
+  describe('200 OK — happy path (continued)', () => {
 
     it('still 200 when some rows failed — errorRows[] surfaces row numbers + reasons', async () => {
       runImportCsvMock.mockResolvedValue({
@@ -564,6 +613,48 @@ describe('T090 — POST /api/admin/events/import (CSV import contract)', () => {
       expect(res.status).toBe(504);
       const body = (await res.json()) as Record<string, unknown>;
       expect(String(body['type'])).toMatch(/(csv-timeout|timeout)/);
+    });
+
+    // R8.S / Staff R3 R069 — pin safetyNetFailedOpen wire on the 504
+    // timeout path. The use-case outcome `kind: 'timeout'` carries the
+    // field per import-csv.ts:165; the route maps it into the 504
+    // response envelope (or `extras` sub-object). Without this test,
+    // R7-introduced 504-path wiring is unverified at JSON level.
+    it('R8.S R069 — 504 timeout response carries safetyNetFailedOpen=true when use-case reports it', async () => {
+      runImportCsvMock.mockResolvedValue({
+        kind: 'timeout',
+        recordId: '00000000-0000-4000-8000-000000000004',
+        sourceFormat: 'eventcreate_csv',
+        historyPersisted: true,
+        auditCompletionEmitted: true,
+        safetyNetFailedOpen: true,
+        partialSummary: {
+          rowsProcessed: 12,
+          rowsAlreadyImported: 0,
+          eventsCreated: 0,
+          eventsUpdated: 0,
+          matchCounts: {
+            member_contact: 0,
+            member_domain: 0,
+            member_fuzzy: 0,
+            non_member: 8,
+            unmatched: 4,
+          },
+          errorRows: [],
+          durationMs: 12_000,
+        },
+      });
+      const { POST } = await loadImportRoute();
+      const res = await POST(buildRequest());
+      expect(res.status).toBe(504);
+      const body = (await res.json()) as Record<string, unknown>;
+      // Route may surface field at envelope root OR under `extras` —
+      // assert at least one of those positions carries `true`.
+      const extras = (body['extras'] ?? {}) as Record<string, unknown>;
+      const observed =
+        body['safetyNetFailedOpen'] === true ||
+        extras['safetyNetFailedOpen'] === true;
+      expect(observed).toBe(true);
     });
   });
 

@@ -274,6 +274,36 @@ describe('Phase H4.1 — redactPayloadForFatalLog exhaustive allowlist verificat
     expect(out['attendeeEmailHash']).toBe('a1b2c3d4e5f60718');
   });
 
+  // R8.W / Staff R3 R054 — round-trip test for pii_erasure_completed
+  // audit payload shape. R042 added `completedWithinSecondsOfRequest`
+  // as a forward-only allowlist pin; this test asserts the latency
+  // primitive ACTUALLY survives the projection AND that nested
+  // `quotaReversals` is dropped (per allowlist-deny-by-default).
+  it('round-trip: pii_erasure_completed preserves latency primitive + drops nested quota object', () => {
+    const payload = {
+      severity: 'info',
+      actorUserId: 'usr_admin_001',
+      registrationId: '00000000-0000-4000-8000-000000000001',
+      completedWithinSecondsOfRequest: 42,
+      // Nested object — must be dropped (no nested-object support in
+      // allowlist projection; closes Phase H4.1 deny-by-default contract).
+      quotaReversals: {
+        partnership: { decremented: 1, allotmentAfter: 4 },
+        cultural: { decremented: 0, allotmentAfter: 6 },
+      },
+    };
+    const out = redactPayloadForFatalLog(payload);
+    expect(out['severity']).toBe('info');
+    expect(out['actorUserId']).toBe('usr_admin_001');
+    expect(out['registrationId']).toBe(
+      '00000000-0000-4000-8000-000000000001',
+    );
+    expect(out['completedWithinSecondsOfRequest']).toBe(42);
+    // Load-bearing assertion — nested object stripped, NOT silently
+    // shallow-cloned into the output.
+    expect(out['quotaReversals']).toBeUndefined();
+  });
+
   it('R6.S / R026 — allowlist-deny-by-default: arbitrary unknown fields are dropped', () => {
     // Guards against a future refactor flipping the redactor from
     // allowlist-deny-by-default to denylist-allow-by-default. The

@@ -94,13 +94,10 @@ export async function changePassword(
   input: ChangePasswordInput,
   deps: ChangePasswordDeps = defaultChangePasswordDeps,
 ): Promise<Result<ChangePasswordSuccess, ChangePasswordError>> {
-  // 1. Per-user rate limit — peek-then-consume (B2, post-ship 2026-05-17).
-  //    Peek WITHOUT consuming so a legitimate user rotating passwords
-  //    multiple times (e.g. post-phishing-scare hygiene) does not trip
-  //    the 5/15min cap. The bucket is only debited on the wrong-current
-  //    branch below. Pre-B2 the bucket was consumed on every call
-  //    including success + same-password + weak-password, which made
-  //    the 5/15min ceiling block legitimate rotations.
+  // 1. Per-user rate limit — peek-then-consume (B2). Peek to gate;
+  //    the bucket is only debited on the wrong-current branch below,
+  //    so legitimate password rotations do not trip the cap. See
+  //    review-20260517-post-ship-hardening.md § B2 for rationale.
   const bucketKey = `change-pw:user:${input.user.id}`;
   const peek = await deps.limiter.peek(
     bucketKey,

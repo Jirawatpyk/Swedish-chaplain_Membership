@@ -80,21 +80,18 @@ describe('PasswordInput primitive', () => {
   });
 
   it('forwards ref to the underlying input (react-hook-form compat)', () => {
-    let ref: HTMLInputElement | null = null;
     function Wrapper() {
       const local = useRef<HTMLInputElement>(null);
-      ref = local.current;
       return <PasswordInput id="pw" ref={local} />;
     }
     renderWithIntl(<Wrapper />);
-    // ref attaches after render; re-query the DOM:
+    // ref attaches after render; re-query the DOM to verify shape:
     const input = document.querySelector('input#pw') as HTMLInputElement;
     expect(input).toBeTruthy();
     expect(input.tagName).toBe('INPUT');
     // The forwarded ref pattern is verified by RHF's register() at
     // runtime — here we only assert the input element exists and is
     // an HTMLInputElement (i.e. ref target shape).
-    void ref;
   });
 
   it('passes through autoComplete and other input props', () => {

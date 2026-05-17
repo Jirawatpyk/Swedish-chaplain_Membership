@@ -4,13 +4,17 @@
  * Maps the Result union from `resetPassword()` to HTTP status codes:
  *   200 — { ok: true, signInUrl }
  *   400 — invalid-input / weak-password
- *   404/410 — link-invalid (single public slug — no leak between the
- *           three underlying reasons: missing, expired, used)
+ *   410 — link-invalid (uniform Gone status across all reasons —
+ *         missing/expired/used — per B1 enumeration safety)
  *   429 — rate-limited (with Retry-After)
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { resetPassword, asResetTokenId } from '@/modules/auth';
+import {
+  resetPassword,
+  parseResetTokenId,
+  MalformedTokenError,
+} from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -42,8 +46,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // I3 (Round 2) — parse instead of cast: validates 64-hex at the
+  // trust boundary so a malformed URL gets a uniform 410 link-invalid
+  // instead of silently never matching in the repo sha256Hex lookup.
+  let parsedToken;
+  try {
+    parsedToken = parseResetTokenId(parsed.data.token);
+  } catch (parseErr) {
+    if (parseErr instanceof MalformedTokenError) {
+      logger.warn(
+        { requestId, reason: 'malformed-token' },
+        'reset-password.link-invalid',
+      );
+      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
+    }
+    throw parseErr;
+  }
+
   const result = await resetPassword({
-    token: asResetTokenId(parsed.data.token),
+    token: parsedToken,
     newPassword: parsed.data.newPassword,
     sourceIp: getClientIp(request),
     requestId,

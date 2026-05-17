@@ -88,7 +88,7 @@ export default async function ResetPasswordPage({
                   href="/forgot-password"
                   className="text-sm underline underline-offset-4"
                 >
-                  {t('submit')}
+                  {t('requestNewLink')}
                 </a>
               </div>
             ) : (
