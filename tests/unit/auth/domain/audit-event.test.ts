@@ -19,12 +19,13 @@ describe('AUDIT_EVENT_TYPES', () => {
     //                     webhook_payment_already_canceled            (2)
     //   0047 (Rev I-14) : payment_processor_retrieve_failed           (1)
     //   0048 (Rev S5)   : payment_invoice_not_found                   (1)
+    //   0151 (F5R2-C2)  : webhook_dispatch_permanent_failure          (1)
     //                                                                 ──
-    //                                                                  9
+    //                                                                 10
     // Tenant-scoped payment lifecycle events (payment_initiated /
     // payment_succeeded etc.) do NOT go through this repo — they use
     // the F5 AuditPort with retention_years per data-model.md § 7.1.
-    expect(AUDIT_EVENT_TYPES).toHaveLength(26);
+    expect(AUDIT_EVENT_TYPES).toHaveLength(27);
   });
 
   it('includes expected F1 events', () => {

@@ -11,6 +11,12 @@ import {
   f8OnPaidCallbacks,
 } from '@/modules/renewals/infrastructure/renewals-deps';
 import { buildPayload } from '@/modules/renewals/domain/renewal-link-token';
+// F6 ship (2026-05-17) flipped FEATURE_F6_EVENTCREATE=true, so
+// makeRenewalsDeps now mounts the REAL drizzleEventAttendeesAdapter
+// (queries live Neon) instead of the stub. The "FR-029a fallback"
+// contract still lives in the stub itself — assert it there, not
+// through the deps composition which would hit the DB.
+import { eventAttendeesStub } from '@/modules/renewals/infrastructure/event-attendees-stub';
 
 describe('makeRenewalsDeps composition root (T054)', () => {
   it('returns a deps object with the wired Wave G surface', () => {
@@ -33,14 +39,16 @@ describe('makeRenewalsDeps composition root (T054)', () => {
     expect(a.tenant.slug).not.toBe(b.tenant.slug);
   });
 
+  // FR-029a fallback contract — asserted on the stub directly because
+  // post-F6-ship the deps composition mounts the real Drizzle adapter
+  // (would hit live Neon on these calls). The stub-vs-real selection
+  // is covered separately at the boot-config layer.
   it('eventAttendees stub returns isAvailable=false (FR-029a fallback)', () => {
-    const deps = makeRenewalsDeps('test-swecham');
-    expect(deps.eventAttendees.isAvailable()).toBe(false);
+    expect(eventAttendeesStub.isAvailable()).toBe(false);
   });
 
   it('eventAttendees stub returns [] for any (tenant, member)', async () => {
-    const deps = makeRenewalsDeps('test-swecham');
-    expect(await deps.eventAttendees.listAttendances('test-swecham', 'mem-1')).toEqual([]);
+    expect(await eventAttendeesStub.listAttendances('test-swecham', 'mem-1')).toEqual([]);
   });
 });
 

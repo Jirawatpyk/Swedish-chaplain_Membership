@@ -31,11 +31,23 @@ const constructEventMock = vi.fn();
 const processWebhookEventMock = vi.fn();
 const markPaidFromProcessorMock = vi.fn();
 
-vi.mock('@/lib/stripe-webhook-verifier', () => ({
-  webhookVerifier: {
-    constructEvent: (...args: unknown[]) => constructEventMock(...args),
-  },
-}));
+vi.mock('@/lib/stripe-webhook-verifier', async () => {
+  // Re-export the REAL `WebhookSignatureError` class so the route's
+  // `instanceof WebhookSignatureError` branch in src/app/api/webhooks/
+  // stripe/route.ts:347 still works under the mocked module. Stubbing
+  // it out as a vanilla error would silently change the route's
+  // 401 → 500 fallback path (regression from F5R3 H-5 Satang migration
+  // commit 70424505 which introduced the instanceof check).
+  const real = await vi.importActual<
+    typeof import('@/lib/stripe-webhook-verifier')
+  >('@/lib/stripe-webhook-verifier');
+  return {
+    ...real,
+    webhookVerifier: {
+      constructEvent: (...args: unknown[]) => constructEventMock(...args),
+    },
+  };
+});
 
 /**
  * `@/lib/stripe-webhook-deps` is the route-level composition adapter
@@ -279,8 +291,12 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     const event = makeStripeEvent();
     constructEventMock.mockReturnValue(event);
 
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'processed' });
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'duplicate' });
+    // F5R3 H-5 fix-up — route's `if (!result.ok)` (route.ts:744)
+    // now strictly narrows on the Result<T,E> shape from `@/lib/result`,
+    // so contract stubs MUST wrap their outcome in `{ ok: true, value }`
+    // instead of returning the raw outcome envelope.
+    processWebhookEventMock.mockResolvedValueOnce({ ok: true, value: { outcome: 'processed' } });
+    processWebhookEventMock.mockResolvedValueOnce({ ok: true, value: { outcome: 'duplicate' } });
 
     const rawBody = JSON.stringify(event);
     const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
@@ -304,9 +320,12 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     const event = makeStripeEvent();
     constructEventMock.mockReturnValueOnce(event);
     processWebhookEventMock.mockResolvedValueOnce({
-      outcome: 'processed',
-      paymentStatus: 'succeeded',
-      markPaidInvoked: true,
+      ok: true,
+      value: {
+        outcome: 'processed',
+        paymentStatus: 'succeeded',
+        markPaidInvoked: true,
+      },
     });
 
     const rawBody = JSON.stringify(event);
@@ -370,8 +389,11 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
     });
     constructEventMock.mockReturnValueOnce(event);
     processWebhookEventMock.mockResolvedValueOnce({
-      outcome: 'processed',
-      auditEmitted: 'out_of_band_refund_detected',
+      ok: true,
+      value: {
+        outcome: 'processed',
+        auditEmitted: 'out_of_band_refund_detected',
+      },
     });
 
     const rawBody = JSON.stringify(event);
@@ -389,7 +411,7 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
       type: 'some.future.event',
     });
     constructEventMock.mockReturnValueOnce(event);
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'acknowledged_only' });
+    processWebhookEventMock.mockResolvedValueOnce({ ok: true, value: { outcome: 'acknowledged_only' } });
 
     const rawBody = JSON.stringify(event);
     const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };
@@ -431,7 +453,7 @@ describe('contract: POST /api/webhooks/stripe (T042)', () => {
   it('200 responses always return { received: true }', async () => {
     const event = makeStripeEvent();
     constructEventMock.mockReturnValueOnce(event);
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'processed' });
+    processWebhookEventMock.mockResolvedValueOnce({ ok: true, value: { outcome: 'processed' } });
 
     const rawBody = JSON.stringify(event);
     const { POST } = await importWebhookRoute() as { POST: (req: NextRequest) => Promise<Response> };

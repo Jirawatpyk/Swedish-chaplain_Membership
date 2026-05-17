@@ -51,11 +51,19 @@ const markPaidFromProcessorMock = vi.fn();
  
 const insertProcessorEventMock = vi.fn(async (..._args: unknown[]) => undefined);
 
-vi.mock('@/lib/stripe-webhook-verifier', () => ({
-  webhookVerifier: {
-    constructEvent: (...args: unknown[]) => constructEventMock(...args),
-  },
-}));
+vi.mock('@/lib/stripe-webhook-verifier', async () => {
+  // Re-export real `WebhookSignatureError` so the route's `instanceof`
+  // narrowing still works under the mocked module (F5R3 H-5 fix-up).
+  const real = await vi.importActual<
+    typeof import('@/lib/stripe-webhook-verifier')
+  >('@/lib/stripe-webhook-verifier');
+  return {
+    ...real,
+    webhookVerifier: {
+      constructEvent: (...args: unknown[]) => constructEventMock(...args),
+    },
+  };
+});
 
 vi.mock('@/lib/stripe-webhook-deps', async () => {
   const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
@@ -187,9 +195,14 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
 
   it('first delivery: 200, processWebhookEvent called once', async () => {
     constructEventMock.mockReturnValueOnce(STRIPE_EVENT_FIXTURE);
+    // F5R3 H-5 fix-up — route's `if (!result.ok)` strictly narrows on
+    // Result<T,E>; stubs must wrap outcome in `{ ok: true, value }`.
     processWebhookEventMock.mockResolvedValueOnce({
-      outcome: 'processed',
-      paymentStatus: 'succeeded',
+      ok: true,
+      value: {
+        outcome: 'processed',
+        paymentStatus: 'succeeded',
+      },
     });
     markPaidFromProcessorMock.mockResolvedValueOnce({
       status: 'paid',
@@ -211,8 +224,11 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
 
     // First delivery: processed normally
     processWebhookEventMock.mockResolvedValueOnce({
-      outcome: 'processed',
-      paymentStatus: 'succeeded',
+      ok: true,
+      value: {
+        outcome: 'processed',
+        paymentStatus: 'succeeded',
+      },
     });
 
     const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
@@ -222,7 +238,7 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
     expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
 
     // Second delivery: idempotency guard fires — use-case returns 'duplicate'
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'duplicate' });
+    processWebhookEventMock.mockResolvedValueOnce({ ok: true, value: { outcome: 'duplicate' } });
 
     const res2 = await POST(makeRequest(2)) as Response;
     expect(res2.status).toBe(200);
@@ -237,8 +253,8 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
   it('both deliveries return the identical { received: true } shape', async () => {
     constructEventMock.mockReturnValue(STRIPE_EVENT_FIXTURE);
     processWebhookEventMock
-      .mockResolvedValueOnce({ outcome: 'processed' })
-      .mockResolvedValueOnce({ outcome: 'duplicate' });
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'processed' } })
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'duplicate' } });
 
     const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
 
@@ -257,8 +273,8 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
   it('processor_events dedup: both deliveries pass same event.id to processWebhookEvent', async () => {
     constructEventMock.mockReturnValue(STRIPE_EVENT_FIXTURE);
     processWebhookEventMock
-      .mockResolvedValueOnce({ outcome: 'processed' })
-      .mockResolvedValueOnce({ outcome: 'duplicate' });
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'processed' } })
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'duplicate' } });
 
     const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     await POST(makeRequest(1));
@@ -297,8 +313,8 @@ describe('webhook-idempotency: SC-005 same event delivered twice (T045)', () => 
   it('second delivery: processWebhookEvent called at most twice total (no extra side-effects)', async () => {
     constructEventMock.mockReturnValue(STRIPE_EVENT_FIXTURE);
     processWebhookEventMock
-      .mockResolvedValueOnce({ outcome: 'processed' })
-      .mockResolvedValueOnce({ outcome: 'duplicate' });
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'processed' } })
+      .mockResolvedValueOnce({ ok: true, value: { outcome: 'duplicate' } });
 
     const { POST } = await importWebhookRoute() as unknown as { POST: (req: Request) => Promise<Response> };
     await POST(makeRequest(1));

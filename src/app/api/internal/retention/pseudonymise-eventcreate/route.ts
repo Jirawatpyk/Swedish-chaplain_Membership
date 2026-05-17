@@ -30,8 +30,7 @@ import { asTenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import {
   pseudonymiseStaleNonMemberPii,
-  makeDrizzleRegistrationsRepository,
-  makePinoAuditPort,
+  makePseudonymiseStaleNonMemberPiiDeps,
 } from '@/modules/events';
 
 export const runtime = 'nodejs';
@@ -108,11 +107,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const result = await runInTenant(ctx, async (tx) => {
         return pseudonymiseStaleNonMemberPii(
           { tenantId, occurredAt },
-          {
-            registrationsRepo: makeDrizzleRegistrationsRepository(tx),
-            audit: makePinoAuditPort(tx),
-            hasher,
-          },
+          makePseudonymiseStaleNonMemberPiiDeps(tx, hasher),
         );
       });
       if (result.ok) {

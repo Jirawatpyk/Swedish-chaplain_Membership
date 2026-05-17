@@ -423,8 +423,33 @@ export {
 } from './application/use-cases/sweep-stale-idempotency-receipts';
 
 export { makeDrizzleIdempotencySweepPort } from './infrastructure/drizzle-idempotency-sweep';
-export { makeDrizzleRegistrationsRepository } from './infrastructure/drizzle-registrations-repository';
-export { makePinoAuditPort } from './infrastructure/pino-audit-port';
+
+// Composition factory — assembles raw Infrastructure deps for the
+// pseudonymise-stale-non-member-pii use-case behind the barrel so
+// Routes don't reach into `./infrastructure/*` directly (Principle III
+// — Clean Architecture barrel rule, enforced by
+// tests/unit/architecture/events-barrel.test.ts). The factory takes
+// a TenantTx (composed by the caller via `runInTenant`) plus a hasher
+// (caller-supplied because the salt lives in env) and returns the
+// fully-wired deps object the use-case expects.
+import type { TenantTx } from '@/lib/db';
+import { makeDrizzleRegistrationsRepository as _makeRegRepo } from './infrastructure/drizzle-registrations-repository';
+import { makePinoAuditPort as _makePinoAudit } from './infrastructure/pino-audit-port';
+import type {
+  PseudonymisationHasher,
+  PseudonymiseStaleNonMemberPiiDeps,
+} from './application/use-cases/pseudonymise-stale-non-member-pii';
+
+export function makePseudonymiseStaleNonMemberPiiDeps(
+  tx: TenantTx,
+  hasher: PseudonymisationHasher,
+): PseudonymiseStaleNonMemberPiiDeps {
+  return {
+    registrationsRepo: _makeRegRepo(tx),
+    audit: _makePinoAudit(tx),
+    hasher,
+  };
+}
 
 // --- 7. Infrastructure composition factories (DI surface) -------------------
 
