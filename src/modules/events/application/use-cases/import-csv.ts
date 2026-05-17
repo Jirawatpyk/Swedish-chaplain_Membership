@@ -1933,6 +1933,26 @@ function sanitiseFormulaPrefix(s: string): string {
   // cheatsheet. Today benign (server-generated `reason` strings don't
   // start with whitespace) but defense-in-depth for when user-input
   // surfaces are added (e.g., `rawRowExcerpt` in a future feature).
+  //
+  // R8.S / Staff R3 R068 (Suggestion) — sanitiser does NOT cover
+  // `\0` (NULL byte) or Unicode fullwidth `＝` (U+FF1D) / `＋`
+  // (U+FF0B) / `－` (U+FF0D) / `＠` (U+FF20). OWASP cheatsheet focuses
+  // on 6 ASCII chars. Theoretical risk today (server-generated strings
+  // don't contain these). A future feature surfacing user-input cell
+  // values must add Unicode normalisation + fullwidth char detection
+  // here. Tracked as F6.1 backlog item; non-blocking.
+  //
+  // R8.S / Staff R3 R063 — `\r` interaction with `csvEscape` below:
+  // when `\r` survives this gate (untouched by sanitiser if NOT first
+  // char) it passes through `csvEscape` which double-quote-wraps the
+  // cell. The resulting `"...\r..."` renders as:
+  //   - Excel: line-break inside the cell (RFC-4180 standard).
+  //   - LibreOffice Calc: literal `\r` glyph in the cell.
+  // This is RFC-4180-valid but visually ambiguous. Acceptable today
+  // because server-generated `reason` / `failureStage` strings do not
+  // contain `\r`. A future feature surfacing user-input cell values
+  // (e.g., `rawRowExcerpt`) should consider stripping `\r` before
+  // sanitisation OR documenting the ambiguity in admin-facing docs.
   if (
     first === '=' ||
     first === '+' ||
@@ -2140,4 +2160,10 @@ export const _internals = {
   CancellationSkipMarker,
   isCancellationSkip,
   hashAttendeeEmail,
+  // R8.W / Staff R3 R056 — exported for direct unit-test coverage of the
+  // OWASP CSV-Injection sanitiser. Production callers continue to invoke
+  // the file-private function inside `serialiseErrorCsv`; this re-export
+  // serves test-only consumers in
+  // `tests/unit/events/import-csv-sanitise-formula-prefix.test.ts`.
+  sanitiseFormulaPrefix,
 } as const;

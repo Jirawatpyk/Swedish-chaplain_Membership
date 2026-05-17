@@ -792,19 +792,38 @@ export async function POST(
         // rejected at Step 7), so this is an authenticated edge case:
         // either Zapier misconfiguration (literal `__test_webhook__`
         // as externalId) or insider probing for sentinel-pattern
-        // detectability. Emit a structured warn + bump a counter so
-        // SREs see the bypass-attempt rate. Do NOT fail the request —
-        // the regular ingest pipeline handles the "real" registration
+        // detectability. Emit a structured warn (log-only signal — no
+        // metric counter; SREs search via pino log streams on the
+        // `f6_sentinel_pattern_without_metadata` event key). R8.W /
+        // Staff R3 R048 — comment honestly reflects the absence of a
+        // counter; the bypass-attempt rate is bounded by the per-tenant
+        // 60/min Upstash rate-limit gate above, so log-stream alerting
+        // on a single occurrence is sufficient. Do NOT fail the request
+        // — the regular ingest pipeline handles the "real" registration
         // safely; this log surfaces the anomaly without breaking flow.
         if (
           eventExternalId === '__test_webhook__' &&
           attendeeExternalId.startsWith('__test_webhook__-')
         ) {
+          // R8.S / Staff R3 R070 (Suggestion) — emission cadence is
+          // bounded by the per-tenant 60 req/min Upstash rate-limit
+          // gate (max 60 warn lines/min/tenant). A misconfigured Zap
+          // that emits real attendees with sentinel externalIds could
+          // produce sustained log spam at this ceiling. Future
+          // improvement: log-rate-limit (e.g., log once + every 100th
+          // occurrence per tenant per hour) once the cardinality of
+          // legitimate test-mode patterns has been observed in prod.
+          // Tracked as F6.2 backlog; non-blocking today.
           logger.warn(
             {
               event: 'f6_sentinel_pattern_without_metadata',
               tenantSlug,
               requestId,
+              // R8.W / Staff R3 R051 — sourceIp added for forensic
+              // correlation. Sibling security warns at L311/L334/L352/
+              // L370/L399/L524/L541 all include sourceIp; this branch
+              // (insider-probing detection) needs it too.
+              sourceIp,
               eventExternalId,
               attendeeExternalIdPrefix: '__test_webhook__-',
               hasChamberTestMetadata: false,

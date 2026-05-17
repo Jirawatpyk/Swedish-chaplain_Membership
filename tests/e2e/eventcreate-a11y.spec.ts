@@ -575,6 +575,99 @@ test.describe('@a11y T055 — F6 events list+detail axe-core scan', () => {
   });
 
   /**
+   * R8.W / Staff R3 R060 — axe-core scan of the FR-019b safety-net
+   * fail-open chip (`result.safetyNetFailedOpen === true` branch in
+   * csv-import-result.tsx:229-243). Hard to drive via real DB because
+   * the chip only renders when the safety-net query THROWS. Playwright's
+   * route.fulfill() intercepts the POST /api/admin/events/import
+   * response and injects `safetyNetFailedOpen: true` into the envelope
+   * — the form-layer wire (closed by R068) propagates it into the
+   * component prop and the chip renders with role="status" + amber
+   * surface. axe-core then scans the colour-contrast + ARIA semantics.
+   */
+  test('@a11y R8.W R060 — safetyNetFailedOpen=true chip axe scan (intercepted response)', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await signInAsAdmin(page);
+    await page.goto('/admin/events/import');
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+    // Seed a single event so the EventPicker has a selectable option
+    // (the Confirm button stays disabled with no selection per F6.1).
+    const ts = Date.now();
+    const evtExternalId = `a11y-r060-${ts}`;
+    const evtName = `A11y R060 ${ts}`;
+    const seedRes = await page.request.post('/api/admin/events', {
+      headers: { Origin: 'http://localhost:3100' },
+      data: {
+        externalId: evtExternalId,
+        name: evtName,
+        startDate: new Date(ts + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        category: null,
+      },
+    });
+    if (![200, 201].includes(seedRes.status())) {
+      throw new Error(
+        `seedEvent failed: ${seedRes.status()} ${await seedRes.text()}`,
+      );
+    }
+    await page.reload();
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await page.getByRole('combobox').first().click();
+    await page.getByRole('option', { name: new RegExp(evtName) }).click();
+
+    // Intercept the import POST and inject `safetyNetFailedOpen: true`
+    // into the envelope so the form-layer cherry-pick (R068 fix) lands
+    // the field into the rendered chip.
+    await page.route('**/api/admin/events/import', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      const augmented = {
+        ...body,
+        safetyNetFailedOpen: true,
+      };
+      await route.fulfill({
+        status: response.status(),
+        headers: response.headers(),
+        contentType: 'application/json',
+        body: JSON.stringify(augmented),
+      });
+    });
+
+    const validCsv = Buffer.from(
+      [
+        'event_external_id,event_name,event_start,attendee_email,attendee_name',
+        `event_a11y_r060_${ts}_0,A11y R060,2026-06-21T18:00:00+07:00,r060_${ts}@example.com,A11y R060 Attendee`,
+      ].join('\n'),
+      'utf8',
+    );
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'a11y-r060.csv',
+      mimeType: 'text/csv',
+      buffer: validCsv,
+    });
+    await page
+      .getByRole('button', { name: /import|confirm|upload/i })
+      .click();
+
+    // Result card mounts AND the safety-net chip is present in DOM.
+    await expect(
+      page.locator('[data-testid="csv-import-result"]'),
+    ).toBeVisible({ timeout: 90_000 });
+    await expect(
+      page.locator('[data-testid="result-safety-net-unavailable"]'),
+    ).toBeVisible({ timeout: 5_000 });
+
+    await expectNoAxeViolations(
+      page,
+      '/admin/events/import (safetyNetFailedOpen=true chip visible)',
+    );
+  });
+
+  /**
    * A8 — dedicated server-rendered PII erasure confirmation page. The
    * page renders inside `DetailContainer` + `PageHeader` + the
    * `ErasePiiDialog` opened in dialog mode. WCAG-critical surface:

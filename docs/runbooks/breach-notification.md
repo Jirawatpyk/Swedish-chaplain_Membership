@@ -88,7 +88,7 @@ Failure to notify within these windows triggers regulatory fines + reputational 
    - Containment actions taken.
 
 3. **Forensic preservation**.
-   - Snapshot relevant audit_log rows BEFORE any cleanup: `pg_dump --table audit_log --where ""timestamp" > $window_start" > /tmp/breach-audit-$timestamp.sql`.
+   - Snapshot relevant audit_log rows BEFORE any cleanup: `pg_dump --table audit_log --where '"timestamp" > '"$window_start" > /tmp/breach-audit-$timestamp.sql` (single-quote outer + injected `$window_start` keeps quoted `"timestamp"` column-name intact for Postgres while letting the shell expand the bound variable).
    - Capture Vercel access logs + Sentry traces for the relevant time window (Vercel Logs export is 7-day retention max — pull within 24h of awareness).
    - Capture Neon query logs (separate retention from app logs).
 

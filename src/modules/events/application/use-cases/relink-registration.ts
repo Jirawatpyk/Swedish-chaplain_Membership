@@ -554,16 +554,29 @@ export async function relinkRegistration(
   if (event.isPartnerBenefit) {
     if (newConsumed.partnershipConsumedForEvent < newAllotments.partnershipPerEvent) {
       nextPartnership = true;
-      // R7.W / Staff R2 R036 — symmetric Math.max guard with the
-      // credit-back branch above. The outer if-guard ensures
-      // consumed < perEvent so the subtraction is always ≥1, but the
-      // explicit Math.max(0, ...) keeps the defense-in-depth invariant
-      // visible at every allotmentAfter site (closes R19 asymmetry).
-      const allotmentAfter = Math.max(
-        0,
+      // R8.W / Staff R3 R053 — replaced silent Math.max(0, ...) with an
+      // observable invariant assertion. Outer if-guard at line 555
+      // ensures `consumed < perEvent`, so `perEvent - (consumed + 1)`
+      // is always ≥ 0. If a future guard regression flipped `<` → `<=`,
+      // the previous Math.max would silently produce `allotmentAfter:
+      // 0` — structurally indistinguishable from a legitimate
+      // `over_quota` audit row. Throwing instead surfaces the violation
+      // as an unhandled exception caught by the relink route's outer
+      // try-catch (pino-serialised) and the cron handler's per-tenant
+      // error counter, turning silent absorption into an alertable
+      // signal. Math.max removed — defense-in-depth lives at the
+      // application-level invariant boundary.
+      const naturalAllotment =
         newAllotments.partnershipPerEvent -
-          (newConsumed.partnershipConsumedForEvent + 1),
-      );
+        (newConsumed.partnershipConsumedForEvent + 1);
+      if (naturalAllotment < 0) {
+        throw new Error(
+          `F6 invariant violation (relinkRegistration / partnership scope): naturalAllotment=${naturalAllotment} ` +
+            `(perEvent=${newAllotments.partnershipPerEvent}, consumedAfter=${newConsumed.partnershipConsumedForEvent + 1}) — ` +
+            `outer if-guard at relink-registration.ts:555 should make this unreachable. Suspect guard regression.`,
+        );
+      }
+      const allotmentAfter = naturalAllotment;
       const r = await emitQuotaScopeAudit(deps.audit, baseAudit, {
         scope: 'partnership',
         action: 'decremented',
@@ -592,12 +605,20 @@ export async function relinkRegistration(
   if (event.isCulturalEvent) {
     if (newConsumed.culturalConsumedForYear < newAllotments.culturalPerYear) {
       nextCultural = true;
-      // R7.W / R036 — same defensive Math.max guard as partnership branch.
-      const allotmentAfter = Math.max(
-        0,
+      // R8.W / Staff R3 R053 — same observable invariant pattern as the
+      // partnership branch above. See the partnership-branch comment for
+      // rationale (silent Math.max → throw-on-invariant for alertability).
+      const naturalAllotment =
         newAllotments.culturalPerYear -
-          (newConsumed.culturalConsumedForYear + 1),
-      );
+        (newConsumed.culturalConsumedForYear + 1);
+      if (naturalAllotment < 0) {
+        throw new Error(
+          `F6 invariant violation (relinkRegistration / cultural scope): naturalAllotment=${naturalAllotment} ` +
+            `(perYear=${newAllotments.culturalPerYear}, consumedAfter=${newConsumed.culturalConsumedForYear + 1}) — ` +
+            `outer if-guard at relink-registration.ts:592 should make this unreachable. Suspect guard regression.`,
+        );
+      }
+      const allotmentAfter = naturalAllotment;
       const r = await emitQuotaScopeAudit(deps.audit, baseAudit, {
         scope: 'cultural',
         action: 'decremented',

@@ -2837,21 +2837,23 @@ export const eventcreateMetrics = {
    *   - Runbook `f6-match-rate-degradation-triage.md`
    */
   matchRateGauge(tenantId: string, value: number): void {
-    // R7.S / Staff R2 R043 closure — wrap `observeGauge` in
-    // `safeMetric` to match the project convention across all F6
-    // metric helpers. Failure mode previously bubbled an OTel SDK
-    // shutdown throw to the cron coordinator's per-tenant catch,
-    // which converted it to an error in the response — fine but
-    // inconsistent with the ~80 other call sites. `safeMetric`
-    // swallows + console.warns instead.
-    safeMetric(() => {
-      observeGauge(
-        'eventcreate_match_rate_gauge',
-        'F6 rolling 30-day per-tenant match rate (fraction in [0.0, 1.0]) — SC-002',
-        { tenant: tenantId },
-        Math.max(0, Math.min(1, value)),
-      );
-    });
+    // R8.W / Staff R3 R049 — reverted R043 `safeMetric` wrap. This is
+    // an asymmetric call site: the SOLE caller is the
+    // `/api/internal/observability/recompute-match-rate` cron handler,
+    // which catches the per-tenant throw and pushes it into
+    // `errors[]`. cron-job.org dashboards alert on `errors.length > 0`.
+    // `safeMetric` swallows the throw + console.warns → coordinator
+    // sees green → SLO-F6-005 (match-rate freshness) silently degrades.
+    // The other ~80 `safeMetric` call sites are non-coordinator
+    // contexts where convention-parity makes sense; this one is the
+    // exception. Direct `observeGauge` so a real OTel emit failure
+    // surfaces to cron-job.org as an alertable error.
+    observeGauge(
+      'eventcreate_match_rate_gauge',
+      'F6 rolling 30-day per-tenant match rate (fraction in [0.0, 1.0]) — SC-002',
+      { tenant: tenantId },
+      Math.max(0, Math.min(1, value)),
+    );
   },
 
   /**

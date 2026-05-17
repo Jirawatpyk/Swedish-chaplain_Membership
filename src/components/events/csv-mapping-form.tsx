@@ -257,13 +257,20 @@ export function CsvMappingForm() {
           // F6.1 `completed` envelope wraps summary at top-level.
           const rawSummary = (body['summary'] ?? body) as Omit<
             CsvImportResultPayload,
-            'recordId' | 'historyPersisted'
+            'recordId' | 'historyPersisted' | 'safetyNetFailedOpen'
           >;
           // Smart-feature S-02 (Round 1) — thread recordId from the
           // F6.1 envelope so the result card can render it for support.
           // R2-I4 (Round 2) — thread `historyPersisted` so the card can
           // render the degraded-history warning when both placeholder
           // and CR-5 recovery INSERTs failed.
+          // R8.B1 / Staff R3 R068 closure — thread `safetyNetFailedOpen`
+          // from the envelope into the summary so the
+          // "duplicate-protection unavailable" chip renders when the
+          // FR-019b safety-net query failed. Previously the form layer
+          // silently dropped this envelope field — R7's R030 wiring
+          // existed at every layer EXCEPT this one, so the chip was
+          // dead code in production.
           const summary: CsvImportResultPayload = {
             ...rawSummary,
             ...(typeof body['recordId'] === 'string'
@@ -271,6 +278,9 @@ export function CsvMappingForm() {
               : {}),
             ...(typeof body['historyPersisted'] === 'boolean'
               ? { historyPersisted: body['historyPersisted'] }
+              : {}),
+            ...(typeof body['safetyNetFailedOpen'] === 'boolean'
+              ? { safetyNetFailedOpen: body['safetyNetFailedOpen'] }
               : {}),
           };
           setPhase({ kind: 'completed', summary });
@@ -331,13 +341,19 @@ export function CsvMappingForm() {
             const partialSummary: CsvImportResultPayload = {
               ...(summary as Omit<
                 CsvImportResultPayload,
-                'recordId' | 'historyPersisted'
+                'recordId' | 'historyPersisted' | 'safetyNetFailedOpen'
               >),
               ...(typeof body['recordId'] === 'string'
                 ? { recordId: body['recordId'] }
                 : {}),
               ...(typeof body['historyPersisted'] === 'boolean'
                 ? { historyPersisted: body['historyPersisted'] }
+                : {}),
+              // R8.B1 / Staff R3 R068 — same safety-net signal on the
+              // 504 timeout extras envelope so partial-import admin
+              // retry surfaces the chip too.
+              ...(typeof body['safetyNetFailedOpen'] === 'boolean'
+                ? { safetyNetFailedOpen: body['safetyNetFailedOpen'] }
                 : {}),
             };
             setPhase({ kind: 'completed', summary: partialSummary });

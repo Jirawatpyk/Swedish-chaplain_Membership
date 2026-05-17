@@ -41,8 +41,12 @@ import { adminOnlyGuard } from '../../../integrations/eventcreate/_lib/role-viol
 
 const ROUTE = '/api/admin/events/import/history';
 
+// R8.W / Staff R3 R050 — pinned to UUID v4 (was [1-5] v1-5). v1/v3/v5
+// UUIDs in eventId/actorUserId filters would pass this gate and reach
+// `asEventId()` brand call → throw → route 500 instead of clean 400.
+// Mirrors R037 sweep on error-csv route + import route + brand.
 const UUID_V4_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const DEFAULT_PER_PAGE = 30;
 const MAX_PER_PAGE = 100;

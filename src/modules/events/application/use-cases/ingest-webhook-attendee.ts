@@ -42,12 +42,11 @@
  *
  * Security-critical use-case → 100% branch coverage target per
  * Constitution Principle II.
- */
-/**
- * R6.W / Round 5 staff-review R014 — DESIGN DEBT (F6.2 tracker):
  *
- * The `IngestWebhookAttendeeDeps.runInTenantTx` port currently accepts
- * `tenantId: string` (unbranded) — the use-case brands internally via
+ * --- Design debt (F6.2 tracker) ---
+ * R6.W / Round 5 staff-review R014 — the
+ * `IngestWebhookAttendeeDeps.runInTenantTx` port currently accepts
+ * `tenantId: string` (unbranded). The use-case brands internally via
  * `asTenantId()` at the boundary. This is inconsistent with F4/F5
  * which use `TenantId` branded type at the port level for type-system
  * enforcement of caller-side branding.
@@ -57,11 +56,14 @@
  * via `asTenantContext()` before calling, but the inconsistency adds
  * cognitive load when comparing F4/F5/F6 use-case shapes.
  *
- * Defer to F6.2: tighten this port + `CreateEventDeps.runInTenantTx` +
- * `ImportCsvDeps.runInTenantTx` to `TenantId`. Estimated effort: 3
- * sites × ~15 min = 45 min (Staff R2 R047 closure — earlier estimate
- * of "4 sites" was off-by-one; grep confirms 3 distinct files).
- * Not a Round 5/6 priority.
+ * R8.S / Staff R3 R064 + R065 — JSDoc consolidation. Scope corrected
+ * from "3 sites" → "ALL F6 unbranded `tenantId: string` port signatures
+ * (4 sites)" — earlier counts missed `ImportCsvDeps.withImportRecordsTx`
+ * at `import-csv.ts:315-317`, which has the same design-debt profile.
+ * Defer to F6.2: tighten `IngestWebhookAttendeeDeps.runInTenantTx` +
+ * `CreateEventDeps.runInTenantTx` + `ImportCsvDeps.runInTenantTx` +
+ * `ImportCsvDeps.withImportRecordsTx` to `TenantId`. Estimated effort:
+ * 4 sites × ~15 min = 60 min. Not a Round 5/6/7/8 priority.
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
