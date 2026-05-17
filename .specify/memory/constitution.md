@@ -1,6 +1,22 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.4.0 → 1.4.1  (PATCH: add canonical
+                "silent-failure prevention via observable verification"
+                pattern as a Principle VIII precedent. Triggered by F6
+                R10 retrospective recommendation #3 (post-flag-flip
+                F8 live-wired verification automated via
+                `pnpm verify:f6-f8`). The pattern was already established
+                in F4 (`check:audit-events`) + F5 (`check:multi-tenant`)
+                + F6 (`verify:f6-f8`) — this amendment promotes the
+                cross-feature pattern from convention to canonical
+                precedent so future features adopt it consistently.
+                PATCH bump: no principle is removed, renumbered, or
+                redefined; existing rules unchanged. New text is a
+                "Reusable patterns" sub-section under Principle VIII
+                documenting the precedent. Solo-maintainer substitute
+                applies — no second human reviewer available.)
+
 Version change: 1.3.1 → 1.4.0  (MINOR: SaaS pivot — add explicit
                 tenant-isolation clause to Principle I NON-NEGOTIABLE for
                 multi-tenant deployments. Triggered by the 2026-04-11
@@ -101,6 +117,18 @@ History:
                          the canonical record. The default ≥2-reviewers + no-
                          direct-push rules remain unchanged for multi-maintainer
                          projects.
+  - 1.4.1 (2026-05-18) — PATCH precedent. Principle VIII gains a "Reusable
+                         pattern — silent-failure prevention via observable
+                         verification" sub-section documenting the canonical
+                         `pnpm verify:{feature}-{downstream}` script pattern
+                         for any feature that wires a critical bridge between
+                         bounded contexts behind a feature flag (F6→F8 was
+                         the surfacing precedent; F4 `check:audit-events` +
+                         F5 `check:multi-tenant` were earlier instances of
+                         the same pattern). Triggered by F6 R10 retrospective
+                         recommendation #3. No principle removed, renumbered,
+                         or redefined; existing rules unchanged. Solo-
+                         maintainer substitute applies.
   - 1.4.0 (2026-04-11) — SaaS pivot. Chamber-OS is pivoting from single-tenant
                          SweCham deployment into a multi-tenant SaaS platform
                          serving chambers of commerce and membership
@@ -469,6 +497,39 @@ The system MUST degrade gracefully and preserve data integrity.
 **Rationale**: Membership and payment systems must be trustworthy records. Audit and
 integrity controls turn incidents from mysteries into investigations.
 
+**Reusable pattern — silent-failure prevention via observable verification** (v1.4.1
+precedent): when a feature wires a critical bridge between bounded contexts behind a
+feature flag (e.g., F6 `EventAttendeesPort` for F8 at-risk scoring), the composition-
+root swap is a silent-failure surface — if it's bypassed or misconfigured, the
+downstream feature reads from the stub forever in production without any observable
+signal. Each such bridge MUST ship with an automated verification script
+`scripts/verify-{feature}-{downstream}-live-wired.ts` invocable via
+`pnpm verify:{feature}-{downstream}` that:
+
+1. Reads the feature flag from `process.env` (via the validated `env.ts` boot cache).
+2. Mirrors the composition-root selection logic (real adapter when flag-on, stub when
+   flag-off).
+3. Calls a cheap `isAvailable()` or equivalent probe on the selected port (verifies
+   the real adapter reaches the DB; verifies the stub returns false).
+4. Asserts that port behaviour matches flag state (real adapter → available; stub →
+   unavailable). Exits non-zero on mismatch with a CRITICAL diagnostic.
+
+Precedents:
+- **F4** — `pnpm check:audit-events` validates audit event-type enum vs taxonomy
+- **F5** — `pnpm check:multi-tenant` validates RLS + tenant-binding readiness
+- **F6** — `pnpm verify:f6-f8` validates the F6→F8 EventAttendeesPort wiring
+
+Run this verification:
+- LOCALLY: post any change to the composition-root swap site.
+- POST-FLAG-FLIP: as a 2-layer protocol (Layer 1 = automated script; Layer 2 =
+  seeded-data behavioural assertion via use-case invocation). Documented per
+  feature in `ship-day-checklist.md` (e.g., F6 T154a).
+
+The pattern is OPTIONAL where no cross-feature bridge exists (e.g., a feature that
+only writes within its own bounded context). Where a bridge exists, this pattern is
+MANDATORY before flag-flip — it converts a silent-failure class into an alertable
+gate.
+
 ### IX. Code Quality Standards
 
 The codebase MUST maintain strict, automated quality gates.
@@ -727,4 +788,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.4.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-11
+**Version**: 1.4.1 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-05-18
