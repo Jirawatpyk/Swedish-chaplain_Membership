@@ -13,6 +13,9 @@ import { ok, err } from '@/lib/result';
 // `runInTenant` must be mocked BEFORE importing the use case so the
 // stub is baked into the module's closure.
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish — stub `db` to fix "No 'db' export defined on
+  // mock" collection error from F3 infra adapter import chain.
+  db: {},
   runInTenant: vi.fn(
     async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>): Promise<T> => {
       return fn({}); // empty stub tx — use case doesn't touch it directly

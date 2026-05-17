@@ -36,6 +36,9 @@ const CYCLE_UUID = '00000000-0000-0000-0000-0000000c1220';
 const NEW_PLAN_ID = 'plan-premium-2026';
 
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish — stub `db` to fix collection error from
+  // F8/infra adapter import chain ("No 'db' export defined on mock").
+  db: {},
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
     fn({} as unknown),
 }));

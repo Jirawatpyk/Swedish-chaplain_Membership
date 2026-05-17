@@ -37,6 +37,8 @@ vi.mock('@/lib/env', () => ({
 
 const txExecuteMock = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish — stub `db` to fix collection error.
+  db: {},
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
     fn({ execute: txExecuteMock }),
 }));
