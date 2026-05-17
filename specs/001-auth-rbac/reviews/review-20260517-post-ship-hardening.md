@@ -314,9 +314,9 @@ This review was paired with **24 tracked tasks** (TaskCreate IDs 1-24) covering:
 |---|---|---|---|
 | **A** Critical | A1 - A7 (Task IDs 1-7) | Code + UX critical paths; no migration | ✅ All 7 closed |
 | **B** Important | B1 - B11 (Task IDs 8-18) | Code + i18n + new audit events (with migration 0158) | ✅ All 11 closed |
-| **C** Polish | C1, C3 (Task IDs 19, 21) | Comment rot + simplify pass | ✅ 2 of 3 closed |
-| **C-DEFER** | C2 (Task ID 20) | Per-purpose token brands | 🟠 Deferred — see § D-DEFER pairing |
+| **C** Polish | C1, C2, C3 (Task IDs 19, 20, 21) | Comment rot + per-purpose token brands + simplify pass | ✅ All 3 closed (C2 closed by **E1** below) |
 | **D** Verification | D1 - D3 (Task IDs 22-24) | lint + typecheck + integration (live Neon) + i18n parity | ✅ All 3 closed |
+| **E** Deferred closure | E1 - E7 (Task IDs 25-31) | C2 + D-DEFER paired closure | ✅ All 7 closed in commit `16f8006b` |
 
 Execution was performed on the `012-eventcreate-integration` working tree, isolated to F1 files (zero overlap with in-progress F6 modifications). 7 commits with `chore(F1):` prefix:
 
@@ -382,6 +382,14 @@ Specific assertion bumps:
 
 **Verdict**: 🟢 **Ready for staff-review co-sign**. Pre-flag-flip operator gates (manual SR walkthrough, reduced-motion E2E, cross-browser staging traces) remain on the existing F1 ship checklist — none are introduced or worsened by this batch.
 
-Two items deferred to a follow-up PR with explicit rationale:
-1. **C2** (per-purpose token brands) — scope ~12 files; pairs naturally with D-DEFER.
-2. **D-DEFER** (plaintext token + session-ID storage as DB PK) — production-breaking; requires maintenance window + comms.
+**Update 2026-05-17 (later same session)** — both originally-deferred items closed in commit `16f8006b`:
+
+1. **C2** (per-purpose token brands) — closed as **E1**. `ResetTokenId`, `InvitationTokenId`, `EmailVerificationTokenHash`, `EmailRevertTokenHash` added to `branded.ts` with constructor functions; route handlers apply the correct brand at the trust boundary.
+2. **D-DEFER** (plaintext token + session-ID storage as DB PK) — closed as **E2 + E3**. `tokenRepo` and `sessionRepo` now store `sha256Hex(plaintext)` as the row id and return the plaintext separately on `create`. Lookup methods accept plaintext and hash internally before SQL.
+
+Migration 0159 TRUNCATEs `sessions` + `password_reset_tokens` and deletes unconsumed `invitations` (the cannot-reverse-hash cliff). Operationally trivial at SweCham scale; documented in the migration header.
+
+Phase E verification:
+- 1167/1167 unit + contract green; 59/59 auth integration on live Neon; 91/91 middleware + audit integration; 2895 i18n keys; lint + typecheck clean.
+
+F1 is now at full defence-in-depth parity with F3's hash-at-rest pattern. **Zero outstanding items from this review** — all 24 original tasks + 2 originally-deferred items closed.
