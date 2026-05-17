@@ -108,17 +108,31 @@ const MATCH_TYPES = [
 import type { MATCH_TYPES as RealMatchTypes } from '@/modules/events';
 const _matchTypesDriftAnchor: typeof RealMatchTypes = MATCH_TYPES;
 void _matchTypesDriftAnchor;
-vi.mock('@/modules/events', () => ({
-  MATCH_TYPES,
-  isMatchType: (v: unknown): v is (typeof MATCH_TYPES)[number] =>
-    typeof v === 'string' &&
-    (MATCH_TYPES as readonly string[]).includes(v),
-  // F1 fix: stub makeStandaloneAuditDeps so the route's audit emit
-  // path is observable (FR-035 mandate) without hitting a real DB.
-  makeStandaloneAuditDeps: () => ({
-    emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
-  }),
-}));
+vi.mock('@/modules/events', async () => {
+  // Re-export everything from the real `@/modules/events` barrel so
+  // unrelated downstream consumers (e.g. F8 renewals-deps imports
+  // `drizzleEventAttendeesAdapter` from this same barrel) don't fail
+  // with "No 'X' export is defined on the mock". Override ONLY the
+  // surfaces this test needs to control — `makeStandaloneAuditDeps`
+  // so audit-emit is observable without hitting a real DB. The
+  // `MATCH_TYPES` + `isMatchType` overrides preserve the
+  // _matchTypesDriftAnchor pin above.
+  const real = await vi.importActual<typeof import('@/modules/events')>(
+    '@/modules/events',
+  );
+  return {
+    ...real,
+    MATCH_TYPES,
+    isMatchType: (v: unknown): v is (typeof MATCH_TYPES)[number] =>
+      typeof v === 'string' &&
+      (MATCH_TYPES as readonly string[]).includes(v),
+    // F1 fix: stub makeStandaloneAuditDeps so the route's audit emit
+    // path is observable (FR-035 mandate) without hitting a real DB.
+    makeStandaloneAuditDeps: () => ({
+      emitStandalone: (...args: unknown[]) => emitStandaloneMock(...args),
+    }),
+  };
+});
 
 // Mock the composition adapter (route handler's only DB seam) so no
 // Drizzle pool / Neon connection is required. The `run*` wrappers stub

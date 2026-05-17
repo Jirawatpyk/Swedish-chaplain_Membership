@@ -1,1 +1,32 @@
+# Pre-push guards — kept fast (~30 sec total) so the dev loop stays
+# tight. Heavier suites (full contract, integration, e2e, coverage) run
+# in CI only.
+#
+# Rationale per check (all derived from 2026-05-17 polish retrospective):
+#
+#   - check:layout    : single-page → single-container invariant
+#                       (Spec §FR-007 CLS-0). Cheap (~1 sec).
+#
+#   - check:fixme     : zero test.fixme + bare test.skip in
+#                       tests/e2e + tests/contract. Closes the
+#                       F4-ship-with-fixmes regression net erosion
+#                       class. Cheap (~1 sec).
+#
+#   - vitest payments contract : F5R3 H-5 contract drift class —
+#                       webhook Result<T,E> envelope +
+#                       WebhookSignatureError mock importActual.
+#                       Catches surface promise changes BEFORE merge.
+#                       ~12 sec on Neon Singapore.
+#
+#   - vitest architecture     : Principle III Clean-Architecture
+#                       barrel guard — events module barrel rule
+#                       (e815caa9 F6 Phase 10 leaked raw infra).
+#                       ~10 sec.
+#
+# Other tests/contract/* dirs (auth, broadcasts, events, members,
+# plans, portal, renewals) run in full CI only — they're stable
+# surfaces with no recent drift class to guard against in pre-push.
+
 pnpm check:layout
+pnpm check:fixme
+pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
