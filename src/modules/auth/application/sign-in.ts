@@ -52,6 +52,7 @@ import type { Session } from '@/modules/auth/domain/session';
 // concrete Infrastructure singletons into its own module graph.
 // Default wiring lives in the composition root (@/lib/auth-deps).
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -275,8 +276,32 @@ async function signInImpl(
     return err({ code: 'account-locked', retryAfterSeconds: retryAfter });
   }
 
-  // 5. Verify password
-  const passwordOk = await deps.hasher.verify(passwordHash, input.password);
+  // 5. Verify password (B4 — catch MalformedHashError separately so a
+  //    DB-corruption issue doesn't lockout the legitimate user).
+  let passwordOk: boolean;
+  try {
+    passwordOk = await deps.hasher.verify(passwordHash, input.password);
+  } catch (verifyError) {
+    if (verifyError instanceof MalformedHashError) {
+      // Emit dedicated audit so operators see the corruption signal
+      // cleanly, without polluting the wrong-password baseline. Skip
+      // incrementFailedCount + setLocked — the user did not type the
+      // wrong password; their stored hash is broken. Surface the
+      // standard invalid-credentials response so callers can prompt
+      // them to use the password-reset flow (which will overwrite
+      // the malformed hash).
+      await deps.audit.append({
+        eventType: 'password_malformed_hash_detected',
+        actorUserId: user.id,
+        targetUserId: user.id,
+        sourceIp: input.sourceIp,
+        summary: 'stored password hash is malformed — user blocked from sign-in',
+        requestId: input.requestId,
+      });
+      return err({ code: 'invalid-credentials' });
+    }
+    throw verifyError;
+  }
 
   if (!passwordOk) {
     const newCount = await deps.users.incrementFailedCount(user.id);

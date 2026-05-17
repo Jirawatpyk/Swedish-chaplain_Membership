@@ -265,6 +265,16 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     for the route's permanent-failure 200-ack path). Both 5y. ---
   'refund_amount_mismatch_detected',
   'webhook_dispatch_permanent_failure',
+  // --- B5 (migration 0158, post-ship 2026-05-17) — three new F1
+  //     operational events closing silent-failure gaps:
+  //       password_change_failed       — wrong-current-password trail
+  //       password_reset_email_failed  — Resend exhaustion trail
+  //       password_malformed_hash_detected — argon2 corruption trail
+  //     Five-year default retention via audit_log.retention_years.
+  //     See review-20260517-post-ship-hardening.md § B5.
+  'password_change_failed',
+  'password_reset_email_failed',
+  'password_malformed_hash_detected',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

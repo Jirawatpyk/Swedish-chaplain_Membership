@@ -1,16 +1,35 @@
 /**
  * Authentication audit event types (data-model.md § 2.7, spec User Story 7).
  *
- * 17 event types total — every user-visible auth action emits exactly
- * one row in `audit_log` (T067 audit-repo.append). The list is the
- * single source of truth and is duplicated in the Postgres enum
- * `audit_event_type` (schema.ts § auditEventTypeEnum) — keep in sync.
+ * Every user-visible auth action emits exactly one row in `audit_log`
+ * (T067 audit-repo.append). This array is the single source of truth
+ * and is duplicated in the Postgres enum `audit_event_type`
+ * (schema.ts § auditEventTypeEnum) — keep in sync via migrations.
  *
- * Pass 5: bumped 16 → 17 after splitting `password_reset_failed`
- * out of the `invitation_redemption_failed` overload. See
- * `drizzle/migrations/0002_add_password_reset_failed_audit.sql`.
+ * NOTE: not every payment- or webhook-related lifecycle event flows
+ * through F1's `audit_log` enum. F5 + F7 + F8 declare their own
+ * tenant-scoped audit-port event taxonomies; only F5 route-level
+ * events (signature reject, env mismatch, etc.) are registered here
+ * because the route handlers call `auditRepo.append` directly without
+ * a port boundary. See the inline comments below.
  *
  * Pure types — no framework imports.
+ *
+ * Provenance:
+ *   - Pass 5: split `password_reset_failed` out of the
+ *     `invitation_redemption_failed` overload (migration 0002).
+ *   - 2026-04-25 audit-finding #10 + #13: added
+ *     `webhook_unknown_intent` + `webhook_payment_already_canceled`
+ *     (migration 0046).
+ *   - Review I-14: added `payment_processor_retrieve_failed`
+ *     (migration 0047).
+ *   - Review S5: added `payment_invoice_not_found` (migration 0048).
+ *   - F5R2-C2: added `webhook_dispatch_permanent_failure`
+ *     (migration 0151).
+ *   - B5 (post-ship 2026-05-17): added three operational events for
+ *     wrong-current-password, malformed-hash detection, and
+ *     password-reset email send failures. See migration 0nnn (TBD)
+ *     and the rationale comments inline below.
  */
 
 import type { AuditEventId, UserId } from './branded';
@@ -60,6 +79,26 @@ export const AUDIT_EVENT_TYPES = [
   //     200-ack forensic trail. 5y retention. Honours the
   //     process-webhook-event.ts:156 docstring promise.
   'webhook_dispatch_permanent_failure',
+  // --- B5 (post-ship 2026-05-17, migration 0nnn) ---
+  // `password_change_failed` — emitted on the wrong-current-password
+  //   branch in change-password.ts. Pre-B5 this branch only logged at
+  //   warn and incremented authMetrics; an attacker with a stolen
+  //   session cookie probing the user's password had ZERO audit-trail
+  //   footprint. (silent-failure C5 in review-20260517).
+  'password_change_failed',
+  // `password_reset_email_failed` — emitted by forgot-password when the
+  //   Resend retry loop exhausts. Pre-B5 the failure was logger.error
+  //   only, leaving audit trail looking as if the email had been sent.
+  //   Closes silent-failure C4.
+  'password_reset_email_failed',
+  // `password_malformed_hash_detected` — emitted by sign-in when the
+  //   argon2 verify catches a malformed-hash error. Pre-B5 this fell
+  //   through to wrong-password + incrementFailedCount, locking the
+  //   account out for what is actually a DB-corruption issue. The
+  //   dedicated event lets operators page in on the metric without
+  //   confusing the legitimate-user-typed-wrong-password baseline.
+  //   Closes silent-failure H4 / B4.
+  'password_malformed_hash_detected',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

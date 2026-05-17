@@ -179,6 +179,19 @@ export async function forgotPassword(
       },
       'forgot_password.email_send_failed',
     );
+    // B5 — dedicated audit event so the trail records the failure
+    // alongside the password_reset_requested row below. Pre-B5 the
+    // audit trail read "request issued + presumed email sent" when
+    // Resend retries had actually exhausted — operators investigating
+    // "I never got the email" had no audit link to the cause.
+    await deps.audit.append({
+      eventType: 'password_reset_email_failed',
+      actorUserId: user.id,
+      targetUserId: user.id,
+      sourceIp: input.sourceIp,
+      summary: `Resend exhausted: ${sendResult.error.code}`,
+      requestId: input.requestId,
+    });
   }
 
   // 6. Audit (only for existing active accounts)

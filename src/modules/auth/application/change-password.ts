@@ -143,6 +143,19 @@ export async function changePassword(
       { userIdHash: hashId(input.user.id), requestId: input.requestId },
       'change_password.wrong_current',
     );
+    // B5 — audit emit on wrong-current. Pre-B5 the failure was
+    // logger.warn only — an attacker probing the user's password to
+    // elevate via /change-password had zero audit-trail footprint.
+    // Auto-swallow contract (A1) means a Neon hiccup here can't
+    // mask the user-facing error path.
+    await deps.audit.append({
+      eventType: 'password_change_failed',
+      actorUserId: input.user.id,
+      targetUserId: input.user.id,
+      sourceIp: input.sourceIp,
+      summary: 'wrong current password on /change-password',
+      requestId: input.requestId,
+    });
     return err({ code: 'wrong-current-password' });
   }
 

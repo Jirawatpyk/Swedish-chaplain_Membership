@@ -31,6 +31,25 @@ import {
 } from '@/modules/auth/domain/branded';
 import { logger } from '@/lib/logger';
 
+/**
+ * B4 (post-ship 2026-05-17) — typed error thrown by `verify` when the
+ * stored hash is malformed (corrupted row, legacy format, encoding
+ * drift). Distinct from a return-value `false` (which means the user
+ * typed the wrong password). Sign-in catches this specifically to
+ * skip the `incrementFailedCount` + lockout-trigger path — otherwise
+ * a DB corruption issue would lock the legitimate user out and the
+ * audit trail would read "user kept entering wrong password",
+ * misleading operators.
+ */
+export class MalformedHashError extends Error {
+  override readonly cause: unknown;
+  constructor(cause: unknown) {
+    super('argon2 verify: malformed hash');
+    this.name = 'MalformedHashError';
+    this.cause = cause;
+  }
+}
+
 // `@node-rs/argon2` exports `Algorithm` as an ambient const enum which
 // trips Next.js' `isolatedModules: true`. We use the literal value:
 //   Argon2d  = 0
@@ -82,19 +101,18 @@ class Argon2Hasher implements PasswordHasher {
     try {
       return await verify(hashed, plaintext);
     } catch (error) {
-      // verify throws if the hash string is malformed (corrupted DB row,
-      // legacy format). Log at WARN so ops has a diagnostic trail for
-      // "user can't sign in even with right password" incidents, then
-      // treat as authentication failure rather than crashing the server.
-      //
-      // Logger is imported statically at module top: previously used a
-      // dynamic `import('@/lib/logger')` to avoid a possible circular
-      // dependency, but pino has no back-edge to this file, so the
-      // dynamic import was unnecessary cost + a small risk that a
-      // module-init error in logger would swallow the original error
-      // via a secondary throw.
-      logger.warn({ err: error }, 'argon2.verify.malformed_hash');
-      return false;
+      // B4 (post-ship 2026-05-17) — promote the malformed-hash signal
+      // to a typed error so the caller (sign-in) can skip the
+      // failedSignInCount + lockout path. Pre-B4 this branch swallowed
+      // the error and returned false, which made the sign-in flow
+      // take the wrong-password branch — eventually locking the
+      // legitimate user out because of a DB-corruption issue, with an
+      // audit trail that misled operators into thinking the user
+      // kept typing wrong passwords. Log at ERROR (not WARN) so it
+      // crosses the default alerting threshold; the audit event in
+      // sign-in completes the 5-year forensic trail.
+      logger.error({ err: error }, 'argon2.verify.malformed_hash');
+      throw new MalformedHashError(error);
     }
   }
 
