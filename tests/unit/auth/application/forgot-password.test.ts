@@ -191,4 +191,89 @@ describe('forgotPassword — B5 password_reset_email_failed emit', () => {
     expect(result.ok).toBe(true);
     expect(deps.audit.append).not.toHaveBeenCalled();
   });
+
+  // ── O8 (Round 3) — rate-limit branches ────────────────────────────
+  // The integration test (`password-reset.test.ts`) exercises the
+  // happy + email-failure paths. These two unit cases pin the
+  // rate-limit branches so a refactor that drops the IP-bucket drain
+  // or skips the limiter check fails CI fast (vs minutes on live
+  // Neon + Upstash).
+
+  it('malformed email drains the IP bucket and returns ok without email send', async () => {
+    const limiterCheck = vi
+      .fn()
+      .mockResolvedValue({ success: true, reset: Date.now() + 3_600_000 });
+    const emailSend = vi.fn();
+    const deps = makeDeps({
+      limiter: {
+        check: limiterCheck,
+        peek: vi.fn(),
+      } as unknown as ForgotPasswordDeps['limiter'],
+      email: { send: emailSend } as unknown as ForgotPasswordDeps['email'],
+    });
+
+    const result = await forgotPassword(
+      {
+        // not a valid email-address brand
+        email: 'not-an-email',
+        sourceIp: '203.0.113.99',
+        requestId: 'req-malformed',
+      },
+      deps,
+    );
+
+    // Enumeration safety — still ok.
+    expect(result.ok).toBe(true);
+
+    // IP bucket WAS drained (exactly once, with the IP key).
+    expect(limiterCheck).toHaveBeenCalledTimes(1);
+    expect(limiterCheck).toHaveBeenCalledWith(
+      'forgot:ip:203.0.113.99',
+      10,
+      60 * 60,
+    );
+
+    // No email lookup, no email send, no audit emit.
+    expect(emailSend).not.toHaveBeenCalled();
+    expect(deps.audit.append).not.toHaveBeenCalled();
+  });
+
+  it('returns rate-limited when the IP bucket is exhausted', async () => {
+    const resetAt = Date.now() + 7200_000;
+    const limiterCheck = vi
+      .fn()
+      // First call (email bucket) succeeds, second call (IP bucket)
+      // exhausted.
+      .mockResolvedValueOnce({ success: true, reset: resetAt })
+      .mockResolvedValueOnce({ success: false, reset: resetAt });
+    const emailSend = vi.fn();
+    const deps = makeDeps({
+      limiter: {
+        check: limiterCheck,
+        peek: vi.fn(),
+      } as unknown as ForgotPasswordDeps['limiter'],
+      email: { send: emailSend } as unknown as ForgotPasswordDeps['email'],
+    });
+
+    const result = await forgotPassword(
+      {
+        email: FAKE_EMAIL,
+        sourceIp: '203.0.113.99',
+        requestId: 'req-ip-exhausted',
+      },
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('rate-limited');
+    expect(result.error.retryAfterSeconds).toBeGreaterThan(0);
+
+    // Limiter called twice (email + IP); user lookup + email send NOT
+    // called (early-return short-circuit preserves Resend quota when
+    // the bucket says no).
+    expect(limiterCheck).toHaveBeenCalledTimes(2);
+    expect(emailSend).not.toHaveBeenCalled();
+    expect(deps.audit.append).not.toHaveBeenCalled();
+  });
 });

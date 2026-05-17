@@ -19,6 +19,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -30,8 +31,9 @@ import {
   estimatePasswordStrength,
 } from './password-strength';
 
-// H2 (Round 2) — schema built inside component so Zod error messages
-// translate per locale.
+// H2 + O1 (Round 2/3) — schema built inside component via shared
+// `refinePasswordPair` helper (invite uses `password` not
+// `newPassword` so the field name override is passed explicitly).
 type FormValues = {
   displayName: string;
   password: string;
@@ -42,16 +44,15 @@ function buildSchema(
   tooShort: string,
   passwordMismatch: string,
 ): z.ZodType<FormValues> {
-  return z
-    .object({
+  return refinePasswordPair(
+    z.object({
       displayName: z.string().min(1).max(120),
       password: z.string().min(12, tooShort).max(256),
       confirmPassword: z.string(),
-    })
-    .refine((data) => data.password === data.confirmPassword, {
-      path: ['confirmPassword'],
-      message: passwordMismatch,
-    });
+    }),
+    passwordMismatch,
+    'password',
+  ) as unknown as z.ZodType<FormValues>;
 }
 
 export interface InviteRedeemFormProps {

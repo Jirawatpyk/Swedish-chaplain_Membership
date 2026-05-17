@@ -617,12 +617,26 @@ describe('signIn use case', () => {
     expect(incrementSpy).not.toHaveBeenCalled();
     expect(setLockedSpy).not.toHaveBeenCalled();
 
+    // O6 (Round 3) — verifyDummy MUST NOT be called either. The
+    // malformed-hash branch is purely a peek-detect-and-skip path:
+    // we already KNOW the user exists (we just loaded their row)
+    // and the hash is broken, so spending the argon2 cost to feign
+    // a constant-time path is pointless + slows the request.
+    const hasherMock = deps.hasher as unknown as {
+      verifyDummy: ReturnType<typeof vi.fn>;
+    };
+    expect(hasherMock.verifyDummy).not.toHaveBeenCalled();
+
     // Dedicated audit event emitted
     expect(auditSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'password_malformed_hash_detected',
         actorUserId: targetUser.id,
         targetUserId: targetUser.id,
+        // O6 (Round 3) — pin that the summary surfaces the
+        // operator-relevant signal so an alert on "malformed" in
+        // the audit_log.summary column reliably fires.
+        summary: expect.stringContaining('malformed'),
       }),
     );
   });

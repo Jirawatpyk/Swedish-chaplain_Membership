@@ -68,7 +68,7 @@ export async function heartbeat(
   input: HeartbeatInput,
   deps: HeartbeatDeps = defaultHeartbeatDeps,
 ): Promise<Result<HeartbeatSuccess, HeartbeatError>> {
-  // F1 (Round 2 C1, 2026-05-17) — hash the session id before composing
+  // Round 2 (post-ship review § C1, 2026-05-17) — hash the session id before composing
   // the rate-limit key. Pre-fix the plaintext bearer credential was
   // stored verbatim inside Upstash Redis as part of the bucket key,
   // shifting (not closing) the E3 hash-at-rest blast radius from

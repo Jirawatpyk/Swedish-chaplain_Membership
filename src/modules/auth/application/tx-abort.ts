@@ -24,11 +24,10 @@
  *
  * Mirrors `src/modules/members/application/tx-abort.ts` (F3 pattern).
  *
- * Originally named `CreateUserAbort` (for the F1 create-user Path C
- * refactor `984ee140`). Renamed to `TxAbort` when `redeem-invite` and
- * `reset-password` adopted the same pattern in `chore(F1)` post-ship
- * hardening. The original name is re-exported as a deprecated alias so
- * existing imports (sign-in.ts, tests) continue to work.
+ * Originally named `CreateUserAbort` (F1 create-user Path C refactor —
+ * F1 PR #1 post-ship hardening). Renamed to `TxAbort` when redeem-invite
+ * and reset-password adopted the same pattern. The deprecated alias was
+ * removed at O9 (Round 3) after verifying zero call-site references.
  */
 export class TxAbort<E> extends Error {
   constructor(public readonly error: E) {
@@ -36,7 +35,3 @@ export class TxAbort<E> extends Error {
     this.name = 'TxAbort';
   }
 }
-
-/** @deprecated Use {@link TxAbort} — name kept for backwards compat. */
-export const CreateUserAbort = TxAbort;
-export type CreateUserAbort<E> = TxAbort<E>;

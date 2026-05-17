@@ -12,12 +12,25 @@
  *
  * **Never-throws contract** — both `append` and `appendInTx` catch any
  * DB error and degrade to `logger.error` + `authMetrics.auditMissing`.
- * The append-only audit row is diagnostic; the upstream mutation has
- * already committed (or, for `appendInTx`, the surrounding caller-owned
- * tx will still commit if the audit insert is the LAST step and we
- * swallow). Constitution Principle VIII authorises this trade-off:
- * losing an audit row to a transient Neon hiccup is preferable to
- * masking a successful user-facing action behind a 500.
+ * The append-only audit row is diagnostic.
+ *
+ * For `append` (top-level db) the upstream mutation has already
+ * committed, so swallowing here is unambiguously safe — the audit
+ * row is the only thing lost.
+ *
+ * For `appendInTx` the situation is more nuanced (N2 Round 3 — was
+ * previously documented as "tx still commits if audit is last step"
+ * which is technically false): when Postgres throws inside an active
+ * transaction, the tx enters `ABORT` state. Every subsequent
+ * statement AND the COMMIT itself will fail. We swallow the JS-level
+ * throw locally so it does NOT bubble to the caller, but the
+ * surrounding tx is poisoned. Callers MUST place the audit emit as
+ * the LAST statement before the caller's COMMIT — any later
+ * statement WILL fail. Verified by ordering in create-user.ts,
+ * redeem-invite.ts, reset-password.ts (audit row is always the
+ * final tx-step). The audit loss happens together with a full
+ * roll-back of the surrounding state-change, which is a safe
+ * fail-closed outcome consistent with Constitution Principle VIII.
  *
  * Tests pin both behaviours:
  *   tests/unit/auth/infrastructure/audit-repo-never-throws.test.ts
@@ -68,7 +81,7 @@ export interface AuditRepo {
 
 /**
  * Shared row-builder — keeps the truncation policy + field mapping in
- * one place so `append` and `appendInTx` cannot drift (S2 review).
+ * one place so `append` and `appendInTx` cannot drift (DRY).
  */
 function buildAuditRow(event: AppendAuditEvent) {
   const summary =

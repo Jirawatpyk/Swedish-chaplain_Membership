@@ -181,4 +181,18 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
 
     expect(res.status).toBe(409);
   });
+
+  // N4 (Round 3) — B3 outer try/catch.
+  it('500 with requestId when change-role throws (infra error)', async () => {
+    const { assertRoute500WithRequestId } = await import(
+      './_helpers/assert-route-500'
+    );
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    changeRoleMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
+
+    const { POST } = await import('@/app/api/auth/users/[id]/role/route');
+    const res = await POST(makeRequest({ newRole: 'manager' }), { params: routeParams });
+
+    await assertRoute500WithRequestId(res);
+  });
 });

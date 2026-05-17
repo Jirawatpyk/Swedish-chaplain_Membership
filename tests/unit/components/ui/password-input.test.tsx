@@ -11,7 +11,7 @@
  *   - hit-target 44×44 (via w-11 h-full className)
  *   - ref forwards to underlying input (for react-hook-form `register`)
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useRef } from 'react';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -35,7 +35,15 @@ function renderWithIntl(ui: React.ReactNode) {
 }
 
 describe('PasswordInput primitive', () => {
-  afterEachCleanup();
+  // O4 (Round 3) — standard `afterEach` from vitest. The earlier
+  // `afterEachCleanup()` helper + `declare` fallback was a workaround
+  // for a perceived global-types gap; `vitest.config.ts:globals=true`
+  // already exposes afterEach but we import it explicitly to keep
+  // TS happy without needing the ambient declaration.
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
 
   it('renders an input with type="password" by default', () => {
     renderWithIntl(<PasswordInput id="pw" defaultValue="" />);
@@ -110,12 +118,3 @@ describe('PasswordInput primitive', () => {
   });
 });
 
-// vitest doesn't auto-cleanup between tests in the same file by default
-// when using @testing-library/react in a worker; explicit cleanup.
-function afterEachCleanup() {
-  afterEach(() => {
-    cleanup();
-    vi.clearAllMocks();
-  });
-}
-declare function afterEach(fn: () => void): void;

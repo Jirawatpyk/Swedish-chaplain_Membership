@@ -103,4 +103,14 @@ describe('POST /api/auth/forgot-password', () => {
       expect.objectContaining({ locale: 'th' }),
     );
   });
+
+  // N4 (Round 3) — B3 outer try/catch.
+  it('500 with requestId when forgot-password throws (infra error)', async () => {
+    const { assertRoute500WithRequestId } = await import(
+      './_helpers/assert-route-500'
+    );
+    forgotMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
+    const response = await POST(makeRequest({ email: 'jane@example.com' }));
+    await assertRoute500WithRequestId(response);
+  });
 });

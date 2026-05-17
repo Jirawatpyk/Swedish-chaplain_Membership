@@ -167,4 +167,17 @@ describe('POST /api/auth/reset-password', () => {
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('300');
   });
+
+  // N4 (Round 3) — B3 outer try/catch surfaces infra throws as
+  // structured 500 + requestId.
+  it('500 with requestId when reset-password throws (infra error)', async () => {
+    const { assertRoute500WithRequestId } = await import(
+      './_helpers/assert-route-500'
+    );
+    resetMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
+    const response = await POST(
+      makeRequest({ token: VALID_TOKEN, newPassword: 'AnotherStrong!2026' }),
+    );
+    await assertRoute500WithRequestId(response);
+  });
 });

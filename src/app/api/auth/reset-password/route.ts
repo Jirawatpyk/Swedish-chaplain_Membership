@@ -10,14 +10,11 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import {
-  resetPassword,
-  parseResetTokenId,
-  MalformedTokenError,
-} from '@/modules/auth';
+import { resetPassword, parseResetTokenId } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { parseTokenOrLinkInvalid } from '@/lib/auth-route-helpers';
 
 const inputSchema = z.object({
   token: z.string().min(32).max(128),
@@ -46,25 +43,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // I3 (Round 2) — parse instead of cast: validates 64-hex at the
-  // trust boundary so a malformed URL gets a uniform 410 link-invalid
-  // instead of silently never matching in the repo sha256Hex lookup.
-  let parsedToken;
-  try {
-    parsedToken = parseResetTokenId(parsed.data.token);
-  } catch (parseErr) {
-    if (parseErr instanceof MalformedTokenError) {
-      logger.warn(
-        { requestId, reason: 'malformed-token' },
-        'reset-password.link-invalid',
-      );
-      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
-    }
-    throw parseErr;
-  }
+  // I3 (Round 2) + O3 (Round 3) — parse-or-link-invalid via shared
+  // helper. Validates 64-hex at the trust boundary so a malformed URL
+  // gets a uniform 410 link-invalid instead of silently never matching
+  // in the repo sha256Hex lookup.
+  const parsedTokenResult = parseTokenOrLinkInvalid(
+    parseResetTokenId,
+    parsed.data.token,
+    { requestId, routeName: 'reset-password' },
+  );
+  if (!parsedTokenResult.ok) return parsedTokenResult.response;
 
   const result = await resetPassword({
-    token: parsedToken,
+    token: parsedTokenResult.value,
     newPassword: parsed.data.newPassword,
     sourceIp: getClientIp(request),
     requestId,

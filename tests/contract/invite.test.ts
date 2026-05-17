@@ -146,4 +146,18 @@ describe('POST /api/auth/invite', () => {
     const body = await response.json();
     expect(body.error).toBe('email-taken');
   });
+
+  // N4 (Round 3) — B3 outer try/catch.
+  it('500 with requestId when invite throws (infra error)', async () => {
+    const { assertRoute500WithRequestId } = await import(
+      './_helpers/assert-route-500'
+    );
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    createUserMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
+
+    const response = await POST(
+      makeRequest({ email: 'new@swecham.test', role: 'manager' }),
+    );
+    await assertRoute500WithRequestId(response);
+  });
 });

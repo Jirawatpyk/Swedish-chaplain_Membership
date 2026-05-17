@@ -348,6 +348,80 @@ describe('changePassword use case', () => {
     expect(auditCalls).not.toContain('concurrent_sessions_revoked');
   });
 
+  // ── N1 (Round 3): MalformedHashError branch ─────────────────────────────
+  // When the stored hash is corrupted, change-password MUST:
+  //   1. NOT consume the rate-limit bucket (peek already passed; this
+  //      is not a wrong-current event)
+  //   2. NOT increment any failed-count (change-password has no
+  //      failed-count, but limiter.check is the equivalent)
+  //   3. Emit `password_malformed_hash_detected` audit (operator signal)
+  //   4. Return `wrong-current-password` (UX consistent with sign-in's
+  //      invalid-credentials — user can use /forgot-password to fix)
+  // Pre-F3 the throw bubbled to the route's B3 catch → opaque 500 +
+  // zero audit trail.
+  it('MalformedHashError: skips lockout + emits dedicated audit + returns wrong-current', async () => {
+    const { MalformedHashError } = await import(
+      '@/modules/auth/infrastructure/password/argon2-hasher'
+    );
+    const auditSpy = vi.fn().mockResolvedValue(undefined);
+    const checkSpy = vi.fn().mockResolvedValue({
+      success: true,
+      reset: Date.now() + 900_000,
+    });
+    const peekSpy = vi.fn().mockResolvedValue({
+      success: true,
+      reset: Date.now() + 900_000,
+    });
+    const deps = makeDeps({
+      hasher: {
+        verify: vi.fn().mockRejectedValue(
+          new MalformedHashError(new Error('argon2: invalid encoded hash')),
+        ),
+        hash: vi.fn(),
+      } as unknown as ChangePasswordDeps['hasher'],
+      audit: { append: auditSpy } as unknown as ChangePasswordDeps['audit'],
+      limiter: {
+        peek: peekSpy,
+        check: checkSpy,
+      } as unknown as ChangePasswordDeps['limiter'],
+    });
+
+    const result = await changePassword(BASE_INPUT, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('wrong-current-password');
+
+    // peek ran (gate), check did NOT (bucket only debits on real
+    // wrong-current, not on DB-corruption malformed-hash)
+    expect(peekSpy).toHaveBeenCalledTimes(1);
+    expect(checkSpy).not.toHaveBeenCalled();
+
+    // Dedicated audit event emitted
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'password_malformed_hash_detected',
+        actorUserId: USER_ID,
+        targetUserId: USER_ID,
+      }),
+    );
+  });
+
+  it('MalformedHashError: re-throws non-malformed verify errors', async () => {
+    const deps = makeDeps({
+      hasher: {
+        verify: vi
+          .fn()
+          .mockRejectedValue(new Error('argon2: native module crashed')),
+        hash: vi.fn(),
+      } as unknown as ChangePasswordDeps['hasher'],
+    });
+
+    await expect(changePassword(BASE_INPUT, deps)).rejects.toThrow(
+      'argon2: native module crashed',
+    );
+  });
+
   // ── Correct wiring of calls ────────────────────────────────────────────────
   it('calls setPasswordHash with the new hash and now timestamp', async () => {
     const deps = makeDeps();

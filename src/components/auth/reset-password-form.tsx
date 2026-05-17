@@ -22,6 +22,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,23 +34,19 @@ import {
 } from './password-strength';
 
 // H2 (Round 2) — schema built inside the component so error messages
-// translate per locale. Pre-fix the Zod messages were hardcoded EN
-// and TH/SV users saw English on client-side validation failures.
+// translate per locale. O1 (Round 3) — extracted to src/lib/zod-i18n.ts
+// for reuse across 3 forms; N6 dev-mode guard now catches translation
+// drift even before check:i18n CI runs.
 type FormValues = { newPassword: string; confirmPassword: string };
 
 function buildSchema(
   tooShort: string,
   passwordMismatch: string,
 ): z.ZodType<FormValues> {
-  return z
-    .object({
-      newPassword: z.string().min(12, tooShort).max(256),
-      confirmPassword: z.string(),
-    })
-    .refine((data) => data.newPassword === data.confirmPassword, {
-      path: ['confirmPassword'],
-      message: passwordMismatch,
-    });
+  return refinePasswordPair(
+    z.object(passwordPairFields(tooShort)),
+    passwordMismatch,
+  ) as unknown as z.ZodType<FormValues>;
 }
 
 export interface ResetPasswordFormProps {

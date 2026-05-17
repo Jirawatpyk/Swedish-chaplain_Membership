@@ -120,7 +120,8 @@ export async function changePassword(
     return err({ code: 'wrong-current-password' });
   }
 
-  // 3. Verify current password. F3 (Round 2 HIGH1, 2026-05-17) — catch
+  // 3. Verify current password. Round 2 (post-ship review § E-HIGH1
+  //    silent-failure, 2026-05-17) — catch
   //    MalformedHashError separately so a DB-corruption incident does
   //    NOT bubble as an opaque 500 with no audit row. Pre-fix the
   //    B4 catch existed only in sign-in; change-password silently

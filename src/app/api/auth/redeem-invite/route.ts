@@ -8,15 +8,12 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import {
-  redeemInvite,
-  parseInvitationTokenId,
-  MalformedTokenError,
-} from '@/modules/auth';
+import { redeemInvite, parseInvitationTokenId } from '@/modules/auth';
 import { setSessionCookie } from '@/lib/auth-cookies';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { parseTokenOrLinkInvalid } from '@/lib/auth-route-helpers';
 
 const inputSchema = z.object({
   token: z.string().min(32).max(128),
@@ -49,23 +46,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // I3 (Round 2) — parse instead of cast (see reset-password/route.ts).
-  let parsedToken;
-  try {
-    parsedToken = parseInvitationTokenId(parsed.data.token);
-  } catch (parseErr) {
-    if (parseErr instanceof MalformedTokenError) {
-      logger.warn(
-        { requestId, reason: 'malformed-token' },
-        'redeem-invite.link-invalid',
-      );
-      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
-    }
-    throw parseErr;
-  }
+  // I3 (Round 2) + O3 (Round 3) — parse-or-link-invalid via shared
+  // helper (see reset-password/route.ts).
+  const parsedTokenResult = parseTokenOrLinkInvalid(
+    parseInvitationTokenId,
+    parsed.data.token,
+    { requestId, routeName: 'redeem-invite' },
+  );
+  if (!parsedTokenResult.ok) return parsedTokenResult.response;
 
   const result = await redeemInvite({
-    token: parsedToken,
+    token: parsedTokenResult.value,
     password: parsed.data.password,
     displayName: parsed.data.displayName ?? null,
     sourceIp: getClientIp(request),
