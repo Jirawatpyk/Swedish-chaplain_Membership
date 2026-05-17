@@ -7,13 +7,13 @@
  *   try {
  *     const outcome = await db.transaction(async (tx) => {
  *       const a = await port1.doInTx(tx, ...);
- *       if (!a.ok) throw new CreateUserAbort(mapError(a.error));
+ *       if (!a.ok) throw new TxAbort(mapError(a.error));
  *       // ... more steps ...
  *       return result;
  *     });
  *     return ok(outcome);
  *   } catch (e) {
- *     if (e instanceof CreateUserAbort) return err(e.error);
+ *     if (e instanceof TxAbort) return err(e.error);
  *     throw e;
  *   }
  *
@@ -23,10 +23,20 @@
  * outer catch can map it back to a use-case error without losing shape.
  *
  * Mirrors `src/modules/members/application/tx-abort.ts` (F3 pattern).
+ *
+ * Originally named `CreateUserAbort` (for the F1 create-user Path C
+ * refactor `984ee140`). Renamed to `TxAbort` when `redeem-invite` and
+ * `reset-password` adopted the same pattern in `chore(F1)` post-ship
+ * hardening. The original name is re-exported as a deprecated alias so
+ * existing imports (sign-in.ts, tests) continue to work.
  */
-export class CreateUserAbort<E> extends Error {
+export class TxAbort<E> extends Error {
   constructor(public readonly error: E) {
     super();
-    this.name = 'CreateUserAbort';
+    this.name = 'TxAbort';
   }
 }
+
+/** @deprecated Use {@link TxAbort} — name kept for backwards compat. */
+export const CreateUserAbort = TxAbort;
+export type CreateUserAbort<E> = TxAbort<E>;

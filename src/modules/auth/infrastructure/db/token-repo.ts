@@ -71,7 +71,11 @@ export function generateTokenId(): TokenId {
 export interface TokenRepo {
   createReset(args: { userId: UserId; now: Date }): Promise<PasswordResetToken>;
   findResetById(id: TokenId): Promise<PasswordResetToken | null>;
+  /** Tx-scoped variant of `findResetById` (Path C — A4). */
+  findResetByIdInTx(tx: DbTx, id: TokenId): Promise<PasswordResetToken | null>;
   markResetConsumed(id: TokenId, now: Date): Promise<void>;
+  /** Tx-scoped variant of `markResetConsumed` (Path C — A4). */
+  markResetConsumedInTx(tx: DbTx, id: TokenId, now: Date): Promise<void>;
   /**
    * Mark every still-unconsumed reset token for a user as consumed.
    * Used by `forgotPassword` to invalidate a stale token before issuing
@@ -80,6 +84,12 @@ export interface TokenRepo {
    * redemption.
    */
   invalidateAllUnconsumedForUser(userId: UserId, now: Date): Promise<number>;
+  /** Tx-scoped variant of `invalidateAllUnconsumedForUser` (Path C — A4). */
+  invalidateAllUnconsumedForUserInTx(
+    tx: DbTx,
+    userId: UserId,
+    now: Date,
+  ): Promise<number>;
 
   // --- Invitation tokens (T121, spec US4) ---
   createInvitation(args: {
@@ -104,7 +114,11 @@ export interface TokenRepo {
     },
   ): Promise<Invitation>;
   findInvitationById(id: TokenId): Promise<Invitation | null>;
+  /** Tx-scoped variant of `findInvitationById` (Path C — A3). */
+  findInvitationByIdInTx(tx: DbTx, id: TokenId): Promise<Invitation | null>;
   markInvitationConsumed(id: TokenId, now: Date): Promise<void>;
+  /** Tx-scoped variant of `markInvitationConsumed` (Path C — A3). */
+  markInvitationConsumedInTx(tx: DbTx, id: TokenId, now: Date): Promise<void>;
 }
 
 // Object-literal implementation — no class wrapper; see audit-repo.ts
@@ -140,8 +154,25 @@ export const tokenRepo: TokenRepo = {
     return row ? toDomainReset(row) : null;
   },
 
+  async findResetByIdInTx(tx, id) {
+    const rows = await tx
+      .select()
+      .from(passwordResetTokens)
+      .where(eq(passwordResetTokens.id, id))
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomainReset(row) : null;
+  },
+
   async markResetConsumed(id: TokenId, now: Date): Promise<void> {
     await db
+      .update(passwordResetTokens)
+      .set({ consumedAt: now })
+      .where(eq(passwordResetTokens.id, id));
+  },
+
+  async markResetConsumedInTx(tx, id, now) {
+    await tx
       .update(passwordResetTokens)
       .set({ consumedAt: now })
       .where(eq(passwordResetTokens.id, id));
@@ -152,6 +183,20 @@ export const tokenRepo: TokenRepo = {
     now: Date,
   ): Promise<number> {
     const result = await db
+      .update(passwordResetTokens)
+      .set({ consumedAt: now })
+      .where(
+        and(
+          eq(passwordResetTokens.userId, userId),
+          isNull(passwordResetTokens.consumedAt),
+        ),
+      )
+      .returning({ id: passwordResetTokens.id });
+    return result.length;
+  },
+
+  async invalidateAllUnconsumedForUserInTx(tx, userId, now) {
+    const result = await tx
       .update(passwordResetTokens)
       .set({ consumedAt: now })
       .where(
@@ -218,8 +263,25 @@ export const tokenRepo: TokenRepo = {
     return row ? toDomainInvitation(row) : null;
   },
 
+  async findInvitationByIdInTx(tx, id) {
+    const rows = await tx
+      .select()
+      .from(invitations)
+      .where(eq(invitations.id, id))
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomainInvitation(row) : null;
+  },
+
   async markInvitationConsumed(id: TokenId, now: Date): Promise<void> {
     await db
+      .update(invitations)
+      .set({ consumedAt: now })
+      .where(eq(invitations.id, id));
+  },
+
+  async markInvitationConsumedInTx(tx, id, now) {
+    await tx
       .update(invitations)
       .set({ consumedAt: now })
       .where(eq(invitations.id, id));

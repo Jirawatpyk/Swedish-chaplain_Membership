@@ -10,7 +10,7 @@
  * helper from proxy.ts (the Next.js 16 proxy layer).
  */
 import { and, eq, ne } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { db, type DbTx } from '@/lib/db';
 import { sessions, type SessionRow } from './schema';
 import {
   asSessionId,
@@ -43,10 +43,17 @@ function generateSessionId(): SessionId {
 
 export interface SessionRepo {
   create(args: { userId: UserId; sourceIp: string; now: Date }): Promise<Session>;
+  /** Tx-scoped variant of `create` (Path C — A3 redeem-invite). */
+  createInTx(
+    tx: DbTx,
+    args: { userId: UserId; sourceIp: string; now: Date },
+  ): Promise<Session>;
   findById(id: SessionId): Promise<Session | null>;
   updateLastSeen(id: SessionId, now: Date): Promise<void>;
   delete(id: SessionId): Promise<void>;
   deleteByUserId(userId: UserId): Promise<number>;
+  /** Tx-scoped variant of `deleteByUserId` (Path C — A4 reset-password). */
+  deleteByUserIdInTx(tx: DbTx, userId: UserId): Promise<number>;
   deleteByUserIdExcept(userId: UserId, keepId: SessionId): Promise<number>;
 }
 
@@ -76,6 +83,25 @@ export const sessionRepo: SessionRepo = {
     return toDomain(row);
   },
 
+  async createInTx(tx, args) {
+    const id = generateSessionId();
+    const expiresAt = new Date(args.now.getTime() + ABSOLUTE_LIFETIME_MS);
+    const rows = await tx
+      .insert(sessions)
+      .values({
+        id,
+        userId: args.userId,
+        createdAt: args.now,
+        lastSeenAt: args.now,
+        expiresAt,
+        sourceIp: args.sourceIp,
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error('session-repo.createInTx: no row returned');
+    return toDomain(row);
+  },
+
   async findById(id: SessionId): Promise<Session | null> {
     const rows = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     const row = rows[0];
@@ -92,6 +118,14 @@ export const sessionRepo: SessionRepo = {
 
   async deleteByUserId(userId: UserId): Promise<number> {
     const result = await db
+      .delete(sessions)
+      .where(eq(sessions.userId, userId))
+      .returning({ id: sessions.id });
+    return result.length;
+  },
+
+  async deleteByUserIdInTx(tx, userId) {
+    const result = await tx
       .delete(sessions)
       .where(eq(sessions.userId, userId))
       .returning({ id: sessions.id });

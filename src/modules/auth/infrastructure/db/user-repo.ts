@@ -74,6 +74,14 @@ export interface UserRepo {
     email: EmailAddress,
   ): Promise<{ user: UserAccount; passwordHash: PasswordHash | null } | null>;
   findById(id: UserId): Promise<UserAccount | null>;
+  /**
+   * Tx-scoped variant of `findById`. Used by Path C use cases
+   * (redeem-invite, reset-password) so the user row is locked inside
+   * the same tx that subsequently mutates it — closes the race window
+   * where a concurrent disable/role-change could land between read
+   * and mutation.
+   */
+  findByIdInTx(tx: DbTx, id: UserId): Promise<UserAccount | null>;
   updateLastSignIn(id: UserId, at: Date): Promise<void>;
   incrementFailedCount(id: UserId): Promise<number>;
   clearFailedCount(id: UserId): Promise<void>;
@@ -108,7 +116,20 @@ export interface UserRepo {
    */
   deletePending(id: UserId): Promise<void>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
+  /** Tx-scoped variant of `setPasswordHash` (Path C — A3 / A4). */
+  setPasswordHashInTx(
+    tx: DbTx,
+    id: UserId,
+    hash: PasswordHash,
+    now: Date,
+  ): Promise<void>;
   activate(id: UserId, now: Date): Promise<void>;
+  /** Tx-scoped variant of `activate` (Path C — A3). */
+  activateInTx(tx: DbTx, id: UserId, now: Date): Promise<void>;
+  /** Tx-scoped variant of `clearLock` (Path C — A4). */
+  clearLockInTx(tx: DbTx, id: UserId): Promise<void>;
+  /** Tx-scoped variant of `clearFailedCount` (Path C — A4). */
+  clearFailedCountInTx(tx: DbTx, id: UserId): Promise<void>;
   /** Transition active → disabled. */
   disable(id: UserId): Promise<void>;
   /** Transition disabled → active. */
@@ -170,6 +191,16 @@ export const userRepo: UserRepo = {
 
   async findById(id: UserId): Promise<UserAccount | null> {
     const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  },
+
+  async findByIdInTx(tx, id) {
+    const rows = await tx
+      .select()
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
   },
@@ -284,10 +315,42 @@ export const userRepo: UserRepo = {
       .where(eq(users.id, id));
   },
 
+  async setPasswordHashInTx(tx, id, hash, now) {
+    await tx
+      .update(users)
+      .set({
+        passwordHash: hash,
+        lastPasswordChangedAt: now,
+        requiresPasswordReset: false,
+      })
+      .where(eq(users.id, id));
+  },
+
   async activate(id: UserId, now: Date): Promise<void> {
     await db
       .update(users)
       .set({ status: 'active', lastPasswordChangedAt: now })
+      .where(eq(users.id, id));
+  },
+
+  async activateInTx(tx, id, now) {
+    await tx
+      .update(users)
+      .set({ status: 'active', lastPasswordChangedAt: now })
+      .where(eq(users.id, id));
+  },
+
+  async clearLockInTx(tx, id) {
+    await tx
+      .update(users)
+      .set({ lockedUntil: null, failedSignInCount: 0 })
+      .where(eq(users.id, id));
+  },
+
+  async clearFailedCountInTx(tx, id) {
+    await tx
+      .update(users)
+      .set({ failedSignInCount: 0, lockedUntil: null })
       .where(eq(users.id, id));
   },
 
