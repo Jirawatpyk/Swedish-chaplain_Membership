@@ -352,6 +352,39 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // F5 PCI-critical additional use-cases — 2026-05-17 polish
+        // retrospective F5 push (per user "ผมบอกให้ทำ F5 ด้วย").
+        // Adds file-level thresholds for use-cases that ALREADY achieve
+        // 100% line + functions in unit-only scoped run (verified via
+        // `pnpm vitest run --coverage tests/unit/payments`). Branches
+        // threshold set to the achieved level to lock in regression
+        // protection without speculative tightening that would block
+        // CI under unit-only mode. Higher branch % is achieved in
+        // full `pnpm test:coverage` mode via integration test backfill
+        // (see vitest.config.ts:140-141 comment).
+        'src/modules/payments/application/use-cases/cancel-payment.ts': {
+          // Member-initiated cancel of pending payment. State transition
+          // gates (payment_not_cancelable) + processor permanence
+          // discriminator are security-critical.
+          lines: 100,
+          branches: 95,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/fail-payment.ts': {
+          // Webhook → payment_intent.payment_failed handler. Failure
+          // mode classification feeds into Retry-After header decisions.
+          lines: 95,
+          branches: 95,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/sweep-stale-pending-refunds.ts': {
+          // Cron sweeper — detects stale `requested`-status refunds
+          // and reconciles with Stripe. Money-movement reconciliation
+          // surface.
+          lines: 100,
+          branches: 94,
+          functions: 100,
+        },
         // F3: Members Application layer — security-critical use cases
         // require 100% branch coverage per plan.md § Constitution Check II.
         'src/modules/members/application/enforce-tenant-context-on-member.ts': {
