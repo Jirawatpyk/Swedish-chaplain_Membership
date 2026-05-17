@@ -3365,4 +3365,27 @@ export const eventcreateMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * R5.1 / Round 4 C-1 — grace-state invariant violation counter.
+   * Emitted by `drizzleTenantWebhookConfigRepository.toAggregate` +
+   * `events-webhook-deps.loadTenantWebhookConfig` when `asGraceState`
+   * throws `GraceStateInvariantError` (half-set pair at read time).
+   * Migration 0129 CHECK constraint prevents the write-time path; a
+   * hit on this counter signals a regression (CHECK relaxed, RLS
+   * surfacing rows that violate, manual UPDATE bypassing the app
+   * layer).
+   *
+   * Alert spec: rate > 0 sustained ≥1 min → P1 page — DB CHECK
+   * regression suspected. Mirrors the matchResolutionInvariantViolation
+   * pattern (both are read-time DB invariant tripwires).
+   */
+  graceStateInvariantViolation(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_grace_state_invariant_violation_total',
+        'tenant_webhook_configs row violates grace-pair invariant at READ time (migration 0129 CHECK regression?)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;

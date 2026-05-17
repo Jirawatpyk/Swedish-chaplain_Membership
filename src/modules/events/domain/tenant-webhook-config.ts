@@ -83,12 +83,37 @@ export function isGraceSecretActive(
 }
 
 /**
- * R3.7.1 — construct a `GraceState` discriminated union from raw DB
- * column values. Migration 0129 CHECK constraint guarantees
+ * R5.1 / Round 4 C-1 — dedicated error class for the read-time grace-
+ * pair invariant violation. Parallels `MatchResolutionInvariantError`
+ * (event-registration.ts). Allows `wrapRepoError` to re-throw before
+ * sanitisation degrades the signal to a generic `db_error` Result.err
+ * (which the previous plain-Error throw was being silently swallowed
+ * into).
+ *
+ * Stores booleans rather than the raw secret to avoid leaking the
+ * half-set secret value into log/stack capture chains.
+ */
+export class GraceStateInvariantError extends Error {
+  constructor(
+    public readonly rawSecretWasSet: boolean,
+    public readonly rawRotatedAtWasSet: boolean,
+  ) {
+    super(
+      `GraceState invariant violated at read-time: secret=${rawSecretWasSet} rotatedAt=${rawRotatedAtWasSet}. Likely migration 0129 CHECK regression or RLS surfacing rows that violate the pair invariant.`,
+    );
+    this.name = 'GraceStateInvariantError';
+  }
+}
+
+/**
+ * R3.7.1 / R5.1 — construct a `GraceState` discriminated union from raw
+ * DB column values. Migration 0129 CHECK constraint guarantees
  * `(graceSecret IS NULL) = (graceRotatedAt IS NULL)`, so this helper
  * never sees a half-set pair in practice. A half-set pair AT READ time
- * is a hard invariant violation — throw loudly rather than silently
- * coerce to `{ active: false }`.
+ * is a hard invariant violation — throw `GraceStateInvariantError`
+ * (Round 4 C-1 fix) rather than the prior generic `Error`. The named
+ * subclass lets `sanitize-db-error.wrapRepoError` re-throw before the
+ * generic `db_error` Result conversion swallows the signal.
  *
  * Used by:
  *   - `drizzleTenantWebhookConfigRepository.toAggregate`
@@ -108,7 +133,8 @@ export function asGraceState(
   if (rawSecret === null && rawRotatedAt === null) {
     return { active: false };
   }
-  throw new Error(
-    'GraceState invariant violated at read-time: graceSecret + graceRotatedAt are half-set. Likely migration 0129 CHECK regression or RLS surfacing rows that violate the pair invariant.',
+  throw new GraceStateInvariantError(
+    rawSecret !== null,
+    rawRotatedAt !== null,
   );
 }

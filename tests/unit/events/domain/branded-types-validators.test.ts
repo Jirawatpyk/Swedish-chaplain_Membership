@@ -94,18 +94,34 @@ describe('R3.2.1 — asEventId (validated UUID v4 default)', () => {
     );
   });
 
-  it('property: every non-v4 string is rejected', () => {
+  it('R5.6 / Round 4 tests-Important #9 — independent v4-shape check property (not tautological with validator)', () => {
+    // Round 4 caught that the prior "rejects non-v4 strings" property
+    // used the SAME regex as the validator to filter inputs — a
+    // regression that loosens the regex (e.g. accepts v1/v3/v5) would
+    // simultaneously loosen the test filter, hiding the bug.
+    //
+    // This property uses an INDEPENDENT structural check: count
+    // hyphens at positions 8/13/18/23, version-nibble at position 14,
+    // variant-nibble at position 19, and total length === 36. If the
+    // independent check says "not v4 shaped" then the validator MUST
+    // reject.
     fc.assert(
-      fc.property(
-        fc.string({ minLength: 0, maxLength: 50 }).filter(
-          (s) =>
-            !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s),
-        ),
-        (s) => {
+      fc.property(fc.string({ minLength: 36, maxLength: 36 }), (s) => {
+        const isV4Shape =
+          s.length === 36 &&
+          s[8] === '-' &&
+          s[13] === '-' &&
+          s[18] === '-' &&
+          s[23] === '-' &&
+          s[14] === '4' &&
+          (s[19] !== undefined &&
+            ['8', '9', 'a', 'b', 'A', 'B'].includes(s[19])) &&
+          /^[0-9a-fA-F-]{36}$/.test(s);
+        if (!isV4Shape) {
           expect(() => asEventId(s)).toThrow();
-        },
-      ),
-      { numRuns: 100 },
+        }
+      }),
+      { numRuns: 200 },
     );
   });
 });

@@ -112,30 +112,48 @@ export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
           }));
       });
     } catch (e) {
-      // R3.3.4 / I-4 — preserve `err.stack` for RLS-regression / pool-
-      // exhaustion forensics. Without the stack, SRE cannot tell which
-      // Drizzle code path threw — only that the bridge query failed.
-      // `redactStack` strips secrets before pino serialises.
-      logger.error(
-        {
-          event: 'f6_event_attendees_query_failed',
-          tenantId: String(input.tenantId),
-          memberId: String(input.memberId),
-          err:
-            e instanceof Error
-              ? {
-                  name: e.name,
-                  message: e.message,
-                  stack:
-                    typeof e.stack === 'string'
-                      ? (redactStack(e.stack) ?? null)
-                      : null,
-                }
-              : { name: 'non_error', message: String(e), stack: null },
-        },
-        '[F6→F8 bridge] eventAttendees query failed — falling open to [] to preserve F8 scorer no-throw contract',
-      );
-      eventcreateMetrics.bridgeEventAttendeesQueryFailed(String(input.tenantId));
+      // R3.3.4 / I-4 / R5.3.2 / Round 4 I-5 — preserve `err.stack` for
+      // RLS-regression / pool-exhaustion forensics. `redactStack`
+      // strips secrets before pino serialises.
+      //
+      // R5.3.2 / Round 4 I-5 — nested try/catch around `logger.error` +
+      // the metric counter. The F8 EventAttendeesPort contract is "no
+      // throw under any circumstance"; if pino itself throws on a
+      // circular-reference inside `e` (e.g. a custom Error with
+      // `this.cause = this`), or if `safeMetric`'s OTel SDK is
+      // mid-shutdown, the bridge would break F8's at-risk scorer batch.
+      // Last-resort `console.error` fallback ensures forensics survive
+      // even when the structured logger is down.
+      try {
+        logger.error(
+          {
+            event: 'f6_event_attendees_query_failed',
+            tenantId: String(input.tenantId),
+            memberId: String(input.memberId),
+            err:
+              e instanceof Error
+                ? {
+                    name: e.name,
+                    message: e.message,
+                    stack:
+                      typeof e.stack === 'string'
+                        ? (redactStack(e.stack) ?? null)
+                        : null,
+                  }
+                : { name: 'non_error', message: String(e), stack: null },
+          },
+          '[F6→F8 bridge] eventAttendees query failed — falling open to [] to preserve F8 scorer no-throw contract',
+        );
+        eventcreateMetrics.bridgeEventAttendeesQueryFailed(String(input.tenantId));
+      } catch (loggerErr) {
+        // Worst case: pino + safeMetric BOTH threw. Stack trace is
+        // gone; `console.error` is the last-ditch breadcrumb so SRE
+        // can at least see the bridge failed open from container logs.
+        console.error(
+          '[F6→F8 bridge] logger.error or metric counter itself threw — F8 no-throw contract preserved',
+          loggerErr,
+        );
+      }
       return [];
     }
   },

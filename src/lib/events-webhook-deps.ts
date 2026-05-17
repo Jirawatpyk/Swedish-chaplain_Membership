@@ -35,6 +35,7 @@ import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
   asGraceState,
+  GraceStateInvariantError,
   type TenantWebhookConfigAggregate,
 } from '@/modules/events';
 
@@ -112,18 +113,51 @@ export async function loadTenantWebhookConfig(
 
   if (rows.length === 0) return null;
   const row = rows[0]!;
-  // H3.1 / R3.7.1 — use the `asGraceState` domain helper for the
+  // H3.1 / R3.7.1 / R5.1 — use the `asGraceState` domain helper for the
   // boundary mapping. DB CHECK at migration 0129 guarantees the pair
-  // invariant; throw loudly on read-time violation (mirrors the
-  // drizzleTenantWebhookConfigRepository pattern).
+  // invariant. R5.1 (Round 4 C-1) added structured forensic log +
+  // metric bump before re-throw on `GraceStateInvariantError` so the
+  // P1 alert fires even though this code path is OUTSIDE the
+  // wrapRepoError catch (the webhook ingest route handler already
+  // surfaces the throw as a structured 500 + audit emit).
+  let grace: TenantWebhookConfigAggregate['grace'];
+  try {
+    grace = asGraceState(
+      row.webhookSecretGrace as unknown as TenantWebhookConfigAggregate['activeSecret'] | null,
+      row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
+    );
+  } catch (e) {
+    if (e instanceof GraceStateInvariantError) {
+      logger.error(
+        {
+          event: 'f6_grace_state_invariant_violation',
+          tenantId: ctx.slug,
+          source: row.source,
+          rawSecretWasSet: e.rawSecretWasSet,
+          rawRotatedAtWasSet: e.rawRotatedAtWasSet,
+        },
+        '[F6] tenant_webhook_configs row violates grace-pair invariant at READ time — likely DB CHECK regression or RLS misconfig',
+      );
+      eventcreateMetrics.graceStateInvariantViolation(ctx.slug);
+    } else {
+      logger.error(
+        {
+          event: 'f6_unexpected_throw_in_asGraceState',
+          tenantId: ctx.slug,
+          err: e instanceof Error
+            ? { name: e.name, message: e.message }
+            : { name: 'non_error', message: String(e) },
+        },
+        '[F6] unexpected throw inside asGraceState — investigate',
+      );
+    }
+    throw e;
+  }
   return {
     tenantId: ctx.slug as unknown as TenantWebhookConfigAggregate['tenantId'],
     source: row.source as 'eventcreate',
     activeSecret: row.webhookSecretActive as unknown as TenantWebhookConfigAggregate['activeSecret'],
-    grace: asGraceState(
-      row.webhookSecretGrace as unknown as TenantWebhookConfigAggregate['activeSecret'] | null,
-      row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
-    ),
+    grace,
     enabled: row.enabled,
     createdAt: new Date(row.createdAt),
     lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt) : null,

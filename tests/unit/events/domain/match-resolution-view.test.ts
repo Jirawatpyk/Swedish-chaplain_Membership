@@ -165,6 +165,28 @@ describe('R3.2.2 — asMatchResolutionView invariant-violation throws', () => {
     };
     expect(() => asMatchResolutionView(bad)).toThrow(MatchResolutionInvariantError);
   });
+
+  // R5.6 / Round 4 tests-Important #4 — close the asymmetric matrix gap.
+  // Each non_member/unmatched variant has 2 distinct invariant-violation
+  // shapes (matchedMemberId set OR matchedContactId set, since both
+  // must be null). Previous 8-case matrix only probed one half of each.
+  it('non_member with matchedContactId !== null → throws (asymmetric matrix cell)', () => {
+    const bad: MatchResolution = {
+      type: 'non_member',
+      matchedMemberId: null,
+      matchedContactId: CONTACT_ID,
+    };
+    expect(() => asMatchResolutionView(bad)).toThrow(MatchResolutionInvariantError);
+  });
+
+  it('unmatched with matchedMemberId !== null → throws (asymmetric matrix cell)', () => {
+    const bad: MatchResolution = {
+      type: 'unmatched',
+      matchedMemberId: MEMBER_ID,
+      matchedContactId: null,
+    };
+    expect(() => asMatchResolutionView(bad)).toThrow(MatchResolutionInvariantError);
+  });
 });
 
 describe('R3.2.2 — MatchResolutionInvariantError shape', () => {

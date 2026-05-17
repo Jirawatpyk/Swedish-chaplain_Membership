@@ -74,6 +74,27 @@ describe('R3.2.3 — TxStageError.cause threading', () => {
     expect(err.stage).toBe('event_upsert');
   });
 
+  it('R5.6 / Round 4 tests-Important #6 — cause is set as own property on the instance (pino-serialiser compatible)', () => {
+    // ES2022 §27.5.6.1 spec: `Error(message, options)` sets `cause` as
+    // a non-enumerable own property when `options.cause` is provided.
+    // Pino's default `err` serialiser (pino-std-serializers) inspects
+    // `Object.getOwnPropertyDescriptor(err, 'cause')` rather than
+    // `Object.keys` enumeration, so the non-enumerable bit is
+    // intentional + compatible.
+    //
+    // A regression that swaps `super(message, options)` for
+    // `Object.assign(this, options)` would still pin runtime access
+    // but would break pino's own-property check. This test asserts
+    // `hasOwnProperty` to catch that class of regression.
+    const root = new Error('root cause');
+    const err = new TxStageError('audit_emit', 'wrap', { cause: root });
+
+    expect(Object.prototype.hasOwnProperty.call(err, 'cause')).toBe(true);
+    const descriptor = Object.getOwnPropertyDescriptor(err, 'cause');
+    expect(descriptor).toBeDefined();
+    expect(descriptor!.value).toBe(root);
+  });
+
   it('synthetic cause from Result.err discriminator is preserved', () => {
     // Pattern used by R3.3.1 for Result.err threading (no raw exception
     // in scope). The caller wraps the Result discriminator + message
@@ -87,14 +108,24 @@ describe('R3.2.3 — TxStageError.cause threading', () => {
     expect((err.cause as Error).message).toContain('AuditEmitError.db_error');
   });
 
-  it('non-Error cause is permitted by spec; caller convention wraps at boundary', () => {
-    // ES2022 §27.5.6.1: cause MAY be any value. Our caller-side
-    // convention wraps non-Errors at the call site (so `cause` is
-    // always an Error in practice), but the ctor doesn't reject
-    // primitives — that's the spec contract.
-    const err = new TxStageError('unknown', 'opaque failure', {
-      cause: 'string-not-error',
+  it('R5.5 — TxStageErrorOptions narrows cause to Error (compile-time enforcement)', () => {
+    // Round 4 type-design follow-up: `TxStageErrorOptions.cause` is
+    // typed as `Error` (not `unknown`), so a primitive cause is a
+    // TypeScript error at the call site.
+    //
+    // The narrowing matches the R3.3.1 caller convention — every
+    // R3.3.1 site wraps non-Error throws via `safeStringify`
+    // before passing. This test pins runtime acceptance of all
+    // Error subclasses; the compile-time check happens at call
+    // sites in process-attendee-in-tx.ts.
+    class PostgresError extends Error {
+      override name = 'PostgresError';
+    }
+    const root = new PostgresError('deadlock detected');
+    const err = new TxStageError('quota_decrement', 'lock failed', {
+      cause: root,
     });
-    expect(err.cause).toBe('string-not-error');
+    expect(err.cause).toBe(root);
+    expect((err.cause as Error).name).toBe('PostgresError');
   });
 });

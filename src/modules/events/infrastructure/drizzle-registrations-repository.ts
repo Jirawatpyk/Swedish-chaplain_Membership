@@ -77,6 +77,16 @@ export function readAttendeeEmailLower(row: EventRegistrationRow): string {
   return row.attendeeEmail.toLowerCase();
 }
 
+/**
+ * R5.2.1 / Round 4 I-1 — exported for unit testing the read-time
+ * invariant defense (catch + metric + log + re-throw). The function is
+ * private to module callers in production code; the export carries a
+ * `_` prefix to signal "infrastructure-test seam only".
+ */
+export function _toAggregateForTesting(row: EventRegistrationRow): EventRegistrationAggregate {
+  return toAggregate(row);
+}
+
 function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
   // R3.4.2 / IMP-1 — invariant-error collapse defense-in-depth.
   // Wrap the H3.2 `asMatchResolutionView` narrowing with a try/catch
@@ -109,6 +119,26 @@ function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
         '[F6] event_registrations row violates match-resolution invariant at READ time — likely DB CHECK regression or RLS misconfig',
       );
       eventcreateMetrics.matchResolutionInvariantViolation(String(row.tenantId));
+    } else {
+      // R5.3.3 / Round 4 I-6 — log unexpected throws so a future
+      // refactor that introduces a different error class (or a
+      // type-system regression that throws a plain string) does not
+      // silently lose the forensic breadcrumb. The P1 alert only
+      // fires for MatchResolutionInvariantError; a sibling alert can
+      // be wired on `f6_unexpected_throw_in_asMatchResolutionView` if
+      // that becomes a recurring incident class.
+      logger.error(
+        {
+          event: 'f6_unexpected_throw_in_asMatchResolutionView',
+          tenantId: String(row.tenantId),
+          registrationId: String(row.registrationId),
+          eventId: String(row.eventId),
+          err: e instanceof Error
+            ? { name: e.name, message: e.message }
+            : { name: 'non_error', message: String(e) },
+        },
+        '[F6] unexpected throw inside asMatchResolutionView — investigate',
+      );
     }
     throw e;
   }

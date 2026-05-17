@@ -21,6 +21,8 @@
 
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
+import { GraceStateInvariantError } from '../domain/tenant-webhook-config';
+import { MatchResolutionInvariantError } from '../domain/event-registration';
 
 const DB_ERROR_MESSAGE_CAP = 200;
 
@@ -66,6 +68,23 @@ export function wrapRepoError(
     | 'csvImportRecords',
   e: unknown,
 ): { readonly kind: 'db_error'; readonly message: string } {
+  // R5.1 / Round 4 C-1 — re-throw read-time invariant violations BEFORE
+  // sanitisation. Without this guard, an `asGraceState` or
+  // `asMatchResolutionView` throw would be silently swallowed into a
+  // generic `Result.err({kind:'db_error', message:'<sanitised>'})` —
+  // forensically indistinguishable from a Neon connectivity blip.
+  // The dedicated error classes preserve their `name` + structured
+  // fields up to the route handler, which surfaces the violation as
+  // an unhandled-error 500 + structured pino.error (the P1 alert at
+  // `eventcreate_match_resolution_invariant_violation_total` + future
+  // GraceState equivalent will still fire from the upstream catch
+  // site that emits the metric before re-throwing).
+  if (
+    e instanceof GraceStateInvariantError ||
+    e instanceof MatchResolutionInvariantError
+  ) {
+    throw e;
+  }
   logger.error(
     {
       event: 'f6_repo_db_error',

@@ -36,6 +36,8 @@
 import { and, eq, lt, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
 import {
   tenantWebhookConfigs,
   type TenantWebhookConfigRow,
@@ -48,6 +50,7 @@ import type {
 } from '../application/ports/tenant-webhook-config-repository';
 import {
   asGraceState,
+  GraceStateInvariantError,
   type TenantWebhookConfigAggregate,
 } from '../domain/tenant-webhook-config';
 import type { WebhookSecret } from '../domain/branded-types';
@@ -56,19 +59,54 @@ import { wrapRepoError } from './sanitize-db-error';
 import type { TenantId } from '@/modules/members';
 
 function toAggregate(row: TenantWebhookConfigRow): TenantWebhookConfigAggregate {
-  // H3.1 / R3.7.1 — DB CHECK constraint (migration 0129) guarantees
+  // H3.1 / R3.7.1 / R5.1 — DB CHECK constraint (migration 0129) guarantees
   // both grace columns are NULL or both non-NULL together. The
   // `asGraceState` domain helper constructs the discriminated union
-  // once + throws loudly if the pair invariant is violated at READ
-  // time (a hard regression signal, not silent fallback).
+  // once + throws `GraceStateInvariantError` if the pair invariant is
+  // violated at READ time. Mirroring the R3.4.2 pattern in
+  // `drizzle-registrations-repository.ts`, the catch here emits a
+  // structured forensic log + bumps the P1-alert metric BEFORE
+  // re-throwing (the throw IS load-bearing — propagates past
+  // `wrapRepoError` per R5.1 to the route handler).
+  let grace: TenantWebhookConfigAggregate['grace'];
+  try {
+    grace = asGraceState(
+      row.webhookSecretGrace as WebhookSecret | null,
+      row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
+    );
+  } catch (e) {
+    if (e instanceof GraceStateInvariantError) {
+      logger.error(
+        {
+          event: 'f6_grace_state_invariant_violation',
+          tenantId: String(row.tenantId),
+          source: row.source,
+          rawSecretWasSet: e.rawSecretWasSet,
+          rawRotatedAtWasSet: e.rawRotatedAtWasSet,
+        },
+        '[F6] tenant_webhook_configs row violates grace-pair invariant at READ time — likely DB CHECK regression or RLS misconfig',
+      );
+      eventcreateMetrics.graceStateInvariantViolation(String(row.tenantId));
+    } else {
+      logger.error(
+        {
+          event: 'f6_unexpected_throw_in_asGraceState',
+          tenantId: String(row.tenantId),
+          source: row.source,
+          err: e instanceof Error
+            ? { name: e.name, message: e.message }
+            : { name: 'non_error', message: String(e) },
+        },
+        '[F6] unexpected throw inside asGraceState — investigate',
+      );
+    }
+    throw e;
+  }
   return {
     tenantId: row.tenantId as TenantId,
     source: row.source as Source,
     activeSecret: row.webhookSecretActive as WebhookSecret,
-    grace: asGraceState(
-      row.webhookSecretGrace as WebhookSecret | null,
-      row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
-    ),
+    grace,
     enabled: row.enabled,
     createdAt: new Date(row.createdAt),
     lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt) : null,

@@ -214,6 +214,46 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     expect(result.error.failureStage).toBe('audit_emit');
   });
 
+  it('R5.2.2 / Round 4 I-2 — Result.err mid-tx → emitRolledBackStandalone payload.errorMessage carries (cause: …) discriminator from synthetic cause', async () => {
+    // R3.3.1 wraps `audit.emit` Result.err as
+    //   TxStageError('audit_emit', wrap_msg, { cause: new Error('AuditEmitError.db_error: ...') })
+    // The R5.4 refactor extracted the outer catch's cause-format into
+    // `formatErrorWithCause`, which prefixes `(cause: NAME: MSG)` onto
+    // the rolled-back audit payload errorMessage. A regression that
+    // drops the helper call would collapse every wrapped failure to
+    // the bare TxStageError message — this test pins the contract.
+    const ports = buildPorts();
+    (ports.audit.emit as ReturnType<typeof vi.fn>).mockImplementation(
+      async (entry) => {
+        if (entry.eventType === 'webhook_receipt_verified') {
+          return err({
+            kind: 'db_error',
+            message: 'connection terminated by Neon',
+          });
+        }
+        return ok('audit-id');
+      },
+    );
+    const deps = buildDeps(ports);
+    const emitRolledBackSpy = deps.emitRolledBackStandalone as ReturnType<typeof vi.fn>;
+
+    await ingestWebhookAttendee(VALID_INPUT, deps);
+
+    expect(emitRolledBackSpy).toHaveBeenCalledTimes(1);
+    const call = emitRolledBackSpy.mock.calls[0]?.[0] as {
+      payload: { errorMessage: string };
+    };
+    expect(call.payload.errorMessage).toContain('audit emit failed');
+    expect(call.payload.errorMessage).toContain('(cause:');
+    // R5.8 — synthetic-cause Error.name = wrapping class discriminator
+    // ('AuditEmitError'), Error.message = detail body. formatErrorWithCause
+    // renders as `(cause: AuditEmitError: <detail>)`.
+    expect(call.payload.errorMessage).toContain('AuditEmitError:');
+    expect(call.payload.errorMessage).toContain(
+      'db_error: connection terminated by Neon',
+    );
+  });
+
   it('emitRolledBackStandalone failure → auditFallbackFailed=true + double-failure metric + logger.fatal', async () => {
     const counterSpy = vi.spyOn(eventcreateMetrics, 'auditFallbackDoubleFailure');
     const ports = buildPorts();

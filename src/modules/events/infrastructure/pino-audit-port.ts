@@ -318,7 +318,14 @@ function redactPayloadForFatalLog(payload: unknown): Record<string, unknown> {
   return out;
 }
 
-/** Re-exported for H4.1 snapshot test (43-event union allowlist parity). */
+/**
+ * Re-exported for the redact-payload-for-fatal-log snapshot test that
+ * pins the allowlist against every in-tree `emitStandalone()` +
+ * `emitRolledBack()` caller's payload fields (R3.1.1 + R3.1.2 / R5.7
+ * Round 4 stale-claim cleanup). The prior "43-event union allowlist
+ * parity" framing was retired by Round 3 because the snapshot covers
+ * CALLER payloads (~11 today), not the full F6 audit-event taxonomy.
+ */
 export { REDACT_ALLOWED_KEYS, redactPayloadForFatalLog };
 
 async function insertAuditRow(

@@ -47,6 +47,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { redactStack } from '@/lib/redact-stack';
+import { formatErrorWithCause } from './_helpers/format-error-with-cause';
 import { asTenantId } from '@/modules/members';
 import {
   EventCreatePayloadV1,
@@ -381,22 +382,13 @@ export async function ingestWebhookAttendee(
       });
     });
   } catch (e) {
-    // R3.3.2 / I-1-follow — preserve `e.cause` info in errorMessage.
-    // After R3.3.1 widened TxStageError to thread `cause` at 8+ sites
-    // in process-attendee-in-tx.ts, the outer catch MUST surface the
-    // cause's name + message so the `webhook_rolled_back.payload.errorMessage`
-    // audit field carries the underlying root-cause discriminator
-    // (e.g. PostgresError + connection-terminated, vs MarkRefundedError +
-    // already_refunded). Without this, every wrapped failure collapses
-    // to "TxStageError: audit emit failed" indistinguishably.
-    if (e instanceof Error) {
-      errorMessage = e.message;
-      if (e.cause instanceof Error) {
-        errorMessage = `${e.message} (cause: ${e.cause.name}: ${e.cause.message})`;
-      }
-    } else {
-      errorMessage = String(e);
-    }
+    // R3.3.2 + R5.4 / Round 4 I-8 — delegate to shared
+    // `formatErrorWithCause` helper. Preserves the `e.cause` discriminator
+    // (PostgresError, MarkRefundedError, AuditEmitError.db_error, etc.)
+    // on the `webhook_rolled_back.payload.errorMessage` audit field so
+    // SRE forensics can distinguish failure modes. Previously inlined
+    // the same logic; consolidated with import-csv.ts toErrMessage.
+    errorMessage = formatErrorWithCause(e);
     const stage: FailureStage = e instanceof TxStageError ? e.stage : failureStage;
     // scrub Vercel container
     // paths + macOS /private/* + node_modules + webpack-internal:///

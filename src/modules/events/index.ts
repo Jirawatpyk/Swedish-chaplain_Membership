@@ -131,6 +131,7 @@ export {
   GRACE_WINDOW_MS,
   isGraceSecretActive,
   asGraceState,
+  GraceStateInvariantError,
   type GraceState,
   type TenantWebhookConfigAggregate,
 } from './domain/tenant-webhook-config';

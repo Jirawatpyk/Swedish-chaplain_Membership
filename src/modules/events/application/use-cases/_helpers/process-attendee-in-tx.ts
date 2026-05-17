@@ -86,21 +86,86 @@ import type { FailureStage } from '../../ports/audit-port';
 // to the SAME type declared once in audit-port.ts (H5 deduplication).
 export type { FailureStage };
 
+/**
+ * R5.5 / Round 4 type-design — narrowed `TxStageError` cause contract.
+ *
+ * Native `ErrorOptions.cause: unknown` is wide open per ECMAScript
+ * spec. The R3.3.1 caller convention (9 sites) ALWAYS wraps Result.err
+ * discriminators OR raw catch-block exceptions as `Error` instances
+ * before passing — never primitives, never `null`. This narrower
+ * options type makes that convention compile-time-enforced: a future
+ * `new TxStageError(stage, msg, { cause: 'plain string' })` would now
+ * be a type error.
+ */
+export interface TxStageErrorOptions {
+  readonly cause: Error;
+}
+
 export class TxStageError extends Error {
   /**
-   * H8.1 / NEW-I5 — thread the original Error via `options.cause`
-   * (Node 16.9+ / ES2022 Error.cause) so SRE forensics see the raw
-   * exception's `.name` (e.g. 'PostgresError', 'AbortError') alongside
-   * the failureStage. Pino's default `err` serialiser surfaces
-   * `cause.name` + `cause.message` automatically.
+   * H8.1 / NEW-I5 / R5.5 — thread the original Error via
+   * `options.cause` (Node 16.9+ / ES2022 Error.cause) so SRE forensics
+   * see the raw exception's `.name` (e.g. 'PostgresError',
+   * 'AbortError') alongside the failureStage. Pino's default `err`
+   * serialiser surfaces `cause.name` + `cause.message` automatically.
+   *
+   * Options narrowed from `ErrorOptions` to `TxStageErrorOptions` so
+   * the cause is statically guaranteed to be an `Error` — matches the
+   * R3.3.1 caller convention (every call site wraps non-Error throws
+   * via `safeStringify` before passing).
    */
   constructor(
     public readonly stage: FailureStage,
     message: string,
-    options?: ErrorOptions,
+    options?: TxStageErrorOptions,
   ) {
     super(message, options);
     this.name = 'TxStageError';
+  }
+}
+
+/**
+ * R5.8 / Round 4 simplify-S1 — construct a synthetic-cause Error with
+ * its `name` set to the wrapping error class's discriminator so
+ * pino's default `err` serialiser surfaces `cause.name === 'AuditEmitError'`
+ * (or 'EventsRepoError', 'QuotaEffectError', etc.) on the audit
+ * fallback log line. The pre-R5.8 pattern left `name === 'Error'`,
+ * forcing SRE dashboards to grep the cause.message body for the
+ * discriminator — slower triage when filtering log streams.
+ *
+ * Message stays as just the `detail` (no class-name prefix) — pino
+ * renders the chain as `cause: AuditEmitError: db_error: ...` from
+ * `${cause.name}: ${cause.message}`, so re-prefixing the class name
+ * inside the message would double the discriminator.
+ *
+ * Used by every R3.3.1 synthetic-cause site that wraps a Result.err
+ * (no raw exception in scope to thread).
+ */
+function makeSyntheticCause(errorClass: string, detail: string): Error {
+  const e = new Error(detail);
+  e.name = errorClass;
+  return e;
+}
+
+/**
+ * R5.3.1 / Round 4 I-4 — JSON-stringify a non-Error value for
+ * cause-wrapping. Guards against circular references (which would
+ * crash a naive `JSON.stringify`) and caps the output so a future
+ * adversarial throw can't bloat the audit row.
+ */
+function safeStringify(value: unknown): string {
+  try {
+    const seen = new WeakSet<object>();
+    const json = JSON.stringify(value, (_k, v) => {
+      if (typeof v === 'object' && v !== null) {
+        if (seen.has(v as object)) return '[Circular]';
+        seen.add(v as object);
+      }
+      return v;
+    });
+    return (json ?? String(value)).slice(0, 500);
+  } catch {
+    return String(value).slice(0, 500);
   }
 }
 
@@ -143,10 +208,11 @@ export async function emitOrThrow(
 ): Promise<void> {
   const result = await audit.emit(entry);
   if (!result.ok) {
-    // R3.3.1 — thread synthetic cause so SRE forensics see the error
-    // kind + discriminator on `cause.message` (pino's default `err`
-    // serialiser surfaces it). Result.err has no raw Error in scope.
-    const causeMessage =
+    // R3.3.1 / R5.8 — thread synthetic cause so SRE forensics see the
+    // error kind + discriminator on `cause.name` (now set to the
+    // wrapping class name) + `cause.message`. Pino's default `err`
+    // serialiser surfaces both. Result.err has no raw Error in scope.
+    const causeDetail =
       result.error.kind === 'db_error'
         ? `${result.error.kind}: ${result.error.message}`
         : `${result.error.kind}: ${result.error.eventType}`;
@@ -157,7 +223,7 @@ export async function emitOrThrow(
           ? result.error.message
           : result.error.eventType
       }`,
-      { cause: new Error(`AuditEmitError.${causeMessage}`) },
+      { cause: makeSyntheticCause('AuditEmitError', causeDetail) },
     );
   }
 }
@@ -421,11 +487,12 @@ export async function processAttendeeInTx(
         '[F6] events.upsert called an unimplemented port stub',
       );
     }
-    // R3.3.1 — thread synthetic cause carrying the error kind so SRE
-    // forensics distinguish db_error / invariant_violation / unimplemented
-    // on the audit fallback log.
+    // R3.3.1 / R5.8 — thread synthetic cause carrying the error kind
+    // so SRE forensics distinguish db_error / invariant_violation /
+    // unimplemented via cause.name + cause.message on the audit
+    // fallback log.
     throw new TxStageError('event_upsert', msg, {
-      cause: new Error(`EventsRepoError.${e.kind}: ${msg}`),
+      cause: makeSyntheticCause('EventsRepoError', `${e.kind}: ${msg}`),
     });
   }
 
@@ -441,10 +508,10 @@ export async function processAttendeeInTx(
     attendeeCompany: input.attendee.companyName,
   });
   if (!matchResult.ok) {
-    // R3.3.1 — thread synthetic cause so SRE forensics see the
-    // matcher's underlying failure message on `cause.message`.
+    // R3.3.1 / R5.8 — thread synthetic cause so SRE forensics see the
+    // matcher's underlying failure on `cause.name` + `cause.message`.
     throw new TxStageError('event_upsert', matchResult.error.message, {
-      cause: new Error(`AttendeeMatchError: ${matchResult.error.message}`),
+      cause: makeSyntheticCause('AttendeeMatchError', matchResult.error.message),
     });
   }
 
@@ -513,11 +580,12 @@ export async function processAttendeeInTx(
         '[F6] event_registrations.insertOnConflictDoNothing called an unimplemented port stub',
       );
     }
-    // R3.3.1 — thread synthetic cause carrying the error kind so SRE
-    // forensics distinguish db_error / invariant_violation /
-    // pseudonymised_row_rejected / unimplemented on the audit fallback.
+    // R3.3.1 / R5.8 — thread synthetic cause carrying the error kind
+    // so SRE forensics distinguish db_error / invariant_violation /
+    // pseudonymised_row_rejected / unimplemented via cause.name +
+    // cause.message on the audit fallback.
     throw new TxStageError('registration_insert', msg, {
-      cause: new Error(`RegistrationsRepoError.${e.kind}: ${msg}`),
+      cause: makeSyntheticCause('RegistrationsRepoError', `${e.kind}: ${msg}`),
     });
   }
 
@@ -598,14 +666,15 @@ export async function processAttendeeInTx(
           }
         }
       }
-      // R3.3.1 — thread synthetic cause carrying the quota-error kind
-      // + nested cause discriminator so SRE forensics can branch on
-      // lock_acquisition_failed vs quota_lookup_failed.db_error vs
-      // member_not_found at the cause level.
+      // R3.3.1 / R5.8 — thread synthetic cause carrying the quota-
+      // error kind + nested cause discriminator so SRE forensics can
+      // branch on lock_acquisition_failed vs quota_lookup_failed.db_error
+      // vs member_not_found at the cause level (cause.name +
+      // cause.message both surfaced).
       throw new TxStageError(
         'quota_decrement',
         `apply-quota-effect failed (${qe.kind}): ${detail}`,
-        { cause: new Error(`QuotaEffectError.${qe.kind}: ${detail}`) },
+        { cause: makeSyntheticCause('QuotaEffectError', `${qe.kind}: ${detail}`) },
       );
     }
     const decided = quotaResult.value.quotaEffect;
@@ -628,11 +697,14 @@ export async function processAttendeeInTx(
               : e.kind === 'pseudonymised_row_rejected'
                 ? `setQuotaEffect on pseudonymised row ${e.registrationId}`
                 : `setQuotaEffect ${e.kind}`;
-        // R3.3.1 — thread synthetic cause for setQuotaEffect repo error
-        // discriminator (db_error / invariant_violation /
+        // R3.3.1 / R5.8 — thread synthetic cause for setQuotaEffect
+        // repo error discriminator (db_error / invariant_violation /
         // pseudonymised_row_rejected / unimplemented).
         throw new TxStageError('quota_decrement', msg, {
-          cause: new Error(`RegistrationsRepoError.setQuotaEffect.${e.kind}: ${msg}`),
+          cause: makeSyntheticCause(
+            'RegistrationsRepoError.setQuotaEffect',
+            `${e.kind}: ${msg}`,
+          ),
         });
       }
       quotaEffect = decided;
@@ -675,15 +747,25 @@ export async function processAttendeeInTx(
           buildQuotaLockKey(input.tenantId, matchedMemberId!, event.eventId),
         );
       } catch (e) {
-        // R3.3.1 — thread raw Error as cause so SRE sees the lock
-        // adapter's underlying exception class (PostgresError on
-        // pool-exhaust, etc.).
+        // R3.3.1 / R5.3.1 / Round 4 I-4 — thread raw Error as cause so
+        // SRE sees the lock adapter's underlying exception class
+        // (PostgresError on pool-exhaust, etc.). Non-Error throws get
+        // JSON-stringified instead of `String(e)` so plain-object
+        // payloads (`{code:'POOL_EXHAUSTED',detail:'…'}`) preserve
+        // their diagnostic content. Some `@neondatabase/serverless`
+        // versions throw plain objects from pool-exhaustion paths.
+        const rawForCause =
+          e instanceof Error
+            ? e
+            : new Error(`NonError(${safeStringify(e)})`);
+        const messageForWrap =
+          e instanceof Error
+            ? (e.message ?? 'unknown')
+            : safeStringify(e);
         throw new TxStageError(
           'quota_decrement',
-          `refund advisory-lock acquisition failed: ${
-            (e as Error)?.message ?? 'unknown'
-          }`,
-          { cause: e instanceof Error ? e : new Error(String(e)) },
+          `refund advisory-lock acquisition failed: ${messageForWrap}`,
+          { cause: rawForCause },
         );
       }
     }
@@ -693,16 +775,19 @@ export async function processAttendeeInTx(
       existingReg.registrationId,
     );
     if (!flip.ok) {
-      // R3.3.1 — thread synthetic cause carrying the markRefunded
-      // error kind so SRE forensics distinguish the 4 variants
-      // (registration_not_found / already_refunded / db_error /
-      // pseudonymised_row_rejected) on the audit fallback log.
+      // R3.3.1 / R5.8 — thread synthetic cause carrying the
+      // markRefunded error kind so SRE forensics distinguish the 4
+      // variants (registration_not_found / already_refunded /
+      // db_error / pseudonymised_row_rejected) on the audit fallback
+      // log via cause.name + cause.message.
+      const refundDetail = markRefundedErrorMessage(flip.error);
       throw new TxStageError(
         'quota_decrement',
-        markRefundedErrorMessage(flip.error),
+        refundDetail,
         {
-          cause: new Error(
-            `MarkRefundedError.${flip.error.kind}: ${markRefundedErrorMessage(flip.error)}`,
+          cause: makeSyntheticCause(
+            'MarkRefundedError',
+            `${flip.error.kind}: ${refundDetail}`,
           ),
         },
       );
@@ -726,17 +811,19 @@ export async function processAttendeeInTx(
         ),
       });
       if (!r.ok) {
-        // R3.3.1 — thread synthetic cause carrying the quota-accounting
-        // error kind so SRE forensics see the underlying DB / lookup
-        // discriminator (vs the wrapping message).
+        // R3.3.1 / R5.8 — thread synthetic cause carrying the quota-
+        // accounting error kind so SRE forensics see the underlying
+        // DB / lookup discriminator via cause.name + cause.message
+        // (vs the wrapping outer message).
         const causeDetail =
           r.error.kind === 'db_error' ? r.error.message : r.error.kind;
         throw new TxStageError(
           'quota_decrement',
           `refund credit-back allotment lookup failed: ${causeDetail}`,
           {
-            cause: new Error(
-              `QuotaAccountingError.${r.error.kind}: ${causeDetail}`,
+            cause: makeSyntheticCause(
+              'QuotaAccountingError',
+              `${r.error.kind}: ${causeDetail}`,
             ),
           },
         );
