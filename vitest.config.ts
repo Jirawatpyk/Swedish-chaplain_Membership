@@ -85,6 +85,14 @@ export default defineConfig({
         // Pure TypeScript type files — no executable statements.
         'src/modules/plans/domain/benefit-matrix.ts',
         'src/modules/plans/domain/fee-config.ts',
+        // F4 cross-feature payload — pure types/interfaces (no runtime
+        // statements). v8 instrumentation reports 0/130 lines under
+        // unit-only mode because the file is import-only at module
+        // load + tsc strips type declarations at compile time. Coverage
+        // is asserted at the TYPE level by tests/unit/invoicing/domain/
+        // f4-invoice-paid-event.test.ts (compile-roundtrip + payload
+        // shape contracts).
+        'src/modules/invoicing/domain/f4-invoice-paid-event.ts',
         // Next.js server-runtime utilities — require a running Next.js context.
         'src/lib/auth-session.ts',
         'src/lib/feature-flags.ts',
@@ -194,6 +202,88 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F4: Invoicing Domain layer — file-level 100% thresholds for
+        // the 11 fully-covered files. Added 2026-05-17 (polish
+        // retrospective Phase C). Blanket `domain/**/*.ts: 100%` was
+        // attempted but 5 pre-existing files (calculate-credit-note-vat,
+        // document-number, member-identity-snapshot, money — all <100%
+        // by 1-25 branches/lines in scoped run + f4-invoice-paid-event
+        // which is types-only and shows 0/130 lines under v8 instrumentation)
+        // can't hit 100% in unit-only mode. The 11 entries below pin the
+        // files that ALREADY achieve 100% so regressions are caught;
+        // the 4 sub-100% files are deferred to a follow-up commit
+        // ("F4 Domain coverage polish — close remaining 4 gaps") and
+        // the types-only file is excluded above (search "types-only"
+        // in exclude:).
+        // Mirrors the F8 deferred-with-rationale precedent at lines
+        // ~361-373 below — explicit acknowledgement beats silent
+        // gaps under a blanket threshold.
+        'src/modules/invoicing/domain/credit-note.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/invoice.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/invoice-line.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/policies/calculate-pro-rate-factor.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/policies/calculate-vat.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/fiscal-year.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/pro-rate-policy.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/sha256-hex.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/tenant-identity-snapshot.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/vat-rate.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // F4: Invoicing Application — security-critical use cases require
         // 100% branch coverage per Constitution Principle II. The 5 paths
         // below directly gate PII/financial-doc read (PDF signed-URL
@@ -201,6 +291,23 @@ export default defineConfig({
         // and async render-state transitions (R10-T2 added these blocks
         // after R9-blob_missing branches landed without coverage and the
         // global 80% threshold swallowed the drift).
+        //
+        // **Deferred (integration-only)** per 2026-05-17 polish
+        // retrospective Phase D:
+        //
+        // - `mark-paid-from-processor.ts` — F4/F5 bridge entry called
+        //   by the Stripe webhook (`processWebhookEvent`). Covered by
+        //   tests/integration/payments/f4-markpaid-integration.test.ts
+        //   (T128 — 5 invariants: status flip, single render, single
+        //   outbox enqueue, paymentDate threading, byte-identical
+        //   render with manual-mark equivalent). The use case
+        //   orchestrates `recordPayment` + repo writes + audit emit
+        //   under `runInTenant` — unit-mocking the chain would
+        //   re-stub every IT contract above for marginal extra
+        //   confidence. Same R6-CRIT-1 rationale as F8 deferred
+        //   use-cases below. Threshold lives at the global 50%/80%
+        //   minimum (no file-level entry); the IT suite is the
+        //   binding correctness contract.
         'src/modules/invoicing/application/use-cases/get-invoice-pdf-signed-url.ts': {
           lines: 100,
           branches: 100,

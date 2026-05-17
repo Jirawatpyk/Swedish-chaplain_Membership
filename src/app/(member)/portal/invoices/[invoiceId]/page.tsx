@@ -113,6 +113,17 @@ interface RouteParams {
   readonly invoiceId: string;
 }
 
+// F4/F5 polish retrospective Phase E (2026-05-17) — `export const
+// dynamic = 'force-dynamic'` paired with the sibling `not-found.tsx`
+// is required for `notFound()` to set the response status to HTTP
+// 404 (vs the RSC streaming default of 200). Without `force-dynamic`,
+// response headers commit before `notFound()` resolves and a 200
+// leaks even when the body is the not-found UI — breaking the
+// Principle I cross-tenant probe contract (attackers can grep 200
+// status to enumerate invoiceIds). Mirrors the admin/invoices/
+// [invoiceId] fix from commit a8333ba2 + the F7 broadcasts pattern.
+export const dynamic = 'force-dynamic';
+
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.invoices.detail');
   return { title: t('title') };
