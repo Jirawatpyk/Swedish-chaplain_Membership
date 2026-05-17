@@ -19,6 +19,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { runInTenant } from '@/lib/db';
 import { eventcreateMetrics } from '@/lib/metrics';
+import { gateCronBearerOrRespond } from '@/lib/cron-auth';
 import { asTenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import {
@@ -29,26 +30,17 @@ import {
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 
-function verifyCronBearer(auth: string | null): boolean {
-  const expected = env.cron.secret;
-  if (!expected || !auth || !auth.startsWith('Bearer ')) return false;
-  const supplied = auth.slice('Bearer '.length);
-  if (supplied.length !== expected.length) return false;
-  let diff = 0;
-  for (let i = 0; i < supplied.length; i++) {
-    diff |= supplied.charCodeAt(i) ^ expected.charCodeAt(i);
-  }
-  return diff === 0;
-}
+const ROUTE = '/api/internal/retention/sweep-eventcreate-idempotency';
 
 async function listKnownTenants(): Promise<ReadonlyArray<string>> {
   return [env.tenant.slug];
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  if (!verifyCronBearer(request.headers.get('authorization'))) {
-    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  // Security review 2026-05-17 closure: use shared gateCronBearerOrRespond
+  // for audit + IP rate-limit consistency with sweep-error-csv-blobs.
+  const gate = await gateCronBearerOrRespond(request, { route: ROUTE });
+  if (gate) return gate;
 
   if (!env.features.f6EventCreate) {
     return NextResponse.json({ ok: true, skipped: 'feature_off' }, { status: 200 });

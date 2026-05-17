@@ -38,10 +38,18 @@ const PROTECTED_PATH_PREFIX = '/api/';
  *     it here would block every webhook delivery.
  *   - `/api/cron/*` — authenticated by a Bearer `CRON_SECRET` token
  *     set by Vercel Cron. Vercel Cron does not send an Origin header.
+ *   - `/api/internal/*` — authenticated by a Bearer `CRON_SECRET` token
+ *     via `gateCronBearerOrRespond` (`src/lib/cron-auth.ts`). External
+ *     cron-job.org coordinators (F4 outbox-purge, F5 stale-pending-count,
+ *     F6 pseudonymise + idempotency sweep + recompute-match-rate, F6.1
+ *     error-csv-blob sweep) POST/GET here as server-to-server clients
+ *     without an Origin header. Adding this prefix prevents the CSRF
+ *     guard from blocking the request before the Bearer check runs
+ *     (security review 2026-05-17 finding — see `ship-day-checklist.md`).
  *
  * Everything else under `/api/` still goes through the Origin allow-list.
  */
-const EXEMPT_PATH_PREFIXES = ['/api/webhooks/', '/api/cron/'];
+const EXEMPT_PATH_PREFIXES = ['/api/webhooks/', '/api/cron/', '/api/internal/'];
 
 export type CsrfDecision =
   | {
