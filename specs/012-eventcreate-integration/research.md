@@ -413,9 +413,9 @@ This trade-off is acceptable for F6 v1; if maintenance proves excessive (e.g., Z
 
 ---
 
-## R13 — Audit event taxonomy (~35 events)
+## R13 — Audit event taxonomy (43 events; originally scoped ~35)
 
-**Decision**: F6 emits ~35 named audit event types via `pino-audit-port.ts`, conforming to the `payload jsonb` schema used by F2/F3/F4/F5/F7/F8. The canonical list (with retention years column):
+**Decision**: F6 emits **43** named audit event types via `pino-audit-port.ts`, conforming to the `payload jsonb` schema used by F2/F3/F4/F5/F7/F8. The list below covers the original ~35-event scope; 8 additional events were added in subsequent migrations (0135 `webhook_secret_force_expired` + 0140-series F6.1 CSV events `csv_import_error_csv_downloaded` / `csv_import_cross_tenant_probe` / `csv_import_event_mismatch_overridden` / `csv_import_row_cancelled_no_prior` / `csv_import_row_state_changed` + 0144 `event_created` admin-manual + R6-W5 staff-review fix `webhook_ingest_precondition_failed`). The canonical 43-event closed union lives at `src/modules/events/application/ports/audit-port.ts:76-171`. The list below (with retention years column):
 
 **Webhook ingest** (8):
 1. `webhook_receipt_verified` — signature ok + processing complete (5y)

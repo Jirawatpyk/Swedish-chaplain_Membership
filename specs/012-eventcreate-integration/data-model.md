@@ -354,7 +354,7 @@ There is no "archive registration" state — registrations either exist or are e
 
 ## 4. Audit event taxonomy (canonical)
 
-See `research.md` R13 for the full ~35-event list with retention years. Codified in `src/modules/events/application/ports/audit-port.ts` as a closed union type so adding a new event type requires a TypeScript change (compile-time enforcement).
+See `research.md` R13 for the original ~35-event list with retention years. Final canonical taxonomy is **43 events** (original 35 enumerated in migration 0132 + 8 added via subsequent migrations 0135 `webhook_secret_force_expired` + 0140-series F6.1 CSV events + R6-W5 staff-review fix `webhook_ingest_precondition_failed`). Codified in `src/modules/events/application/ports/audit-port.ts:76-171` as a closed union type so adding a new event type requires a TypeScript change (compile-time enforcement).
 
 ```ts
 export type F6AuditEventType =

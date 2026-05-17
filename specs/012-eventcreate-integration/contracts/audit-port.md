@@ -4,7 +4,7 @@
 **Pattern**: Closed TypeScript union — adding events requires a compile-time change.
 **FR refs**: FR-009, FR-032 (audit retention), FR-035 (role violation audit), spec.md § Edge Cases (cross-tenant probe high severity)
 
-This contract codifies the ~35 audit event types F6 emits. The full canonical list lives in `data-model.md` § 4; this doc adds the **payload shape** per event, which is the binding contract for downstream observers (alerts, reports, retention sweeper).
+This contract codifies the **43** audit event types F6 emits (original spec scoped ~35; extended to 43 via migrations 0135 + 0140-series F6.1 CSV + 0144 `event_created` + R6-W5 staff-review fix). The full canonical list lives at `src/modules/events/application/ports/audit-port.ts:76-171`; this doc adds the **payload shape** per event, which is the binding contract for downstream observers (alerts, reports, retention sweeper).
 
 All events use the existing `audit_log` table (introduced in F1, extended F2..F8). Default retention 5 years. F6 does **not** introduce new audit-log columns — it writes into the existing structured-payload column added by F2. All events carry the standard envelope:
 

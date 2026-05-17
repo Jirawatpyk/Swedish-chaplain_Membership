@@ -236,7 +236,7 @@ Down-migrations are idempotent and reverse the CREATE TABLE / ALTER TABLE / CREA
 - **Postgres advisory locks**: F6 does NOT use advisory locks (unlike F4 §87 numbering + F5 TOCTOU guard + F7 broadcast dispatch + F8 cron coordinator). The `SELECT … FOR UPDATE` row lock on the quota counter is sufficient at F6's transaction granularity.
 - **Don't write to F2 quota counters directly**: F2 owns its schema. F6 calls `getMemberPlanForBucket` + `applyQuotaEffect` through F2's barrel; do not reach into F2's tables from F6 use-cases.
 - **Test the cron handler timeout**: if pseudonymisation sweep exceeds 60s with 50k rows, batch the work — don't extend the function timeout.
-- **i18n keys for audit events**: all ~35 event types have a human-readable description in `i18n/messages/{en,th,sv}.json` under `audit.eventcreate.*`. CI fails if any is missing.
+- **i18n keys for audit events**: all **43** event types (original spec scoped 35; final taxonomy 43 per closed union at `audit-port.ts:76-171`) have a human-readable description in `i18n/messages/{en,th,sv}.json` under `admin.events.detail.auditEvents.*` (canonical project namespace). CI fails if any is missing.
 - **CSV import 5 MiB limit**: enforced at the multipart parse boundary. If a tenant needs >5 MiB, they have to split the file — bigger uploads are F6.1 backlog.
 
 ---

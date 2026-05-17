@@ -38,7 +38,7 @@
 ## Audit Log Payload Schema
 
 - [ ] CHK021 - Is the `audit_log.payload jsonb` column specified as the canonical structured-payload carrier (NOT the legacy `summary` text column) — corrected round-2 M1? [Clarity, contracts/audit-port.md round-2 M1]
-- [ ] CHK022 - Are the **35 F6 audit event payload shapes** specified with TypeScript discriminated-union types per event? [Completeness, contracts/audit-port.md]
+- [ ] CHK022 - Are the **43 F6 audit event payload shapes** (original spec scoped 35; extended to 43) specified with TypeScript discriminated-union types per event? [Completeness, contracts/audit-port.md + canonical closed union at `src/modules/events/application/ports/audit-port.ts:76-171`]
 - [ ] CHK023 - Is the `severity` field specified as living inside `payload.severity` (no top-level audit-log column)? [Consistency, contracts/audit-port.md round-2 E7]
 - [ ] CHK024 - Are queryable JSON-path index requirements specified for high-cardinality fields (e.g., `audit_log(tenant_id, (payload->>'event_external_id'), ...)` if needed)? [Coverage, follow F4 precedent at `audit_log_overdue_once_per_day`]
 - [ ] CHK025 - Is the `summary` column convention specified (one-line synopsis ≤500 chars for log-line readability; structured payload in JSONB)? [Clarity, contracts/audit-port.md round-2 M1]

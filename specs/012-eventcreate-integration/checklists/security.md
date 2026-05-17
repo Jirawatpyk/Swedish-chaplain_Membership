@@ -42,7 +42,7 @@
 
 ## Audit Log Coverage
 
-- [ ] CHK023 - Are the **35 F6 audit event types** completely enumerated with payload shapes, severity, and retention years? [Completeness, data-model.md § 4 + contracts/audit-port.md]
+- [ ] CHK023 - Are the **43 F6 audit event types** (original spec scoped 35; extended to 43) completely enumerated with payload shapes, severity, and retention years? [Completeness, data-model.md § 4 + contracts/audit-port.md + canonical closed union at `src/modules/events/application/ports/audit-port.ts:76-171`]
 - [ ] CHK024 - Are requirements for the **dual-write fallback** of `webhook_rolled_back` (DB tx + stderr `pino.fatal`) specified to prevent silent observability loss? [Coverage, research.md R6 round-1 E3]
 - [ ] CHK025 - Is the `audit_log.payload jsonb` column (F2 migration 0007) explicitly named as the canonical structured-payload carrier (NOT the legacy `summary` text)? [Clarity, contracts/audit-port.md round-2 M1]
 - [ ] CHK026 - Are audit-event retention requirements consistently 5 years across all 35 F6 events (no F4-style 10-year tax-doc overlap)? [Consistency, data-model.md § 4]

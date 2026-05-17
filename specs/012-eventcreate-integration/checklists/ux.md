@@ -36,7 +36,7 @@
 
 - [ ] CHK018 - Is the canonical EN locale + TH + SV all required at release specified (no F4-style TH-only-blocker since F6 has no tax-doc surface)? [Completeness, Spec §FR-030]
 - [ ] CHK019 - Are the ~150 new i18n keys estimate documented (×3 locales = ~450 entries)? [Clarity, plan.md Constitution Check § V]
-- [ ] CHK020 - Are i18n requirements for all 35 audit event human-readable descriptions explicit? [Coverage, Spec §FR-030 + data-model.md § 4]
+- [ ] CHK020 - Are i18n requirements for all **43** audit event human-readable descriptions (original spec scoped 35; extended to 43) explicit? [Coverage, Spec §FR-030 + data-model.md § 4 + canonical closed union at `src/modules/events/application/ports/audit-port.ts:76-171`]
 - [ ] CHK021 - Is the EN-fail-build + TH/SV-warn-then-CI-block-on-release-branch policy explicit (inherited from F1+F2 i18n discipline)? [Clarity, plan.md Constitution Check § V]
 - [ ] CHK022 - Are i18n requirements for CSV-import error messages specified per-locale (so admin sees errors in their locale)? [Coverage, contracts/csv-import-api.md]
 

@@ -5,7 +5,9 @@
  * F6 audit events to F1's shared `audit_log` table (extended by F2
  * migration 0007 with `payload jsonb` + `tenant_id text`; extended by
  * F5 migration 0038 with `retention_years smallint`; extended by F6
- * migration 0132 with 35 new enum values).
+ * migration 0132 with 35 new enum values, then further extended to a
+ * canonical 43-event taxonomy via migrations 0135 + 0140-series F6.1
+ * CSV + 0144 `event_created` + R6-W5 `webhook_ingest_precondition_failed`).
  *
  * tx semantics (mirror F4/F5):
  *   - `emit(entry)` — writes inside the CALLER'S transaction (executor
