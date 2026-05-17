@@ -322,8 +322,9 @@ describe('Phase B B7 — POST /api/admin/events/[eventId]/registrations/[registr
     });
   });
 
-  // Killswitch coverage is exercised in a sibling file matching the
-  // `admin-events-create-killswitch.test.ts` pattern — `vi.mock` of
-  // `@/lib/env` must happen at module init (a single test cannot flip
-  // the feature flag mid-suite). Out of scope for this contract file.
+  // Killswitch coverage lives in
+  // `admin-registration-erase-killswitch.test.ts` — `vi.mock` of
+  // `@/lib/env` permanently pollutes the worker's module cache
+  // (Vitest 2.x ESM), so the killswitch case must run in its own file
+  // with the flag mocked OFF at module init.
 });

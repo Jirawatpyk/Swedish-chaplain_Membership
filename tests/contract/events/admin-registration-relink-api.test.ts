@@ -3,6 +3,9 @@
  *
  * Closes test-coverage gap C2 (FR-014 + pseudonymised-row 409 path).
  * Mirrors `admin-registration-erase-api.test.ts` (B7) structure.
+ * Killswitch coverage lives in
+ * `admin-registration-relink-killswitch.test.ts` — same module-cache
+ * isolation rationale as the erase variant.
  */
 import {
   afterEach,
