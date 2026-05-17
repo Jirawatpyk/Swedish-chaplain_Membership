@@ -45,6 +45,7 @@ import {
 } from '@/modules/events/infrastructure/schema';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser } from '../helpers/test-users';
 import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
 
 describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Principle I clause 3)', () => {
@@ -56,11 +57,18 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
   let bRegId: string;
   let aRequestId: string;
   let bRequestId: string;
+  let testActorUserId: string;
 
   beforeAll(async () => {
     const pair = await createTwoTestTenants();
     tenantA = pair.a;
     tenantB = pair.b;
+
+    // D1 fix: create a real admin user for the CSV-import probe's
+    // actor_user_id FK requirement. Other CSV integration tests
+    // (eventcreate-csv-real-fixtures.test.ts) use the same pattern.
+    const actor = await createActiveTestUser('admin');
+    testActorUserId = actor.userId;
 
     aEventId = randomUUID();
     bEventId = randomUUID();
@@ -485,9 +493,21 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
 
       const outcome = await runImportCsv({
         tenantSlug: tenantB.ctx.slug,
-        actorUserId: asUserId('00000000-0000-0000-0000-000000000999'),
+        // D1 fix (Phase 10 verify-run, 2026-05-17): the original
+        // sentinel actorUserId `0000…0999` doesn't exist in the
+        // users table → FK on csv_import_records.actor_user_id
+        // fails. Replace with a real test admin user (mirrors
+        // eventcreate-csv-real-fixtures.test.ts pattern).
+        actorUserId: asUserId(testActorUserId),
         bytes: csvBytes,
-        selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: f6CsvTestSelectedEventStub.eventId as string },
+        // D1 fix (Phase 10 verify-run, 2026-05-17): the stub
+        // eventId is a hardcoded UUID that doesn't exist in
+        // tenant B's events table — the CSV import's INSERT into
+        // `csv_import_records` fails the FK constraint on
+        // `event_id`. Replace with `bEventId` which is seeded in
+        // beforeAll for THIS tenant; preserves the test's
+        // cross-tenant-isolation intent while using a real FK.
+        selectedEvent: { ...f6CsvTestSelectedEventStub, eventId: bEventId },
       });
 
       // The import should succeed for Tenant B — proves the use-case
@@ -501,17 +521,26 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
       expect(after.registrations).toBe(before.registrations);
       expect(after.idempotency).toBe(before.idempotency);
 
-      // Tenant B should now have the 3 rows.
-      const tenantBEvents = await runInTenant(tenantB.ctx, async (tx) =>
+      // Tenant B should now have 3 NEW registrations from the CSV.
+      // D1 fix (Phase 10 verify-run): the original assertion checked
+      // for 3 NEW events filtered by externalId — but `importCsv` per
+      // import-csv.ts:1196-1201 merges `selectedEvent` into EVERY row,
+      // so all 3 CSV rows land as registrations against the SAME
+      // `selectedEvent.eventId` (here = bEventId). The test's
+      // cross-tenant-isolation invariant is satisfied by proving 3
+      // NEW REGISTRATIONS landed in tenant B + tenant A unchanged
+      // (already asserted above). Switching from events → registrations
+      // matches the architectural reality of the importer.
+      const tenantBRegistrations = await runInTenant(tenantB.ctx, async (tx) =>
         tx
           .select()
-          .from(events)
-          .where(eq(events.tenantId, tenantB.ctx.slug)),
+          .from(eventRegistrations)
+          .where(eq(eventRegistrations.tenantId, tenantB.ctx.slug)),
       );
-      const probeEvents = tenantBEvents.filter((e) =>
-        e.externalId.startsWith(`cross_t_event_${ts}_`),
+      const probeRegistrations = tenantBRegistrations.filter((r) =>
+        r.attendeeEmail.startsWith(`cross_${ts}_`),
       );
-      expect(probeEvents.length).toBe(3);
+      expect(probeRegistrations.length).toBe(3);
     });
   });
 });
