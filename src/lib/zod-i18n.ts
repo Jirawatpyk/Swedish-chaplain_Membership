@@ -57,12 +57,23 @@ export function passwordPairFields(tooShort: string): {
 /**
  * Refine that "the new password" matches confirmPassword. Caller
  * passes the actual field name (defaults to `newPassword`).
+ *
+ * I1 (Round 4) — generic shape changed from
+ * `<T extends z.ZodObject<z.ZodRawShape>>(schema: T, ...): z.ZodEffects<T>`
+ * to `<T extends z.ZodRawShape>(schema: z.ZodObject<T>, ...)`. The
+ * pre-fix shape collapsed the input's per-field types to the raw-shape
+ * record, so the returned `ZodEffects` no longer preserved enough
+ * information to be structurally assignment-compatible with the
+ * caller's `z.ZodType<FormValues>`. Each form ended up writing
+ * `as unknown as z.ZodType<FormValues>` — the kind of cast Strict TS
+ * is supposed to prevent. The new signature keeps the per-field
+ * `ZodRawShape` parameter alive, so the cast is no longer needed.
  */
-export function refinePasswordPair<T extends z.ZodObject<z.ZodRawShape>>(
-  schema: T,
+export function refinePasswordPair<T extends z.ZodRawShape>(
+  schema: z.ZodObject<T>,
   passwordMismatch: string,
   newPasswordFieldName: 'newPassword' | 'password' = 'newPassword',
-): z.ZodEffects<T> {
+): z.ZodEffects<z.ZodObject<T>> {
   const guarded = guardI18nValue(passwordMismatch, 'passwordMismatch');
   return schema.refine(
     (data: Record<string, unknown>) =>

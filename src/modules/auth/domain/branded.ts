@@ -138,7 +138,9 @@ export function asTokenId(value: string): TokenId {
  * O11 (Round 3): brandName narrowed to the literal union of valid
  * brand names — pre-fix a typo like `'Resettokenid'` compiled.
  */
-export type ValidatedBrandName = 'ResetTokenId' | 'InvitationTokenId';
+// S3 (Round 4) — module-local. Not part of the public type contract;
+// no external consumer pattern-matches on the union today.
+type ValidatedBrandName = 'ResetTokenId' | 'InvitationTokenId';
 
 export class MalformedTokenError extends Error {
   constructor(brandName: ValidatedBrandName, length: number) {
@@ -173,7 +175,7 @@ function assertHex64(value: string, brandName: ValidatedBrandName): void {
  * would otherwise yield a silent 410 even though the token is
  * structurally valid.
  */
-function parseHex64<T>(value: string, brandName: ValidatedBrandName): T {
+function parseHex64<T extends string>(value: string, brandName: ValidatedBrandName): T {
   const normalised = value.toLowerCase();
   assertHex64(normalised, brandName);
   return normalised as T;

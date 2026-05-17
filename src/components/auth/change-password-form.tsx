@@ -33,24 +33,22 @@ import {
 } from './password-strength';
 
 // H2 + O1 (Round 2/3) — schema built inside component via shared
-// helpers in src/lib/zod-i18n.ts.
+// helpers in src/lib/zod-i18n.ts. I1 (Round 4) — helper signature
+// now preserves inferred shape so the cast is dropped.
 type FormValues = {
   currentPassword: string;
   newPassword: string;
   confirmPassword: string;
 };
 
-function buildSchema(
-  tooShort: string,
-  passwordMismatch: string,
-): z.ZodType<FormValues> {
+function buildSchema(tooShort: string, passwordMismatch: string) {
   return refinePasswordPair(
     z.object({
       currentPassword: z.string().min(1),
       ...passwordPairFields(tooShort),
     }),
     passwordMismatch,
-  ) as unknown as z.ZodType<FormValues>;
+  );
 }
 
 export function ChangePasswordForm() {

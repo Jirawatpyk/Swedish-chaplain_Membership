@@ -36,17 +36,16 @@ import {
 // H2 (Round 2) — schema built inside the component so error messages
 // translate per locale. O1 (Round 3) — extracted to src/lib/zod-i18n.ts
 // for reuse across 3 forms; N6 dev-mode guard now catches translation
-// drift even before check:i18n CI runs.
+// drift even before check:i18n CI runs. I1 (Round 4) — helper signature
+// now preserves inferred shape, so the previous `as unknown as
+// z.ZodType<FormValues>` cast is gone.
 type FormValues = { newPassword: string; confirmPassword: string };
 
-function buildSchema(
-  tooShort: string,
-  passwordMismatch: string,
-): z.ZodType<FormValues> {
+function buildSchema(tooShort: string, passwordMismatch: string) {
   return refinePasswordPair(
     z.object(passwordPairFields(tooShort)),
     passwordMismatch,
-  ) as unknown as z.ZodType<FormValues>;
+  );
 }
 
 export interface ResetPasswordFormProps {

@@ -34,16 +34,15 @@ import {
 // H2 + O1 (Round 2/3) — schema built inside component via shared
 // `refinePasswordPair` helper (invite uses `password` not
 // `newPassword` so the field name override is passed explicitly).
+// I1 (Round 4) — cast dropped now that the helper preserves inferred
+// shape.
 type FormValues = {
   displayName: string;
   password: string;
   confirmPassword: string;
 };
 
-function buildSchema(
-  tooShort: string,
-  passwordMismatch: string,
-): z.ZodType<FormValues> {
+function buildSchema(tooShort: string, passwordMismatch: string) {
   return refinePasswordPair(
     z.object({
       displayName: z.string().min(1).max(120),
@@ -52,7 +51,7 @@ function buildSchema(
     }),
     passwordMismatch,
     'password',
-  ) as unknown as z.ZodType<FormValues>;
+  );
 }
 
 export interface InviteRedeemFormProps {
