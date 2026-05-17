@@ -2,6 +2,7 @@
   "auth": {
     "signIn": {
       "title": "Logga in",
+      "cardDescription": "Personalportal",
       "emailLabel": "E-post",
       "passwordLabel": "Lösenord",
       "submit": "Logga in",
@@ -32,6 +33,7 @@
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
+      "cardDescription": "Välj ett nytt lösenord för ditt konto.",
       "newPasswordLabel": "Nytt lösenord",
       "confirmPasswordLabel": "Bekräfta nytt lösenord",
       "submit": "Uppdatera lösenord",
@@ -63,6 +65,7 @@
     },
     "invite": {
       "title": "Slutför ditt konto",
+      "cardDescription": "Aktivera ditt inbjudna konto genom att välja ett lösenord.",
       "emailLabel": "E-post",
       "displayNameLabel": "Ditt namn",
       "passwordLabel": "Välj ett lösenord",
@@ -241,7 +244,6 @@
         "invite": "Bjud in användare",
         "disable": "Inaktivera",
         "enable": "Aktivera",
-        "changeRole": "Byt roll",
         "self": "Det är du"
       },
       "confirm": {

@@ -31,9 +31,14 @@
  *      - audit `sign_in_success`
  *      - return Ok({ sessionId, user })
  *
- * Application layer NEVER throws across its boundary — every error
- * path returns a Result. The Route Handler (T070) maps the union to
- * the appropriate HTTP status.
+ * Every *business-logic* error path returns a Result (the Route
+ * Handler T070 maps the union to the appropriate HTTP status).
+ * Infrastructure faults (Neon connection drops, Upstash unreachable
+ * beyond the in-memory fallback, argon2 native-module failure) DO
+ * bubble as unhandled rejections — the route handler's B3 outer
+ * try/catch maps those to 500 with a requestId. Pre-B3 this comment
+ * read "NEVER throws across its boundary" which was true only for
+ * the documented Result union, not for infra throws.
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
@@ -54,6 +59,7 @@ import type { Session } from '@/modules/auth/domain/session';
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
@@ -170,12 +176,10 @@ async function signInImpl(
     RATE_LIMIT_PER_IP.windowSeconds,
   );
   if (!emailLimit.success || !ipLimit.success) {
-    const retryAfter = Math.max(
-      Math.ceil((emailLimit.reset - Date.now()) / 1000),
-      Math.ceil((ipLimit.reset - Date.now()) / 1000),
-      1,
-    );
-    return err({ code: 'rate-limited', retryAfterSeconds: retryAfter });
+    return err({
+      code: 'rate-limited',
+      retryAfterSeconds: retryAfterSeconds(emailLimit, ipLimit),
+    });
   }
 
   // 2. User lookup

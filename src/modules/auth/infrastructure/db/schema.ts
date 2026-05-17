@@ -25,7 +25,7 @@ import {
  *   - email_delivery_events     — Resend webhook tracking (NOT audit)
  *
  * `audit_log` enforces append-only via DB grants in
- * drizzle/migrations/0001_audit_log_grants.sql (T024). The Drizzle layer
+ * drizzle/migrations/0001_audit_log_append_only.sql (T024). The Drizzle layer
  * additionally only exposes an `append()` method on the audit repo (T067) —
  * defense in depth.
  *

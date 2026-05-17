@@ -23,7 +23,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { AUDIT_EVENT_TYPES } from '@/modules/auth/domain/audit-event';
 
-describe('integration: audit completeness — all 17 event types writable', () => {
+describe('integration: audit completeness — all 30 event types writable', () => {
   it.each(AUDIT_EVENT_TYPES)(
     'can append and read back a %s audit row',
     async (eventType) => {
@@ -55,23 +55,21 @@ describe('integration: audit completeness — all 17 event types writable', () =
     },
   );
 
-  it('the full event-type list has exactly 26 entries', () => {
+  it('the full event-type list has exactly 30 entries', () => {
     // Regression guard against accidental removal or duplication.
     // Pass 5: 16 → 17 after splitting `password_reset_failed` out of
     //         `invitation_redemption_failed` (migration 0002).
     // F5:    17 → 22 after the routes-level webhook + rate-limit
-    //         events were registered for the auditRepo path
-    //         (webhook_signature_rejected, payment_environment_mismatch,
-    //          webhook_api_version_mismatch,
-    //          payment_initiate_rate_limited, payment_cancel_rate_limited).
-    // F5 audit closeout: 22 → 24 after migration 0046 added
-    //         `webhook_unknown_intent` + `webhook_payment_already_canceled`.
-    // F5 review I-14: 24 → 25 after migration 0047 added
-    //         `payment_processor_retrieve_failed`.
-    // F5 review S5: 25 → 26 after migration 0048 added
-    //         `payment_invoice_not_found`.
-    expect(AUDIT_EVENT_TYPES.length).toBe(26);
-    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(26);
+    //         events were registered for the auditRepo path.
+    // F5 audit closeout: 22 → 24 (migration 0046).
+    // F5 review I-14: 24 → 25 (migration 0047).
+    // F5 review S5: 25 → 26 (migration 0048).
+    // F5R2-C2: 26 → 27 (migration 0151 webhook_dispatch_permanent_failure).
+    // F1 post-ship B5: 27 → 30 (migration 0158 — password_change_failed,
+    //                  password_reset_email_failed,
+    //                  password_malformed_hash_detected).
+    expect(AUDIT_EVENT_TYPES.length).toBe(30);
+    expect(new Set(AUDIT_EVENT_TYPES).size).toBe(30);
   });
 });
 

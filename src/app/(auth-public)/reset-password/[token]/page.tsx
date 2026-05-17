@@ -64,7 +64,7 @@ export default async function ResetPasswordPage({
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-muted/20">
+    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
       <header className="flex items-center justify-between p-4">
         <div className="text-sm font-semibold tracking-tight">{process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}</div>
         <ThemeToggle />
@@ -73,9 +73,7 @@ export default async function ResetPasswordPage({
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>
-              Choose a new password for your account.
-            </CardDescription>
+            <CardDescription>{t('cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             {tokenDead ? (

@@ -2,6 +2,7 @@
   "auth": {
     "signIn": {
       "title": "Sign in",
+      "cardDescription": "Staff portal",
       "emailLabel": "Email",
       "passwordLabel": "Password",
       "submit": "Sign in",
@@ -32,6 +33,7 @@
     },
     "resetPassword": {
       "title": "Choose a new password",
+      "cardDescription": "Choose a new password for your account.",
       "newPasswordLabel": "New password",
       "confirmPasswordLabel": "Confirm new password",
       "submit": "Update password",
@@ -63,6 +65,7 @@
     },
     "invite": {
       "title": "Finish setting up your account",
+      "cardDescription": "Activate your invited account by setting a password.",
       "emailLabel": "Email",
       "displayNameLabel": "Your name",
       "passwordLabel": "Choose a password",
@@ -241,7 +244,6 @@
         "invite": "Invite user",
         "disable": "Disable",
         "enable": "Enable",
-        "changeRole": "Change role",
         "self": "That's you"
       },
       "confirm": {

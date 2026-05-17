@@ -34,6 +34,7 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
 // `buildResetPasswordEmail` is a PURE template function (no DB, no
 // network). The function VALUE is injected via `ForgotPasswordDeps`
@@ -126,12 +127,10 @@ export async function forgotPassword(
     RATE_LIMIT_PER_IP.windowSeconds,
   );
   if (!emailLimit.success || !ipLimit.success) {
-    const retryAfter = Math.max(
-      Math.ceil((emailLimit.reset - Date.now()) / 1000),
-      Math.ceil((ipLimit.reset - Date.now()) / 1000),
-      1,
-    );
-    return err({ code: 'rate-limited', retryAfterSeconds: retryAfter });
+    return err({
+      code: 'rate-limited',
+      retryAfterSeconds: retryAfterSeconds(emailLimit, ipLimit),
+    });
   }
 
   // 3. Look up user

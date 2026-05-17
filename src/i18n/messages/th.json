@@ -2,6 +2,7 @@
   "auth": {
     "signIn": {
       "title": "เข้าสู่ระบบ",
+      "cardDescription": "พอร์ทัลเจ้าหน้าที่",
       "emailLabel": "อีเมล",
       "passwordLabel": "รหัสผ่าน",
       "submit": "เข้าสู่ระบบ",
@@ -32,6 +33,7 @@
     },
     "resetPassword": {
       "title": "ตั้งรหัสผ่านใหม่",
+      "cardDescription": "เลือกรหัสผ่านใหม่สำหรับบัญชีของคุณ",
       "newPasswordLabel": "รหัสผ่านใหม่",
       "confirmPasswordLabel": "ยืนยันรหัสผ่านใหม่",
       "submit": "อัปเดตรหัสผ่าน",
@@ -63,6 +65,7 @@
     },
     "invite": {
       "title": "ตั้งค่าบัญชีของคุณ",
+      "cardDescription": "เปิดใช้งานบัญชีที่ได้รับเชิญโดยตั้งรหัสผ่าน",
       "emailLabel": "อีเมล",
       "displayNameLabel": "ชื่อของคุณ",
       "passwordLabel": "เลือกรหัสผ่าน",
@@ -241,7 +244,6 @@
         "invite": "เชิญผู้ใช้",
         "disable": "ระงับ",
         "enable": "เปิดใช้งาน",
-        "changeRole": "เปลี่ยนสิทธิ์",
         "self": "บัญชีของคุณ"
       },
       "confirm": {

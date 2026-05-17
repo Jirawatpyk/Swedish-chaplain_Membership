@@ -28,6 +28,7 @@ import type { SessionId } from '@/modules/auth/domain/branded';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { defaultHeartbeatDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -72,11 +73,10 @@ export async function heartbeat(
     RATE_LIMIT.windowSeconds,
   );
   if (!rl.success) {
-    const retryAfter = Math.max(
-      Math.ceil((rl.reset - Date.now()) / 1000),
-      1,
-    );
-    return err({ code: 'rate-limited', retryAfterSeconds: retryAfter });
+    return err({
+      code: 'rate-limited',
+      retryAfterSeconds: retryAfterSeconds(rl),
+    });
   }
 
   const now = deps.now();

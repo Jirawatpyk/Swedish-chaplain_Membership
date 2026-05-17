@@ -41,6 +41,13 @@ const unlimitedLimiter = {
     remaining: 99,
     reset: Date.now() + 60_000,
   }),
+  // B2 — change-password peek-then-consume; stub both.
+  peek: async () => ({
+    success: true,
+    limit: 100,
+    remaining: 99,
+    reset: Date.now() + 60_000,
+  }),
 };
 
 describe('integration: change-password (US6)', () => {
@@ -171,12 +178,16 @@ describe('integration: change-password (US6)', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('wrong-current-password');
 
-    // No audit row for this request id
+    // B5 (post-ship 2026-05-17) — wrong-current-password now emits a
+    // dedicated `password_change_failed` audit row so an attacker
+    // probing a stolen session cookie has a forensic trail. Pre-B5
+    // the audit was silent on this branch.
     const auditRows = await db
       .select()
       .from(auditLog)
       .where(eq(auditLog.requestId, requestId));
-    expect(auditRows).toHaveLength(0);
+    expect(auditRows).toHaveLength(1);
+    expect(auditRows[0]?.eventType).toBe('password_change_failed');
 
     // Sessions unchanged — 2 still present
     const sessionRows = await db

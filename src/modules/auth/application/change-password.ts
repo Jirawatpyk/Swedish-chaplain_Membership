@@ -42,6 +42,7 @@ import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo'
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { defaultChangePasswordDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -108,10 +109,7 @@ export async function changePassword(
   if (!peek.success) {
     return err({
       code: 'rate-limited',
-      retryAfterSeconds: Math.max(
-        Math.ceil((peek.reset - Date.now()) / 1000),
-        1,
-      ),
+      retryAfterSeconds: retryAfterSeconds(peek),
     });
   }
 

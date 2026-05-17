@@ -3,25 +3,27 @@
  *
  * Transition `active → disabled`. Kills all sessions for the target
  * user so they get booted immediately. Enforces the "at least one
- * active admin always exists" invariant via a DB transaction:
+ * active admin always exists" invariant in two layers:
  *
- *   BEGIN
- *     SELECT COUNT(*) FROM users
- *       WHERE role = 'admin' AND status = 'active'
- *       FOR UPDATE;   -- take row locks so a concurrent disable
- *                     -- can't race us to 0 admins
- *     IF target is admin AND count == 1 THEN
- *       ROLLBACK → return 'last-admin-protection'
- *     END IF
- *     UPDATE users SET status='disabled' WHERE id = target;
- *     DELETE FROM sessions WHERE user_id = target;
- *   COMMIT
+ *   Layer 1 (Application — race-prone, fast happy-path):
+ *     pre-tx `countActiveAdmins()` short-circuits at value == 1 when
+ *     the target is the active admin → returns `last-admin-protection`
+ *     without opening a tx.
  *
- * Note that Neon / postgres-js doesn't always honour `FOR UPDATE` on
- * aggregate queries (the row lock applies to the scanned rows, not
- * the aggregate). We rely on the SERIALIZABLE isolation level via
- * `sql.begin()` transaction context + a recheck after UPDATE to be
- * safe.
+ *   Layer 2 (DB — race-safe, authoritative):
+ *     trigger `users_last_admin_protection` (migrations 0003 + 0004)
+ *     raises `SQLSTATE 23514 last-admin-protection` if a concurrent
+ *     UPDATE/DELETE would drop the active-admin count below 1. The
+ *     trigger is the source of truth; the Application check is a UX
+ *     optimisation only.
+ *
+ * The catch at the bottom of `disableUserImpl` maps trigger throws
+ * via `isLastAdminTriggerError` into the same `last-admin-protection`
+ * Result so the caller never distinguishes layer 1 vs layer 2.
+ *
+ * Pre-W-02 (PR #1 staff-review) this used a hand-rolled SERIALIZABLE
+ * tx with FOR UPDATE; that comment block survives in git history at
+ * commit 905137f1 if a future maintainer wonders why we replaced it.
  */
 import { Result, err, ok } from '@/lib/result';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
