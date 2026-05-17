@@ -393,3 +393,35 @@ Phase E verification:
 - 1167/1167 unit + contract green; 59/59 auth integration on live Neon; 91/91 middleware + audit integration; 2895 i18n keys; lint + typecheck clean.
 
 F1 is now at full defence-in-depth parity with F3's hash-at-rest pattern. **Zero outstanding items from this review** — all 24 original tasks + 2 originally-deferred items closed.
+
+---
+
+## Round 2 (2026-05-17 evening)
+
+After the Phase E closure above, an independent six-agent review (`/speckit.review F1 Round 2`) was run. It surfaced **22 new findings** in the Round 1 hardening commits themselves — concentrated in:
+- 4 routes that lost `requestId` from their 500 body during the B3 sweep,
+- 2 typed-error branches without unit pins (MalformedHashError + reset-password G8 transaction),
+- 6 stale comment finding-IDs (`Round 2 C1` etc.) that confused new readers,
+- 1 K1 helper-extracted JSDoc that pointed to a method that was never written.
+
+All 22 closed across 13 commits — see git log on branch `012-eventcreate-integration` between `a9252d3f` and the Round 2 closure marker. The `chore(F1)` commits document each finding ID inline.
+
+---
+
+## Round 3 (2026-05-17 night)
+
+A third review pass found **25 follow-up findings** in the Round 2 work itself:
+- **5 Critical/Blocker**: heartbeat + sign-out 500 dropped requestId regression; security-update banner not announced to legacy SR; invite dead-token had no recovery affordance; K1 dangling JSDoc pointer; (closed in Phase M, commit `a9252d3f`).
+- **8 Important**: change-password MalformedHashError unit pin; audit-repo file-header drift; parse-token-id unit pins; B3 500-with-requestId coverage extended to 6 more routes via shared helper; parseHex64 case-normalisation for email-gateway-rewritten URLs; dev-mode i18n key-as-value guard; SessionId → SessionToken rename; stale finding-IDs in comments (closed in Phase N, commit `cac40822`).
+- **12 Polish**: shared `passwordPairFields` / `refinePasswordPair` zod helpers; generic `parseHex64<T>`; `parseTokenOrLinkInvalid` route helper; standard `afterEach` import; `isHex64` predicate export; G3 verifyDummy + summary assertions; G8 `toHaveBeenCalledWith` args (already pinned, verified); forgot-password 2 rate-limit unit cases; removed dead `CreateUserAbort` alias; removed dead `SessionIdHash` brand; narrowed `MalformedTokenError.brandName` to literal union; comment polish (closed in Phase O, commit `cac40822`).
+
+Verification (Phase P, all green):
+- `pnpm lint`: 0 errors / 0 warnings.
+- `pnpm tsc --noEmit`: clean.
+- `pnpm check:i18n`: 2902 keys × EN+TH+SV (1 new key for the invite dead-token CTA).
+- `pnpm vitest run tests/unit/auth tests/unit/components tests/contract`: **1510/1510 passed** (163 files; 1 todo).
+- `pnpm test:integration tests/integration/{auth,middleware,audit}`: **150/150 passed** on live Neon `ap-southeast-1` (29 files, 181s).
+
+**Verdict**: 🟢 **All 25 Round 3 findings closed.** F1 hardening loop has now run to a fixed point — three rounds (26 + 22 + 25 = 73 findings cumulative) with the trailing round's residue absorbed in two commits. Net code change across Rounds 2+3: ~870 LOC added (helpers + tests + branded type expansion) / ~210 LOC removed (dead aliases + inlined dup blocks).
+
+Pre-flag-flip operator gates unchanged: manual SR walkthrough, reduced-motion E2E, cross-browser staging traces.
