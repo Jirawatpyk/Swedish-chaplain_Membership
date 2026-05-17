@@ -26,11 +26,12 @@ const inputSchema = z.object({
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
-
-  const current = await getCurrentSession();
-  if (!current) {
-    return NextResponse.json({ error: 'no-session' }, { status: 401 });
-  }
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
+  try {
+    const current = await getCurrentSession();
+    if (!current) {
+      return NextResponse.json({ error: 'no-session' }, { status: 401 });
+    }
 
   let payload: unknown;
   try {
@@ -94,5 +95,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       logger.error({ requestId }, 'change-password: unhandled error variant');
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
+  }
+  } catch (error) {
+    logger.error({ err: error, requestId }, 'change-password.infra-error');
+    return NextResponse.json(
+      { error: 'server-error', requestId },
+      { status: 500 },
+    );
   }
 }

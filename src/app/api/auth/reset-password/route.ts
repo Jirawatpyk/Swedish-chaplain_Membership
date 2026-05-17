@@ -22,8 +22,9 @@ const inputSchema = z.object({
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
-
-  let payload: unknown;
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
+  try {
+    let payload: unknown;
   try {
     payload = await request.json();
   } catch {
@@ -92,5 +93,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       logger.error({ requestId }, 'reset-password: unhandled error variant');
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
+  }
+  } catch (error) {
+    logger.error({ err: error, requestId }, 'reset-password.infra-error');
+    return NextResponse.json(
+      { error: 'server-error', requestId },
+      { status: 500 },
+    );
   }
 }

@@ -22,16 +22,20 @@ const inputSchema = z.object({
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
-
-  let payload: unknown;
+  // B3 — outer try/catch wraps the full body so any infra throw
+  // (Neon, sessions.create row-not-returned, Drizzle constraint blip
+  // mid-tx) surfaces as a structured 500 with requestId, not a raw
+  // Next.js HTML 500. See sign-in/route.ts B3 note.
   try {
-    payload = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: 'invalid-input', message: 'Body must be JSON' },
-      { status: 400 },
-    );
-  }
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'invalid-input', message: 'Body must be JSON' },
+        { status: 400 },
+      );
+    }
 
   const parsed = inputSchema.safeParse(payload);
   if (!parsed.success) {
@@ -97,5 +101,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       logger.error({ requestId }, 'redeem-invite: unhandled error variant');
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
+  }
+  } catch (error) {
+    logger.error({ err: error, requestId }, 'redeem-invite.infra-error');
+    return NextResponse.json(
+      { error: 'server-error', requestId },
+      { status: 500 },
+    );
   }
 }

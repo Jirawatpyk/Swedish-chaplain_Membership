@@ -42,7 +42,18 @@ describe('heartbeat use case', () => {
         deleteByUserIdInTx: vi.fn(),
         deleteByUserIdExcept: vi.fn(),
       },
-      limiter: { check },
+      limiter: {
+        check,
+        // B2 — peek added to RateLimiter port; heartbeat doesn't use it
+        // but the type-check still requires the method.
+        peek: vi.fn(async () => ({
+          success: true,
+          limit: 60,
+          remaining: 60,
+          reset: Date.now() + 60_000,
+          fellBack: false,
+        })),
+      },
       now: () => NOW,
       _updateLastSeen: updateLastSeen,
       _check: check,

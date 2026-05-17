@@ -54,6 +54,9 @@ const noOpLimiter: RateLimiter = {
   async check() {
     return { success: true, remaining: 999, reset: Date.now() + 60_000, fellBack: false };
   },
+  async peek() {
+    return { success: true, remaining: 999, reset: Date.now() + 60_000, fellBack: false };
+  },
 };
 
 // --- Counting hasher wraps the real argon2 hasher and records -------

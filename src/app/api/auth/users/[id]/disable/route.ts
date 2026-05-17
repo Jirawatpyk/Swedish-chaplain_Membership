@@ -14,33 +14,50 @@ export async function POST(
 ): Promise<NextResponse> {
   const ctx = await requireAdminContext(request);
   if ('response' in ctx) return ctx.response;
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
+  try {
+    const { id } = await params;
+    const result = await disableUser({
+      targetUserId: asUserId(id),
+      actorUserId: ctx.current.user.id,
+      sourceIp: ctx.sourceIp,
+      requestId: ctx.requestId,
+    });
 
-  const { id } = await params;
-  const result = await disableUser({
-    targetUserId: asUserId(id),
-    actorUserId: ctx.current.user.id,
-    sourceIp: ctx.sourceIp,
-    requestId: ctx.requestId,
-  });
-
-  if (result.ok) {
-    return NextResponse.json(
-      { ok: true, sessionsRevoked: result.value.sessionsRevoked },
-      { status: 200 },
-    );
-  }
-
-  const { error } = result;
-  switch (error.code) {
-    case 'not-found':
-      return NextResponse.json({ error: 'not-found' }, { status: 404 });
-    case 'already-disabled':
-      return NextResponse.json({ error: 'already-disabled' }, { status: 409 });
-    case 'last-admin-protection':
-      return NextResponse.json({ error: 'last-admin-protection' }, { status: 409 });
-    default: {
-      logger.error({ requestId: ctx.requestId }, 'disable-user: unhandled error variant');
-      return NextResponse.json({ error: 'server-error' }, { status: 500 });
+    if (result.ok) {
+      return NextResponse.json(
+        { ok: true, sessionsRevoked: result.value.sessionsRevoked },
+        { status: 200 },
+      );
     }
+
+    const { error } = result;
+    switch (error.code) {
+      case 'not-found':
+        return NextResponse.json({ error: 'not-found' }, { status: 404 });
+      case 'already-disabled':
+        return NextResponse.json({ error: 'already-disabled' }, { status: 409 });
+      case 'last-admin-protection':
+        return NextResponse.json(
+          { error: 'last-admin-protection' },
+          { status: 409 },
+        );
+      default: {
+        logger.error(
+          { requestId: ctx.requestId },
+          'disable-user: unhandled error variant',
+        );
+        return NextResponse.json({ error: 'server-error' }, { status: 500 });
+      }
+    }
+  } catch (error) {
+    logger.error(
+      { err: error, requestId: ctx.requestId },
+      'disable-user.infra-error',
+    );
+    return NextResponse.json(
+      { error: 'server-error', requestId: ctx.requestId },
+      { status: 500 },
+    );
   }
 }
