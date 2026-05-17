@@ -40,7 +40,7 @@
 - [X] CHK021 - Is the `audit_log.payload jsonb` column specified as the canonical structured-payload carrier (NOT the legacy `summary` text column) — corrected round-2 M1? [Clarity, contracts/audit-port.md round-2 M1]
 - [X] CHK022 - Are the **43 F6 audit event payload shapes** (original spec scoped 35; extended to 43) specified with TypeScript discriminated-union types per event? [Completeness, contracts/audit-port.md + canonical closed union at `src/modules/events/application/ports/audit-port.ts:76-171`]
 - [X] CHK023 - Is the `severity` field specified as living inside `payload.severity` (no top-level audit-log column)? [Consistency, contracts/audit-port.md round-2 E7]
-- [-] CHK024 - Are queryable JSON-path index requirements specified for high-cardinality fields (e.g., `audit_log(tenant_id, (payload->>'event_external_id'), ...)` if needed)? [Coverage, follow F4 precedent at `audit_log_overdue_once_per_day`] **DEFERRED to F6.2** — F4 precedent cited but F6 DDL is silent on partial indexes. Low severity per Constitution VII (audit reads are post-incident forensic, not real-time dashboards). At SweCham single-tenant scale (~131 members × ~50 events/yr), full audit_log scan during incident triage is acceptable. Action: add to F6.2 backlog with concrete index DDL if audit query p95 > 5s observed in prod.
+- [X] CHK024 - Are queryable JSON-path index requirements specified for high-cardinality fields (e.g., `audit_log(tenant_id, (payload->>'event_external_id'), ...)` if needed)? [Coverage, follow F4 precedent at `audit_log_overdue_once_per_day`] ✓ **Closed via data-model.md § 4.1** — explicit design decision documented (R9 T151 CHK024 closure): F6 reuses F3 migration 0009 `payload->>'member_id'` index for cross-feature member timeline; F6 idempotency is structural (separate `eventcreate_idempotency_receipts` table, NOT audit-row uniqueness like F4); no F6-specific JSONB partial indexes needed at single-tenant scale; concrete F6.2 DDL ready when 100k-row OR 5s p95 OR real-time-dashboard triggers fire.
 - [X] CHK025 - Is the `summary` column convention specified (one-line synopsis ≤500 chars for log-line readability; structured payload in JSONB)? [Clarity, contracts/audit-port.md round-2 M1]
 
 ## Structured Logging (pino)
@@ -82,7 +82,7 @@
 - **Date**: 2026-05-17
 - **Branch HEAD at co-sign**: `5bf7aef0` (R9.S1 hardening + T150 security co-sign)
 - **Verification method**: read-only category-by-category audit via Explore agent (7 categories: OTel metrics / alerts / runbooks / audit-log payload schema / structured logging / SLO tracking / multi-tenant observability)
-- **Result**: **38/39 PASS** · **1 DEFERRED to F6.2** (CHK024 — audit JSON-path index, low severity) · 0 N/A
+- **Result**: **39/39 PASS** · 0 GAP · 0 N/A (R9 closure update: CHK024 originally flagged as gap; closed in same session via data-model.md § 4.1 explicit design-decision documentation per user "ไม่ defer" directive)
 - **Key evidence per category**:
   - **OTel Metrics (CHK001-008)**: 11+ `eventcreate_*` metrics in `src/lib/metrics.ts` (counters + histograms + gauges). Tenant-scoped labels. PII-redaction enforced (member_id_hash, not raw). Metrics emit INSIDE strict-tx ACID unit (FR-037).
   - **Alerts (CHK009-015)**: 6 alert rules with quantified thresholds in research.md R10 + docs/observability.md § 24.3 (signature-burst >10/min, match-rate <95% rolling 24h, p95 >300ms rolling 1h, CSV failure >3/h, idempotency-sweep stalled, sentinel-pattern). Resend email routing.

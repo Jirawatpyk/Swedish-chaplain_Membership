@@ -405,6 +405,45 @@ All events use the existing `audit_log` table from F1 (extended through F8). Def
 
 **Schema enforcement**: `audit_log.event_type` is a **Postgres enum** (`audit_event_type`, introduced in F1, extended by F4 via the idempotent `DO $$ BEGIN ALTER TYPE … ADD VALUE 'X'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;` pattern). Adding F6's 35 event types requires **migration 0132** to extend the enum with 35 separate DO-blocks (Postgres restriction: each ADD VALUE must be its own statement). The TypeScript `F6AuditEventType` closed-union provides compile-time taxonomy enforcement; the Postgres enum provides DB-level enforcement. Both layers must stay in sync — adding a new event type requires both a TypeScript edit AND a migration. **Without migration 0132, every F6 audit emit raises `invalid input value for enum audit_event_type`** and the strict-transactional ingest (FR-037) rolls back on every webhook.
 
+### 4.1 Audit query patterns + JSON-path index decision (R9 T151 CHK024 closure)
+
+**Question**: Does F6 need Postgres partial indexes on `audit_log.payload` JSONB column for high-cardinality forensic queries (e.g., lookup-by-`event_external_id`, lookup-by-`request_id`, lookup-by-`attendee_email_hash`)?
+
+**Answer**: **No new F6-specific JSONB indexes at v1.** F6 reuses existing indexes only:
+
+| Query pattern | Source-of-truth index | Use case |
+|---|---|---|
+| Look up audits for a specific member | F3 migration 0009 — `audit_log ((payload->>'member_id'))` | Member timeline / cross-feature member-detail page (already present from F3) |
+| Look up audits by event-type + actor | F1 migration 0001 — `audit_log (event_type, actor_user_id, timestamp)` composite | Standard audit queries (admin "what happened?" timeline) |
+| Idempotency-unique forensic events | F4 migration 0021 — `audit_log_overdue_once_per_day` UNIQUE index | F4-specific (NOT reused by F6 — F6's idempotency lives in `eventcreate_idempotency_receipts`, NOT audit_log) |
+
+**Rationale for deferring F6-specific JSONB indexes**:
+1. **Single-tenant scale**: SweCham ~131 members × ~50 events/yr × ~100 attendees/event ≈ 5,000 F6 audit rows/yr — fits in Postgres shared_buffers; full-scan acceptable for post-incident forensics.
+2. **F6 idempotency is structural (separate table)**: `eventcreate_idempotency_receipts` handles webhook + CSV idempotency at the DB-row level. No F4-style "once-per-day" audit-row UNIQUE index needed.
+3. **Forensic queries are post-incident, not real-time**: SREs investigating a `cross_tenant_probe` or `webhook_signature_rejected` event run ad-hoc queries via Vercel Postgres dashboard — query latency budget is "human-tolerable" (~5-30s), not "dashboard-real-time" (<500ms).
+4. **F3 member-id index is already sufficient for the most-common cross-feature query** (member timeline including F6 attendance audits).
+
+**Trigger for revisiting**: add F6-specific JSONB partial indexes IF any of:
+- F6 audit row count exceeds **100,000** (multi-tenant scale OR high-volume tenant) — measurable via `SELECT count(*) FROM audit_log WHERE event_type LIKE 'webhook_%' OR event_type LIKE 'attendee_%' OR event_type LIKE 'csv_import_%'`.
+- A forensic query repeatedly used during incident response exceeds **5s p95 wall-clock** — measurable via Neon slow-query log.
+- A real-time admin dashboard surface (NOT post-incident forensic) needs sub-second audit query (e.g., "show last 100 webhook signature rejections" widget).
+
+**Recommended F6.2 backlog indexes** (DDL ready when triggers fire):
+```sql
+-- Forensic lookup: webhook deliveries for a specific event_external_id
+CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_f6_event_external_id
+  ON audit_log ((payload->>'event_external_id'))
+  WHERE event_type IN ('webhook_receipt_verified', 'webhook_rolled_back',
+                       'webhook_duplicate_rejected', 'webhook_test_invoked');
+
+-- Forensic lookup: audit trail for a specific webhook delivery (request_id)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_log_f6_request_id
+  ON audit_log ((payload->>'request_id'))
+  WHERE event_type LIKE 'webhook_%';
+```
+
+**Decision documented**: 2026-05-17 (R9 T151 CHK024 closure). Revisit at multi-tenant onboarding or `EVENTCREATE_AUDIT_ROW_COUNT_OVER_100K` alert (to be added at F6.2 if triggered).
+
 ---
 
 ## 5. Domain value objects (Clean Architecture)
