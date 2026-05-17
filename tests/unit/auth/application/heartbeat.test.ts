@@ -11,10 +11,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { heartbeat } from '@/modules/auth/application/heartbeat';
-import { asSessionId } from '@/modules/auth/domain/branded';
+import { asSessionToken } from '@/modules/auth/domain/branded';
 
 describe('heartbeat use case', () => {
-  const TEST_SESSION_ID = asSessionId('a'.repeat(64));
+  const TEST_SESSION_ID = asSessionToken('a'.repeat(64));
   const NOW = new Date('2026-04-10T12:00:00Z');
 
   function makeStubs(opts: {

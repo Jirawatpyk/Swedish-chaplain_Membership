@@ -30,7 +30,7 @@ vi.mock('@/lib/auth-deps', () => ({
 import { signIn, expectedPortal } from '@/modules/auth/application/sign-in';
 import type { SignInDeps } from '@/modules/auth/application/sign-in';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import { asUserId, asEmailAddress, asPasswordHash, asSessionId } from '@/modules/auth/domain/branded';
+import { asUserId, asEmailAddress, asPasswordHash, asSessionToken } from '@/modules/auth/domain/branded';
 import type { Session } from '@/modules/auth/domain/session';
 import { authMetrics } from '@/lib/metrics';
 
@@ -40,7 +40,7 @@ import { authMetrics } from '@/lib/metrics';
 
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-abc-123');
-const SESSION_ID = asSessionId('sess-xyz-456');
+const SESSION_ID = asSessionToken('sess-xyz-456');
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
   return {

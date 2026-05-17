@@ -20,17 +20,11 @@ export type UserId = Brand<string, 'UserId'>;
  *
  * N7 (Round 3): renamed from `SessionId`. Pre-N7 the brand name read
  * as if it referenced the DB row id; post-E3 the brand carried the
- * plaintext cookie value but kept the old name. The rename forces
- * a re-read at every call site. `SessionId` survives as a
- * `@deprecated` alias for backwards compat.
+ * plaintext cookie value but kept the old name. I2 (Round 4) — the
+ * `@deprecated SessionId` alias and `asSessionId` constructor have
+ * been removed now that every call site uses the new name.
  */
 export type SessionToken = Brand<string, 'SessionToken'>;
-/**
- * @deprecated N7 (Round 3) — use `SessionToken` instead. Same brand
- * (alias preserves backwards-compat), but the new name correctly
- * conveys "plaintext cookie value" vs the sha256(token) DB row id.
- */
-export type SessionId = SessionToken;
 /**
  * @deprecated E1 (post-ship 2026-05-17) — use the per-purpose brands
  * `ResetTokenId`, `InvitationTokenId`, `EmailVerificationTokenHash`,
@@ -112,9 +106,6 @@ export function asUserId(value: string): UserId {
 export function asSessionToken(value: string): SessionToken {
   return value as SessionToken;
 }
-
-/** @deprecated N7 (Round 3) — use `asSessionToken`. Same value semantics. */
-export const asSessionId = asSessionToken;
 
 export function asTokenId(value: string): TokenId {
   return value as TokenId;

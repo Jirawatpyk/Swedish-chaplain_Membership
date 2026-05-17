@@ -191,7 +191,6 @@ export { AUDIT_EVENT_TYPES, AUDIT_SUMMARY_MAX_LENGTH } from './domain/audit-even
 
 export {
   asUserId,
-  asSessionId,
   asSessionToken,
   asTokenId,
   asResetTokenId,
@@ -208,7 +207,6 @@ export {
   asPasswordHash,
   asAuditEventId,
   type UserId,
-  type SessionId,
   type SessionToken,
   type TokenId,
   type ResetTokenId,

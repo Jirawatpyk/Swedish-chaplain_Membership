@@ -25,9 +25,9 @@ import { and, eq, ne } from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
 import { sessions, type SessionRow } from './schema';
 import {
-  asSessionId,
+  asSessionToken,
   asUserId,
-  type SessionId,
+  type SessionToken,
   type UserId,
 } from '@/modules/auth/domain/branded';
 import {
@@ -44,7 +44,7 @@ import { sha256Hex } from '@/lib/crypto';
  */
 function toDomainCreated(row: SessionRow, plaintext: string): Session {
   return {
-    id: asSessionId(plaintext),
+    id: asSessionToken(plaintext),
     userId: asUserId(row.userId),
     createdAt: row.createdAt,
     lastSeenAt: row.lastSeenAt,
@@ -60,7 +60,7 @@ function toDomainCreated(row: SessionRow, plaintext: string): Session {
  */
 function toDomainLookup(row: SessionRow, plaintext: string): Session {
   return {
-    id: asSessionId(plaintext),
+    id: asSessionToken(plaintext),
     userId: asUserId(row.userId),
     createdAt: row.createdAt,
     lastSeenAt: row.lastSeenAt,
@@ -91,11 +91,11 @@ export interface SessionRepo {
    * Look up a session by the plaintext id from the user's cookie.
    * Hashes internally; returns null if no row matches.
    */
-  findById(plaintext: SessionId): Promise<Session | null>;
+  findById(plaintext: SessionToken): Promise<Session | null>;
   /** Hashes plaintext internally. */
-  updateLastSeen(plaintext: SessionId, now: Date): Promise<void>;
+  updateLastSeen(plaintext: SessionToken, now: Date): Promise<void>;
   /** Hashes plaintext internally. */
-  delete(plaintext: SessionId): Promise<void>;
+  delete(plaintext: SessionToken): Promise<void>;
   deleteByUserId(userId: UserId): Promise<number>;
   /** Tx-scoped variant of `deleteByUserId` (Path C — A4 reset-password). */
   deleteByUserIdInTx(tx: DbTx, userId: UserId): Promise<number>;
@@ -106,7 +106,7 @@ export interface SessionRepo {
    */
   deleteByUserIdExcept(
     userId: UserId,
-    keepPlaintext: SessionId,
+    keepPlaintext: SessionToken,
   ): Promise<number>;
 }
 

@@ -11,11 +11,11 @@
  *     authoritative limit (30 min idle / 12 h absolute)
  *
  * Used by /api/auth/sign-in (T070), /api/auth/sign-out (T071), and any
- * server component that needs the current session id (`getSessionId()`).
+ * server component that needs the current session id (`getSessionIdFromCookie()`).
  */
 import { cookies } from 'next/headers';
-import type { SessionId } from '@/modules/auth/domain/branded';
-import { asSessionId } from '@/modules/auth/domain/branded';
+import type { SessionToken } from '@/modules/auth/domain/branded';
+import { asSessionToken } from '@/modules/auth/domain/branded';
 
 export const SESSION_COOKIE_NAME = 'swecham_session';
 
@@ -29,7 +29,7 @@ const COOKIE_OPTIONS = {
 /**
  * Set the session cookie. Call from a Route Handler or Server Action.
  */
-export async function setSessionCookie(sessionId: SessionId): Promise<void> {
+export async function setSessionCookie(sessionId: SessionToken): Promise<void> {
   const store = await cookies();
   store.set(SESSION_COOKIE_NAME, sessionId, COOKIE_OPTIONS);
 }
@@ -46,9 +46,9 @@ export async function clearSessionCookie(): Promise<void> {
  * Read the session id from the cookie store. Returns null if absent
  * or empty.
  */
-export async function getSessionIdFromCookie(): Promise<SessionId | null> {
+export async function getSessionIdFromCookie(): Promise<SessionToken | null> {
   const store = await cookies();
   const value = store.get(SESSION_COOKIE_NAME)?.value;
   if (!value) return null;
-  return asSessionId(value);
+  return asSessionToken(value);
 }

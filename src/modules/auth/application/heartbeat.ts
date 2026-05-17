@@ -24,7 +24,7 @@
  * budget and a misbehaving tab cannot starve a well-behaved one.
  */
 import { Result, err, ok } from '@/lib/result';
-import type { SessionId } from '@/modules/auth/domain/branded';
+import type { SessionToken } from '@/modules/auth/domain/branded';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
@@ -35,7 +35,7 @@ import { sha256Hex } from '@/lib/crypto';
 // --- Public types -------------------------------------------------------------
 
 export interface HeartbeatInput {
-  readonly sessionId: SessionId;
+  readonly sessionId: SessionToken;
   readonly requestId: string;
 }
 

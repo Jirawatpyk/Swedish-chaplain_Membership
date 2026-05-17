@@ -41,7 +41,7 @@ const {
   clearSessionCookie,
   SESSION_COOKIE_NAME,
 } = await import('@/lib/auth-cookies');
-const { asSessionId } = await import('@/modules/auth/domain/branded');
+const { asSessionToken } = await import('@/modules/auth/domain/branded');
 
 describe('auth-cookies — flag contract (T-05 session hijack defence)', () => {
   beforeEach(() => {
@@ -50,24 +50,24 @@ describe('auth-cookies — flag contract (T-05 session hijack defence)', () => {
 
   describe('setSessionCookie', () => {
     it('uses the swecham_session cookie name (no collision with generic "session")', async () => {
-      await setSessionCookie(asSessionId('a'.repeat(64)));
+      await setSessionCookie(asSessionToken('a'.repeat(64)));
       expect(cookieSetCalls).toHaveLength(1);
       expect(cookieSetCalls[0]?.name).toBe(SESSION_COOKIE_NAME);
       expect(cookieSetCalls[0]?.name).toBe('swecham_session');
     });
 
     it('sets HttpOnly: true — blocks document.cookie access from XSS', async () => {
-      await setSessionCookie(asSessionId('b'.repeat(64)));
+      await setSessionCookie(asSessionToken('b'.repeat(64)));
       expect(cookieSetCalls[0]?.options.httpOnly).toBe(true);
     });
 
     it('sets SameSite=Lax — blocks CSRF-delivered cross-site POSTs', async () => {
-      await setSessionCookie(asSessionId('c'.repeat(64)));
+      await setSessionCookie(asSessionToken('c'.repeat(64)));
       expect(cookieSetCalls[0]?.options.sameSite).toBe('lax');
     });
 
     it('sets Path=/ so the cookie is sent to every route', async () => {
-      await setSessionCookie(asSessionId('d'.repeat(64)));
+      await setSessionCookie(asSessionToken('d'.repeat(64)));
       expect(cookieSetCalls[0]?.options.path).toBe('/');
     });
 
@@ -80,7 +80,7 @@ describe('auth-cookies — flag contract (T-05 session hijack defence)', () => {
       // inspects the real Set-Cookie header. Until that exists the
       // production behaviour is verified only via code review of
       // `src/lib/auth-cookies.ts`.
-      await setSessionCookie(asSessionId('e'.repeat(64)));
+      await setSessionCookie(asSessionToken('e'.repeat(64)));
       const secureValue = cookieSetCalls[0]?.options.secure;
       expect(typeof secureValue).toBe('boolean');
       expect(secureValue).toBe(false);
@@ -88,12 +88,12 @@ describe('auth-cookies — flag contract (T-05 session hijack defence)', () => {
 
     it('writes the session id as the cookie value', async () => {
       const id = 'f'.repeat(64);
-      await setSessionCookie(asSessionId(id));
+      await setSessionCookie(asSessionToken(id));
       expect(cookieSetCalls[0]?.value).toBe(id);
     });
 
     it('does NOT set Max-Age — browser drops on tab close; server-side TTL is authoritative', async () => {
-      await setSessionCookie(asSessionId('a'.repeat(64)));
+      await setSessionCookie(asSessionToken('a'.repeat(64)));
       expect(cookieSetCalls[0]?.options.maxAge).toBeUndefined();
     });
   });

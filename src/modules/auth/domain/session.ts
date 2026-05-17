@@ -17,10 +17,10 @@
  * Pure types — Domain layer; no framework imports.
  */
 
-import type { SessionId, UserId } from './branded';
+import type { SessionToken, UserId } from './branded';
 
 export interface Session {
-  readonly id: SessionId;
+  readonly id: SessionToken;
   readonly userId: UserId;
   readonly createdAt: Date;
   readonly lastSeenAt: Date;

@@ -34,7 +34,7 @@ vi.mock('@/modules/auth/application/password-policy', () => ({
 import { changePassword } from '@/modules/auth/application/change-password';
 import type { ChangePasswordDeps } from '@/modules/auth/application/change-password';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import { asUserId, asEmailAddress, asPasswordHash, asSessionId } from '@/modules/auth/domain/branded';
+import { asUserId, asEmailAddress, asPasswordHash, asSessionToken } from '@/modules/auth/domain/branded';
 import type { Session } from '@/modules/auth/domain/session';
 import { checkPasswordPolicy, weakPasswordMetricBucket } from '@/modules/auth/application/password-policy';
 import { authMetrics } from '@/lib/metrics';
@@ -45,8 +45,8 @@ import { authMetrics } from '@/lib/metrics';
 
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-chpw-001');
-const OLD_SESSION_ID = asSessionId('old-sess-001');
-const NEW_SESSION_ID = asSessionId('new-sess-002');
+const OLD_SESSION_ID = asSessionToken('old-sess-001');
+const NEW_SESSION_ID = asSessionToken('new-sess-002');
 const PASS_HASH = asPasswordHash('$argon2id$v=19$stored-hash');
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash');
 

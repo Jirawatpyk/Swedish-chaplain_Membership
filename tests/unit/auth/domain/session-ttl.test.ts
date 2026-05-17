@@ -14,10 +14,10 @@ import {
   nextExpiryAt,
   type Session,
 } from '@/modules/auth/domain/session';
-import { asSessionId, asUserId } from '@/modules/auth/domain/branded';
+import { asSessionToken, asUserId } from '@/modules/auth/domain/branded';
 
 const userId = asUserId('00000000-0000-0000-0000-000000000001');
-const sessionId = asSessionId('a'.repeat(64));
+const sessionId = asSessionToken('a'.repeat(64));
 
 function makeSession(overrides: Partial<Session> = {}): Session {
   const created = new Date('2026-04-09T12:00:00.000Z');

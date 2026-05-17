@@ -13,14 +13,14 @@
  * both fixed here.
  */
 import { Result, ok } from '@/lib/result';
-import type { SessionId } from '@/modules/auth/domain/branded';
+import type { SessionToken } from '@/modules/auth/domain/branded';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import { defaultSignOutDeps } from '@/lib/auth-deps';
 
 export interface SignOutInput {
-  readonly sessionId: SessionId | null;
+  readonly sessionId: SessionToken | null;
   readonly sourceIp: string;
   readonly requestId: string;
 }
