@@ -43,6 +43,13 @@ import { adminOnlyWriterGuard } from '../../_lib/role-violation-audit';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+// R3.1.3 — UUID v4 regex matches `asEventId`'s validation. Defense-in-
+// depth gate so a malformed eventId returns 404 (consistent with relink/
+// erase) instead of throwing inside the brand constructor → 500. The
+// sibling routes followed this pattern; this route did NOT until R3.1.3.
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 const BodySchema = z.object({
   newValue: z.boolean(),
 });
@@ -62,6 +69,9 @@ export async function POST(
 
   // FR-035 admin-only writer guard: manager → 403 + audit, member → 404
   // + audit. See `adminOnlyWriterGuard` doc-comment for full matrix.
+  // Guard runs BEFORE the UUID-shape check so an unauthenticated probe
+  // never reaches the regex (info-disclosure asymmetry; matches relink
+  // + erase sibling-route ordering).
   const guard = await adminOnlyWriterGuard(request, {
     attemptedRoute: `/api/admin/events/${eventId}/toggle-partner-benefit`,
     attemptedAction: 'toggle_partner_benefit',
@@ -69,6 +79,14 @@ export async function POST(
   });
   if (guard.kind === 'deny') return guard.response;
   const actorUserId = guard.actorUserId;
+
+  // R3.1.3 — UUID v4 shape gate. After H3.3, `asEventId` throws on a
+  // non-UUID input. Without this gate a malformed eventId would reach
+  // `asEventId(eventId)` below → throw → outer catch → 500. This 404
+  // matches the relink + erase sibling routes' behaviour.
+  if (!UUID_V4.test(eventId)) {
+    return new NextResponse(null, { status: 404 });
+  }
 
   let body: unknown;
   try {
@@ -108,7 +126,7 @@ export async function POST(
   let result: Awaited<ReturnType<typeof runToggleEventCategory>>;
   try {
     result = await runToggleEventCategory(tenantCtx.slug, {
-      // brand-boundary: UUID_V4 regex at line 64 (path-param check)
+      // brand-boundary: UUID_V4.test(eventId) gate above (post-guard)
       eventId: asEventId(eventId),
       flag: 'is_partner_benefit',
       newValue: parsed.data.newValue,

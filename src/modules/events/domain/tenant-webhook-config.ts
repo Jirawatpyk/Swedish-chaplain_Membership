@@ -81,3 +81,34 @@ export function isGraceSecretActive(
   const ageMs = now.getTime() - cfg.grace.rotatedAt.getTime();
   return ageMs <= GRACE_WINDOW_MS;
 }
+
+/**
+ * R3.7.1 — construct a `GraceState` discriminated union from raw DB
+ * column values. Migration 0129 CHECK constraint guarantees
+ * `(graceSecret IS NULL) = (graceRotatedAt IS NULL)`, so this helper
+ * never sees a half-set pair in practice. A half-set pair AT READ time
+ * is a hard invariant violation — throw loudly rather than silently
+ * coerce to `{ active: false }`.
+ *
+ * Used by:
+ *   - `drizzleTenantWebhookConfigRepository.toAggregate`
+ *     (`src/modules/events/infrastructure/drizzle-tenant-webhook-config-repository.ts`)
+ *   - `events-webhook-deps.ts` inline mapper (composition adapter)
+ *
+ * Both call sites previously inlined the same 3-arm match; consolidating
+ * here removes ~12 LOC and pins the read-time invariant in one place.
+ */
+export function asGraceState(
+  rawSecret: WebhookSecret | null,
+  rawRotatedAt: Date | null,
+): GraceState {
+  if (rawSecret !== null && rawRotatedAt !== null) {
+    return { active: true, secret: rawSecret, rotatedAt: rawRotatedAt };
+  }
+  if (rawSecret === null && rawRotatedAt === null) {
+    return { active: false };
+  }
+  throw new Error(
+    'GraceState invariant violated at read-time: graceSecret + graceRotatedAt are half-set. Likely migration 0129 CHECK regression or RLS surfacing rows that violate the pair invariant.',
+  );
+}

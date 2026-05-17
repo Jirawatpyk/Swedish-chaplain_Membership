@@ -31,6 +31,18 @@ vi.mock('@/lib/db', async () => {
     db: {
       transaction: vi.fn(),
     },
+    // R3 follow-up — emitStandalone + emitRolledBack now call
+    // `runInTenant(...)` (post-A1 refactor) rather than `db.transaction`
+    // directly. The previous test mock of `db.transaction` no longer
+    // intercepts those paths. Mock `runInTenant` instead so per-test
+    // mockImplementations can simulate passthrough or reject behaviours.
+    // Default: throw to surface uncaught mock misconfigurations as
+    // test failures rather than hangs.
+    runInTenant: vi.fn(async () => {
+      throw new Error(
+        'runInTenant mock not configured — set vi.mocked(runInTenant).mockImplementation/...mockRejectedValue per test',
+      );
+    }),
   };
 });
 
@@ -100,13 +112,17 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     );
   });
 
-  it('emitRolledBack — db.transaction throw → logFullError with caller="emitRolledBack" + audit_secondary_tx_failure marker', async () => {
-    const { db } = await import('@/lib/db');
-    vi.mocked(db.transaction).mockRejectedValue(
+  it('emitRolledBack — runInTenant throw → logFullError with caller="emitRolledBack" + audit_secondary_tx_failure marker', async () => {
+    // Post-A1 refactor — emitRolledBack now uses `runInTenant(ctx, fn)`
+    // instead of `db.transaction(fn)` directly. Mock runInTenant to
+    // simulate the inner-tx throw path (the DB-write failure mode that
+    // triggers the dual-write fallback per FR-037).
+    const { runInTenant } = await import('@/lib/db');
+    vi.mocked(runInTenant).mockRejectedValue(
       new Error('column "tenant_id" of constraint "audit_log_pkey" violation'),
     );
 
-    // Dummy executor — emitRolledBack uses root db.transaction not this
+    // Dummy executor — emitRolledBack uses runInTenant not this
     const executor = {
       execute: () => {
         throw new Error('not reached');
@@ -166,14 +182,19 @@ describe('pino-audit-port — logFullError coverage on emit + emitRolledBack', (
     if (result.ok) throw new Error('unreachable');
     expect(result.error.kind).toBe('db_error');
     if (result.error.kind !== 'db_error') throw new Error('unreachable');
-    expect(result.error.message).toMatch(/slug invariant violated/);
+    // Post-A1 refactor — `asTenantContext` throws `InvalidTenantSlugError`
+    // BEFORE `runInTenant` is reached, so the slug-guard message now
+    // originates from `asTenantContext` ("Invalid tenant slug: ...") not
+    // the prior inline runInTenant guard ("slug invariant violated").
+    // Sanitizer redacts the table name within the slug.
+    expect(result.error.message).toMatch(/Invalid tenant slug/);
 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         event: 'f6_audit_emit_db_error',
         caller: 'emitRolledBack',
         err: expect.objectContaining({
-          message: expect.stringContaining('slug invariant violated'),
+          message: expect.stringContaining('Invalid tenant slug'),
         }),
       }),
       expect.any(String),
@@ -465,17 +486,13 @@ describe('emitMatchingQuotaMetric — ARCH-R6-02 direct dispatcher coverage', ()
     // emitStandalone callsite would silently stop firing counters for
     // any standalone quota emit (e.g., F6.1 manual recovery scripts).
     //
-    // emitStandalone uses `db.transaction(...)` — mock the root db's
-    // transaction method to invoke the callback with a passthrough
-    // executor that returns the audit row id.
-    const { db } = await import('@/lib/db');
-    const dbTxSpy = vi.spyOn(db, 'transaction').mockImplementation(
+    // Post-A1 refactor: `emitStandalone` uses `runInTenant(ctx, fn)`
+    // (NOT db.transaction directly). Mock `runInTenant` to invoke the
+    // callback with a passthrough executor that returns the audit row id.
+    const { runInTenant } = await import('@/lib/db');
+    vi.mocked(runInTenant).mockImplementation(
       // @ts-expect-error — minimal stub matches the runtime callback shape
-      (async (cb) => {
-        // Always return the audit row shape — the SET LOCAL calls
-        // don't read the return value, only the final INSERT does.
-        // Returning the same shape for every execute() call is safe
-        // because the SET LOCALs' return is discarded by insertAuditRow.
+      (async (_ctx, cb) => {
         const tx = {
           execute: vi.fn().mockResolvedValue([{ id: 'audit-test-id' }]),
         } as unknown as TenantTx;
@@ -502,7 +519,6 @@ describe('emitMatchingQuotaMetric — ARCH-R6-02 direct dispatcher coverage', ()
 
     expect(creditBackSpy).toHaveBeenCalledTimes(1);
     expect(creditBackSpy).toHaveBeenCalledWith('test-chamber', 'archive', 'partnership');
-    dbTxSpy.mockRestore();
   });
 
   it('invalid scope in payload — over-quota dispatcher skips counter (defensive guard)', async () => {

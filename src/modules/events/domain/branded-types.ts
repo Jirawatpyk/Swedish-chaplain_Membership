@@ -40,47 +40,27 @@ export type RequestId = string & { readonly __brand: 'RequestId' };
 /**
  * Branded-type smart constructors.
  *
- * **Trust convention** (Round-2 types-H1 hardening):
- * - `as*` = **caller asserts the value is pre-validated**. The
- *   constructor performs only a length-non-zero sanity check —
- *   sufficient to catch the empty-string-passed-by-accident class,
- *   NOT a substitute for caller-side validation. UUID-shaped IDs
- *   (`EventId`, `RegistrationId`) MUST be validated by the caller
- *   first (zod regex on body fields, UUID_V4 regex on path params,
- *   or post-Postgres-read where Drizzle's `uuid` type guarantees the
- *   shape).
- * - `try*` = **constructor validates**, returns null on failure.
- *   Use at raw-input boundaries (URL query parsing, untrusted
- *   webhook payload fields).
+ * **Trust model** (Phase H3.3 hardening — Round 3 R3.5.2 documented):
  *
- * Why `as*` is length-only and not UUID-validated:
- * 1. Hot paths — every Drizzle row read brands a UUID; a regex check
- *    on each would add non-zero overhead on read-heavy queries
- *    (e.g., the attendee table render at 50 rows × 4 brand calls).
- * 2. DB type system already guarantees the shape **for the
- *    UUID-PK-backed brands** (`EventId`, `RegistrationId`) — Postgres
- *    `uuid` columns cannot store malformed values, so `as*` reads
- *    from those rows are inherently safe.
- * 3. Route handlers already inline UUID_V4 regex on path params
- *    BEFORE calling `as*`, so the constructor's regex would be
- *    redundant.
+ * UUID-PK-backed brands have TWO constructor variants:
+ * - **Default validated** `asEventId` / `asRegistrationId` (+ `tryEventId` /
+ *   `tryRegistrationId`) — checks UUID v4 shape via `UUID_V4_PATTERN`.
+ *   Use at HTTP / CSV / external trust boundaries.
+ * - **`*Unchecked` hot-path variant** `asEventIdUnchecked` /
+ *   `asRegistrationIdUnchecked` (+ `try*Unchecked`) — non-empty string
+ *   check only. Reserved for Drizzle row reads where Postgres
+ *   `uuid DEFAULT gen_random_uuid()` column type already guarantees
+ *   the shape. ESLint rule scoped to `src/modules/events/infrastructure/**`
+ *   (eslint.config.mjs:621-678) enforces this — relative-import
+ *   bypass also blocked per R3.4.1.
  *
- * **External*-ID exception** (Round-3 types-M closure):
- * `ExternalEventId` + `ExternalAttendeeId` are NOT backed by Postgres
- * `uuid` columns — they originate from CSV cells / webhook payload
- * fields and have variable-format identifiers (EventCreate emits
- * snake_case strings, NOT UUIDs). Callers MUST validate at the
- * CSV/webhook ingest boundary BEFORE calling `asExternalEventId` /
- * `asExternalAttendeeId`. The length-only check here only protects
- * against the empty-string class — it does NOT enforce any format
- * shape on external identifiers because no canonical shape exists.
- *
- * Strengthening (rename to `asXUnchecked` OR add regex) was
- * considered in Round 2 and rejected on cost-vs-benefit grounds
- * (the agent flag was correct that the contract is implicit; this
- * doc-comment makes it explicit). Future audits should treat `as*`
- * as the moral equivalent of `as EventId` cast with a runtime
- * non-empty assertion.
+ * **External-ID brands** (`ExternalEventId` / `ExternalAttendeeId`) are
+ * NOT backed by Postgres `uuid` columns — they originate from CSV cells
+ * or webhook payload fields with variable-format identifiers
+ * (EventCreate emits snake_case strings). The length-only `as*`
+ * constructor stays — callers MUST validate the format at the ingest
+ * boundary (canonical shape is feature-specific). The `tryExternalEventId`
+ * /  `tryExternalAttendeeId` variants apply the same non-empty check.
  *
  * **Brand-boundary audit convention** (Round-3 types-H1 closure):
  *

@@ -46,31 +46,29 @@ import type {
   InsertConfigInput,
   RotateSecretInput,
 } from '../application/ports/tenant-webhook-config-repository';
-import type { TenantWebhookConfigAggregate } from '../domain/tenant-webhook-config';
+import {
+  asGraceState,
+  type TenantWebhookConfigAggregate,
+} from '../domain/tenant-webhook-config';
 import type { WebhookSecret } from '../domain/branded-types';
 import type { Source } from '../domain/value-objects/source';
 import { wrapRepoError } from './sanitize-db-error';
 import type { TenantId } from '@/modules/members';
 
 function toAggregate(row: TenantWebhookConfigRow): TenantWebhookConfigAggregate {
-  // H3.1 — DB CHECK constraint (migration 0129) guarantees both grace
-  // columns are NULL or both non-NULL together. Map to the discriminated
-  // GraceState union once at the boundary so downstream readers
-  // pattern-match on `grace.active` for compile-time-guaranteed pair
-  // access.
-  const rawGraceSecret = row.webhookSecretGrace as WebhookSecret | null;
-  const rawGraceRotatedAt = row.graceRotatedAt
-    ? new Date(row.graceRotatedAt)
-    : null;
-  const grace =
-    rawGraceSecret !== null && rawGraceRotatedAt !== null
-      ? ({ active: true, secret: rawGraceSecret, rotatedAt: rawGraceRotatedAt } as const)
-      : ({ active: false } as const);
+  // H3.1 / R3.7.1 — DB CHECK constraint (migration 0129) guarantees
+  // both grace columns are NULL or both non-NULL together. The
+  // `asGraceState` domain helper constructs the discriminated union
+  // once + throws loudly if the pair invariant is violated at READ
+  // time (a hard regression signal, not silent fallback).
   return {
     tenantId: row.tenantId as TenantId,
     source: row.source as Source,
     activeSecret: row.webhookSecretActive as WebhookSecret,
-    grace,
+    grace: asGraceState(
+      row.webhookSecretGrace as WebhookSecret | null,
+      row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
+    ),
     enabled: row.enabled,
     createdAt: new Date(row.createdAt),
     lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt) : null,

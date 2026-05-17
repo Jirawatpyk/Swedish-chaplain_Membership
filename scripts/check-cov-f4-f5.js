@@ -1,5 +1,9 @@
-const path = require('node:path');
-const c = require(path.join(process.cwd(), 'coverage/coverage-summary.json'));
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const c = JSON.parse(
+  readFileSync(join(process.cwd(), 'coverage', 'coverage-summary.json'), 'utf-8'),
+);
 const targets = [
   'invoicing/domain',
   'payments/domain',

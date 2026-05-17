@@ -1,4 +1,11 @@
-const c = require('../coverage/coverage-summary.json');
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const c = JSON.parse(
+  readFileSync(join(__dirname, '..', 'coverage', 'coverage-summary.json'), 'utf-8'),
+);
 for (const [k, v] of Object.entries(c)) {
   if (k === 'total') continue;
   if (!k.includes('invoicing') && !k.includes('payments')) continue;

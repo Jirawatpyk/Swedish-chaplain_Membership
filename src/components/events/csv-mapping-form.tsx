@@ -763,10 +763,9 @@ function PreviewPanel({
             when there's no reason. Mirrors the precedent at the
             phase-state live region near the top of this component. */}
         <p
-          className="text-caption text-muted-foreground"
+          className="text-caption text-muted-foreground min-h-[1lh]"
           aria-live="polite"
           aria-atomic="true"
-          style={{ minHeight: '1lh' }}
         >
           {submitDisabled && submitDisabledReason !== null
             ? submitDisabledReason

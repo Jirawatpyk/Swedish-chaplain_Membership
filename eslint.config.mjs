@@ -648,6 +648,44 @@ const eslintConfig = defineConfig([
                 "Unchecked brand constructors are infrastructure-only (DB row reads). " +
                 "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.",
             },
+            // R3.4.1 / IMP-2 — defense-in-depth against relative-import
+            // bypass. The alias rule above catches `@/modules/events` +
+            // `@/modules/events/domain/branded-types`; this path-name
+            // catches direct deep-import via the full module path.
+            {
+              name: "@/modules/events/domain/branded-types",
+              importNames: [
+                "asEventIdUnchecked",
+                "asRegistrationIdUnchecked",
+                "tryEventIdUnchecked",
+                "tryRegistrationIdUnchecked",
+              ],
+              message:
+                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+                "Defense-in-depth: this rule mirrors the @/modules/events alias rule for direct path imports.",
+            },
+          ],
+          // R3.4.1 / IMP-2 — relative-import bypass coverage. A caller
+          // using `import { asEventIdUnchecked } from '../../../modules/events/domain/branded-types'`
+          // would route around the `paths` alias rule above. The
+          // `patterns` array catches arbitrary relative paths ending
+          // at `branded-types(.ts)`.
+          patterns: [
+            {
+              group: [
+                "**/modules/events/domain/branded-types",
+                "**/modules/events/domain/branded-types.ts",
+              ],
+              importNames: [
+                "asEventIdUnchecked",
+                "asRegistrationIdUnchecked",
+                "tryEventIdUnchecked",
+                "tryRegistrationIdUnchecked",
+              ],
+              message:
+                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+                "Relative-import bypass blocked — use asEventId / asRegistrationId at HTTP/CSV boundaries.",
+            },
           ],
         },
       ],

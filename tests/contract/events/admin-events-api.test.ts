@@ -893,7 +893,13 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       eventType: string;
       payload: { requestId: string | null };
     };
-    expect(entry.eventType).toBe('cross_tenant_probe');
+    // Phase B B2 — `not_found` from loadEventDetail emits the
+    // info-severity `event_detail_not_found_probe` discriminator (NOT
+    // the legacy high-severity `cross_tenant_probe`). RLS cannot
+    // discriminate "row missing" from "cross-tenant" at this code
+    // path; the new discriminator avoids dashboard noise for routine
+    // archive/soft-delete 404s while preserving the audit row.
+    expect(entry.eventType).toBe('event_detail_not_found_probe');
     expect(entry.payload.requestId).not.toBeNull();
     expect((entry.payload.requestId ?? '').length).toBe(200);
   });
@@ -918,7 +924,13 @@ describe('T053 — GET /api/admin/events/[eventId] (detail contract)', () => {
       eventType: string;
       payload: { requestId: string | null };
     };
-    expect(entry.eventType).toBe('cross_tenant_probe');
+    // Phase B B2 — `not_found` from loadEventDetail emits the
+    // info-severity `event_detail_not_found_probe` discriminator (NOT
+    // the legacy high-severity `cross_tenant_probe`). RLS cannot
+    // discriminate "row missing" from "cross-tenant" at this code
+    // path; the new discriminator avoids dashboard noise for routine
+    // archive/soft-delete 404s while preserving the audit row.
+    expect(entry.eventType).toBe('event_detail_not_found_probe');
     expect(entry.payload.requestId).toBeNull();
   });
 

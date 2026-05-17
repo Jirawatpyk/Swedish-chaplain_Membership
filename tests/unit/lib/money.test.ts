@@ -24,7 +24,6 @@ import {
   parseSatang,
   satangToProcessorAmount,
   subSatang,
-  type Satang,
   type UntrustedSatang,
 } from '@/lib/money';
 

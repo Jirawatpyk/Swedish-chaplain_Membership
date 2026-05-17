@@ -42,9 +42,13 @@
 import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { F6_FISCAL_YEAR_START_MONTH } from './fiscal-year-constants';
-import type { TenantId, MemberId, ContactId } from '@/modules/members';
+import type { TenantId, MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
-import type { QuotaEffect } from '../../../domain/event-registration';
+import {
+  asMatchResolutionView,
+  type MatchResolutionView,
+  type QuotaEffect,
+} from '../../../domain/event-registration';
 import type { MatchType } from '../../../domain/value-objects/match-type';
 import type { PaymentStatus } from '../../../domain/value-objects/payment-status';
 import {
@@ -139,6 +143,13 @@ export async function emitOrThrow(
 ): Promise<void> {
   const result = await audit.emit(entry);
   if (!result.ok) {
+    // R3.3.1 — thread synthetic cause so SRE forensics see the error
+    // kind + discriminator on `cause.message` (pino's default `err`
+    // serialiser surfaces it). Result.err has no raw Error in scope.
+    const causeMessage =
+      result.error.kind === 'db_error'
+        ? `${result.error.kind}: ${result.error.message}`
+        : `${result.error.kind}: ${result.error.eventType}`;
     throw new TxStageError(
       'audit_emit',
       `audit emit failed (kind=${result.error.kind}): ${
@@ -146,6 +157,7 @@ export async function emitOrThrow(
           ? result.error.message
           : result.error.eventType
       }`,
+      { cause: new Error(`AuditEmitError.${causeMessage}`) },
     );
   }
 }
@@ -259,11 +271,11 @@ async function emitMatchResolutionAudit(
   audit: F6AuditPort,
   tenantId: TenantId,
   actorContext: AttendeeActorContext,
-  resolution: {
-    readonly type: MatchType;
-    readonly matchedMemberId: MemberId | null;
-    readonly matchedContactId: ContactId | null;
-  },
+  // R3.7.2 — accept the narrowed view directly so the switch arms
+  // narrow on `resolution.type` without non-null assertions (H3.2
+  // already pinned the invariant at the type level; this helper was
+  // the lone holdout still using `.matchedMemberId!`).
+  resolution: MatchResolutionView,
   fuzzyDetail: {
     readonly attendeeCompanyOriginal: string;
     readonly matchedMemberCompanyNormalised: string;
@@ -291,8 +303,8 @@ async function emitMatchResolutionAudit(
         payload: {
           severity: 'info',
           registrationId,
-          matchedMemberId: resolution.matchedMemberId!,
-          matchedContactId: resolution.matchedContactId!,
+          matchedMemberId: resolution.matchedMemberId,
+          matchedContactId: resolution.matchedContactId,
           matchedOnEmail: asAttendeeEmail(attendeeEmail),
         },
       });
@@ -305,7 +317,7 @@ async function emitMatchResolutionAudit(
         payload: {
           severity: 'info',
           registrationId,
-          matchedMemberId: resolution.matchedMemberId!,
+          matchedMemberId: resolution.matchedMemberId,
           emailDomain: attendeeEmail.split('@')[1] ?? '',
         },
       });
@@ -318,7 +330,7 @@ async function emitMatchResolutionAudit(
         payload: {
           severity: 'info',
           registrationId,
-          matchedMemberId: resolution.matchedMemberId!,
+          matchedMemberId: resolution.matchedMemberId,
           attendeeCompanyOriginal: fuzzyDetail?.attendeeCompanyOriginal ?? '',
           matchedMemberCompanyNormalised:
             fuzzyDetail?.matchedMemberCompanyNormalised ?? '',
@@ -409,7 +421,12 @@ export async function processAttendeeInTx(
         '[F6] events.upsert called an unimplemented port stub',
       );
     }
-    throw new TxStageError('event_upsert', msg);
+    // R3.3.1 — thread synthetic cause carrying the error kind so SRE
+    // forensics distinguish db_error / invariant_violation / unimplemented
+    // on the audit fallback log.
+    throw new TxStageError('event_upsert', msg, {
+      cause: new Error(`EventsRepoError.${e.kind}: ${msg}`),
+    });
   }
 
   // 3. Attendee match (read-only against F3 — runs inside tx for
@@ -424,7 +441,11 @@ export async function processAttendeeInTx(
     attendeeCompany: input.attendee.companyName,
   });
   if (!matchResult.ok) {
-    throw new TxStageError('event_upsert', matchResult.error.message);
+    // R3.3.1 — thread synthetic cause so SRE forensics see the
+    // matcher's underlying failure message on `cause.message`.
+    throw new TxStageError('event_upsert', matchResult.error.message, {
+      cause: new Error(`AttendeeMatchError: ${matchResult.error.message}`),
+    });
   }
 
   // 4. Registration insert with NEUTRAL quota flags. The advisory-lock
@@ -492,7 +513,12 @@ export async function processAttendeeInTx(
         '[F6] event_registrations.insertOnConflictDoNothing called an unimplemented port stub',
       );
     }
-    throw new TxStageError('registration_insert', msg);
+    // R3.3.1 — thread synthetic cause carrying the error kind so SRE
+    // forensics distinguish db_error / invariant_violation /
+    // pseudonymised_row_rejected / unimplemented on the audit fallback.
+    throw new TxStageError('registration_insert', msg, {
+      cause: new Error(`RegistrationsRepoError.${e.kind}: ${msg}`),
+    });
   }
 
   // 5. Apply quota effect — Phase 6 T085 wiring.
@@ -572,9 +598,14 @@ export async function processAttendeeInTx(
           }
         }
       }
+      // R3.3.1 — thread synthetic cause carrying the quota-error kind
+      // + nested cause discriminator so SRE forensics can branch on
+      // lock_acquisition_failed vs quota_lookup_failed.db_error vs
+      // member_not_found at the cause level.
       throw new TxStageError(
         'quota_decrement',
         `apply-quota-effect failed (${qe.kind}): ${detail}`,
+        { cause: new Error(`QuotaEffectError.${qe.kind}: ${detail}`) },
       );
     }
     const decided = quotaResult.value.quotaEffect;
@@ -597,7 +628,12 @@ export async function processAttendeeInTx(
               : e.kind === 'pseudonymised_row_rejected'
                 ? `setQuotaEffect on pseudonymised row ${e.registrationId}`
                 : `setQuotaEffect ${e.kind}`;
-        throw new TxStageError('quota_decrement', msg);
+        // R3.3.1 — thread synthetic cause for setQuotaEffect repo error
+        // discriminator (db_error / invariant_violation /
+        // pseudonymised_row_rejected / unimplemented).
+        throw new TxStageError('quota_decrement', msg, {
+          cause: new Error(`RegistrationsRepoError.setQuotaEffect.${e.kind}: ${msg}`),
+        });
       }
       quotaEffect = decided;
     }
@@ -639,11 +675,15 @@ export async function processAttendeeInTx(
           buildQuotaLockKey(input.tenantId, matchedMemberId!, event.eventId),
         );
       } catch (e) {
+        // R3.3.1 — thread raw Error as cause so SRE sees the lock
+        // adapter's underlying exception class (PostgresError on
+        // pool-exhaust, etc.).
         throw new TxStageError(
           'quota_decrement',
           `refund advisory-lock acquisition failed: ${
             (e as Error)?.message ?? 'unknown'
           }`,
+          { cause: e instanceof Error ? e : new Error(String(e)) },
         );
       }
     }
@@ -653,9 +693,18 @@ export async function processAttendeeInTx(
       existingReg.registrationId,
     );
     if (!flip.ok) {
+      // R3.3.1 — thread synthetic cause carrying the markRefunded
+      // error kind so SRE forensics distinguish the 4 variants
+      // (registration_not_found / already_refunded / db_error /
+      // pseudonymised_row_rejected) on the audit fallback log.
       throw new TxStageError(
         'quota_decrement',
         markRefundedErrorMessage(flip.error),
+        {
+          cause: new Error(
+            `MarkRefundedError.${flip.error.kind}: ${markRefundedErrorMessage(flip.error)}`,
+          ),
+        },
       );
     }
 
@@ -677,11 +726,19 @@ export async function processAttendeeInTx(
         ),
       });
       if (!r.ok) {
+        // R3.3.1 — thread synthetic cause carrying the quota-accounting
+        // error kind so SRE forensics see the underlying DB / lookup
+        // discriminator (vs the wrapping message).
+        const causeDetail =
+          r.error.kind === 'db_error' ? r.error.message : r.error.kind;
         throw new TxStageError(
           'quota_decrement',
-          `refund credit-back allotment lookup failed: ${
-            r.error.kind === 'db_error' ? r.error.message : r.error.kind
-          }`,
+          `refund credit-back allotment lookup failed: ${causeDetail}`,
+          {
+            cause: new Error(
+              `QuotaAccountingError.${r.error.kind}: ${causeDetail}`,
+            ),
+          },
         );
       }
       allotmentSnapshot = r.value;
@@ -742,12 +799,18 @@ export async function processAttendeeInTx(
 
   // 7. Match-resolution audit (always emitted regardless of branch).
   // Failures route through emitOrThrow → TxStageError('audit_emit').
+  // R3.7.2 — narrow the port-side `MatchResolution` to the
+  // discriminated `MatchResolutionView` at this boundary so the audit
+  // helper switch arms get compile-time-narrowed non-null IDs (H3.2
+  // invariant). A read-time violation throws
+  // `MatchResolutionInvariantError` — caught by the outer rollback
+  // path + surfaces in `webhook_rolled_back` audit.
   reportStage('audit_emit');
   await emitMatchResolutionAudit(
     audit,
     input.tenantId,
     input.actorContext,
-    matchResult.value.resolution,
+    asMatchResolutionView(matchResult.value.resolution),
     matchResult.value.fuzzyDetail,
     matchResult.value.unmatchedCandidates,
     regInsert.value.registration.registrationId,

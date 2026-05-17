@@ -53,8 +53,15 @@ import { makeStandaloneAuditDeps } from '@/modules/events';
 // surface families.
 import { adminOnlyWriterGuard } from '../_lib/role-violation-audit';
 
+// R3.3.5 / I-3 — UUID v4 ONLY (variant nibble `4`). Aligns with
+// `asEventId`'s validation in `src/modules/events/domain/branded-types.ts`.
+// Prior version accepted v1-5 (`[1-5]`) but the brand constructor
+// rejected anything except v4 → mismatch caused a 500 on hypothetical
+// v1/v3/v5 UUIDs (low practical risk today since DB column is
+// `uuid DEFAULT gen_random_uuid()` = v4, but a footgun for future
+// integrations). DB-shape ≡ route-shape ≡ brand-shape is the invariant.
 const UUID_V4_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const FORCE_PROCEED_TRUTHY = new Set(['true', '1', 'yes']);
 

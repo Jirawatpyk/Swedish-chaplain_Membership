@@ -31,6 +31,7 @@
 import { and, desc, eq, gte } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { redactStack } from '@/lib/redact-stack';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { events, eventRegistrations } from './schema';
@@ -111,15 +112,26 @@ export const drizzleEventAttendeesQuery: EventAttendeesQueryPort = {
           }));
       });
     } catch (e) {
-      const errName = e instanceof Error ? e.name : 'unknown';
-      const errMessage = e instanceof Error ? e.message : String(e);
+      // R3.3.4 / I-4 — preserve `err.stack` for RLS-regression / pool-
+      // exhaustion forensics. Without the stack, SRE cannot tell which
+      // Drizzle code path threw — only that the bridge query failed.
+      // `redactStack` strips secrets before pino serialises.
       logger.error(
         {
           event: 'f6_event_attendees_query_failed',
           tenantId: String(input.tenantId),
           memberId: String(input.memberId),
-          errName,
-          errMessage,
+          err:
+            e instanceof Error
+              ? {
+                  name: e.name,
+                  message: e.message,
+                  stack:
+                    typeof e.stack === 'string'
+                      ? (redactStack(e.stack) ?? null)
+                      : null,
+                }
+              : { name: 'non_error', message: String(e), stack: null },
         },
         '[F6→F8 bridge] eventAttendees query failed — falling open to [] to preserve F8 scorer no-throw contract',
       );

@@ -1040,9 +1040,26 @@ async function processBatch(
  * Collapse `e instanceof Error ? e.message : String(e)` boilerplate;
  * single source of truth for caught-error stringification (future
  * refactors like stack capture + PII redaction flow through here).
+ *
+ * R3.3.3 / I-5 — When the caught Error carries a `.cause` (ES2022
+ * `Error.cause` threaded by R3.3.1 in `process-attendee-in-tx.ts` at
+ * 8+ TxStageError sites), surface the cause's name + message after the
+ * primary message so SRE forensics can distinguish
+ * `PostgresError(deadlock)` vs `AbortError(timeout)` vs
+ * `AuditEmitError.db_error(connection lost)` on the audit fallback log.
+ * Without cause threading, every wrapped error collapses to "audit emit
+ * failed (kind=db_error): ..." indistinguishably across N root causes.
+ *
+ * Backward-compat: callers that pass non-Error or cause-less Errors
+ * see the original `e.message` / `String(e)` shape; only cause-bearing
+ * Errors get the appended `(cause: ...)` segment.
  */
 function toErrMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+  if (!(e instanceof Error)) return String(e);
+  if (e.cause instanceof Error) {
+    return `${e.message} (cause: ${e.cause.name}: ${e.cause.message})`;
+  }
+  return e.message;
 }
 
 /**

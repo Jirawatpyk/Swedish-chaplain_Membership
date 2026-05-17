@@ -42,11 +42,24 @@ export interface MatchResolution {
  * Phase C C2 — type-narrowed view per match_type variant. The aggregate
  * keeps the existing flat shape for migration-friendliness; this
  * discriminated union lets callers pattern-match against the
- * per-variant invariants. The migration 0136 CHECK constraint enforces
- * the same shape at write time:
- *   - 'non_member' / 'unmatched' → both IDs null + both counters false
+ * per-variant invariants.
+ *
+ * R3.5.4 honest-doc closure — migration 0136 CHECK constraint enforces
+ * ONLY the `'non_member' | 'unmatched' → both IDs null + both counters
+ * false` invariant at write time (see
+ * `drizzle/migrations/0136_f6_event_registrations_non_member_no_contact_check.sql`).
+ * The positive-set invariants for the remaining variants:
  *   - 'member_contact' → matched_member_id + matched_contact_id present
  *   - 'member_domain' / 'member_fuzzy' → matched_member_id only
+ * ...are enforced by application-layer (the F6 Phase 3 ingest pipeline
+ * + Phase 4 admin routes) + the FK column nullability on
+ * `matched_member_id` / `matched_contact_id` (which permits null at
+ * the column level — the discriminated invariant lives in the
+ * use-case path). R3.4.2 added a read-time defense:
+ * `drizzleRegistrationsRepository.toAggregate` calls
+ * `asMatchResolutionView` which throws `MatchResolutionInvariantError`
+ * + bumps the `eventcreate_match_resolution_invariant_violation_total`
+ * metric if any read-time row violates the invariant.
  */
 export type MatchResolutionView =
   | {

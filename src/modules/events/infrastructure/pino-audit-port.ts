@@ -193,15 +193,6 @@ function logFullError(
 }
 
 /**
- * PII-redacted forensic projection of an audit payload for the
- * `emitStandalone` + `emitRolledBack` dual-write `pino.fatal` fallback
- * paths. Only forensically-useful fields are preserved — raw email,
- * names, company, phone never make it to the log line even if a future
- * audit event type carries them. This is defence-in-depth against
- * caller drift (current callers don't carry PII, but the contract is
- * shared infrastructure).
- */
-/**
  * Allowlist for {@link redactPayloadForFatalLog}.
  *
  * Organised by purpose so future maintainers can reason about each
@@ -209,22 +200,35 @@ function logFullError(
  *
  *   - Forensic context (always safe): severity, source, scope, requestId
  *   - Probe/attack signals (non-PII identifiers): sourceIp, attemptedRoute,
- *     probedTenantId, signedTenantId
+ *     probedTenantId, signedTenantId, probedId, probeSurface, probedAt
  *   - Signature failure details: signatureLastFour, timestampSkewSeconds,
  *     bodyLengthBytes
  *   - Operation outcomes: errorName, failureStage, stage, rowNumber,
  *     rowsCleared, durationMs
+ *   - CSV import row counters: rowsProcessed, rowsAlreadyImported,
+ *     rowsStateChanged, eventsCreated, eventsUpdated, errorRowCount,
+ *     timedOut, sourceFormat
+ *   - CSV import override forensics: recordId, currentEventId, overriddenAt
  *   - Identifiers (non-PII UUIDs): registrationId, eventId, matchType
  *   - Actor classification (non-PII role labels): actorType, actorUserId,
- *     dispatchedByActorUserId, dispatchedByActorRole
+ *     dispatchedByActorUserId, dispatchedByActorRole, actorRole,
+ *     attemptedAction, blockedAt
+ *   - Cancellation forensics (already-hashed PII): attendeeEmailHash
  *   - State signals: graceSecretUsed, graceSecretAgeHours, reason
  *
  * Anything NOT on this list is dropped — protects against PII fields
  * like `attendeeEmail`, `attendeeName`, `attendeeCompany`, `errorMessage`,
  * `errorStack`, `reasonText`, `rawRowExcerpt`, `errors[]` reaching the
- * `pino.fatal` log when DB-write fails. Exhaustively cross-checked
- * against the 43-event F6 payload union — see test
- * `tests/unit/events/infrastructure/redact-payload-for-fatal-log.test.ts`.
+ * `pino.fatal` log when DB-write fails. Nested objects (e.g.
+ * `matchCounts: Record<MatchType, number>`) and arrays (e.g.
+ * `priorRecordIds`, `priorEventIds`) are also dropped — emit-site
+ * pre-formatting to a primitive summary string is required if those
+ * forensic primitives need to survive the fallback.
+ *
+ * Cross-checked against every in-tree `emitStandalone()` and
+ * `emitRolledBack()` caller's payload fields as of Round-3 audit (see
+ * `tests/unit/events/infrastructure/redact-payload-for-fatal-log.test.ts`
+ * for the snapshot + per-caller round-trip cases).
  */
 const REDACT_ALLOWED_KEYS = new Set<string>([
   // Forensic context
@@ -237,6 +241,9 @@ const REDACT_ALLOWED_KEYS = new Set<string>([
   'attemptedRoute',
   'probedTenantId',
   'signedTenantId',
+  'probedId',
+  'probeSurface',
+  'probedAt',
   // Signature failure details
   'signatureLastFour',
   'timestampSkewSeconds',
@@ -248,6 +255,19 @@ const REDACT_ALLOWED_KEYS = new Set<string>([
   'rowNumber',
   'rowsCleared',
   'durationMs',
+  // CSV import row counters (forensic primitives)
+  'rowsProcessed',
+  'rowsAlreadyImported',
+  'rowsStateChanged',
+  'eventsCreated',
+  'eventsUpdated',
+  'errorRowCount',
+  'timedOut',
+  'sourceFormat',
+  // CSV import override forensics (non-PII UUIDs + Date)
+  'recordId',
+  'currentEventId',
+  'overriddenAt',
   // Identifiers (non-PII)
   'registrationId',
   'eventId',
@@ -257,12 +277,26 @@ const REDACT_ALLOWED_KEYS = new Set<string>([
   'actorUserId',
   'dispatchedByActorUserId',
   'dispatchedByActorRole',
+  'actorRole',
+  'attemptedAction',
+  'blockedAt',
+  // Cancellation forensics (already-hashed PII — safe to log)
+  'attendeeEmailHash',
   // State signals
   'graceSecretUsed',
   'graceSecretAgeHours',
   'reason',
 ]);
 
+/**
+ * PII-redacted forensic projection of an audit payload for the
+ * `emitStandalone` + `emitRolledBack` dual-write `pino.fatal` fallback
+ * paths. Only forensically-useful fields are preserved — raw email,
+ * names, company, phone never make it to the log line even if a future
+ * audit event type carries them. This is defence-in-depth against
+ * caller drift (current callers don't carry PII, but the contract is
+ * shared infrastructure).
+ */
 function redactPayloadForFatalLog(payload: unknown): Record<string, unknown> {
   if (typeof payload !== 'object' || payload === null) {
     return { _shape: 'non-object' };

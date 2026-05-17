@@ -20,9 +20,27 @@
  * Mocks: i18n via NextIntlClientProvider with inline messages — keeps
  * the test deterministic without loading the full message catalogue.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+
+// Phase G G3 — auto-refresh polling uses `useRouter().refresh()` from
+// next/navigation. The component requires an App Router context;
+// vitest's jsdom env does not provide one. Mock the navigation surface
+// to a no-op so the component renders in unit tests. The polling tick
+// effect runs but the refresh call lands on the stub.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    refresh: vi.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+  usePathname: () => '/admin/events/import/history',
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 import {
   CsvImportHistoryTable,
@@ -63,6 +81,7 @@ const MESSAGES = {
             eventcreate_csv: 'EventCreate',
             generic_csv: 'Generic',
           },
+          autoRefreshing: 'Auto-refreshing every 5s while imports are running',
           outcome: {
             running: 'Running…',
             completed: 'Completed',

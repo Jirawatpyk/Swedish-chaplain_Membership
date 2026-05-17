@@ -46,7 +46,7 @@ export default function ErasePiiError({
           ) : null}
         </div>
         <Button type="button" onClick={reset} className="min-h-11">
-          {t('cancel')}
+          {t('tryAgain')}
         </Button>
       </div>
     </DetailContainer>

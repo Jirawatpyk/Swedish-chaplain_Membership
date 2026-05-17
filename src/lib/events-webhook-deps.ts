@@ -33,7 +33,10 @@ import { eventcreateMetrics } from '@/lib/metrics';
 import { rateLimiter as authRateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { tenantWebhookConfigs } from '@/modules/events/infrastructure/schema';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
-import type { TenantWebhookConfigAggregate } from '@/modules/events';
+import {
+  asGraceState,
+  type TenantWebhookConfigAggregate,
+} from '@/modules/events';
 
 export {
   makeIngestWebhookAttendeeDeps,
@@ -109,22 +112,18 @@ export async function loadTenantWebhookConfig(
 
   if (rows.length === 0) return null;
   const row = rows[0]!;
-  // H3.1 — construct GraceState union at the boundary. DB CHECK at
-  // migration 0129 guarantees the pair invariant; map both NULL → not
-  // active, both non-NULL → active.
-  const rawGraceSecret = row.webhookSecretGrace as unknown as
-    | TenantWebhookConfigAggregate['activeSecret']
-    | null;
-  const rawGraceRotatedAt = row.graceRotatedAt ? new Date(row.graceRotatedAt) : null;
-  const grace: TenantWebhookConfigAggregate['grace'] =
-    rawGraceSecret !== null && rawGraceRotatedAt !== null
-      ? { active: true, secret: rawGraceSecret, rotatedAt: rawGraceRotatedAt }
-      : { active: false };
+  // H3.1 / R3.7.1 — use the `asGraceState` domain helper for the
+  // boundary mapping. DB CHECK at migration 0129 guarantees the pair
+  // invariant; throw loudly on read-time violation (mirrors the
+  // drizzleTenantWebhookConfigRepository pattern).
   return {
     tenantId: ctx.slug as unknown as TenantWebhookConfigAggregate['tenantId'],
     source: row.source as 'eventcreate',
     activeSecret: row.webhookSecretActive as unknown as TenantWebhookConfigAggregate['activeSecret'],
-    grace,
+    grace: asGraceState(
+      row.webhookSecretGrace as unknown as TenantWebhookConfigAggregate['activeSecret'] | null,
+      row.graceRotatedAt ? new Date(row.graceRotatedAt) : null,
+    ),
     enabled: row.enabled,
     createdAt: new Date(row.createdAt),
     lastReceivedAt: row.lastReceivedAt ? new Date(row.lastReceivedAt) : null,

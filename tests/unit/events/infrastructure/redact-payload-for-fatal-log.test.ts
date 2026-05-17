@@ -1,15 +1,21 @@
 /**
- * Phase H4.1 / NEW-I4 — exhaustive 43-event-union snapshot test for
- * `redactPayloadForFatalLog` allowlist.
+ * Round 3 R3.1.2 — pins `REDACT_ALLOWED_KEYS` against the real
+ * `emitStandalone()` + `emitRolledBack()` caller payload graph as of
+ * Round 3 audit. Adding a new audit event type with a new non-PII
+ * forensic primitive REQUIRES updating BOTH the allowlist AND this test.
  *
- * For each F6 audit event type, this test:
+ * For each shipped F6 audit event type whose payload reaches the
+ * `pino.fatal` dual-write fallback, this test:
  *   1. Constructs a synthetic payload containing ALL declared fields
  *      (including PII fields like `attendeeEmail`, `errorMessage`).
  *   2. Asserts the redactor preserves only the allowlist fields and
- *      drops every PII / nested-object field.
- *   3. Verifies SRE forensic fields used by real `emitStandalone`
- *      callers (sourceIp, attemptedRoute, signatureLastFour, etc.) are
- *      preserved — closing R2-C1 the Round-2 silent-failure CRITICAL.
+ *      drops every PII / nested-object / array field.
+ *   3. Verifies SRE forensic fields used by every real `emitStandalone`
+ *      caller (5 webhook callers + role-violation + cross-tenant probe +
+ *      csv-import-completed + override + cancellation-no-prior) are
+ *      preserved — closes Round-2 R2-C1 (5 webhook callers) + Round-3
+ *      C-1 (3+ missed callers including csv_import_cross_tenant_probe
+ *      P-I cl.4 critical-severity event).
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -121,24 +127,149 @@ describe('Phase H4.1 — redactPayloadForFatalLog exhaustive allowlist verificat
     // Snapshot-style assertion pinning the allowlist taxonomy. A future
     // refactor that removes a forensic field from the allowlist forces
     // a test update + reviewer scrutiny (the "snapshot drift catches the
-    // regression" pattern).
+    // regression" pattern). Updated in Round 3 R3.1.2 to include the
+    // 18 forensic primitives missed by Round-2 R2-C1 (probedId,
+    // probeSurface, probedAt for csv_import_cross_tenant_probe;
+    // actorRole, attemptedAction, blockedAt for role_violation_blocked;
+    // CSV import counters for csv_import_completed; override forensics;
+    // attendeeEmailHash for csv_import_row_cancelled_no_prior).
     const expectedKeys = [
       // Forensic context
       'severity', 'requestId', 'source', 'scope',
       // Probe/attack signals
       'sourceIp', 'attemptedRoute', 'probedTenantId', 'signedTenantId',
+      'probedId', 'probeSurface', 'probedAt',
       // Signature failure details
       'signatureLastFour', 'timestampSkewSeconds', 'bodyLengthBytes',
       // Operation outcomes
       'errorName', 'failureStage', 'stage', 'rowNumber', 'rowsCleared', 'durationMs',
+      // CSV import row counters (forensic primitives)
+      'rowsProcessed', 'rowsAlreadyImported', 'rowsStateChanged',
+      'eventsCreated', 'eventsUpdated', 'errorRowCount', 'timedOut', 'sourceFormat',
+      // CSV import override forensics
+      'recordId', 'currentEventId', 'overriddenAt',
       // Identifiers (non-PII)
       'registrationId', 'eventId', 'matchType',
       // Actor classification (non-PII)
       'actorType', 'actorUserId', 'dispatchedByActorUserId', 'dispatchedByActorRole',
+      'actorRole', 'attemptedAction', 'blockedAt',
+      // Cancellation forensics (already-hashed PII)
+      'attendeeEmailHash',
       // State signals
       'graceSecretUsed', 'graceSecretAgeHours', 'reason',
     ];
     expect([...REDACT_ALLOWED_KEYS].sort()).toEqual(expectedKeys.sort());
+  });
+
+  it('round-trip: csv_import_cross_tenant_probe (Constitution P-I cl.4 critical) preserves all forensic primitives', () => {
+    // Real payload from src/app/api/admin/events/import/route.ts:573-580.
+    // SRE MUST see probedId + probeSurface + sourceIp during a DB-down
+    // incident — otherwise the security event is forensic-blind.
+    const payload = {
+      severity: 'critical',
+      actorUserId: 'admin-uuid',
+      probedId: 'event-uuid-from-another-tenant',
+      probeSurface: 'import_event_id',
+      sourceIp: '203.0.113.1',
+      probedAt: '2026-05-17T10:00:00.000Z',
+    };
+    const out = redactPayloadForFatalLog(payload);
+    for (const key of Object.keys(payload)) {
+      expect(out).toHaveProperty(key);
+      expect(out[key]).toBe((payload as Record<string, unknown>)[key]);
+    }
+  });
+
+  it('round-trip: role_violation_blocked preserves actor + action + blockedAt', () => {
+    // Real payload from src/app/api/admin/events/_lib/role-violation-audit.ts:89-96
+    // + the /admin/integrations/eventcreate/_lib sibling. SRE forensics
+    // need actorRole (member vs manager) + attemptedAction (which mutation)
+    // + blockedAt (app_layer vs db_layer in future variants).
+    const payload = {
+      severity: 'warn',
+      actorUserId: 'manager-uuid',
+      actorRole: 'manager',
+      attemptedRoute: '/api/admin/events/foo/archive',
+      attemptedAction: 'archive_event',
+      blockedAt: 'app_layer',
+    };
+    const out = redactPayloadForFatalLog(payload);
+    for (const key of Object.keys(payload)) {
+      expect(out).toHaveProperty(key);
+      expect(out[key]).toBe((payload as Record<string, unknown>)[key]);
+    }
+  });
+
+  it('round-trip: csv_import_completed preserves all row counters + flags', () => {
+    // Real payload shape from audit-port.ts:455-485 (csv_import_completed
+    // payload contract). matchCounts (nested object) MUST be dropped;
+    // every other primitive preserved.
+    const payload = {
+      severity: 'info',
+      actorUserId: 'admin-uuid',
+      rowsProcessed: 150,
+      rowsAlreadyImported: 25,
+      rowsStateChanged: 5,
+      eventsCreated: 2,
+      eventsUpdated: 1,
+      errorRowCount: 3,
+      durationMs: 12500,
+      timedOut: false,
+      sourceFormat: 'eventcreate_csv',
+      // Nested object MUST be dropped (PII-safety: matchCounts is
+      // intentionally not allowlisted as a top-level key).
+      matchCounts: { member_contact: 100, non_member: 50 },
+    };
+    const out = redactPayloadForFatalLog(payload);
+    expect(out['rowsProcessed']).toBe(150);
+    expect(out['rowsAlreadyImported']).toBe(25);
+    expect(out['rowsStateChanged']).toBe(5);
+    expect(out['eventsCreated']).toBe(2);
+    expect(out['eventsUpdated']).toBe(1);
+    expect(out['errorRowCount']).toBe(3);
+    expect(out['durationMs']).toBe(12500);
+    expect(out['timedOut']).toBe(false);
+    expect(out['sourceFormat']).toBe('eventcreate_csv');
+    // Nested object dropped:
+    expect(out['matchCounts']).toBeUndefined();
+  });
+
+  it('round-trip: csv_import_event_mismatch_overridden preserves override forensics', () => {
+    // Real payload from import-csv.ts:1912-1927 — admin overriding the
+    // FR-019b safety net. priorRecordIds / priorEventIds are arrays →
+    // dropped; per-row primitives (recordId, currentEventId, overriddenAt)
+    // preserved.
+    const payload = {
+      severity: 'warn',
+      actorUserId: 'admin-uuid',
+      recordId: '11111111-2222-4333-8444-555555555555',
+      currentEventId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      overriddenAt: '2026-05-17T10:30:00.000Z',
+      // Arrays dropped:
+      priorRecordIds: ['old-record-1', 'old-record-2'],
+      priorEventIds: ['old-event-1'],
+    };
+    const out = redactPayloadForFatalLog(payload);
+    expect(out['recordId']).toBe(payload.recordId);
+    expect(out['currentEventId']).toBe(payload.currentEventId);
+    expect(out['overriddenAt']).toBe(payload.overriddenAt);
+    // Arrays dropped:
+    expect(out['priorRecordIds']).toBeUndefined();
+    expect(out['priorEventIds']).toBeUndefined();
+  });
+
+  it('round-trip: csv_import_row_cancelled_no_prior preserves hashed PII', () => {
+    // Real payload from import-csv.ts:1152-1167 — first-time Cancellation
+    // row skipped. attendeeEmailHash is SHA-256 hex prefix, NOT raw PII,
+    // so it's safe to log.
+    const payload = {
+      severity: 'info',
+      rowNumber: 42,
+      attendeeEmailHash: 'a1b2c3d4e5f60718', // SHA-256 first-16-hex
+    };
+    const out = redactPayloadForFatalLog(payload);
+    expect(out['rowNumber']).toBe(42);
+    expect(out['attendeeEmailHash']).toBe('a1b2c3d4e5f60718');
   });
 
   it('PII field names that overlap with allowlist semantics are NOT auto-allowed', () => {

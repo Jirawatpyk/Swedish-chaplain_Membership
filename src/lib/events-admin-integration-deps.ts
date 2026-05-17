@@ -35,10 +35,11 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { asTenantId } from '@/modules/members';
 import { asUserId } from '@/modules/auth';
-// 06 (2026-05-13) — use-cases + their error
-// types now flow through the public barrel instead of deep-importing
-// from `application/use-cases/*`. Same runtime behaviour; cleaner
-// boundary for the rest of the project to follow.
+// Use-cases + their error types flow through the public barrel
+// (`@/modules/events`) instead of deep-importing from
+// `application/use-cases/*`. Same runtime behaviour; cleaner module
+// boundary per Constitution Principle III (every barrel-only public
+// surface).
 import {
   generateWebhookSecret,
   rotateWebhookSecret,
@@ -83,9 +84,9 @@ import {
 // JSDoc intent; ESLint exemption for src/lib/** is no longer needed
 // for this seam).
 import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
-// 07 (2026-05-13) — `tenantWebhookConfigs`
-// import dropped after the barrel re-export was removed; the file
-// no longer needs the raw schema reference. Tests now reach
+// `tenantWebhookConfigs` schema import dropped — barrel re-export
+// removed during Phase III barrel cleanup. The file no longer needs
+// the raw schema reference. Tests now reach
 // `@/modules/events/infrastructure/schema` directly.
 
 // ---------------------------------------------------------------------------
@@ -94,12 +95,11 @@ import { makeAuditPortForTenant as makePinoAuditPort } from '@/modules/events';
 
 const ROTATE_MAX_PER_HOUR = 3;
 const TEST_WEBHOOK_MAX_PER_HOUR = 10;
-// 01 (2026-05-13) — generate-secret rate limit.
-// Fresh tenant onboarding is a one-shot action; 3/hour matches the
-// rotate-secret budget and prevents an attacker with a compromised
-// admin session from hammering the endpoint (each call costs an
-// Upstash check + a DB conflict probe even though the 409 idempotency
-// bound prevents repeated writes).
+// Generate-secret rate limit. Fresh tenant onboarding is a one-shot
+// action; 3/hour matches the rotate-secret budget and prevents an
+// attacker with a compromised admin session from hammering the
+// endpoint (each call costs an Upstash check + a DB conflict probe
+// even though the 409 idempotency bound prevents repeated writes).
 const GENERATE_SECRET_MAX_PER_HOUR = 3;
 const WINDOW_SECONDS = 3600;
 
@@ -531,12 +531,12 @@ export async function runRunTestWebhook(
     {
       signRequest: signWebhookRequest,
       httpFetch: async (url, init) => {
-        // 02 (2026-05-13) — 10s AbortSignal
-        // timeout. Without this, a stuck receiver (advisory-lock
-        // contention, Neon connectivity glitch, cold function start
-        // targeting itself) blocks the admin route until Vercel
-        // platform timeout (~30s) before surfacing as a generic
-        // failure. 10s is conservative-but-actionable: the receiver's
+        // 10s AbortSignal timeout. Without this, a stuck receiver
+        // (advisory-lock contention, Neon connectivity glitch, cold
+        // function start targeting itself) blocks the admin route
+        // until Vercel platform timeout (~30s) before surfacing as a
+        // generic failure. 10s is conservative-but-actionable: the
+        // receiver's
         // happy path is sub-100ms p95 (SC-003 budget <300ms), so 10s
         // is 33× headroom for real outage detection without false
         // positives under cold-start latency.
@@ -592,12 +592,12 @@ export async function runRunTestWebhook(
     },
   );
 
-  // 07 (2026-05-13) — emit test-invoked metric
-  // on every completed round-trip. We classify by `result.ok` AND by
-  // the inner `RunTestWebhookOutcome.ok` (the use-case returns
-  // `Result.ok` even when the receiver returned 4xx/5xx — the outer
-  // Result only fails on signing errors / invalid_base_url, which are
-  // programming bugs not user-facing failures).
+  // Emit test-invoked metric on every completed round-trip. Classify
+  // by `result.ok` AND by the inner `RunTestWebhookOutcome.ok` (the
+  // use-case returns `Result.ok` even when the receiver returned
+  // 4xx/5xx — the outer Result only fails on signing errors /
+  // invalid_base_url, which are programming bugs not user-facing
+  // failures).
   const outcome: 'success' | 'failure' =
     useCaseResult.ok && useCaseResult.value.ok ? 'success' : 'failure';
   safeEmitTestInvokedMetric(tenantSlug, outcome);
@@ -792,9 +792,9 @@ export async function runToggleIngest(
 // strict-R1 freshness logic that this file used to host.
 // ---------------------------------------------------------------------------
 
-// 07 (2026-05-13) — the `tenantWebhookConfigs`
-// raw-table re-export was removed. Tests that probe the table
-// directly import from `@/modules/events/infrastructure/schema` (the
-// canonical location); the public surface should NOT widen to
-// production callers via the barrel. The barrel's "no raw Drizzle
-// adapters" rule is now consistent across all F6 tables.
+// The `tenantWebhookConfigs` raw-table re-export was removed during
+// Phase III barrel cleanup. Tests that probe the table directly import
+// from `@/modules/events/infrastructure/schema` (the canonical
+// location); the public surface should NOT widen to production callers
+// via the barrel. The barrel's "no raw Drizzle adapters" rule is now
+// consistent across all F6 tables.

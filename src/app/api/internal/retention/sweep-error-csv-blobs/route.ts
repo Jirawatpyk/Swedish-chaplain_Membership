@@ -29,7 +29,6 @@
 import { randomUUID } from 'node:crypto';
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
-import { eventcreateMetrics } from '@/lib/metrics';
 import { gateF6Cron } from '@/lib/events-cron-deps';
 import { runSweepExpiredErrorCsvBlobs } from '@/lib/events-csv-import-deps';
 

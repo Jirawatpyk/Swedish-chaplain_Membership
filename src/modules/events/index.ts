@@ -130,6 +130,8 @@ export {
 export {
   GRACE_WINDOW_MS,
   isGraceSecretActive,
+  asGraceState,
+  type GraceState,
   type TenantWebhookConfigAggregate,
 } from './domain/tenant-webhook-config';
 

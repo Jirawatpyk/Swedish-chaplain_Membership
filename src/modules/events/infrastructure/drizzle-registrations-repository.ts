@@ -21,6 +21,7 @@ import { and, asc, desc, eq, inArray, or, sql, ilike, like, type SQL } from 'dri
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { eventcreateMetrics } from '@/lib/metrics';
 
 /**
  * R6 SEC-R6-01 — `listForRequota` row cap. See call-site comment for
@@ -41,6 +42,7 @@ import type {
 } from '../application/ports/registrations-repository';
 import {
   asMatchResolutionView,
+  MatchResolutionInvariantError,
   type EventRegistrationAggregate,
 } from '../domain/event-registration';
 import type {
@@ -76,6 +78,40 @@ export function readAttendeeEmailLower(row: EventRegistrationRow): string {
 }
 
 function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
+  // R3.4.2 / IMP-1 — invariant-error collapse defense-in-depth.
+  // Wrap the H3.2 `asMatchResolutionView` narrowing with a try/catch
+  // that emits a structured log + bumps the metric counter BEFORE
+  // re-throwing. The throw IS load-bearing (preserves the
+  // throw-on-invariant contract); the catch adds a forensic
+  // breadcrumb if migration 0136 CHECK is ever weakened or RLS
+  // surfaces a row that violates the invariant. SRE alert wired:
+  // `eventcreate_match_resolution_invariant_violation_total > 0` for
+  // ≥1 min → P1 page (see docs/observability.md § F6 alerts).
+  let match: ReturnType<typeof asMatchResolutionView>;
+  try {
+    match = asMatchResolutionView({
+      type: row.matchType as MatchType,
+      matchedMemberId: row.matchedMemberId as MemberId | null,
+      matchedContactId: row.matchedContactId as ContactId | null,
+    });
+  } catch (e) {
+    if (e instanceof MatchResolutionInvariantError) {
+      logger.error(
+        {
+          event: 'f6_match_resolution_invariant_violation',
+          tenantId: String(row.tenantId),
+          registrationId: String(row.registrationId),
+          eventId: String(row.eventId),
+          matchType: row.matchType,
+          matchedMemberId: row.matchedMemberId === null ? null : 'set',
+          matchedContactId: row.matchedContactId === null ? null : 'set',
+        },
+        '[F6] event_registrations row violates match-resolution invariant at READ time — likely DB CHECK regression or RLS misconfig',
+      );
+      eventcreateMetrics.matchResolutionInvariantViolation(String(row.tenantId));
+    }
+    throw e;
+  }
   return {
     tenantId: row.tenantId as TenantId,
     registrationId: row.registrationId as RegistrationId,
@@ -86,15 +122,7 @@ function toAggregate(row: EventRegistrationRow): EventRegistrationAggregate {
       name: row.attendeeName,
       company: row.attendeeCompany,
     },
-    // H3.2 — narrow to MatchResolutionView at the boundary. The DB
-    // CHECK at migration 0136 guarantees the pair invariant; a thrown
-    // MatchResolutionInvariantError here means an in-memory row that
-    // disagrees with the schema (should be impossible in production).
-    match: asMatchResolutionView({
-      type: row.matchType as MatchType,
-      matchedMemberId: row.matchedMemberId as MemberId | null,
-      matchedContactId: row.matchedContactId as ContactId | null,
-    }),
+    match,
     ticket: {
       type: row.ticketType,
       priceThb: row.ticketPriceThb,

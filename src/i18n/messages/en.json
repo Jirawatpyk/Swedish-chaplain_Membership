@@ -2540,6 +2540,7 @@
           "pathMismatchDescription": "This registration belongs to a different event. Refresh the page and try again.",
           "errorTitle": "Could not erase personal data",
           "errorDescription": "Please try again. If the issue persists, contact support.",
+          "tryAgain": "Try again",
           "loading": "Erasing personal data…",
           "pageTitle": "Erase personal data — {attendeeName}",
           "pageBackToEventLabel": "Back to event detail",

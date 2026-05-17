@@ -3344,4 +3344,25 @@ export const eventcreateMetrics = {
       ).add(1, { route });
     });
   },
+
+  /**
+   * R3.4.2 / IMP-1 — match-resolution invariant violation counter.
+   * Emitted by `drizzleRegistrationsRepository.toAggregate` when
+   * `asMatchResolutionView` throws `MatchResolutionInvariantError`
+   * (read-time invariant). The migration 0136 CHECK constraint
+   * prevents the write-time path; a hit on this counter signals a
+   * regression (CHECK relaxed, RLS misconfig surfacing rows that
+   * violate, in-memory mutation).
+   *
+   * Alert spec: rate > 0 sustained ≥1 min → P1 page — DB CHECK
+   * regression suspected. See `docs/observability.md` § F6 alerts.
+   */
+  matchResolutionInvariantViolation(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_match_resolution_invariant_violation_total',
+        'event_registrations row violates match-resolution invariant at READ time (migration 0136 CHECK regression?)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;
