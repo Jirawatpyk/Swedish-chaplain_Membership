@@ -2,18 +2,21 @@
 SYNC IMPACT REPORT
 ==================
 Version change: 1.4.1 → 1.4.2  (PATCH: add canonical
-                "co-sign footer YAML template" pattern as a Principle IX
-                solo-maintainer-substitute precedent. Triggered by F6
-                R10 retrospective recommendation #4 (T150 + T151 closure
-                that co-signed 5 quality checklists using a structured
-                YAML-style footer documenting signer + date + branch
-                HEAD + verification method + per-category evidence +
-                Constitution gate). The pattern was already established
-                via the F6 T150 (security) + T151 (reliability + UX +
-                observability + integration) co-signs — this amendment
-                promotes the 5-checklist precedent from convention to
-                canonical template so future feature checklists adopt
-                it consistently. PATCH bump: no principle removed,
+                "structured markdown co-sign footer template" pattern as
+                a Principle IX solo-maintainer-substitute precedent.
+                Triggered by F6 R10 retrospective recommendation #4
+                (T150 + T151 closure that co-signed 5 quality checklists
+                using a structured footer documenting signer + date +
+                branch HEAD + verification method + per-category
+                evidence + Constitution gate). The pattern was already
+                established via the F6 T150 (security) + T151
+                (reliability + UX + observability + integration) co-
+                signs — this amendment promotes the 5-checklist
+                precedent from convention to canonical template so
+                future feature checklists adopt it consistently.
+                Format note: markdown bullets with bold-labelled keys
+                (NOT machine-parseable YAML, despite earlier draft
+                language). PATCH bump: no principle removed,
                 renumbered, or redefined; existing rules unchanged.
                 Solo-maintainer substitute applies.)
 
@@ -135,12 +138,16 @@ History:
                          projects.
   - 1.4.2 (2026-05-18) — PATCH precedent. Principle IX gains a
                          "Co-sign footer template" sub-section
-                         documenting the canonical YAML-style footer
-                         structure for solo-maintainer-substitute
-                         co-signs on quality checklists. Template
-                         enables retroactive audit (signer + date +
-                         branch HEAD + verification method + per-
-                         category evidence + Constitution gate).
+                         documenting the canonical structured-markdown
+                         footer for solo-maintainer-substitute co-signs
+                         on quality checklists. Template enables
+                         retroactive audit (signer + date + branch
+                         HEAD + verification method + per-category
+                         evidence + Constitution gate). Format is
+                         markdown bullets with bold-labelled keys
+                         (NOT machine-parseable YAML — extendable
+                         with frontmatter later if CI aggregation
+                         needed).
                          Precedents: F6 T150 (security 38/38) + T151
                          (reliability 35/35 + UX 40/40 + observability
                          39/39 + integration 35/35) all use this
@@ -614,8 +621,13 @@ The codebase MUST maintain strict, automated quality gates.
 **Co-sign footer template** (v1.4.2 canonical precedent for solo-maintainer
 substitute documentation): when a solo maintainer co-signs a feature's quality
 checklist (security / reliability / UX / observability / integration), the co-sign
-MUST be appended as a YAML-style footer at the bottom of the checklist file using
-this structure (verbatim field order; field values per-checklist):
+MUST be appended as a **structured markdown footer** at the bottom of the
+checklist file using this structure (verbatim field order; field values per-
+checklist). The format is markdown bullets with bold-labelled keys — chosen for
+human readability inside the markdown checklist file. It is NOT machine-parseable
+YAML; if CI aggregation of co-sign status is needed later, the template MAY be
+extended with a YAML frontmatter block (separate from the markdown body) per the
+`retrospective.md` precedent without changing the field semantics defined here.
 
 ```yaml
 ## Co-Sign Footer
