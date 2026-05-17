@@ -381,4 +381,247 @@ describe('processChargeRefunded — T130 100% branch coverage', () => {
     // Zero OOB audits across BOTH deliveries (refund is known on each).
     expect(vi.mocked(deps.audit.emit).mock.calls).toHaveLength(0);
   });
+
+  // ---------------------------------------------------------------------
+  // 2026-05-17 F5 polish — cover the remaining branches:
+  //   - refund_amount_mismatch_detected (F5R2-SF-6)
+  //   - amountProjectionFailed bypass (F5R3v3 H-4)
+  //   - parent recovery to 'refunded' (fully refunded)
+  //   - parent recovery race (updateStatus returns null → logger.warn)
+  //   - lockForUpdate returns null (defensive — parent missing)
+  //   - parent status NOT in succeeded|partially_refunded (skip recovery)
+  // ---------------------------------------------------------------------
+
+  it('F5R2-SF-6 — refund_amount_mismatch_detected fires when DB amount > Stripe amount', async () => {
+    vi.mocked(deps.refundsRepo.findByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) => ({
+        id: `rfd_${refundId}`,
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId('pmt_test'),
+        invoiceId: `inv-${refundId}`,
+        amountSatang: asSatang(200_000n), // DB > Stripe
+        status: 'pending' as const,
+        processorRefundId: refundId,
+      }),
+    );
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({
+        refundIds: ['re_mismatch'],
+        amountSatang: asSatang(100_000n), // Stripe < DB
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+
+    // Audit emit fires with refund_amount_mismatch_detected; NO refund
+    // flip + NO refund_succeeded emit (continue short-circuit).
+    const auditCalls = vi.mocked(deps.audit.emit).mock.calls;
+    expect(auditCalls).toHaveLength(1);
+    expect(auditCalls[0]![1].eventType).toBe('refund_amount_mismatch_detected');
+    expect(auditCalls[0]![1].payload).toMatchObject({
+      refund_id: 'rfd_re_mismatch',
+      payment_id: 'pmt_test',
+      db_amount_satang: '200000',
+      stripe_amount_satang: '100000',
+      runbook_url: RUNBOOK_URL,
+    });
+    expect(vi.mocked(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+  });
+
+  it('F5R3v3 H-4 — amountProjectionFailed=true SKIPS the mismatch check', async () => {
+    // Even though DB amount (200_000) > input amount (0n default), the
+    // projection-failed flag means we MUST NOT compare. Refund flips to
+    // succeeded as if no mismatch existed.
+    vi.mocked(deps.refundsRepo.findByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) => ({
+        id: `rfd_${refundId}`,
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId('pmt_test'),
+        invoiceId: `inv-${refundId}`,
+        amountSatang: asSatang(200_000n),
+        status: 'pending' as const,
+        processorRefundId: refundId,
+      }),
+    );
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({
+        refundIds: ['re_proj_failed'],
+        amountSatang: asSatang(0n),
+        amountProjectionFailed: true,
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+
+    // Refund flip should fire (mismatch check bypassed).
+    expect(vi.mocked(deps.refundsRepo.updateStatus)).toHaveBeenCalledTimes(1);
+    // No mismatch audit; only refund_succeeded.
+    const eventTypes = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.map((c) => c[1].eventType);
+    expect(eventTypes).not.toContain('refund_amount_mismatch_detected');
+    expect(eventTypes).toContain('refund_succeeded');
+  });
+
+  it('parent recovery → refunded (fully refunded) when succeededSum ≥ parent amount', async () => {
+    vi.mocked(deps.refundsRepo.findByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) => ({
+        id: `rfd_${refundId}`,
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId('pmt_test'),
+        invoiceId: `inv-${refundId}`,
+        amountSatang: asSatang(100_000n),
+        status: 'pending' as const,
+        processorRefundId: refundId,
+      }),
+    );
+    // succeededSum equals parent.amountSatang → fully refunded
+    vi.mocked(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValue({
+      pendingCount: 0,
+      succeededSumSatang: asSatang(100_000n),
+      nextSeq: 1,
+    });
+    // updateStatus returns truthy → recovery succeeded
+    vi.mocked(deps.paymentsRepo.updateStatus).mockResolvedValue({} as never);
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({ refundIds: ['re_full'] }),
+    );
+
+    expect(result.ok).toBe(true);
+    // updateStatus called with nextStatus='refunded'
+    const calls = vi.mocked(deps.paymentsRepo.updateStatus).mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![1]).toMatchObject({
+      paymentId: 'pmt_test',
+      nextStatus: 'refunded',
+      expectedCurrentStatus: 'succeeded',
+    });
+    // Audit payload carries parent_payment_status_recovered_to='refunded'
+    const refundSucceededAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(refundSucceededAudit![1].payload).toMatchObject({
+      parent_payment_status_recovered_to: 'refunded',
+    });
+  });
+
+  it('parent recovery race — updateStatus returns null → logger.warn (no throw)', async () => {
+    const warn = vi.fn();
+    const depsWithLogger: ProcessChargeRefundedDeps = {
+      ...deps,
+      logger: { warn, error: vi.fn(), info: vi.fn() } as never,
+    };
+    vi.mocked(depsWithLogger.refundsRepo.findByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) => ({
+        id: `rfd_${refundId}`,
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId('pmt_test'),
+        invoiceId: `inv-${refundId}`,
+        amountSatang: asSatang(50_000n),
+        status: 'pending' as const,
+        processorRefundId: refundId,
+      }),
+    );
+    // updateStatus returns null → race-lost path
+    vi.mocked(depsWithLogger.paymentsRepo.updateStatus).mockResolvedValue(null);
+
+    const result = await processChargeRefunded(
+      depsWithLogger,
+      makeInput({ refundIds: ['re_race'] }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toBe(
+      'process_charge_refunded.parent_status_recovery_race',
+    );
+    // refund_succeeded audit still emitted but with
+    // parent_payment_status_recovered_to=null
+    const refundSucceededAudit = vi
+      .mocked(depsWithLogger.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(refundSucceededAudit![1].payload).toMatchObject({
+      parent_payment_status_recovered_to: null,
+    });
+  });
+
+  it('parent payment is null (defensive — concurrent delete) → skip recovery, still emit refund_succeeded', async () => {
+    vi.mocked(deps.refundsRepo.findByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) => ({
+        id: `rfd_${refundId}`,
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId('pmt_test'),
+        invoiceId: `inv-${refundId}`,
+        amountSatang: asSatang(50_000n),
+        status: 'pending' as const,
+        processorRefundId: refundId,
+      }),
+    );
+    vi.mocked(deps.paymentsRepo.lockForUpdate).mockResolvedValue(null);
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({ refundIds: ['re_nopar'] }),
+    );
+
+    expect(result.ok).toBe(true);
+    // updateStatus NOT called (parent missing)
+    expect(vi.mocked(deps.paymentsRepo.updateStatus)).not.toHaveBeenCalled();
+    // refund_succeeded still emitted with parent_recovered_to=null
+    const refundSucceededAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(refundSucceededAudit).toBeDefined();
+    expect(refundSucceededAudit![1].payload).toMatchObject({
+      parent_payment_status_recovered_to: null,
+    });
+  });
+
+  it('parent already at next status (parent.status === nextPaymentStatus) → skip updateStatus, emit refund_succeeded with recovered_to=null', async () => {
+    vi.mocked(deps.refundsRepo.findByProcessorRefundId).mockImplementation(
+      async (_tx, _t, refundId) => ({
+        id: `rfd_${refundId}`,
+        tenantId: TENANT_ID,
+        paymentId: asPaymentId('pmt_test'),
+        invoiceId: `inv-${refundId}`,
+        amountSatang: asSatang(50_000n),
+        status: 'pending' as const,
+        processorRefundId: refundId,
+      }),
+    );
+    // Parent is already partially_refunded (matches computed nextStatus)
+    vi.mocked(deps.paymentsRepo.lockForUpdate).mockResolvedValue({
+      id: asPaymentId('pmt_test'),
+      tenantId: TENANT_ID,
+      status: 'partially_refunded' as const,
+      amountSatang: asSatang(100_000n),
+    } as never);
+    vi.mocked(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValue({
+      pendingCount: 0,
+      succeededSumSatang: asSatang(50_000n),
+      nextSeq: 1,
+    });
+
+    const result = await processChargeRefunded(
+      deps,
+      makeInput({ refundIds: ['re_same'] }),
+    );
+
+    expect(result.ok).toBe(true);
+    // updateStatus NOT called (skip — parent already in target state)
+    expect(vi.mocked(deps.paymentsRepo.updateStatus)).not.toHaveBeenCalled();
+    // refund_succeeded with parent_recovered_to=null (no transition)
+    const refundSucceededAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_succeeded');
+    expect(refundSucceededAudit![1].payload).toMatchObject({
+      parent_payment_status_recovered_to: null,
+    });
+  });
 });

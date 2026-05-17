@@ -418,12 +418,13 @@ export default defineConfig({
           // Out-of-band refund detection — Stripe webhook
           // `charge.refunded` arriving without a matching F5-initiated
           // refund row triggers out_of_band_refund_detected audit.
-          // 80% line / 84% branch in unit mode. The remaining ~20% is
-          // multi-rail tenant-settings lookup paths covered by
-          // tests/integration/payments/process-charge-refunded-*.test
-          // .ts. Same deferred-with-rationale precedent.
-          lines: 75,
-          branches: 80,
+          // Pushed to 100% L/B/F on 2026-05-17 (F5 polish round 4) by
+          // adding 6 cases covering: refund_amount_mismatch_detected,
+          // amountProjectionFailed bypass, parent recovery to refunded,
+          // parent recovery race (updateStatus null → logger.warn),
+          // parent null (concurrent delete), parent already at target.
+          lines: 100,
+          branches: 100,
           functions: 100,
         },
         // F3: Members Application layer — security-critical use cases
