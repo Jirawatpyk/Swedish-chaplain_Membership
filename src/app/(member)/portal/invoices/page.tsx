@@ -63,13 +63,7 @@ import {
   PortalInvoiceDownloadButton,
   PortalReceiptDownloadButton,
 } from './_components/portal-pdf-download-button';
-import { InfoIcon } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { CombinedReceiptHint } from './_components/combined-receipt-hint';
 
 const PAGE_SIZE = 20;
 
@@ -273,28 +267,17 @@ export default async function PortalInvoicesPage({
                             // Combined-mode = receipt reuses invoice number.
                             // Em-dash + InfoIcon affordance with min-h-6 hit
                             // area for WCAG 2.2 SC 2.5.8 (R5-UX-M2).
-                            <TooltipProvider delay={200}>
-                              <Tooltip>
-                                <TooltipTrigger
-                                  render={(props) => (
-                                    <span
-                                      {...props}
-                                      className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground cursor-help"
-                                      aria-label={t('receiptNumberCombinedAria')}
-                                    >
-                                      —
-                                      <InfoIcon
-                                        className="size-3.5"
-                                        aria-hidden="true"
-                                      />
-                                    </span>
-                                  )}
-                                />
-                                <TooltipContent>
-                                  {t('receiptNumberCombinedTooltip')}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
+                            // F5R6+ — extracted to a Client Component
+                            // wrapper because Tooltip.Trigger's `render`
+                            // prop is a function; passing it from a Server
+                            // Component to a Client Component throws the
+                            // "Functions cannot be passed directly to
+                            // Client Components" error under React 19 +
+                            // Next.js 16 strict SC/CC boundaries.
+                            <CombinedReceiptHint
+                              ariaLabel={t('receiptNumberCombinedAria')}
+                              tooltipText={t('receiptNumberCombinedTooltip')}
+                            />
                           ) : (
                             <span className="text-sm text-muted-foreground">—</span>
                           )}

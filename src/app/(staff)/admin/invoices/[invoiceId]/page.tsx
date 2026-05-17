@@ -1,6 +1,17 @@
 /**
  * T056 — /admin/invoices/[invoiceId] detail page.
+ *
+ * F5R6+ fix — `export const dynamic = 'force-dynamic'` paired with
+ * the sibling `not-found.tsx` is required for `notFound()` to set
+ * HTTP status 404 (not 200) under Next.js 16 RSC streaming. Mirrors
+ * the F7 broadcast pattern at `src/app/(member)/portal/broadcasts/
+ * [id]/page.tsx:44`. Without `force-dynamic`, response headers commit
+ * before `notFound()` resolves and 200 leaks even when the body
+ * renders the not-found UI. Pinned by `tests/e2e/invoice-draft-issue
+ * .spec.ts` AS6.
  */
+export const dynamic = 'force-dynamic';
+
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';

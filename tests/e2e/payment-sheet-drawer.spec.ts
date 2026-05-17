@@ -171,23 +171,54 @@ test.describe('PaySheet drawer interactions @f5 @e2e (T147)', () => {
     // so multi-Tab cycling is platform-dependent and not part of the
     // radix trap contract we want to assert. One Tab is sufficient
     // proof that the trap activated and held native focus.
+    // F5R6+ fix — radix Dialog's focus-trap behavior at the first
+    // Tab is browser-specific: chromium/mobile-chrome may briefly
+    // transfer focus to body or document.activeElement before the
+    // trap re-anchors on the next paint. The hard contract is that
+    // the drawer REMAINS OPEN under keyboard navigation (i.e. Tab
+    // does NOT close the dialog) — a buggy trap that allowed focus
+    // to escape would also break sandbox-isolation and typically
+    // result in the dialog closing via outside-interaction. The
+    // mid-Tab focus location is platform-dependent; the open-state
+    // is the cross-platform invariant.
+    await page.waitForFunction(
+      () => {
+        const drawer = document.querySelector(
+          '[data-testid="pay-sheet-content"]',
+        );
+        return !!drawer;
+      },
+      undefined,
+      { timeout: 3_000 },
+    );
     await page.keyboard.press('Tab');
-    const focusedInDrawer = await page.evaluate(() => {
-      const drawer = document.querySelector(
-        '[data-testid="pay-sheet-content"]',
-      );
-      if (!drawer) return false;
-      const active = document.activeElement;
-      return active ? drawer.contains(active) : false;
-    });
-    expect(
-      focusedInDrawer,
-      'after Tab 1: focus must stay in drawer (radix Dialog trap)',
-    ).toBe(true);
-
-    // Sanity: drawer is still open after 3 tabs (a buggy trap that
-    // closed the drawer would also fail this).
+    // Primary contract: drawer stays open after Tab (focus-trap
+    // active prevents Tab from triggering outside-close behaviour).
     await expect(sheet).toBeVisible();
+
+    // Subtree contract: after the FIRST native Tab (before any
+    // cross-origin Stripe Elements iframe is involved), the active
+    // element MUST settle inside the drawer subtree. A broken focus-
+    // trap would punt focus to <body> or the document root and never
+    // recover. chromium/mobile-chrome may briefly transfer focus to
+    // body or document.activeElement before the trap re-anchors on
+    // the next paint — so we poll for up to 500ms with waitForFunction
+    // (one-shot evaluate races the re-anchor and fails intermittently).
+    // We deliberately assert only on Tab #1 because subsequent Tabs
+    // may enter the cross-origin iframe and the browser security model
+    // prevents the parent from observing focus inside the iframe.
+    await page.waitForFunction(
+      () => {
+        const drawer = document.querySelector(
+          '[data-testid="pay-sheet-content"]',
+        );
+        return drawer ? drawer.contains(document.activeElement) : false;
+      },
+      undefined,
+      {
+        timeout: 500,
+      },
+    );
   });
 
   test('T164: print media hides drawer CTAs (download / close / countdown)', async ({

@@ -245,6 +245,19 @@ async function seedIssuedInvoice(
       pdfBlobKey: blobKey,
       pdfSha256: rendered.sha256,
       pdfTemplateVersion: 1,
+      // CHECK invoices_paid_has_receipt_status (migration 0056) —
+      // any paid invoice MUST carry receipt_pdf_status. Seeded as
+      // 'rendered' so tests can pretend the async-receipt-PDF worker
+      // already ran (the seeder doesn't render a separate receipt PDF
+      // — combined-mode tenants reuse the invoice PDF).
+      ...(opts.kind === 'credit-target'
+        ? {
+            receiptPdfStatus: 'rendered' as const,
+            receiptPdfBlobKey: blobKey,
+            receiptPdfSha256: rendered.sha256,
+            receiptPdfTemplateVersion: 1,
+          }
+        : {}),
     });
     await tx.insert(invoiceLines).values({
       tenantId: ctx.slug,
@@ -293,9 +306,12 @@ async function main(): Promise<void> {
     console.log(`  PAY_TARGET_DOCUMENT_NUMBER=${r.documentNumber}`);
   }
 
-  // Credit-note target — 1 paid at all times (status may change to
-  // credited or partially_credited after a test run — we then seed
-  // a fresh one on the next re-run).
+  // Credit-note target — keep ≥3 unmutated paid invoices at all
+  // times so Playwright workers across 3 browser projects (chromium
+  // + mobile-safari + mobile-chrome) each have their own credit
+  // target. Each `credit-note-full.spec.ts AS1` run consumes one
+  // (flips paid → credited). Re-running this seeder tops up to 3.
+  const TARGET_UNMUTATED = 3;
   const creditRows = await runInTenant(ctx, async (tx) => {
     return tx
       .select({ invoiceId: invoices.invoiceId, status: invoices.status })
@@ -307,18 +323,23 @@ async function main(): Promise<void> {
           eq(invoices.status, 'paid'),
           sql`${invoices.sequenceNumber} BETWEEN ${CREDIT_TARGET_SEQ_BASE} AND ${CREDIT_TARGET_SEQ_BASE + 9999}`,
         ),
-      )
-      .limit(1);
+      );
   });
-  if (creditRows.length > 0) {
-    console.log('  credit-target already present (paid) — skip');
+  const needed = Math.max(0, TARGET_UNMUTATED - creditRows.length);
+  if (needed === 0) {
+    console.log(`  credit-target ≥${TARGET_UNMUTATED} present (paid) — skip`);
   } else {
-    const seq = await findNextAvailableSeq(ctx, CREDIT_TARGET_SEQ_BASE);
-    const r = await seedIssuedInvoice(ctx, memberId, adminUserId, {
-      sequenceNumber: seq,
-      kind: 'credit-target',
-    });
-    console.log(`  CREDIT_TARGET_DOCUMENT_NUMBER=${r.documentNumber}`);
+    console.log(
+      `  credit-target has ${creditRows.length}/${TARGET_UNMUTATED}; seeding ${needed} more`,
+    );
+    for (let i = 0; i < needed; i++) {
+      const seq = await findNextAvailableSeq(ctx, CREDIT_TARGET_SEQ_BASE);
+      const r = await seedIssuedInvoice(ctx, memberId, adminUserId, {
+        sequenceNumber: seq,
+        kind: 'credit-target',
+      });
+      console.log(`  CREDIT_TARGET_DOCUMENT_NUMBER=${r.documentNumber}`);
+    }
   }
 
   console.log('\n----------------------------------------');
