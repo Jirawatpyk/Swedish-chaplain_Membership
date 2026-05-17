@@ -1,6 +1,7 @@
-# Pre-push guards — kept fast (~30 sec total) so the dev loop stays
-# tight. Heavier suites (full contract, integration, e2e, coverage) run
-# in CI only.
+# Pre-push guards — kept fast (~30 sec for guard tests) so the dev
+# loop stays tight. Heavier suites (full contract, e2e, coverage)
+# run in CI only. Per-module integration tests run conditionally
+# when the push touches that module (see § Spec Coverage Gate below).
 #
 # Rationale per check (all derived from 2026-05-17 polish retrospective):
 #
@@ -30,3 +31,89 @@
 pnpm check:layout
 pnpm check:fixme
 pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
+
+# ===========================================================================
+# Spec Coverage Gate — per-module integration tests (R10 retrospective HIGH-1)
+# ===========================================================================
+#
+# When the push touches `src/modules/{module}/**` AND a matching
+# `tests/integration/{module}/` directory exists, run that module's
+# integration suite to catch the regression class that R8/R9/R10
+# missed: pre-existing read-time invariant conflicts + writer-path
+# misalignments that only surface when both layers run against a
+# real DB.
+#
+# Triggered by: 8+ test failures in QA pass on commit 5ba665bc that
+# had been RED on `main` for ~3 weeks (R3 regression class). Pre-push
+# integration gate would have caught these on the FIRST commit.
+#
+# Performance: only runs the modules ACTUALLY touched in the push
+# (typically 0–1 modules → 0–8 min). For multi-module pushes the
+# tests run sequentially to avoid Neon connection-pool exhaustion.
+#
+# Emergency override: `SKIP_INTEGRATION_PREPUSH=1 git push` skips the
+# gate. Use sparingly — document why in commit message.
+#
+# Detection logic:
+#   1. Compute diff against the upstream/default branch via
+#      `git merge-base` + `git diff --name-only` (handles both
+#      feature branches and direct main pushes).
+#   2. Extract touched `src/modules/{module}` names.
+#   3. For each, run `pnpm test:integration tests/integration/{module}/`
+#      if the directory exists.
+#
+# Exits non-zero on any test failure — blocks the push.
+
+if [ -n "$SKIP_INTEGRATION_PREPUSH" ]; then
+  echo "[pre-push] SKIP_INTEGRATION_PREPUSH=1 — skipping spec coverage gate (use sparingly)"
+else
+  # Diff baseline preference (most → least specific):
+  #   1. `@{u}` (remote-tracking ref) — what's NOT yet pushed to the
+  #      remote tracking branch. For branches that have been pushed
+  #      before this is just the NEW commits since the last push;
+  #      avoids the "long-running branch with 200+ commits triggers
+  #      all-module integration runs" anti-pattern.
+  #   2. `HEAD~1` — first push on a never-pushed branch; gate only
+  #      checks the most-recent commit. Documented in commit message
+  #      that user should split a long-running branch into smaller
+  #      PRs to keep pre-push fast.
+  #   3. `HEAD` — branch with no parent (edge case; skips gate).
+  if git rev-parse --verify '@{u}' >/dev/null 2>&1; then
+    BASELINE='@{u}'
+  elif git rev-parse --verify 'HEAD~1' >/dev/null 2>&1; then
+    BASELINE='HEAD~1'
+    echo "[pre-push] no @{u} (branch not pushed yet) — gating only last commit (HEAD~1..HEAD)"
+  else
+    BASELINE='HEAD'
+  fi
+  CHANGED_FILES=$(git diff --name-only "$BASELINE" HEAD 2>/dev/null)
+
+  # Extract unique module names from BOTH src/modules/{module} AND
+  # tests/integration/{module} prefixes — a test-only change still
+  # needs the integration suite run (the regression class includes
+  # test-fixture drift like R10.4 UUID-v4 + R10.6 single-event rewrite).
+  CHANGED_MODULES=$(echo "$CHANGED_FILES" \
+    | grep -oE '^(src/modules|tests/integration)/[^/]+' \
+    | sed -E 's#^(src/modules|tests/integration)/##' \
+    | sort -u)
+
+  if [ -n "$CHANGED_MODULES" ]; then
+    echo "[pre-push] Spec Coverage Gate — modules touched: $(echo $CHANGED_MODULES | tr '\n' ' ')"
+    for module in $CHANGED_MODULES; do
+      INTEG_DIR="tests/integration/$module"
+      if [ -d "$INTEG_DIR" ]; then
+        echo "[pre-push] running integration tests for src/modules/$module → $INTEG_DIR"
+        pnpm test:integration "$INTEG_DIR/" || {
+          echo "[pre-push] ❌ integration tests failed for module: $module"
+          echo "[pre-push]    Fix the failures OR set SKIP_INTEGRATION_PREPUSH=1 to push anyway"
+          echo "[pre-push]    (document the skip rationale in commit message)"
+          exit 1
+        }
+      else
+        echo "[pre-push] no integration suite for src/modules/$module — skipping"
+      fi
+    done
+  else
+    echo "[pre-push] no src/modules/* changes in this push — skipping spec coverage gate"
+  fi
+fi
