@@ -111,7 +111,12 @@ describe('POST /api/auth/reset-password', () => {
     expect(body.issues).toContain('too-short');
   });
 
-  it('404 link-invalid when reason=not-found (token id absent from DB)', async () => {
+  // B1 (post-ship 2026-05-17) — all three link-invalid reasons now
+  // return 410 Gone. The previous 404/410 split was an enumeration
+  // vector (attacker counts status codes to infer which random hex
+  // strings hit real tokens). Public body remains uniform; internal
+  // metrics still discriminate via `error.reason` in the use case.
+  it('410 link-invalid when reason=not-found (token id absent from DB)', async () => {
     resetMock.mockResolvedValueOnce(
       err({ code: 'link-invalid', reason: 'not-found' as const }),
     );
@@ -119,7 +124,7 @@ describe('POST /api/auth/reset-password', () => {
     const response = await POST(
       makeRequest({ token: VALID_TOKEN, newPassword: 'new passphrase 2026!' }),
     );
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(410);
     const body = await response.json();
     expect(body.error).toBe('link-invalid');
   });

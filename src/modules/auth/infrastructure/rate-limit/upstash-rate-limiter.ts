@@ -54,6 +54,23 @@ export interface RateLimiter {
     max: number,
     windowSeconds: number,
   ): Promise<RateLimitResult>;
+  /**
+   * Non-consuming check (B2 — change-password peek-then-consume).
+   * Returns the bucket's current state WITHOUT decrementing it.
+   * Use case: gate an expensive operation (e.g. argon2 verify) on
+   * "is there budget left?" and only consume after the expensive
+   * operation confirmed a failure that should count against the
+   * bucket. The success path leaves the bucket untouched, so 5
+   * successful operations in a row do NOT trip the 429.
+   *
+   * Falls back to the same in-memory bucket inspection as `check`
+   * during Upstash outages — but does NOT advance the bucket state.
+   */
+  peek(
+    key: string,
+    max: number,
+    windowSeconds: number,
+  ): Promise<RateLimitResult>;
 }
 
 // --- Upstash-backed implementation -------------------------------------------
@@ -124,9 +141,70 @@ function fallbackCheck(
   };
 }
 
+/** Non-consuming peek for the in-memory fallback bucket (B2). */
+function fallbackPeek(
+  key: string,
+  max: number,
+  windowSeconds: number,
+): RateLimitResult {
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+  const bucket = fallbackBuckets.get(key);
+
+  if (!bucket || now - bucket.windowStart >= windowMs) {
+    return {
+      success: true,
+      remaining: max,
+      reset: now + windowMs,
+      fellBack: true,
+    };
+  }
+
+  return {
+    success: bucket.count < max,
+    remaining: Math.max(max - bucket.count, 0),
+    reset: bucket.windowStart + windowMs,
+    fellBack: true,
+  };
+}
+
 // --- Public adapter -----------------------------------------------------------
 
 class UpstashRateLimiter implements RateLimiter {
+  async peek(
+    key: string,
+    max: number,
+    windowSeconds: number,
+  ): Promise<RateLimitResult> {
+    try {
+      const remaining = await getRateLimit(max, windowSeconds).getRemaining(
+        key,
+      );
+      const reset =
+        typeof remaining === 'object' && 'reset' in remaining
+          ? (remaining as { reset: number }).reset
+          : Date.now() + windowSeconds * 1000;
+      const remainingCount =
+        typeof remaining === 'object' && 'remaining' in remaining
+          ? (remaining as { remaining: number }).remaining
+          : (remaining as unknown as number);
+      return {
+        success: remainingCount > 0,
+        remaining: remainingCount,
+        reset,
+        fellBack: false,
+      };
+    } catch (error) {
+      const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
+      logger.warn(
+        { err: error, keyKind, max, windowSeconds, fallback: true },
+        'rate-limit peek upstream unreachable, falling back to in-memory bucket',
+      );
+      authMetrics.redisFallback();
+      return fallbackPeek(key, max, windowSeconds);
+    }
+  }
+
   async check(
     key: string,
     max: number,

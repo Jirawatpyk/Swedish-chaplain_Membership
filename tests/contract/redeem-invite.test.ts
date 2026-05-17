@@ -91,7 +91,8 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
     expect(body.issues).toContain('too-short');
   });
 
-  it('404 on link-invalid when reason=not-found', async () => {
+  // B1 — collapsed 404/410 to uniform 410 for enumeration safety.
+  it('410 on link-invalid when reason=not-found (uniform with expired/used)', async () => {
     redeemInviteMock.mockResolvedValueOnce(
       err({ code: 'link-invalid', reason: 'not-found' as const }),
     );
@@ -99,7 +100,7 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
     const { POST } = await import('@/app/api/auth/redeem-invite/route');
     const res = await POST(makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }));
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(410);
     const body = await res.json();
     expect(body.error).toBe('link-invalid');
   });

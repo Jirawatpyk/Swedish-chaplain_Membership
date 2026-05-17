@@ -70,11 +70,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { error } = result;
   switch (error.code) {
     case 'link-invalid': {
-      // 404 for unknown token, 410 Gone for expired/used. Public body
-      // stays uniform to prevent enumeration. See reset-password route
-      // for the same pattern + rationale.
-      const status = error.reason === 'not-found' ? 404 : 410;
-      return NextResponse.json({ error: 'link-invalid' }, { status });
+      // B1 (post-ship 2026-05-17) — collapsed 404/410 split to a uniform
+      // 410 Gone. The previous status-code distinction (404 vs 410)
+      // leaked which random 64-hex strings hit real issued invitations.
+      // The internal `error.reason` still drives logs + metrics.
+      logger.warn(
+        { requestId, reason: error.reason },
+        'redeem-invite.link-invalid',
+      );
+      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
     }
     case 'weak-password':
       return NextResponse.json(

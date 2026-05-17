@@ -92,17 +92,24 @@ export async function changePassword(
   input: ChangePasswordInput,
   deps: ChangePasswordDeps = defaultChangePasswordDeps,
 ): Promise<Result<ChangePasswordSuccess, ChangePasswordError>> {
-  // 1. Per-user rate limit (wrong-current brute force defence)
-  const limit = await deps.limiter.check(
-    `change-pw:user:${input.user.id}`,
+  // 1. Per-user rate limit — peek-then-consume (B2, post-ship 2026-05-17).
+  //    Peek WITHOUT consuming so a legitimate user rotating passwords
+  //    multiple times (e.g. post-phishing-scare hygiene) does not trip
+  //    the 5/15min cap. The bucket is only debited on the wrong-current
+  //    branch below. Pre-B2 the bucket was consumed on every call
+  //    including success + same-password + weak-password, which made
+  //    the 5/15min ceiling block legitimate rotations.
+  const bucketKey = `change-pw:user:${input.user.id}`;
+  const peek = await deps.limiter.peek(
+    bucketKey,
     RATE_LIMIT_PER_USER.max,
     RATE_LIMIT_PER_USER.windowSeconds,
   );
-  if (!limit.success) {
+  if (!peek.success) {
     return err({
       code: 'rate-limited',
       retryAfterSeconds: Math.max(
-        Math.ceil((limit.reset - Date.now()) / 1000),
+        Math.ceil((peek.reset - Date.now()) / 1000),
         1,
       ),
     });
@@ -123,6 +130,15 @@ export async function changePassword(
     input.currentPassword,
   );
   if (!currentOk) {
+    // 3a. NOW consume the bucket (B2). Wrong-current is the only
+    //     event that should count against the user's brute-force
+    //     budget. If `check` here pushes the count over `max`, the
+    //     NEXT call's peek will return rate-limited.
+    await deps.limiter.check(
+      bucketKey,
+      RATE_LIMIT_PER_USER.max,
+      RATE_LIMIT_PER_USER.windowSeconds,
+    );
     logger.warn(
       { userIdHash: hashId(input.user.id), requestId: input.requestId },
       'change_password.wrong_current',
