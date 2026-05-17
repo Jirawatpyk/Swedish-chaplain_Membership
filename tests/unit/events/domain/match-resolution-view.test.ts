@@ -21,12 +21,18 @@
  *   - MatchResolutionInvariantError shape (name, raw, message).
  */
 import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import {
   asMatchResolutionView,
   MatchResolutionInvariantError,
   type MatchResolution,
 } from '@/modules/events/domain/event-registration';
 import { asMemberId, asContactId } from '@/modules/members';
+import {
+  asGraceState,
+  GraceStateInvariantError,
+} from '@/modules/events/domain/tenant-webhook-config';
+import { asWebhookSecret } from '@/modules/events/domain/branded-types';
 
 const MEMBER_ID = asMemberId('11111111-2222-4333-8444-555555555555');
 const CONTACT_ID = asContactId('aaaaaaaa-bbbb-4ccc-9ddd-eeeeeeeeeeee');
@@ -212,6 +218,74 @@ describe('R3.2.2 — MatchResolutionInvariantError shape', () => {
     expect(captured!.message).toContain('type=member_contact');
     expect(captured!.message).toContain('matchedContactId=null');
     expect(captured!.message).toContain('matchedMemberId=set');
+  });
+
+  // R6.S / Round 5 staff-review R029 closure — property tests covering
+  // the asMatchResolutionView ↔ migration 0136 CHECK invariant
+  // boundary at scale. Fast-check generates arbitrary nullity combos
+  // across all 5 match-type variants; we assert the helper either
+  // succeeds (round-trips identifiers) OR throws
+  // `MatchResolutionInvariantError` (no silent coercion).
+  it('R6.S / R029 property — asMatchResolutionView either succeeds OR throws (never silently coerces)', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(
+          'member_contact',
+          'member_domain',
+          'member_fuzzy',
+          'non_member',
+          'unmatched',
+        ),
+        fc.boolean(),
+        fc.boolean(),
+        (type, hasMember, hasContact) => {
+          const m: MatchResolution = {
+            type: type as MatchResolution['type'],
+            matchedMemberId: hasMember ? MEMBER_ID : null,
+            matchedContactId: hasContact ? CONTACT_ID : null,
+          };
+          try {
+            const view = asMatchResolutionView(m);
+            expect(view.type).toBe(m.type);
+            expect(view.matchedMemberId).toBe(m.matchedMemberId);
+            expect(view.matchedContactId).toBe(m.matchedContactId);
+          } catch (e) {
+            expect(e).toBeInstanceOf(MatchResolutionInvariantError);
+          }
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('R6.S / R029 property — asGraceState either succeeds OR throws GraceStateInvariantError (never silently coerces half-set pair)', () => {
+    const TEST_SECRET = asWebhookSecret('a'.repeat(43));
+    const TEST_DATE = new Date('2026-05-17T00:00:00Z');
+    fc.assert(
+      fc.property(fc.boolean(), fc.boolean(), (hasSecret, hasRotatedAt) => {
+        const rawSecret = hasSecret ? TEST_SECRET : null;
+        const rawRotatedAt = hasRotatedAt ? TEST_DATE : null;
+        try {
+          const grace = asGraceState(rawSecret, rawRotatedAt);
+          // If we reach here, the pair was either BOTH null or BOTH set.
+          if (hasSecret && hasRotatedAt) {
+            expect(grace.active).toBe(true);
+            if (grace.active) {
+              expect(grace.secret).toBe(TEST_SECRET);
+              expect(grace.rotatedAt).toBe(TEST_DATE);
+            }
+          } else {
+            expect(grace.active).toBe(false);
+          }
+        } catch (e) {
+          // The only allowed throw is GraceStateInvariantError for
+          // half-set pairs.
+          expect(e).toBeInstanceOf(GraceStateInvariantError);
+          expect(hasSecret).not.toBe(hasRotatedAt); // proves it was half-set
+        }
+      }),
+      { numRuns: 50 },
+    );
   });
 
   it('extends Error so pino err serializer picks it up', () => {

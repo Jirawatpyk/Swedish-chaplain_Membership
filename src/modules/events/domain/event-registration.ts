@@ -89,6 +89,17 @@ export type MatchResolutionView =
  * is now typed as `MatchResolutionView`, and the Drizzle repo mapper
  * calls this function at the row→aggregate boundary.
  */
+/**
+ * R6.S / Round 5 staff-review R022 — `raw: MatchResolution` is kept
+ * intentionally for OUT-OF-TREE consumers (e.g. an F6.2 super-admin
+ * forensics dashboard that catches this error far from the read site
+ * + needs the full nullity matrix to render). In-tree, the catch site
+ * at `drizzle-registrations-repository.toAggregate` reads identifiers
+ * from the source `row` directly — so `raw` is redundant for the
+ * current call graph but cheap to maintain. The boolean fields
+ * (memberId-set vs null) survive on `error.message` as a fallback if
+ * a future caller drops `raw`.
+ */
 export class MatchResolutionInvariantError extends Error {
   constructor(public readonly raw: MatchResolution) {
     super(

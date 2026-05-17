@@ -21,6 +21,30 @@ import { asTenantId } from '@/modules/members';
 import { asCsvImportRecordId } from '@/modules/events';
 
 const BLOB_GATE = Boolean(process.env['BLOB_READ_WRITE_TOKEN']);
+const IS_CI = process.env['CI'] === 'true' || process.env['CI'] === '1';
+
+/**
+ * R6.B3 / Round 5 staff-review R003 closure — fail-loudly in CI when
+ * `BLOB_READ_WRITE_TOKEN` is missing. Previously the entire describe
+ * block was silently skipped, leaving F6.1 US5 AS2 ("Download error
+ * CSV") Vercel Blob lifecycle untested in CI. The gate now:
+ *   - Local dev (CI != true) + no token → describe.skip (silent OK,
+ *     developer doesn't need to run live Blob roundtrip every test).
+ *   - CI without token → describe.fails with explicit error message
+ *     (the env var is REQUIRED in CI for the F6.1 US5 acceptance gate).
+ */
+if (IS_CI && !BLOB_GATE) {
+  describe('T038 — Vercel Blob roundtrip CI gate', () => {
+    it('FAIL — BLOB_READ_WRITE_TOKEN must be present in CI to validate F6.1 US5 AS2', () => {
+      throw new Error(
+        '[R6.B3] CI=true but BLOB_READ_WRITE_TOKEN is unset. ' +
+          'The F6.1 US5 AS2 Vercel Blob roundtrip test cannot run. ' +
+          'Add BLOB_READ_WRITE_TOKEN to CI environment (Vercel project settings → Environment Variables) ' +
+          'OR set CI=false for the workflow if running in a dev shell that cannot access Blob.',
+      );
+    });
+  });
+}
 
 const CSV_BYTES = new TextEncoder().encode(
   'row_number,reason\n2,"missing attendee_email"\n',

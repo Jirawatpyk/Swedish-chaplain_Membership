@@ -300,10 +300,14 @@ export async function eraseAttendeePii(
   }
 
   // (6) Macro `pii_erasure_completed` audit.
-  const completedAt = input.occurredAt.getTime();
+  // R6.W / Round 5 staff-review R005 closure — capture REAL Date.now()
+  // at completion instead of re-reading `input.occurredAt` (the same
+  // source as `requestStartedAt`). Without this, `completedWithinSeconds-
+  // OfRequest` was always 0, breaking the PDPA §30 / GDPR Art. 17
+  // latency-of-erasure metric (SC-012).
   const completedSeconds = Math.max(
     0,
-    Math.round((completedAt - requestStartedAt) / 1000),
+    Math.round((Date.now() - requestStartedAt) / 1000),
   );
   const completedEmit = await deps.audit.emit({
     eventType: 'pii_erasure_completed',

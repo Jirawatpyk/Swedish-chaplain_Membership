@@ -88,6 +88,19 @@ beforeAll(async () => {
     }
     const [a1, a2, a3] = insertedEvents;
 
+    // R6.B4 — seed UUIDs for matched_member_id + matched_contact_id so the
+    // R3.4.2 read-time MatchResolutionInvariantError doesn't fire on
+    // member_*/member_contact variants. These are arbitrary UUIDs not
+    // linked to real F3 rows — sufficient for the repository-level read
+    // tests which don't FK-join through members/contacts.
+    const MEMBER_UUID_1 = '11111111-1111-4111-8111-aaaaaaaaaaa1';
+    const MEMBER_UUID_2 = '11111111-1111-4111-8111-aaaaaaaaaaa2';
+    const MEMBER_UUID_3 = '11111111-1111-4111-8111-aaaaaaaaaaa3';
+    const MEMBER_UUID_4 = '11111111-1111-4111-8111-aaaaaaaaaaa4';
+    const MEMBER_UUID_5 = '11111111-1111-4111-8111-aaaaaaaaaaa5';
+    const CONTACT_UUID_1 = '22222222-2222-4222-8222-bbbbbbbbbbb1';
+    const CONTACT_UUID_2 = '22222222-2222-4222-8222-bbbbbbbbbbb2';
+
     // 4 registrations on A1: 2 member_contact, 1 non_member, 1 unmatched
     await tx.insert(eventRegistrations).values([
       {
@@ -97,6 +110,8 @@ beforeAll(async () => {
         attendeeEmail: 'alice@member.example',
         attendeeName: 'Alice',
         matchType: 'member_contact',
+        matchedMemberId: MEMBER_UUID_1,
+        matchedContactId: CONTACT_UUID_1,
         registeredAt: new Date('2026-06-01T10:00:00Z'),
       },
       {
@@ -106,6 +121,8 @@ beforeAll(async () => {
         attendeeEmail: 'bob@member.example',
         attendeeName: 'Bob',
         matchType: 'member_contact',
+        matchedMemberId: MEMBER_UUID_2,
+        matchedContactId: CONTACT_UUID_2,
         registeredAt: new Date('2026-06-02T10:00:00Z'),
       },
       {
@@ -126,7 +143,7 @@ beforeAll(async () => {
         matchType: 'unmatched',
         registeredAt: new Date('2026-06-04T10:00:00Z'),
       },
-      // 2 on A2 — both member_domain
+      // 2 on A2 — both member_domain (matched_member_id set, matched_contact_id null)
       {
         tenantId: TENANT_A,
         eventId: a2!.id,
@@ -134,6 +151,7 @@ beforeAll(async () => {
         attendeeEmail: 'c@corp.example',
         attendeeName: 'Carol',
         matchType: 'member_domain',
+        matchedMemberId: MEMBER_UUID_3,
         registeredAt: new Date('2026-05-01T10:00:00Z'),
       },
       {
@@ -143,9 +161,10 @@ beforeAll(async () => {
         attendeeEmail: 'd@corp.example',
         attendeeName: 'Dave',
         matchType: 'member_domain',
+        matchedMemberId: MEMBER_UUID_4,
         registeredAt: new Date('2026-05-02T10:00:00Z'),
       },
-      // 1 on A3 (archived) — member_fuzzy
+      // 1 on A3 (archived) — member_fuzzy (matched_member_id set, matched_contact_id null)
       {
         tenantId: TENANT_A,
         eventId: a3!.id,
@@ -153,6 +172,7 @@ beforeAll(async () => {
         attendeeEmail: 'e@fuzzy.example',
         attendeeName: 'Eve',
         matchType: 'member_fuzzy',
+        matchedMemberId: MEMBER_UUID_5,
         registeredAt: new Date('2026-04-01T10:00:00Z'),
       },
     ]);
@@ -403,6 +423,17 @@ describe('drizzle-registrations-repository.findByEventId — paginated attendees
     ).toBe(4);
     // But the items list IS filtered to non_member + unmatched (2 rows)
     expect(result.value.totalCount).toBe(2);
+    // R6.B4 / Round 5 staff-review R004 closure — pin US2 AS4 filter
+    // semantics. Prior assertion only checked totalCount which would
+    // false-positive on a regression that filtered to `= 'unmatched'`
+    // alone (excluding non_member). Now assert every returned item is
+    // in the FR-002 unmatched-attention set: ('unmatched','non_member').
+    expect(result.value.items).toHaveLength(2);
+    const returnedTypes = result.value.items.map((r) => r.match.type).sort();
+    expect(returnedTypes).toEqual(['non_member', 'unmatched']);
+    for (const item of result.value.items) {
+      expect(['unmatched', 'non_member']).toContain(item.match.type);
+    }
   });
 
   it('matchTypeFilter narrows to exact match type', async () => {

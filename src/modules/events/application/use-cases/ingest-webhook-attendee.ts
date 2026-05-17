@@ -43,6 +43,24 @@
  * Security-critical use-case → 100% branch coverage target per
  * Constitution Principle II.
  */
+/**
+ * R6.W / Round 5 staff-review R014 — DESIGN DEBT (F6.2 tracker):
+ *
+ * The `IngestWebhookAttendeeDeps.runInTenantTx` port currently accepts
+ * `tenantId: string` (unbranded) — the use-case brands internally via
+ * `asTenantId()` at the boundary. This is inconsistent with F4/F5
+ * which use `TenantId` branded type at the port level for type-system
+ * enforcement of caller-side branding.
+ *
+ * Risk: a test seam could inject the wrong tenant string without
+ * type-level catch. Risk is low because the composition root validates
+ * via `asTenantContext()` before calling, but the inconsistency adds
+ * cognitive load when comparing F4/F5/F6 use-case shapes.
+ *
+ * Defer to F6.2: tighten this port + `CreateEventDeps.runInTenantTx` +
+ * `ImportCsvDeps.runInTenantTx` to `TenantId`. Estimated effort: 4
+ * sites × ~15 min = 1 hour. Not a Round 5/6 priority.
+ */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';

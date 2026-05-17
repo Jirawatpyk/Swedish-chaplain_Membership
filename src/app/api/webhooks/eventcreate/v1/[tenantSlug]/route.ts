@@ -661,9 +661,29 @@ export async function POST(
           typeof candidate.attendee.externalId === 'string'
             ? candidate.attendee.externalId
             : '';
+        // R6.W / Round 5 staff-review R008 (T-elevation) closure —
+        // require `chamberTestMetadata` envelope (HMAC-signed by the
+        // admin route's run-test-webhook use-case) to be PRESENT before
+        // short-circuiting the ACID pipeline. Pre-fix accepted any
+        // payload whose externalIds matched the sentinel pattern even
+        // if `chamberTestMetadata` was null/malformed — a malicious
+        // tenant insider with EventCreate config access could craft a
+        // real-attendee payload using event externalId
+        // `__test_webhook__` to bypass FR-013/015/016 invariants while
+        // still emitting a valid `webhook_test_invoked` audit. The
+        // chamberTestMetadata + its HMAC coverage make the test-webhook
+        // path provably distinguishable from production ingest.
+        const earlyChamberTestMetadata =
+          typeof candidate === 'object' &&
+          candidate !== null &&
+          'chamberTestMetadata' in candidate &&
+          typeof (candidate as Record<string, unknown>)['chamberTestMetadata'] ===
+            'object' &&
+          (candidate as Record<string, unknown>)['chamberTestMetadata'] !== null;
         if (
           eventExternalId === '__test_webhook__' &&
-          attendeeExternalId.startsWith('__test_webhook__-')
+          attendeeExternalId.startsWith('__test_webhook__-') &&
+          earlyChamberTestMetadata
         ) {
           const shortCircuitLatencyMs = Date.now() - startedAtMs;
           eventcreateMetrics.webhookReceiptsTotal(

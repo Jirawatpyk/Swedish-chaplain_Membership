@@ -728,6 +728,25 @@ export async function processAttendeeInTx(
   //    benefit-event attendee still flips payment_status to refunded
   //    (the CSV admin audit trail captures the row state regardless of
   //    quota scope).
+  // R6.W / Round 5 staff-review R013 closure — documented race:
+  //
+  // The advisory-lock acquisition below is gated on `hasMatchedQuotaScope`
+  // (matched member + counted_against_* flag). For unmatched/non_member
+  // rows with no quota effect, no lock is acquired — the `markRefunded`
+  // UPDATE still mutates `event_registrations.payment_status` but doesn't
+  // serialise with concurrent `relinkRegistration` on the SAME row.
+  //
+  // End-state collision possible if relink + refund commit concurrently
+  // on a previously-unmatched row that relink moves to a quota-bearing
+  // member: relink emits `quota_*_decremented` audit; refund-flip
+  // clears `counted_against_*`. Final-state row says "matched + refunded
+  // + not counted" while audit log says quota was consumed.
+  //
+  // MVCC + `UPDATE … RETURNING` prevents lost writes; the divergence
+  // is purely audit-vs-state. At SweCham single-admin scale unobservable.
+  // For F6.2 multi-admin MTA: either (a) acquire per-registration
+  // advisory lock at refund-flip time unconditionally, or (b) widen
+  // relink to compare-and-swap on the quota-effect snapshot.
   const existingReg = regInsert.value.registration;
   const isRefundTransition =
     !regInsert.value.isNewRegistration &&

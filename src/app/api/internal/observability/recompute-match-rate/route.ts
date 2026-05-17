@@ -3,11 +3,24 @@
  *
  * Phase 10 T126 — hourly cron handler that refreshes the per-tenant
  * `eventcreate_match_rate_gauge` from a rolling 30-day window of
- * `match_resolution_completed` audit events.
+ * F6 match-resolution audit events.
+ *
+ * R6.B1 / Round 5 staff-review R001 closure — the prior implementation
+ * queried event_type `match_resolution_completed` which does NOT exist
+ * in the F6 audit taxonomy (`audit-port.ts:87-91` canonical list). It
+ * also read a non-existent `payload->>'matchType'` field — the match
+ * type is encoded in the `event_type` column itself, not the payload.
+ * The gauge therefore emitted 0.0 forever, silently masking SC-002
+ * (the 30-day post-flag-flip rollback signal). Fixed here by querying
+ * the 5 actual emitted event types directly.
  *
  * Formula:
- *   matchRate = (member_contact + member_domain + member_fuzzy) /
- *               total_resolved
+ *   matched = COUNT(*) WHERE event_type IN
+ *     ('attendee_matched_member_contact',
+ *      'attendee_matched_member_domain',
+ *      'attendee_matched_member_fuzzy')
+ *   total = COUNT(*) WHERE event_type IN (those 3 + 'attendee_non_member' + 'attendee_unmatched')
+ *   matchRate = total > 0 ? matched / total : 0
  *
  * Refreshes once per hour from cron-job.org per `docs/runbooks/cron-jobs.md`.
  *
@@ -66,17 +79,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     try {
       const ctx = asTenantContext(tenantId);
       const value = await runInTenant(ctx, async (tx) => {
+        // R6.B1 — query the 5 actual F6 match-resolution audit event
+        // types. The `event_type` column carries the discriminator;
+        // there is no payload.matchType field. Emitted from
+        // `process-attendee-in-tx.ts:267-433` (5 emit sites, one per
+        // match variant).
         const row = await tx.execute(sql`
           SELECT
             COUNT(*) FILTER (
-              WHERE payload->>'matchType' IN ('member_contact','member_domain','member_fuzzy')
+              WHERE event_type IN (
+                'attendee_matched_member_contact',
+                'attendee_matched_member_domain',
+                'attendee_matched_member_fuzzy'
+              )
             )::numeric AS matched,
             COUNT(*) FILTER (
-              WHERE payload->>'matchType' IS NOT NULL
+              WHERE event_type IN (
+                'attendee_matched_member_contact',
+                'attendee_matched_member_domain',
+                'attendee_matched_member_fuzzy',
+                'attendee_non_member',
+                'attendee_unmatched'
+              )
             )::numeric AS total
           FROM audit_log
-          WHERE event_type = 'match_resolution_completed'
-            AND emitted_at > NOW() - INTERVAL '30 days'
+          WHERE event_type IN (
+              'attendee_matched_member_contact',
+              'attendee_matched_member_domain',
+              'attendee_matched_member_fuzzy',
+              'attendee_non_member',
+              'attendee_unmatched'
+            )
+            AND timestamp > NOW() - INTERVAL '30 days'
             AND tenant_id = ${tenantId}
         `);
         const rows = row as unknown as ReadonlyArray<{

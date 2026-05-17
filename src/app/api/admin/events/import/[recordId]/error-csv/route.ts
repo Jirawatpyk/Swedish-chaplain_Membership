@@ -34,6 +34,8 @@ import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { problemResponse } from '@/lib/http/problem-response';
 import { runGenerateErrorCsvSignedUrl } from '@/lib/events-csv-import-deps';
+import { errorCsvDownloadRateLimitCheck } from '@/lib/events-admin-integration-deps';
+import { eventcreateMetrics } from '@/lib/metrics';
 import { asUserId } from '@/modules/auth';
 import { adminOnlyGuard } from '../../../../integrations/eventcreate/_lib/role-violation-audit';
 
@@ -96,6 +98,33 @@ export async function GET(
       NOT_FOUND_TITLE,
       NOT_FOUND_DETAIL,
       { extras: { requestId, type: NOT_FOUND_PROBLEM_TYPE } },
+    );
+  }
+
+  // R6.W / Round 5 staff-review R011 (T-11) closure — rate-limit
+  // PII bulk-download via compromised admin sessions. 20/hr per
+  // (tenant, actor). The audit log still records every successful
+  // download (csv_import_error_csv_downloaded) — this limiter bounds
+  // the throughput before audit trail gets noisy.
+  const rl = await errorCsvDownloadRateLimitCheck(
+    tenantSlug,
+    guard.actorUserId,
+  );
+  if (!rl.success) {
+    eventcreateMetrics.csvErrorCsvDownloadRateLimitExceeded(tenantSlug);
+    const retryAfter = Math.max(
+      1,
+      Math.ceil((rl.resetAtUnixMs - Date.now()) / 1000),
+    );
+    return problemResponse(
+      429,
+      'rate-limited',
+      'Too many requests',
+      `Error-CSV download rate limit exceeded (20/hr). Retry after ${retryAfter}s.`,
+      {
+        extras: { requestId },
+        headers: { 'Retry-After': retryAfter.toString() },
+      },
     );
   }
 

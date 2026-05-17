@@ -105,19 +105,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       });
       if (result.ok) {
-        eventcreateMetrics.pseudonymisationSweepRowsTotal(
-          tenantSlug,
-          result.value.rowsPseudonymised > 0 ? 'pseudonymised' : 'skipped_not_eligible',
-        );
-        // If we actually pseudonymised some rows, also emit a counter
-        // event PER row for dashboard granularity.
-        if (result.value.rowsPseudonymised > 1) {
-          for (let i = 1; i < result.value.rowsPseudonymised; i++) {
-            eventcreateMetrics.pseudonymisationSweepRowsTotal(
-              tenantSlug,
-              'pseudonymised',
-            );
-          }
+        // R6.W / Round 5 staff-review R018 closure — single-loop metric
+        // emission. Pre-fix used a "emit once + N-1 in loop" pattern
+        // (correct but fragile: a future refactor could break the
+        // off-by-one). For N rows pseudonymised: emit N. For N=0:
+        // emit 1 with `skipped_not_eligible` label.
+        const outcome =
+          result.value.rowsPseudonymised > 0
+            ? 'pseudonymised'
+            : 'skipped_not_eligible';
+        const emitCount = Math.max(1, result.value.rowsPseudonymised);
+        for (let i = 0; i < emitCount; i++) {
+          eventcreateMetrics.pseudonymisationSweepRowsTotal(tenantSlug, outcome);
         }
         perTenant.push({
           tenantId: tenantSlug,

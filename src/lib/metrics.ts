@@ -3388,4 +3388,22 @@ export const eventcreateMetrics = {
       ).add(1, { tenant: tenantId });
     });
   },
+
+  /**
+   * R6.W / Round 5 staff-review R011 (T-11) closure — error-CSV
+   * download rate-limit hit counter. Wired on
+   * `/api/admin/events/import/{recordId}/error-csv` 429 path.
+   *
+   * Alert spec: rate > 5/min sustained ≥10 min → P3 page — possible
+   * compromised admin credential bulk-downloading attendee PII via the
+   * error-CSV surface. Cross-reference with admin auth session activity.
+   */
+  csvErrorCsvDownloadRateLimitExceeded(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_download_rate_limit_exceeded_total',
+        'F6.1 error-CSV download rate limit exceeded (20/hr per actor) — possible insider exfiltration attempt',
+      ).add(1, { tenant: tenantId });
+    });
+  },
 } as const;

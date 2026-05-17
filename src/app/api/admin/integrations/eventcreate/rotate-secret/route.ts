@@ -37,7 +37,31 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
   if (guard.kind === 'deny') return guard.response;
 
-  const tenantCtx = resolveTenantFromRequest(request);
+  // R6.W / Round 5 staff-review R007 closure — wrap tenant resolve in
+  // try/catch so malformed host headers surface as a structured 500 +
+  // pino.error with requestId (matches relink + erase sibling pattern).
+  // Pre-fix: throw fell through to Next.js default 500 with no log.
+  const rotateRequestId = crypto.randomUUID();
+  let tenantCtx: ReturnType<typeof resolveTenantFromRequest>;
+  try {
+    tenantCtx = resolveTenantFromRequest(request);
+  } catch (e) {
+    logger.error(
+      {
+        event: 'f6_rotate_secret_tenant_resolve_failed',
+        err: e instanceof Error ? e.message : String(e),
+        requestId: rotateRequestId,
+      },
+      '[F6] resolveTenantFromRequest threw on rotate-secret route',
+    );
+    return problemResponse(
+      500,
+      'internal-error',
+      'Internal Server Error',
+      'Tenant resolution failed. Contact support with the request ID.',
+      { headers: { 'X-Request-ID': rotateRequestId } },
+    );
+  }
 
   const rl = await rotateSecretRateLimitCheck(
     tenantCtx.slug,
@@ -57,8 +81,10 @@ export async function POST(request: NextRequest): Promise<Response> {
   // Round 3 H1 — surface a request ID in every 500 problem body so the
   // recovery copy's "contact support with this request ID" promise has
   // an actual identifier to give. The same ID is emitted on the pino
-  // error line so SREs can correlate.
-  const requestId = crypto.randomUUID();
+  // error line so SREs can correlate. R6.W — reuse the rotateRequestId
+  // generated above before the tenant-resolve guard so a single trace ID
+  // covers the entire route.
+  const requestId = rotateRequestId;
 
   try {
     const result = await runRotateWebhookSecret(

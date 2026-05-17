@@ -471,9 +471,14 @@ export async function relinkRegistration(
     if (previousQuotaEffect.countedAgainstPartnership) {
       // After credit-back the OLD row no longer counts → consumed
       // drops by 1 → allotmentAfter = allotment - (consumed - 1).
+      // R6.W / Round 5 staff-review R019 closure — `Math.max(0, ...)`
+      // defends against a hypothetical regression where a row has
+      // `counted_against_partnership=true` but `consumed=0` (e.g., a
+      // race condition that double-decremented and crashed mid-flush).
+      // Without the guard the audit would emit `allotment + 1`.
       const allotmentAfter =
         oldAllotments.partnershipPerEvent -
-        (oldConsumed.partnershipConsumedForEvent - 1);
+        Math.max(0, oldConsumed.partnershipConsumedForEvent - 1);
       const r = await emitQuotaScopeAudit(deps.audit, baseAudit, {
         scope: 'partnership',
         action: 'credit_back',
@@ -488,9 +493,10 @@ export async function relinkRegistration(
     }
 
     if (previousQuotaEffect.countedAgainstCulturalQuota) {
+      // R6.W / R019 — same defensive Math.max guard as partnership branch.
       const allotmentAfter =
         oldAllotments.culturalPerYear -
-        (oldConsumed.culturalConsumedForYear - 1);
+        Math.max(0, oldConsumed.culturalConsumedForYear - 1);
       const r = await emitQuotaScopeAudit(deps.audit, baseAudit, {
         scope: 'cultural',
         action: 'credit_back',

@@ -127,6 +127,17 @@ export type ImportCsvOutcome =
        * THIS import. UI should surface a degraded audit-trail chip.
        */
       readonly auditCompletionEmitted: boolean;
+      /**
+       * R6.W / Round 5 staff-review R009 closure — `true` when the
+       * FR-019b safety-net query (event-mismatch detector) failed
+       * during this upload. The import proceeded fail-open (no
+       * priorImports lookup ran), so the admin lacks the routine
+       * "looks like you uploaded this to event X before" guard. UI
+       * SHOULD surface a "duplicate-protection unavailable" chip so
+       * the admin can manually verify the event selection before
+       * trusting the import.
+       */
+      readonly safetyNetFailedOpen: boolean;
     }
   | {
       readonly kind: 'invalid_header';
@@ -150,6 +161,8 @@ export type ImportCsvOutcome =
       readonly historyPersisted: boolean;
       /** See `completed.auditCompletionEmitted`. Same semantics. */
       readonly auditCompletionEmitted: boolean;
+      /** See `completed.safetyNetFailedOpen`. Same semantics. */
+      readonly safetyNetFailedOpen: boolean;
     }
   | {
       /**
@@ -933,6 +946,15 @@ async function processBatch(
       // commit half-overlapping registrations and confuse the
       // idempotency-receipt PK".
       //
+      // R6.W / Round 5 staff-review R017 closure — `batchConcurrency=3`
+      // in the input docs implies parallelism that does NOT materialise
+      // for same-event imports. Effective concurrency = 1 within an
+      // import; parallelism is preserved only ACROSS imports targeting
+      // DIFFERENT events. If F6.2 needs intra-import parallelism (e.g.
+      // 10k-row uploads), the lock would need to split to per-(tenant,
+      // event, batch) — but that requires careful deadlock-avoidance
+      // ordering across the batch range.
+      //
       // pg_advisory_xact_lock auto-releases at tx-end (commit OR
       // rollback) — no need for explicit unlock.
       await batchPorts.advisoryLockAcquirer.acquire(
@@ -1348,6 +1370,12 @@ export async function importCsv(
   // F6.1 — Phase 2c: FR-019b safety-net query. Skip if fingerprint is
   // null (zero attending rows — nothing to match).
   let priorImports: ReadonlyArray<PriorImportMatch> = [];
+  // R6.W / Round 5 staff-review R009 closure — propagate safety-net
+  // fail-open state to the response so the admin UX can surface a
+  // "safety-net unavailable" warning chip. Previously the fail-open
+  // path was silent: SRE saw the metric but the admin had no UX cue
+  // that the FR-019b duplicate-protection didn't run.
+  let safetyNetFailedOpen = false;
   if (attendeeFingerprint !== null) {
     const since = new Date(startedAtMs - 30 * 24 * 60 * 60 * 1000);
     try {
@@ -1383,6 +1411,7 @@ export async function importCsv(
           input.tenantId,
           'result_err',
         );
+        safetyNetFailedOpen = true; // R6.W / R009 — surface to admin UX
       }
     } catch (e) {
       logger.error(
@@ -1396,6 +1425,7 @@ export async function importCsv(
         '[F6.1] safety-net fingerprint query threw — fail-open; FR-019b duplicate protection disabled for this upload',
       );
       eventcreateMetrics.csvImportSafetyNetFallback(input.tenantId, 'threw');
+      safetyNetFailedOpen = true; // R6.W / R009 — surface to admin UX
     }
   }
 
@@ -1836,6 +1866,7 @@ export async function importCsv(
       errorCsvAvailable,
       historyPersisted,
       auditCompletionEmitted,
+      safetyNetFailedOpen,
     };
   }
 
@@ -1846,6 +1877,7 @@ export async function importCsv(
     errorCsvAvailable,
     historyPersisted,
     auditCompletionEmitted,
+    safetyNetFailedOpen,
     summary: {
       rowsTotal,
       rowsProcessed: summary.rowsProcessed,
@@ -1871,12 +1903,35 @@ function serializeErrorRowsToCsv(
 ): Uint8Array {
   const lines: string[] = ['row_number,reason,failure_stage'];
   for (const row of errorRows) {
-    const reason = csvEscape(row.reason);
-    const stage = row.failureStage ?? '';
+    const reason = csvEscape(sanitiseFormulaPrefix(row.reason));
+    const stage = csvEscape(sanitiseFormulaPrefix(row.failureStage ?? ''));
     lines.push(`${row.rowNumber},${reason},${stage}`);
   }
   const text = lines.join('\r\n') + '\r\n';
   return new TextEncoder().encode(text);
+}
+
+/**
+ * R6.W / Round 5 staff-review R012 (T-06) closure — CSV formula
+ * injection guard. When an admin opens the error-CSV in Excel/Sheets,
+ * cells starting with `=`, `+`, `-`, `@` auto-evaluate as formulas. If
+ * a row-rejection `reason` string ever surfaces user-supplied content
+ * starting with those characters, the formula executes on download.
+ *
+ * Mitigation: prepend a single-quote literal so the cell renders as
+ * text. OWASP CSV-Injection-recommended pattern.
+ *
+ * `reason` strings today are server-generated (failureStage + repo
+ * error class) so this is defense-in-depth, but a future feature that
+ * surfaces user input (e.g. raw row excerpt) would route through here.
+ */
+function sanitiseFormulaPrefix(s: string): string {
+  if (s.length === 0) return s;
+  const first = s.charAt(0);
+  if (first === '=' || first === '+' || first === '-' || first === '@') {
+    return `'${s}`;
+  }
+  return s;
 }
 
 function csvEscape(s: string): string {

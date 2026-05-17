@@ -323,22 +323,30 @@ export async function runGenerateErrorCsvSignedUrl(
   return runInTenant(asTenantContext(input.tenantSlug), async (tx) => {
     const repo = makeDrizzleCsvImportRecordsRepository(tx);
     const adminRepo = makeDrizzleCsvImportRecordsAdminRepository();
+    // R6.S / Round 5 staff-review R028 closure — replaced the
+    // `spread + override` pattern with explicit named-field assignment
+    // so the delegation contract is grep-friendly + a future refactor
+    // re-ordering the spread cannot silently rewire
+    // `findPriorErasureCompletion` to a different port.
+    //
+    // Both `emit` (strict-audit + cross-tenant probe) AND
+    // `emitRolledBack` route through the STANDALONE tx so a parent-tx
+    // rollback (rare on read-only paths) cannot lose the audit row.
+    // `findPriorErasureCompletion` keeps the tx-bound `audit` impl
+    // because the idempotency probe needs the SAME RLS scope as the
+    // surrounding strict-tx read (Constitution Principle I sub-clause 2).
     const audit = makePinoAuditPort(tx);
     const standalone = makeStandaloneAuditDeps();
-    // Override `emit` so that BOTH the strict-audit
-    // `csv_import_error_csv_downloaded` write AND the cross-tenant
-    // probe emit commit in their own tx — survives a parent-tx
-    // rollback. `emitRolledBack` / `emitStandalone` retain their
-    // original semantics via the spread.
     const hybrid: F6AuditPort = {
-      ...audit,
-      emit: async (entry) => {
-        // Both probe + downloaded emits go through the standalone
-        // tx so a parent-tx rollback (rare on read-only paths) does
-        // not lose the audit row. Aligns with the audit-trust
-        // invariants from F4/F5/F7.
-        return standalone.emitStandalone(entry as F6AuditEntry<F6AuditEventType>);
-      },
+      emit: async (entry) =>
+        standalone.emitStandalone(entry as F6AuditEntry<F6AuditEventType>),
+      // `emitRolledBack` + the typed `emitStandalone` come from the
+      // tx-bound `audit` port (the standalone-deps surface only exposes
+      // `emitStandalone`; FR-037 rolled-back path stays on the
+      // tx-bound impl).
+      emitRolledBack: audit.emitRolledBack,
+      emitStandalone: audit.emitStandalone,
+      findPriorErasureCompletion: audit.findPriorErasureCompletion,
     };
     const outcome = await generateErrorCsvSignedUrl(
       {

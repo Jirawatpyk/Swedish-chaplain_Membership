@@ -439,6 +439,14 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
     // TOCTOU window with concurrent ingest workers that ALSO try to
     // touch this (member, event) registration.
     expect(ports.advisoryLockAcquirer.acquire).toHaveBeenCalledTimes(1);
+    // R6.S / Round 5 staff-review R025 closure — pin the lock-key
+    // shape `eventcreate-quota:{tenant}:{member}:{event}`. A regression
+    // swapping the member/event order would acquire a DIFFERENT key
+    // for concurrent workers + break TOCTOU protection silently.
+    const acquireCalls = (
+      ports.advisoryLockAcquirer.acquire as ReturnType<typeof vi.fn>
+    ).mock.calls;
+    expect(acquireCalls[0]?.[0]).toMatch(/^eventcreate-quota:test-chamber:[^:]+:[^:]+$/);
     // The audit port should have received a quota_credit_back_refund
     // emit for partnership scope.
     const emitCalls = (ports.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
@@ -446,6 +454,17 @@ describe('ingestWebhookAttendee — round-2 hardening branches', () => {
       return (entry as { eventType: string }).eventType === 'quota_credit_back_refund';
     });
     expect(creditBackRefundCalls.length).toBe(1);
+    // R6.S / Round 5 staff-review R024 closure — assert NO
+    // `quota_partnership_decremented` emit happens during the refund
+    // path. A double-counting regression (emit BOTH credit-back AND
+    // a fresh decrement) would silently corrupt the member's quota.
+    const decrementCalls = emitCalls.filter(([entry]) => {
+      return (
+        (entry as { eventType: string }).eventType ===
+        'quota_partnership_decremented'
+      );
+    });
+    expect(decrementCalls).toHaveLength(0);
     const refundEntry = creditBackRefundCalls[0]![0] as {
       payload: { scope: string; allotmentAfter: number };
     };

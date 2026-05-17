@@ -88,7 +88,21 @@ function makePayload(overrides: Record<string, unknown> = {}) {
 }
 
 test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
-  test('AS1 — signed payload + valid timestamp → 200 + member match + audit', async ({ request }) => {
+  test('AS1 — signed payload + valid timestamp → 200 + deterministic match + audit', async ({ request }) => {
+    // R6.B2 / Round 5 staff-review R002 closure — the prior assertion
+    // accepted ALL 5 match outcomes (`['member_contact','member_domain',
+    // 'member_fuzzy','non_member','unmatched']`), which is a FALSE
+    // POSITIVE: if the FR-002 contact-email match rule silently breaks
+    // and returns one of the other 4 shapes, the test still passes.
+    //
+    // The E2E seed (`seedF6Events`) does NOT create an F3 contact row
+    // for `e2e-test@example.com`, so the FR-002 match rule deterministi-
+    // cally returns `non_member`. We now assert that exact shape — a
+    // regression flipping unmatched/member_* would fail this test.
+    //
+    // The `member_contact` HAPPY PATH (with a seeded contact email) is
+    // covered by `tests/integration/events/transactional-ingest.test.ts`
+    // which exercises the F3 contact-email match against live Neon.
     const payload = makePayload();
     const signed = signBody(payload, TEST_SECRET);
     const res = await request.post(
@@ -107,7 +121,11 @@ test.describe('F6 webhook ingest — US1 AS1-AS5 @workers=1', () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.registrationId).toBeTruthy();
-    expect(['member_contact', 'member_domain', 'member_fuzzy', 'non_member', 'unmatched']).toContain(body.matched);
+    // R6.B2 — tightened from `toContain([...5 shapes])` to deterministic
+    // `toBe('non_member')`. The seed does not include `e2e-test@example.com`
+    // in F3 contacts, so the FR-002 match rule MUST return `non_member`.
+    // A regression here is a real bug.
+    expect(body.matched).toBe('non_member');
   });
 
   test('AS2 — non-member attendee persists with match_type=non_member', async ({ request }) => {

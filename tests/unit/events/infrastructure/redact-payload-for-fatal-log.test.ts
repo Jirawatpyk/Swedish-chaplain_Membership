@@ -272,6 +272,26 @@ describe('Phase H4.1 — redactPayloadForFatalLog exhaustive allowlist verificat
     expect(out['attendeeEmailHash']).toBe('a1b2c3d4e5f60718');
   });
 
+  it('R6.S / R026 — allowlist-deny-by-default: arbitrary unknown fields are dropped', () => {
+    // Guards against a future refactor flipping the redactor from
+    // allowlist-deny-by-default to denylist-allow-by-default. The
+    // negative assertion ensures unknown fields NEVER survive even if
+    // they look benign (e.g. a future audit payload accidentally
+    // introduces a `userEmail` or `internalNotes` field).
+    const out = redactPayloadForFatalLog({
+      unknownFieldNeverInAllowlist: 'this should be dropped',
+      anotherFakeField: 42,
+      maliciousLookalike: 'severity-like-string-but-wrong-key',
+    });
+    expect(out).not.toHaveProperty('unknownFieldNeverInAllowlist');
+    expect(out).not.toHaveProperty('anotherFakeField');
+    expect(out).not.toHaveProperty('maliciousLookalike');
+    // Confirm the empty allowlist intersection results in an empty
+    // projection (no `_shape` sentinel — that's reserved for non-object
+    // inputs).
+    expect(Object.keys(out)).toHaveLength(0);
+  });
+
   it('PII field names that overlap with allowlist semantics are NOT auto-allowed', () => {
     // Defence-in-depth: even if a future payload misuses an allowlisted
     // field name (e.g., `requestId` carrying an email), the value must

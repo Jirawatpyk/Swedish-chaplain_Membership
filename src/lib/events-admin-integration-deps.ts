@@ -148,6 +148,25 @@ export const testWebhookRateLimitCheck = makeF6RateLimitCheck(
 );
 
 /**
+ * R6.W / Round 5 staff-review R011 (T-11) closure — error-CSV download
+ * rate limit. 20/hr per (tenant, actor) bounds bulk-exfiltration via a
+ * compromised admin session. The csv_import_error_csv_downloaded
+ * audit + this limiter together close the PDPA Article 30 + GDPR
+ * Article 32 access-control gap (rate-controlled access + auditable
+ * download log).
+ *
+ * Constitution Principle I sub-clause 4: forensic-trail integrity is
+ * preserved — every download attempt that hits the cap still emits a
+ * `csv_import_error_csv_download_rate_limit_exceeded` metric so SREs
+ * can alert on sustained spikes (P3 — possible insider exfiltration).
+ */
+const ERROR_CSV_DOWNLOAD_MAX_PER_HOUR = 20;
+export const errorCsvDownloadRateLimitCheck = makeF6RateLimitCheck(
+  'f6.1-error-csv-download',
+  ERROR_CSV_DOWNLOAD_MAX_PER_HOUR,
+);
+
+/**
  * generate-secret rate-limit gate. 3 generations/hour per (tenant,
  * actor). Even though `generateWebhookSecret` returns 409
  * `secret_already_exists` after the first successful call, each
