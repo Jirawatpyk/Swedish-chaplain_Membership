@@ -144,9 +144,15 @@ function captureGitSha(): string {
 function runBench(spec: BenchSpec): BenchResult {
   const startMs = Date.now();
   const scriptPath = path.join('scripts', 'perf', `${spec.script}.ts`);
+  // R9.S1 security-review hardening — `shell: false` (default) instead
+  // of `shell: true`. The script-path is currently hardcoded from the
+  // BENCHES constant (no untrusted input), but disabling shell parsing
+  // closes the attack surface for any future code change that might
+  // introduce dynamic arguments. Defense-in-depth per Constitution X
+  // (Simplicity — prefer the safer default).
   const r = spawnSync('pnpm', ['tsx', scriptPath], {
     encoding: 'utf8',
-    shell: true,
+    shell: false,
     // The bench scripts may run long (idempotency-soak excluded);
     // give a generous 10-min ceiling per bench.
     timeout: 10 * 60 * 1000,
@@ -203,8 +209,20 @@ function runBench(spec: BenchSpec): BenchResult {
   };
 }
 
+/**
+ * Sanitise BENCH_ENV to prevent path-traversal in output filename.
+ * R9.S1 security-review hardening — env vars are trusted in this
+ * project's threat model (per security-review precedent), but
+ * belt-and-braces: restrict to `[a-z0-9_-]+` (max 32 chars) so a
+ * typo or shared-CI misconfig can't write JSON outside `perf-results/`.
+ */
+function sanitiseEnvLabel(raw: string | undefined): string {
+  const v = (raw ?? 'local').replace(/[^a-z0-9_-]/gi, '_').slice(0, 32);
+  return v.length > 0 ? v : 'local';
+}
+
 async function main(): Promise<void> {
-  const environment = process.env['BENCH_ENV'] ?? 'local';
+  const environment = sanitiseEnvLabel(process.env['BENCH_ENV']);
   const strict = process.env['STRICT'] === 'true';
   const runStartedAt = new Date().toISOString();
 
