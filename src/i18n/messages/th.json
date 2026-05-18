@@ -2693,7 +2693,11 @@
           "previewRowsTitle": "ตัวอย่าง ({count, plural, other {# แถว}})",
           "missingColumnsTitle": "CSV ขาดคอลัมน์ที่จำเป็น",
           "missingColumnsDescription": "กรุณาส่งออกไฟล์ใหม่หลังเพิ่มคอลัมน์เหล่านี้:",
-          "tableAriaLabel": "ตัวอย่าง CSV สำหรับ {fileName}"
+          "tableAriaLabel": "ตัวอย่าง CSV สำหรับ {fileName}",
+          "totalRowsHint": "{columns} คอลัมน์ × แสดง {sampled} จากทั้งหมด {total, plural, other {# แถว}}",
+          "tableHelpText": "วางเมาส์บนเซลล์เพื่อดูข้อความเต็ม คอลัมน์ที่มีเครื่องหมาย ✓ คือคอลัมน์หลักที่ใช้ในการนำเข้า ส่วนคอลัมน์อื่นจะถูกส่งต่อโดยไม่แก้ไข",
+          "emptyCell": "(ว่าง)",
+          "confirmCtaWithCount": "ยืนยันและนำเข้า {count, plural, other {# แถว}}"
         },
         "result": {
           "regionLabel": "ผลการนำเข้า CSV",
@@ -2733,7 +2737,7 @@
         },
         "eventPicker": {
           "fieldLabel": "อีเวนต์",
-          "fieldHelp": "เลือกอีเวนต์ F6 ที่ CSV นี้จะถูกบันทึก ค่าที่เลือกจากดรอปดาวน์เป็นค่าหลัก คอลัมน์อีเวนต์ในไฟล์ CSV จะถูกแทนที่ทั้งหมด",
+          "fieldHelp": "เลือกอีเวนต์ที่ CSV นี้จะถูกบันทึก ค่าที่เลือกจากดรอปดาวน์เป็นค่าหลัก คอลัมน์อีเวนต์ในไฟล์ CSV จะถูกแทนที่ทั้งหมด",
           "selectedPrefix": "เลือกแล้ว",
           "submitGatedHint": "กรุณาเลือกอีเวนต์จากดรอปดาวน์ด้านบนเพื่อดำเนินการต่อ",
           "triggerAriaLabel": "เลือกอีเวนต์สำหรับนำเข้า CSV",
@@ -2742,6 +2746,7 @@
           "searchPlaceholder": "ค้นหาอีเวนต์ด้วยชื่อ…",
           "searchAriaLabel": "ค้นหาอีเวนต์",
           "emptyState": "ไม่พบอีเวนต์ที่ตรงกัน สร้างอีเวนต์ใหม่หรือปรับการค้นหา",
+          "createInlineCta": "+ สร้างอีเวนต์ใหม่",
           "loadErrorDetail": "โหลดรายการอีเวนต์ไม่สำเร็จ กรุณารีเฟรชแล้วลองใหม่",
           "filenameMatchHint": "เสนอจากชื่อไฟล์: {eventName}",
           "createNewCta": "สร้างอีเวนต์ใหม่",

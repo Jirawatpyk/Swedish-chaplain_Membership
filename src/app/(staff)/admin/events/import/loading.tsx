@@ -2,18 +2,18 @@
  * T098 — /admin/events/import shimmer skeleton (F6 Phase 7).
  *
  * CLS-0 shape — mirrors the CsvMappingForm card layout exactly.
- * Renders inside FormContainer + PageHeader so the layout matches
+ * Renders inside TableContainer + PageHeader so the layout matches
  * the real page on navigation. Pairs with `page.tsx` per the
  * pnpm check:layout invariant (page + loading use the SAME container).
  */
-import { FormContainer } from '@/components/layout';
+import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function CsvImportLoading() {
   return (
-    <FormContainer aria-busy="true">
+    <TableContainer aria-busy="true">
       <PageHeader
         title={
           <span aria-hidden="true" className="block">
@@ -57,6 +57,6 @@ export default function CsvImportLoading() {
           </div>
         </CardContent>
       </Card>
-    </FormContainer>
+    </TableContainer>
   );
 }

@@ -26,7 +26,7 @@
  * Pure client component — no DB access. The route handler at
  * `/api/admin/events/import` does the parse-and-import.
  */
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
@@ -95,6 +95,13 @@ interface PreviewData {
   readonly detectedColumns: ReadonlyArray<string>;
   readonly rows: ReadonlyArray<ReadonlyArray<string>>;
   readonly missingRequired: ReadonlyArray<string>;
+  /**
+   * UX-R1.2 F-02 — total non-empty data rows in the uploaded file
+   * (excluding header). Preview caps display at 10 rows; this field
+   * lets the UI communicate "showing 10 of N" so admin can see the
+   * scope of the upcoming import before clicking Confirm.
+   */
+  readonly totalRowCount: number;
 }
 
 /**
@@ -172,11 +179,17 @@ function tokeniseCsvLine(line: string): string[] {
  * missing before they upload.
  */
 function sniffPreview(text: string): PreviewData {
-  const lines = text.split(/\r?\n/).slice(0, 11);
+  // UX-R1.2 F-02 — count ALL non-empty data rows before slicing for
+  // the 10-row preview. Filter empty lines (trailing newline + blank
+  // separator lines tolerated). `-1` for header row.
+  const allLines = text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
+  const totalRowCount = Math.max(0, allLines.length - 1);
+  const lines = allLines.slice(0, 11);
   const header = tokeniseCsvLine(lines[0] ?? '');
   const rows = lines
     .slice(1, 11)
-    .filter((line) => line.length > 0)
     .map((line) => tokeniseCsvLine(line));
   const headerSet = new Set(header);
   // F6.1 FR-001 — if the file is in EventCreate native format (all 6
@@ -191,7 +204,7 @@ function sniffPreview(text: string): PreviewData {
   const missingRequired = isEventCreateFormat
     ? []
     : REQUIRED_COLUMNS.filter((c) => !headerSet.has(c));
-  return { detectedColumns: header, rows, missingRequired };
+  return { detectedColumns: header, rows, missingRequired, totalRowCount };
 }
 
 export function CsvMappingForm() {
@@ -312,6 +325,7 @@ export function CsvMappingForm() {
                 detectedColumns: [],
                 rows: [],
                 missingRequired: [],
+                totalRowCount: 0,
               },
             });
             return;
@@ -609,7 +623,9 @@ export function CsvMappingForm() {
                 fileName={phase.file.name}
                 onSubmit={onSubmit}
                 onCancel={resetToUpload}
-                submitLabel={t('confirmCta')}
+                submitLabel={t('preview.confirmCtaWithCount', {
+                  count: phase.preview.totalRowCount,
+                })}
                 cancelLabel={t('cancelCta')}
                 submitDisabled={selectedEventId === null}
                 submitDisabledReason={
@@ -648,10 +664,29 @@ interface ErrorPanelProps {
 
 function ErrorPanel({ phase, onRetry }: ErrorPanelProps) {
   const t = useTranslations('admin.events.import');
+  // UX-R1.2 F-04 — focus management on phase transition. Same
+  // double-RAF pattern as PreviewPanel; moves SR focus to the
+  // error AlertTitle on mount so users hear the error message
+  // instead of staying anchored on the now-unmounted file input.
+  const errorTitleRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        errorTitleRef.current?.focus();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      if (raf2 !== 0) window.cancelAnimationFrame(raf2);
+    };
+  }, []);
   return (
     <div data-testid="csv-header-error">
       <Alert variant="destructive">
-        <AlertTitle>{phase.title}</AlertTitle>
+        <AlertTitle ref={errorTitleRef} tabIndex={-1} className="focus:outline-none">
+          {phase.title}
+        </AlertTitle>
         <AlertDescription>
           <p>{phase.detail}</p>
           {phase.missingColumns && phase.missingColumns.length > 0 ? (
@@ -703,6 +738,27 @@ function PreviewPanel({
   // `sniffPreview` (slice(0,11) over header + 10 body rows). No
   // additional slice needed; useMemo was a no-op churn.
   const sampleRows = preview.rows;
+
+  // UX-R1.2 F-04 — focus management on phase transition. When this
+  // panel mounts (after file-chooser closes + sniff completes), move
+  // SR focus to the preview heading so keyboard + screen-reader users
+  // are placed at the new content instead of the now-unmounted file
+  // input. Double-RAF pattern from `reject-dialog.tsx:57-69` waits
+  // for DOM mount + layout before calling .focus(); reduced-motion
+  // safe because raf cancellation handles unmount mid-frame.
+  const previewHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => {
+        previewHeadingRef.current?.focus();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      if (raf2 !== 0) window.cancelAnimationFrame(raf2);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col gap-4">
@@ -765,11 +821,20 @@ function PreviewPanel({
 
       <section aria-labelledby="csv-preview-rows">
         <div className="mb-2 flex items-baseline justify-between">
-          <h3 id="csv-preview-rows" className="text-body font-medium">
+          <h3
+            id="csv-preview-rows"
+            ref={previewHeadingRef}
+            tabIndex={-1}
+            className="text-body font-medium focus:outline-none"
+          >
             {t('previewRowsTitle', { count: sampleRows.length })}
           </h3>
           <span className="text-caption text-muted-foreground">
-            {preview.detectedColumns.length} columns × {sampleRows.length} rows
+            {t('totalRowsHint', {
+              columns: preview.detectedColumns.length,
+              sampled: sampleRows.length,
+              total: preview.totalRowCount,
+            })}
           </span>
         </div>
         {/*
@@ -876,7 +941,11 @@ function PreviewPanel({
                       scope="col"
                       className={
                         idx === 0
-                          ? `sticky left-0 z-20 w-[8rem] min-w-[8rem] max-w-[8rem] truncate border-r border-border bg-muted px-2 py-1.5 text-left font-medium ${accentClass}`
+                          ? // UX-R1.2 F-09 — narrower sticky col on mobile
+                            // (6rem ≈ 96px = 26% of 375px viewport, was
+                            // 37% at 8rem). Restores at sm: ≥640px where
+                            // there's more horizontal space.
+                            `sticky left-0 z-20 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-border bg-muted px-2 py-1.5 text-left font-medium ${accentClass}`
                           : `w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1.5 text-left font-medium ${accentClass}`
                       }
                     >
@@ -906,14 +975,31 @@ function PreviewPanel({
                             // transparent and lets scrolled-past columns
                             // bleed through. Use solid `bg-background`
                             // OR `bg-muted` per row parity (both solid).
-                            `sticky left-0 z-10 w-[8rem] min-w-[8rem] max-w-[8rem] truncate border-r border-border ${
+                            `sticky left-0 z-10 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-border ${
                               rowIdx % 2 === 1 ? 'bg-muted' : 'bg-background'
                             } px-2 py-1 align-top`
                           : 'w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1 align-top'
                       }
                     >
                       {cell || (
-                        <span className="text-muted-foreground/50">—</span>
+                        <>
+                          {/* UX-R1.2 F-06 — em-dash decorative only;
+                              SR-only fallback carries the semantic
+                              "(empty)" to assistive tech. Bumped opacity
+                              from /50 (~1.98:1) to /70 (~2.8:1) — still
+                              under 4.5:1 but with aria-hidden marks the
+                              em-dash as decoration per WCAG SC 1.4.3
+                              exemption. */}
+                          <span
+                            aria-hidden="true"
+                            className="text-muted-foreground/70"
+                          >
+                            —
+                          </span>
+                          <span className="sr-only">
+                            {t('emptyCell')}
+                          </span>
+                        </>
                       )}
                     </td>
                   ))}
@@ -923,8 +1009,7 @@ function PreviewPanel({
           </table>
         </div>
         <p className="text-caption mt-1.5 text-muted-foreground">
-          Hover a cell to see full content. Canonical columns are
-          highlighted; the rest are passed through unchanged on import.
+          {t('tableHelpText')}
         </p>
       </section>
 

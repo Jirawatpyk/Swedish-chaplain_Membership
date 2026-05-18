@@ -35,6 +35,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 export interface EventPickerOption {
@@ -342,13 +343,23 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                 : { 'aria-label': t('triggerAriaLabel') })}
               className="min-h-11 w-full justify-between text-left font-normal"
             >
-              <span className="truncate">
-                {selected !== null
-                  ? `${selected.name} — ${formatter.dateTime(new Date(selected.startDate), { dateStyle: 'medium' })}`
-                  : loading
-                    ? t('loading')
-                    : t('placeholder')}
-              </span>
+              {/* UX-R1.2 F-05 — show shimmer skeleton (not text) while
+                  events are loading. shadcn/ui Skeleton aligned to text
+                  size so CLS=0 when fetch resolves and the selected /
+                  placeholder text takes over. aria-label on the trigger
+                  carries the semantic for SR; visual loading state is
+                  purely decorative shimmer per ux-standards.md § 2.1. */}
+              {selected !== null ? (
+                <span className="truncate">
+                  {`${selected.name} — ${formatter.dateTime(new Date(selected.startDate), { dateStyle: 'medium' })}`}
+                </span>
+              ) : loading ? (
+                <Skeleton aria-hidden="true" className="h-4 w-48" />
+              ) : (
+                <span className="truncate text-muted-foreground">
+                  {t('placeholder')}
+                </span>
+              )}
               <ChevronsUpDown
                 aria-hidden="true"
                 className="ml-2 size-4 shrink-0 opacity-50"
@@ -367,7 +378,34 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             />
             <CommandList>
               <CommandEmpty>
-                {error ?? t('emptyState')}
+                {/* UX-R1.2 F-08 — surface an inline "+ Create new event"
+                    CTA inside the empty state so an admin who searches
+                    and finds nothing can act without leaving the
+                    dropdown. Only renders when a parent supplied
+                    `onCreateNew`; otherwise we fall back to the plain
+                    empty-state copy. The button closes the popover
+                    before invoking the create callback so focus follows
+                    into the inline-create modal. */}
+                <div className="flex flex-col items-center gap-2 py-3 text-center">
+                  <span className="text-caption text-muted-foreground">
+                    {error ?? t('emptyState')}
+                  </span>
+                  {props.onCreateNew !== undefined ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setOpen(false);
+                        props.onCreateNew?.();
+                      }}
+                      className="min-h-9 gap-1.5"
+                    >
+                      <Plus aria-hidden="true" className="size-3.5" />
+                      {t('createInlineCta')}
+                    </Button>
+                  ) : null}
+                </div>
               </CommandEmpty>
               <CommandGroup>
                 {events.map((event) => (

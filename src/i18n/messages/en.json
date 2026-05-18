@@ -2693,7 +2693,11 @@
           "previewRowsTitle": "Preview ({count, plural, one {# row} other {# rows}})",
           "missingColumnsTitle": "CSV is missing required columns",
           "missingColumnsDescription": "Re-export the CSV after adding these columns:",
-          "tableAriaLabel": "CSV preview for {fileName}"
+          "tableAriaLabel": "CSV preview for {fileName}",
+          "totalRowsHint": "{columns} columns × showing {sampled} of {total, plural, one {# row} other {# rows}}",
+          "tableHelpText": "Hover a cell to see full content. Canonical columns are highlighted; the rest are passed through unchanged on import.",
+          "emptyCell": "(empty)",
+          "confirmCtaWithCount": "Confirm and import {count, plural, one {# row} other {# rows}}"
         },
         "result": {
           "regionLabel": "CSV import result",
@@ -2733,7 +2737,7 @@
         },
         "eventPicker": {
           "fieldLabel": "Event",
-          "fieldHelp": "Choose the F6 event this CSV should reconcile to. The dropdown selection is authoritative — any event columns in the CSV are overridden.",
+          "fieldHelp": "Choose the event this CSV should reconcile to. The dropdown selection is authoritative — any event columns in the CSV are overridden.",
           "selectedPrefix": "Selected",
           "submitGatedHint": "Select an event from the dropdown above to continue.",
           "triggerAriaLabel": "Choose event for CSV import",
@@ -2742,6 +2746,7 @@
           "searchPlaceholder": "Search events by name…",
           "searchAriaLabel": "Search events",
           "emptyState": "No events match. Create one first or refine the search.",
+          "createInlineCta": "+ Create new event",
           "loadErrorDetail": "Could not load events. Refresh and try again.",
           "filenameMatchHint": "Auto-suggested from filename: {eventName}",
           "createNewCta": "Create new event",

@@ -2693,7 +2693,11 @@
           "previewRowsTitle": "Förhandsgranskning ({count, plural, one {# rad} other {# rader}})",
           "missingColumnsTitle": "CSV saknar obligatoriska kolumner",
           "missingColumnsDescription": "Exportera filen på nytt efter att du lagt till dessa kolumner:",
-          "tableAriaLabel": "CSV-förhandsgranskning för {fileName}"
+          "tableAriaLabel": "CSV-förhandsgranskning för {fileName}",
+          "totalRowsHint": "{columns} kolumner × visar {sampled} av {total, plural, one {# rad} other {# rader}}",
+          "tableHelpText": "Håll muspekaren över en cell för att se hela innehållet. Kanoniska kolumner är markerade; resten skickas vidare oförändrat vid import.",
+          "emptyCell": "(tom)",
+          "confirmCtaWithCount": "Bekräfta och importera {count, plural, one {# rad} other {# rader}}"
         },
         "result": {
           "regionLabel": "Resultat av CSV-import",
@@ -2733,7 +2737,7 @@
         },
         "eventPicker": {
           "fieldLabel": "Evenemang",
-          "fieldHelp": "Välj F6-evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
+          "fieldHelp": "Välj evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
           "selectedPrefix": "Valt",
           "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan för att fortsätta.",
           "triggerAriaLabel": "Välj evenemang för CSV-import",
@@ -2742,6 +2746,7 @@
           "searchPlaceholder": "Sök evenemang efter namn…",
           "searchAriaLabel": "Sök efter evenemang",
           "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
+          "createInlineCta": "+ Skapa nytt evenemang",
           "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
           "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
           "createNewCta": "Skapa nytt evenemang",
