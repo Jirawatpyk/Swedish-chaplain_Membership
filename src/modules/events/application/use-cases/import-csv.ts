@@ -907,6 +907,22 @@ async function processOneRowInSavepoint(
         }
       }
 
+      // Bug-fix 2026-05-18 — `processAttendeeInTx` upserts via ON
+      // CONFLICT DO UPDATE on (tenant_id, event_id, external_id). If
+      // the unique-index conflict fires, `isNewRegistration=false` —
+      // the registration was already in the DB. This happens when a
+      // re-upload uses a NEW rowHash format (computeRowHash changed
+      // to include attendee_external_id) but the registration was
+      // already persisted under the OLD hash form on a prior upload.
+      // Without this branch, the row would be reported as
+      // `kind:'inserted'` even though nothing was actually inserted —
+      // the user-visible summary would show "rows imported: 17" on a
+      // re-upload that touched zero rows. Report as `duplicate` so the
+      // summary's rowsProcessed reflects only genuinely-new rows.
+      if (!result.isNewRegistration) {
+        return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
+      }
+
       return {
         kind: 'inserted' as const,
         rowNumber: parsed.rowNumber,

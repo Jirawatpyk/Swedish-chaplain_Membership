@@ -364,15 +364,32 @@ function parseHeader(
 // ---------------------------------------------------------------------------
 
 function computeRowHash(row: CsvRow): string {
-  // Canonical key triple — see contracts/csv-import-api.md § 4b.
+  // Canonical key — see contracts/csv-import-api.md § 4b.
   // tenant_id is added implicitly by the idempotency-store PK
-  // `(tenant_id, source, request_id)`; the hash only needs to be
-  // unique per-(event,attendee,registration-time) within a tenant.
+  // `(tenant_id, source, request_id)`; the hash needs to be unique
+  // per-(event, attendee, registration-time) within a tenant.
+  //
+  // Bug-fix 2026-05-18 — include `attendee_external_id` so family /
+  // group bookings (multiple guests sharing one primary registrant
+  // email — common in EventCreate) do NOT collide on the receipt
+  // dedup key. Previous form (event_external_id, email, ts) made the
+  // Wittebrood family’s 5 attendees all hash to one value → 4 of 5
+  // were silently skipped as "already imported" on first upload.
+  //
+  // Backward compat for generic CSV (no Attendee ID column):
+  // `attendee_external_id` is undefined → coerced to "" → hash is
+  // OBSERVABLY different from the old form, so existing receipts
+  // become benign orphans. The re-upload INSERT path hits ON
+  // CONFLICT on (tenant,event,external_id) → isNewRegistration=false
+  // → reported as kind:'duplicate' (NOT 'inserted'). The 7-day TTL
+  // on eventcreate_idempotency_receipts cleans the old receipts up.
   const ts = row.registered_at ?? row.event_start;
+  const ext = row.attendee_external_id ?? '';
   const canonicalBytes = [
     row.event_external_id,
     row.attendee_email.toLowerCase(),
     ts,
+    ext,
   ].join(' ');
   return createHash('sha256').update(canonicalBytes, 'utf8').digest('hex');
 }
