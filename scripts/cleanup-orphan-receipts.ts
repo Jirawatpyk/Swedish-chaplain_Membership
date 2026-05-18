@@ -52,7 +52,7 @@ async function main() {
     SELECT count(*)::int AS n
     FROM event_registrations
     WHERE tenant_id = ${TENANT_ID}
-  `)[0].n;
+  `)[0]?.n ?? 0;
 
   console.log(`event_registrations rows on tenant=${TENANT_ID}:`, regsForTenant);
 
@@ -78,7 +78,7 @@ async function main() {
   console.log('\n→ event_registrations is EMPTY for this tenant. All receipts are orphan.');
 
   if (!APPLY) {
-    console.log('\nDRY-RUN — would delete ' + receipts[0].n + ' orphan receipts.');
+    console.log('\nDRY-RUN — would delete ' + (receipts[0]?.n ?? 0) + ' orphan receipts.');
     console.log('Re-run with --apply to actually delete.');
     await sql.end();
     return;
