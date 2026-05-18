@@ -61,7 +61,7 @@ Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` until operator/maintai
 
 ### NON-NEGOTIABLE gates (any FAIL blocks the plan; no waivers)
 
-- [x] **I. Data Privacy & Security** — F7.1a preserves the F7 MVP tenant-isolation posture: every new table carries `tenant_id` + RLS + FORCE policies (data-model.md § 2); every new use-case runs under `runInTenant(ctx, fn)`; every US ships ≥1 cross-tenant probe integration test; audit log captures `tenant_id` on every new event type; 7 new audit event types catalogue in research.md § 7; cross-tenant access attempts emit `broadcast_cross_tenant_probe`. **OWASP Top 10**: XSS via `<img>` allowlist (US2 — mitigated via FR-014 scheme + event-handler stripping AND FR-011 hostname allowlist); SSRF via image-upload server-fetch (US2 — mitigated by uploading to chamber asset bucket only, never fetching external URLs server-side); filename-XSS on attachment-detail surfaces (US2 — FR-013 sanitises filename at upload boundary); broken-access-control on allowlist admin surface (FR-010 — admin role check enforced at use-case boundary). **TLS 1.2+** unchanged. **At-rest encryption** — Vercel Blob AES-256 by default; Postgres at-rest encryption per Neon's platform default. ✅ PASS.
+- [x] **I. Data Privacy & Security** — F7.1a preserves the F7 MVP tenant-isolation posture: every new table carries `tenant_id` + RLS + FORCE policies (data-model.md § 2); every new use-case runs under `runInTenant(ctx, fn)`; every US ships ≥1 cross-tenant probe integration test; audit log captures `tenant_id` on every new event type; 10 new audit event types catalogue in research.md § 8; cross-tenant access attempts emit `broadcast_cross_tenant_probe`. **OWASP Top 10**: XSS via `<img>` allowlist (US2 — mitigated via FR-014 scheme + event-handler stripping AND FR-011 hostname allowlist); SSRF via image-upload server-fetch (US2 — mitigated by uploading to chamber asset bucket only, never fetching external URLs server-side); filename-XSS on attachment-detail surfaces (US2 — FR-013 sanitises filename at upload boundary); broken-access-control on allowlist admin surface (FR-010 — admin role check enforced at use-case boundary). **TLS 1.2+** unchanged. **At-rest encryption** — Vercel Blob AES-256 by default; Postgres at-rest encryption per Neon's platform default. ✅ PASS.
 
 - [x] **II. Test-First Development** — TDD discipline preserved per F7 MVP precedent. Each US ships: (a) ≥1 acceptance-level Vitest contract test authored RED before the use-case implementation; (b) ≥1 integration test against live Neon Singapore covering the cross-tenant probe + the happy-path resolver; (c) ≥1 Playwright e2e test for the new UI surfaces under axe-core a11y + reduced-motion + i18n locales. **Coverage targets**: Domain layer 100% line (batch boundary calculator, image-source allowlist matcher); Application layer 80% line + 80% branch; **100% branch on security-critical paths** (Principle II): `validateImageSourceAllowlist`, `enforceCrossTenantIsolation`, `scanInlineImageForVirus`. Live Neon Singapore for integration — no mocks for database. ✅ PASS.
 
@@ -71,7 +71,7 @@ Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` until operator/maintai
 
 ### Core principle gates (FAIL must be justified in Complexity Tracking)
 
-- [x] **V. Internationalization (EN/TH/SV)** — All new user-facing strings (admin batch breakdown UI, admin retry confirmation + accept-partial modal, admin image-source allowlist editor, member inline-image uploader + size-cap error + scan-pending banner, ClamAV unreachable banner, 7 audit-event display strings) ship with EN + TH + SV keys from day one. **~150-200 new i18n keys estimated** (down from original F7.1 8-US estimate of ~600-700; F7.1a is ~25-30% of F7.1's user-facing surface). `pnpm check:i18n` enforces parity at CI; release-branch builds fail on missing TH or SV keys. ✅ PASS.
+- [x] **V. Internationalization (EN/TH/SV)** — All new user-facing strings (admin batch breakdown UI, admin retry confirmation + accept-partial modal, admin image-source allowlist editor, member inline-image uploader + size-cap error + scan-pending banner, ClamAV unreachable banner, admin template library + editor surfaces, member template picker + stale-draft banner + bracketed-placeholder microcopy, 10 audit-event display strings) ship with EN + TH + SV keys from day one. **~150-200 new i18n keys estimated** (down from original F7.1 8-US estimate of ~600-700; F7.1a is ~25-30% of F7.1's user-facing surface). `pnpm check:i18n` enforces parity at CI; release-branch builds fail on missing TH or SV keys. ✅ PASS.
 
 - [x] **VI. Inclusive UX (Mobile First + WCAG 2.1 AA + UX Consistency)** — All new surfaces designed mobile-first from 320px width; axe-core WCAG 2.1 AA scan on every new page (SC-008); semantic HTML (admin batch breakdown is a `<details>/<summary>` collapsible; retry confirmation is a `<dialog role="alertdialog">`; image upload progress is `<progress>` with `aria-label`); `prefers-reduced-motion` respected on per-batch progress bar; `prefers-color-scheme` respected via existing `next-themes` integration. **WCAG 2.2 opportunistic adoption**: SC 2.4.11 (Focus Not Obscured) verified on retry confirmation modal; SC 2.5.8 (Target Size ≥24×24px) verified on image-upload + allowlist-add buttons. **Manual SR QA gate** on at least one major screen reader (NVDA or VoiceOver) per SC-008. Shared component library: shadcn/ui (Dialog, AlertDialog, Form, Table from F3) — zero net-new shadcn primitives required. ✅ PASS.
 
@@ -92,7 +92,7 @@ Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` until operator/maintai
 ```text
 specs/014-email-broadcast-advance/
 ├── plan.md                  # This file (F7.1a)
-├── spec.md                  # F7.1a spec (2 USs)
+├── spec.md                  # F7.1a spec (3 USs)
 ├── f71b-backlog.md          # 6 deferred USs preserved for future promotion
 ├── research.md              # F7.1a Phase 0 output
 ├── data-model.md            # F7.1a Phase 1 output
@@ -384,11 +384,11 @@ These items require operator/maintainer judgement and cannot be fully resolved i
 
 This plan ends after Phase 1. The next command is **`/speckit.tasks`**, which will:
 - Read `spec.md` + `plan.md` + `data-model.md` + `contracts/*` + `quickstart.md`
-- Decompose the 2 user stories into TDD-ordered task chains
+- Decompose the 3 user stories into TDD-ordered task chains
 - Group tasks by user story for independent deliverability
 - Mark parallelizable `[P]` tasks
 
-**Estimated task volume**: ~100-140 tasks (down from original F7.1 8-US estimate of ~250). US1 and US2 are independent — could ship in parallel branches if desired.
+**Estimated task volume**: ~140-180 tasks (US7 promote-back added ~40 tasks for template CRUD + seed + UI; still down from original F7.1 8-US estimate of ~250). US1, US2, US7 are mostly independent — could ship in parallel branches if desired. **Per Clarifications round 3 Q1**: if `/speckit.tasks` produces >200 items, re-defer US7 back to F7.1b.
 
 ---
 
@@ -405,7 +405,7 @@ After Phase 1 design completion + Strategy B scope reduction, re-evaluating agai
 - [x] **VII. Performance & Observability** — Re-confirmed PASS. 5 new metrics + 4 alerts + 3 runbooks catalogued; SLO budgets per US in spec § SC. ✅
 - [x] **VIII. Reliability** — Re-confirmed PASS. Transaction boundaries enumerated; idempotency keys defined; 7 audit event types; advisory-lock namespaces `broadcasts-batch:` + `broadcasts-retry:` both disjoint from existing `broadcasts:`. ✅
 - [x] **IX. Code Quality Standards** — Re-confirmed PASS via solo-maintainer substitute (CT #3). ✅
-- [x] **X. Simplicity (YAGNI)** — Re-confirmed PASS. **Strategy B reduced scope from 8 USs → 2 USs**, deferring 6 USs worth of speculative engineering; 3 Complexity Tracking entries (down from 5). ✅
+- [x] **X. Simplicity (YAGNI)** — Re-confirmed PASS. **Strategy B reduced scope from 8 USs → 3 USs** (US1 + US2 + US7 — US7 promoted back after maintainer committed to writing 5 starter templates × 3 locales directly), deferring 5 USs worth of speculative engineering; 3 Complexity Tracking entries (down from 5). ✅
 
 **Final gate verdict**: ✅ PASS — ready for `/speckit.tasks`.
 

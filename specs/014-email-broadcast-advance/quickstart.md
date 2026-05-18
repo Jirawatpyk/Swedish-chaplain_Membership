@@ -3,7 +3,7 @@
 **Branch**: `014-email-broadcast-advance` | **Date**: 2026-05-17 (Strategy B split + US7 promote-back on 2026-05-18)
 **Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md) | **Research**: [research.md](./research.md) | **Data Model**: [data-model.md](./data-model.md)
 
-This document gets a developer from `git clone` to running F7.1 locally with all 8 user stories ship-ready behind feature flags.
+This document gets a developer from `git clone` to running F7.1a locally with **3 user stories** (US1 pagination + US2 image embedding + US7 multi-template library) ship-ready behind 4 feature flags.
 
 ---
 
