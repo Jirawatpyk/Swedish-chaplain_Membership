@@ -214,6 +214,7 @@ tests/
 │   ├── retry-failed-batches.test.ts               # NEW (US1)
 │   ├── accept-partial-delivery.test.ts            # NEW (US1)
 │   ├── concurrent-retry-race.test.ts              # NEW (US1 SC-007 — advisory-lock race)
+│   ├── cancel-broadcast-batch-halt.test.ts        # NEW (US1 FR-004 — per analyze round 2 N3; cancel halts pending batch_manifests; audit payload extended)
 │   ├── image-source-allowlist.test.ts             # NEW (US2)
 │   ├── upload-inline-image.test.ts                # NEW (US2)
 │   ├── manage-image-allowlist.test.ts             # NEW (US2)

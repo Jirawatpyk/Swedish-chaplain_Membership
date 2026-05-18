@@ -61,7 +61,7 @@ export const broadcastBatchManifests = pgTable('broadcast_batch_manifests', {
   recipientCount: integer('recipient_count').notNull(),
   recipientRangeStart: integer('recipient_range_start').notNull(), // 0-based inclusive
   recipientRangeEnd: integer('recipient_range_end').notNull(), // 0-based inclusive
-  status: text('status', { enum: ['pending', 'sending', 'sent', 'failed'] }).notNull().default('pending'),
+  status: text('status', { enum: ['pending', 'sending', 'sent', 'failed', 'cancelled'] }).notNull().default('pending'), // 'cancelled' added per analyze round 2 N1 — set by cancelBroadcast use-case (T163) when admin halts mid-dispatch broadcast per FR-004
   providerAudienceId: text('provider_audience_id'), // Resend audience id; null before send
   idempotencyKey: text('idempotency_key').notNull(),
   retryCount: integer('retry_count').notNull().default(0),
