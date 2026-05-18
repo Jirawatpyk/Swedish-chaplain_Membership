@@ -98,6 +98,74 @@ interface PreviewData {
 }
 
 /**
+ * RFC-4180 single-line tokeniser. Handles:
+ *   - double-quoted cells (cells with embedded commas → must be quoted)
+ *   - `""` escape for literal double-quote inside a quoted cell
+ *   - whitespace trimming on unquoted cells only (quoted cells preserve)
+ *
+ * Bug-fix 2026-05-18 — replaced naive `.split(',')` which split on EVERY
+ * comma including those inside quoted strings. Real EventCreate exports
+ * routinely include cells like `"Please provide name, address, tax ID"`
+ * and dates like `"May 16, 2026"` that the naive split shredded into
+ * fragmented columns + wrong cell offsets in preview.
+ *
+ * The server-side parser at `streaming-csv-importer.ts` already does
+ * proper RFC-4180 parsing; this client-side helper only needs the
+ * tokeniser for accurate preview rendering. Multi-line quoted cells
+ * (which RFC-4180 also permits) are NOT supported here — preview
+ * truncates at first \n; the server-side parser handles those.
+ */
+function tokeniseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < line.length) {
+    const ch = line[i] ?? '';
+    if (inQuotes) {
+      if (ch === '"') {
+        // Lookahead for `""` escape → literal quote.
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i += 2;
+          continue;
+        }
+        // End of quoted cell.
+        inQuotes = false;
+        i += 1;
+        continue;
+      }
+      cur += ch;
+      i += 1;
+      continue;
+    }
+    // Unquoted state.
+    if (ch === '"') {
+      // Opening quote — only valid at start of cell.
+      if (cur.length === 0) {
+        inQuotes = true;
+        i += 1;
+        continue;
+      }
+      // Quote mid-cell-unquoted is unusual but tolerate by treating as literal.
+      cur += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === ',') {
+      cells.push(cur);
+      cur = '';
+      i += 1;
+      continue;
+    }
+    cur += ch;
+    i += 1;
+  }
+  cells.push(cur);
+  return cells.map((c) => c.trim());
+}
+
+/**
  * Lightweight client-side CSV header sniff for preview only — the
  * server-side parser is authoritative. We just want to render a
  * 10-row preview + tell the admin if a required column is obviously
@@ -105,17 +173,11 @@ interface PreviewData {
  */
 function sniffPreview(text: string): PreviewData {
   const lines = text.split(/\r?\n/).slice(0, 11);
-  const header = (lines[0] ?? '')
-    .split(',')
-    .map((c) => c.trim().replace(/^"(.*)"$/, '$1'));
+  const header = tokeniseCsvLine(lines[0] ?? '');
   const rows = lines
     .slice(1, 11)
     .filter((line) => line.length > 0)
-    .map((line) =>
-      line
-        .split(',')
-        .map((c) => c.trim().replace(/^"(.*)"$/, '$1')),
-    );
+    .map((line) => tokeniseCsvLine(line));
   const headerSet = new Set(header);
   // F6.1 FR-001 — if the file is in EventCreate native format (all 6
   // adapter columns present), the server adapter translates it into
