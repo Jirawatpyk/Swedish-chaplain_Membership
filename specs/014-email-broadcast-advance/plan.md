@@ -326,6 +326,14 @@ F7.1a schema additions are NON-REVERSIBLE without data loss:
 15. 49999 / 50000 / 50001 recipients (F7.1a cap boundary)
 16. Template-snapshot of 200KB-body template (size cap boundary; FR-017 enforcement)
 
+### Risk notes (per `/speckit.analyze` D1+D2 findings 2026-05-18)
+
+**D1 — Variable substitution rules described in 3 places** (spec FR-019 + contracts § 5 + research § 6). Currently consistent ✓. **Canonical source**: `contracts/broadcast-template.md § 5`. Any future change to variable resolution MUST update contracts § 5 FIRST + propagate to spec FR-019 + research § 6 in same PR. If drift detected during code review, contracts § 5 wins.
+
+**D2 — ClamAV scan requirements overlap between F7.1a FR-013 (images) and F7.1b FR-027 (attachments, deferred)**. When F7.1b promotes attachments, extract shared scanner contract into a common section (e.g., `contracts/_shared/virus-scanner.md`) referenced by both FRs to prevent drift. F7.1a-only impact: T151 polish task already documents the 5-min timeout parity expectation.
+
+---
+
 ### CI gate (per critique E2/X2 — added 2026-05-18 round 2)
 
 Pre-merge CI MUST run:
