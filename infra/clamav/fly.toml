@@ -1,0 +1,54 @@
+# F7.1a US2 — Fly.io app config for ClamAV virus scanner.
+#
+# Deploy commands + secret rotation procedure live in
+# infra/clamav/README.md. This file is committed as the source of
+# truth; do not edit directly on Fly.io — `fly launch --copy-config`
+# always reads from here.
+#
+# Why Fly.io (vs Vercel Functions): clamd is a long-running daemon
+# that streams files over a TCP socket and holds the signature DB in
+# memory (~250 MB). Vercel Functions are stateless + short-lived; a
+# Fly machine is the natural fit and `sin` keeps it co-located with
+# Neon Postgres (Singapore) for low-latency F7.1a control-plane RTT.
+
+app = "clamav-swecham"
+primary_region = "sin"
+
+# Build from Dockerfile in this directory.
+[build]
+  dockerfile = "Dockerfile"
+
+# clamd is reachable only from the Fly 6PN private network — no
+# public IP, no HTTPS termination. Chamber-OS Vercel functions
+# resolve `clamav-swecham.internal` via Fly DNS and connect over TCP.
+[[services]]
+  internal_port = 3310
+  protocol = "tcp"
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  # TCP-level health check — sends a SYN to 3310 every 15s and treats
+  # a successful handshake as healthy. Application-level PING is
+  # handled by the container HEALTHCHECK directive in Dockerfile.
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "60s"
+
+# Smallest Fly VM size that meets clamd memory floor (~250 MB
+# resident set after signature DB load). Upgrade to shared-cpu-2x@512mb
+# only if `clamav.signature_age_hours` alert flaps from OOM (see
+# docs/runbooks/clamav-signature-stale.md).
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+# Mount a 1 GB persistent volume for the signature DB so freshclam
+# does not redownload the ~250 MB ClamAV signature set on every
+# machine restart. Volume name MUST be created via
+# `fly volumes create clamav_data --region sin --size 1` before
+# `fly deploy` (one-time, documented in README.md § Deploy).
+[[mounts]]
+  source = "clamav_data"
+  destination = "/var/lib/clamav"

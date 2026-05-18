@@ -29,6 +29,7 @@
 # surfaces with no recent drift class to guard against in pre-push.
 
 pnpm check:layout
+pnpm check:template-seed
 pnpm check:fixme
 pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
 

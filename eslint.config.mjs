@@ -34,6 +34,11 @@ const domainForbiddenImports = [
   "@tiptap/starter-kit",
   "isomorphic-dompurify",
   "email-validator",
+  // F7.1a — Tiptap image extension is a browser editor plugin; the
+  // ClamAV `clamscan` binding is a Node lib that talks to a TCP
+  // daemon. Both belong in Infrastructure (Phase 2 T025 + T073).
+  "@tiptap/extension-image",
+  "clamscan",
 ];
 
 const applicationForbiddenImports = [
@@ -62,6 +67,13 @@ const applicationForbiddenImports = [
   "@tiptap/starter-kit",
   "isomorphic-dompurify",
   "email-validator",
+  // F7.1a — Application layer reaches ClamAV via VirusScannerPort
+  // (Phase 2 T021) and the Tiptap image extension via the editor
+  // composition root only. Direct imports break the F7.1a US2
+  // scan-before-persist invariant (FR-013 + T152) and the testable-
+  // sanitiser boundary.
+  "@tiptap/extension-image",
+  "clamscan",
 ];
 
 /**

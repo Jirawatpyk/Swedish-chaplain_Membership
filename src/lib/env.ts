@@ -479,6 +479,41 @@ const schema = z.object({
   // Default false — production deployments where F6 is dark are
   // unaffected.
   ZAPIER_DPA_EXECUTED: booleanFromString.default(false),
+
+  // --- F7.1a Email Broadcast Advanced --------------------------------------
+  // Master kill-switch for F7.1a (pagination + image embedding + multi-
+  // template library). When FALSE every F7.1a-only surface short-circuits
+  // and the F7 MVP 5k cap path remains active. Default FALSE — F7.1a
+  // ships dark; flip TRUE only after ClamAV Fly.io deploy (T139) +
+  // staging flag-matrix smoke test (T142) per quickstart.md § 9.
+  FEATURE_F71A_BROADCAST_ADVANCED: booleanFromString.default(false),
+
+  // Per-US flags — only have effect when the master flag is also TRUE.
+  // Staged flip order (lowest risk → highest): US7 templates → US2 images
+  // → US1 pagination. See tasks.md T143–T146.
+  FEATURE_F71A_US1_PAGINATION: booleanFromString.default(false),
+  FEATURE_F71A_US2_IMAGES: booleanFromString.default(false),
+  FEATURE_F71A_US7_TEMPLATES: booleanFromString.default(false),
+
+  // --- ClamAV virus scanner (US2 dependency) -------------------------------
+  // Network address of the clamd daemon. Empty string in dev = US2 disabled.
+  // In prod, points at the Fly.io private 6PN address (e.g.
+  // "clamav-swecham.internal"). The clamav-virus-scanner adapter (Phase 2
+  // T025) treats empty CLAMAV_HOST as `error` verdict and surfaces the
+  // ClamAV-unreachable banner (T081). See infra/clamav/README.md.
+  CLAMAV_HOST: z.string().default(''),
+  CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
+  // Scan timeout per file. FR-013 mandates conservative `error` verdict
+  // on timeout — the use-case (T071 upload-inline-image) refuses to
+  // persist the file. 5 min default matches the deferred-F7.1b attachment
+  // contract for cross-feature parity (see T151).
+  CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600000).default(300000),
+  // SECRET — 32-byte hex shared secret between Chamber-OS and the ClamAV
+  // reverse proxy. Empty string in dev tolerated (runtime adapter rejects
+  // scans). When the master flag flips ON the adapter MUST require this
+  // to be ≥32 chars — enforced in Phase 2 T025, not here, to keep env
+  // schema shape stable across the dark→live transition.
+  CLAMAV_SHARED_SECRET: z.string().default(''),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -674,7 +709,7 @@ export const env = {
     xHeaderEnabled: raw.E2E_X_TENANT_HEADER_ENABLED,
   },
 
-  // F3 + F4 + F5 + F7 + F8 feature flags
+  // F3 + F4 + F5 + F7 + F7.1a + F8 feature flags
   features: {
     f3Members: raw.FEATURE_F3_MEMBERS,
     f4Invoicing: raw.FEATURE_F4_INVOICING,
@@ -682,6 +717,12 @@ export const env = {
     f5OnlinePayment: raw.FEATURE_F5_ONLINE_PAYMENT,
     f5AsyncReceiptPdf: raw.FEATURE_F5_ASYNC_RECEIPT_PDF,
     f7Broadcasts: raw.FEATURE_F7_BROADCASTS,
+    // F7.1a master + per-US flags. Adapters MUST check the master flag
+    // before per-US flags (per-US flags only have effect when master ON).
+    f71aBroadcastAdvanced: raw.FEATURE_F71A_BROADCAST_ADVANCED,
+    f71aUs1Pagination: raw.FEATURE_F71A_US1_PAGINATION,
+    f71aUs2Images: raw.FEATURE_F71A_US2_IMAGES,
+    f71aUs7Templates: raw.FEATURE_F71A_US7_TEMPLATES,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
@@ -748,6 +789,18 @@ export const env = {
     // `/api/admin/health` style endpoint or a CLI helper can read the
     // executed-DPA status without reaching back into env.ts.
     zapierDpaExecuted: raw.ZAPIER_DPA_EXECUTED,
+  },
+
+  // F7.1a US2 — ClamAV virus scanner connection settings. The clamav-
+  // virus-scanner adapter (Phase 2 T025) consumes this block. Empty
+  // `host` ⇒ adapter returns `error` verdict; when the master F7.1a
+  // flag flips ON the adapter additionally requires `sharedSecret`
+  // to be ≥32 chars. See infra/clamav/README.md for deploy procedure.
+  clamav: {
+    host: raw.CLAMAV_HOST,
+    port: raw.CLAMAV_PORT,
+    timeoutMs: raw.CLAMAV_TIMEOUT_MS,
+    sharedSecret: raw.CLAMAV_SHARED_SECRET,
   },
 } as const;
 
