@@ -2452,7 +2452,7 @@
           "noDeliveries": {
             "title": "Väntar på första evenemanget",
             "body": "Din Zap ska leverera nya deltagardata inom cirka 15 minuter efter en EventCreate-registrering. Du kan också skicka en testwebhook för att bekräfta anslutningen.",
-            "primaryCta": "Skicka ett testevenemang",
+            "primaryCta": "Skicka en testhändelse",
             "cta": "Visa integrationsinställningar",
             "illustrationAlt": "Illustration av tom inkorg"
           },
@@ -2497,8 +2497,10 @@
           "showUnmatchedOnlyActive": "Visar endast omatchade",
           "filterByPaymentStatusLabel": "Filtrera efter betalningsstatus",
           "allPaymentStatuses": "Alla statusar",
-          "empty": "Inga deltagare matchar dessa filter just nu. Prova att rensa eller utforska hela listan.",
+          "empty": "Inga deltagare matchar dessa filter. Prova att rensa filtren eller visa hela listan.",
+          "emptyHeading": "Inga matchningar hittades",
           "clearFilters": "Rensa filter",
+          "filtersCleared": "Filter rensade",
           "paymentStatusFilterDropped": "Filtret för betalningsstatus kändes inte igen — visar alla statusar.",
           "columns": {
             "attendee": "Deltagare",

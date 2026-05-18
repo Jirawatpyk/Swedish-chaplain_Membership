@@ -65,9 +65,11 @@ export {
 
 export {
   PAYMENT_STATUSES,
+  QUOTA_COUNTED_STATUSES,
   isPaymentStatus,
   isQuotaCountedStatus,
   type PaymentStatus,
+  type QuotaCountedStatus,
 } from './domain/value-objects/payment-status';
 
 export {

@@ -58,6 +58,7 @@
  * Caller (route handler) owns the tx via `runInTenantTx`.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import type { TenantId } from '@/modules/members';
 import type { EventId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
@@ -576,7 +577,7 @@ export async function toggleEventCategory(
   }
 
   // (6) Macro toggle audit
-  const macroResult = await deps.audit.emit({
+  const macroResult = await safeAuditEmit(deps.audit, {
     eventType:
       input.flag === 'is_partner_benefit'
         ? 'event_partner_benefit_toggled'

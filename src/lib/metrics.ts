@@ -3240,6 +3240,18 @@ export const eventcreateMetrics = {
    */
   csvImportStateChangeFallback(
     tenantId: string,
+    // R4-S8 (2026-05-18 /speckit-review Round 4 — won't-implement):
+    // The Round 4 type-design review suggested deriving this `reason`
+    // union from `FailureStage` (declared in
+    // `@/modules/events/application/ports/audit-port`) to prevent
+    // drift if FailureStage grows a new member. We do NOT derive
+    // because importing `FailureStage` here would create a
+    // `src/lib/` → `src/modules/` dependency that VIOLATES
+    // **Constitution Principle III (Clean Architecture)** — the lib
+    // layer must not depend on the modules layer. The explicit
+    // 9-literal union is architecturally correct; drift between
+    // FailureStage + this union is acceptable risk traded for layer
+    // boundaries.
     reason:
       // Pre-R2 reasons (kept for backward-compat with existing dashboards
       // during F6.2 dashboard migration; pre-R2 probe surface still emits

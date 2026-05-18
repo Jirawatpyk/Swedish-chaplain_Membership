@@ -41,6 +41,7 @@
  * `archive-event-deps` composition root.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import type { TenantId } from '@/modules/members';
 import type { EventId } from '../../domain/branded-types';
 import type { EventAggregate } from '../../domain/event';
@@ -395,7 +396,7 @@ export async function archiveEvent(
         cached.initialConsumed.partnershipConsumedForEvent - decrementsSoFar.partnership;
       const allotmentAfter =
         cached.allotments.partnershipPerEvent - currentConsumed;
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         ...baseAudit,
         eventType: 'quota_credit_back_archive',
         summary: `partnership credit-back via archive: registration ${reg.registrationId}`,
@@ -419,7 +420,7 @@ export async function archiveEvent(
         cached.initialConsumed.culturalConsumedForYear - decrementsSoFar.cultural;
       const allotmentAfter =
         cached.allotments.culturalPerYear - currentConsumed;
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         ...baseAudit,
         eventType: 'quota_credit_back_archive',
         summary: `cultural credit-back via archive: registration ${reg.registrationId}`,
@@ -441,7 +442,7 @@ export async function archiveEvent(
   }
 
   // (5) Macro event_archived audit.
-  const macro = await deps.audit.emit({
+  const macro = await safeAuditEmit(deps.audit, {
     eventType: 'event_archived',
     tenantId: input.tenantId,
     actorType: 'admin',

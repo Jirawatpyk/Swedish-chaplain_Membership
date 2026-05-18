@@ -47,6 +47,21 @@ function makeAuditPortMock(
   };
 }
 
+// R4-S2 (2026-05-18 /speckit-review Round 4) — typed accessor for the
+// first call's first argument. Replaces 5× repeated
+// `(emit.mock.calls as unknown as Array<[...]>)[0]?.[0]` cast pattern.
+type AuditEntryShape = {
+  readonly eventType: string;
+  readonly summary: string;
+  readonly payload: Record<string, unknown>;
+};
+function firstCallEntry(
+  emit: ReturnType<typeof vi.fn>,
+): AuditEntryShape | undefined {
+  const calls = emit.mock.calls as unknown as Array<[AuditEntryShape]>;
+  return calls[0]?.[0];
+}
+
 describe('emitCreditBackViaStateChange (R3-T6)', () => {
   describe('happy path — partnership scope', () => {
     it('emits eventType=quota_credit_back_refund with the canonical literal', async () => {
@@ -65,7 +80,7 @@ describe('emitCreditBackViaStateChange (R3-T6)', () => {
         allotmentAfter: 5,
       });
       expect(emit).toHaveBeenCalledTimes(1);
-      const entry = (emit.mock.calls as unknown as Array<[{ readonly eventType: string; readonly summary: string; readonly payload: Record<string, unknown> }]>)[0]?.[0];
+      const entry = firstCallEntry(emit);
       expect(entry?.eventType).toBe('quota_credit_back_refund');
     });
 
@@ -84,7 +99,7 @@ describe('emitCreditBackViaStateChange (R3-T6)', () => {
         scope: 'partnership',
         allotmentAfter: 5,
       });
-      const entry = (emit.mock.calls as unknown as Array<[{ readonly eventType: string; readonly summary: string; readonly payload: Record<string, unknown> }]>)[0]?.[0];
+      const entry = firstCallEntry(emit);
       expect(entry?.summary).toContain('partnership credit-back via state_change');
       expect(entry?.summary).toContain('row 12');
       expect(entry?.summary).toContain('paid→pending');
@@ -105,7 +120,7 @@ describe('emitCreditBackViaStateChange (R3-T6)', () => {
         scope: 'partnership',
         allotmentAfter: 5,
       });
-      const entry = (emit.mock.calls as unknown as Array<[{ readonly eventType: string; readonly summary: string; readonly payload: Record<string, unknown> }]>)[0]?.[0];
+      const entry = firstCallEntry(emit);
       expect(entry?.payload).toMatchObject({
         severity: 'info',
         registrationId: REG_ID,
@@ -132,7 +147,7 @@ describe('emitCreditBackViaStateChange (R3-T6)', () => {
         scope: 'cultural',
         allotmentAfter: 4,
       });
-      const entry = (emit.mock.calls as unknown as Array<[{ readonly eventType: string; readonly summary: string; readonly payload: Record<string, unknown> }]>)[0]?.[0];
+      const entry = firstCallEntry(emit);
       expect(entry?.summary).toContain('cultural credit-back via state_change');
       expect(entry?.summary).toContain('paid→no_show');
     });
@@ -152,7 +167,7 @@ describe('emitCreditBackViaStateChange (R3-T6)', () => {
         scope: 'cultural',
         allotmentAfter: 4,
       });
-      const entry = (emit.mock.calls as unknown as Array<[{ readonly eventType: string; readonly summary: string; readonly payload: Record<string, unknown> }]>)[0]?.[0];
+      const entry = firstCallEntry(emit);
       const payload = entry?.payload as { scope?: string };
       expect(payload?.scope).toBe('cultural');
     });

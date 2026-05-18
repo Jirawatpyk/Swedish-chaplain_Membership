@@ -137,11 +137,31 @@ type Props = {
 };
 
 // R3-Y1 (2026-05-18 /speckit-review Round 3 Final) — module-level
-// constants so the closure-capture warning in
-// `react-hooks/exhaustive-deps` doesn't fire on useCallback hooks
-// that reference them. The values are stable across renders, so
-// hoisting them out of the component body is the cleanest fix.
-const ALL_STATUSES_SENTINEL = '__all__' satisfies Exclude<string, PaymentStatus>;
+// constants so closure-capture warnings on useCallback hooks below
+// don't fire. The values are stable across renders, so hoisting them
+// out of the component body is the cleanest fix. Note: the
+// `react-hooks/exhaustive-deps` disable at the R4-C1 useEffect below
+// is a SEPARATE concern (the URL-guard intentionally re-runs only on
+// `rawPaymentStatus` changes).
+const ALL_STATUSES_SENTINEL = '__all__' as const;
+// R4-I4 (2026-05-18 /speckit-review Round 4) — REAL compile-time
+// disjointness check. `Extract<typeof X, Y> extends never ? true :
+// false` evaluates to `true` ONLY when X is disjoint from Y. R3-Y1's
+// `satisfies Exclude<string, PaymentStatus>` was a TS no-op:
+// `Exclude<string, 'paid' | 'pending' | …>` simplifies to `string`,
+// so the satisfies clause only checked `'__all__' is string` (trivially
+// true). The threat model "future PaymentStatus addition collides
+// with `'__all__'`" was unprotected. If PaymentStatus ever extends
+// to include `'__all__'`, `Extract<'__all__', PaymentStatus>` returns
+// `'__all__'` (not `never`), `_AssertSentinelDisjoint` collapses to
+// `false`, and `const _disjoint: false = true` fails the build.
+type _AssertSentinelDisjoint =
+  Extract<typeof ALL_STATUSES_SENTINEL, PaymentStatus> extends never
+    ? true
+    : false;
+const _disjoint: _AssertSentinelDisjoint = true;
+void _disjoint;
+
 const FILTER_PARAM_KEYS = ['q', 'paymentStatus', 'unmatchedOnly'] as const;
 
 function formatRegisteredAt(iso: string, locale: string): string {
@@ -206,23 +226,46 @@ export function AttendeeTable({
   // pasted a URL with an invalid `?paymentStatus=junk` saw the table
   // load with the filter silently dropped (logger.debug captured the
   // event server-side but no user-visible signal). Now: detect the
-  // mismatch on mount, fire a toast.warning, and replace the URL to
+  // mismatch on mount, fire a toast.info, and replace the URL to
   // strip the stale param so refreshes don't re-fire.
+  //
+  // R4-C1 (2026-05-18 /speckit-review Round 4) — dep changed from
+  // `[searchParams]` (object identity, changes every render in Next.js
+  // 16 App Router → infinite-loop risk if router.replace ever fails)
+  // to `[rawPaymentStatus]` (scalar value, stable identity). Plus
+  // try/catch around `router.replace` so a transient navigation
+  // rejection emits a console.warn instead of stacking toasts forever.
+  // R4-U1 — toast.warning → toast.info (recovery info, not user-
+  // actionable warning per ux-standards.md § 6).
+  const rawPaymentStatus = searchParams.get('paymentStatus');
   useEffect(() => {
-    const raw = searchParams.get('paymentStatus');
-    if (raw !== null && raw !== '' && !isPaymentStatus(raw)) {
-      toast.warning(t('paymentStatusFilterDropped'));
-      const next = new URLSearchParams(searchParams.toString());
-      next.delete('paymentStatus');
-      next.delete('page');
-      const qs = next.toString();
-      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+    if (
+      rawPaymentStatus !== null &&
+      rawPaymentStatus !== '' &&
+      !isPaymentStatus(rawPaymentStatus)
+    ) {
+      toast.info(t('paymentStatusFilterDropped'));
+      try {
+        const next = new URLSearchParams(searchParams.toString());
+        next.delete('paymentStatus');
+        next.delete('page');
+        const qs = next.toString();
+        router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+      } catch (e) {
+        // Client-side fallback log — `@/lib/logger` is pino + Node so
+        // can't be imported into client bundles cleanly. console.warn
+        // is the universal sink; Sentry browser SDK (if mounted) will
+        // capture it automatically.
+        console.warn(
+          '[F6.1] router.replace to strip invalid paymentStatus failed',
+          e,
+        );
+      }
     }
-    // Intentionally omit `t`, `pathname`, `router` from deps — these
-    // are stable across re-renders. `searchParams` is the only signal
-    // we need to react to.
+    // Intentionally omit `t`, `pathname`, `router`, `searchParams`
+    // from deps — these are stable / re-derived from rawPaymentStatus.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [rawPaymentStatus]);
 
   const pushUrl = useCallback(
     (next: URLSearchParams) => {
@@ -344,12 +387,20 @@ export function AttendeeTable({
     next.delete('page');
     setSearchInput('');
     pushUrl(next);
-    // Return focus to the search input AFTER the URL push transitions.
-    // The Input element survives the transition (it lives in the
-    // persistent toolbar above the conditionally-rendered table body),
-    // so the ref stays valid.
+    // R4-U2 (2026-05-18 /speckit-review Round 4) — toast.success
+    // announces "Filters cleared" via Sonner's `role="status"` live
+    // region BEFORE focus moves to the search input. NVDA/JAWS read
+    // the toast first, then the new focus target's aria-label. Without
+    // this, SR users only hear "Search attendees, empty edit text"
+    // and don't know whether the click succeeded (since the table
+    // body re-renders silently underneath).
+    toast.success(t('filtersCleared'));
+    // R3-F5 — return focus to the search input AFTER the URL push
+    // transitions. The Input element survives the transition (it
+    // lives in the persistent toolbar above the conditionally-
+    // rendered table body), so the ref stays valid.
     queueMicrotask(() => searchInputRef.current?.focus());
-  }, [searchParams, pushUrl]);
+  }, [searchParams, pushUrl, t]);
 
   // R6-W12 staff-review fix (2026-05-13): clear-on-Escape handler.
   // `<Input type="search">` renders the native browser X clear button
@@ -501,6 +552,13 @@ export function AttendeeTable({
 
       {rows.length === 0 ? (
         <div className="rounded-md border border-border bg-card py-12 text-center">
+          {/* R4-S5 (2026-05-18 /speckit-review Round 4) — sr-only
+              heading for AT users navigating by heading. The section
+              is labelledby the parent `<h2 id="attendees-heading">`
+              already, but adding an empty-state h3 gives screen
+              readers a stable jump target when filter results
+              produce zero rows. WCAG SC 2.4.6. */}
+          <h3 className="sr-only">{t('emptyHeading')}</h3>
           <p className="text-muted-foreground">{t('empty')}</p>
           {/* R2-S1 (2026-05-18 /speckit-review Round 2 Suggestion) —
               when any filter is set AND the result is empty, surface a

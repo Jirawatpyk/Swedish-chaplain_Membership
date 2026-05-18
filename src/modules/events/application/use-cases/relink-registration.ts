@@ -109,6 +109,7 @@
  * (`src/lib/events-admin-deps.ts`).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import type { TenantId, MemberId } from '@/modules/members';
 import type { EventId, RegistrationId } from '../../domain/branded-types';
 import type {
@@ -698,7 +699,7 @@ export async function relinkRegistration(
     scopes,
   };
 
-  const macroResult = await deps.audit.emit({
+  const macroResult = await safeAuditEmit(deps.audit, {
     eventType: 'registration_relinked',
     tenantId: input.tenantId,
     actorType: 'admin',

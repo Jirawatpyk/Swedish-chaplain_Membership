@@ -131,7 +131,11 @@ function makeDeps(): ImportCsvDeps {
     audit: { emit: auditEmit } as unknown as ImportCsvTxScopedPorts['audit'],
   } as unknown as ImportCsvTxScopedPorts;
 
-  return {
+  // R4-T4 — expose the captured `auditEmit` spy as a non-enumerable
+  // property so the 4th it-block can assert on which events emitted
+  // without breaking the existing 3 sites that just use `const deps =
+  // makeDeps()`.
+  const deps = {
     csvImporter: makeCsvImporterMock(
       vi.fn(async () =>
         ok(
@@ -158,6 +162,11 @@ function makeDeps(): ImportCsvDeps {
     runInTenantTx: vi.fn(async (_tenantId, fn) => fn(fakeBatchPorts)),
     emitStandalone: vi.fn(async () => ok('audit-id' as never)),
   } as unknown as ImportCsvDeps;
+  Object.defineProperty(deps, '_auditEmitSpy', {
+    value: auditEmit,
+    enumerable: false,
+  });
+  return deps;
 }
 
 describe('R3-T4 — !eventLookup.ok in maybeApplyStateChange debit path', () => {
@@ -219,7 +228,7 @@ describe('R3-T4 — !eventLookup.ok in maybeApplyStateChange debit path', () => 
     expect(outcome.summary.errorRows).toHaveLength(0);
   });
 
-  it('emits state-change audit ONLY (no quota_credit_back_refund row)', async () => {
+  it('R4-T4 — emits state-change audit ONLY (no quota_credit_back_refund row when eventLookup errs)', async () => {
     const deps = makeDeps();
     await importCsv(
       {
@@ -230,19 +239,23 @@ describe('R3-T4 — !eventLookup.ok in maybeApplyStateChange debit path', () => 
       },
       deps,
     );
-    // The fakeBatchPorts.audit.emit mock captures every emit call.
-    // We expect the state-change audit BUT NOT credit-back-refund
-    // because the lookup-err branch skips the quota emit path.
-    const auditEmits = (
-      (
-        deps as unknown as {
-          runInTenantTx: ReturnType<typeof vi.fn>;
-        }
-      ).runInTenantTx.mock.results[0]
+    // R4-T4 tightening — assert via the captured audit.emit spy
+    // (exposed as `_auditEmitSpy` on deps). Pre-R4-T4 this it-block
+    // duplicated assertions from "row reports as state-changed" and
+    // provided no new coverage. Now: directly verify the audit
+    // event-type stream.
+    const auditEmit = (
+      deps as unknown as { _auditEmitSpy: ReturnType<typeof vi.fn> }
+    )._auditEmitSpy;
+    const emittedEventTypes = auditEmit.mock.calls.map(
+      (c) => (c[0] as { eventType: string }).eventType,
     );
-    expect(auditEmits).toBeDefined();
-    // We can't easily inspect via deps alone — instead confirm via
-    // the rowsStateChanged + zero errorRows assertions above (the
-    // savepoint committed, so the audit emit succeeded).
+    expect(emittedEventTypes).toContain('csv_import_row_state_changed');
+    expect(emittedEventTypes).not.toContain('quota_credit_back_refund');
+    expect(
+      emittedEventTypes.filter((t) => t.startsWith('quota_')),
+    ).toHaveLength(0);
+    // Plus the match-resolution audit fires (member_contact in the
+    // mock); that's transitive coverage, not the focus of this case.
   });
 });

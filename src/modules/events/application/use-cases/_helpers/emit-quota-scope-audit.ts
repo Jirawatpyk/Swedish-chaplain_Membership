@@ -34,6 +34,7 @@ import type { EventId, RegistrationId } from '../../../domain/branded-types';
 import type { ActorType, AuditEmitError, F6AuditPort } from '../../ports/audit-port';
 import type { TenantId } from '@/modules/members';
 import { auditEmitErrorMessage } from './audit-error-message';
+import { safeAuditEmit } from './safe-audit-emit';
 
 export type QuotaScopeAction = 'decremented' | 'over_quota' | 'credit_back';
 
@@ -108,7 +109,7 @@ async function emitDecremented(
 ) {
   if (p.scope === 'partnership') {
     // CRIT-2 invariant preserved: `before = allotmentAfter + 1`.
-    return audit.emit({
+    return safeAuditEmit(audit, {
       ...baseAudit,
       eventType: 'quota_partnership_decremented',
       summary: `partnership decremented via toggle: registration ${p.registrationId} re-flagged after event toggle`,
@@ -122,7 +123,7 @@ async function emitDecremented(
       },
     });
   }
-  return audit.emit({
+  return safeAuditEmit(audit, {
     ...baseAudit,
     eventType: 'quota_cultural_decremented',
     summary: `cultural decremented via toggle: registration ${p.registrationId}`,
@@ -143,7 +144,7 @@ async function emitOverQuota(
   baseAudit: BaseAuditEnvelope,
   p: EmitQuotaScopeAuditParams,
 ) {
-  return audit.emit({
+  return safeAuditEmit(audit, {
     ...baseAudit,
     eventType: 'quota_over_quota_warning',
     summary: `${p.scope} over-quota via toggle: registration ${p.registrationId}`,
@@ -163,7 +164,7 @@ async function emitCreditBack(
   baseAudit: BaseAuditEnvelope,
   p: EmitQuotaScopeAuditParams,
 ) {
-  return audit.emit({
+  return safeAuditEmit(audit, {
     ...baseAudit,
     eventType: 'quota_credit_back_archive',
     summary: `${p.scope} credit-back via toggle OFF: registration ${p.registrationId}`,

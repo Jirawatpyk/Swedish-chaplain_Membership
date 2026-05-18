@@ -46,6 +46,7 @@
  * `src/lib/events-admin-deps.ts`.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import type { TenantId } from '@/modules/members';
 import type {
   EventId,
@@ -198,7 +199,7 @@ export async function eraseAttendeePii(
 
   // (3) Emit `pii_erasure_requested` audit FIRST — request is durably
   // recorded even if the subsequent delete somehow throws.
-  const requestedEmit = await deps.audit.emit({
+  const requestedEmit = await safeAuditEmit(deps.audit, {
     eventType: 'pii_erasure_requested',
     tenantId: input.tenantId,
     actorType: 'admin',
@@ -239,7 +240,7 @@ export async function eraseAttendeePii(
     }
 
     if (wasPartnership) {
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_credit_back_archive',
         tenantId: input.tenantId,
         actorType: 'admin',
@@ -261,7 +262,7 @@ export async function eraseAttendeePii(
     }
 
     if (wasCultural) {
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_credit_back_archive',
         tenantId: input.tenantId,
         actorType: 'admin',
@@ -309,7 +310,7 @@ export async function eraseAttendeePii(
     0,
     Math.round((Date.now() - requestStartedAt) / 1000),
   );
-  const completedEmit = await deps.audit.emit({
+  const completedEmit = await safeAuditEmit(deps.audit, {
     eventType: 'pii_erasure_completed',
     tenantId: input.tenantId,
     actorType: 'admin',

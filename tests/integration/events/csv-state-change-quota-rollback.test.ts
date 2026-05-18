@@ -768,4 +768,98 @@ describe('F6.1 R2-1 — state-change quota-debit savepoint atomicity (live Neon)
       ).toBe(creditBackBefore + 1);
     },
   );
+
+  it(
+    'R4-T3 — cultural-scope fault-injection: audit raw-throw rolls back atomically',
+    { timeout: 120_000 },
+    async () => {
+      // R4-T3 (2026-05-18 /speckit-review Round 4) — mirrors R3-T1
+      // (partnership-scope fault-injection) but on the cultural debit
+      // path. Defends against a future regression that breaks ONLY
+      // the cultural emit branch (e.g., a typo `culturalPerYear` →
+      // `culturalPerEvent` in the math, or scope label flip). R3-T7
+      // happy-path alone wouldn't catch a cultural-only regression
+      // because the test setup mirrors the partnership scope.
+      const seed = await seedCulturalEventAndMember();
+      const selectedEvent = {
+        eventId: seed.eventId,
+        externalId: seed.externalId,
+        name: 'R4-T3 cultural fault-injection',
+        startDate: new Date('2026-06-05T03:00:00Z'),
+        category: null,
+      };
+
+      // 1) Seed Attending row — payment_status=paid, counted_cultural=true.
+      const r1 = await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes: buildCsv([
+          buildRow(
+            'Cleo',
+            'Attending',
+            seed.attendeeEmail,
+            seed.externalAttendeeId,
+          ),
+        ]),
+        selectedEvent,
+        originalFilename: 'r4-t3-seed.csv',
+      });
+      expect(r1.kind).toBe('completed');
+      const before = await fetchSoleRegistration(seed.eventId);
+      expect(before[0]?.paymentStatus).toBe('paid');
+      expect(before[0]?.countedAgainstCulturalQuota).toBe(true);
+
+      const auditBefore = await fetchAuditTypesForEvent();
+      const stateChangedBefore = auditBefore.filter(
+        (t) => t === 'csv_import_row_state_changed',
+      ).length;
+      const creditBackBefore = auditBefore.filter(
+        (t) => t === 'quota_credit_back_refund',
+      ).length;
+
+      // 2) Inject audit-emit raw-throw on `quota_credit_back_refund`
+      // (the cultural credit-back fires this exact eventType).
+      vi.stubEnv('F6_TEST_AUDIT_EMIT_RAW_THROW', 'quota_credit_back_refund');
+
+      const r2 = await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes: buildCsv([
+          buildRow(
+            'Cleo',
+            'Pending',
+            seed.attendeeEmail,
+            seed.externalAttendeeId,
+          ),
+        ]),
+        selectedEvent,
+        originalFilename: 'r4-t3-fault.csv',
+        forceProceed: true,
+      });
+
+      expect(r2.kind).toBe('completed');
+      if (r2.kind !== 'completed') return;
+      // Savepoint rolled back — state-change flag did NOT increment.
+      expect(r2.summary.rowsStateChanged).toBe(0);
+      expect(r2.summary.rowsFailed).toBeGreaterThanOrEqual(1);
+
+      // Cultural quota flag UNCHANGED (still counted=true).
+      const after = await fetchSoleRegistration(seed.eventId);
+      expect(after).toHaveLength(1);
+      expect(after[0]?.paymentStatus).toBe('paid');
+      expect(after[0]?.countedAgainstCulturalQuota).toBe(true);
+
+      // Critically — NO new audit rows for either side of the pair.
+      // Pre-R3-C1, only the credit-back would be missing but the
+      // state-changed audit would have committed in-savepoint (which
+      // also rolls back). Post-R3-C1, BOTH rows are absent.
+      const auditAfter = await fetchAuditTypesForEvent();
+      expect(
+        auditAfter.filter((t) => t === 'csv_import_row_state_changed').length,
+      ).toBe(stateChangedBefore);
+      expect(
+        auditAfter.filter((t) => t === 'quota_credit_back_refund').length,
+      ).toBe(creditBackBefore);
+    },
+  );
 });

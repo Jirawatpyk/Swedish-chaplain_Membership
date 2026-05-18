@@ -72,6 +72,7 @@ import {
   wrapLockFailure,
 } from './_helpers/error-wrappers';
 import { quotaAccountingErrorMessage } from './_helpers/repo-error-message';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 
 export interface ApplyQuotaEffectInput {
   readonly tenantId: TenantId;
@@ -265,7 +266,7 @@ export async function applyQuotaEffect(
       const before =
         allotments.partnershipPerEvent - consumed.partnershipConsumedForEvent;
       const after = before - 1;
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_partnership_decremented',
         tenantId: input.tenantId,
         actorType: input.actorType,
@@ -291,7 +292,7 @@ export async function applyQuotaEffect(
       }
       emittedAuditEventTypes.push('quota_partnership_decremented');
     } else {
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_over_quota_warning',
         tenantId: input.tenantId,
         actorType: input.actorType,
@@ -319,7 +320,7 @@ export async function applyQuotaEffect(
       const before =
         allotments.culturalPerYear - consumed.culturalConsumedForYear;
       const after = before - 1;
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_cultural_decremented',
         tenantId: input.tenantId,
         actorType: input.actorType,
@@ -343,7 +344,7 @@ export async function applyQuotaEffect(
       }
       emittedAuditEventTypes.push('quota_cultural_decremented');
     } else {
-      const r = await deps.audit.emit({
+      const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_over_quota_warning',
         tenantId: input.tenantId,
         actorType: input.actorType,

@@ -182,7 +182,13 @@ export default async function AdminEventDetailPage({
   if (isPaymentStatus(paymentStatusRaw)) {
     paymentStatusFilter = paymentStatusRaw;
   } else if (paymentStatusRaw !== undefined && paymentStatusRaw !== '') {
-    logger.debug(
+    // R4-S6 (2026-05-18 /speckit-review Round 4) — logger.debug →
+    // logger.info because Vercel production log threshold is `info`+;
+    // debug-level lines are invisible to SRE. The forensic trail
+    // matters when admins paste/bookmark bad URLs at scale. The
+    // event is bounded-cardinality (one entry per hand-typed
+    // invalid URL).
+    logger.info(
       {
         event: 'f6_admin_event_detail_payment_status_filter_dropped',
         eventId,

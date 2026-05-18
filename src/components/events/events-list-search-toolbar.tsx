@@ -3,7 +3,8 @@
  *
  * Mirrors the `<Input type="search">` + Escape/X-clear pattern from
  * the per-event attendees table at `src/components/events/attendee-table.tsx`
- * lines 215-284. URL-driven server filter: form submit pushes `?q=…`,
+ * (search for `handleSearchKeyDown` and the onChange empty-string
+ * clear branch). URL-driven server filter: form submit pushes `?q=…`,
  * the native X clear or Escape key strips `q` + `page` inline so the
  * server table re-renders without an explicit submit.
  *

@@ -35,11 +35,12 @@ import { runInTenant, type Database, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
-import type {
-  F6AuditPort,
-  F6AuditEntry,
-  F6AuditEventType,
-  AuditEmitError,
+import {
+  F6_AUDIT_EVENT_TYPES,
+  type F6AuditPort,
+  type F6AuditEntry,
+  type F6AuditEventType,
+  type AuditEmitError,
 } from '../application/ports/audit-port';
 import type { AuditEventId } from '@/modules/auth';
 import type { TenantId } from '@/modules/members';
@@ -453,15 +454,34 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
       // When set, RAW-throws (bypasses the try/catch below) so
       // `emitOrThrow`'s R3-C1 wrap catches the plain Error and
       // converts to `TxStageError('audit_emit')`. Guarded by
-      // `NODE_ENV==='test'` so production deploys short-circuit
-      // (precedent: D1/D2 fault-injection at import-csv.ts:1080-1095).
+      // `NODE_ENV==='test'` so production deploys short-circuit.
+      // Precedent: D1/D2 fault-injection guards in `import-csv.ts`
+      // (search for `F6_TEST_FAIL_AFTER_ORPHAN_DELETE`).
       if (
         process.env.NODE_ENV === 'test' &&
-        process.env.F6_TEST_AUDIT_EMIT_RAW_THROW === entry.eventType
+        process.env.F6_TEST_AUDIT_EMIT_RAW_THROW !== undefined
       ) {
-        throw new Error(
-          `TEST-INJECTED — audit.emit raw-throw for eventType=${entry.eventType} (R3-T1)`,
-        );
+        const seamValue = process.env.F6_TEST_AUDIT_EMIT_RAW_THROW;
+        // R4-S1 (2026-05-18 /speckit-review Round 4) — validate the
+        // env-flag value against the canonical F6 audit-event type
+        // tuple. Pre-R4-S1, a typo (e.g. setting the env to
+        // `'quota_credit_back_refund'` vs `'quota_credit_back_refund'`
+        // with a non-printing char) would silently match nothing and
+        // the test would "pass" without exercising the fault path —
+        // a false-negative regression net. Now: typos fail loud at
+        // the seam.
+        if (
+          !(F6_AUDIT_EVENT_TYPES as readonly string[]).includes(seamValue)
+        ) {
+          throw new Error(
+            `F6_TEST_AUDIT_EMIT_RAW_THROW='${seamValue}' is not a valid F6AuditEventType`,
+          );
+        }
+        if (seamValue === entry.eventType) {
+          throw new Error(
+            `TEST-INJECTED — audit.emit raw-throw for eventType=${entry.eventType} (R3-T1)`,
+          );
+        }
       }
       try {
         const id = await insertAuditRow(executor, entry);
@@ -472,6 +492,13 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
         // `≤ 2 × currentIteration` phantom increments (each row can
         // emit BOTH partnership + cultural credit-back audits =>
         // 2 counters/row).
+        //
+        // R4-S7 ORDERING INVARIANT: `emitMatchingQuotaMetric` MUST
+        // stay AFTER `insertAuditRow` (inside this try block). Moving
+        // it before the try would let the R3-T1 raw-throw seam fire
+        // AFTER the metric increment, breaking the R3-T8 "no metric
+        // increment on rolled-back row" contract. Future maintainers:
+        // do not reorder.
         emitMatchingQuotaMetric(entry);
         return ok(id as AuditEventId);
       } catch (e) {

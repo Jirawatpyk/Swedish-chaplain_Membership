@@ -25,6 +25,7 @@
  * via `runInTenant`-bound repo (Constitution Principle III).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import { logger } from '@/lib/logger';
 import type {
   TenantWebhookConfigRepository,
@@ -100,7 +101,7 @@ export async function forceExpireGraceSecret(
     );
   }
 
-  const auditResult = await deps.audit.emit({
+  const auditResult = await safeAuditEmit(deps.audit, {
     eventType: 'webhook_secret_force_expired',
     tenantId: input.tenantId,
     actorType: input.actorUserId ? 'admin' : 'system',

@@ -40,6 +40,7 @@ import type {
 } from '../ports/audit-port';
 import type { Result } from '@/lib/result';
 import { ok, err } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 
 // ---------------------------------------------------------------------------
 // Input + Output + Outcome
@@ -183,7 +184,7 @@ export async function createEvent(
       // NOT pollute the audit trail. Admin sees `already_exists` in
       // the UI; that surface alone is sufficient.
       if (upsert.value.eventCreated) {
-        const auditResult = await ports.audit.emit({
+        const auditResult = await safeAuditEmit(ports.audit, {
           eventType: 'event_created',
           tenantId: input.tenantId,
           actorType: 'admin',

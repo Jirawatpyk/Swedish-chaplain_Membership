@@ -28,6 +28,7 @@
  * contract.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import { logger } from '@/lib/logger';
 import type {
   TenantWebhookConfigRepository,
@@ -113,7 +114,7 @@ export async function rotateWebhookSecret(
     input.now.getTime() + GRACE_WINDOW_MS,
   ).toISOString();
 
-  const auditResult = await deps.audit.emit({
+  const auditResult = await safeAuditEmit(deps.audit, {
     eventType: 'webhook_secret_rotated',
     tenantId: input.tenantId,
     actorType: 'admin',

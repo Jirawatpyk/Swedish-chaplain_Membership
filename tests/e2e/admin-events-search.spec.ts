@@ -103,4 +103,56 @@ test.describe('F6.1 events search toolbar — R3-T2 + R3-T3 @workers=1', () => {
     expect(text).toBeTruthy();
     expect((text ?? '').trim().length).toBeGreaterThan(0);
   });
+
+  test('R4-T2 — Clear filters click returns focus to search input (WCAG 2.4.3)', async ({
+    page,
+  }) => {
+    // R3-F5 added `queueMicrotask(() => searchInputRef.current?.focus())`
+    // inside the Clear filters callback. This e2e verifies the focus
+    // landing target end-to-end — keyboard users need predictable
+    // focus return after the empty-state container unmounts.
+    //
+    // Strategy: load an event-detail page with a guaranteed-empty
+    // filter (`?q=__r4_t2_nomatch_marker__`), find the Clear filters
+    // button in the empty-state, click it, then assert
+    // `document.activeElement` matches the search input.
+    //
+    // This test depends on a SEEDED event being present in the test
+    // tenant. Skip if no event id is available in the env.
+    const eventId = process.env.E2E_ADMIN_EVENT_ID;
+    test.skip(
+      !eventId,
+      'Set E2E_ADMIN_EVENT_ID to a seeded event UUID to run R4-T2 focus-return e2e',
+    );
+    await page.goto(
+      `/admin/events/${eventId}?q=__r4_t2_nomatch_marker__`,
+    );
+    await page.waitForLoadState('domcontentloaded');
+
+    // Empty-state should render with a Clear filters button.
+    const clearButton = page.getByRole('button', {
+      name: /clear filters/i,
+    });
+    await expect(clearButton).toBeVisible();
+
+    // Capture the search input. The attendee-table search input has
+    // aria-label `t('admin.events.detail.attendees.searchLabel')`
+    // which renders to "Search attendees" in EN.
+    const searchInput = page.getByRole('searchbox', {
+      name: /search attendees/i,
+    });
+    await expect(searchInput).toBeVisible();
+
+    // Click Clear filters + wait for the URL transition.
+    await clearButton.click();
+    await expect(page).toHaveURL(
+      new RegExp(`/admin/events/${eventId}(?:\\?|$)`),
+    );
+
+    // Focus must have returned to the search input. queueMicrotask
+    // schedules the focus after React's commit; Playwright's
+    // `expect.toBeFocused()` polls until the assertion passes or
+    // times out.
+    await expect(searchInput).toBeFocused();
+  });
 });

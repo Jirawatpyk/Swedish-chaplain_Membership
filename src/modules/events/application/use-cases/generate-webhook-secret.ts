@@ -26,6 +26,7 @@
  * (Constitution Principle II testability).
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import { logger } from '@/lib/logger';
 import type {
   TenantWebhookConfigRepository,
@@ -101,7 +102,7 @@ export async function generateWebhookSecret(
     return insertResult;
   }
 
-  const auditResult = await deps.audit.emit({
+  const auditResult = await safeAuditEmit(deps.audit, {
     eventType: 'webhook_secret_generated',
     tenantId: input.tenantId,
     actorType: 'admin',

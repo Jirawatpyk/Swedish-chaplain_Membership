@@ -28,6 +28,7 @@
  * Pure Application — no framework imports (Constitution Principle III).
  */
 import type { Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import { ok } from '@/lib/result';
 import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
@@ -138,7 +139,7 @@ export async function generateErrorCsvSignedUrl(
 
     // Strict-audit invariant — emit BEFORE returning the URL.
     const downloadedAt = now();
-    const auditResult = await deps.audit.emit({
+    const auditResult = await safeAuditEmit(deps.audit, {
       eventType: 'csv_import_error_csv_downloaded',
       tenantId: input.tenantId,
       actorType: 'admin',
@@ -212,7 +213,7 @@ export async function generateErrorCsvSignedUrl(
     // Constitution Principle I clause 4 — critical-severity probe event.
     // Fail-open on emit (logger captures); 404 is returned regardless.
     const probedAt = now();
-    const probeAudit = await deps.audit.emit({
+    const probeAudit = await safeAuditEmit(deps.audit, {
       eventType: 'csv_import_cross_tenant_probe',
       tenantId: input.tenantId,
       actorType: 'admin',

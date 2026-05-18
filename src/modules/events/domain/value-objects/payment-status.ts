@@ -43,16 +43,29 @@ export function isPaymentStatus(value: unknown): value is PaymentStatus {
 }
 
 /**
- * R2-3 (2026-05-18 /speckit-review Round 2) — executable companion to
- * the "Quota counting rule" documented in the module JSDoc above.
- * Single source of truth for the F6.1 Option B+ rule that only `paid`
- * and `free` contribute to partnership / cultural quota; all other
- * statuses are quota-neutral. Used by both the fresh-insert pipeline
- * (`applyQuotaEffect`) and the state-change probe (`maybeApplyStateChange`
- * in `import-csv.ts`) so the rule cannot drift between paths.
+ * R2-3 + R4-I6 (2026-05-18 /speckit-review Round 4) — executable
+ * companion to the "Quota counting rule" documented in the module
+ * JSDoc above. Single source of truth for the F6.1 Option B+ rule
+ * that only `paid` and `free` contribute to partnership / cultural
+ * quota; all other statuses are quota-neutral.
+ *
+ * The tuple `QUOTA_COUNTED_STATUSES` carries `satisfies readonly
+ * PaymentStatus[]` so every member is compile-time verified as a
+ * valid `PaymentStatus` — the runtime check AND the type predicate
+ * AND the named `QuotaCountedStatus` subset cannot drift.
+ *
+ * Used by both the fresh-insert pipeline (`applyQuotaEffect`) and
+ * the state-change probe (`maybeApplyStateChange` in `import-csv.ts`).
  */
+export const QUOTA_COUNTED_STATUSES = [
+  'paid',
+  'free',
+] as const satisfies readonly PaymentStatus[];
+
+export type QuotaCountedStatus = (typeof QUOTA_COUNTED_STATUSES)[number];
+
 export function isQuotaCountedStatus(
   s: PaymentStatus,
-): s is 'paid' | 'free' {
-  return s === 'paid' || s === 'free';
+): s is QuotaCountedStatus {
+  return (QUOTA_COUNTED_STATUSES as readonly PaymentStatus[]).includes(s);
 }

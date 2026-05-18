@@ -2498,7 +2498,9 @@
           "filterByPaymentStatusLabel": "Filter by payment status",
           "allPaymentStatuses": "All statuses",
           "empty": "We couldn't find any attendees matching these filters. Try clearing one or browse the full list.",
+          "emptyHeading": "No matches found",
           "clearFilters": "Clear filters",
+          "filtersCleared": "Filters cleared",
           "paymentStatusFilterDropped": "The payment status filter wasn't recognised — showing all statuses.",
           "columns": {
             "attendee": "Attendee",

@@ -42,7 +42,10 @@
 import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { F6_FISCAL_YEAR_START_MONTH } from './fiscal-year-constants';
-import { assertExhaustive } from './assert-exhaustive';
+import {
+  assertExhaustive,
+  assertExhaustiveThrowing,
+} from './assert-exhaustive';
 import type { TenantId, MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import {
@@ -154,7 +157,7 @@ function makeSyntheticCause(errorClass: string, detail: string): Error {
  * crash a naive `JSON.stringify`) and caps the output so a future
  * adversarial throw can't bloat the audit row.
  */
-function safeStringify(value: unknown): string {
+export function safeStringify(value: unknown): string {
   try {
     const seen = new WeakSet<object>();
     const json = JSON.stringify(value, (_k, v) => {
@@ -234,8 +237,15 @@ export async function emitOrThrow(
     // the underlying exception class (PostgresError, AbortError,
     // etc.). Non-Error throws get a synthetic Error wrapper so
     // `cause.name` / `cause.message` remain pino-serialisable.
+    // R4-I3 — use `safeStringify` (defined at line 156 in this file)
+    // instead of `String(raw)` so non-Error throws preserve diagnostic
+    // content (e.g. `{kind:'POOL_EXHAUSTED',detail:'…'}` would otherwise
+    // collapse to `"[object Object]"`). Mirrors the FR-018 refund
+    // branch's cause-thread shape.
     const causeErr =
-      raw instanceof Error ? raw : new Error(`NonError(${String(raw)})`);
+      raw instanceof Error
+        ? raw
+        : new Error(`NonError(${safeStringify(raw)})`);
     throw new TxStageError(
       'audit_emit',
       `audit emit threw: ${causeErr.message}`,
@@ -478,18 +488,18 @@ async function emitMatchResolutionAudit(
         },
       });
       return;
-    default: {
-      // R3-F2 — exhaustiveness assertion via shared helper. If a future
-      // MatchResolutionView variant is added, the `resolution` here
-      // is not `never` and the helper fails the build, forcing the
-      // new case to emit its dedicated audit event.
-      assertExhaustive(resolution);
-      throw new Error(
-        `F6 invariant: emitMatchResolutionAudit unhandled resolution.type ${
-          (resolution as { type: string }).type
-        } (registrationId=${registrationId})`,
+    default:
+      // R4-I5 (2026-05-18 /speckit-review Round 4) — switched from the
+      // 2-line `assertExhaustive + throw new Error(...)` shape to the
+      // single-line `assertExhaustiveThrowing(value, context)` helper.
+      // Throws `never` so TS narrows the surrounding function's
+      // control flow. The context arg threads `registrationId` so
+      // SRE log forensics see the originating call site. Behavior-
+      // identical to the pre-R4-I5 shape (both throw on unreachable).
+      assertExhaustiveThrowing(
+        resolution,
+        `emitMatchResolutionAudit registrationId=${registrationId}`,
       );
-    }
   }
 }
 

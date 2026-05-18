@@ -22,6 +22,7 @@
  * caller's `runInTenant` so RLS enforces tenant scope at DB layer.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { safeAuditEmit } from './_helpers/safe-audit-emit';
 import type { TenantId } from '@/modules/members';
 import type { EventRegistrationAggregate } from '../../domain/event-registration';
 import type { AttendeeEmail } from '../../domain/branded-types';
@@ -152,7 +153,7 @@ export async function pseudonymiseStaleNonMemberPii(
       continue;
     }
 
-    const emit = await deps.audit.emit({
+    const emit = await safeAuditEmit(deps.audit, {
       eventType: 'pii_pseudonymised',
       tenantId: input.tenantId,
       actorType: 'cron',
@@ -176,7 +177,7 @@ export async function pseudonymiseStaleNonMemberPii(
   // (3) Macro aggregate audit
   const durationMs = Date.now() - startedAt;
   const passDate = input.occurredAt.toISOString().slice(0, 10); // YYYY-MM-DD
-  const macroEmit = await deps.audit.emit({
+  const macroEmit = await safeAuditEmit(deps.audit, {
     eventType: 'pii_pseudonymisation_sweep_run',
     tenantId: input.tenantId,
     actorType: 'cron',

@@ -47,6 +47,7 @@ import {
 } from '../../domain/eventcreate-csv-format';
 import {
   TxStageError,
+  safeStringify,
   type FailureStage,
 } from './_helpers/process-attendee-in-tx';
 import type {
@@ -638,13 +639,22 @@ async function maybeApplyStateChange(
         },
       });
     } catch (rawThrow) {
-      // H8.1 — thread the raw exception via Error.cause so SRE
-      // forensics see the underlying error class (PostgresError,
+      // H8.1 + R4-I2 — thread the raw exception via Error.cause so
+      // SRE forensics see the underlying error class (PostgresError,
       // AbortError, etc.) in addition to the message + failureStage.
+      // R4-I2 (2026-05-18) — symmetric with `emitOrThrow` raw-throw
+      // wrap: non-Error throws get a synthetic Error via `safeStringify`
+      // so plain-object throws (`{kind:'POOL_EXHAUSTED',...}`)
+      // preserve diagnostic content instead of collapsing to
+      // `[object Object]`.
+      const causeErr =
+        rawThrow instanceof Error
+          ? rawThrow
+          : new Error(`NonError(${safeStringify(rawThrow)})`);
       throw new TxStageError(
         'audit_emit',
-        `csv_import_row_state_changed audit emit threw: ${rawThrow instanceof Error ? rawThrow.message : String(rawThrow)}`,
-        rawThrow instanceof Error ? { cause: rawThrow } : undefined,
+        `csv_import_row_state_changed audit emit threw: ${causeErr.message}`,
+        { cause: causeErr },
       );
     }
     if (!auditResult.ok) {

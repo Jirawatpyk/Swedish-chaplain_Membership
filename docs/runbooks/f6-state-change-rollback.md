@@ -13,7 +13,7 @@ The F6.1 CSV state-change probe (`maybeApplyStateChange` in `src/modules/events/
 - **NO new audit row** was written for this state change attempt (`csv_import_row_state_changed` AND `quota_credit_back_refund` / `quota_*_decremented` are all absent for this row's attempt).
 - The CSV summary reported the row as `row_failed` with `failureStage='quota_decrement'`.
 
-The strict-correctness invariant from `import-csv.ts:660-667` is preserved: *"either the row flips AND the quota reflects the new state, or neither."*
+The strict-correctness invariant from the `maybeApplyStateChange` block-comment in `import-csv.ts` (search for `Strict-correctness invariant`) is preserved: *"either the row flips AND the quota reflects the new state, or neither."*
 
 Background context: R2-1 (/speckit-review Round 2, 2026-05-18) replaced a silent-swallow path with this re-throw. Before R2-1, this same failure class committed the payment_status flip with stale quota flags + no audit row — a Reliability/Privacy/Compliance regression that this counter is now designed to catch.
 
@@ -98,6 +98,19 @@ vercel logs <deployment-url> --since=30m \
 ```
 
 Each line is one rolled-back state-change attempt. The audit-log row for `csv_import_row_state_changed` is INTENTIONALLY ABSENT (the rollback was correct). The forensic line above IS the trail — log retention is 30 days minimum on Vercel runtime logs.
+
+## Triple-fallback unobservability (rare)
+
+If ALL THREE of the following fail simultaneously:
+1. Primary `audit_log` INSERT (DB unreachable / RLS error / quota)
+2. FR-037 dual-write `pino.fatal(...)` to stdout (pino crash, EPIPE)
+3. Last-ditch `process.stderr.write(...)` (stderr handle closed)
+
+…then there is NO in-system trace of the rollback. This is a known by-design limit per `pino-audit-port.ts` (search for "LAST-DITCH"). It requires simultaneous Postgres outage + Vercel Fluid Compute stderr-pipe disconnect — extremely rare.
+
+**Operator detection**: alert on the ABSENCE of expected verb-level audits (e.g. `webhook_receipt_verified` for the upstream ingest run that triggered this state-change). The reconciliation cron (see `f6-idempotency-sweep.md`) catches drift between expected and actual audit rows.
+
+**Operator response**: escalate as P1 to engineering. Pull Neon dashboard + Vercel runtime logs + any Sentry breadcrumbs. The cause is upstream infra failure, not F6.1 code logic.
 
 ## Escalation criteria
 
