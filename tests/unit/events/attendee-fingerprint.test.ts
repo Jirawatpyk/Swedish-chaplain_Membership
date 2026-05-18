@@ -30,19 +30,22 @@ function makeRow(
   opts: { isAttending?: boolean } = {},
 ): EventCreateAttendeeRow {
   const attending = opts.isAttending ?? true;
+  // Option B+ (2026-05-18) — `EventCreateAttendeeRow` now carries a
+  // discriminated `status` + derived `paymentStatus` instead of the
+  // old `isAttending`/`isCancellation`/`inferredPaymentStatus` triple.
+  // `computeAttendeeFingerprint` filters by `status === 'Attending'`,
+  // so non-attending rows here are Waitlisted (still persisted in
+  // production; fingerprint test stays focused on FR-019a "Attending
+  // emails only" semantics).
   return {
-    isAttending: attending,
-    // T033 (F6.1 Phase 4 US2) — Cancellation flag is mutually exclusive
-    // with `isAttending` per the adapter contract. Fingerprint tests
-    // use `Skipped` for non-attending (not `Cancelled`) so this stays
-    // false even when isAttending=false.
-    isCancellation: false,
+    status: attending ? 'Attending' : 'Waitlisted',
+    paymentStatus: attending ? 'paid' : 'waitlisted',
+    intendedStateChange: false,
     attendeeEmail: email,
     attendeeName: 'Test',
     attendeeCompany: undefined,
     attendeeExternalId: undefined,
     ticketType: undefined,
-    inferredPaymentStatus: 'paid',
     pdpaConsentAcknowledged: null,
     rawStatus: attending ? 'Attending' : 'Waitlisted',
   };

@@ -597,42 +597,35 @@ async function* iterateEventCreateRows(
 
     const translated = translateEventCreateRow(cells);
 
-    // F6.1 Phase 4 US2 (T033) — FR-007 Status filter is split into 3 paths:
-    //   1. Attending      → ok:true with the row's inferred payment_status
-    //   2. Cancellation   → ok:true with payment_status='refunded' +
-    //                       intendedStateChange=true so the use-case
-    //                       bypasses the idempotency receipt and routes
-    //                       the row through `processAttendeeInTx`'s FR-018
-    //                       refund branch (flips existing paid → refunded
-    //                       + emits quota_credit_back_refund when matched).
-    //   3. Skipped        → ok:false reason="Skipped: …" — flows into
-    //                       `rowsSkipped` counter; never reaches the
-    //                       per-row tx pipeline.
-    if (!translated.isAttending && !translated.isCancellation) {
+    // F6.1 Option B+ (2026-05-18) — FR-007 mirrors EventCreate Status
+    // directly into the persisted payment_status. Only `Skipped` rows
+    // (unrecognised Status: blank, typo, custom label) yield `ok:false`
+    // and flow into `rowsSkipped`. Every other discriminator (Attending,
+    // Pending, Cancellation, Waitlisted, NoShow) proceeds as `ok:true`:
+    //
+    //   - Attending    → payment_status='paid'      (counts toward quota)
+    //   - Pending      → payment_status='pending'   (does NOT count)
+    //   - Cancellation → payment_status='refunded' + intendedStateChange=true
+    //                    (use-case bypasses receipt + routes through FR-018
+    //                    refund branch in processAttendeeInTx)
+    //   - Waitlisted   → payment_status='waitlisted' (does NOT count)
+    //   - NoShow       → payment_status='no_show'   (does NOT count)
+    //
+    // Quota gating (`paid` + `free` only) lives in applyQuotaEffect, NOT
+    // here — the importer's job is to mirror state faithfully.
+    if (translated.status === 'Skipped') {
       yield {
         ok: false,
         rowNumber: lineNumber,
-        reason: `Skipped: Status=${translated.rawStatus} (not a recognized attending status)`,
+        reason: `Skipped: Status=${translated.rawStatus} (not a recognized status)`,
         rawExcerpt: line.slice(0, 200),
       };
       continue;
     }
 
-    // Build CsvRow-compatible raw with eventContext substituted in for
-    // event_* columns. payment_status mapped from the T010 inference
-    // ('paid' | 'pending' | 'unknown'); the schema only allows
-    // ['paid','pending','refunded','free'] — `unknown` maps to 'paid'
-    // default (Phase 7 schema default) to keep the row valid; a later
-    // pass can re-classify via metadata if needed.
-    //
-    // Cancellation rows OVERRIDE the inferred payment_status to
-    // 'refunded' so the FR-018 refund branch fires deterministically
-    // regardless of what Notes said before cancellation.
-    const paymentStatus = translated.isCancellation
-      ? 'refunded'
-      : translated.inferredPaymentStatus === 'unknown'
-        ? undefined
-        : translated.inferredPaymentStatus;
+    // translated.paymentStatus is non-null for all non-Skipped discriminators;
+    // the early return above narrows the type for TS.
+    const paymentStatus = translated.paymentStatus;
 
     const raw: Record<string, unknown> = {
       event_external_id: eventContext.externalId,
@@ -671,8 +664,11 @@ async function* iterateEventCreateRows(
       rowHash: computeRowHash(parsed.data),
       pdpaConsentAcknowledged: translated.pdpaConsentAcknowledged,
       // F6.1 Phase 4 US2 (T033) — Cancellation rows flag for receipt
-      // bypass + FR-018 routing in the use-case.
-      intendedStateChange: translated.isCancellation,
+      // bypass + FR-018 routing in the use-case. Option B+ (2026-05-18)
+      // renamed `translated.isCancellation` → `translated.intendedStateChange`
+      // so the flag has a single home and supports future bypass-class
+      // states without growing more booleans.
+      intendedStateChange: translated.intendedStateChange,
     };
   }
 }

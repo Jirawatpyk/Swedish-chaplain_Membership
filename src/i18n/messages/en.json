@@ -2479,7 +2479,7 @@
           "viewOnEventCreate": "View on EventCreate",
           "opensInNewTab": "(opens in a new tab)",
           "lastUpdatedAt": "Last updated",
-          "lastUpdatedAtTooltip": "Time of the last Zapier delivery for this event.",
+          "lastUpdatedAtTooltip": "Time of the last attendee sync or event update for this row.",
           "actionsLabel": "Event actions"
         },
         "attendees": {

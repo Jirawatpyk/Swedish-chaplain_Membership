@@ -135,59 +135,45 @@ export function stripMailtoPrefix(raw: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Payment-status inference — FR-008 / R5 (closed mapping from Notes)
+// Status filter — FR-007 (mirror EventCreate Status, F6.1 Option B+)
 // ---------------------------------------------------------------------------
 //
-// `Notes` is a free-text field where chamber admins evolved a convention.
-// The closed mapping captures the observed convention without
-// over-engineering free-text parsing. `unknown` is the safe default —
-// downstream F4 invoicing handles `unknown` correctly (admin manually
-// reconciles).
+// Bug-fix 2026-05-18 — original FR-007 dropped every non-Attending /
+// non-Cancelled row into rowsSkipped, silently losing the chamber's
+// pre-event registration list (TSCC's Pending uploads → 17/17 dropped).
+// Option B+ mirrors EventCreate's authoritative `Status` field into the
+// `event_registrations.payment_status` column so F7 broadcasts + F8
+// at-risk scoring see registrations the moment they exist upstream.
+// Re-upload after a host flips Status (Pending → Attending) drives the
+// state-change UPDATE path in maybeApplyStateChange — no per-row admin
+// clicks needed.
 //
-// The product team reviews
-// `eventcreate_csv_adapter_mode_detected_total{format="generic_csv"}`
-// rate spikes as a drift signal — see `docs/runbooks/eventcreate-csv-import.md`.
-
-export type InferredPaymentStatus = 'paid' | 'pending' | 'unknown';
-
-const PAYMENT_NOTES_MAPPING: ReadonlyMap<string, InferredPaymentStatus> =
-  new Map<string, InferredPaymentStatus>([
-    ['paid', 'paid'],
-    ['invoice sent', 'paid'],
-    ['verifying payment', 'pending'],
-    ['pending', 'pending'],
-  ]);
-
-export function inferPaymentStatus(
-  notes: string | null | undefined,
-): InferredPaymentStatus {
-  if (notes === null || notes === undefined) return 'unknown';
-  const trimmed = notes.trim().toLowerCase();
-  if (trimmed.length === 0) return 'unknown';
-  if (trimmed === '-' || trimmed === '–') return 'unknown';
-  return PAYMENT_NOTES_MAPPING.get(trimmed) ?? 'unknown';
-}
-
-// ---------------------------------------------------------------------------
-// Status filter — FR-007 (only `Attending` rows proceed)
-// ---------------------------------------------------------------------------
-//
-// EventCreate emits other Status values (`Cancelled`, `Waitlisted`,
-// `No Show`, `Pending`) — only `Attending` rows are imported as
-// registrations on first pass. Re-uploads with `Status: Attending →
-// Cancelled` trigger the cancellation cascade (US2 — T033, deferred to
-// US5+ session).
+// Notes-based inference was REMOVED: the `Notes` column in TSCC's
+// real-world CSV exports is used for attendee IDs and free-text
+// comments, NOT payment status. inferPaymentStatus + PAYMENT_NOTES_MAPPING
+// produced noise and is gone. `Status` is now the single source of truth.
 
 /**
- * F6.1 Phase 4 US2 (T033) — Cancellation cascade. `Attending` rows
- * proceed normally; `Cancellation` rows pass through with
- * `payment_status='refunded'` so the FR-018 refund branch in
- * `processAttendeeInTx` can flip an existing paid row + emit the
- * credit-back audit; all other statuses (Waitlisted / Pending /
- * No Show / custom) are surfaced as `Skipped` and flow into
- * `rowsSkipped` per FR-007.
+ * EventCreate `Status` discriminator (F6.1 Option B+, 2026-05-18).
+ *
+ *   - `Attending`    → persists with `payment_status='paid'`, COUNTS toward quota
+ *   - `Pending`      → persists with `payment_status='pending'`, does NOT count
+ *   - `Cancellation` → flips an existing paid registration to `'refunded'` via
+ *                      FR-018 credit-back; first-time cancellations land as
+ *                      ghost rows (no-op) flowing into rowsSkipped
+ *   - `Waitlisted`   → persists with `payment_status='waitlisted'`, does NOT count
+ *   - `NoShow`       → persists with `payment_status='no_show'`, does NOT count
+ *                      (admin can still mark No Show seats consumed via toggle)
+ *   - `Skipped`      → unrecognised Status value (blank, typo, custom label)
+ *                      flows into rowsSkipped with `Skipped: Status=...` reason
  */
-export type EventCreateRowStatus = 'Attending' | 'Cancellation' | 'Skipped';
+export type EventCreateRowStatus =
+  | 'Attending'
+  | 'Cancellation'
+  | 'Pending'
+  | 'Waitlisted'
+  | 'NoShow'
+  | 'Skipped';
 
 export function classifyEventCreateStatus(
   rawStatus: string | null | undefined,
@@ -196,7 +182,36 @@ export function classifyEventCreateStatus(
   const trimmed = rawStatus.trim();
   if (trimmed === 'Attending') return 'Attending';
   if (trimmed === 'Cancelled' || trimmed === 'Canceled') return 'Cancellation';
+  if (trimmed === 'Pending') return 'Pending';
+  if (trimmed === 'Waitlisted') return 'Waitlisted';
+  if (trimmed === 'No Show' || trimmed === 'NoShow' || trimmed === 'No-Show') {
+    return 'NoShow';
+  }
   return 'Skipped';
+}
+
+/**
+ * Map an EventCreate Status discriminator to the persisted payment_status.
+ * Pure function — keeps the mapping table central + testable.
+ * `Skipped` returns null because skipped rows never reach the DB.
+ */
+export function statusToPaymentStatus(
+  status: EventCreateRowStatus,
+): 'paid' | 'pending' | 'refunded' | 'waitlisted' | 'no_show' | null {
+  switch (status) {
+    case 'Attending':
+      return 'paid';
+    case 'Pending':
+      return 'pending';
+    case 'Cancellation':
+      return 'refunded';
+    case 'Waitlisted':
+      return 'waitlisted';
+    case 'NoShow':
+      return 'no_show';
+    case 'Skipped':
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -215,16 +230,36 @@ export function classifyEventCreateStatus(
 // it to). The use-case fills these in from the selected event.
 
 export interface EventCreateAttendeeRow {
-  /** True if status was `Attending`; false otherwise (row will be skipped). */
-  readonly isAttending: boolean;
   /**
-   * F6.1 Phase 4 US2 (T033) — true when Status='Cancelled'/'Canceled'.
-   * Mutually exclusive with `isAttending`. The parser surfaces these rows
-   * as `ok:true` with `payment_status='refunded'` + `intendedStateChange=true`
-   * so the use-case bypasses the idempotency receipt + the FR-018 refund
-   * branch in `processAttendeeInTx` flips an existing paid row.
+   * F6.1 Option B+ (2026-05-18) — discriminator for the EventCreate
+   * Status column. Caller branches on this; `Skipped` rows are dropped
+   * before reaching the savepoint pipeline. Replaces the old
+   * `isAttending` + `isCancellation` boolean pair (which couldn't
+   * represent Pending / Waitlisted / NoShow).
    */
-  readonly isCancellation: boolean;
+  readonly status: EventCreateRowStatus;
+  /**
+   * F6.1 Option B+ — payment_status to persist on the registration row.
+   * Derived from `status` via `statusToPaymentStatus`. `null` only when
+   * `status === 'Skipped'`, in which case the row is dropped and never
+   * reaches the DB.
+   */
+  readonly paymentStatus:
+    | 'paid'
+    | 'pending'
+    | 'refunded'
+    | 'waitlisted'
+    | 'no_show'
+    | null;
+  /**
+   * F6.1 Phase 4 US2 (T033) — true when `status === 'Cancellation'`.
+   * Causes the use-case to BYPASS the idempotency receipt and route the
+   * row directly through `processAttendeeInTx`'s FR-018 refund branch
+   * (flips an existing paid row → refunded + credit-back audit). All
+   * other states (including Pending/Waitlisted/NoShow) go through the
+   * normal receipt-then-insert pipeline.
+   */
+  readonly intendedStateChange: boolean;
   /** Lowercased + mailto-stripped + trimmed for idempotency hashing. */
   readonly attendeeEmail: string;
   /** Title-case normalized full name. */
@@ -235,8 +270,6 @@ export interface EventCreateAttendeeRow {
   readonly attendeeExternalId: string | undefined;
   /** Free-text ticket label from `Ticket` column. */
   readonly ticketType: string | undefined;
-  /** Payment status inferred from `Notes` column (R5 closed mapping). */
-  readonly inferredPaymentStatus: InferredPaymentStatus;
   /** PDPA consent classification per FR-009 / Q1. */
   readonly pdpaConsentAcknowledged: PdpaConsentAcknowledged;
   /** Raw `Status` cell — preserved for skipped-row error reporting. */
@@ -247,6 +280,11 @@ export interface EventCreateAttendeeRow {
  * Translate one EventCreate body row (a `{headerName: cellValue}` map) to
  * the F6.1 attendee shape. The header-to-cell map is built by the
  * caller (use-case) from the canonical EventCreate header indexing.
+ *
+ * F6.1 Option B+ change (2026-05-18): `Notes` is no longer parsed for
+ * payment-status inference (TSCC's real-world `Notes` cells contain
+ * attendee IDs and free-text comments, NOT payment state). `Status` is
+ * the single source of truth.
  */
 export function translateEventCreateRow(
   cells: ReadonlyMap<string, string>,
@@ -258,15 +296,15 @@ export function translateEventCreateRow(
   const company = cells.get('Company Name')?.trim();
   const attendeeId = cells.get('Attendee ID')?.trim();
   const ticket = cells.get('Ticket')?.trim();
-  const notes = cells.get('Notes');
   const pdpa = cells.get('Personal Data Protection Consent');
 
   const email = stripMailtoPrefix(emailRaw).trim().toLowerCase();
   const classification = classifyEventCreateStatus(status);
 
   return {
-    isAttending: classification === 'Attending',
-    isCancellation: classification === 'Cancellation',
+    status: classification,
+    paymentStatus: statusToPaymentStatus(classification),
+    intendedStateChange: classification === 'Cancellation',
     attendeeEmail: email,
     attendeeName: normalizeAttendeeName(first, last),
     attendeeCompany: company && company.length > 0 ? company : undefined,
@@ -275,7 +313,6 @@ export function translateEventCreateRow(
         ? attendeeId
         : undefined,
     ticketType: ticket && ticket.length > 0 && ticket !== '–' ? ticket : undefined,
-    inferredPaymentStatus: inferPaymentStatus(notes),
     pdpaConsentAcknowledged: classifyPdpaConsent(pdpa),
     rawStatus: status,
   };
@@ -371,7 +408,7 @@ export function computeAttendeeFingerprint(
   // algorithm — closes Clean Arch Principle III gap where the Application
   // use-case needed the same hash as the EventCreate adapter).
   return computeAttendeeFingerprintFromEmails(
-    rows.filter((r) => r.isAttending).map((r) => r.attendeeEmail),
+    rows.filter((r) => r.status === 'Attending').map((r) => r.attendeeEmail),
   );
 }
 

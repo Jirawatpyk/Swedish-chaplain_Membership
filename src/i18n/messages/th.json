@@ -2479,7 +2479,7 @@
           "viewOnEventCreate": "ดูบน EventCreate",
           "opensInNewTab": "(เปิดในแท็บใหม่)",
           "lastUpdatedAt": "อัปเดตล่าสุด",
-          "lastUpdatedAtTooltip": "เวลาที่ Zapier ส่งข้อมูลเข้ามาล่าสุดสำหรับกิจกรรมนี้",
+          "lastUpdatedAtTooltip": "เวลาที่ซิงค์รายชื่อหรืออัปเดตอีเวนต์ล่าสุด",
           "actionsLabel": "การกระทำของกิจกรรม"
         },
         "attendees": {

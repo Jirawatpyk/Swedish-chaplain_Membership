@@ -170,7 +170,7 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     expect(records.length).toBe(2);
   });
 
-  it('FR-018 — modifying Notes between runs flips payment_status + bumps rowsStateChanged', async () => {
+  it('FR-018 / Option B+ — flipping Status=Pending→Attending across re-uploads bumps rowsStateChanged + updates payment_status', async () => {
     // Seed a separate event so this scenario does not collide with the
     // first test's records.
     const seEventId = randomUUID();
@@ -185,12 +185,18 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
       category: null,
     });
 
-    const buildCsv = (notesValue: string): Uint8Array => {
+    // Option B+ (2026-05-18) — Notes is no longer parsed for payment-status
+    // inference. The chamber's Pending→Attending sync now flows through the
+    // authoritative Status column: a host who verifies payment in EventCreate
+    // flips Status, exports CSV, and re-uploads — `maybeApplyStateChange`
+    // picks up the divergence (`payment_status='pending'` persisted vs
+    // `payment_status='paid'` incoming) and applies the UPDATE.
+    const buildCsv = (statusValue: 'Pending' | 'Attending'): Uint8Array => {
       const header =
         'Basic Info,Status,First Name,Last Name,Email,Phone Number,Phone Number Consent,Registration Date,Added Date,Last Updated Date,Attendee Edited Date,Ticket,Guest Of,Checked In,Attendee ID,Order ID,VIP,Notes,Assigned Table,Tags,Company Name,Registration Category,Personal Data Protection Consent,Last Email Sent,Last Email Sent Date,Unsubscribed';
       const cells = [
         'Workshop',
-        'Attending',
+        statusValue,
         'State',
         'Changer',
         'state.changer@example.test',
@@ -206,7 +212,7 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
         'state-changer-001',
         'ord-sc',
         'No',
-        notesValue,
+        '', // Notes — intentionally empty; Option B+ ignores this column
         '',
         '',
         'Test Co',
@@ -231,11 +237,11 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     };
 
     const beforeMs = Date.now();
-    // 1st upload — Notes='verifying payment' → payment_status='pending'
+    // 1st upload — Status=Pending → payment_status='pending'
     const r1 = await runImportCsv({
       tenantSlug: tenant.ctx.slug,
       actorUserId: actor.userId,
-      bytes: buildCsv('verifying payment'),
+      bytes: buildCsv('Pending'),
       selectedEvent,
       originalFilename: 'state-change-1.csv',
     });
@@ -259,12 +265,12 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     expect(regsAfter1[0]?.paymentStatus).toBe('pending');
 
     // 2nd upload — same canonical row (event_external_id + email +
-    // registered_at unchanged → same rowHash → receipt duplicate),
-    // but Notes='Paid' → inferred payment_status='paid'.
+    // registered_at + attendee_external_id all unchanged → same rowHash
+    // → receipt duplicate), but Status='Attending' → payment_status='paid'.
     const r2 = await runImportCsv({
       tenantSlug: tenant.ctx.slug,
       actorUserId: actor.userId,
-      bytes: buildCsv('Paid'),
+      bytes: buildCsv('Attending'),
       selectedEvent,
       originalFilename: 'state-change-2.csv',
       forceProceed: true,
@@ -293,12 +299,12 @@ describe('T031 — Re-upload idempotency on EventCreate adapter (live Neon)', ()
     expect(regsAfter2).toHaveLength(1);
     expect(regsAfter2[0]?.paymentStatus).toBe('paid');
 
-    // 3rd upload — same Notes='Paid'; should detect no change + count
-    // as plain duplicate (rowsAlreadyImported), NOT state-change.
+    // 3rd upload — same Status='Attending'; should detect no change +
+    // count as plain duplicate (rowsAlreadyImported), NOT state-change.
     const r3 = await runImportCsv({
       tenantSlug: tenant.ctx.slug,
       actorUserId: actor.userId,
-      bytes: buildCsv('Paid'),
+      bytes: buildCsv('Attending'),
       selectedEvent,
       originalFilename: 'state-change-3.csv',
       forceProceed: true,

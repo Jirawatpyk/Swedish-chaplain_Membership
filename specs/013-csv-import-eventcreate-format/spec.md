@@ -135,12 +135,19 @@ As a chamber admin, I want to see a list of my past CSV imports — when each ra
 
 - **FR-005**: System MUST combine EventCreate's separate `First Name` and `Last Name` columns into a single `attendee_name` field with normalized capitalization (e.g., title case, preserving compound names like "ANDERSON-SMITH" semantically); the `Basic Info` column is not used for matching because its capitalization is inconsistent.
 - **FR-006**: System MUST strip the `mailto:` prefix from email values if present, lowercase the local part and domain, and use the cleaned email for both match logic and the registration record.
-- **FR-007**: System MUST process only attendees with `Status = "Attending"` from EventCreate exports; other status values (`Cancelled`, `No Show`, `Pending`, `Waitlisted`, others) MUST be reported in the result summary as "Skipped: Status=<value>" without consuming quota or creating registrations.
-- **FR-008**: System MUST infer per-row payment status from EventCreate's `Notes` column using a closed mapping table:
-  - `"Paid"` or `"invoice sent"` → `paid`
-  - `"verifying payment"` → `pending`
-  - `"Pending"` → `pending`
-  - empty / `–` / unrecognized → `unknown`
+- **FR-007** (revised 2026-05-18 — Option B+): System MUST mirror EventCreate's `Status` column directly into `event_registrations.payment_status` so chamber pre-event workflows (F7 broadcasts, F8 at-risk scoring) can see registrations the moment they exist upstream — not after the host individually flips each to `Attending` (which the user confirms is unreliable). Mapping:
+  - `Attending` → persists with `payment_status='paid'` (COUNTS toward quota per **FR-019**)
+  - `Pending` → persists with `payment_status='pending'` (does NOT count toward quota)
+  - `Cancelled` / `Canceled` → routed via **FR-018** cancellation cascade (`payment_status='refunded'` on existing paid row + quota credit-back)
+  - `Waitlisted` → persists with `payment_status='waitlisted'` (does NOT count toward quota)
+  - `No Show` / `NoShow` / `No-Show` → persists with `payment_status='no_show'` (does NOT count toward quota)
+  - Anything else (blank, typo, custom label) → reported in `rowsSkipped` as `"Skipped: Status=<value> (not a recognized status)"`; no registration row created.
+
+  Re-uploads where Status has flipped (e.g., `Pending → Attending` after the host verifies payment) MUST be detected by the existing receipt-duplicate state-change probe and applied as an UPDATE to `payment_status`, surfaced in `rowsStateChanged`.
+
+- **FR-008** (revised 2026-05-18 — Option B+): The previous Notes-cell `inferPaymentStatus` heuristic is **REMOVED**. EventCreate's `Notes` column in TSCC's real-world exports contains attendee IDs and free-text comments, NOT payment-status indicators (verified against the AGM 2026 and Swedish National Day 2026 fixtures). `Status` is the single source of truth for `payment_status` per FR-007. Adapters MUST NOT parse `Notes` for payment-status inference. The column is still recognised (no "unknown column" warning emitted) but ignored.
+
+- **FR-019** (added 2026-05-18 — Option B+): Quota counting MUST use a strict allowlist on `payment_status`: only rows where `payment_status === 'paid'` OR `payment_status === 'free'` contribute to partnership / cultural quota. All other states (`pending`, `refunded`, `waitlisted`, `no_show`) are quota-neutral. Re-upload with a status flip that promotes a quota-neutral state to `'paid'` (e.g., `pending → paid` via Status change in EventCreate) MUST update both `payment_status` AND the `counted_against_partnership` / `counted_against_cultural_quota` flags consistently in the same transaction.
 - **FR-009**: System MUST classify each row's `Personal Data Protection Consent` value into a boolean at import time and store it as `event_registrations.attendee_pdpa_consent_acknowledged BOOLEAN NULL`. Classification rules: `true` if cell content contains the substring "hereby acknowledge" (case-insensitive); `false` if contains "do not consent" (case-insensitive); `null` if missing / `-` / `–` / unrecognized text. The raw consent text is **NOT** stored — PDPA minimization principle (Article 5(1)(c) GDPR / PDPA Section 24 purpose limitation). A `null` or `false` value does NOT block import; F7 broadcast filter consumes `WHERE attendee_pdpa_consent_acknowledged = true` to determine marketing-eligible recipients. See Clarifications § Session 2026-05-15 (post-critique).
 - **FR-010**: System MUST use EventCreate's `Attendee ID` value (format `16568206-1`) as the canonical `attendee_external_id`; this ensures re-uploads correctly identify duplicates.
 

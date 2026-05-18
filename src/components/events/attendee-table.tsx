@@ -67,7 +67,13 @@ export type AttendeeRow = {
   readonly matchType: MatchType;
   readonly ticketType: string | null;
   readonly ticketPriceThb: number | null;
-  readonly paymentStatus: 'paid' | 'pending' | 'refunded' | 'free';
+  readonly paymentStatus:
+    | 'paid'
+    | 'pending'
+    | 'refunded'
+    | 'free'
+    | 'waitlisted'
+    | 'no_show';
   readonly countedAgainstPartnership: boolean;
   readonly countedAgainstCulturalQuota: boolean;
   readonly isOverQuota: boolean;
@@ -245,7 +251,27 @@ export function AttendeeTable({
           <Input
             type="search"
             value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSearchInput(v);
+              // Bug-fix 2026-05-18 — the native <input type="search"> "X"
+              // clear button fires onChange with v='' but does NOT submit
+              // the form, so the URL-bound ?q= parameter would otherwise
+              // stay stale and the server-rendered table stayed filtered
+              // until the admin pressed Enter on the now-empty input.
+              // Detect "value became empty while URL still has q" and
+              // push the URL clear inline (same effect as the existing
+              // Escape-key handler at handleSearchKeyDown). React's
+              // onChange fires on every keystroke too, so users who
+              // backspace down to empty also see the table refresh —
+              // an expected affordance.
+              if (v === '' && searchParams.has('q')) {
+                const next = new URLSearchParams(searchParams.toString());
+                next.delete('q');
+                next.delete('page');
+                pushUrl(next);
+              }
+            }}
             onKeyDown={handleSearchKeyDown}
             placeholder={t('searchPlaceholder')}
             aria-label={t('searchLabel')}

@@ -257,7 +257,51 @@ If F6.1 must be rolled back entirely (rare; only if data integrity issue detecte
 
 ## 10. Migration safety
 
-F6.1 migrations 0139–0141 + 0144 are additive only (CREATE TABLE / ALTER TABLE ADD COLUMN / ALTER TYPE ADD VALUE). Rollback = drop table / drop column. Postgres enum values cannot be dropped without an offline rebuild; the slot stays harmlessly populated if the TS surface is removed.
+F6.1 migrations 0139–0141 + 0144 + 0160 are additive only (CREATE TABLE / ALTER TABLE ADD COLUMN / ALTER TYPE ADD VALUE / ALTER CONSTRAINT extending allowlists). Rollback = drop table / drop column / shrink allowlist back. Postgres enum values cannot be dropped without an offline rebuild; the slot stays harmlessly populated if the TS surface is removed.
+
+---
+
+## 11. Pending → Attending sync via re-upload (Option B+, 2026-05-18)
+
+EventCreate-Status semantics in TSCC's real workflow are not 1:1 with payment lifecycle. A registrant can be `Pending` because:
+
+- They registered, transferred money, but the host has not verified the bank slip yet;
+- They registered for a free-with-approval event and the host has not approved yet;
+- Auto-status never advanced because the host forgot.
+
+Admins do **NOT** know in advance when EventCreate will flip Status. Chamber-OS handles this by mirroring EventCreate's `Status` column directly into `event_registrations.payment_status` (per **spec.md § FR-007**, Option B+). Pending rows persist with `payment_status='pending'` and become available to F7 broadcasts + F8 at-risk scoring immediately.
+
+When the host eventually verifies payment in EventCreate and flips Status from `Pending → Attending`, the admin simply re-exports the CSV and re-uploads. The receipt-duplicate state-change probe in `maybeApplyStateChange` detects the divergence:
+
+1. Receipt for the row already exists (same `(event_external_id, email_lower, ts, attendee_external_id)` rowHash);
+2. The persisted registration's `payment_status='pending'` differs from the incoming `'paid'`;
+3. The probe applies an UPDATE in the same savepoint and emits `csv_import_row_state_changed`;
+4. The summary's `rowsStateChanged` increments by 1 (NOT `rowsAlreadyImported`).
+
+Quota counting (per **FR-019**) is strict — only `payment_status ∈ {paid, free}` contributes. So a `pending → paid` flip ALSO promotes the row into the quota count atomically in the same UPDATE. No separate admin action needed.
+
+**What admins should NOT do**: hand-edit the CSV to force `Status=Attending` before the host has verified payment in EventCreate. The system mirrors actual EventCreate state; the next legitimate re-upload from EventCreate will reverse the hand-edit. Use EventCreate's host UI to flip Status instead, then re-upload.
+
+---
+
+## 12. F7 + F8 cross-module impact (Option B+ no-op)
+
+F7 (Email Broadcast) and F8 (Renewal / At-Risk Scoring) shipped before Option B+. The new `payment_status` values (`pending`, `waitlisted`, `no_show`) introduced 2026-05-18 are **transparent** to both modules — verified via grep over `src/modules/broadcasts/` and `src/modules/renewals/` finding zero direct filters on `event_registrations.payment_status`.
+
+Observed behaviour change without any F7/F8 code edits:
+
+- **F7 broadcasts** target members by `RecipientSegment` (member-level criteria — tier, archived flag, marketing-consent). Member rows are unchanged. Pre-Option B+, `Pending` registrants existed only in EventCreate and were invisible to F7. Post-Option B+, those members now have F6 event registrations attached → analytics/segments that reference event participation light up earlier in the registration lifecycle. No quota or finance side-effects.
+- **F8 at-risk scoring** consumes the F6→F8 bridge (`getEventAttendeesByMember`). That bridge returns ALL registrations regardless of `payment_status`, so Pending registrations now contribute to engagement signals immediately when the CSV is uploaded — closer to the spec intent of "registration as a signal of interest."
+
+If a future F7 segment or F8 weight wants to distinguish "paid attendee" from "registered (pending payment)", filter at the consumer site:
+
+```ts
+const confirmedAttendees = registrations.filter(
+  (r) => r.paymentStatus === 'paid' || r.paymentStatus === 'free',
+);
+```
+
+No schema or port-interface change is required.
 
 ---
 

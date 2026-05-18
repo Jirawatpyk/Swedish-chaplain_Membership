@@ -608,6 +608,15 @@ export async function processAttendeeInTx(
   //    (decremented OR over_quota_warning), and UPDATEs the row when
   //    flags flip from neutral. Refunded ingests + non-benefit events
   //    short-circuit (no lock, no audit).
+  //
+  // F6.1 Option B+ (2026-05-18) — strict allowlist on `payment_status`.
+  // Only confirmed seats consume the chamber's partnership / cultural
+  // quota: `paid` (Status=Attending in EventCreate) and `free`
+  // (admin-issued complimentary tickets). Pending / Waitlisted /
+  // NoShow / Refunded are all quota-neutral. A re-upload that flips
+  // `pending → paid` UPDATES the registration in maybeApplyStateChange
+  // and the next `applyQuotaEffect` call (driven by the same use-case
+  // re-running for the row) credits the seat at that point.
   const event = eventUpsert.value.event;
   const matchedMemberId = matchResult.value.resolution.matchedMemberId;
   const shouldApplyQuota =
@@ -615,7 +624,8 @@ export async function processAttendeeInTx(
     matchedMemberId !== null &&
     event.archivedAt === null &&
     (event.isPartnerBenefit || event.isCulturalEvent) &&
-    input.attendee.paymentStatus !== 'refunded';
+    (input.attendee.paymentStatus === 'paid' ||
+      input.attendee.paymentStatus === 'free');
   if (shouldApplyQuota) {
     reportStage('quota_decrement');
     const quotaResult = await applyQuotaEffect(

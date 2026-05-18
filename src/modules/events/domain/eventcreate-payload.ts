@@ -66,7 +66,7 @@ export const EventCreatePayloadV1 = z.object({
       ticketType: z.string().max(100).optional().nullable(),
       ticketPricePaid: z.number().int().nonnegative().optional().nullable(),
       paymentStatus: z
-        .enum(['paid', 'pending', 'refunded', 'free'])
+        .enum(['paid', 'pending', 'refunded', 'free', 'waitlisted', 'no_show'])
         .default('paid'),
       registeredAt: z.string().datetime(),
       metadata: z.record(z.unknown()).optional(),
@@ -107,7 +107,7 @@ export const CsvRowSchema = z.object({
   ticket_type: z.string().max(100).optional(),
   ticket_price_thb: z.coerce.number().int().nonnegative().optional(),
   payment_status: z
-    .enum(['paid', 'pending', 'refunded', 'free'])
+    .enum(['paid', 'pending', 'refunded', 'free', 'waitlisted', 'no_show'])
     .default('paid'),
   registered_at: z.string().datetime().optional(),
   // NB: `is_partner_benefit` + `is_cultural_event` CSV columns are

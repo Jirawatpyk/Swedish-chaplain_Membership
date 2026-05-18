@@ -6,8 +6,8 @@
  *   - detectEventCreateFormat (presence-of-6 case-sensitive + fallthrough)
  *   - normalizeAttendeeName   (title-case + hyphen/apostrophe preserve)
  *   - stripMailtoPrefix       (case-insensitive)
- *   - inferPaymentStatus      (R5 closed mapping table)
- *   - classifyEventCreateStatus (FR-007 Attending vs Skipped)
+ *   - classifyEventCreateStatus + statusToPaymentStatus
+ *     (FR-007 mirror EventCreate Status, Option B+ 2026-05-18)
  *   - translateEventCreateRow (end-to-end shape)
  *   - collectUnknownEventCreateColumns (FR-012 tolerance)
  *
@@ -18,8 +18,8 @@ import {
   detectEventCreateFormat,
   normalizeAttendeeName,
   stripMailtoPrefix,
-  inferPaymentStatus,
   classifyEventCreateStatus,
+  statusToPaymentStatus,
   translateEventCreateRow,
   collectUnknownEventCreateColumns,
   EVENTCREATE_REQUIRED_COLUMNS,
@@ -172,42 +172,10 @@ describe('stripMailtoPrefix', () => {
 });
 
 // ---------------------------------------------------------------------------
-// inferPaymentStatus — R5 closed mapping table
-// ---------------------------------------------------------------------------
-
-describe('inferPaymentStatus', () => {
-  it.each([
-    ['Paid', 'paid'],
-    ['paid', 'paid'],
-    ['PAID', 'paid'],
-    ['  Paid  ', 'paid'],
-    ['invoice sent', 'paid'],
-    ['Invoice Sent', 'paid'],
-    ['verifying payment', 'pending'],
-    ['Verifying Payment', 'pending'],
-    ['pending', 'pending'],
-    ['Pending', 'pending'],
-  ] as const)('maps "%s" → %s', (input, expected) => {
-    expect(inferPaymentStatus(input)).toBe(expected);
-  });
-
-  it.each([
-    ['', 'unknown'],
-    ['-', 'unknown'],
-    ['–', 'unknown'], // en-dash
-    ['random unrecognized text', 'unknown'],
-  ] as const)('maps "%s" → unknown (R5 default)', (input, expected) => {
-    expect(inferPaymentStatus(input)).toBe(expected);
-  });
-
-  it('returns unknown for null and undefined', () => {
-    expect(inferPaymentStatus(null)).toBe('unknown');
-    expect(inferPaymentStatus(undefined)).toBe('unknown');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// classifyEventCreateStatus — FR-007 Attending filter
+// classifyEventCreateStatus — F6.1 Option B+ (2026-05-18)
+// Mirror EventCreate Status. Attending/Pending/Cancellation/Waitlisted/NoShow
+// all become persisted registrations with the appropriate payment_status.
+// Only unrecognised Status values flow into rowsSkipped.
 // ---------------------------------------------------------------------------
 
 describe('classifyEventCreateStatus', () => {
@@ -215,23 +183,33 @@ describe('classifyEventCreateStatus', () => {
     expect(classifyEventCreateStatus('Attending')).toBe('Attending');
   });
 
-  // F6.1 Phase 4 US2 (T033) — Cancelled / Canceled rows now flow through
-  // the parser as `Cancellation` (intendedStateChange=true downstream)
-  // so the FR-018 refund branch can flip a previously-paid registration.
-  // All other non-Attending values remain `Skipped`.
   it('returns Cancellation for "Cancelled" and "Canceled"', () => {
     expect(classifyEventCreateStatus('Cancelled')).toBe('Cancellation');
     expect(classifyEventCreateStatus('Canceled')).toBe('Cancellation');
   });
 
-  it('returns Skipped for other non-Attending Status values', () => {
-    expect(classifyEventCreateStatus('Waitlisted')).toBe('Skipped');
-    expect(classifyEventCreateStatus('No Show')).toBe('Skipped');
-    expect(classifyEventCreateStatus('Pending')).toBe('Skipped');
+  it('returns Pending for "Pending" (Option B+)', () => {
+    expect(classifyEventCreateStatus('Pending')).toBe('Pending');
   });
+
+  it('returns Waitlisted for "Waitlisted" (Option B+)', () => {
+    expect(classifyEventCreateStatus('Waitlisted')).toBe('Waitlisted');
+  });
+
+  it.each(['No Show', 'NoShow', 'No-Show'])(
+    'returns NoShow for "%s" (Option B+ — all 3 EventCreate variants)',
+    (input) => {
+      expect(classifyEventCreateStatus(input)).toBe('NoShow');
+    },
+  );
 
   it('returns Skipped for lowercase "attending" (case-sensitive)', () => {
     expect(classifyEventCreateStatus('attending')).toBe('Skipped');
+  });
+
+  it('returns Skipped for unrecognised free-text Status values', () => {
+    expect(classifyEventCreateStatus('Unknown Garbage')).toBe('Skipped');
+    expect(classifyEventCreateStatus('pending')).toBe('Skipped'); // lowercase
   });
 
   it('returns Skipped for null / undefined / empty', () => {
@@ -242,6 +220,27 @@ describe('classifyEventCreateStatus', () => {
 
   it('trims whitespace before comparing', () => {
     expect(classifyEventCreateStatus('  Attending  ')).toBe('Attending');
+    expect(classifyEventCreateStatus('  Pending  ')).toBe('Pending');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// statusToPaymentStatus — F6.1 Option B+ mapping table
+// ---------------------------------------------------------------------------
+
+describe('statusToPaymentStatus', () => {
+  it.each([
+    ['Attending', 'paid'],
+    ['Pending', 'pending'],
+    ['Cancellation', 'refunded'],
+    ['Waitlisted', 'waitlisted'],
+    ['NoShow', 'no_show'],
+  ] as const)('maps Status=%s → payment_status=%s', (status, expected) => {
+    expect(statusToPaymentStatus(status)).toBe(expected);
+  });
+
+  it('returns null for Skipped (row dropped before persistence)', () => {
+    expect(statusToPaymentStatus('Skipped')).toBeNull();
   });
 });
 
@@ -260,6 +259,7 @@ describe('translateEventCreateRow', () => {
       ['Company Name', 'Midsummer AB'],
       ['Attendee ID', '16940826-1'],
       ['Ticket', 'SweCham Members'],
+      // Notes cell present in real fixture but Option B+ no longer parses it
       ['Notes', 'verifying payment'],
       [
         'Personal Data Protection Consent',
@@ -267,24 +267,91 @@ describe('translateEventCreateRow', () => {
       ],
     ]);
     const row = translateEventCreateRow(cells);
-    expect(row.isAttending).toBe(true);
+    expect(row.status).toBe('Attending');
+    expect(row.paymentStatus).toBe('paid');
+    expect(row.intendedStateChange).toBe(false);
     expect(row.attendeeEmail).toBe('lars.svensson@midsummer.se');
     expect(row.attendeeName).toBe('Lars Svensson');
     expect(row.attendeeCompany).toBe('Midsummer AB');
     expect(row.attendeeExternalId).toBe('16940826-1');
     expect(row.ticketType).toBe('SweCham Members');
-    expect(row.inferredPaymentStatus).toBe('pending');
     expect(row.pdpaConsentAcknowledged).toBe(true);
   });
 
-  it('treats Status=Cancelled as not Attending (FR-007)', () => {
+  it('Option B+ — Status=Pending → payment_status=pending (was Skipped pre-fix)', () => {
+    const cells = new Map<string, string>([
+      ['Status', 'Pending'],
+      ['First Name', 'Jane'],
+      ['Last Name', 'Doe'],
+      ['Email', 'jane@example.com'],
+      ['Attendee ID', '17000-1'],
+    ]);
+    const row = translateEventCreateRow(cells);
+    expect(row.status).toBe('Pending');
+    expect(row.paymentStatus).toBe('pending');
+    expect(row.intendedStateChange).toBe(false);
+  });
+
+  it('Option B+ — Status=Waitlisted → payment_status=waitlisted', () => {
+    const cells = new Map<string, string>([
+      ['Status', 'Waitlisted'],
+      ['First Name', 'Anna'],
+      ['Last Name', 'Smith'],
+      ['Email', 'anna@example.com'],
+    ]);
+    const row = translateEventCreateRow(cells);
+    expect(row.status).toBe('Waitlisted');
+    expect(row.paymentStatus).toBe('waitlisted');
+  });
+
+  it('Option B+ — Status="No Show" → payment_status=no_show', () => {
+    const cells = new Map<string, string>([
+      ['Status', 'No Show'],
+      ['First Name', 'Maria'],
+      ['Last Name', 'Jones'],
+      ['Email', 'maria@example.com'],
+    ]);
+    const row = translateEventCreateRow(cells);
+    expect(row.status).toBe('NoShow');
+    expect(row.paymentStatus).toBe('no_show');
+  });
+
+  it('Status=Cancelled → Cancellation discriminator + payment_status=refunded + intendedStateChange', () => {
     const cells = new Map<string, string>([
       ['Status', 'Cancelled'],
       ['First Name', 'Jane'],
       ['Last Name', 'Doe'],
       ['Email', 'jane@example.com'],
     ]);
-    expect(translateEventCreateRow(cells).isAttending).toBe(false);
+    const row = translateEventCreateRow(cells);
+    expect(row.status).toBe('Cancellation');
+    expect(row.paymentStatus).toBe('refunded');
+    expect(row.intendedStateChange).toBe(true);
+  });
+
+  it('Status=blank → Skipped discriminator + null paymentStatus (row dropped)', () => {
+    const cells = new Map<string, string>([
+      ['Status', ''],
+      ['First Name', 'Jane'],
+      ['Last Name', 'Doe'],
+      ['Email', 'jane@example.com'],
+    ]);
+    const row = translateEventCreateRow(cells);
+    expect(row.status).toBe('Skipped');
+    expect(row.paymentStatus).toBeNull();
+  });
+
+  it('does NOT parse Notes for payment status (Option B+ — drops Notes inference)', () => {
+    // Pre-fix, "verifying payment" Notes would have set inferredPaymentStatus='pending'.
+    // Option B+ ignores Notes entirely — Status alone drives payment_status.
+    const cells = new Map<string, string>([
+      ['Status', 'Attending'],
+      ['First Name', 'X'],
+      ['Last Name', 'Y'],
+      ['Email', 'xy@example.com'],
+      ['Notes', 'verifying payment'],
+    ]);
+    expect(translateEventCreateRow(cells).paymentStatus).toBe('paid');
   });
 
   it('omits attendeeExternalId and ticketType when cell is "–"', () => {

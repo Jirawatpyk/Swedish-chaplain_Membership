@@ -1121,6 +1121,13 @@
 			"when": 1779120000000,
 			"tag": "0159_hash_session_and_token_ids",
 			"breakpoints": true
+		},
+		{
+			"idx": 160,
+			"version": "7",
+			"when": 1779200000000,
+			"tag": "0160_event_registrations_payment_status_extend",
+			"breakpoints": true
 		}
 	]
 }

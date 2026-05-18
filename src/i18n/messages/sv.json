@@ -2479,7 +2479,7 @@
           "viewOnEventCreate": "Visa på EventCreate",
           "opensInNewTab": "(öppnas i en ny flik)",
           "lastUpdatedAt": "Senast uppdaterad",
-          "lastUpdatedAtTooltip": "Tidpunkt för senaste Zapier-leverans för detta evenemang.",
+          "lastUpdatedAtTooltip": "Tidpunkt för senaste deltagaresynk eller evenemangsuppdatering.",
           "actionsLabel": "Evenemangsåtgärder"
         },
         "attendees": {

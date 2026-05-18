@@ -60,7 +60,15 @@ type EventHeaderProps = {
     readonly isCulturalEvent: boolean;
     readonly archivedAt: string | null;
     readonly eventcreateUrl: string | null;
-    /** last Zapier delivery timestamp. */
+    /**
+     * `events.last_updated_at` — bumped to `now()` by
+     * `drizzle-events-repository.findOrCreateEvent` on every attendee
+     * upsert (both webhook ingest AND CSV import paths call into it),
+     * and by admin event-metadata mutations (toggle / archive). So
+     * this stamp answers "when did this row or its attendees last
+     * change?" — NOT "when did Zapier last fire". Tooltip i18n key
+     * `admin.events.detail.lastUpdatedAtTooltip` reflects that.
+     */
     readonly lastUpdatedAt: string;
   };
   /**
