@@ -447,6 +447,22 @@ export function makePinoAuditPort(executor: TenantTx): F6AuditPort {
     async emit<T extends F6AuditEventType>(
       entry: F6AuditEntry<T>,
     ): Promise<Result<AuditEventId, AuditEmitError>> {
+      // R3-T1 fault-injection — test-only seam for the audit-emit
+      // raw-throw regression in
+      // `tests/integration/events/csv-state-change-quota-rollback.test.ts`.
+      // When set, RAW-throws (bypasses the try/catch below) so
+      // `emitOrThrow`'s R3-C1 wrap catches the plain Error and
+      // converts to `TxStageError('audit_emit')`. Guarded by
+      // `NODE_ENV==='test'` so production deploys short-circuit
+      // (precedent: D1/D2 fault-injection at import-csv.ts:1080-1095).
+      if (
+        process.env.NODE_ENV === 'test' &&
+        process.env.F6_TEST_AUDIT_EMIT_RAW_THROW === entry.eventType
+      ) {
+        throw new Error(
+          `TEST-INJECTED — audit.emit raw-throw for eventType=${entry.eventType} (R3-T1)`,
+        );
+      }
       try {
         const id = await insertAuditRow(executor, entry);
         // R7 CODE-FR-03 corrected — fire matching OTel counter AFTER

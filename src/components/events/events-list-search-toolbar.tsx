@@ -24,7 +24,13 @@ import {
   usePathname,
   useSearchParams,
 } from 'next/navigation';
-import { useTransition, useState, useCallback, useEffect } from 'react';
+import {
+  useTransition,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -41,15 +47,32 @@ export function EventsListSearchToolbar({ initialSearch }: Props) {
   const t = useTranslations('admin.events.list');
   const [isPending, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(initialSearch);
+  // R3-U2 (2026-05-18 /speckit-review Round 3 Final) — focus tracking
+  // for the prop-sync useEffect below. WCAG SC 3.2.2 (On Input)
+  // forbids changes of context due to user input unless explicitly
+  // requested. The pre-R3 useEffect overwrote in-flight typing if a
+  // sibling filter chip triggered a server re-render while the user
+  // was still editing the input. The ref guards the sync so external
+  // URL changes only overwrite the input when the user is NOT
+  // actively focused.
+  const inputFocused = useRef(false);
 
   // R2-2a (2026-05-18 /speckit-review Round 2 Blocker) — browser Back/
   // Forward changes the URL `?q=` and re-renders the page server-side
   // with a new `initialSearch` prop, but the local state would
   // otherwise stay stale. Sync on prop change so the input mirrors
-  // the URL. Mirrors `attendee-table.tsx:169-171` which already does
-  // this for the per-event attendees table.
+  // the URL. Mirrors the equivalent useEffect prop-sync in
+  // `attendee-table.tsx` (search `useEffect(() => setSearchInput`).
   useEffect(() => {
-    setSearchInput(initialSearch);
+    if (!inputFocused.current) {
+      // R3-U2 + react-hooks/set-state-in-effect: URL→state sync is
+      // the LEGITIMATE use of setState-in-effect (back/forward nav
+      // changes the prop). The cascading render is the desired
+      // behavior. useSyncExternalStore would be heavier without
+      // benefit here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSearchInput(initialSearch);
+    }
   }, [initialSearch]);
 
   const pushUrl = useCallback(
@@ -73,9 +96,10 @@ export function EventsListSearchToolbar({ initialSearch }: Props) {
     [searchInput, searchParams, pushUrl],
   );
 
-  // Escape-key clear handler (mirrors attendee-table.tsx:222-234).
-  // Resets local input state AND strips `q` + `page` from the URL so
-  // keyboard users have a single-key path to unfiltered.
+  // Escape-key clear handler (mirrors the `handleSearchKeyDown`
+  // callback in attendee-table.tsx — search `handleSearchKeyDown` for
+  // the parity site). Resets local input state AND strips `q` + `page`
+  // from the URL so keyboard users have a single-key path to unfiltered.
   const handleSearchKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key !== 'Escape') return;
@@ -104,13 +128,20 @@ export function EventsListSearchToolbar({ initialSearch }: Props) {
       <Input
         type="search"
         value={searchInput}
+        onFocus={() => {
+          inputFocused.current = true;
+        }}
+        onBlur={() => {
+          inputFocused.current = false;
+        }}
         onChange={(e) => {
           const v = e.target.value;
           setSearchInput(v);
           // Native X-button clear fires onChange with v='' but does
           // NOT submit the form — strip the URL `q` inline so the
           // server table refreshes without requiring Enter (mirrors
-          // attendee-table.tsx:252-274 verbatim).
+          // the `clearSearchUrl` callback in attendee-table.tsx —
+          // search `clearSearchUrl` for the shared pattern).
           if (v === '' && searchParams.has('q')) {
             const next = new URLSearchParams(searchParams.toString());
             next.delete('q');

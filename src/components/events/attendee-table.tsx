@@ -23,7 +23,13 @@
 'use client';
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { useTransition, useState, useCallback, useEffect } from 'react';
+import {
+  useTransition,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Copy, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -49,7 +55,10 @@ import {
 // Import the Domain VO directly (NOT via the @/modules/events barrel)
 // so this Client Component does not transitively pull infrastructure
 // modules that reference Server-Component-only `next/cache` APIs.
-import { PAYMENT_STATUSES } from '@/modules/events/domain/value-objects/payment-status';
+import {
+  PAYMENT_STATUSES,
+  isPaymentStatus,
+} from '@/modules/events/domain/value-objects/payment-status';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -103,14 +112,15 @@ type Props = {
   readonly initialSearch: string;
   /**
    * F6.1 follow-up 2026-05-18 — initial selected `payment_status`
-   * for the toolbar Select. Empty string = "All statuses" (no
-   * filter). R2-5 (2026-05-18 /speckit-review Round 2) narrowed
-   * from `string` to `PaymentStatus | ''` so the prop boundary
-   * enforces the same closed set as the page-level
-   * `isPaymentStatus` guard — drift cannot reintroduce arbitrary
-   * URL strings.
+   * for the toolbar Select. `undefined` (or omitted) = "All
+   * statuses" (no filter). R2-5 narrowed from `string` to
+   * `PaymentStatus | ''`; R3-Y3 further dropped the empty-string
+   * lane so the prop boundary is single-axis nullability — pass
+   * `undefined` (or omit) to disable the filter. The empty-string
+   * sentinel is now an internal concern of the `<Select>` widget
+   * inside this component.
    */
-  readonly initialPaymentStatus?: PaymentStatus | '';
+  readonly initialPaymentStatus?: PaymentStatus;
   /**
    * F6 Phase 9 / US6 — required by the relink dialog so it can POST to
    * the per-event route. Branded `EventId | null` (Round-1 type-H3
@@ -125,6 +135,14 @@ type Props = {
    */
   readonly canRelink: boolean;
 };
+
+// R3-Y1 (2026-05-18 /speckit-review Round 3 Final) — module-level
+// constants so the closure-capture warning in
+// `react-hooks/exhaustive-deps` doesn't fire on useCallback hooks
+// that reference them. The values are stable across renders, so
+// hoisting them out of the component body is the cleanest fix.
+const ALL_STATUSES_SENTINEL = '__all__' satisfies Exclude<string, PaymentStatus>;
+const FILTER_PARAM_KEYS = ['q', 'paymentStatus', 'unmatchedOnly'] as const;
 
 function formatRegisteredAt(iso: string, locale: string): string {
   return formatLocalisedDate(iso, locale, {
@@ -147,7 +165,7 @@ export function AttendeeTable({
   rows,
   unmatchedOnly,
   initialSearch,
-  initialPaymentStatus = '',
+  initialPaymentStatus,
   eventId,
   canRelink,
 }: Props) {
@@ -167,11 +185,44 @@ export function AttendeeTable({
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(initialSearch);
+  // R3-U2 (2026-05-18 /speckit-review Round 3 Final) — focus tracking
+  // for the prop-sync useEffect below. WCAG SC 3.2.2 (On Input) —
+  // the sync only fires when the input is NOT focused so external
+  // URL updates can't overwrite in-flight typing.
+  const inputFocused = useRef(false);
 
   // Sync local state when URL changes externally (back/forward nav).
+  // R3-U2 — URL→state sync is the LEGITIMATE use of setState-in-effect
+  // (cascade is intended). Focus guard above (`inputFocused.current`)
+  // prevents the sync from clobbering in-flight typing.
   useEffect(() => {
-    setSearchInput(initialSearch);
+    if (!inputFocused.current) {
+      setSearchInput(initialSearch);
+    }
   }, [initialSearch]);
+
+  // R3-F1 (2026-05-18 /speckit-review Round 3 Final) — UI feedback for
+  // the silent paymentStatus URL guard drop. Pre-R3-F1, an admin who
+  // pasted a URL with an invalid `?paymentStatus=junk` saw the table
+  // load with the filter silently dropped (logger.debug captured the
+  // event server-side but no user-visible signal). Now: detect the
+  // mismatch on mount, fire a toast.warning, and replace the URL to
+  // strip the stale param so refreshes don't re-fire.
+  useEffect(() => {
+    const raw = searchParams.get('paymentStatus');
+    if (raw !== null && raw !== '' && !isPaymentStatus(raw)) {
+      toast.warning(t('paymentStatusFilterDropped'));
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete('paymentStatus');
+      next.delete('page');
+      const qs = next.toString();
+      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+    }
+    // Intentionally omit `t`, `pathname`, `router` from deps — these
+    // are stable across re-renders. `searchParams` is the only signal
+    // we need to react to.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const pushUrl = useCallback(
     (next: URLSearchParams) => {
@@ -202,19 +253,9 @@ export function AttendeeTable({
   // `isPaymentStatus()` (anything off-list drops the filter
   // fail-safe).
   //
-  // R2-5 (2026-05-18 /speckit-review Round 2) — `as const` plus the
-  // compile-time disjointness guard below pins the sentinel string
-  // to a fresh nominal literal that the type-checker forbids any
-  // future PaymentStatus addition from colliding with.
-  const ALL_STATUSES_SENTINEL = '__all__' as const;
-  // Compile-time guard: sentinel must NOT be assignable to a
-  // PaymentStatus member. If a future PaymentStatus literal happens
-  // to be `'__all__'`, the `extends … ? never : true` collapses to
-  // `never` and the `_disjointCheck` line fails the build.
-  type _SentinelDisjoint =
-    typeof ALL_STATUSES_SENTINEL extends PaymentStatus ? never : true;
-  const _disjointCheck: _SentinelDisjoint = true;
-  void _disjointCheck;
+  // R3-Y1 — sentinel hoisted to module scope (see top of file) so it
+  // doesn't trigger the `react-hooks/exhaustive-deps` closure-capture
+  // warning on useCallback hooks below.
   const onPaymentStatusChange = useCallback(
     (next: string | null) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -282,6 +323,34 @@ export function AttendeeTable({
     pushUrl(next);
   }, [searchParams, pushUrl]);
 
+  // R3 simplify (2026-05-18) — single source of truth for the URL
+  // keys that count as an "active filter" on this table. Drives both
+  // the empty-state Clear-filters CTA visibility AND its click
+  // handler, so adding a future filter key only needs to be done in
+  // one place.
+  // FILTER_PARAM_KEYS hoisted to module scope; see top of file.
+  const hasAnyFilter = FILTER_PARAM_KEYS.some((k) => searchParams.has(k));
+  // R3-F5 (2026-05-18 /speckit-review Round 3 Final) — ref to the
+  // search Input so the Clear filters CTA can return focus there
+  // after the URL transitions. WCAG SC 2.4.3 (Focus Order) — focus
+  // must be predictable; without this, focus lands on document.body
+  // after the button is dismissed (the empty-state container
+  // unmounts when results appear), forcing keyboard users to Tab
+  // their way back into the toolbar.
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const clearAllFiltersUrl = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const k of FILTER_PARAM_KEYS) next.delete(k);
+    next.delete('page');
+    setSearchInput('');
+    pushUrl(next);
+    // Return focus to the search input AFTER the URL push transitions.
+    // The Input element survives the transition (it lives in the
+    // persistent toolbar above the conditionally-rendered table body),
+    // so the ref stays valid.
+    queueMicrotask(() => searchInputRef.current?.focus());
+  }, [searchParams, pushUrl]);
+
   // R6-W12 staff-review fix (2026-05-13): clear-on-Escape handler.
   // `<Input type="search">` renders the native browser X clear button
   // on most desktop browsers but it is absent on iOS Safari and some
@@ -317,8 +386,15 @@ export function AttendeeTable({
           className="flex w-full min-w-0 gap-2 sm:w-auto sm:flex-1"
         >
           <Input
+            ref={searchInputRef}
             type="search"
             value={searchInput}
+            onFocus={() => {
+              inputFocused.current = true;
+            }}
+            onBlur={() => {
+              inputFocused.current = false;
+            }}
             onChange={(e) => {
               const v = e.target.value;
               setSearchInput(v);
@@ -372,7 +448,7 @@ export function AttendeeTable({
         </Button>
         <Select
           value={
-            initialPaymentStatus === ''
+            initialPaymentStatus === undefined
               ? ALL_STATUSES_SENTINEL
               : initialPaymentStatus
           }
@@ -432,22 +508,12 @@ export function AttendeeTable({
               to the unfiltered table. Without filters set the empty
               state is a true "no attendees yet" surface, not a
               filter dead-end — no CTA in that case. */}
-          {(searchParams.has('q') ||
-            searchParams.has('paymentStatus') ||
-            searchParams.has('unmatchedOnly')) && (
+          {hasAnyFilter && (
             <Button
               type="button"
               variant="outline"
               className="mt-4"
-              onClick={() => {
-                const next = new URLSearchParams(searchParams.toString());
-                next.delete('q');
-                next.delete('paymentStatus');
-                next.delete('unmatchedOnly');
-                next.delete('page');
-                setSearchInput('');
-                pushUrl(next);
-              }}
+              onClick={clearAllFiltersUrl}
               disabled={isPending}
             >
               {t('clearFilters')}

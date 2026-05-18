@@ -3241,7 +3241,10 @@ export const eventcreateMetrics = {
   csvImportStateChangeFallback(
     tenantId: string,
     reason:
-      // Pre-R2 reasons (kept for backward-compat with existing dashboards).
+      // Pre-R2 reasons (kept for backward-compat with existing dashboards
+      // during F6.2 dashboard migration; pre-R2 probe surface still emits
+      // these from lookup_err / lookup_missing / update_err code-paths
+      // BEFORE the outer-catch is reached).
       | 'lookup_err'
       | 'lookup_missing'
       | 'update_err'
@@ -3249,19 +3252,21 @@ export const eventcreateMetrics = {
       // R2-1 + S-7 (2026-05-18) — outer-catch re-throws every TxStageError
       // stage so the savepoint rolls back atomically. Label is now the
       // `FailureStage` literal so SRE can break down rollback causes.
-      // Cardinality stays bounded at the 6 FailureStage values + the
-      // 'unknown' bucket for non-TxStageError throws + pre-R2 reasons.
+      // `audit_emit` is NOT in this union (per R3-D4): audit-emit
+      // failures route to the dedicated `csvImportAuditEmitFailed`
+      // counter instead, keeping the two SRE series disjoint.
+      // Cardinality stays bounded at 4 pre-R2 + 4 FailureStage + 1
+      // unknown = 9 label values.
       | 'event_upsert'
       | 'registration_insert'
       | 'idempotency_receipt'
       | 'quota_decrement'
-      | 'audit_emit'
       | 'unknown',
   ): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_state_change_fallback_total',
-        'F6.1 state-change fallback counter (admin Notes-fix silently dropped)',
+        'F6.1 state-change probe savepoint-rollback counter — labeled by FailureStage (post-R2-1). See docs/runbooks/f6-state-change-rollback.md.',
       ).add(1, { tenant: tenantId, reason });
     });
   },

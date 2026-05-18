@@ -90,13 +90,14 @@ describe('PaymentStatus VO (R2-6 unit)', () => {
 
     it('narrows the type when true', () => {
       const value: unknown = 'paid';
+      // Assert guard accepts before narrowing — if this fails, the
+      // subsequent block is skipped by vitest's failed-assertion exit.
+      expect(isPaymentStatus(value)).toBe(true);
       if (isPaymentStatus(value)) {
         // Compile-time: `value` is now `PaymentStatus`. The assignment
         // would be a type error if the guard didn't narrow.
         const narrowed: PaymentStatus = value;
         expect(narrowed).toBe('paid');
-      } else {
-        throw new Error('guard incorrectly rejected canonical member');
       }
     });
   });

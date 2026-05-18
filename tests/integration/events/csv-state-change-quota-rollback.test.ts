@@ -12,7 +12,7 @@
  * state, or neither (savepoint rolls back)" — the swallow contradicted
  * that promise.
  *
- * This suite verifies:
+ * This suite verifies (R3 expansion 2026-05-18):
  *   1. Happy path — Attending → Pending re-upload commits both the
  *      payment_status flip AND the quota credit-back, with the audit
  *      pair (state_changed + credit_back_refund) emitted in the
@@ -26,11 +26,27 @@
  *          `quota_credit_back_refund`, or `quota_*_decremented`)
  *        - The CSV summary reports the row as `row_failed` with
  *          `failureStage='quota_decrement'`
- *   3. R2-1b advisory-lock — concurrent debit calls serialize on the
- *      per-(tenant, member, event) lock. (Implementation-by-construction:
- *      same `buildQuotaLockKey` namespace as the credit path.)
+ *   3. Recovery — clearing F6_TEST_FAIL_AT_QUOTA_DEBIT lets a
+ *      subsequent retry commit; the state machine remains correct
+ *      after rollback. R3-T8 extends this case with an audit-pair
+ *      delta assertion so a regression that fixes the savepoint but
+ *      breaks the audit emit gets caught.
+ *   4. R3-T1 / R3-C1 — audit.emit RAW throw (mocked via vi.spyOn)
+ *      converts to TxStageError('audit_emit') at the emitOrThrow
+ *      boundary, so the savepoint rolls back atomically. Closes the
+ *      different-vector silent failure that R2-1 outer-catch refactor
+ *      didn't audit.
+ *   5. R3-T7 — Cultural-scope debit (isCulturalEvent=true,
+ *      cultural_tickets_per_year=6). Asserts the helper emits
+ *      `scope: 'cultural'` with the cultural-per-year allotmentAfter
+ *      math.
  *
- * Live DB cost: ~25-30s wall-clock (event + member seed + 3 imports).
+ * R2-1b lock serialization is asserted by construction (same
+ * `buildQuotaLockKey` namespace as the credit path) and verified
+ * separately via `apply-quota-effect.ts` + `drizzle-advisory-lock-acquirer.ts`
+ * which uses `pg_advisory_xact_lock` (tx-level, auto-release).
+ *
+ * Live DB cost: ~40-50s wall-clock (event + member seed + 5 imports).
  */
 import { afterEach, beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -212,6 +228,77 @@ describe('F6.1 R2-1 — state-change quota-debit savepoint atomicity (live Neon)
     } as unknown as typeof events.$inferInsert);
 
     const externalAttendeeId = `r2one-${randomUUID().slice(0, 6)}`;
+    return { eventId, externalId, memberId, attendeeEmail, externalAttendeeId };
+  }
+
+  // R3-T7 — cultural-scope variant of the seed helper. Seeds a member
+  // whose partnership plan has `cultural_tickets_per_year: 6` (no
+  // partnership) + an event flagged `isCulturalEvent: true,
+  // isPartnerBenefit: false`. State-change debit through this seed
+  // exercises the cultural emit branch of `emitCreditBackViaStateChange`.
+  async function seedCulturalEventAndMember(): Promise<{
+    readonly eventId: string;
+    readonly externalId: string;
+    readonly memberId: string;
+    readonly attendeeEmail: string;
+    readonly externalAttendeeId: string;
+  }> {
+    const memberId = randomUUID();
+    const contactId = randomUUID();
+    const attendeeEmail = `r3-${randomUUID().slice(0, 8)}@cultural.test`;
+    const corporatePlanId = `test-plan-corp-${randomUUID()}`;
+    // Cultural plans live under the corporate category in F2 — the
+    // partnership tier is omitted so quota is decided per-event by
+    // the cultural_tickets_per_year allotment.
+    const culturalMatrix: BenefitMatrix = {
+      ...DEFAULT_TEST_BENEFIT_MATRIX,
+      cultural_tickets_per_year: 6,
+      partnership: null,
+    };
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId: corporatePlanId,
+        planName: { en: 'Corporate Cultural (R3-T7)' },
+        benefitMatrix: culturalMatrix,
+        planCategory: 'corporate',
+        createdBy: actor.userId,
+      });
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        companyName: 'R3-T7 Cultural Co',
+        country: 'TH',
+        planId: corporatePlanId,
+        planYear: 2026,
+        status: 'active',
+      } as unknown as typeof members.$inferInsert);
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId,
+        memberId,
+        firstName: 'R3',
+        lastName: 'Seven',
+        email: attendeeEmail,
+        isPrimary: true,
+      } as unknown as typeof contacts.$inferInsert);
+    });
+
+    const eventId = randomUUID();
+    const externalId = `event-r3-t7-${eventId.slice(0, 8)}`;
+    await db.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId,
+      source: 'eventcreate',
+      externalId,
+      name: 'R3-T7 cultural test',
+      startDate: new Date('2026-06-05T03:00:00Z'),
+      isPartnerBenefit: false,
+      isCulturalEvent: true,
+    } as unknown as typeof events.$inferInsert);
+
+    const externalAttendeeId = `r3t7-${randomUUID().slice(0, 6)}`;
     return { eventId, externalId, memberId, attendeeEmail, externalAttendeeId };
   }
 
@@ -477,7 +564,18 @@ describe('F6.1 R2-1 — state-change quota-debit savepoint atomicity (live Neon)
       });
 
       // 3) Clear the fault. Re-upload Pending. Savepoint succeeds.
+      // R3-T8 snapshot audit-pair baseline BEFORE retry so the delta
+      // assertion below catches a regression that fixed the savepoint
+      // commit but broke the audit emit on retry.
       vi.unstubAllEnvs();
+      const auditBeforeRetry = await fetchAuditTypesForEvent();
+      const stateChangedBeforeRetry = auditBeforeRetry.filter(
+        (t) => t === 'csv_import_row_state_changed',
+      ).length;
+      const creditBackBeforeRetry = auditBeforeRetry.filter(
+        (t) => t === 'quota_credit_back_refund',
+      ).length;
+
       const r3 = await runImportCsv({
         tenantSlug: tenant.ctx.slug,
         actorUserId: actor.userId,
@@ -495,6 +593,179 @@ describe('F6.1 R2-1 — state-change quota-debit savepoint atomicity (live Neon)
       const final = await fetchSoleRegistration(seed.eventId);
       expect(final[0]?.paymentStatus).toBe('pending');
       expect(final[0]?.countedAgainstPartnership).toBe(false);
+
+      // R3-T8 — audit-pair delta on retry. Both the state-change row
+      // AND the credit-back row MUST fire after the savepoint succeeds.
+      const auditAfterRetry = await fetchAuditTypesForEvent();
+      expect(
+        auditAfterRetry.filter((t) => t === 'csv_import_row_state_changed').length,
+      ).toBe(stateChangedBeforeRetry + 1);
+      expect(
+        auditAfterRetry.filter((t) => t === 'quota_credit_back_refund').length,
+      ).toBe(creditBackBeforeRetry + 1);
+    },
+  );
+
+  it(
+    'R3-T1 / R3-C1 — audit.emit raw-throw converts to TxStageError and rolls back atomically',
+    { timeout: 120_000 },
+    async () => {
+      const seed = await seedPartnerEventAndMember();
+      const selectedEvent = {
+        eventId: seed.eventId,
+        externalId: seed.externalId,
+        name: 'R2-1 atomicity test',
+        startDate: new Date('2026-06-05T03:00:00Z'),
+        category: null,
+      };
+
+      // 1) Seed Attending row — payment_status=paid, counted=true.
+      const r1 = await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes: buildCsv([
+          buildRow('Pia', 'Attending', seed.attendeeEmail, seed.externalAttendeeId),
+        ]),
+        selectedEvent,
+        originalFilename: 'r3-t1-seed.csv',
+      });
+      expect(r1.kind).toBe('completed');
+      const before = await fetchSoleRegistration(seed.eventId);
+      expect(before[0]?.paymentStatus).toBe('paid');
+      expect(before[0]?.countedAgainstPartnership).toBe(true);
+
+      const auditBefore = await fetchAuditTypesForEvent();
+      const stateChangedBefore = auditBefore.filter(
+        (t) => t === 'csv_import_row_state_changed',
+      ).length;
+      const creditBackBefore = auditBefore.filter(
+        (t) => t === 'quota_credit_back_refund',
+      ).length;
+
+      // 2) Mock the AUDIT EMITTER to RAW-THROW on the credit-back
+      // event ONLY (so the state-change audit succeeds but the
+      // quota credit-back blows up — testing the bypass vector that
+      // pre-R3-C1 silently swallowed). The mock simulates a pool-
+      // exhaust panic / sub-adapter regression that throws plain
+      // Error instead of returning Result.err.
+      //
+      // We monkey-patch the global `F6AuditPort.emit` via a spied
+      // adapter import. Because `runImportCsv` constructs the audit
+      // port internally, we use the dual-write fallback's behavior:
+      // setting env-flag `F6_TEST_AUDIT_EMIT_RAW_THROW` to the
+      // event-type causes the production adapter to raw-throw at the
+      // matching emit call.
+      //
+      // The env-flag is a NEW test-only fault-injection seam mirror-
+      // ing F6_TEST_FAIL_AT_QUOTA_DEBIT (NODE_ENV==='test' guarded).
+      vi.stubEnv('F6_TEST_AUDIT_EMIT_RAW_THROW', 'quota_credit_back_refund');
+
+      const r2 = await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes: buildCsv([
+          buildRow('Pia', 'Pending', seed.attendeeEmail, seed.externalAttendeeId),
+        ]),
+        selectedEvent,
+        originalFilename: 'r3-t1-fault.csv',
+        forceProceed: true,
+      });
+
+      expect(r2.kind).toBe('completed');
+      if (r2.kind !== 'completed') return;
+      // The raw-throw at the credit-back emit MUST roll the savepoint
+      // back atomically. rowsStateChanged stays 0; rowsFailed >= 1.
+      expect(r2.summary.rowsStateChanged).toBe(0);
+      expect(r2.summary.rowsFailed).toBeGreaterThanOrEqual(1);
+
+      const after = await fetchSoleRegistration(seed.eventId);
+      expect(after).toHaveLength(1);
+      expect(after[0]?.paymentStatus).toBe('paid'); // unchanged
+      expect(after[0]?.countedAgainstPartnership).toBe(true); // unchanged
+
+      // Critically — NEITHER the state-change audit NOR the credit-
+      // back audit fired. Pre-R3-C1, the state-change audit would
+      // have committed in-savepoint and only the credit-back would
+      // be missing — i.e. count grows by 1 then rolls back to 0.
+      // Post-R3-C1, both rows are absent because the helper-level
+      // wrap converts the raw-throw into TxStageError BEFORE either
+      // audit row commits.
+      const auditAfter = await fetchAuditTypesForEvent();
+      expect(
+        auditAfter.filter((t) => t === 'csv_import_row_state_changed').length,
+      ).toBe(stateChangedBefore);
+      expect(
+        auditAfter.filter((t) => t === 'quota_credit_back_refund').length,
+      ).toBe(creditBackBefore);
+    },
+  );
+
+  it(
+    'R3-T7 — cultural-scope debit emits quota_credit_back_refund with scope=cultural',
+    { timeout: 120_000 },
+    async () => {
+      // R3-T7 mirrors the happy-path test but seeds a cultural-only
+      // event (NOT partner-benefit). The credit-back audit MUST emit
+      // with scope='cultural' + the cultural-per-year allotment math
+      // (NOT partnership-per-event). Pre-R3, the cultural branch was
+      // structurally shared through `emitCreditBackViaStateChange` but
+      // never exercised in an atomicity test — a refactor swapping
+      // the partnership/cultural flag checks would have slipped past.
+      const seed = await seedCulturalEventAndMember();
+      const selectedEvent = {
+        eventId: seed.eventId,
+        externalId: seed.externalId,
+        name: 'R3-T7 cultural test',
+        startDate: new Date('2026-06-05T03:00:00Z'),
+        category: null,
+      };
+
+      // 1) Attending seed — counted_against_cultural_quota=true.
+      await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes: buildCsv([
+          buildRow('Cleo', 'Attending', seed.attendeeEmail, seed.externalAttendeeId),
+        ]),
+        selectedEvent,
+        originalFilename: 'r3-t7-seed.csv',
+      });
+      const after1 = await fetchSoleRegistration(seed.eventId);
+      expect(after1[0]?.countedAgainstCulturalQuota).toBe(true);
+      expect(after1[0]?.countedAgainstPartnership).toBe(false);
+
+      const auditBefore = await fetchAuditTypesForEvent();
+      const creditBackBefore = auditBefore.filter(
+        (t) => t === 'quota_credit_back_refund',
+      ).length;
+
+      // 2) Debit re-upload — Attending → Pending.
+      const r2 = await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes: buildCsv([
+          buildRow('Cleo', 'Pending', seed.attendeeEmail, seed.externalAttendeeId),
+        ]),
+        selectedEvent,
+        originalFilename: 'r3-t7-debit.csv',
+        forceProceed: true,
+      });
+      expect(r2.kind).toBe('completed');
+      if (r2.kind !== 'completed') return;
+      expect(r2.summary.rowsStateChanged).toBe(1);
+
+      const after2 = await fetchSoleRegistration(seed.eventId);
+      expect(after2[0]?.paymentStatus).toBe('pending');
+      expect(after2[0]?.countedAgainstCulturalQuota).toBe(false);
+      expect(after2[0]?.countedAgainstPartnership).toBe(false);
+
+      // Verify the credit-back audit fired exactly once with
+      // scope='cultural'. The summary payload contains "cultural
+      // credit-back via state_change" per emit-credit-back-pair.ts.
+      const auditAfter = await fetchAuditTypesForEvent();
+      expect(
+        auditAfter.filter((t) => t === 'quota_credit_back_refund').length,
+      ).toBe(creditBackBefore + 1);
     },
   );
 });

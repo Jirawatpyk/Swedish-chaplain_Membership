@@ -42,6 +42,7 @@
 import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { F6_FISCAL_YEAR_START_MONTH } from './fiscal-year-constants';
+import { assertExhaustive } from './assert-exhaustive';
 import type { TenantId, MemberId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import {
@@ -185,12 +186,11 @@ function markRefundedErrorMessage(e: RegistrationsRepositoryError): string {
     case 'not_implemented':
       return `markRefunded not implemented: ${e.method}`;
     default: {
-      // R2-S4 (2026-05-18) — exhaustiveness assertion. If a future
-      // RegistrationsRepositoryError variant is added, this assigns
-      // a non-`never` value to a `never` slot → compile error,
-      // forcing the new case to be handled explicitly.
-      const _exhaustive: never = e;
-      void _exhaustive;
+      // R3-F2 — exhaustiveness assertion via shared helper (pure
+      // compile-time, no runtime throw). If a future
+      // RegistrationsRepositoryError variant is added, the `e` here
+      // is not `never` and the helper fails the build.
+      assertExhaustive(e);
       return `markRefunded unknown error kind: ${JSON.stringify(e)}`;
     }
   }
@@ -210,12 +210,38 @@ function markRefundedErrorMessage(e: RegistrationsRepositoryError): string {
  * FR-037. Every `audit.emit` Result is therefore checked; on err →
  * throw `TxStageError('audit_emit', ...)` so the outer catch fires the
  * dual-write fallback audit + rolls back the tx.
+ *
+ * R3-C1 (2026-05-18 /speckit-review Round 3 Final) — also wraps any
+ * RAW throw from `audit.emit()` (pool exhaust panic, sub-adapter
+ * regression that drops its Result-conversion) into `TxStageError`
+ * so the contract "every audit emit failure becomes
+ * `TxStageError('audit_emit')`" holds at the helper boundary. Pre-R3
+ * a raw throw escaped as plain `Error` → outer catch in
+ * `maybeApplyStateChange` routed it to the non-TxStageError noop
+ * branch → savepoint committed `payment_status` + `setQuotaEffect`
+ * WITHOUT the audit row, contradicting the R2-1 atomicity invariant.
  */
 export async function emitOrThrow(
   audit: F6AuditPort,
   entry: F6AuditEntry,
 ): Promise<void> {
-  const result = await audit.emit(entry);
+  let result: Awaited<ReturnType<typeof audit.emit>>;
+  try {
+    result = await audit.emit(entry);
+  } catch (raw) {
+    // R3-C1 — wrap raw throws so the helper-boundary contract holds.
+    // Threads the original Error via `cause` so SRE forensics see
+    // the underlying exception class (PostgresError, AbortError,
+    // etc.). Non-Error throws get a synthetic Error wrapper so
+    // `cause.name` / `cause.message` remain pino-serialisable.
+    const causeErr =
+      raw instanceof Error ? raw : new Error(`NonError(${String(raw)})`);
+    throw new TxStageError(
+      'audit_emit',
+      `audit emit threw: ${causeErr.message}`,
+      { cause: causeErr },
+    );
+  }
   if (!result.ok) {
     // R3.3.1 / R5.8 — thread synthetic cause so SRE forensics see the
     // error kind + discriminator on `cause.name` (now set to the
@@ -453,12 +479,11 @@ async function emitMatchResolutionAudit(
       });
       return;
     default: {
-      // R2-S4 (2026-05-18) — exhaustiveness assertion. If a future
-      // MatchResolutionView variant is added, this assigns a non-
-      // `never` value to a `never` slot → compile error, forcing the
+      // R3-F2 — exhaustiveness assertion via shared helper. If a future
+      // MatchResolutionView variant is added, the `resolution` here
+      // is not `never` and the helper fails the build, forcing the
       // new case to emit its dedicated audit event.
-      const _exhaustive: never = resolution;
-      void _exhaustive;
+      assertExhaustive(resolution);
       throw new Error(
         `F6 invariant: emitMatchResolutionAudit unhandled resolution.type ${
           (resolution as { type: string }).type
@@ -704,8 +729,7 @@ export async function processAttendeeInTx(
             detail = `plan_not_found memberId=${c.memberId}`;
             break;
           default: {
-            const _exhaustive: never = c;
-            void _exhaustive;
+            assertExhaustive(c);
             detail = `unexpected quota lookup cause: ${JSON.stringify(c)}`;
           }
         }

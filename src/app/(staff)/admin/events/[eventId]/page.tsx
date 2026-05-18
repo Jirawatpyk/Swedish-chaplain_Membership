@@ -179,19 +179,17 @@ export default async function AdminEventDetailPage({
   // `q` — we pass `null` (not undefined) when the filter is absent.
   const paymentStatusRaw = firstParam(query.paymentStatus);
   let paymentStatusFilter: import('@/modules/events').PaymentStatus | null = null;
-  if (paymentStatusRaw !== undefined && paymentStatusRaw !== '') {
-    if (isPaymentStatus(paymentStatusRaw)) {
-      paymentStatusFilter = paymentStatusRaw;
-    } else {
-      logger.debug(
-        {
-          event: 'f6_admin_event_detail_payment_status_filter_dropped',
-          eventId,
-          paymentStatusRaw,
-        },
-        '[F6.1] invalid paymentStatus URL parameter — filter dropped',
-      );
-    }
+  if (isPaymentStatus(paymentStatusRaw)) {
+    paymentStatusFilter = paymentStatusRaw;
+  } else if (paymentStatusRaw !== undefined && paymentStatusRaw !== '') {
+    logger.debug(
+      {
+        event: 'f6_admin_event_detail_payment_status_filter_dropped',
+        eventId,
+        paymentStatusRaw,
+      },
+      '[F6.1] invalid paymentStatus URL parameter — filter dropped',
+    );
   }
 
   const reqHeaders = await headers();
@@ -334,7 +332,9 @@ export default async function AdminEventDetailPage({
           }
           unmatchedOnly={unmatchedOnly}
           initialSearch={q ?? ''}
-          initialPaymentStatus={paymentStatusFilter ?? ''}
+          {...(paymentStatusFilter !== null && {
+            initialPaymentStatus: paymentStatusFilter,
+          })}
           // F6 Phase 9 / US6 — admin-only column; manager render path
           // hides it. Archived events disable relink because the
           // use-case short-circuits with `event_archived`.

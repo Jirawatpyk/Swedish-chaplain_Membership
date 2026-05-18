@@ -773,7 +773,8 @@ async function maybeApplyStateChange(
           // Rare in practice (host un-verifies payment) but the
           // symmetric correctness keeps `counted_against_*` flags in
           // sync with `payment_status`. Pattern mirrors the FR-018
-          // refund branch in process-attendee-in-tx.ts:838-920.
+          // refund branch in process-attendee-in-tx.ts (search for
+          // `markRefunded`).
           const prev = persisted.quotaEffect;
           if (
             prev.countedAgainstPartnership ||
@@ -782,9 +783,10 @@ async function maybeApplyStateChange(
             // R2-1b (2026-05-18 /speckit-review Round 2 Blocker) —
             // serialize the (tenant, member, event) write window before
             // the clear + audit emit. Credit path locks via
-            // applyQuotaEffect.ts:220-222; debit path was racing.
-            // Mirrors the FR-018 refund-branch pattern at
-            // process-attendee-in-tx.ts:786-811.
+            // `apply-quota-effect.ts` (see the `acquire()` call before
+            // `queryAllotments`); debit path was racing pre-R2.
+            // Mirrors the FR-018 refund-branch advisory-lock pattern in
+            // `process-attendee-in-tx.ts` (search for `buildQuotaLockKey`).
             try {
               await ports.advisoryLockAcquirer.acquire(
                 buildQuotaLockKey(
@@ -913,14 +915,13 @@ async function maybeApplyStateChange(
     // 660-667 ("strict-correctness invariant: either the row flips AND
     // the quota reflects the new state, or neither").
     if (e instanceof TxStageError) {
+      // Audit-emit failure has a DEDICATED counter
+      // (`csvImportAuditEmitFailed`) so SRE alerts on this class
+      // separately from the rollback-cause counter. The two metric
+      // series stay disjoint — `csvImportStateChangeFallback` is a
+      // pure "rollback cause" signal; audit-emit failures land on
+      // `csvImportAuditEmitFailed`.
       if (e.stage === 'audit_emit') {
-        // Audit-emit failure has a DEDICATED counter
-        // (`csvImportAuditEmitFailed`) so SRE alerts on this class
-        // separately from the rollback-cause counter. We deliberately
-        // skip the state-change-fallback bump for this stage so the
-        // two series stay disjoint — `csvImportStateChangeFallback`
-        // remains a pure "rollback cause" signal, audit-emit failures
-        // remain on `csvImportAuditEmitFailed`.
         eventcreateMetrics.csvImportAuditEmitFailed(
           input.tenantId,
           'csv_import_row_state_changed',

@@ -42,6 +42,7 @@
  * Pure Application — no framework imports (Constitution Principle III).
  */
 import type { AuditEmitError } from '../../ports/audit-port';
+import { assertExhaustive } from './assert-exhaustive';
 
 export function auditEmitErrorMessage(e: AuditEmitError): string {
   switch (e.kind) {
@@ -50,10 +51,8 @@ export function auditEmitErrorMessage(e: AuditEmitError): string {
     case 'enum_value_unknown':
       return `audit enum unknown: ${e.eventType}`;
     default: {
-      const _exhaustive: never = e;
-      return `audit error unknown kind: ${
-        (_exhaustive as { kind: string }).kind
-      }`;
+      assertExhaustive(e);
+      return `audit error unknown kind: ${(e as { kind: string }).kind}`;
     }
   }
 }

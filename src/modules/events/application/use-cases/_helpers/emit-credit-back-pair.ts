@@ -3,11 +3,12 @@
  * `quota_credit_back_refund` audit emit on a state-change debit (paid/
  * free → pending/waitlisted/no_show).
  *
- * Before extraction the same emit shape lived inline at two sites in
- * `maybeApplyStateChange` (`import-csv.ts:842` partnership and `:862`
- * cultural) — differing only by scope label + allotment delta. Folding
- * them through one helper prevents drift between the two branches when
- * the audit payload shape evolves.
+ * Before extraction the same emit shape lived inline at the partnership-
+ * scope and cultural-scope sites in `maybeApplyStateChange` (now
+ * consolidated at the two `emitCreditBackViaStateChange(...)` calls in
+ * `import-csv.ts`) — differing only by scope label + allotment delta.
+ * Folding them through one helper prevents drift between the two
+ * branches when the audit payload shape evolves.
  *
  * The helper deliberately does NOT loop over both scopes — callers
  * still gate each emit on `prev.countedAgainstPartnership` /

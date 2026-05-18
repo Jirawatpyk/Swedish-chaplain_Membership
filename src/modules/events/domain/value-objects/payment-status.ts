@@ -51,6 +51,8 @@ export function isPaymentStatus(value: unknown): value is PaymentStatus {
  * (`applyQuotaEffect`) and the state-change probe (`maybeApplyStateChange`
  * in `import-csv.ts`) so the rule cannot drift between paths.
  */
-export function isQuotaCountedStatus(s: PaymentStatus): boolean {
+export function isQuotaCountedStatus(
+  s: PaymentStatus,
+): s is 'paid' | 'free' {
   return s === 'paid' || s === 'free';
 }

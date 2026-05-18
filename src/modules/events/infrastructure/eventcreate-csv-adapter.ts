@@ -33,6 +33,7 @@
  * Pure TypeScript + node:crypto — Constitution Principle III (no framework
  * imports). `node:crypto` is Node standard library, not framework.
  */
+import { assertExhaustive } from '../application/use-cases/_helpers/assert-exhaustive';
 import {
   classifyPdpaConsent,
   computeAttendeeFingerprintFromEmails,
@@ -223,14 +224,13 @@ export function statusToPaymentStatus(
     case 'Skipped':
       return null;
     default: {
-      // C2 follow-up — defence-in-depth exhaustiveness assertion.
-      // Adding a 7th `EventCreateRowStatus` variant forces this case
-      // to compile-error (`never` cannot accept the new literal),
-      // catching a missing mapping at build time rather than at
-      // runtime as silent fall-through.
-      const _exhaustive: never = status;
+      // R3-F2 — defence-in-depth exhaustiveness assertion via shared
+      // helper (compile-time only). Adding a 7th
+      // `EventCreateRowStatus` variant fails the build here; the
+      // throw below is the runtime safety net.
+      assertExhaustive(status);
       throw new Error(
-        `unhandled EventCreateRowStatus: ${_exhaustive as string}`,
+        `unhandled EventCreateRowStatus: ${status as string}`,
       );
     }
   }
