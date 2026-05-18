@@ -2406,6 +2406,9 @@
         "tableCaption": "กิจกรรมที่นำเข้า เรียงตามวันที่เริ่มต้นจากใหม่ไปเก่า",
         "errorState": "ไม่สามารถโหลดกิจกรรมได้ กรุณารีเฟรชหน้าจอ",
         "importCsvCta": "นำเข้า CSV",
+        "searchPlaceholder": "ค้นหาอีเวนต์ด้วยชื่อ…",
+        "searchLabel": "ค้นหาอีเวนต์",
+        "searchSubmit": "ค้นหา",
         "columns": {
           "date": "วันที่",
           "name": "ชื่อ",
@@ -2490,6 +2493,8 @@
           "searchSubmit": "ค้นหา",
           "showUnmatchedOnly": "แสดงเฉพาะที่ยังไม่จับคู่",
           "showUnmatchedOnlyActive": "กำลังแสดงเฉพาะที่ยังไม่จับคู่",
+          "filterByPaymentStatusLabel": "กรองตามสถานะการชำระเงิน",
+          "allPaymentStatuses": "ทุกสถานะ",
           "empty": "ไม่พบผู้เข้าร่วมที่ตรงกับตัวกรอง",
           "columns": {
             "attendee": "ผู้เข้าร่วม",

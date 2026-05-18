@@ -2406,6 +2406,9 @@
         "tableCaption": "Imported events sorted by start date, most recent first.",
         "errorState": "We couldn't load events. Please refresh the page.",
         "importCsvCta": "Import CSV",
+        "searchPlaceholder": "Search events by name…",
+        "searchLabel": "Search events",
+        "searchSubmit": "Search",
         "columns": {
           "date": "Date",
           "name": "Name",
@@ -2490,6 +2493,8 @@
           "searchSubmit": "Search",
           "showUnmatchedOnly": "Show unmatched only",
           "showUnmatchedOnlyActive": "Showing unmatched only",
+          "filterByPaymentStatusLabel": "Filter by payment status",
+          "allPaymentStatuses": "All statuses",
           "empty": "No attendees match your filters.",
           "columns": {
             "attendee": "Attendee",

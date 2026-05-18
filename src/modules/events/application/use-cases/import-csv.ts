@@ -998,6 +998,24 @@ async function processOneRowInSavepoint(
           }
           eventcreateMetrics.csvImportOrphanReceiptRecovered(input.tenantId);
           orphanRecovery = true;
+          // D1 fault-injection — test-only seam for the savepoint
+          // rollback regression in
+          // `tests/integration/events/csv-orphan-receipt-self-heal.test.ts`.
+          // Fires AFTER the orphan-delete commits in-savepoint but
+          // BEFORE processAttendeeInTx runs. Forces the savepoint to
+          // roll back the delete so the receipt is restored. Guarded
+          // by `NODE_ENV==='test'` so production deploys
+          // (`NODE_ENV='production'`) short-circuit the boolean and
+          // pay zero cost. Precedent: `deterministic-render.ts:215`.
+          if (
+            process.env.NODE_ENV === 'test' &&
+            process.env.F6_TEST_FAIL_AFTER_ORPHAN_DELETE === 'true'
+          ) {
+            throw new TxStageError(
+              'event_upsert',
+              'TEST-INJECTED — fail after orphan-receipt delete (D1)',
+            );
+          }
         }
       }
 
@@ -1089,6 +1107,21 @@ async function processOneRowInSavepoint(
       // Same savepoint scope — if anything else throws after this,
       // the re-insert rolls back atomically.
       if (orphanRecovery) {
+        // D2 fault-injection — test-only seam for the savepoint
+        // rollback regression. Fires AT the post-processAttendeeInTx
+        // receipt re-insert site. Forces the savepoint to roll back
+        // BOTH the registration insert AND the orphan-delete so the
+        // pre-savepoint state is fully restored. Same NODE_ENV guard
+        // as D1.
+        if (
+          process.env.NODE_ENV === 'test' &&
+          process.env.F6_TEST_FAIL_AT_RECEIPT_REINSERT === 'true'
+        ) {
+          throw new TxStageError(
+            'idempotency_receipt',
+            'TEST-INJECTED — fail at receipt re-insert (D2)',
+          );
+        }
         const reinsert = await ports.idempotencyStore.tryInsert({
           tenantId: input.tenantId,
           source: 'eventcreate_csv',

@@ -14,7 +14,7 @@ import { redactStack } from '@/lib/redact-stack';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
-import { isMatchType } from '@/modules/events';
+import { isMatchType, isPaymentStatus } from '@/modules/events';
 import type { MatchType } from '@/modules/events';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -46,6 +46,7 @@ interface SearchParams {
   readonly unmatchedOnly?: string | string[];
   readonly matchTypeFilter?: string | string[];
   readonly q?: string | string[];
+  readonly paymentStatus?: string | string[];
 }
 
 const PAGE_SIZE = 50;
@@ -165,6 +166,15 @@ export default async function AdminEventDetailPage({
   }
   const qRaw = firstParam(query.q);
   const q = qRaw && qRaw.trim() !== '' ? qRaw.trim() : null;
+  // F6.1 follow-up — paymentStatus filter. `isPaymentStatus()` guards
+  // against URL hand-typing arbitrary strings — anything outside the
+  // 6 closed values silently drops the filter (fail-safe; don't 500
+  // the page on a typo).
+  const paymentStatusRaw = firstParam(query.paymentStatus);
+  const paymentStatusFilter =
+    paymentStatusRaw && isPaymentStatus(paymentStatusRaw)
+      ? paymentStatusRaw
+      : null;
 
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);
@@ -181,6 +191,7 @@ export default async function AdminEventDetailPage({
       unmatchedOnly,
       matchTypeFilter,
       q,
+      paymentStatusFilter,
     });
     if (!result.ok && result.error.kind !== 'not_found') {
       logger.error(
@@ -305,6 +316,7 @@ export default async function AdminEventDetailPage({
           }
           unmatchedOnly={unmatchedOnly}
           initialSearch={q ?? ''}
+          initialPaymentStatus={paymentStatusFilter ?? ''}
           // F6 Phase 9 / US6 — admin-only column; manager render path
           // hides it. Archived events disable relink because the
           // use-case short-circuits with `event_archived`.

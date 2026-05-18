@@ -60,6 +60,17 @@ export interface LoadEventDetailInput {
   readonly unmatchedOnly: boolean;
   readonly matchTypeFilter: MatchType | null;
   readonly q: string | null;
+  /**
+   * F6.1 follow-up 2026-05-18 — single-value scoping filter on the
+   * registration row's `payment_status`. `null` (default) returns
+   * all statuses. Set to a specific value to scope the attendees
+   * table to e.g. `pending` for admin payment-verification triage.
+   * Validated via `isPaymentStatus` guard at the route boundary;
+   * invalid input drops the filter (fail-safe). Optional for
+   * backward compat with non-attendee call sites (e.g., the erase
+   * page passes only `eventId` + page/size).
+   */
+  readonly paymentStatusFilter?: PaymentStatus | null;
 }
 
 export interface EventDetailItem {
@@ -178,6 +189,7 @@ export async function loadEventDetail(
     unmatchedOnly: input.unmatchedOnly,
     matchTypeFilter: input.matchTypeFilter,
     emailSearch: input.q,
+    paymentStatusFilter: input.paymentStatusFilter ?? null,
     offset,
     pageSize: input.pageSize,
   });

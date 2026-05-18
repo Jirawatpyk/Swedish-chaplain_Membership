@@ -17,7 +17,7 @@
  * repository accepts a `TenantTx` executor — never the root `db` — to
  * prevent accidental RLS-bypass.
  */
-import { and, asc, desc, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ok, err, type Result } from '@/lib/result';
 import type { TenantTx } from '@/lib/db';
 import {
@@ -210,6 +210,20 @@ export function makeDrizzleEventsRepository(executor: TenantTx): EventsRepositor
         }
         if (input.categoryFilter !== null) {
           conditions.push(eq(events.category, input.categoryFilter));
+        }
+        if (input.searchQuery !== undefined) {
+          const trimmed = input.searchQuery.trim();
+          if (trimmed.length > 0) {
+            // Case-insensitive substring match on event_name. SweCham
+            // scale (~200 events/year) makes a sequential scan
+            // acceptable — the primary
+            // `events_tenant_start_active_idx` still drives row
+            // selection (tenant_id + archived_at partial); ILIKE
+            // filters the remaining candidate set in-memory. Upgrade
+            // to a pg_trgm GIN on `events.name` (mirroring F3 members)
+            // if p95 ever exceeds 500ms — F6.2 backlog.
+            conditions.push(ilike(events.name, `%${trimmed}%`));
+          }
         }
         const whereClause = and(...conditions);
 

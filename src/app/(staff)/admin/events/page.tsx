@@ -42,6 +42,7 @@ import {
   EventsListTable,
   type EventsListTableRow,
 } from '@/components/events/events-list-table';
+import { EventsListSearchToolbar } from '@/components/events/events-list-search-toolbar';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.events.list');
@@ -60,6 +61,7 @@ interface SearchParams {
   readonly partnerBenefitOnly?: string | string[];
   readonly culturalEventOnly?: string | string[];
   readonly categoryFilter?: string | string[];
+  readonly q?: string | string[];
 }
 
 const PAGE_SIZE = 25;
@@ -114,11 +116,15 @@ export default async function AdminEventsListPage({
   const categoryRaw = firstParam(query.categoryFilter);
   const categoryFilter =
     categoryRaw && categoryRaw.trim() !== '' ? categoryRaw.trim() : null;
+  const searchRaw = firstParam(query.q);
+  const searchQuery =
+    searchRaw && searchRaw.trim().length > 0 ? searchRaw.trim() : undefined;
   const hasFilters =
     includeArchived ||
     partnerBenefitOnly ||
     culturalEventOnly ||
-    categoryFilter !== null;
+    categoryFilter !== null ||
+    searchQuery !== undefined;
 
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);
@@ -138,6 +144,7 @@ export default async function AdminEventsListPage({
       partnerBenefitOnly,
       culturalEventOnly,
       categoryFilter,
+      ...(searchQuery !== undefined && { searchQuery }),
     });
     if (!result.ok) {
       logger.error(
@@ -206,18 +213,28 @@ export default async function AdminEventsListPage({
             </div>
           ) : (
             <>
-              <FilterChips
-                query={
-                  query as unknown as Record<
-                    string,
-                    string | string[] | undefined
-                  >
-                }
-                hasFilters={hasFilters}
-                includeArchived={includeArchived}
-                partnerBenefitOnly={partnerBenefitOnly}
-                culturalEventOnly={culturalEventOnly}
-              />
+              {/* User UX (2026-05-18): search input and filter chips
+                  on the same row on ≥sm viewports so admins can see
+                  both controls without scrolling. Wraps to a
+                  2-line stack on narrow viewports (<sm) since the
+                  search field needs ~28rem and the chips group needs
+                  ~24rem — a forced single-line at 320px would crush
+                  both. `gap-y-3` keeps vertical rhythm when wrapped. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                <EventsListSearchToolbar initialSearch={searchQuery ?? ''} />
+                <FilterChips
+                  query={
+                    query as unknown as Record<
+                      string,
+                      string | string[] | undefined
+                    >
+                  }
+                  hasFilters={hasFilters}
+                  includeArchived={includeArchived}
+                  partnerBenefitOnly={partnerBenefitOnly}
+                  culturalEventOnly={culturalEventOnly}
+                />
+              </div>
               {result.value.items.length === 0 ? (
                 <EmptyState
                   emptyContext={result.value.emptyStateContext}

@@ -2406,6 +2406,9 @@
         "tableCaption": "Importerade evenemang sorterade efter startdatum, nyast först.",
         "errorState": "Det gick inte att läsa in evenemangen. Uppdatera sidan.",
         "importCsvCta": "Importera CSV",
+        "searchPlaceholder": "Sök evenemang efter namn…",
+        "searchLabel": "Sök evenemang",
+        "searchSubmit": "Sök",
         "columns": {
           "date": "Datum",
           "name": "Namn",
@@ -2490,6 +2493,8 @@
           "searchSubmit": "Sök",
           "showUnmatchedOnly": "Visa endast omatchade",
           "showUnmatchedOnlyActive": "Visar endast omatchade",
+          "filterByPaymentStatusLabel": "Filtrera efter betalningsstatus",
+          "allPaymentStatuses": "Alla statusar",
           "empty": "Inga deltagare matchar dina filter.",
           "columns": {
             "attendee": "Deltagare",

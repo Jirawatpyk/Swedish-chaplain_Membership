@@ -57,6 +57,12 @@ export interface ListEventsInput {
   readonly categoryFilter: string | null;
   readonly offset: number;
   readonly pageSize: number;
+  /**
+   * Free-text substring match on `events.name` (case-insensitive).
+   * Repo applies `ilike(events.name, '%trimmed%')`; undefined OR
+   * whitespace-only treated as no filter.
+   */
+  readonly searchQuery?: string;
 }
 
 export interface ListEventsResult {

@@ -86,6 +86,16 @@ export interface ListRegistrationsByEventInput {
    */
   readonly matchTypeFilter: MatchType | null;
   readonly emailSearch: string | null; // substring on attendee_email_lower + attendee_name
+  /**
+   * Single-value scoping filter on `payment_status`. `null` (or
+   * omitted) returns all statuses. F6.1 follow-up 2026-05-18 —
+   * surfaces post-Option-B+ mixed-status rows (paid / pending /
+   * waitlisted / no_show / refunded / free). Optional for backward
+   * compat with existing call sites that don't yet thread it.
+   */
+  readonly paymentStatusFilter?:
+    | import('../../domain/value-objects/payment-status').PaymentStatus
+    | null;
   readonly offset: number;
   readonly pageSize: number;
 }

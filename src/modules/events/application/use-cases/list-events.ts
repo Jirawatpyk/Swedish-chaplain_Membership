@@ -39,6 +39,13 @@ export interface ListEventsInput {
   readonly partnerBenefitOnly: boolean;
   readonly culturalEventOnly: boolean;
   readonly categoryFilter: string | null;
+  /**
+   * Free-text substring search on event_name (case-insensitive).
+   * Trimmed + empty-string-treated-as-undefined at the call site —
+   * the repo's `ilike(events.name, '%trimmed%')` is a no-op for
+   * undefined OR all-whitespace input.
+   */
+  readonly searchQuery?: string;
 }
 
 export interface ListEventsItem {
@@ -104,6 +111,7 @@ export async function listEvents(
       categoryFilter: input.categoryFilter,
       offset,
       pageSize: input.pageSize,
+      ...(input.searchQuery !== undefined && { searchQuery: input.searchQuery }),
     }),
     // Empty-state context is always returned (the contract requires
     // it even when items.length > 0 so paginated views landing on

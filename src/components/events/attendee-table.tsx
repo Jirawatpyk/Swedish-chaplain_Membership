@@ -39,6 +39,17 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  TranslatedSelectValue,
+} from '@/components/ui/select';
+// Import the Domain VO directly (NOT via the @/modules/events barrel)
+// so this Client Component does not transitively pull infrastructure
+// modules that reference Server-Component-only `next/cache` APIs.
+import { PAYMENT_STATUSES } from '@/modules/events/domain/value-objects/payment-status';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
@@ -91,6 +102,13 @@ type Props = {
   readonly unmatchedOnly: boolean;
   readonly initialSearch: string;
   /**
+   * F6.1 follow-up 2026-05-18 — initial selected `payment_status`
+   * for the toolbar Select. Empty string = "All statuses" (no
+   * filter). Validated by the page-level `isPaymentStatus` guard;
+   * the table accepts the empty-string default for backward compat.
+   */
+  readonly initialPaymentStatus?: string;
+  /**
    * F6 Phase 9 / US6 — required by the relink dialog so it can POST to
    * the per-event route. Branded `EventId | null` (Round-1 type-H3
    * fix) — `null` only on the manager read-only render path which
@@ -126,6 +144,7 @@ export function AttendeeTable({
   rows,
   unmatchedOnly,
   initialSearch,
+  initialPaymentStatus = '',
   eventId,
   canRelink,
 }: Props) {
@@ -171,6 +190,28 @@ export function AttendeeTable({
     next.delete('page');
     pushUrl(next);
   }, [searchParams, unmatchedOnly, pushUrl]);
+
+  // F6.1 follow-up — paymentStatus filter (single-value select).
+  // Empty string == "All statuses" sentinel — Base UI `<Select>`
+  // rejects empty string as a `value`, so we route the "all" choice
+  // through the `__all__` sentinel and strip it before pushing to URL.
+  // URL key is `paymentStatus`; server page validates with
+  // `isPaymentStatus()` (anything off-list drops the filter
+  // fail-safe).
+  const ALL_STATUSES_SENTINEL = '__all__';
+  const onPaymentStatusChange = useCallback(
+    (next: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === null || next === '' || next === ALL_STATUSES_SENTINEL) {
+        params.delete('paymentStatus');
+      } else {
+        params.set('paymentStatus', next);
+      }
+      params.delete('page');
+      pushUrl(params);
+    },
+    [searchParams, pushUrl],
+  );
 
   const submitSearch = useCallback(
     (e: React.FormEvent) => {
@@ -241,8 +282,15 @@ export function AttendeeTable({
        page; tooltip race + Tab order noise). */
     <TooltipProvider>
     <div className="flex flex-col gap-4" aria-busy={isPending}>
+      {/* Mobile: search takes full row, filter chips wrap to next.
+          ≥sm: search + 2 chips share one row. The `min-w-0` on the
+          form lets it shrink inside the flex parent without forcing
+          horizontal scroll on narrow viewports. */}
       <div className="flex flex-wrap items-center gap-2">
-        <form onSubmit={submitSearch} className="flex flex-1 gap-2">
+        <form
+          onSubmit={submitSearch}
+          className="flex w-full min-w-0 gap-2 sm:w-auto sm:flex-1"
+        >
           <Input
             type="search"
             value={searchInput}
@@ -270,7 +318,7 @@ export function AttendeeTable({
             onKeyDown={handleSearchKeyDown}
             placeholder={t('searchPlaceholder')}
             aria-label={t('searchLabel')}
-            className="max-w-md"
+            className="min-w-0 flex-1"
           />
           <Button type="submit" variant="outline" disabled={isPending}>
             {isPending && (
@@ -288,6 +336,7 @@ export function AttendeeTable({
           onClick={toggleUnmatched}
           aria-pressed={unmatchedOnly}
           disabled={isPending}
+          className="w-full sm:w-auto"
         >
           {isPending && (
             <Loader2
@@ -299,6 +348,42 @@ export function AttendeeTable({
             ? t('showUnmatchedOnlyActive')
             : t('showUnmatchedOnly')}
         </Button>
+        <Select
+          value={
+            initialPaymentStatus === ''
+              ? ALL_STATUSES_SENTINEL
+              : initialPaymentStatus
+          }
+          onValueChange={onPaymentStatusChange}
+          disabled={isPending}
+        >
+          <SelectTrigger
+            className="w-full sm:w-[12rem]"
+            aria-label={t('filterByPaymentStatusLabel')}
+          >
+            {/* TranslatedSelectValue maps the raw `value` (e.g.
+                `'paid'` or the `__all__` sentinel) to a localised
+                label so users never see the internal literal. */}
+            <TranslatedSelectValue
+              placeholder={t('filterByPaymentStatusLabel')}
+              translate={(v) =>
+                v === ALL_STATUSES_SENTINEL
+                  ? t('allPaymentStatuses')
+                  : tPay(v as Parameters<typeof tPay>[0])
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_STATUSES_SENTINEL}>
+              {t('allPaymentStatuses')}
+            </SelectItem>
+            {PAYMENT_STATUSES.map((s) => (
+              <SelectItem key={s} value={s}>
+                {tPay(s)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {/*
        * result-count aria-live region —

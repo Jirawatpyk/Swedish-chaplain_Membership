@@ -335,6 +335,14 @@ export function makeDrizzleRegistrationsRepository(executor: TenantTx): Registra
         const itemFilters: SQL[] = [...baseFilters];
         if (matchFilter) itemFilters.push(matchFilter);
         if (searchFilter) itemFilters.push(searchFilter);
+        if (
+          input.paymentStatusFilter !== null &&
+          input.paymentStatusFilter !== undefined
+        ) {
+          itemFilters.push(
+            eq(eventRegistrations.paymentStatus, input.paymentStatusFilter),
+          );
+        }
 
         // When unmatchedOnly is true, sort `unmatched` first (admin
         // reviews ambiguous matches before non-members) per AS4 / P4.
