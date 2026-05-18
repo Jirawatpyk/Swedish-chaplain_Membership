@@ -33,6 +33,15 @@ import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 
+// /code-review (2026-05-19 post-ship) — explicit Node runtime +
+// force-dynamic to match the project-wide cron-route convention
+// (precedent: PR #22 review for `dispatch-scheduled`). The route
+// uses `verifyCronBearer` (`node:crypto.timingSafeEqual`) +
+// Drizzle's `postgres-js` socket. Defends against future Vercel
+// default drift.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const RETENTION_DAYS = 90;
 
 export async function GET(request: NextRequest): Promise<NextResponse> {

@@ -593,3 +593,11 @@ export { asTenantId } from '@/modules/members';
 // MTA tenant-per-DB) a one-line barrel re-wire instead of an N-line
 // grep through every adapter file.
 export { makeDrizzleTenantWebhookConfigRepository } from './infrastructure/drizzle-tenant-webhook-config-repository';
+
+// /code-review (2026-05-19 post-ship) — surface the R4-I1
+// `safeAuditEmit` Result-helper through the barrel so composition
+// adapters in `src/lib/**` (e.g. `events-admin-integration-deps.ts`)
+// route raw `audit.emit()` throws through the canonical F6 silent-
+// failure guard without reaching into `_helpers/`. Pure Application
+// helper — no framework imports (Constitution Principle III).
+export { safeAuditEmit } from './application/use-cases/_helpers/safe-audit-emit';

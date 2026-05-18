@@ -78,6 +78,12 @@ import type {
 } from '../../ports/quota-accounting-port';
 import type { AdvisoryLockAcquirer } from '../../ports/advisory-lock-acquirer';
 import { applyQuotaEffect, buildQuotaLockKey } from '../apply-quota-effect';
+// /code-review (2026-05-19 post-ship) — `safeStringify` extracted to a
+// leaf module to break the 3-file circular import cycle. Re-exported
+// below so existing internal callers (`maybeApplyStateChange` synth
+// cause sites + the `emitOrThrow` raw-throw wrap at L240/849/853) and
+// `import-csv.ts` continue to resolve via this module path.
+import { safeStringify } from './safe-stringify';
 
 // ---------------------------------------------------------------------------
 // TxStageError — shared between helper and webhook/CSV callers
@@ -153,25 +159,14 @@ function makeSyntheticCause(errorClass: string, detail: string): Error {
 
 /**
  * R5.3.1 / Round 4 I-4 — JSON-stringify a non-Error value for
- * cause-wrapping. Guards against circular references (which would
- * crash a naive `JSON.stringify`) and caps the output so a future
- * adversarial throw can't bloat the audit row.
+ * cause-wrapping.
+ *
+ * /code-review (2026-05-19 post-ship) — `safeStringify` body moved to
+ * `_helpers/safe-stringify.ts` to break a 3-file circular import
+ * cycle. Re-exported below so `import-csv.ts` (which `import`s it
+ * from this module path) keeps working without churning every caller.
  */
-export function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet<object>();
-    const json = JSON.stringify(value, (_k, v) => {
-      if (typeof v === 'object' && v !== null) {
-        if (seen.has(v as object)) return '[Circular]';
-        seen.add(v as object);
-      }
-      return v;
-    });
-    return (json ?? String(value)).slice(0, 500);
-  } catch {
-    return String(value).slice(0, 500);
-  }
-}
+export { safeStringify };
 
 /**
  * Format a `markRefunded` repo error into a human-readable string for

@@ -42,7 +42,10 @@ import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+// /code-review (2026-05-19) — Principle III: type imports go through the
+// F2 public barrel. `BenefitMatrix` IS re-exported from
+// `@/modules/plans` (see `src/modules/plans/index.ts` § Domain types).
+import type { BenefitMatrix } from '@/modules/plans';
 import type {
   QuotaAccountingPort,
   QuotaAccountingError,

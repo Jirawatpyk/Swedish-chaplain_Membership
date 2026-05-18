@@ -756,8 +756,23 @@ async function maybeApplyStateChange(
             },
           );
           if (!q.ok) {
+            // /code-review (2026-05-19 post-ship) — preserve the
+            // canonical FailureStage discriminator so the outer catch
+            // at L934 routes audit-emit failures into the dedicated
+            // `csvImportAuditEmitFailed` counter (R3-C3 disjoint-
+            // series invariant) instead of mis-bucketing them as
+            // `csvImportStateChangeFallback{reason='quota_decrement'}`.
+            // Pre-fix: every `q.error.kind` value funnelled into
+            // `'quota_decrement'`, breaking SRE alert routing for the
+            // `applyQuotaEffect` → internal `audit.emit` raw-throw
+            // path that R4-I1's `safeAuditEmit` now correctly
+            // surfaces as `q.error.kind === 'audit_emit_failed'`.
+            const stage: FailureStage =
+              q.error.kind === 'audit_emit_failed'
+                ? 'audit_emit'
+                : 'quota_decrement';
             throw new TxStageError(
-              'quota_decrement',
+              stage,
               `state-change quota credit failed (${q.error.kind})`,
             );
           }

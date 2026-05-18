@@ -65,6 +65,11 @@ async function main() {
   // 5. Compute rowHash for each missing email + check if receipt exists
   // rowHash = sha256(event_external_id + " " + email + " " + ts)
   const evt = (await sql`SELECT external_id, start_date FROM events WHERE event_id=${EVENT_ID} AND tenant_id=${TENANT_ID}`)[0];
+  if (!evt) {
+    console.error(`\n✗ Event not found: event_id=${EVENT_ID} tenant_id=${TENANT_ID}`);
+    await sql.end();
+    process.exit(1);
+  }
   console.log('\nEvent external_id:', evt.external_id);
   console.log('Event start_date:', evt.start_date.toISOString());
 

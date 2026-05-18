@@ -74,6 +74,13 @@ import {
   signWebhookRequest,
   asSecretLastFour,
   makeDrizzleTenantWebhookConfigRepository,
+  // /code-review (2026-05-19 post-ship) — `safeAuditEmit` wraps the
+  // raw `audit.emit()` call below so a sub-adapter raw throw (pool
+  // exhaust panic, etc.) does NOT escape this composition adapter as
+  // an uncaught exception. Mirrors the R4-I1 27-caller migration that
+  // covered every F6 `src/modules/events/**` site; this file lives in
+  // `src/lib/**` and was missed by that grep target.
+  safeAuditEmit,
   type WebhookSecret,
   type TenantWebhookConfigAggregate,
   type SecretLastFour,
@@ -731,7 +738,15 @@ export async function runToggleIngest(
     dbStateMutated = true;
     mutatedEnabledState = update.value.enabled;
 
-    const auditRes = await audit.emit({
+    // /code-review (2026-05-19 post-ship) — route through
+    // `safeAuditEmit` so a raw throw from the sub-adapter (DB pool
+    // exhaust panic, future audit-repo regression) converts to a
+    // `Result.err({kind:'db_error',...})` that the existing
+    // `if (!auditRes.ok)` handler 4 lines below already covers.
+    // Pre-fix: a raw throw escaped this `runInTenant` callback as an
+    // uncaught exception, leaving SRE with `unknown`-bucketed alerts
+    // instead of the correct `audit_emit_failed` classification.
+    const auditRes = await safeAuditEmit(audit, {
       eventType: 'ingest_disabled_tenant_admin',
       tenantId: asTenantId(tenantSlug),
       actorType: 'admin',

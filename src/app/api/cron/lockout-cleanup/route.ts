@@ -36,6 +36,17 @@ import { hashId } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 
+// /code-review (2026-05-19 post-ship) — explicit Node runtime + force-
+// dynamic to match the project-wide cron-route convention (precedent:
+// PR #22 review for `dispatch-scheduled`). `verifyCronBearer` uses
+// `node:crypto.timingSafeEqual` and the route reads
+// `process.env.CRON_SECRET` per-request — both rely on the Node
+// runtime + dynamic execution. Works today because Vercel App Router
+// defaults to Node + Dynamic for route handlers; explicit exports
+// defend against future default drift.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 

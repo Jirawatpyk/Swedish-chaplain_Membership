@@ -75,6 +75,17 @@ import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { sql as sqlTag } from 'drizzle-orm';
 
+// /code-review (2026-05-19 post-ship) — explicit Node runtime +
+// force-dynamic to match the project-wide cron-route convention
+// (precedent: PR #22 review for `dispatch-scheduled`). The route
+// uses `node:crypto.timingSafeEqual` (via `verifyCronBearer`),
+// Drizzle's `postgres-js` socket, `db.transaction()` row-level locks,
+// and per-tick wall-clock reads — every primitive depends on the
+// Node runtime + dynamic execution. Defends against future Vercel
+// default drift.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 // Spec FR-012c: "≥ 5 attempts with exponential backoff 60s / 5m / 30m / 3h / 12h".
 const RETRY_BACKOFF_SECONDS = [60, 300, 1_800, 10_800, 43_200] as const;
 const MAX_ATTEMPTS = 5;

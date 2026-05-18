@@ -40,7 +40,11 @@ import type {
   F6AuditEventType,
   AuditEmitError,
 } from '../../ports/audit-port';
-import { safeStringify } from './process-attendee-in-tx';
+// /code-review (2026-05-19 post-ship) — import from the leaf module
+// `./safe-stringify` instead of `./process-attendee-in-tx` to break a
+// 3-file circular import cycle. See `./safe-stringify.ts` header for
+// the cycle diagram + TDZ-fragility rationale.
+import { safeStringify } from './safe-stringify';
 
 /**
  * Wraps `audit.emit()` to catch raw throws and convert them into the

@@ -23,11 +23,32 @@ import { NextRequest } from 'next/server';
 const runGenerateErrorCsvSignedUrlMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
 const adminOnlyGuardMock = vi.fn();
+const errorCsvDownloadRateLimitCheckMock = vi.fn();
 
 vi.mock('@/lib/events-csv-import-deps', () => ({
   runGenerateErrorCsvSignedUrl: (...args: unknown[]) =>
     runGenerateErrorCsvSignedUrlMock(...args),
 }));
+
+// /code-review (2026-05-19 post-ship) — mock `errorCsvDownloadRateLimitCheck`
+// so this CONTRACT test (HTTP boundary only) doesn't share an Upstash
+// rate-limit budget with other tests in the same vitest run. Before
+// this mock the test would intermittently 429 when a sibling suite
+// consumed the 20/hr (tenant, actor) budget — rate-limit behavior is
+// covered by a dedicated integration suite, not this surface contract.
+// Use `vi.importActual` + spread to preserve the rest of the module's
+// real exports (rotateSecretRateLimitCheck, runToggleIngest, etc.)
+// per the project's safe partial-mock convention.
+vi.mock('@/lib/events-admin-integration-deps', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/lib/events-admin-integration-deps')
+  >('@/lib/events-admin-integration-deps');
+  return {
+    ...actual,
+    errorCsvDownloadRateLimitCheck: (...args: unknown[]) =>
+      errorCsvDownloadRateLimitCheckMock(...args),
+  };
+});
 
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: (...args: unknown[]) =>
@@ -67,6 +88,10 @@ beforeEach(() => {
     kind: 'allow',
     actorUserId: ADMIN_USER_ID,
   });
+  // Default to "rate-limit allows" so the HTTP boundary tests below
+  // exercise the use-case mock + outcome mapping. Tests that need the
+  // 429 path can override per-test.
+  errorCsvDownloadRateLimitCheckMock.mockResolvedValue({ success: true });
 });
 
 afterEach(() => {
