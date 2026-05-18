@@ -724,9 +724,17 @@ function PreviewPanel({
           >
             <thead>
               <tr>
-                {preview.detectedColumns.map((c) => (
+                {/*
+                  Bug-fix 2026-05-18 — some EventCreate CSV exports
+                  contain duplicate column names (e.g., "Billing
+                  Address" appearing twice). React requires unique keys
+                  so we suffix with the column index. Duplicates remain
+                  visible to the admin (intentional — flag of CSV
+                  quirk; admin may re-export from EventCreate).
+                */}
+                {preview.detectedColumns.map((c, idx) => (
                   <th
-                    key={c}
+                    key={`${c}-${idx}`}
                     className="border-b border-border px-2 py-1 text-left"
                   >
                     {c}
