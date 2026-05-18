@@ -62,15 +62,20 @@ export interface LoadEventDetailInput {
   readonly q: string | null;
   /**
    * F6.1 follow-up 2026-05-18 — single-value scoping filter on the
-   * registration row's `payment_status`. `null` (default) returns
-   * all statuses. Set to a specific value to scope the attendees
-   * table to e.g. `pending` for admin payment-verification triage.
-   * Validated via `isPaymentStatus` guard at the route boundary;
-   * invalid input drops the filter (fail-safe). Optional for
-   * backward compat with non-attendee call sites (e.g., the erase
-   * page passes only `eventId` + page/size).
+   * registration row's `payment_status`. `null` returns all statuses.
+   * Set to a specific value to scope the attendees table to e.g.
+   * `pending` for admin payment-verification triage. Validated via
+   * `isPaymentStatus` guard at the route boundary; invalid input
+   * drops the filter (fail-safe).
+   *
+   * R2-5 (2026-05-18 /speckit-review Round 2) — dropped the `?:`
+   * optional marker so the field is required + nullable, matching
+   * the `matchTypeFilter: MatchType | null` and `q: string | null`
+   * convention on this same interface (single-axis nullability).
+   * Callers MUST pass `null` (or a `PaymentStatus` value) — omitting
+   * the key is a type error.
    */
-  readonly paymentStatusFilter?: PaymentStatus | null;
+  readonly paymentStatusFilter: PaymentStatus | null;
 }
 
 export interface EventDetailItem {
@@ -189,7 +194,7 @@ export async function loadEventDetail(
     unmatchedOnly: input.unmatchedOnly,
     matchTypeFilter: input.matchTypeFilter,
     emailSearch: input.q,
-    paymentStatusFilter: input.paymentStatusFilter ?? null,
+    paymentStatusFilter: input.paymentStatusFilter,
     offset,
     pageSize: input.pageSize,
   });

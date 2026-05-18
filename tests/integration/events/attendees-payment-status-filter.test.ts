@@ -107,4 +107,27 @@ describe('F6.1 loadEventDetail.paymentStatusFilter (live Neon)', () => {
     expect(r.value.registrations).toHaveLength(1);
     expect(r.value.registrations[0]?.paymentStatus).toBe('waitlisted');
   });
+
+  it('R2-6 combined paymentStatusFilter + unmatchedOnly intersects predicates', async () => {
+    // All 4 seeded rows are `non_member` matchType (see beforeAll),
+    // which is an unmatched-class match. Combining `paymentStatusFilter='pending'`
+    // with `unmatchedOnly=true` must return ONLY the pending row —
+    // not all 4 unmatched rows, and not all 1 pending row regardless
+    // of match. This pins the AND-composition behaviour so a future
+    // OR-by-mistake regression breaks the test.
+    const r = await runLoadEventDetail(tenant.ctx.slug, {
+      eventId,
+      page: 1,
+      pageSize: 50,
+      unmatchedOnly: true,
+      matchTypeFilter: null,
+      q: null,
+      paymentStatusFilter: 'pending',
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.registrations).toHaveLength(1);
+    expect(r.value.registrations[0]?.paymentStatus).toBe('pending');
+    expect(r.value.registrations[0]?.matchType).toBe('non_member');
+  });
 });

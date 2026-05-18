@@ -3238,12 +3238,53 @@ export const eventcreateMetrics = {
    * `rate > 0` because state-change loss is a silent data-correctness
    * regression on re-upload.
    */
-  csvImportStateChangeFallback(tenantId: string, reason: 'lookup_err' | 'lookup_missing' | 'update_err' | 'threw'): void {
+  csvImportStateChangeFallback(
+    tenantId: string,
+    reason:
+      // Pre-R2 reasons (kept for backward-compat with existing dashboards).
+      | 'lookup_err'
+      | 'lookup_missing'
+      | 'update_err'
+      | 'threw'
+      // R2-1 + S-7 (2026-05-18) — outer-catch re-throws every TxStageError
+      // stage so the savepoint rolls back atomically. Label is now the
+      // `FailureStage` literal so SRE can break down rollback causes.
+      // Cardinality stays bounded at the 6 FailureStage values + the
+      // 'unknown' bucket for non-TxStageError throws + pre-R2 reasons.
+      | 'event_upsert'
+      | 'registration_insert'
+      | 'idempotency_receipt'
+      | 'quota_decrement'
+      | 'audit_emit'
+      | 'unknown',
+  ): void {
     safeMetric(() => {
       counter(
         'eventcreate_csv_state_change_fallback_total',
         'F6.1 state-change fallback counter (admin Notes-fix silently dropped)',
       ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * R2-7 (2026-05-18 /speckit-review Round 2) — fired when `findById` on
+   * the events repo returns an err during the state-change quota gate.
+   * Previously folded into the "non-eligible event" branch (silently),
+   * masking transient DB-read errors as legitimate quota neutrality.
+   * SRE alerts on `rate > 0` because a DB-read err in this path means
+   * the savepoint commits a payment_status flip with zero quota effect,
+   * which only matters if the event was quota-eligible — operator must
+   * verify via the runbook.
+   */
+  csvImportEventLookupFailed(
+    tenantId: string,
+    scope: 'state_change_quota_gate',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_event_lookup_failed_total',
+        'F6.1 event lookup failure counter (state-change quota gate)',
+      ).add(1, { tenant: tenantId, scope });
     });
   },
 

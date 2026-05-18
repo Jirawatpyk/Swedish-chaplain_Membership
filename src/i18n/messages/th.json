@@ -387,7 +387,7 @@
           "homepageLogo": "โลโก้บนหน้าแรก",
           "directoryListingSize": "ขนาดรายชื่อในไดเรกทอรี",
           "directoryListing": "รายชื่อในไดเรกทอรี",
-          "eventDiscountScope": "ขอบเขตส่วนลดงานอีเวนต์",
+          "eventDiscountScope": "ขอบเขตส่วนลดงานกิจกรรม",
           "discountScope": "ขอบเขตส่วนลด",
           "eventsCoBrandedAccess": "สิทธิ์เข้างาน Co-Branded",
           "coBrandedAccess": "สิทธิ์ Co-Branded",
@@ -396,8 +396,8 @@
           "m2mBenefitsAccess": "สิทธิ์ M2M Benefits",
           "businessReferrals": "การแนะนำธุรกิจ",
           "tailorMadeServices": "บริการเฉพาะสมาชิก",
-          "eventTicketsIncluded": "บัตรงานอีเวนต์รวมในแพ็กเกจ",
-          "eventTickets": "บัตรงานอีเวนต์",
+          "eventTicketsIncluded": "บัตรงานกิจกรรมรวมในแพ็กเกจ",
+          "eventTickets": "บัตรงานกิจกรรม",
           "websiteLogoMonths": "เดือนแสดงโลโก้บนเว็บไซต์",
           "bannerPerYear": "แบนเนอร์ต่อปี",
           "boothIncluded": "บูธรวมในแพ็กเกจ",
@@ -2406,9 +2406,11 @@
         "tableCaption": "กิจกรรมที่นำเข้า เรียงตามวันที่เริ่มต้นจากใหม่ไปเก่า",
         "errorState": "ไม่สามารถโหลดกิจกรรมได้ กรุณารีเฟรชหน้าจอ",
         "importCsvCta": "นำเข้า CSV",
-        "searchPlaceholder": "ค้นหาอีเวนต์ด้วยชื่อ…",
-        "searchLabel": "ค้นหาอีเวนต์",
+        "searchPlaceholder": "ค้นหากิจกรรมด้วยชื่อ…",
+        "searchLabel": "ค้นหากิจกรรม",
         "searchSubmit": "ค้นหา",
+        "resultsAnnouncement": "{count, plural, =0 {ไม่พบกิจกรรม} other {# กิจกรรม}}",
+        "resultsAnnouncementWithQuery": "{count, plural, =0 {ไม่พบกิจกรรม} other {# กิจกรรม}} สำหรับ ''{query}''",
         "columns": {
           "date": "วันที่",
           "name": "ชื่อ",
@@ -2482,7 +2484,7 @@
           "viewOnEventCreate": "ดูบน EventCreate",
           "opensInNewTab": "(เปิดในแท็บใหม่)",
           "lastUpdatedAt": "อัปเดตล่าสุด",
-          "lastUpdatedAtTooltip": "เวลาที่ซิงค์รายชื่อหรืออัปเดตอีเวนต์ล่าสุด",
+          "lastUpdatedAtTooltip": "เวลาที่ซิงค์รายชื่อหรืออัปเดตกิจกรรมล่าสุด",
           "actionsLabel": "การกระทำของกิจกรรม"
         },
         "attendees": {
@@ -2496,6 +2498,7 @@
           "filterByPaymentStatusLabel": "กรองตามสถานะการชำระเงิน",
           "allPaymentStatuses": "ทุกสถานะ",
           "empty": "ไม่พบผู้เข้าร่วมที่ตรงกับตัวกรอง",
+          "clearFilters": "ล้างตัวกรอง",
           "columns": {
             "attendee": "ผู้เข้าร่วม",
             "match": "การจับคู่",
@@ -2613,7 +2616,7 @@
           "pii_pseudonymised": "ปกปิดข้อมูลส่วนบุคคลของผู้เข้าร่วม",
           "pii_pseudonymisation_sweep_run": "รอบกวาดปกปิดข้อมูลส่วนบุคคล",
           "cross_tenant_probe": "บล็อกการตรวจสอบข้ามองค์กร",
-          "event_detail_not_found_probe": "ไม่พบรายละเอียดอีเวนต์ (ระดับข้อมูล)",
+          "event_detail_not_found_probe": "ไม่พบรายละเอียดกิจกรรม (ระดับข้อมูล)",
           "role_violation_blocked": "บล็อกการละเมิดบทบาท"
         },
         "toggles": {
@@ -2739,53 +2742,53 @@
           "timeoutDetail": "การนำเข้าบางส่วนเสร็จสิ้นแล้ว กรุณาอัปโหลด CSV เดิมอีกครั้ง — แถวที่ประมวลผลไปแล้วจะถูกข้ามอัตโนมัติ",
           "unexpectedTitle": "เกิดข้อผิดพลาดบางอย่าง",
           "unexpectedDetail": "เกิดข้อผิดพลาดที่ไม่คาดคิด ลองอีกครั้ง หากปัญหายังคงอยู่กรุณาติดต่อทีมสนับสนุน",
-          "eventNotSelectedTitle": "ยังไม่ได้เลือกอีเวนต์",
-          "eventNotSelectedDetail": "กรุณาเลือกอีเวนต์จากเมนูดรอปดาวน์ก่อนอัปโหลด"
+          "eventNotSelectedTitle": "ยังไม่ได้เลือกกิจกรรม",
+          "eventNotSelectedDetail": "กรุณาเลือกกิจกรรมจากเมนูดรอปดาวน์ก่อนอัปโหลด"
         },
         "eventPicker": {
-          "fieldLabel": "อีเวนต์",
-          "fieldHelp": "เลือกอีเวนต์ที่ CSV นี้จะถูกบันทึก ค่าที่เลือกจากดรอปดาวน์เป็นค่าหลัก คอลัมน์อีเวนต์ในไฟล์ CSV จะถูกแทนที่ทั้งหมด",
+          "fieldLabel": "กิจกรรม",
+          "fieldHelp": "เลือกกิจกรรมที่ CSV นี้จะถูกบันทึก ค่าที่เลือกจากดรอปดาวน์เป็นค่าหลัก คอลัมน์กิจกรรมในไฟล์ CSV จะถูกแทนที่ทั้งหมด",
           "selectedPrefix": "เลือกแล้ว",
-          "submitGatedHint": "กรุณาเลือกอีเวนต์จากดรอปดาวน์ด้านบนเพื่อดำเนินการต่อ",
-          "triggerAriaLabel": "เลือกอีเวนต์สำหรับนำเข้า CSV",
-          "loading": "กำลังโหลดรายการอีเวนต์…",
-          "placeholder": "เลือกอีเวนต์…",
-          "searchPlaceholder": "ค้นหาอีเวนต์ด้วยชื่อ…",
-          "searchAriaLabel": "ค้นหาอีเวนต์",
-          "emptyState": "ไม่พบอีเวนต์ที่ตรงกัน สร้างอีเวนต์ใหม่หรือปรับการค้นหา",
-          "createInlineCta": "+ สร้างอีเวนต์ใหม่",
-          "loadErrorDetail": "โหลดรายการอีเวนต์ไม่สำเร็จ กรุณารีเฟรชแล้วลองใหม่",
+          "submitGatedHint": "กรุณาเลือกกิจกรรมจากดรอปดาวน์ด้านบนเพื่อดำเนินการต่อ",
+          "triggerAriaLabel": "เลือกกิจกรรมสำหรับนำเข้า CSV",
+          "loading": "กำลังโหลดรายการกิจกรรม…",
+          "placeholder": "เลือกกิจกรรม…",
+          "searchPlaceholder": "ค้นหากิจกรรมด้วยชื่อ…",
+          "searchAriaLabel": "ค้นหากิจกรรม",
+          "emptyState": "ไม่พบกิจกรรมที่ตรงกัน สร้างกิจกรรมใหม่หรือปรับการค้นหา",
+          "createInlineCta": "+ สร้างกิจกรรมใหม่",
+          "loadErrorDetail": "โหลดรายการกิจกรรมไม่สำเร็จ กรุณารีเฟรชแล้วลองใหม่",
           "filenameMatchHint": "เสนอจากชื่อไฟล์: {eventName}",
-          "createNewCta": "สร้างอีเวนต์ใหม่",
-          "refreshAriaLabel": "รีเฟรชรายการอีเวนต์",
+          "createNewCta": "สร้างกิจกรรมใหม่",
+          "refreshAriaLabel": "รีเฟรชรายการกิจกรรม",
           "inlineCreateModal": {
-            "title": "สร้างอีเวนต์ใหม่",
-            "description": "สร้างอีเวนต์ใหม่ของหอการค้าเพื่อให้ CSV นี้สามารถนำเข้าได้ หลังสร้างเสร็จ ระบบจะเลือกอีเวนต์นี้ในดรอปดาวน์ด้านบนให้อัตโนมัติ",
-            "submitCta": "สร้างอีเวนต์",
+            "title": "สร้างกิจกรรมใหม่",
+            "description": "สร้างกิจกรรมใหม่ของหอการค้าเพื่อให้ CSV นี้สามารถนำเข้าได้ หลังสร้างเสร็จ ระบบจะเลือกกิจกรรมนี้ในดรอปดาวน์ด้านบนให้อัตโนมัติ",
+            "submitCta": "สร้างกิจกรรม",
             "submittingCta": "กำลังสร้าง…",
             "cancelCta": "ยกเลิก",
-            "createdToast": "สร้างอีเวนต์เรียบร้อย",
-            "createdToastDesc": "{name} พร้อมให้ใช้งานในรายการอีเวนต์แล้ว",
-            "alreadyExistsToast": "อีเวนต์มีอยู่แล้ว",
-            "alreadyExistsToastDesc": "อีเวนต์ \"{name}\" มีอยู่แล้ว และถูกเลือกให้คุณแล้ว",
+            "createdToast": "สร้างกิจกรรมเรียบร้อย",
+            "createdToastDesc": "{name} พร้อมให้ใช้งานในรายการกิจกรรมแล้ว",
+            "alreadyExistsToast": "กิจกรรมมีอยู่แล้ว",
+            "alreadyExistsToastDesc": "กิจกรรม \"{name}\" มีอยู่แล้ว และถูกเลือกให้คุณแล้ว",
             "fields": {
               "externalIdLabel": "รหัสอ้างอิง (External ID)",
               "externalIdPlaceholder": "เช่น agm-2026",
               "externalIdHelp": "รหัสเฉพาะ (1-100 ตัวอักษร a-z, 0-9, ยัติภังค์) ใช้ค่าเดียวกับคอลัมน์ event_external_id ใน CSV",
-              "nameLabel": "ชื่ออีเวนต์",
+              "nameLabel": "ชื่อกิจกรรม",
               "namePlaceholder": "เช่น SweCham AGM 2026",
-              "nameHelp": "ชื่ออีเวนต์ที่แสดงบนหน้าประวัติการนำเข้าและบันทึกการตรวจสอบ (ไม่เกิน 500 ตัวอักษร)",
+              "nameHelp": "ชื่อกิจกรรมที่แสดงบนหน้าประวัติการนำเข้าและบันทึกการตรวจสอบ (ไม่เกิน 500 ตัวอักษร)",
               "startDateLabel": "วันที่และเวลาเริ่ม",
               "startDateHelp": "เวลาตามเขตเวลาหลักของหอการค้า ระบบจะบันทึกเป็น UTC",
               "categoryLabel": "หมวดหมู่ (ไม่จำเป็น)",
               "categoryPlaceholder": "เช่น AGM, Networking, Workshop",
-              "categoryHelp": "ข้อความอิสระสำหรับกรองในรายการอีเวนต์",
+              "categoryHelp": "ข้อความอิสระสำหรับกรองในรายการกิจกรรม",
               "errors": {
                 "externalIdRequired": "ต้องระบุรหัสอ้างอิง",
                 "externalIdTooLong": "รหัสอ้างอิงต้องมีความยาวไม่เกิน 100 ตัวอักษร",
                 "externalIdInvalid": "ใช้ได้เฉพาะตัวอักษร a-z, ตัวเลข และยัติภังค์เท่านั้น (เช่น agm-2026)",
-                "nameRequired": "ต้องระบุชื่ออีเวนต์",
-                "nameTooLong": "ชื่ออีเวนต์ต้องมีความยาวไม่เกิน 500 ตัวอักษร",
+                "nameRequired": "ต้องระบุชื่อกิจกรรม",
+                "nameTooLong": "ชื่อกิจกรรมต้องมีความยาวไม่เกิน 500 ตัวอักษร",
                 "startDateRequired": "ต้องระบุวันที่และเวลาเริ่ม",
                 "categoryTooLong": "หมวดหมู่ต้องมีความยาวไม่เกิน 100 ตัวอักษร"
               }
@@ -2798,8 +2801,8 @@
               "validationTitle": "ข้อมูลไม่ถูกต้อง",
               "validationDetail": "มีฟิลด์ไม่ถูกต้องอย่างน้อยหนึ่งช่อง ตรวจสอบฟอร์มแล้วลองใหม่",
               "rateLimitTitle": "พยายามมากเกินไป",
-              "rateLimitDetail": "คุณได้สร้างอีเวนต์มากเกินไปในช่วงชั่วโมงที่ผ่านมา รอสักครู่แล้วลองใหม่",
-              "rateLimitDetailWithSeconds": "เกินขีดจำกัด: ผู้ดูแลระบบสร้างได้ 30 อีเวนต์ต่อชั่วโมง ลองใหม่หลังจาก {seconds, plural, other {# วินาที}}",
+              "rateLimitDetail": "คุณได้สร้างกิจกรรมมากเกินไปในช่วงชั่วโมงที่ผ่านมา รอสักครู่แล้วลองใหม่",
+              "rateLimitDetailWithSeconds": "เกินขีดจำกัด: ผู้ดูแลระบบสร้างได้ 30 กิจกรรมต่อชั่วโมง ลองใหม่หลังจาก {seconds, plural, other {# วินาที}}",
               "unexpectedTitle": "เกิดข้อผิดพลาด",
               "unexpectedDetail": "เกิดความผิดพลาดขึ้นทางเซิร์ฟเวอร์ กรุณาลองใหม่ หากยังพบให้แจ้งทีมสนับสนุน"
             }
@@ -2807,8 +2810,8 @@
           "filenameMatchHintWithScore": "เสนอจากชื่อไฟล์: {eventName} — ตรง {score}%"
         },
         "eventMismatch": {
-          "title": "CSV นี้อาจเป็นของอีเวนต์อื่น",
-          "description": "พบ {count} ครั้งที่นำเข้าผู้เข้าร่วมชุดเดียวกันในช่วง 30 วันที่ผ่านมา แต่ใช้สำหรับอีเวนต์อื่น โปรดยืนยันว่าต้องการนำเข้าไปยังอีเวนต์ที่เลือกหรือไม่",
+          "title": "CSV นี้อาจเป็นของกิจกรรมอื่น",
+          "description": "พบ {count} ครั้งที่นำเข้าผู้เข้าร่วมชุดเดียวกันในช่วง 30 วันที่ผ่านมา แต่ใช้สำหรับกิจกรรมอื่น โปรดยืนยันว่าต้องการนำเข้าไปยังกิจกรรมที่เลือกหรือไม่",
           "priorImportsHeading": "ครั้งก่อนที่นำเข้าผู้เข้าร่วมชุดเดียวกัน:",
           "priorImportRow": "อัปโหลดเมื่อ {uploadedAt}",
           "cancelCta": "ยกเลิก",
@@ -2838,7 +2841,7 @@
             "timeout": "หมดเวลา",
             "partial_failure": "บางส่วนล้มเหลว",
             "invalid_header": "หัวคอลัมน์ไม่ถูกต้อง",
-            "event_not_found": "ไม่พบอีเวนต์",
+            "event_not_found": "ไม่พบกิจกรรม",
             "event_not_owned_by_tenant": "ผิดผู้เช่า",
             "unexpected_error": "ล้มเหลว"
           },
@@ -2873,7 +2876,7 @@
           "subtitle": "ตั้งค่าระบบนำเข้าผู้เข้าร่วมผ่าน Zapier",
           "heading": "เร็วๆ นี้",
           "body": "ตัวช่วยตั้งค่าการเชื่อมต่อ EventCreate กำลังจะเปิดให้ใช้งานเร็วๆ นี้ ระหว่างนี้กรุณาติดต่อผู้ดูแลระบบเพื่อขอความช่วยเหลือในการตั้งค่า Zap",
-          "backToEvents": "กลับไปยังอีเวนต์"
+          "backToEvents": "กลับไปยังกิจกรรม"
         },
         "page": {
           "title": "การเชื่อมต่อ EventCreate",
@@ -2946,7 +2949,7 @@
           },
           "step3": {
             "title": "ขั้นตอนที่ 3: เลือก EventCreate เป็นทริกเกอร์",
-            "body": "ค้นหา EventCreate เลือกอีเวนต์ New Attendee Registration แล้วเชื่อมต่อบัญชี EventCreate ของคุณ",
+            "body": "ค้นหา EventCreate เลือกกิจกรรม New Attendee Registration แล้วเชื่อมต่อบัญชี EventCreate ของคุณ",
             "alt": "หน้าตั้งค่าทริกเกอร์ที่แสดง EventCreate"
           },
           "step4": {
@@ -2977,12 +2980,12 @@
         },
         "phaseC": {
           "test": {
-            "sendTest": "ส่งอีเวนต์ทดสอบ",
-            "inProgress": "กำลังส่งอีเวนต์ทดสอบ…",
-            "success": "ส่งอีเวนต์ทดสอบสำเร็จ",
-            "successWithOutcome": "ส่งอีเวนต์ทดสอบสำเร็จ ({outcome}, {durationMs}ms)",
-            "failure": "อีเวนต์ทดสอบไม่สำเร็จ",
-            "failureWithHint": "อีเวนต์ทดสอบไม่สำเร็จ — {hint}",
+            "sendTest": "ส่งกิจกรรมทดสอบ",
+            "inProgress": "กำลังส่งกิจกรรมทดสอบ…",
+            "success": "ส่งกิจกรรมทดสอบสำเร็จ",
+            "successWithOutcome": "ส่งกิจกรรมทดสอบสำเร็จ ({outcome}, {durationMs}ms)",
+            "failure": "กิจกรรมทดสอบไม่สำเร็จ",
+            "failureWithHint": "กิจกรรมทดสอบไม่สำเร็จ — {hint}",
             "rateLimited": "ส่งทดสอบมากเกินไปในชั่วโมงนี้ กรุณารอแล้วลองใหม่",
             "rateLimitedWithRetry": "ส่งทดสอบมากเกินไปในชั่วโมงนี้ ลองอีกครั้งใน {seconds} วินาที",
             "serverError": "เซิร์ฟเวอร์เกิดข้อผิดพลาดขณะทดสอบ กรุณาลองใหม่หรือติดต่อฝ่ายสนับสนุน",
@@ -3004,7 +3007,7 @@
           },
           "recentDeliveries": {
             "title": "การส่งล่าสุด",
-            "empty": "ยังไม่มีการส่งล่าสุด เรียกใช้ Zap หรือกด \"ส่งอีเวนต์ทดสอบ\" เพื่อดูทราฟฟิก",
+            "empty": "ยังไม่มีการส่งล่าสุด เรียกใช้ Zap หรือกด \"ส่งกิจกรรมทดสอบ\" เพื่อดูทราฟฟิก",
             "includeTestDeliveriesLabel": "รวมการส่งทดสอบ",
             "updating": "กำลังอัปเดตรายการล่าสุด…",
             "listSummary": "{count, plural, =0 {ไม่มีรายการล่าสุด} other {แสดง # รายการ}}",
@@ -3026,7 +3029,7 @@
               "matched_member_fuzzy": "จับคู่สมาชิก (ใกล้เคียง)",
               "non_member": "ไม่ใช่สมาชิก",
               "unmatched": "ไม่จับคู่",
-              "short_circuited_test": "อีเวนต์ทดสอบ",
+              "short_circuited_test": "กิจกรรมทดสอบ",
               "duplicate": "ซ้ำ (idempotency)",
               "malformed": "เพย์โหลดผิดรูปแบบ",
               "rolled_back": "ย้อนกลับ",
@@ -3075,7 +3078,7 @@
       "escalationTasks": "งานติดตามด่วน",
       "escalationTasksMine": "งานติดตามด่วน: ของฉัน",
       "escalationTasksOverdue": "งานติดตามด่วน: เฉพาะที่เกินกำหนด",
-      "eventsList": "อีเวนต์",
+      "eventsList": "กิจกรรม",
       "eventcreateIntegration": "การเชื่อมต่อ EventCreate",
       "csvImportHistory": "ประวัติการนำเข้า CSV"
     }
@@ -3089,7 +3092,7 @@
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
       "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
-      "events": "อีเวนต์",
+      "events": "กิจกรรม",
       "sections": {
         "main": "หลัก",
         "settings": "การตั้งค่า"

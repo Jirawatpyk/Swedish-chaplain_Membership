@@ -24,7 +24,7 @@ import {
   usePathname,
   useSearchParams,
 } from 'next/navigation';
-import { useTransition, useState, useCallback } from 'react';
+import { useTransition, useState, useCallback, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -41,6 +41,16 @@ export function EventsListSearchToolbar({ initialSearch }: Props) {
   const t = useTranslations('admin.events.list');
   const [isPending, startTransition] = useTransition();
   const [searchInput, setSearchInput] = useState(initialSearch);
+
+  // R2-2a (2026-05-18 /speckit-review Round 2 Blocker) — browser Back/
+  // Forward changes the URL `?q=` and re-renders the page server-side
+  // with a new `initialSearch` prop, but the local state would
+  // otherwise stay stale. Sync on prop change so the input mirrors
+  // the URL. Mirrors `attendee-table.tsx:169-171` which already does
+  // this for the per-event attendees table.
+  useEffect(() => {
+    setSearchInput(initialSearch);
+  }, [initialSearch]);
 
   const pushUrl = useCallback(
     (params: URLSearchParams) => {

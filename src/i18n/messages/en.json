@@ -2409,6 +2409,8 @@
         "searchPlaceholder": "Search events by name…",
         "searchLabel": "Search events",
         "searchSubmit": "Search",
+        "resultsAnnouncement": "{count, plural, =0 {No events} =1 {1 event} other {# events}}",
+        "resultsAnnouncementWithQuery": "{count, plural, =0 {No events} =1 {1 event} other {# events}} for ''{query}''",
         "columns": {
           "date": "Date",
           "name": "Name",
@@ -2496,6 +2498,7 @@
           "filterByPaymentStatusLabel": "Filter by payment status",
           "allPaymentStatuses": "All statuses",
           "empty": "No attendees match your filters.",
+          "clearFilters": "Clear filters",
           "columns": {
             "attendee": "Attendee",
             "match": "Match",

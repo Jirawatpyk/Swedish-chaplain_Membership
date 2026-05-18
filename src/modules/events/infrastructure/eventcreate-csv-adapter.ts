@@ -2,8 +2,8 @@
  * T010 (Feature 013 / F6.1) — EventCreate CSV format adapter.
  *
  * Pure-function adapter that maps EventCreate's native "Guestlist" CSV
- * export (29-30 columns, multi-line address cells, payment status inferred
- * from `Notes`, etc.) to the existing Phase 7 canonical `CsvRow` shape.
+ * export (29-30 columns, multi-line address cells) to the existing
+ * Phase 7 canonical `CsvRow` shape.
  *
  * Pure Infrastructure adapter — runs the format-translation. The
  * adapter itself does NOT run the import; the use-case
@@ -12,12 +12,22 @@
  * translated rows through the existing `processAttendeeInTx` pipeline.
  *
  * Decision records:
- *   - Header heuristic (R2)        — presence-of-6 case-sensitive
- *   - Name normalization (R4)      — title-case with hyphen/apostrophe preserve
- *   - Payment-status mapping (R5)  — closed mapping table from Notes
- *   - PDPA consent (FR-009)        — classified via Domain helper
- *   - Status filter (FR-007)       — only `Attending` rows proceed
- *   - Unknown-column tolerance     — collected for aggregate observability
+ *   - Header heuristic (R2)         — presence-of-6 case-sensitive
+ *   - Name normalization (R4)       — title-case with hyphen/apostrophe preserve
+ *   - Payment-status mapping        — Option B+ (2026-05-18 /speckit-review
+ *                                     follow-up): strict allowlist mapped
+ *                                     from the upstream `Status` column;
+ *                                     the pre-Option-B `Notes` inference
+ *                                     was dropped. See
+ *                                     `classifyEventCreateStatus` +
+ *                                     `statusToPaymentStatus` below.
+ *   - PDPA consent (FR-009)         — classified via Domain helper
+ *   - Status routing (FR-007 + R2)  — 6-variant discriminated union
+ *                                     (Attending → ingest; Cancellation →
+ *                                     refund-flip; Pending / Waitlisted /
+ *                                     NoShow → record as quota-neutral;
+ *                                     unknown → Skipped)
+ *   - Unknown-column tolerance      — collected for aggregate observability
  *   - Attendee fingerprint (FR-019a) — 8-step deterministic algorithm
  *
  * Pure TypeScript + node:crypto — Constitution Principle III (no framework

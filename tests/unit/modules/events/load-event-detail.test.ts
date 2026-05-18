@@ -78,6 +78,7 @@ describe('loadEventDetail — UUID v4 guard (M4 round-3)', () => {
         unmatchedOnly: false,
         matchTypeFilter: null,
         q: null,
+        paymentStatusFilter: null,
       },
     );
     expect(result.ok).toBe(false);
@@ -110,6 +111,7 @@ describe('loadEventDetail — UUID v4 guard (M4 round-3)', () => {
         unmatchedOnly: false,
         matchTypeFilter: null,
         q: null,
+        paymentStatusFilter: null,
       },
     );
     expect(result.ok).toBe(false);
@@ -250,6 +252,7 @@ describe('loadEventDetail — isOverQuota truth table (M5 round-3)', () => {
           unmatchedOnly: false,
           matchTypeFilter: null,
           q: null,
+          paymentStatusFilter: null,
         },
       );
       expect(result.ok).toBe(true);

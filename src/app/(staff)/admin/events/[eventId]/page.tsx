@@ -170,11 +170,29 @@ export default async function AdminEventDetailPage({
   // against URL hand-typing arbitrary strings — anything outside the
   // 6 closed values silently drops the filter (fail-safe; don't 500
   // the page on a typo).
+  //
+  // R2-7 (2026-05-18 /speckit-review Round 2) — log on the guard-drop
+  // path so operator troubleshooting of "filter dropped" complaints
+  // surfaces in the structured log stream (silent drop was previously
+  // invisible). R2-5 sibling fix on `LoadEventDetailInput` made the
+  // field required + nullable for consistency with `matchTypeFilter` /
+  // `q` — we pass `null` (not undefined) when the filter is absent.
   const paymentStatusRaw = firstParam(query.paymentStatus);
-  const paymentStatusFilter =
-    paymentStatusRaw && isPaymentStatus(paymentStatusRaw)
-      ? paymentStatusRaw
-      : null;
+  let paymentStatusFilter: import('@/modules/events').PaymentStatus | null = null;
+  if (paymentStatusRaw !== undefined && paymentStatusRaw !== '') {
+    if (isPaymentStatus(paymentStatusRaw)) {
+      paymentStatusFilter = paymentStatusRaw;
+    } else {
+      logger.debug(
+        {
+          event: 'f6_admin_event_detail_payment_status_filter_dropped',
+          eventId,
+          paymentStatusRaw,
+        },
+        '[F6.1] invalid paymentStatus URL parameter — filter dropped',
+      );
+    }
+  }
 
   const reqHeaders = await headers();
   const tenantCtx = resolveTenantFromHeaders(reqHeaders);

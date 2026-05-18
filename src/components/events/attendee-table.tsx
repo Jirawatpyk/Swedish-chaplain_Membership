@@ -104,10 +104,13 @@ type Props = {
   /**
    * F6.1 follow-up 2026-05-18 — initial selected `payment_status`
    * for the toolbar Select. Empty string = "All statuses" (no
-   * filter). Validated by the page-level `isPaymentStatus` guard;
-   * the table accepts the empty-string default for backward compat.
+   * filter). R2-5 (2026-05-18 /speckit-review Round 2) narrowed
+   * from `string` to `PaymentStatus | ''` so the prop boundary
+   * enforces the same closed set as the page-level
+   * `isPaymentStatus` guard — drift cannot reintroduce arbitrary
+   * URL strings.
    */
-  readonly initialPaymentStatus?: string;
+  readonly initialPaymentStatus?: PaymentStatus | '';
   /**
    * F6 Phase 9 / US6 — required by the relink dialog so it can POST to
    * the per-event route. Branded `EventId | null` (Round-1 type-H3
@@ -198,7 +201,20 @@ export function AttendeeTable({
   // URL key is `paymentStatus`; server page validates with
   // `isPaymentStatus()` (anything off-list drops the filter
   // fail-safe).
-  const ALL_STATUSES_SENTINEL = '__all__';
+  //
+  // R2-5 (2026-05-18 /speckit-review Round 2) — `as const` plus the
+  // compile-time disjointness guard below pins the sentinel string
+  // to a fresh nominal literal that the type-checker forbids any
+  // future PaymentStatus addition from colliding with.
+  const ALL_STATUSES_SENTINEL = '__all__' as const;
+  // Compile-time guard: sentinel must NOT be assignable to a
+  // PaymentStatus member. If a future PaymentStatus literal happens
+  // to be `'__all__'`, the `extends … ? never : true` collapses to
+  // `never` and the `_disjointCheck` line fails the build.
+  type _SentinelDisjoint =
+    typeof ALL_STATUSES_SENTINEL extends PaymentStatus ? never : true;
+  const _disjointCheck: _SentinelDisjoint = true;
+  void _disjointCheck;
   const onPaymentStatusChange = useCallback(
     (next: string | null) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -254,6 +270,18 @@ export function AttendeeTable({
     [t],
   );
 
+  // R2-3 (2026-05-18 /speckit-review Round 2) — local callback that
+  // strips the `q` + `page` URL keys. Pre-R2 this body was duplicated
+  // inline in BOTH the native-X clear path (Input onChange when v==='')
+  // AND the Escape-key handler — same 4-line delete sequence. Folding
+  // through one helper prevents the two paths drifting apart.
+  const clearSearchUrl = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete('q');
+    next.delete('page');
+    pushUrl(next);
+  }, [searchParams, pushUrl]);
+
   // R6-W12 staff-review fix (2026-05-13): clear-on-Escape handler.
   // `<Input type="search">` renders the native browser X clear button
   // on most desktop browsers but it is absent on iOS Safari and some
@@ -267,12 +295,9 @@ export function AttendeeTable({
       if (searchInput === '' && !searchParams.has('q')) return;
       e.preventDefault();
       setSearchInput('');
-      const next = new URLSearchParams(searchParams.toString());
-      next.delete('q');
-      next.delete('page');
-      pushUrl(next);
+      clearSearchUrl();
     },
-    [searchInput, searchParams, pushUrl],
+    [searchInput, searchParams, clearSearchUrl],
   );
 
   return (
@@ -309,10 +334,7 @@ export function AttendeeTable({
               // backspace down to empty also see the table refresh —
               // an expected affordance.
               if (v === '' && searchParams.has('q')) {
-                const next = new URLSearchParams(searchParams.toString());
-                next.delete('q');
-                next.delete('page');
-                pushUrl(next);
+                clearSearchUrl();
               }
             }}
             onKeyDown={handleSearchKeyDown}
@@ -404,6 +426,33 @@ export function AttendeeTable({
       {rows.length === 0 ? (
         <div className="rounded-md border border-border bg-card py-12 text-center">
           <p className="text-muted-foreground">{t('empty')}</p>
+          {/* R2-S1 (2026-05-18 /speckit-review Round 2 Suggestion) —
+              when any filter is set AND the result is empty, surface a
+              "Clear filters" CTA so users have a one-click path back
+              to the unfiltered table. Without filters set the empty
+              state is a true "no attendees yet" surface, not a
+              filter dead-end — no CTA in that case. */}
+          {(searchParams.has('q') ||
+            searchParams.has('paymentStatus') ||
+            searchParams.has('unmatchedOnly')) && (
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams.toString());
+                next.delete('q');
+                next.delete('paymentStatus');
+                next.delete('unmatchedOnly');
+                next.delete('page');
+                setSearchInput('');
+                pushUrl(next);
+              }}
+              disabled={isPending}
+            >
+              {t('clearFilters')}
+            </Button>
+          )}
         </div>
       ) : (
         // min-w sizing: 5 base columns (Attendee + Match + Ticket +

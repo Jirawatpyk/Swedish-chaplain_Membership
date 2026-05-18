@@ -156,6 +156,7 @@ export async function GET(
           matchTypeFilter: parsed.data.matchTypeFilter ?? null,
           unmatchedOnly: parsed.data.unmatchedOnly,
           q: trimmedQ && trimmedQ.length > 0 ? trimmedQ : null,
+          paymentStatusFilter: null,
         }),
     );
   } catch (e) {

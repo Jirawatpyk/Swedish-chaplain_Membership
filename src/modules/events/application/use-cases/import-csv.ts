@@ -25,10 +25,14 @@ import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { formatErrorWithCause } from './_helpers/format-error-with-cause';
 import { asLockKey } from '../ports/advisory-lock-acquirer';
-import { applyQuotaEffect } from './apply-quota-effect';
+import {
+  applyQuotaEffect,
+  buildQuotaLockKey,
+} from './apply-quota-effect';
 import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
-import { emitOrThrow } from './_helpers/process-attendee-in-tx';
+import { emitCreditBackViaStateChange } from './_helpers/emit-credit-back-pair';
+import { isQuotaCountedStatus } from '../../domain/value-objects/payment-status';
 import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { MatchType } from '../../domain/value-objects/match-type';
@@ -666,12 +670,12 @@ async function maybeApplyStateChange(
     // versa). Strict-correctness invariant: either the row flips AND
     // the quota reflects the new state, or neither (savepoint rolls back).
     const matchedMemberId = persisted.match.matchedMemberId;
-    const oldCounted =
-      persisted.ticket.paymentStatus === 'paid' ||
-      persisted.ticket.paymentStatus === 'free';
-    const newCounted =
-      parsed.row.payment_status === 'paid' ||
-      parsed.row.payment_status === 'free';
+    // R2-3 (2026-05-18) — quota-counting rule extracted to
+    // `isQuotaCountedStatus` Domain VO predicate so the rule cannot
+    // drift between `applyQuotaEffect` (fresh-insert path) and this
+    // state-change probe.
+    const oldCounted = isQuotaCountedStatus(persisted.ticket.paymentStatus);
+    const newCounted = isQuotaCountedStatus(parsed.row.payment_status);
     if (oldCounted !== newCounted && matchedMemberId !== null) {
       // Load event flags to gate the quota call (no quota effect on
       // non-partnership / non-cultural / archived events).
@@ -679,8 +683,31 @@ async function maybeApplyStateChange(
         input.tenantId,
         input.selectedEvent.eventId,
       );
-      if (
-        eventLookup.ok &&
+      if (!eventLookup.ok) {
+        // R2-7 (2026-05-18 /speckit-review Round 2) — split DB-read
+        // error from the legitimate "non-eligible event" branch. Pre-R2
+        // both paths folded into a silent fall-through which masked
+        // transient DB errors. With the explicit WARN + dedicated
+        // metric, SRE can alert when the state-change path silently
+        // skips quota for a *real* lookup failure (which may matter if
+        // the event was actually quota-eligible). Fail-safe: still skip
+        // the quota call so we don't synthesize credit/debit on
+        // partial DB state.
+        logger.warn(
+          {
+            event: 'f6_csv_state_change_event_lookup_err',
+            tenantId: input.tenantId,
+            eventId: input.selectedEvent.eventId,
+            rowNumber: parsed.rowNumber,
+            err: eventLookup.error.kind,
+          },
+          '[F6.1] event lookup failed during state-change quota gate — treating as non-eligible',
+        );
+        eventcreateMetrics.csvImportEventLookupFailed(
+          input.tenantId,
+          'state_change_quota_gate',
+        );
+      } else if (
         eventLookup.value !== null &&
         eventLookup.value.archivedAt === null &&
         (eventLookup.value.isPartnerBenefit ||
@@ -752,6 +779,49 @@ async function maybeApplyStateChange(
             prev.countedAgainstPartnership ||
             prev.countedAgainstCulturalQuota
           ) {
+            // R2-1b (2026-05-18 /speckit-review Round 2 Blocker) —
+            // serialize the (tenant, member, event) write window before
+            // the clear + audit emit. Credit path locks via
+            // applyQuotaEffect.ts:220-222; debit path was racing.
+            // Mirrors the FR-018 refund-branch pattern at
+            // process-attendee-in-tx.ts:786-811.
+            try {
+              await ports.advisoryLockAcquirer.acquire(
+                buildQuotaLockKey(
+                  input.tenantId,
+                  matchedMemberId,
+                  event.eventId,
+                ),
+              );
+            } catch (e) {
+              const causeErr =
+                e instanceof Error
+                  ? e
+                  : new Error(`NonError(${String(e)})`);
+              throw new TxStageError(
+                'quota_decrement',
+                `state-change debit advisory-lock acquisition failed: ${causeErr.message}`,
+                { cause: causeErr },
+              );
+            }
+            // R2-1 fault-injection — test-only seam for the savepoint
+            // rollback regression in
+            // `tests/integration/events/csv-state-change-quota-rollback.test.ts`.
+            // Fires AFTER the debit advisory-lock acquires (lock is
+            // held when throw fires → savepoint rolls back → lock
+            // auto-released at tx end). Guarded by `NODE_ENV==='test'`
+            // so production deploys (`NODE_ENV='production'`) short-
+            // circuit the boolean and pay zero cost. Precedent:
+            // D1/D2 at lines 1080-1095 below.
+            if (
+              process.env.NODE_ENV === 'test' &&
+              process.env.F6_TEST_FAIL_AT_QUOTA_DEBIT === 'true'
+            ) {
+              throw new TxStageError(
+                'quota_decrement',
+                'TEST-INJECTED — fail at state-change debit (R2-1)',
+              );
+            }
             const clearRes = await ports.registrationsRepo.setQuotaEffect(
               input.tenantId,
               persisted.registrationId,
@@ -781,55 +851,47 @@ async function maybeApplyStateChange(
                 `state-change allotment snapshot failed (${snap.error.kind})`,
               );
             }
-            const baseAudit = {
-              tenantId: input.tenantId,
-              actorType: 'csv_import' as const,
-              actorUserId: input.actorUserId,
-              occurredAt: new Date(),
-            };
+            // R2-3 (2026-05-18) — emit shape folded through
+            // `emitCreditBackViaStateChange` helper so the partnership
+            // + cultural branches cannot drift apart.
             if (prev.countedAgainstPartnership) {
-              const allotmentAfter =
-                snap.value.allotments.partnershipPerEvent -
-                snap.value.consumed.partnershipConsumedForEvent;
-              // Reuse `quota_credit_back_refund` event type — semantically
-              // identical (a previously-counted seat no longer counts).
-              // Summary disambiguates "via state_change" from refund.
-              await emitOrThrow(ports.audit, {
-                ...baseAudit,
-                eventType: 'quota_credit_back_refund',
-                summary: `partnership credit-back via state_change: row ${parsed.rowNumber} ${update.value.previousPaymentStatus}→${parsed.row.payment_status}`,
-                payload: {
-                  severity: 'info',
-                  registrationId: persisted.registrationId,
-                  memberId: matchedMemberId,
-                  scope: 'partnership',
-                  allotmentAfter,
-                },
+              await emitCreditBackViaStateChange(ports.audit, {
+                tenantId: input.tenantId,
+                actorUserId: input.actorUserId,
+                rowNumber: parsed.rowNumber,
+                registrationId: persisted.registrationId,
+                memberId: matchedMemberId,
+                previousPaymentStatus: update.value.previousPaymentStatus,
+                newPaymentStatus: parsed.row.payment_status,
+                scope: 'partnership',
+                allotmentAfter:
+                  snap.value.allotments.partnershipPerEvent -
+                  snap.value.consumed.partnershipConsumedForEvent,
               });
             }
             if (prev.countedAgainstCulturalQuota) {
-              const allotmentAfter =
-                snap.value.allotments.culturalPerYear -
-                snap.value.consumed.culturalConsumedForYear;
-              await emitOrThrow(ports.audit, {
-                ...baseAudit,
-                eventType: 'quota_credit_back_refund',
-                summary: `cultural credit-back via state_change: row ${parsed.rowNumber} ${update.value.previousPaymentStatus}→${parsed.row.payment_status}`,
-                payload: {
-                  severity: 'info',
-                  registrationId: persisted.registrationId,
-                  memberId: matchedMemberId,
-                  scope: 'cultural',
-                  allotmentAfter,
-                },
+              await emitCreditBackViaStateChange(ports.audit, {
+                tenantId: input.tenantId,
+                actorUserId: input.actorUserId,
+                rowNumber: parsed.rowNumber,
+                registrationId: persisted.registrationId,
+                memberId: matchedMemberId,
+                previousPaymentStatus: update.value.previousPaymentStatus,
+                newPaymentStatus: parsed.row.payment_status,
+                scope: 'cultural',
+                allotmentAfter:
+                  snap.value.allotments.culturalPerYear -
+                  snap.value.consumed.culturalConsumedForYear,
               });
             }
           }
         }
       }
-      // else: no quota effect — non-benefit event, archived, or event
-      // lookup failed. The payment_status UPDATE still committed
-      // (correct — it always mirrors upstream Status).
+      // else: no quota effect — non-benefit event, archived, or
+      // eventLookup.value === null (event was deleted between matching
+      // and quota gate). The DB-read-error case is split into its own
+      // branch above (R2-7). The payment_status UPDATE still committed
+      // — correct, as it always mirrors upstream Status.
     }
 
     return {
@@ -839,22 +901,53 @@ async function maybeApplyStateChange(
       newPaymentStatus: parsed.row.payment_status,
     };
   } catch (e) {
-    // Strict-audit invariant — re-throw audit-emit failures so the
-    // savepoint rolls back the UPDATE (PDPA Art. 30 / GDPR Art. 30
-    // require state-change forensic trace; committing the UPDATE
-    // without the audit row is a Reliability/Privacy regression).
-    if (e instanceof TxStageError && e.stage === 'audit_emit') {
-      eventcreateMetrics.csvImportAuditEmitFailed(
-        input.tenantId,
-        'csv_import_row_state_changed',
+    // R2-1 (2026-05-18 /speckit-review Round 2 Blocker) — every
+    // TxStageError stage MUST re-throw so the SAVEPOINT rolls back
+    // atomically. Pre-R2 only `'audit_emit'` was re-thrown, leaving
+    // `'quota_decrement'` / `'event_upsert'` / `'idempotency_receipt'` /
+    // `'registration_insert'` to silently swallow via
+    // `return { kind: 'noop' }`. The swallow committed the
+    // payment_status UPDATE in-savepoint while quota flags + state-
+    // change audit either never ran or rolled back inconsistently —
+    // directly contradicting the block-comment invariant at lines
+    // 660-667 ("strict-correctness invariant: either the row flips AND
+    // the quota reflects the new state, or neither").
+    if (e instanceof TxStageError) {
+      if (e.stage === 'audit_emit') {
+        // Audit-emit failure has a DEDICATED counter
+        // (`csvImportAuditEmitFailed`) so SRE alerts on this class
+        // separately from the rollback-cause counter. We deliberately
+        // skip the state-change-fallback bump for this stage so the
+        // two series stay disjoint — `csvImportStateChangeFallback`
+        // remains a pure "rollback cause" signal, audit-emit failures
+        // remain on `csvImportAuditEmitFailed`.
+        eventcreateMetrics.csvImportAuditEmitFailed(
+          input.tenantId,
+          'csv_import_row_state_changed',
+        );
+      } else {
+        eventcreateMetrics.csvImportStateChangeFallback(
+          input.tenantId,
+          e.stage,
+        );
+      }
+      logger.error(
+        {
+          event: 'f6_csv_state_change_savepoint_rollback',
+          tenantId: input.tenantId,
+          rowNumber: parsed.rowNumber,
+          stage: e.stage,
+          attendeeEmailHash: hashAttendeeEmail(parsed.row.attendee_email),
+          err: toErrMessage(e),
+        },
+        '[F6.1] state-change probe TxStageError — savepoint rolls back atomically',
       );
-      throw e;
+      throw e; // propagate to outer SAVEPOINT for rollback
     }
-    // Never swallow silently. Log structured error + emit metric.
-    // State-change path failure means admin's payment_status fix is
-    // silently dropped — must be visible to SRE alerting.
-    // The forensic log MUST NOT surface raw attendee email; hash it
-    // for cross-request correlation.
+    // Non-TxStageError (programmer/runtime defect) — log + bounded
+    // metric + return noop. This path shouldn't fire in practice; the
+    // 'unknown' bucket exists so cardinality stays bounded under any
+    // future runtime regressions.
     logger.error(
       {
         event: 'f6_csv_state_change_threw',
@@ -863,9 +956,9 @@ async function maybeApplyStateChange(
         attendeeEmailHash: hashAttendeeEmail(parsed.row.attendee_email),
         err: toErrMessage(e),
       },
-      '[F6.1] state-change probe threw — row falls back to duplicate; admin re-upload required',
+      '[F6.1] state-change probe threw — non-TxStageError fallback; admin re-upload required',
     );
-    eventcreateMetrics.csvImportStateChangeFallback(input.tenantId, 'threw');
+    eventcreateMetrics.csvImportStateChangeFallback(input.tenantId, 'unknown');
     return { kind: 'noop' };
   }
 }
@@ -996,7 +1089,13 @@ async function processOneRowInSavepoint(
               `orphan receipt delete failed: ${del.error.message}`,
             );
           }
-          eventcreateMetrics.csvImportOrphanReceiptRecovered(input.tenantId);
+          // R2-7 (2026-05-18 /speckit-review Round 2) — the
+          // `csvImportOrphanReceiptRecovered` metric used to fire here,
+          // BEFORE `processAttendeeInTx` ran. If the savepoint
+          // subsequently rolled back, the recovery counter was already
+          // incremented — over-counting failed recoveries. Moved to the
+          // end of the savepoint (after the receipt re-insert succeeds)
+          // so the metric reflects only committed recoveries.
           orphanRecovery = true;
           // D1 fault-injection — test-only seam for the savepoint
           // rollback regression in
@@ -1133,6 +1232,12 @@ async function processOneRowInSavepoint(
             `orphan-recovery receipt re-insert failed: ${reinsert.error.message}`,
           );
         }
+        // R2-7 (2026-05-18) — emit recovery counter AFTER the full
+        // orphan-recovery sequence (delete + processAttendeeInTx +
+        // receipt re-insert) commits in-savepoint. If any prior step
+        // threw, the savepoint rolled back and this line was never
+        // reached, so the metric stays at zero — correct semantics.
+        eventcreateMetrics.csvImportOrphanReceiptRecovered(input.tenantId);
       }
 
       // Bug-fix 2026-05-18 — `processAttendeeInTx` upserts via ON

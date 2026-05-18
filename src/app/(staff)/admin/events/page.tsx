@@ -235,6 +235,30 @@ export default async function AdminEventsListPage({
                   culturalEventOnly={culturalEventOnly}
                 />
               </div>
+              {/* R2-2b (2026-05-18 /speckit-review Round 2 Blocker) —
+                  screen-reader live-region announcing the filtered
+                  result count. Mirrors the attendee-table parity:
+                  when the server re-renders after a search submit /
+                  filter chip toggle, the DOM text changes and
+                  aria-live="polite" causes assistive tech to read
+                  "5 events for 'midsummer'" without disrupting input
+                  focus. `sr-only` keeps it visually hidden — sighted
+                  users see the table itself. */}
+              <output
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="sr-only"
+              >
+                {searchQuery !== undefined
+                  ? t('resultsAnnouncementWithQuery', {
+                      count: result.value.items.length,
+                      query: searchQuery,
+                    })
+                  : t('resultsAnnouncement', {
+                      count: result.value.items.length,
+                    })}
+              </output>
               {result.value.items.length === 0 ? (
                 <EmptyState
                   emptyContext={result.value.emptyStateContext}

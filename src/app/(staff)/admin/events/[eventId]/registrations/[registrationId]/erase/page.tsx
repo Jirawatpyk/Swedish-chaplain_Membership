@@ -97,6 +97,7 @@ export default async function ErasePiiPage({
       unmatchedOnly: false,
       matchTypeFilter: null,
       q: null,
+      paymentStatusFilter: null,
     });
   } catch (e) {
     logger.error(

@@ -184,6 +184,15 @@ function markRefundedErrorMessage(e: RegistrationsRepositoryError): string {
       return `markRefunded on pseudonymised row ${e.registrationId}`;
     case 'not_implemented':
       return `markRefunded not implemented: ${e.method}`;
+    default: {
+      // R2-S4 (2026-05-18) — exhaustiveness assertion. If a future
+      // RegistrationsRepositoryError variant is added, this assigns
+      // a non-`never` value to a `never` slot → compile error,
+      // forcing the new case to be handled explicitly.
+      const _exhaustive: never = e;
+      void _exhaustive;
+      return `markRefunded unknown error kind: ${JSON.stringify(e)}`;
+    }
   }
 }
 
@@ -443,6 +452,19 @@ async function emitMatchResolutionAudit(
         },
       });
       return;
+    default: {
+      // R2-S4 (2026-05-18) — exhaustiveness assertion. If a future
+      // MatchResolutionView variant is added, this assigns a non-
+      // `never` value to a `never` slot → compile error, forcing the
+      // new case to emit its dedicated audit event.
+      const _exhaustive: never = resolution;
+      void _exhaustive;
+      throw new Error(
+        `F6 invariant: emitMatchResolutionAudit unhandled resolution.type ${
+          (resolution as { type: string }).type
+        } (registrationId=${registrationId})`,
+      );
+    }
   }
 }
 
