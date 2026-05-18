@@ -764,27 +764,70 @@ function PreviewPanel({
       </section>
 
       <section aria-labelledby="csv-preview-rows">
-        <h3 id="csv-preview-rows" className="text-body mb-2 font-medium">
-          {t('previewRowsTitle', { count: sampleRows.length })}
-        </h3>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h3 id="csv-preview-rows" className="text-body font-medium">
+            {t('previewRowsTitle', { count: sampleRows.length })}
+          </h3>
+          <span className="text-caption text-muted-foreground">
+            {preview.detectedColumns.length} columns × {sampleRows.length} rows
+          </span>
+        </div>
         {/*
           F6.1 R3 a11y-fix 2026-05-16 — axe-core `scrollable-region-focusable`
           required a keyboard-focusable handle on the horizontally-scrolling
           region so keyboard-only users can pan a wide preview. Pattern
           mirrors `recent-deliveries-panel.tsx` (role=region + aria-labelledby
           + tabIndex=0 + visible focus ring).
+
+          UX-fix 2026-05-18 — bounded max-h on the region so very tall
+          tables (e.g., 10 rows × 250-char PDPA cells) don't push the
+          Confirm button below the viewport. Vertical scroll inside the
+          region; horizontal scroll for many-column CSVs. Cell-level
+          truncation (max-w + line-clamp) limits each row's height.
+        */}
+        {/*
+          UX-fix 2026-05-18 — force ALWAYS-visible scrollbars via
+          `overflow-x-scroll` + `overflow-y-auto`. Browser default
+          (`overflow: auto`) hides scrollbars when not actively
+          scrolling on some platforms (Windows native, macOS with
+          "Show scroll bars: When scrolling" setting) — admin
+          couldn't see the horizontal scroll affordance + missed
+          that the table has 35+ columns. `overflow-x-scroll`
+          shows the bar permanently when there's any chance of
+          overflow. Also added `scrollbar-thin` style hooks for
+          Firefox + thicker WebKit bars for Windows visibility.
         */}
         <div
           role="region"
           aria-labelledby="csv-preview-rows"
           tabIndex={0}
-          className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="max-h-[28rem] overflow-x-scroll overflow-y-auto rounded-md border border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [scrollbar-color:var(--muted-foreground)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/60 [&::-webkit-scrollbar-track]:bg-muted/30"
         >
+          {/*
+            UX-fix 2026-05-18 — `table-fixed` forces browser to honor
+            per-cell `width:` declarations (default `table-layout: auto`
+            collapses cells to natural content width when the parent is
+            narrow, defeating the fixed-column-width design + hiding the
+            horizontal scrollbar). With `table-fixed`, the table's
+            intrinsic width = sum of per-cell widths = 35 cols × 8rem =
+            ~4480px, which forces horizontal overflow in any reasonable
+            viewport so the scrollbar is always present.
+          */}
+          {/*
+            `min-w-max` + inline `width` style sums per-cell widths so
+            the table extends to its natural intrinsic width (35 cols ×
+            8rem = 280rem ≈ 4480px). Without this, the table collapsed
+            to parent container width and the horizontal scrollbar
+            never appeared because browser saw no overflow.
+          */}
           <table
-            className="text-caption w-full border-collapse font-mono"
+            className="min-w-max table-fixed border-collapse font-mono text-xs"
+            style={{
+              width: `${preview.detectedColumns.length * 8}rem`,
+            }}
             aria-label={t('tableAriaLabel', { fileName })}
           >
-            <thead>
+            <thead className="sticky top-0 z-10 bg-muted">
               <tr>
                 {/*
                   Bug-fix 2026-05-18 — some EventCreate CSV exports
@@ -793,15 +836,54 @@ function PreviewPanel({
                   so we suffix with the column index. Duplicates remain
                   visible to the admin (intentional — flag of CSV
                   quirk; admin may re-export from EventCreate).
+
+                  UX-fix 2026-05-18 — highlight canonical columns
+                  (EventCreate-format required + generic-CSV required +
+                  optional) with subtle emerald background; non-canonical
+                  columns are muted. Admins can scan which columns
+                  actually drive the import.
                 */}
-                {preview.detectedColumns.map((c, idx) => (
-                  <th
-                    key={`${c}-${idx}`}
-                    className="border-b border-border px-2 py-1 text-left"
-                  >
-                    {c}
-                  </th>
-                ))}
+                {preview.detectedColumns.map((c, idx) => {
+                  const isCanonical =
+                    EVENTCREATE_REQUIRED_COLUMNS.includes(
+                      c as (typeof EVENTCREATE_REQUIRED_COLUMNS)[number],
+                    ) ||
+                    REQUIRED_COLUMNS.includes(
+                      c as (typeof REQUIRED_COLUMNS)[number],
+                    ) ||
+                    OPTIONAL_PREVIEW_COLUMNS.includes(
+                      c as (typeof OPTIONAL_PREVIEW_COLUMNS)[number],
+                    );
+                  // Canonical columns get a 2px emerald bottom-border accent
+                  // + emerald text — clear visual signal of "these drive the
+                  // import" without overwhelming the table. Non-canonical
+                  // columns use muted text + thin default bottom-border.
+                  //
+                  // `min-w-[10rem]` on every cell forces the table to
+                  // overflow horizontally on wide CSVs (e.g., 35 columns ×
+                  // 10rem = ~5600px > container width) so the horizontal
+                  // scrollbar appears at the bottom. Without min-width,
+                  // truncate + max-w would collapse columns to natural
+                  // content width and the table would silently fit the
+                  // container with no scroll affordance.
+                  const accentClass = isCanonical
+                    ? 'border-b-2 border-b-emerald-500 bg-emerald-50/70 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                    : 'border-b border-border text-muted-foreground';
+                  return (
+                    <th
+                      key={`${c}-${idx}`}
+                      title={c}
+                      scope="col"
+                      className={
+                        idx === 0
+                          ? `sticky left-0 z-20 w-[8rem] min-w-[8rem] max-w-[8rem] truncate border-r border-border bg-muted px-2 py-1.5 text-left font-medium ${accentClass}`
+                          : `w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1.5 text-left font-medium ${accentClass}`
+                      }
+                    >
+                      {isCanonical ? '✓ ' : ''}{c}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
@@ -809,11 +891,30 @@ function PreviewPanel({
                 <tr
                   key={rowIdx}
                   data-testid="csv-preview-row"
-                  className="border-b border-border/40"
+                  className={`border-b border-border/40 transition-colors hover:bg-muted/40 ${
+                    rowIdx % 2 === 1 ? 'bg-muted/20' : ''
+                  }`}
                 >
                   {row.map((cell, cellIdx) => (
-                    <td key={cellIdx} className="px-2 py-1">
-                      {cell}
+                    <td
+                      key={cellIdx}
+                      title={cell}
+                      className={
+                        cellIdx === 0
+                          ? // Sticky first column MUST have SOLID
+                            // background — `bg-muted/20` (zebra) is 20%
+                            // transparent and lets scrolled-past columns
+                            // bleed through. Use solid `bg-background`
+                            // OR `bg-muted` per row parity (both solid).
+                            `sticky left-0 z-10 w-[8rem] min-w-[8rem] max-w-[8rem] truncate border-r border-border ${
+                              rowIdx % 2 === 1 ? 'bg-muted' : 'bg-background'
+                            } px-2 py-1 align-top`
+                          : 'w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1 align-top'
+                      }
+                    >
+                      {cell || (
+                        <span className="text-muted-foreground/50">—</span>
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -821,6 +922,10 @@ function PreviewPanel({
             </tbody>
           </table>
         </div>
+        <p className="text-caption mt-1.5 text-muted-foreground">
+          Hover a cell to see full content. Canonical columns are
+          highlighted; the rest are passed through unchanged on import.
+        </p>
       </section>
 
       <div className="flex flex-col gap-2">
