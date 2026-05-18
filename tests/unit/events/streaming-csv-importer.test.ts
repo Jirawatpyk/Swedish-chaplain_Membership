@@ -309,6 +309,43 @@ describe('streamingCsvImporter — rowHash determinism + sensitivity', () => {
       _internals.computeRowHash(row2),
     );
   });
+
+  // Family-collision regression (commit 68b33e90): attendee_external_id
+  // is part of the canonical key so the Wittebrood-family pattern
+  // (multiple guests sharing one email) does not silently dedup.
+  it('produces different hash when attendee_external_id differs (family-collision regression)', async () => {
+    const row1 = {
+      event_external_id: 'event_h5',
+      attendee_email: 'crusselth@yahoo.com',
+      event_start: '2026-06-21T18:00:00+07:00',
+      event_name: 'Test',
+      attendee_name: 'Vendela',
+      payment_status: 'paid' as const,
+      attendee_external_id: '17368626-1',
+    };
+    const row2 = { ...row1, attendee_external_id: '17368626-2' };
+    expect(_internals.computeRowHash(row1)).not.toBe(
+      _internals.computeRowHash(row2),
+    );
+  });
+
+  // Backward-compat for the generic-CSV path: when the column is absent
+  // entirely, computeRowHash MUST coerce to '' deterministically.
+  it('undefined attendee_external_id coerces to empty string deterministically (generic-CSV backward compat)', async () => {
+    const baseRow = {
+      event_external_id: 'event_h6',
+      attendee_email: 'jane@example.com',
+      event_start: '2026-06-21T18:00:00+07:00',
+      event_name: 'Test',
+      attendee_name: 'Jane',
+      payment_status: 'paid' as const,
+    };
+    const row1 = baseRow;
+    const row2 = { ...baseRow, attendee_external_id: undefined };
+    expect(_internals.computeRowHash(row1)).toBe(
+      _internals.computeRowHash(row2),
+    );
+  });
 });
 
 // T053 (F6.1 Phase 6) — Sub-flag rollback safety net.

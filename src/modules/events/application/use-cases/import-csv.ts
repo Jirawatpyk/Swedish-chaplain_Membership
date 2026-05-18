@@ -25,6 +25,10 @@ import { logger } from '@/lib/logger';
 import { eventcreateMetrics } from '@/lib/metrics';
 import { formatErrorWithCause } from './_helpers/format-error-with-cause';
 import { asLockKey } from '../ports/advisory-lock-acquirer';
+import { applyQuotaEffect } from './apply-quota-effect';
+import { F6_FISCAL_YEAR_START_MONTH } from './_helpers/fiscal-year-constants';
+import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { emitOrThrow } from './_helpers/process-attendee-in-tx';
 import type { TenantId } from '@/modules/members';
 import type { UserId } from '@/modules/auth';
 import type { MatchType } from '../../domain/value-objects/match-type';
@@ -85,7 +89,7 @@ export interface ImportSummary {
   readonly rowsFailed: number;
   /**
    * count of re-uploaded rows whose
-   * `payment_status` (Notes-inferred) differed from the persisted
+   * `payment_status` (Status-derived) differed from the persisted
    * value AND was successfully updated. Excludes refunded transitions
    * (those flow through `markRefunded` + the FR-018 quota credit-back
    * branch — counted separately by the existing `quota_credit_back_refund`
@@ -410,7 +414,7 @@ type RowOutcome =
   | {
       /**
        * receipt-duplicate row whose
-       * `payment_status` (Notes-inferred) differed from the persisted
+       * `payment_status` (Status-derived) differed from the persisted
        * value AND was successfully UPDATEd to the new value. Counted
        * in `rowsStateChanged` (NOT `rowsAlreadyImported`); surfaced on
        * the `csv_import_completed` audit payload.
@@ -454,8 +458,8 @@ function isSkippedParserRow(reason: string): boolean {
  *
  * On re-upload, the idempotency receipt rowHash matches the first
  * upload's hash (event_external_id, email, registered_at) regardless
- * of payment_status. When admins fix the Notes column between runs
- * (e.g., `verifying payment` → `Paid`), the receipt dedup catches the
+ * of payment_status. When the host flips Status in EventCreate between
+ * runs (e.g., `Pending` → `Attending`), the receipt dedup catches the
  * second arrival as duplicate; this helper unblocks the case by
  * looking up the persisted row, comparing payment_status, and
  * applying an UPDATE if they differ.
@@ -591,7 +595,7 @@ async function maybeApplyStateChange(
           registrationId: persisted.registrationId,
           err: update.error.kind,
         },
-        '[F6.1] state-change UPDATE err — admin Notes-fix silently dropped; falls back to duplicate',
+        '[F6.1] state-change UPDATE err — admin Status-flip silently dropped; falls back to duplicate',
       );
       eventcreateMetrics.csvImportStateChangeFallback(
         input.tenantId,
@@ -652,6 +656,182 @@ async function maybeApplyStateChange(
         `csv_import_row_state_changed audit emit failed: ${auditResult.error.kind}`,
       );
     }
+
+    // Option B+ (2026-05-18) /speckit-review follow-up — quota credit /
+    // debit on a state-change that crosses the counted/uncounted boundary.
+    // The fresh-insert path in `processAttendeeInTx` calls
+    // `applyQuotaEffect` for new rows; the state-change path historically
+    // updated `payment_status` only — leaving `counted_against_*` flags
+    // stale on re-uploads that flipped Pending → Attending (or vice
+    // versa). Strict-correctness invariant: either the row flips AND
+    // the quota reflects the new state, or neither (savepoint rolls back).
+    const matchedMemberId = persisted.match.matchedMemberId;
+    const oldCounted =
+      persisted.ticket.paymentStatus === 'paid' ||
+      persisted.ticket.paymentStatus === 'free';
+    const newCounted =
+      parsed.row.payment_status === 'paid' ||
+      parsed.row.payment_status === 'free';
+    if (oldCounted !== newCounted && matchedMemberId !== null) {
+      // Load event flags to gate the quota call (no quota effect on
+      // non-partnership / non-cultural / archived events).
+      const eventLookup = await ports.eventsRepo.findById(
+        input.tenantId,
+        input.selectedEvent.eventId,
+      );
+      if (
+        eventLookup.ok &&
+        eventLookup.value !== null &&
+        eventLookup.value.archivedAt === null &&
+        (eventLookup.value.isPartnerBenefit ||
+          eventLookup.value.isCulturalEvent)
+      ) {
+        const event = eventLookup.value;
+        const fiscalYear = deriveFiscalYear(
+          event.startDate.toISOString(),
+          F6_FISCAL_YEAR_START_MONTH,
+        );
+        if (!oldCounted && newCounted) {
+          // Credit path — pending/waitlisted/no_show → paid/free.
+          // Delegates to the same `applyQuotaEffect` used by the
+          // fresh-insert pipeline; the quota_*_decremented audit
+          // emits inside that call.
+          const q = await applyQuotaEffect(
+            {
+              tenantId: input.tenantId,
+              matchedMemberId,
+              eventId: event.eventId,
+              registrationId: persisted.registrationId,
+              eventFlags: {
+                isPartnerBenefit: event.isPartnerBenefit,
+                isCulturalEvent: event.isCulturalEvent,
+              },
+              fiscalYear,
+              paymentStatus: parsed.row.payment_status,
+              actorType: 'csv_import',
+              actorUserId: input.actorUserId,
+              occurredAt: new Date(),
+            },
+            {
+              quotaAccountingPort: ports.quotaAccountingPort,
+              advisoryLockAcquirer: ports.advisoryLockAcquirer,
+              audit: ports.audit,
+            },
+          );
+          if (!q.ok) {
+            throw new TxStageError(
+              'quota_decrement',
+              `state-change quota credit failed (${q.error.kind})`,
+            );
+          }
+          const decided = q.value.quotaEffect;
+          if (
+            decided.countedAgainstPartnership ||
+            decided.countedAgainstCulturalQuota
+          ) {
+            const setRes = await ports.registrationsRepo.setQuotaEffect(
+              input.tenantId,
+              persisted.registrationId,
+              decided,
+            );
+            if (!setRes.ok) {
+              throw new TxStageError(
+                'quota_decrement',
+                `state-change setQuotaEffect failed: ${setRes.error.kind}`,
+              );
+            }
+          }
+        } else {
+          // Debit path — paid/free → pending/waitlisted/no_show.
+          // Rare in practice (host un-verifies payment) but the
+          // symmetric correctness keeps `counted_against_*` flags in
+          // sync with `payment_status`. Pattern mirrors the FR-018
+          // refund branch in process-attendee-in-tx.ts:838-920.
+          const prev = persisted.quotaEffect;
+          if (
+            prev.countedAgainstPartnership ||
+            prev.countedAgainstCulturalQuota
+          ) {
+            const clearRes = await ports.registrationsRepo.setQuotaEffect(
+              input.tenantId,
+              persisted.registrationId,
+              {
+                countedAgainstPartnership: false,
+                countedAgainstCulturalQuota: false,
+              },
+            );
+            if (!clearRes.ok) {
+              throw new TxStageError(
+                'quota_decrement',
+                `state-change clear quota failed: ${clearRes.error.kind}`,
+              );
+            }
+            // Query allotment snapshot AFTER the flag-clear so the
+            // `allotmentAfter` payload reflects post-debit state —
+            // identical to the FR-018 refund snapshot semantics.
+            const snap = await ports.quotaAccountingPort.queryAllotments({
+              tenantId: input.tenantId,
+              memberId: matchedMemberId,
+              eventId: event.eventId,
+              fiscalYear,
+            });
+            if (!snap.ok) {
+              throw new TxStageError(
+                'quota_decrement',
+                `state-change allotment snapshot failed (${snap.error.kind})`,
+              );
+            }
+            const baseAudit = {
+              tenantId: input.tenantId,
+              actorType: 'csv_import' as const,
+              actorUserId: input.actorUserId,
+              occurredAt: new Date(),
+            };
+            if (prev.countedAgainstPartnership) {
+              const allotmentAfter =
+                snap.value.allotments.partnershipPerEvent -
+                snap.value.consumed.partnershipConsumedForEvent;
+              // Reuse `quota_credit_back_refund` event type — semantically
+              // identical (a previously-counted seat no longer counts).
+              // Summary disambiguates "via state_change" from refund.
+              await emitOrThrow(ports.audit, {
+                ...baseAudit,
+                eventType: 'quota_credit_back_refund',
+                summary: `partnership credit-back via state_change: row ${parsed.rowNumber} ${update.value.previousPaymentStatus}→${parsed.row.payment_status}`,
+                payload: {
+                  severity: 'info',
+                  registrationId: persisted.registrationId,
+                  memberId: matchedMemberId,
+                  scope: 'partnership',
+                  allotmentAfter,
+                },
+              });
+            }
+            if (prev.countedAgainstCulturalQuota) {
+              const allotmentAfter =
+                snap.value.allotments.culturalPerYear -
+                snap.value.consumed.culturalConsumedForYear;
+              await emitOrThrow(ports.audit, {
+                ...baseAudit,
+                eventType: 'quota_credit_back_refund',
+                summary: `cultural credit-back via state_change: row ${parsed.rowNumber} ${update.value.previousPaymentStatus}→${parsed.row.payment_status}`,
+                payload: {
+                  severity: 'info',
+                  registrationId: persisted.registrationId,
+                  memberId: matchedMemberId,
+                  scope: 'cultural',
+                  allotmentAfter,
+                },
+              });
+            }
+          }
+        }
+      }
+      // else: no quota effect — non-benefit event, archived, or event
+      // lookup failed. The payment_status UPDATE still committed
+      // (correct — it always mirrors upstream Status).
+    }
+
     return {
       kind: 'state_changed' as const,
       rowNumber: parsed.rowNumber,
@@ -783,8 +963,9 @@ async function processOneRowInSavepoint(
         if (!receipt.value.wasFresh) {
           // T031 (F6.1 Phase 4 US2) — receipt duplicate doesn't always
           // mean "no-op". When the incoming row's payment_status differs
-          // from the persisted row (e.g. admin re-uploaded after fixing
-          // the Notes cell), apply a state-change UPDATE before returning.
+          // from the persisted row (e.g. admin re-uploaded after the host
+          // flipped Status in EventCreate), apply a state-change UPDATE
+          // before returning.
           // Refund transitions go through markRefunded + the FR-018
           // credit-back path; non-refund payment_status changes go
           // through updatePaymentStatus (no quota effect).
@@ -888,11 +1069,25 @@ async function processOneRowInSavepoint(
         );
       }
 
-      // Orphan-recovery self-heal (bug-fix 2026-05-18): if we deleted
-      // an orphan receipt above to let this row insert fresh, re-insert
-      // the receipt now so future re-uploads dedup correctly. Same
-      // savepoint scope — if anything else throws after this, the
-      // re-insert rolls back atomically.
+      // Orphan-recovery self-heal: if we deleted an orphan receipt
+      // above to let this row insert fresh, re-insert the receipt now
+      // so future re-uploads dedup correctly.
+      //
+      // Ordering invariant: the re-insert MUST sit AFTER the
+      // `processAttendeeInTx` call above — if it ran BEFORE, the in-tx
+      // `processAttendeeInTx` could itself observe the fresh receipt
+      // and bail with a duplicate outcome, breaking the recovery.
+      //
+      // Concurrent-self-heal race: we deliberately do NOT check
+      // `reinsert.value.wasFresh`. If another worker / re-upload
+      // happened to insert the same receipt between our delete and
+      // re-insert, both transactions converge to the same persisted
+      // state (one registration + one receipt) under the per-(tenant,
+      // event) advisory lock in the outer batch tx, so observing
+      // `wasFresh:false` here is benign — not a bug.
+      //
+      // Same savepoint scope — if anything else throws after this,
+      // the re-insert rolls back atomically.
       if (orphanRecovery) {
         const reinsert = await ports.idempotencyStore.tryInsert({
           tenantId: input.tenantId,
@@ -919,6 +1114,16 @@ async function processOneRowInSavepoint(
       // the user-visible summary would show "rows imported: 17" on a
       // re-upload that touched zero rows. Report as `duplicate` so the
       // summary's rowsProcessed reflects only genuinely-new rows.
+      //
+      // Intentional side-effect omission (silent-failure-hunter R2-W2,
+      // 2026-05-18 follow-up): this branch deliberately does NOT
+      // accumulate `summary.matchCounts[outcome.matchType]` nor
+      // `summary.eventsUpdated`. Those counters track "how many NEW
+      // rows did THIS upload produce" — and on a no-op upsert, nothing
+      // new was produced. The underlying `attendee_matched_*` audit
+      // DID fire inside `processAttendeeInTx` regardless, so
+      // audit-log forensics remain complete. The summary intentionally
+      // diverges from audit cardinality on duplicates.
       if (!result.isNewRegistration) {
         return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
       }
@@ -2158,8 +2363,8 @@ interface EmitImportCompletedAuditArgs {
     readonly rowsAlreadyImported: number;
     /**
      * Staff-review H-1: subset of rowsProcessed whose
-     * state actually changed on this re-upload (Notes-driven payment
-     * flip, Attending→Cancelled, etc.). Surfaced on the audit payload
+     * state actually changed on this re-upload (Status-driven payment
+     * flip, e.g. Pending → Attending or Attending → Cancelled). Surfaced on the audit payload
      * so post-import forensic queries can distinguish no-op re-uploads
      * from re-uploads that mutated existing registrations.
      */

@@ -82,7 +82,20 @@ export function makeDrizzleIdempotencyStore(executor: TenantTx): IdempotencyStor
 
     async delete(input) {
       try {
-        await executor
+        // 0-rows-affected is treated as `err` on the F6.1 self-heal
+        // path. The caller (`maybeApplyStateChange` → orphan-recovery
+        // in `processOneRowInSavepoint`) reaches this point ONLY after
+        // confirming the receipt exists via `tryInsert` (wasFresh=false)
+        // AND the orphan-detection probe in `maybeApplyStateChange`
+        // saw the matching registration row was absent. A delete that
+        // affects 0 rows means either:
+        //   - a concurrent tx deleted+re-inserted the receipt under us
+        //     (race; should not occur under the per-(tenant, event)
+        //     advisory lock, but defensive against future refactors)
+        //   - the executor's tenant scope drifted (RLS misconfig)
+        // Either case is a silent-correctness bug — the savepoint
+        // SHOULD roll back so the recovery retries from a clean state.
+        const deleted = await executor
           .delete(eventcreateIdempotencyReceipts)
           .where(
             and(
@@ -90,7 +103,17 @@ export function makeDrizzleIdempotencyStore(executor: TenantTx): IdempotencyStor
               eq(eventcreateIdempotencyReceipts.source, input.source),
               eq(eventcreateIdempotencyReceipts.requestId, input.requestId),
             ),
-          );
+          )
+          .returning({
+            requestId: eventcreateIdempotencyReceipts.requestId,
+          });
+        if (deleted.length === 0) {
+          return err({
+            kind: 'db_error',
+            message:
+              'idempotency receipt delete affected 0 rows — likely concurrent race (another tx deleted+re-inserted between probe and delete) or RLS scope drift; caller must roll back',
+          });
+        }
         return ok(undefined);
       } catch (e) {
         return err(wrapRepoError('idempotency', e));

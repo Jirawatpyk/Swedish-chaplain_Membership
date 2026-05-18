@@ -4,27 +4,27 @@
  * CLS-0 shape — mirrors EventsListTable's 6-column header + 8 row
  * shape exactly. Renders inside TableContainer + PageHeader so the
  * layout matches the real page on navigation.
+ *
+ * Title + subtitle render at REAL text (not Skeleton bars) per the
+ * /speckit-review follow-up 2026-05-18 — other admin loading pages
+ * (members, invoices, plans, renewals) all render the real header
+ * text via `getTranslations`. The previous Skeleton bars over the
+ * heading were inconsistent and gave a "still loading" impression
+ * even for the static parts of the layout.
  */
+import { getTranslations } from 'next-intl/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function EventsListLoading() {
-  // R6-W11 staff-review fix (2026-05-13): wrap Skeleton inside the
-  // PageHeader `<h1>` slot in `<span aria-hidden>` so VoiceOver does
-  // not announce "heading level 1" with no label. Card carries
-  // `aria-hidden` for the same reason as the detail loading skeleton.
-  // R7-A staff-review fix (2026-05-13): `<span className="block">` —
-  // a default-inline span does not establish a block formatting
-  // context, so the inner block-display Skeleton (`h-7`) could
-  // collapse to 0 height on some browsers. Forcing block restores
-  // CLS-0 layout intent.
+export default async function EventsListLoading() {
+  const t = await getTranslations('admin.events.list');
   return (
     <TableContainer aria-busy="true">
       <PageHeader
-        title={<span aria-hidden="true" className="block"><Skeleton className="h-7 w-44" /></span>}
-        subtitle={<Skeleton className="h-4 w-64" aria-hidden />}
+        title={t('title')}
+        subtitle={t('subtitle')}
         // "Import CSV" CTA in PageHeader actions — admin-only button
         // rendered by the real page. Skeleton placeholder keeps CLS-0
         // when the page swaps in.

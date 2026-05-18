@@ -2666,7 +2666,9 @@
         "paid": "Paid",
         "pending": "Pending",
         "refunded": "Refunded",
-        "free": "Free"
+        "free": "Free",
+        "waitlisted": "Waitlisted",
+        "no_show": "No show"
       },
       "import": {
         "pageTitle": "Import attendees from CSV",
@@ -2706,12 +2708,12 @@
           "rowsAlreadyImportedLabel": "Already imported",
           "rowsAlreadyImportedDescription": "These rows match a prior upload and were skipped (idempotent).",
           "rowsStateChangedLabel": "State changed",
-          "rowsStateChangedDescription": "Re-uploaded rows whose payment status flipped after a Notes-column fix.",
+          "rowsStateChangedDescription": "Re-uploaded rows whose Status changed (e.g. Pending → Attending).",
           "eventsCreatedLabel": "Events created",
           "eventsUpdatedLabel": "Events updated",
           "durationLabel": "Duration",
           "matchBreakdownTitle": "Match breakdown",
-          "errorRowsTitle": "Skipped rows ({count})",
+          "errorRowsTitle": "Rows with errors ({count})",
           "errorRowLabel": "Row {rowNumber}",
           "noErrorRows": "All rows imported cleanly — no errors to review.",
           "recordIdLabel": "Reference ID",

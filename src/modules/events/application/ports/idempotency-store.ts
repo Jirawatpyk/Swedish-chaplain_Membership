@@ -79,8 +79,18 @@ export interface IdempotencyStore {
    * `event_registrations` row was deleted (manual cleanup, F6 PII
    * erasure, dev teardown, pseudonymise sweep race). The use-case
    * deletes the orphan receipt + re-runs the row through the normal
-   * processing pipeline so the registration lands fresh. Idempotent:
-   * deleting a row that does not exist is a no-op.
+   * processing pipeline so the registration lands fresh.
+   *
+   * **Not idempotent on the self-heal path** (revised 2026-05-18
+   * /speckit-review follow-up): a 0-rows-affected outcome is treated
+   * as `err({kind:'db_error'})` because the caller reaches this point
+   * having JUST confirmed the receipt exists via `tryInsert` +
+   * orphan-detection probe. A missing row at delete-time means
+   * concurrent-tx race or RLS scope drift — the savepoint MUST roll
+   * back so the recovery retries from a clean state, NOT silently
+   * proceed. Callers that genuinely want delete-if-exists semantics
+   * (e.g., future TTL cleanup job) should perform the existence
+   * check separately and accept the err as benign.
    */
   delete(
     input: DeleteReceiptInput,

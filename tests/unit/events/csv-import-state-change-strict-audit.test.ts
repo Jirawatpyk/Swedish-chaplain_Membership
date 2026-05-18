@@ -102,9 +102,20 @@ function makeDeps(opts: FixtureOpts): ImportCsvDeps {
     } as unknown as ImportCsvTxScopedPorts['advisoryLockAcquirer'],
     registrationsRepo: {
       findByEventAndEmail: vi.fn(async () =>
+        // Option B+ /speckit-review follow-up — `maybeApplyStateChange`
+        // now reads `persisted.match.matchedMemberId` + `quotaEffect`
+        // on the state-change boundary to decide whether to credit /
+        // debit quota. Match resolution is `null` here so the quota
+        // branch self-guards and skips — keeping the test's focus on
+        // the audit-emit invariant.
         ok({
           registrationId: 'reg-uuid' as never,
+          match: { type: 'non_member', matchedMemberId: null, matchedContactId: null },
           ticket: { paymentStatus: 'pending' },
+          quotaEffect: {
+            countedAgainstPartnership: false,
+            countedAgainstCulturalQuota: false,
+          },
         } as never),
       ),
       updatePaymentStatus: vi.fn(async () =>

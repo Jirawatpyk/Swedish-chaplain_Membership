@@ -44,6 +44,7 @@ import { cn } from '@/lib/utils';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type {
   MatchType,
+  PaymentStatus,
   RegistrationId,
   AttendeeEmail,
   EventId,
@@ -67,13 +68,7 @@ export type AttendeeRow = {
   readonly matchType: MatchType;
   readonly ticketType: string | null;
   readonly ticketPriceThb: number | null;
-  readonly paymentStatus:
-    | 'paid'
-    | 'pending'
-    | 'refunded'
-    | 'free'
-    | 'waitlisted'
-    | 'no_show';
+  readonly paymentStatus: PaymentStatus;
   readonly countedAgainstPartnership: boolean;
   readonly countedAgainstCulturalQuota: boolean;
   readonly isOverQuota: boolean;

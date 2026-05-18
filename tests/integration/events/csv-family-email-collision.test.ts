@@ -162,4 +162,94 @@ describe('F6.1 family-email rowHash collision (live Neon)', () => {
     expect(r2.summary.rowsProcessed).toBe(0);
     expect(r2.summary.rowsAlreadyImported).toBe(7);
   });
+
+  /**
+   * D6 follow-up (Option B+ /speckit-review): family bookings can
+   * arrive with mixed statuses — the registrant locked in the table
+   * while one child is still `Pending` (payment unverified) and
+   * another fell to `Waitlisted`. The rowHash must still distinguish
+   * each guest by `attendee_external_id`, AND each `payment_status`
+   * MUST mirror the per-row Status — same dedup safety as the
+   * all-Attending fixture but with the Option B+ mapping table
+   * exercised across statuses.
+   */
+  it(
+    'family bookings with mixed Status (Attending + Pending + Waitlisted) all persist with correct payment_status',
+    { timeout: 60_000 },
+    async () => {
+      const eventId = randomUUID();
+      const externalId = `event-family-mixed-${eventId.slice(0, 8)}`;
+      await db.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId,
+        name: 'Family mixed-status test',
+        startDate: new Date('2026-06-05T03:00:00Z'),
+        category: null,
+      } satisfies NewEventRow);
+
+      const header =
+        'Basic Info,Status,First Name,Last Name,Email,Phone Number,Phone Number Consent,Registration Date,Added Date,Last Updated Date,Attendee Edited Date,Ticket,Guest Of,Number of Guests Allowed,Checked In,Attendee ID,Order ID,VIP,Notes,Assigned Table,Tags,Company Name,Registration Category,Personal Data Protection Consent,Last Email Sent,Last Email Sent Date,Unsubscribed';
+      const family = [
+        ['Vendela', 'Gyllin', 'Attending', '17400000-1'],
+        ['Monique', 'Wittebrood', 'Pending', '17400000-2'],
+        ['Chloe', 'Wittebrood', 'Waitlisted', '17400000-3'],
+        ['Robert', 'Wittebrood', 'Attending', '17400000-4'],
+        ['Christine', 'Russel-Wittebrood', 'Pending', '17400000-5'],
+      ] as const;
+      const SHARED_EMAIL = 'family-mixed@example.test';
+      const lines = family.map(
+        ([first, last, status, attId]) =>
+          `${first} ${last},${status},${first},${last},${SHARED_EMAIL},,FALSE,2026-04-10,2026-04-10,2026-04-10,–,Adults,–,5,FALSE,${attId},17400000,FALSE,–,–,,Acme,Members,I hereby acknowledge,–,–,–`,
+      );
+      const bytes = new TextEncoder().encode([header, ...lines].join('\n'));
+
+      const r = await runImportCsv({
+        tenantSlug: tenant.ctx.slug,
+        actorUserId: actor.userId,
+        bytes,
+        selectedEvent: {
+          eventId,
+          externalId,
+          name: 'Family mixed-status test',
+          startDate: new Date('2026-06-05T03:00:00Z'),
+          category: null,
+        },
+        originalFilename: 'family-mixed.csv',
+      });
+      expect(r.kind).toBe('completed');
+      if (r.kind !== 'completed') return;
+
+      // All 5 family members persist — no rowHash collision dedup even
+      // though they share an email AND have different statuses.
+      expect(r.summary.rowsProcessed).toBe(5);
+      expect(r.summary.rowsSkipped).toBe(0);
+
+      const regs = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventRegistrations)
+          .where(
+            and(
+              eq(eventRegistrations.tenantId, tenant.ctx.slug),
+              eq(eventRegistrations.eventId, eventId),
+            ),
+          ),
+      );
+      expect(regs.length).toBe(5);
+
+      const byExternalId = new Map(regs.map((row) => [row.externalId, row]));
+      for (const [, , status, attId] of family) {
+        const row = byExternalId.get(attId);
+        const expected =
+          status === 'Attending'
+            ? 'paid'
+            : status === 'Pending'
+              ? 'pending'
+              : 'waitlisted';
+        expect(row?.paymentStatus).toBe(expected);
+      }
+    },
+  );
 });

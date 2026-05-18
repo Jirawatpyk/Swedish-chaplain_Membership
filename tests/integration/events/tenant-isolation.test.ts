@@ -211,6 +211,66 @@ describe('T042 — F6 Tenant isolation (REVIEW-GATE BLOCKER, Constitution Princi
       );
       expect(rows.length).toBe(0);
     });
+
+    // D4 follow-up (Option B+ /speckit-review): the new
+    // `IdempotencyStore.delete()` method (added 2026-05-18 for the
+    // orphan-receipt self-heal path) MUST be RLS-scoped. A delete
+    // from tenant A's runInTenant context MUST NOT touch tenant B's
+    // receipt rows — even when the `where` clause coincidentally
+    // names tenantId=B (RLS enforces context, not args).
+    it('delete() in tenant A context cannot remove tenant B receipt (D4 RLS probe)', async () => {
+      const { makeDrizzleIdempotencyStore } = await import(
+        '@/modules/events/infrastructure/drizzle-idempotency-store'
+      );
+      // Pre-check: tenant B's seed receipt exists.
+      const beforeB = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventcreateIdempotencyReceipts)
+          .where(
+            and(
+              eq(eventcreateIdempotencyReceipts.tenantId, tenantB.ctx.slug),
+              eq(eventcreateIdempotencyReceipts.requestId, bRequestId),
+            ),
+          ),
+      );
+      expect(beforeB.length).toBe(1);
+
+      // Attempt the cross-tenant delete from tenant A's context.
+      // The new `delete()` returns err({kind:'db_error'}) on 0-rows-
+      // affected per the C3 hardening — that IS the correct signal
+      // that RLS blocked the write.
+      const result = await runInTenant(tenantA.ctx, async (tx) => {
+        const store = makeDrizzleIdempotencyStore(tx);
+        return store.delete({
+          // Note: the `tenantId` arg is a brand-typed `TenantId`, not a
+          // `TenantSlug`. The TestTenant's `slug` is the same string at
+          // runtime, so we coerce. The RLS context (the `runInTenant`
+          // wrapper) is what actually gates the write — the WHERE arg
+          // is observational only.
+          tenantId: tenantB.ctx.slug as unknown as Parameters<
+            typeof store.delete
+          >[0]['tenantId'],
+          source: 'eventcreate_webhook',
+          requestId: bRequestId,
+        });
+      });
+      expect(result.ok).toBe(false);
+
+      // Tenant B's receipt MUST still exist.
+      const afterB = await runInTenant(tenantB.ctx, async (tx) =>
+        tx
+          .select()
+          .from(eventcreateIdempotencyReceipts)
+          .where(
+            and(
+              eq(eventcreateIdempotencyReceipts.tenantId, tenantB.ctx.slug),
+              eq(eventcreateIdempotencyReceipts.requestId, bRequestId),
+            ),
+          ),
+      );
+      expect(afterB.length).toBe(1);
+    });
   });
 
   describe('Round-trip cross-tenant probe via webhook URL (application-layer)', () => {

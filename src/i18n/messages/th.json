@@ -2666,7 +2666,9 @@
         "paid": "ชำระแล้ว",
         "pending": "รอชำระ",
         "refunded": "คืนเงินแล้ว",
-        "free": "ฟรี"
+        "free": "ฟรี",
+        "waitlisted": "รอคิว",
+        "no_show": "ไม่มาตามนัด"
       },
       "import": {
         "pageTitle": "นำเข้าผู้เข้าร่วมจากไฟล์ CSV",
@@ -2706,12 +2708,12 @@
           "rowsAlreadyImportedLabel": "นำเข้าไปแล้วก่อนหน้า",
           "rowsAlreadyImportedDescription": "แถวเหล่านี้ตรงกับการนำเข้าก่อนหน้าและถูกข้ามอัตโนมัติ (idempotent)",
           "rowsStateChangedLabel": "สถานะเปลี่ยน",
-          "rowsStateChangedDescription": "แถวที่อัปโหลดซ้ำและสถานะการชำระเงินเปลี่ยนหลังแก้ไขคอลัมน์ Notes",
+          "rowsStateChangedDescription": "แถวที่อัปโหลดซ้ำและ Status เปลี่ยน (เช่น Pending → Attending)",
           "eventsCreatedLabel": "กิจกรรมที่สร้างใหม่",
           "eventsUpdatedLabel": "กิจกรรมที่อัปเดต",
           "durationLabel": "ระยะเวลา",
           "matchBreakdownTitle": "สรุปผลการจับคู่",
-          "errorRowsTitle": "แถวที่ข้าม ({count})",
+          "errorRowsTitle": "แถวที่มีข้อผิดพลาด ({count})",
           "errorRowLabel": "แถวที่ {rowNumber}",
           "noErrorRows": "นำเข้าทุกแถวสำเร็จ — ไม่มีข้อผิดพลาดให้ตรวจสอบ",
           "recordIdLabel": "รหัสอ้างอิง",

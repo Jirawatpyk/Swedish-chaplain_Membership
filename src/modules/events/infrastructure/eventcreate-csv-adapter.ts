@@ -28,6 +28,7 @@ import {
   computeAttendeeFingerprintFromEmails,
   type PdpaConsentAcknowledged,
 } from '../domain/eventcreate-csv-format';
+import type { PaymentStatus } from '../domain/value-objects/payment-status';
 
 // Re-export so test imports continue to resolve via the adapter module.
 export { computeAttendeeFingerprintFromEmails };
@@ -197,7 +198,7 @@ export function classifyEventCreateStatus(
  */
 export function statusToPaymentStatus(
   status: EventCreateRowStatus,
-): 'paid' | 'pending' | 'refunded' | 'waitlisted' | 'no_show' | null {
+): Exclude<PaymentStatus, 'free'> | null {
   switch (status) {
     case 'Attending':
       return 'paid';
@@ -211,6 +212,17 @@ export function statusToPaymentStatus(
       return 'no_show';
     case 'Skipped':
       return null;
+    default: {
+      // C2 follow-up — defence-in-depth exhaustiveness assertion.
+      // Adding a 7th `EventCreateRowStatus` variant forces this case
+      // to compile-error (`never` cannot accept the new literal),
+      // catching a missing mapping at build time rather than at
+      // runtime as silent fall-through.
+      const _exhaustive: never = status;
+      throw new Error(
+        `unhandled EventCreateRowStatus: ${_exhaustive as string}`,
+      );
+    }
   }
 }
 
@@ -244,13 +256,7 @@ export interface EventCreateAttendeeRow {
    * `status === 'Skipped'`, in which case the row is dropped and never
    * reaches the DB.
    */
-  readonly paymentStatus:
-    | 'paid'
-    | 'pending'
-    | 'refunded'
-    | 'waitlisted'
-    | 'no_show'
-    | null;
+  readonly paymentStatus: Exclude<PaymentStatus, 'free'> | null;
   /**
    * F6.1 Phase 4 US2 (T033) — true when `status === 'Cancellation'`.
    * Causes the use-case to BYPASS the idempotency receipt and route the
@@ -386,7 +392,7 @@ export function collectUnknownEventCreateColumns(
 // lowercased list of `attendee_email` values for rows where
 // `Status === 'Attending'`. The 8-step algorithm (per spec):
 //
-//   1. Filter input rows to `isAttending === true`.
+//   1. Filter input rows to `status === 'Attending'`.
 //   2. Strip `mailto:` prefix from each email (already done in
 //      `translateEventCreateRow`).
 //   3. Trim each email.

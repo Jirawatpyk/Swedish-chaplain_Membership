@@ -16,6 +16,14 @@
 --     on the table while the constraint is rebuilt — F6 event_registrations
 --     is small (~thousands at most) so the rebuild is sub-second.
 --   * RLS + FORCE policies on the table are unaffected.
+--
+-- Rollback: IRREVERSIBLE while any persisted row has
+--   `payment_status IN ('waitlisted','no_show')`. The 6-status enum
+--   widens the contract — a pre-Option-B+ app rolled back against this
+--   schema will hit zod enum-rejection on list queries. To roll back
+--   schema: first UPDATE all `waitlisted` / `no_show` rows to a
+--   pre-Option-B+ value (e.g. `pending`), THEN rebuild the CHECK
+--   constraint with the original 4-value allowlist.
 
 ALTER TABLE "event_registrations"
   DROP CONSTRAINT "event_registrations_payment_status_check";

@@ -86,7 +86,7 @@ export function classifyPdpaConsent(
 // lowercased list of attendee emails. The Use-case path (Application
 // layer) consumes this via the canonical-form helper; the EventCreate
 // adapter (Infrastructure layer) wraps it with the EventCreateAttendeeRow
-// filter on `isAttending`.
+// filter on `status === 'Attending'`.
 //
 //   3. trim · 4. lowercase · 5. discard empty · 6. lex-sort
 //   7. NUL-byte join · 8. SHA-256 hex first 16

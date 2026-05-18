@@ -2666,7 +2666,9 @@
         "paid": "Betald",
         "pending": "Väntar",
         "refunded": "Återbetald",
-        "free": "Gratis"
+        "free": "Gratis",
+        "waitlisted": "Väntelista",
+        "no_show": "Uteblev"
       },
       "import": {
         "pageTitle": "Importera deltagare från CSV",
@@ -2706,12 +2708,12 @@
           "rowsAlreadyImportedLabel": "Redan importerade",
           "rowsAlreadyImportedDescription": "Dessa rader matchar en tidigare uppladdning och hoppades över (idempotent).",
           "rowsStateChangedLabel": "Statusändrad",
-          "rowsStateChangedDescription": "Återuppladdade rader vars betalningsstatus ändrades efter en Notes-rättning.",
+          "rowsStateChangedDescription": "Återuppladdade rader vars Status ändrades (t.ex. Pending → Attending).",
           "eventsCreatedLabel": "Evenemang skapade",
           "eventsUpdatedLabel": "Evenemang uppdaterade",
           "durationLabel": "Varaktighet",
           "matchBreakdownTitle": "Matchningsöversikt",
-          "errorRowsTitle": "Överhoppade rader ({count})",
+          "errorRowsTitle": "Rader med fel ({count})",
           "errorRowLabel": "Rad {rowNumber}",
           "noErrorRows": "Alla rader importerades utan fel.",
           "recordIdLabel": "Referens-ID",

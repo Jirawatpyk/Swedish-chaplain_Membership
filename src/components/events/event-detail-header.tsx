@@ -20,8 +20,10 @@
  *     the event header.
  *
  * P1 — Last updated:
- *   - Wrapped in <Tooltip> explaining the value is the last Zapier
- *     delivery timestamp (trust signal for ops triage).
+ *   - Wrapped in <Tooltip> explaining the value is the last sync
+ *     timestamp from any source — webhook ingest, CSV import, or
+ *     admin metadata mutation (toggle / archive). Trust signal for
+ *     ops triage; see `events.last_updated_at` field JSDoc below.
  *
  * a11y:
  * - Match-rate metric uses <dl> + sr-only matchRateValue so SRs hear
