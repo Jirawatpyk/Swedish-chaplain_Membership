@@ -79,5 +79,22 @@ export function makeDrizzleIdempotencyStore(executor: TenantTx): IdempotencyStor
         return err(wrapRepoError('idempotency', e));
       }
     },
+
+    async delete(input) {
+      try {
+        await executor
+          .delete(eventcreateIdempotencyReceipts)
+          .where(
+            and(
+              eq(eventcreateIdempotencyReceipts.tenantId, input.tenantId),
+              eq(eventcreateIdempotencyReceipts.source, input.source),
+              eq(eventcreateIdempotencyReceipts.requestId, input.requestId),
+            ),
+          );
+        return ok(undefined);
+      } catch (e) {
+        return err(wrapRepoError('idempotency', e));
+      }
+    },
   };
 }

@@ -479,14 +479,43 @@ function isSkippedParserRow(reason: string): boolean {
  * invariant. The persisted row stays at its old value; next re-upload
  * tries again.
  */
+/**
+ * State-change probe result. Three terminal cases:
+ *   - `'noop'`           — registration exists + state already matches the
+ *                          incoming row → caller short-circuits with
+ *                          `kind:'duplicate'`. Also used as the fallback
+ *                          on `lookup_err`, `update_err`, `threw` so the
+ *                          row is reported under `rowsAlreadyImported`
+ *                          on the next re-upload retry.
+ *   - `'orphan'`         — receipt exists in `eventcreate_idempotency_receipts`
+ *                          but the matching `event_registrations` row was
+ *                          deleted (manual cleanup / PII erasure / dev
+ *                          teardown / pseudonymise sweep race). Caller
+ *                          performs self-heal: delete the orphan receipt,
+ *                          fall through to `processAttendeeInTx` so the
+ *                          row inserts fresh, then re-insert the receipt
+ *                          inside the same savepoint so future re-uploads
+ *                          dedup correctly. Bug-fix 2026-05-18 — replaces
+ *                          the previous ERROR-level "invariant violation"
+ *                          fallback that silently counted the row as
+ *                          `rowsAlreadyImported` (admin data loss).
+ *   - `{kind:'state_changed', ...}` — registration exists + payment_status
+ *                          differs → UPDATE applied, audit emitted; caller
+ *                          returns this outcome verbatim.
+ */
+type StateChangeProbeResult =
+  | { readonly kind: 'noop' }
+  | { readonly kind: 'orphan' }
+  | (RowOutcome & { readonly kind: 'state_changed' });
+
 async function maybeApplyStateChange(
   parsed: ParsedOkRow,
   input: ImportCsvInput,
   ports: ImportCsvTxScopedPorts,
-): Promise<RowOutcome | null> {
+): Promise<StateChangeProbeResult> {
   // Skip refund transitions — handled by the intendedStateChange
   // Cancellation path which bypasses the receipt entirely.
-  if (parsed.row.payment_status === 'refunded') return null;
+  if (parsed.row.payment_status === 'refunded') return { kind: 'noop' };
 
   const repo = ports.registrationsRepo;
 
@@ -514,33 +543,38 @@ async function maybeApplyStateChange(
         input.tenantId,
         'lookup_err',
       );
-      return null;
+      return { kind: 'noop' };
     }
     if (existing.value === null) {
-      // The receipt INSERT just committed, but no registration row
-      // exists. This is an invariant violation: either the receipt
-      // landed in a different tenant scope, or a concurrent admin
-      // archived the registration between the receipt INSERT and
-      // this lookup. Emit error-level signal — root cause must be
-      // diagnosed before recurrence.
-      logger.error(
+      // Orphan receipt detected: the idempotency receipt is present
+      // (tryInsert returned wasFresh=false) but no persisted
+      // registration matches via (tenantId, eventId, email). Common
+      // causes: registration deleted by admin PII erasure (F6 Phase 10
+      // Wave 1), manual DB cleanup during dev/test, pseudonymise sweep
+      // race, or events table cascade delete that didn't propagate to
+      // receipts (no FK by design — request_id = rowHash, not
+      // registration_id). Self-heal at the caller: delete the orphan
+      // receipt + fall through to processAttendeeInTx so the row
+      // inserts fresh. Bug-fix 2026-05-18 — replaces the previous
+      // ERROR-level fallback that masked admin data loss as
+      // `rowsAlreadyImported`. Logged at WARN, not ERROR, because the
+      // self-heal recovers fully — SRE should see sustained rate > 0
+      // but it is not an incident.
+      logger.warn(
         {
-          event: 'f6_csv_state_change_lookup_missing',
+          event: 'f6_csv_orphan_receipt_detected',
           tenantId: input.tenantId,
           rowNumber: parsed.rowNumber,
           eventId: input.selectedEvent.eventId,
+          rowHash: parsed.rowHash,
         },
-        '[F6.1] receipt-duplicate but no persisted registration — invariant violation; row falls back to duplicate',
+        '[F6.1] orphan receipt detected — registration absent; caller will self-heal',
       );
-      eventcreateMetrics.csvImportStateChangeFallback(
-        input.tenantId,
-        'lookup_missing',
-      );
-      return null;
+      return { kind: 'orphan' };
     }
     const persisted = existing.value;
     if (persisted.ticket.paymentStatus === parsed.row.payment_status) {
-      return null;
+      return { kind: 'noop' };
     }
 
     const update = await repo.updatePaymentStatus(
@@ -563,7 +597,7 @@ async function maybeApplyStateChange(
         input.tenantId,
         'update_err',
       );
-      return null;
+      return { kind: 'noop' };
     }
     // Emit per-row state-change audit. PDPA Art. 30 + GDPR Art. 30
     // require traceable processing-records for payment-status
@@ -619,7 +653,7 @@ async function maybeApplyStateChange(
       );
     }
     return {
-      kind: 'state_changed',
+      kind: 'state_changed' as const,
       rowNumber: parsed.rowNumber,
       previousPaymentStatus: update.value.previousPaymentStatus,
       newPaymentStatus: parsed.row.payment_status,
@@ -652,7 +686,7 @@ async function maybeApplyStateChange(
       '[F6.1] state-change probe threw — row falls back to duplicate; admin re-upload required',
     );
     eventcreateMetrics.csvImportStateChangeFallback(input.tenantId, 'threw');
-    return null;
+    return { kind: 'noop' };
   }
 }
 
@@ -720,6 +754,16 @@ async function processOneRowInSavepoint(
       // audit. First-time Cancellation rows (no prior registration) land
       // as a refunded ghost row — harmless side effect: no quota effect,
       // no audit emit (matchedMember+counted gates remain in effect).
+      //
+      // Orphan-recovery flag (bug-fix 2026-05-18): when the state-change
+      // probe finds a receipt-duplicate but no persisted registration,
+      // we delete the orphan receipt here, fall through to
+      // `processAttendeeInTx` so the row inserts fresh, and re-insert
+      // the receipt at the end of the savepoint so future re-uploads
+      // dedup correctly. If `processAttendeeInTx` throws, the savepoint
+      // rolls back including the delete + (absent) re-insert — the
+      // original orphan state is restored, safe to retry.
+      let orphanRecovery = false;
       if (!parsed.intendedStateChange) {
         const receipt = await ports.idempotencyStore.tryInsert({
           tenantId: input.tenantId,
@@ -749,8 +793,30 @@ async function processOneRowInSavepoint(
             input,
             ports,
           );
-          if (stateChange !== null) return stateChange;
-          return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
+          if (stateChange.kind === 'state_changed') return stateChange;
+          if (stateChange.kind === 'noop') {
+            return { kind: 'duplicate' as const, rowNumber: parsed.rowNumber };
+          }
+          // stateChange.kind === 'orphan' — registration was deleted
+          // out-of-band. Self-heal: delete the orphan receipt and let
+          // control fall through to processAttendeeInTx below. The
+          // receipt gets re-inserted after processAttendeeInTx commits
+          // inside this same savepoint (line below the
+          // processAttendeeInTx call), so the final state mirrors a
+          // fresh first-time upload + correct future-dedup semantics.
+          const del = await ports.idempotencyStore.delete({
+            tenantId: input.tenantId,
+            source: 'eventcreate_csv',
+            requestId: parsed.rowHash,
+          });
+          if (!del.ok) {
+            throw new TxStageError(
+              'idempotency_receipt',
+              `orphan receipt delete failed: ${del.error.message}`,
+            );
+          }
+          eventcreateMetrics.csvImportOrphanReceiptRecovered(input.tenantId);
+          orphanRecovery = true;
         }
       }
 
@@ -820,6 +886,25 @@ async function processOneRowInSavepoint(
           parsed.rowNumber,
           hashAttendeeEmail(parsed.row.attendee_email),
         );
+      }
+
+      // Orphan-recovery self-heal (bug-fix 2026-05-18): if we deleted
+      // an orphan receipt above to let this row insert fresh, re-insert
+      // the receipt now so future re-uploads dedup correctly. Same
+      // savepoint scope — if anything else throws after this, the
+      // re-insert rolls back atomically.
+      if (orphanRecovery) {
+        const reinsert = await ports.idempotencyStore.tryInsert({
+          tenantId: input.tenantId,
+          source: 'eventcreate_csv',
+          requestId: parsed.rowHash,
+        });
+        if (!reinsert.ok) {
+          throw new TxStageError(
+            'idempotency_receipt',
+            `orphan-recovery receipt re-insert failed: ${reinsert.error.message}`,
+          );
+        }
       }
 
       return {

@@ -58,6 +58,12 @@ export interface TryInsertReceiptResult {
 export type IdempotencyStoreError =
   | { readonly kind: 'db_error'; readonly message: string };
 
+export interface DeleteReceiptInput {
+  readonly tenantId: TenantId;
+  readonly source: IdempotencySource;
+  readonly requestId: string;
+}
+
 export interface IdempotencyStore {
   /**
    * Atomic insert-or-skip. Idempotent: re-issuing the same call after
@@ -66,4 +72,17 @@ export interface IdempotencyStore {
   tryInsert(
     input: TryInsertReceiptInput,
   ): Promise<Result<TryInsertReceiptResult, IdempotencyStoreError>>;
+
+  /**
+   * Orphan-receipt cleanup for the F6.1 self-heal path. Used ONLY when
+   * `tryInsert` returned `wasFresh:false` AND the matching
+   * `event_registrations` row was deleted (manual cleanup, F6 PII
+   * erasure, dev teardown, pseudonymise sweep race). The use-case
+   * deletes the orphan receipt + re-runs the row through the normal
+   * processing pipeline so the registration lands fresh. Idempotent:
+   * deleting a row that does not exist is a no-op.
+   */
+  delete(
+    input: DeleteReceiptInput,
+  ): Promise<Result<void, IdempotencyStoreError>>;
 }

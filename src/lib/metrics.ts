@@ -3248,6 +3248,25 @@ export const eventcreateMetrics = {
   },
 
   /**
+   * F6.1 bug-fix 2026-05-18 — fired when the receipt-duplicate
+   * state-change probe finds no persisted registration AND the
+   * self-heal path deletes the orphan receipt + re-runs the row through
+   * `processAttendeeInTx` so the registration lands fresh. Orphan
+   * receipts arise from registrations deleted out-of-band (manual
+   * cleanup, PII erasure, dev teardown, pseudonymise sweep race).
+   * Sustained rate > 0 is operationally interesting but NOT an
+   * incident — admin's row is recovered, no data loss.
+   */
+  csvImportOrphanReceiptRecovered(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_orphan_receipt_recovered_total',
+        'F6.1 orphan-receipt self-heal counter (receipt deleted + row re-inserted)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * R1 I-1 (silent-failure-hunter) — fired when the TTL-sweep cron
    * deletes a blob successfully but fails to clear the DB column.
    * Result: orphan blob_url pointer in DB (idempotent next-run retry
