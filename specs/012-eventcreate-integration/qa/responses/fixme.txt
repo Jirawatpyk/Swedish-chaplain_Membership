@@ -1,0 +1,12 @@
+
+> swecham-membership@0.1.0 check:fixme C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/check-fixme-budget.ts
+
+
+=== check:fixme budget report ===
+
+[32mPASS[0m (0/0) tests/e2e (excluding viewport-gated conditional skips)
+[32mPASS[0m (0/0) tests/contract
+
+[32m✓ check:fixme: all suites within budget[0m
+

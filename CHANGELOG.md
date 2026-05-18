@@ -13,6 +13,65 @@ spec / plan / tasks / review / retrospective for each release lives under
 
 ---
 
+## [F6] EventCreate Integration — 2026-05-19
+
+**Spec**: [`specs/012-eventcreate-integration/spec.md`](specs/012-eventcreate-integration/spec.md)
+**Plan**: [`specs/012-eventcreate-integration/plan.md`](specs/012-eventcreate-integration/plan.md)
+**Final review**: R4 fix-all `cb00ed1a` — ✅ APPROVED (R1 → R2 atomicity → R3 audit-emit boundary → R4 27-caller migration)
+**Review history**: 12 review reports + 4 cumulative fix-all close-outs (R1 base / R2 / R3 / R4)
+**Spec adherence**: 7 user stories (US1–US7) all closed in-session; 6 operator gates (T150–T154a) deferred to ship-day-checklist.md
+**Test baseline**: 4852 / 4852 unit + 204 / 204 F6 integration + 271 / 271 F8/audit cross-module on live Neon `ap-southeast-1` · 2924 i18n keys × EN/TH/SV · typecheck + lint clean · 4 / 4 cross-tenant search probes GREEN (Principle I Review-Gate)
+
+### Added
+
+- **US1 Webhook ingest** — per-tenant signed HTTPS POST at `/api/webhooks/eventcreate/v1/{tenantSlug}` with HMAC-SHA256 timing-safe verify + 5-min replay protection + 7-day idempotency receipts + 10 req/min rate limit + HTTP 503 super-admin kill switch + cross-tenant probe rejection (Principle I sub-clause 1).
+- **US2 Events list + detail** — `/admin/events` paginated list (sort by date desc) + filter chips (partner-benefit / cultural / archived / category) + free-text search + payment-status filter; `/admin/events/{eventId}` detail with match-rate header + paginated attendee table + "Show unmatched only" toggle + Clear filters CTA with focus return.
+- **US3 Zapier setup wizard** — `/admin/integrations/eventcreate` with one-time secret reveal + masked-after-rotation display + "Test webhook" round-trip + inline Zapier walkthrough (EN screenshots, TH/SV narration).
+- **US4 Quota accounting** — Partnership tier per-event ticket allotment + Corporate tier annual cultural quota; counted_against flags + over-quota informational badge + refund credit-back.
+- **US5 CSV import** — `/admin/events/import` drag-drop or file-picker with 10-row preview + column-mapping suggestions + EventCreate-format auto-detection (Option B+ strict allowlist status mapping). Same matching + quota + audit pipeline as webhook (FR-027 by construction). 1,000-row p95 <60s (SC-006).
+- **US6 Manual relink** — admin re-links non-member or mis-matched registrations to correct member; quota effects recomputed + credit-back of prior member's quota; restricted on pseudonymised PII rows (FR-014 round-2 R4 invariant).
+- **US7 Secret rotation** — admin-initiated rotation with 24-hour grace window (old secret continues to verify, audit-tagged as deprecated-grace); cron-job.org `force-expire-grace-secret` invalidates after 25h.
+- **PDPA / GDPR data subject erasure** — admin-only tool at `/admin/events/{eventId}/registrations/{registrationId}/erase` deletes PII + reverses counted quota + audit-logs erasure with admin actor + reason text (satisfies PDPA §30 / GDPR Art. 17 within 30-day statutory deadline).
+- **Admin-archive lifecycle** — `archived_at` soft-delete + reverses `counted_against_*` flags on event's registrations + audit-logs each reversal + hides from default list (accessible via "Include archived" filter).
+- **Differentiated PII retention** — member-linked attendees 5y, non-member attendees 2y + pseudonymise via deterministic salted hash. `pseudonymise-eventcreate` cron sweeps daily.
+- **Strict ACID-tx atomicity (FR-037)** — single tx for event upsert + registration insert + idempotency receipt + quota decrement. Atomicity invariant locked under R2-1 (re-throw all TxStageError stages) + R3-C1 (raw-throw → TxStageError at emitOrThrow boundary) + R4-I1 (27-caller safeAuditEmit migration).
+- **5 admin surfaces** + **1 webhook surface** + **3 cron coordinators** (pseudonymise-eventcreate daily / sweep-eventcreate-idempotency daily / recompute-match-rate hourly).
+- **New bounded context** `src/modules/events/` (Domain / Application / Infrastructure) with public barrel + ESLint `no-restricted-imports` per Principle III.
+- **35+ F6 audit event types** under `audit_event_type` pgEnum (5y default retention per F6 scope; no Thai-tax 10y retention applies).
+- **~11 OTel metrics + ~6 alerts + 3 runbooks** matching F7 / F8 ship-readiness bar per docs/observability.md § 14.
+- **2 new DB tables** — `events`, `event_registrations` — plus `tenant_webhook_configs` + `eventcreate_idempotency_receipts` + `csv_import_records`. RLS + FORCE on every tenant-scoped row.
+- **Kill-switch** — `FEATURE_F6_EVENTCREATE=false` contains F6 end-to-end (routes + cron + outbox + UI).
+
+### Changed
+
+- **No behavioral changes** to F2 (Plans), F3 (Members), F4 (Invoicing), F5 (Payments), F7 (Broadcasts), or F8 (Renewals). F6 reads members + plans + tenant_invoice_settings via cross-context ports.
+- **R2 atomicity invariant** (`f59782f8`) — `maybeApplyStateChange` outer catch re-throws every `TxStageError` stage so savepoint rolls back atomically. Pre-R2 silently swallowed `quota_decrement` failures, committing partial state.
+- **R3 emitOrThrow raw-throw wrap** (`7671fb94`) — `audit.emit()` raw throws (pool exhaust panic, sub-adapter regression) now convert to `TxStageError('audit_emit')` at the helper boundary instead of leaking up as plain `Error`.
+- **R4 27-caller safeAuditEmit migration** (`cb00ed1a`) — every direct `audit.emit()` callsite across 12 F6 files migrated to `safeAuditEmit` helper; raw throws correctly classify as `audit_emit` in SRE alerts instead of `unknown`.
+
+### Fixed
+
+- **R2-2 toolbar a11y** — `useEffect` prop-sync to `initialSearch` + lifted `<output role="status">` live-region announcing result count (WCAG SC 4.1.3).
+- **R2-7 observability split** — `!eventLookup.ok` branch separated from "non-eligible event" with dedicated `csvImportEventLookupFailed` metric + structured WARN log.
+- **R3-D1 stale citations** — 5 cross-file line-number references replaced with grep-stable identifier references.
+- **R4-C1 useEffect infinite-loop risk** — switched dep from `[searchParams]` (object identity, changes every render) to `[rawPaymentStatus]` (scalar value, stable); added try/catch around `router.replace` with console.warn fallback so navigation rejection doesn't stack toasts.
+- **R4-C2 + R4-C3** — stale line citations re-introduced in R3 swept again (`pino-audit-port.ts:457` + `events-list-search-toolbar.tsx:5-6`).
+- **R4-I4 disjointness check** — `Exclude<string, PaymentStatus>` was a TS no-op; replaced with proper `Extract<typeof X, Y> extends never ? true : false` assertion so future `PaymentStatus` addition matching `'__all__'` sentinel fails the build.
+- **R4-N1** SV i18n `"Skicka ett testevenemang"` → `"Skicka en testhändelse"` — aligns with sibling phaseC.test.sendTest compound; `testhändelse` (test occurrence) is the technical-correct term for webhook payload.
+- **R4-N2** TH i18n `"ไม่รู้จัก..."` → `"ไม่สามารถระบุ..."` — system-neutral register instead of colloquial.
+
+### Technical Notes
+
+- **Concurrency model**: per-(tenant, member, event) `eventcreate-quota:` advisory-lock namespace (disjoint from F4 `invoicing:` and F5 `payments:` namespaces).
+- **Strict transactional reliability (FR-037)**: webhook handler treats each delivery as a single ACID unit; failure rolls back entire tx + emits `webhook_rolled_back` audit in SEPARATE post-rollback tx (observability never lost, Constitution Principle VIII upheld).
+- **Two-mode ingest parity (FR-027)**: webhook + CSV share `processAttendeeInTx` helper so identical inputs produce identical persisted state regardless of ingest path.
+- **R3-T1 fault-injection seam** at `pino-audit-port.ts` (NODE_ENV-gated) exercises the R3-C1 wrap on live Neon — proven via integration test capturing the `f6_csv_state_change_savepoint_rollback` audit on a forced raw-throw.
+- **Constitution Principle I Review-Gate**: 4/4 cross-tenant search probes GREEN + 2-layer (application guard + Postgres RLS+FORCE) enforcement on every `tenant_id`-scoped read/write.
+- **Compile-time exhaustiveness helpers**: `assertExhaustive(value: never): void` (pure compile-time, R3-F2) + `assertExhaustiveThrowing(value: never, context?): never` (R4-I5) consolidate 5 prior `const _exhaustive: never = x` sites.
+- **Pre-flag-flip operator gates (6 outstanding)**: T150 security checklist co-sign / T151 reliability + UX + observability + integration checklists / T152 staging /speckit.qa.run with FEATURE_F6_EVENTCREATE=true / T153 SC-005 baseline measurement / T154 cron-job.org coordinator setup / T154a F8 port adapter live-wired verification.
+
+---
+
 ## [F4] Invoicing & Thai-Tax Receipts (MVP slice) — 2026-04-19
 
 **Spec**: [`specs/007-invoices-receipts/spec.md`](specs/007-invoices-receipts/spec.md)
