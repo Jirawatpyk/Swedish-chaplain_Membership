@@ -292,9 +292,17 @@ export {
 // in-memory mock.
 export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
 export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
+// F2 R6 Batch 2c (D7) — `cancelScheduledPlanChange` closes the
+// `plan_change_cancelled` deferred-emitter TODO. Ready-to-call use-case
+// with no API route yet; future admin "cancel scheduled change" surface
+// or F8 auto-supersede flow wires the caller at composition root.
+export { cancelScheduledPlanChange } from './application/cancel-scheduled-plan-change';
 export type {
   ScheduleNextRenewalPlanChangeDeps,
 } from './application/schedule-next-renewal-plan-change';
+export type {
+  CancelScheduledPlanChangeDeps,
+} from './application/cancel-scheduled-plan-change';
 export type {
   GetEffectivePlanForRenewalDeps,
   GetEffectivePlanForRenewalInput,
@@ -323,6 +331,8 @@ export type {
   ScheduledPlanChangeStatus,
   ScheduleNextRenewalPlanChangeInput,
   ScheduleNextRenewalPlanChangeError,
+  CancelScheduledPlanChangeInput,
+  CancelScheduledPlanChangeError,
   EffectivePlanForRenewal,
   GetEffectivePlanForRenewalError,
 } from './domain/scheduled-plan-change';

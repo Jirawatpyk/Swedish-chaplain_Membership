@@ -50,16 +50,19 @@ export const F2_AUDIT_EVENT_TYPES = [
   // because composition roots may legitimately wire ports across
   // modules without coupling Application layers).
   'plan_change_superseded',
-  // TODO(renewal-applier): wire emitters for the 2 events below when
-  // a Domain caller exists. Payload schemas + severity map + adapter
-  // summarizers + F1 pgEnum values are already in place; only the
-  // Application-layer emit calls are pending. `plan_change_cancelled`
-  // needs a "cancel scheduled change" use-case (not in F2/F8 today).
-  // `plan_change_applied` needs the renewal-applier use-case to invoke
-  // it when a scheduled change actually applies at the next cycle.
-  // Tracked as F8 post-ship maintenance — NOT the F9 Admin Dashboard
-  // feature per docs/phases-plan.md.
+  // F2 R6 Batch 2c (D7) — `plan_change_cancelled` emitter is now
+  // wired via `cancelScheduledPlanChange` use-case
+  // (`application/cancel-scheduled-plan-change.ts`). Ready-to-call;
+  // no API caller yet (future admin "cancel scheduled change" surface
+  // or F8 auto-supersede flow wires the route at composition root).
   'plan_change_cancelled',
+  // TODO(renewal-applier): `plan_change_applied` emitter wires in
+  // Batch 2d at the F8 invoice-paid callback (renewal-applier path)
+  // when a scheduled change actually applies at the next cycle.
+  // Payload schema + severity map + adapter summarizer + F1 pgEnum
+  // value are already in place; only the F8 post-tx emit call is
+  // pending. Tracked as F8 post-ship maintenance — NOT the F9 Admin
+  // Dashboard feature per docs/phases-plan.md.
   'plan_change_applied',
 ] as const;
 

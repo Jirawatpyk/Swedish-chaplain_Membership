@@ -73,6 +73,40 @@ export type ScheduleNextRenewalPlanChangeError =
   | { readonly code: 'audit_failed'; readonly message: string }
   | { readonly code: 'server_error'; readonly message: string };
 
+// --- F2 R6 Batch 2c (D7) — `cancelScheduledPlanChange` types -----------------
+
+/**
+ * Caller-supplied fields when cancelling a pending scheduled plan change.
+ * The use-case looks up the row by `scheduledChangeId`, asserts it is
+ * still `pending` (terminal-state immutability is a Domain invariant),
+ * transitions it to `cancelled`, and emits the `plan_change_cancelled`
+ * audit event.
+ *
+ * `reason` is optional free-form text (≤500 chars enforced in zod at
+ * the future API boundary — none yet today). Mirrors the optional
+ * `reason` on `ScheduleNextRenewalPlanChangeInput`.
+ */
+export interface CancelScheduledPlanChangeInput {
+  readonly scheduledChangeId: string;
+  /** UUID of the member the scheduled change belongs to — required for the audit payload. */
+  readonly memberId: string;
+  /** The renewal cycle this change targets — required for the audit payload. */
+  readonly effectiveAtCycleId: string;
+  readonly cancelledByUserId: string;
+  readonly reason?: string;
+}
+
+export type CancelScheduledPlanChangeError =
+  | { readonly code: 'invalid_input'; readonly field: string }
+  | { readonly code: 'not_found'; readonly scheduledChangeId: string }
+  | {
+      readonly code: 'already_terminal';
+      readonly scheduledChangeId: string;
+      readonly status: Exclude<ScheduledPlanChangeStatus, 'pending'>;
+    }
+  | { readonly code: 'audit_failed'; readonly message: string }
+  | { readonly code: 'server_error'; readonly message: string };
+
 /** Resolved plan for a renewal cycle — output of `getEffectivePlanForRenewal`. */
 export interface EffectivePlanForRenewal {
   readonly planId: string;
