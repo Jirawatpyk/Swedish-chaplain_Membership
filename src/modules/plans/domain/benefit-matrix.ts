@@ -103,6 +103,21 @@ type BenefitMatrixBase = {
  * is reachable via the matrix's `partnership` field — narrowing once
  * via `matrix.partnership !== null` gives the consumer the variant
  * shape it needs.
+ *
+ * R4-S4 backlog note: a `unique symbol` brand was attempted in
+ * Batch 5e but reverted because the sweep cascaded to 92 test files
+ * (each holding inline `BenefitMatrix` literals for plan-seed
+ * fixtures across F4 invoicing / F6 events / F7 broadcasts / F8
+ * renewals + e2e + auth tests). The brand-vs-runtime-validation
+ * trade-off doesn't justify the ~92-file sweep at this scope. Runtime
+ * enforcement via `asBenefitMatrix` at `plan-repo.ts:rowToPlan` +
+ * the API-boundary zod schema remains the canonical entry point;
+ * test fixtures construct literals directly because their data path
+ * goes to `db.insert(membershipPlans).values(...)` (which Drizzle
+ * accepts as raw JSONB without the TS brand). Re-attempt R4-S4 only
+ * if a future shared `TEST_MATRIX_FACTORY` helper consolidates the
+ * 92 sites — or if the existing `DEFAULT_TEST_BENEFIT_MATRIX` is
+ * adopted in their place via a sweep batch dedicated to that.
  */
 export type CorporateBenefitMatrix = BenefitMatrixBase & {
   readonly partnership: null;
@@ -156,6 +171,14 @@ export function asBenefitMatrix(
   input: BenefitMatrixInput,
   planCategory: 'partnership',
 ): PartnershipBenefitMatrix;
+// R4-S5 — overload #3 (union-input → union-output) is INTENTIONALLY
+// kept. `plan-repo.ts:rowToPlan` calls
+// `asBenefitMatrix(matrix, row.planCategory)` where `row.planCategory`
+// is `'corporate' | 'partnership'` (the DB-pgEnum-derived union).
+// Dropping this overload would force every union-typed caller to
+// branch with `row.planCategory === 'corporate' ? asBenefitMatrix(m, 'corporate') : asBenefitMatrix(m, 'partnership')`
+// at every call site — verbose without value. Literal-string callers
+// (seed scripts, tests) resolve to the narrow overloads above.
 export function asBenefitMatrix(
   input: BenefitMatrixInput,
   planCategory: 'corporate' | 'partnership',

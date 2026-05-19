@@ -58,10 +58,10 @@ type MembershipPlanRow = typeof membershipPlans.$inferSelect;
  * JSONB columns.
  */
 function cloneBenefitMatrix(m: BenefitMatrix): BenefitMatrix {
-  // BenefitMatrix is structural (no brand). Deep-clone for safety in
-  // the Drizzle insert path (JSONB columns require a writable object).
-  // Partnership integrity is validated upstream by `asBenefitMatrix`
-  // in `rowToPlan` + at API boundary by zod.
+  // Deep-clone for safety in the Drizzle insert path (JSONB columns
+  // require a writable object). Partnership integrity is validated
+  // upstream by `asBenefitMatrix` in `rowToPlan` + at API boundary
+  // by zod.
   return {
     ...m,
     partnership: m.partnership ? { ...m.partnership } : null,

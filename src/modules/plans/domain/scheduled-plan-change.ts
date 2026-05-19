@@ -131,6 +131,18 @@ export type ScheduledPlanChange =
  * `assertValidScheduledPlanChange` defence tests) use this type
  * directly.
  *
+ * **Exception note (R4-S6)**: this type is intentionally exported
+ * from the barrel because the Drizzle adapter's `rowToDomain` is
+ * production infrastructure code (not test-utility) and needs to
+ * build the Mutable shape before narrowing. Application-layer code
+ * MUST NEVER expose `MutableScheduledPlanChange` as a public
+ * function-parameter or return-type — accept/return the discriminated
+ * `ScheduledPlanChange` union instead. If a future module needs to
+ * pass a non-narrowed shape around, the right answer is to narrow it
+ * at the boundary via `assertValidScheduledPlanChange` and propagate
+ * the discriminated union. Reviewers: reject PRs that introduce new
+ * Application-layer surfaces typed as `MutableScheduledPlanChange`.
+ *
  * Code consumers should NEVER accept `MutableScheduledPlanChange` —
  * the discriminated `ScheduledPlanChange` carries the type-level
  * status↔timestamp invariant.
@@ -175,6 +187,18 @@ export function makeScheduledPlanChange(
   status: ScheduledPlanChangeStatus,
   timestamp?: string,
 ): ScheduledPlanChange {
+  // R4-I11 — TS overloads protect typed callers, but a widened-status
+  // call (e.g., `makeScheduledPlanChange(base, status as ScheduledPlanChangeStatus)`
+  // via an `any` cast or generic propagation) would bypass the
+  // compile-time signature. Catch that path at runtime so a corrupt
+  // record with `appliedAt: undefined` cannot escape — the runtime
+  // throw is more informative than the downstream
+  // `assertValidScheduledPlanChange` failure.
+  if (status !== 'pending' && timestamp === undefined) {
+    throw new Error(
+      `makeScheduledPlanChange: 'timestamp' is required when status='${status}'`,
+    );
+  }
   switch (status) {
     case 'pending':
       return {
@@ -188,7 +212,7 @@ export function makeScheduledPlanChange(
       return {
         ...base,
         status: 'applied',
-        appliedAt: timestamp!,
+        appliedAt: timestamp as string,
         supersededAt: null,
         cancelledAt: null,
       };
@@ -197,7 +221,7 @@ export function makeScheduledPlanChange(
         ...base,
         status: 'superseded',
         appliedAt: null,
-        supersededAt: timestamp!,
+        supersededAt: timestamp as string,
         cancelledAt: null,
       };
     case 'cancelled':
@@ -206,7 +230,7 @@ export function makeScheduledPlanChange(
         status: 'cancelled',
         appliedAt: null,
         supersededAt: null,
-        cancelledAt: timestamp!,
+        cancelledAt: timestamp as string,
       };
   }
 }

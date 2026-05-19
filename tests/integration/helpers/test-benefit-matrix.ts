@@ -11,11 +11,10 @@
  * spread + override:
  *   const partnershipMatrix = { ...DEFAULT_TEST_BENEFIT_MATRIX, partnership: 'gold' };
  */
-// R2 Batch 3e — dropped inert `BenefitMatrixLiteral` alias (was
-// `type X = X;` — no compile-time benefit). `BenefitMatrix` is
-// structural; integration tests can construct via object literal.
-// Test code that wants partnership↔corporate integrity validation
-// can opt into `asBenefitMatrix()` from `@/modules/plans`.
+// `BenefitMatrix` is structural; integration tests can construct via
+// object literal. Test code that wants partnership↔corporate
+// integrity validation can opt into `asBenefitMatrix()` from
+// `@/modules/plans`.
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 
 export const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrix = {
