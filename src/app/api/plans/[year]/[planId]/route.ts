@@ -135,7 +135,7 @@ export async function PATCH(
   });
   if ('response' in ctx) return ctx.response;
 
-  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  // Emergency maintenance freeze short-circuit.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
 
@@ -214,7 +214,7 @@ export async function PATCH(
       { status: 409 },
     );
   }
-  // Post-ship R6 C3 — 503 on Redis outage.
+  // 503 on Redis outage.
   {
     const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
     if (!reserved.ok) {
@@ -356,7 +356,7 @@ export async function DELETE(
   });
   if ('response' in ctx) return ctx.response;
 
-  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  // Emergency maintenance freeze short-circuit.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
 
@@ -417,7 +417,7 @@ export async function DELETE(
       { status: 409 },
     );
   }
-  // Post-ship R6 C3 — 503 on Redis outage.
+  // 503 on Redis outage.
   {
     const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
     if (!reserved.ok) {

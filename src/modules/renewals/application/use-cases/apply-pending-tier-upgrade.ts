@@ -17,9 +17,8 @@
  * F2 `scheduled_plan_changes.status` transition from `pending` →
  * `applied` (atomic with this F8 suggestion transition's commit) lives
  * in `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-
- * paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`
- * (R2 Batch 2d closed the prior "Phase 5+ deferred" claim). The audit
- * chain `tier_upgrade_applied_at_renewal` is the F8 canonical apply
+ * paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`.
+ * The audit chain `tier_upgrade_applied_at_renewal` is the F8 canonical apply
  * event; the F2 audit chain (`plan_change_applied`) lands post-tx
  * alongside it. `members.plan_id` flip remains a future feature.
  *

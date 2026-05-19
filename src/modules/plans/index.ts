@@ -56,8 +56,8 @@ export {
 
 export type {
   BenefitMatrix,
-  // R3 Batch 4f (R3-S7) — discriminated variants of `BenefitMatrix`
-  // by `partnership` field. Use these directly when a code site
+  // Discriminated variants of `BenefitMatrix` by `partnership` field.
+  // Use these directly when a code site
   // already knows the variant (e.g., the partnership-only editor
   // panel) — the compiler will then refuse to access undefined
   // partnership-only fields on a corporate-typed value.
@@ -85,8 +85,8 @@ export {
   EmptyEnLocaleTextError,
 } from './domain/locale-text';
 
-// R2 Batch 3f (R2-S11) — opt-in re-export of F1's `UserId` brand for
-// future F2 code that wants to brand `Plan.created_by` /
+// Opt-in re-export of F1's `UserId` brand for future F2 code that
+// wants to brand `Plan.created_by` /
 // `ScheduledPlanChange.scheduledByUserId` / etc. The fields are
 // `string` today for back-compat; new code should adopt `UserId`
 // where it constructs these values to inherit F1's brand guarantees.
@@ -309,8 +309,8 @@ export {
 // (in-memory mock for shape pinning).
 export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
 export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
-// F2 R6 Batch 2c (D7) — `cancelScheduledPlanChange` closes the
-// `plan_change_cancelled` deferred-emitter TODO. Ready-to-call use-case
+// `cancelScheduledPlanChange` closes the `plan_change_cancelled`
+// deferred-emitter TODO. Ready-to-call use-case
 // with no API route yet; future admin "cancel scheduled change" surface
 // or F8 auto-supersede flow wires the caller at composition root.
 export { cancelScheduledPlanChange } from './application/cancel-scheduled-plan-change';
@@ -343,8 +343,8 @@ export {
   SCHEDULED_PLAN_CHANGE_STATUSES,
   isTerminalStatus,
   assertValidScheduledPlanChange,
-  // R3 Batch 4e (R3-S6) — discriminated-union factory + loose
-  // hydration type. `makeScheduledPlanChange` is the canonical way to
+  // Discriminated-union factory + loose hydration type.
+  // `makeScheduledPlanChange` is the canonical way to
   // construct a `ScheduledPlanChange` in test fixtures; the type
   // overloads enforce the status↔timestamp invariant at compile time.
   makeScheduledPlanChange,
@@ -356,8 +356,8 @@ export type {
   AppliedScheduledPlanChange,
   SupersededScheduledPlanChange,
   CancelledScheduledPlanChange,
-  // R3 Batch 4e (R3-S6) — loose hydration shape used by the Drizzle
-  // adapter's `rowToDomain` + test-fixture helpers + the
+  // Loose hydration shape used by the Drizzle adapter's `rowToDomain`
+  // + test-fixture helpers + the
   // `assertValidScheduledPlanChange` defence-in-depth input. Code
   // consumers should accept the discriminated `ScheduledPlanChange`
   // (the carry-the-invariant-in-the-type variant) wherever possible.

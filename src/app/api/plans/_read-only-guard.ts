@@ -1,6 +1,5 @@
 /**
- * R2 Batch 3j (R2-S8) — shared `READ_ONLY_MODE` guard for F2 plan
- * mutation routes.
+ * Shared `READ_ONLY_MODE` guard for F2 plan mutation routes.
  *
  * When the operator flips `READ_ONLY_MODE=true` (emergency maintenance
  * freeze documented in `specs/001-auth-rbac/quickstart.md § 7.3`), every

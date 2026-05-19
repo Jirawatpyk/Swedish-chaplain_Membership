@@ -36,10 +36,9 @@ import {
   drizzleScheduledPlanChangeRepo,
   planAuditAdapter as f2PlanAuditAdapter,
 } from '@/modules/plans/server';
-// Post-ship R6 I2 / D2 (2026-05-19) — F2 AuditPort type for the
-// cross-module emit. Imported from the public barrel (Domain/
-// Application surface only) — concrete adapter comes from the
-// server sub-barrel above.
+// F2 AuditPort type for the cross-module emit. Imported from the
+// public barrel (Domain/Application surface only) — concrete adapter
+// comes from the server sub-barrel above.
 import type { AuditPort as F2AuditPort } from '@/modules/plans';
 
 import { eventAttendeesStub } from './event-attendees-stub';
@@ -341,8 +340,8 @@ export interface RenewalsDeps {
    */
   readonly suggestionIdGenerator: () => SuggestionId;
   /**
-   * Post-ship R6 I2 / D2 (2026-05-19) — F2-module audit emitter for the
-   * `plan_change_scheduled` + `plan_change_superseded` events that
+   * F2-module audit emitter for the `plan_change_scheduled` +
+   * `plan_change_superseded` events that
    * accompany the cross-module `supersedeAndInsertPendingAtomically`
    * call. F8 owns its own `tier_upgrade_*` taxonomy (`auditEmitter`
    * above); the F2-domain audit trail uses this separate emitter so
@@ -400,7 +399,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     // (was singleton `drizzlePlanCatalog` with implicit-via-arg binding).
     planCatalog: makeDrizzlePlanCatalog(tenant),
     suggestionIdGenerator: () => asSuggestionId(randomUUID()),
-    // Post-ship R6 I2 / D2 — F2 audit emitter for cross-module
+    // F2 audit emitter for cross-module
     // `plan_change_{scheduled,superseded}` audit events.
     f2AuditEmitter: f2PlanAuditAdapter,
   };

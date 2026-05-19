@@ -1,10 +1,8 @@
 /**
  * F2 `MemberAttachmentChecker` — Drizzle-backed implementation.
  *
- * Post-ship R6 C1 + D1 (2026-05-19): replaces the prior
- * `stub-member-attachment-checker` (always returned 0) now that F3
- * has shipped a real `members` table. The stub's "F3 will replace this"
- * documentation has been honoured.
+ * Replaces the prior `stub-member-attachment-checker` (always
+ * returned 0) now that F3 has shipped a real `members` table.
  *
  * Composition (Constitution Principle III — barrel-only cross-module):
  *   F2 plans-deps → this adapter → F3 public barrel

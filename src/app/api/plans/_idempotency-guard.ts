@@ -103,10 +103,10 @@ export async function runIdempotencyGuard(
     };
   }
 
-  // Post-ship R6 C3 (2026-05-19) — surface Redis-down as 503 instead
-  // of silently continuing. The prior fire-and-forget call meant a
-  // retry could create a duplicate plan/clone/etc. when the
-  // reservation was dropped during an Upstash outage.
+  // Surface Redis-down as 503 instead of silently continuing. A
+  // fire-and-forget call would let a retry create a duplicate
+  // plan/clone/etc. when the reservation was dropped during an
+  // Upstash outage.
   const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
   if (!reserved.ok) {
     return {

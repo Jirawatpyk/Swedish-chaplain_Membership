@@ -135,7 +135,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   });
   if ('response' in ctx) return ctx.response;
 
-  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  // Emergency maintenance freeze short-circuit.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
 
@@ -199,8 +199,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
   // first — reserve the slot so concurrent workers conflict.
-  // Post-ship R6 C3 — 503 on Redis outage instead of silently
-  // continuing (would let retries create duplicate plans).
+  // 503 on Redis outage instead of silently continuing (would let
+  // retries create duplicate plans).
   const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
   if (!reserved.ok) {
     return NextResponse.json(

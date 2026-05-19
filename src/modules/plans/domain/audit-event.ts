@@ -82,8 +82,8 @@ export const EVENT_SEVERITY: Record<F2AuditEventType, AuditSeverity> = {
 // --- Normative diff shape (critique P9) ---------------------------------------
 
 /**
- * R2 Batch 3f (R2-S12) — typed enum of diffable Plan field names. A
- * typo like `'plan_naem'` in an emit site would otherwise log under
+ * Typed enum of diffable Plan field names. A typo like `'plan_naem'`
+ * in an emit site would otherwise log under
  * the wrong key + silently fail any downstream "diff keys must be
  * valid Plan field names" assertion. The `as const satisfies` chain
  * ties the runtime literal array to `keyof Plan` so a future Plan
@@ -118,10 +118,9 @@ export type DiffableField = (typeof KNOWN_DIFF_FIELDS)[number];
  * `{ [field]: { before, after } }` — only changed fields appear.
  * Create events have `before: null`; delete events have `after: null`.
  *
- * R2 Batch 3f (R2-S12) — keys constrained to `DiffableField`. Emit
- * sites that pass an unknown field name are rejected at the zod
- * boundary AND at the TypeScript level via the `AuditDiff` type
- * below.
+ * Keys are constrained to `DiffableField`. Emit sites that pass an
+ * unknown field name are rejected at the zod boundary AND at the
+ * TypeScript level via the `AuditDiff` type below.
  */
 export const auditDiffSchema = z.record(
   z.enum(KNOWN_DIFF_FIELDS),
@@ -136,10 +135,9 @@ export const auditDiffSchema = z.record(
  * could cause the recorded audit event to diverge from the caller's
  * intent if the write is async-interleaved.
  *
- * R2 Batch 3f (R2-S12) — keys constrained to `DiffableField`. Emit
- * sites that try to log under an arbitrary string key get a compile
- * error. `Partial<>` because not every field is in every diff (only
- * changed fields appear).
+ * Keys are constrained to `DiffableField`. Emit sites that try to log
+ * under an arbitrary string key get a compile error. `Partial<>`
+ * because not every field is in every diff (only changed fields appear).
  *
  * Use `MutableAuditDiff` for construction, then widen to `AuditDiff`.
  */
@@ -284,14 +282,13 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
 ]);
 
 /**
- * R2 Batch 3g (R2-S13) — hand-written discriminated union for
- * `F2AuditEvent`. Previously `F2AuditEvent = z.infer<typeof
- * auditPayloadSchema>` chained the Domain type to a specific zod
- * version forever (every consumer transitively imported zod). The
- * hand-written union below decouples Domain types from the runtime
- * validator: `auditPayloadSchema` validates HTTP-boundary input;
- * `F2AuditEvent` is the compile-time contract that propagates through
- * use-cases, ports, and adapters.
+ * Hand-written discriminated union for `F2AuditEvent`. Previously
+ * `F2AuditEvent = z.infer<typeof auditPayloadSchema>` chained the
+ * Domain type to a specific zod version forever (every consumer
+ * transitively imported zod). The hand-written union below decouples
+ * Domain types from the runtime validator: `auditPayloadSchema`
+ * validates HTTP-boundary input; `F2AuditEvent` is the compile-time
+ * contract that propagates through use-cases, ports, and adapters.
  *
  * **Drift defence**: the `_zodInferMatchesHandWritten` type-level
  * assertion below uses mutual structural assignability to fail
@@ -421,10 +418,10 @@ export type F2AuditEvent =
       };
     };
 
-// R2 Batch 3g (R2-S13) — compile-time drift defence. Mutual structural
-// assignability between the hand-written union (above) and the
-// zod-inferred type (below). If either diverges, this assertion fails
-// compile and the maintainer must update BOTH.
+// Compile-time drift defence. Mutual structural assignability between
+// the hand-written union (above) and the zod-inferred type (below).
+// If either diverges, this assertion fails compile and the maintainer
+// must update BOTH.
 type _ZodInfer = z.infer<typeof auditPayloadSchema>;
 type _AssertHandWrittenMatchesZodInfer = F2AuditEvent extends _ZodInfer
   ? _ZodInfer extends F2AuditEvent

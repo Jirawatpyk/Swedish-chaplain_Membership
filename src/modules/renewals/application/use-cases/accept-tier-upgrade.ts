@@ -171,12 +171,12 @@ export async function acceptTierUpgrade(
   }
   const suggestionId = idParse.value;
 
-  // R3 Batch 4a (R3-C3) — pre-tx repo lookups MUST be wrapped so a DB
-  // drop / RLS error / drizzle parse error doesn't escape the Result
-  // contract. Without this, the throw bubbles past the use-case to
-  // the route's outer try/catch where it lands as
-  // `accept_unexpected_error` with NO `errorId` in the canonical
-  // `F8.ACCEPT_TIER.*` taxonomy. Constitution Principle VIII.
+  // Pre-tx repo lookups MUST be wrapped so a DB drop / RLS error /
+  // drizzle parse error doesn't escape the Result contract. Without
+  // this, the throw bubbles past the use-case to the route's outer
+  // try/catch where it lands as `accept_unexpected_error` with NO
+  // `errorId` in the canonical `F8.ACCEPT_TIER.*` taxonomy.
+  // Constitution Principle VIII.
   let suggestion;
   let activeCycle;
   try {
@@ -230,8 +230,8 @@ export async function acceptTierUpgrade(
             },
           );
         scheduledChangeId = scheduled.inserted.scheduledChangeId;
-        // Post-ship R6 I2 — capture the superseded prior-pending row id
-        // (if any) so the post-tx emit branch fires the F2-domain
+        // Capture the superseded prior-pending row id (if any) so the
+        // post-tx emit branch fires the F2-domain
         // `plan_change_superseded` audit. `null` when this was a fresh
         // schedule with no prior pending row on the same (member, cycle).
         supersededScheduledChangeId =
@@ -363,8 +363,8 @@ export async function acceptTierUpgrade(
     // (suggestion accepted, scheduled-plan-change row in place) but
     // emits a critical log so on-call can backfill the F2 audit row.
     // Pattern mirrors the post-tx member-notification email below.
-    // R2 Batch 3d (R2-I17) — replace empty-string requestId default
-    // with a sentinel that preserves cross-request correlation. Empty
+    // The requestId default is a sentinel that preserves cross-request
+    // correlation when not supplied. Empty
     // strings pass `audit_log.request_id NOT NULL` but defeat the
     // column's purpose. The sentinel `system:accept-tier-upgrade:<id>`
     // gives SRE a deterministic key + matches the F4 onPaid pattern
@@ -392,8 +392,8 @@ export async function acceptTierUpgrade(
         },
       );
       if (!scheduledAuditResult.ok) {
-        // R2 Batch 3d (R2-I11) — `errorId` field aligns with the
-        // Batch 2d `F2.PLAN_CHANGE.*` convention used at the F8
+        // `errorId` field aligns with the `F2.PLAN_CHANGE.*`
+        // convention used at the F8
         // onPaid finaliser. Sentry / Grafana alert rules built
         // against `errorId: 'F2.PLAN_CHANGE.*'` now catch BOTH the
         // schedule-side (this site) and the apply-side
@@ -429,7 +429,7 @@ export async function acceptTierUpgrade(
           },
         );
         if (!supersededAuditResult.ok) {
-          // R2 Batch 3d (R2-I11) — errorId for alert-routing parity.
+          // errorId for alert-routing parity.
           logger.error(
             {
               errorId: 'F2.PLAN_CHANGE.SUPERSEDED_AUDIT_EMIT_FAILED',
@@ -450,8 +450,8 @@ export async function acceptTierUpgrade(
       // still want F8's main flow to continue. Bumping a dedicated
       // counter via the F8 emitter is appropriate but the F8 emitter
       // is typed to F8 events; just log critically.
-      // R2 Batch 3d (R2-I11) — errorId for alert-routing parity with
-      // Batch 2d `F2.PLAN_CHANGE.*` convention.
+      // errorId for alert-routing parity with the `F2.PLAN_CHANGE.*`
+      // convention.
       logger.error(
         {
           errorId: 'F2.PLAN_CHANGE.AUDIT_EMIT_THREW',
@@ -785,8 +785,8 @@ export async function acceptTierUpgrade(
           '[accept-tier-upgrade] unhandled-arm audit emit failed — counter bumped',
         );
       }
-      // R3 Batch 4d (R3-S5) — return typed server_error instead of
-      // throwing into the outer catch. Preserves the compile-time
+      // Return typed server_error instead of throwing into the outer
+      // catch. Preserves the compile-time
       // exhaustiveness pin (`_exhaustive: never`) AND surfaces the
       // unhandled-arm kind operationally so alert routing can match
       // on `message: 'deploy-skew:unhandled-gateway-arm:*'`.

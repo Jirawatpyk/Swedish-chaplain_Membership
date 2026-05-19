@@ -47,13 +47,10 @@ export type PartnershipBenefits = {
   readonly booth_included: boolean;
   readonly rollup_logo_at_events: boolean;
   readonly logo_on_merch: boolean;
-  // R2 Batch 3f (R2-S9) — narrow union `1.0 | 1.5` only enforced at
-  // zod write boundary (`partnershipBenefitsSchema`). DB returns
-  // `number`; `asBenefitMatrix` in `plan-repo.ts:rowToPlan`
-  // re-validates partnership↔category but NOT this specific value
-  // (zod accepts any number when reading from DB rows via the cast).
-  // Future hardening: tighten `asBenefitMatrix` to assert the narrow
-  // values when the planCategory is 'partnership'.
+  // Narrow union `1.0 | 1.5` enforced both at the zod write boundary
+  // (`partnershipBenefitsSchema`) AND at hydration via
+  // `asBenefitMatrix` (which now asserts the narrow values when
+  // `planCategory === 'partnership'`).
   readonly video_duration_minutes: 1.0 | 1.5;
   readonly video_frequency_scope: VideoFrequencyScope;
   readonly website_logo_months: number; // 12 / 6 / 3
@@ -91,24 +88,21 @@ type BenefitMatrixBase = {
 };
 
 /**
- * R3 Batch 4f (R3-S7) — compile-time discriminated union over the
- * `partnership` field. The status↔partnership invariant
- * (`plan_category === 'partnership'` ⇔ non-null `partnership`) is now
- * encoded in the TYPE (not just in the smart constructor +
- * data-model.md § 2.2 comments).
+ * Compile-time discriminated union over the `partnership` field. The
+ * partnership↔corporate invariant (`plan_category === 'partnership'`
+ * ⇔ non-null `partnership`) is encoded in the TYPE (not just in the
+ * smart constructor + data-model.md § 2.2 comments).
  *
  * Code consumers narrow via `if (matrix.partnership !== null)` to get
  * `PartnershipBenefitMatrix`; the structural-union surface remains
- * compatible with the existing ~19 reader call sites in
+ * compatible with the existing reader call sites in
  * `src/components/plans/**` + `src/app/(staff)/admin/plans/**`.
  *
  * Scope note: `Plan.benefit_matrix` continues to be `BenefitMatrix`
  * (the union) rather than discriminating `Plan` itself. The discriminant
  * is reachable via the matrix's `partnership` field — narrowing once
  * via `matrix.partnership !== null` gives the consumer the variant
- * shape it needs. Discriminating `Plan` per the original R3-S7 plan
- * would force ~19 UI sites to narrow on `plan.plan_category` first
- * (HIGH-risk per plan's Complexity Tracking entry).
+ * shape it needs.
  */
 export type CorporateBenefitMatrix = BenefitMatrixBase & {
   readonly partnership: null;
@@ -129,9 +123,9 @@ export class InvalidBenefitMatrixError extends Error {
 
 /**
  * Loose input shape — accepts the structural type before the
- * discriminated union narrows. Mirrors `MutableScheduledPlanChange`
- * (R3 Batch 4e) — the smart constructor takes this looser shape,
- * runtime-validates, and returns the discriminated variant.
+ * discriminated union narrows. Mirrors `MutableScheduledPlanChange`:
+ * the smart constructor takes this looser shape, runtime-validates,
+ * and returns the discriminated variant.
  */
 type BenefitMatrixInput = BenefitMatrixBase & {
   readonly partnership: PartnershipBenefits | null;
@@ -146,12 +140,11 @@ type BenefitMatrixInput = BenefitMatrixBase & {
  * - `planCategory === 'corporate'` → `partnership` MUST be null
  * - `planCategory === 'partnership'` → `partnership` MUST be non-null
  *
- * R3 Batch 4f (R3-S7) — overloads narrow the return type to the
- * discriminated variant matching the caller's `planCategory`. A
- * code site that calls `asBenefitMatrix(m, 'partnership')` now gets
- * `PartnershipBenefitMatrix` (with non-null `partnership` field at
- * the type level) — no need for `if (matrix.partnership !== null)`
- * guards downstream.
+ * Overloads narrow the return type to the discriminated variant
+ * matching the caller's `planCategory`. A code site that calls
+ * `asBenefitMatrix(m, 'partnership')` gets `PartnershipBenefitMatrix`
+ * (with non-null `partnership` field at the type level) — no need for
+ * `if (matrix.partnership !== null)` guards downstream.
  *
  * @throws InvalidBenefitMatrixError on mismatch
  */
@@ -181,11 +174,11 @@ export function asBenefitMatrix(
       'asBenefitMatrix: partnership plan must have a non-null `partnership` block',
     );
   }
-  // R3 Batch 4d (R3-S8) — runtime-assert the narrow union when
-  // planCategory='partnership'. Zod enforces this at write boundary;
-  // DB JSONB return is `number` which the structural type widens.
-  // A migration-introduced typo (e.g., 1.25) would otherwise slip
-  // through hydration; the smart constructor now catches it.
+  // Runtime-assert the narrow union when planCategory='partnership'.
+  // Zod enforces this at write boundary; DB JSONB return is `number`
+  // which the structural type widens. A migration-introduced typo
+  // (e.g., 1.25) would otherwise slip through hydration; the smart
+  // constructor catches it.
   if (planCategory === 'partnership' && input.partnership !== null) {
     const v = input.partnership.video_duration_minutes;
     if (v !== 1.0 && v !== 1.5) {

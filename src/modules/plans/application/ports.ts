@@ -314,8 +314,8 @@ export interface ScheduledPlanChangeRepo {
   ): Promise<ScheduledPlanChange | null>;
 
   /**
-   * R2 Batch 3g (R2-I16) — primary-key lookup by `scheduledChangeId`
-   * within the tenant scope. Returns `null` when the row does not
+   * Primary-key lookup by `scheduledChangeId` within the tenant
+   * scope. Returns `null` when the row does not
    * exist OR is RLS-hidden from the caller's tenant context.
    *
    * Used by `cancelScheduledPlanChange` to look up a specific row;

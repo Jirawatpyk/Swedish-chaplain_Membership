@@ -437,11 +437,11 @@ async function stageA_FeeConfig(ctx: TenantContext): Promise<'inserted' | 'exist
   });
 }
 
-// Exported for the R3 Batch 4a smoke test
+// Exported for the smoke test
 // (`tests/integration/scripts/seed-swecham-2026-plans-runs.test.ts`)
 // which calls this directly against a throwaway tenant to catch
-// R3-C1-class crashes pre-merge. Not exported for production callers
-// — they go through `main()`.
+// EmptyEnLocaleTextError-class crashes pre-merge. Not exported for
+// production callers — they go through `main()`.
 export async function stageB_Plans(
   ctx: TenantContext,
   ownerUserId: string,
@@ -451,11 +451,11 @@ export async function stageB_Plans(
     return { inserted: 0, skipped: true };
   }
 
-  // R3 Batch 4d (R3-S3) — single correlation id for ALL 9 plan_created
-  // audit emits so cross-event log queries can stitch the seed run
-  // together as one unit-of-work. Without this, each `randomUUID()` per
-  // emit produced 9 unrelated requestIds and forensics had to grep by
-  // payload.plan_id (lossy when seed runs interleave).
+  // Single correlation id for ALL 9 plan_created audit emits so
+  // cross-event log queries can stitch the seed run together as one
+  // unit-of-work. Without this, each `randomUUID()` per emit would
+  // produce 9 unrelated requestIds and forensics would have to grep
+  // by payload.plan_id (lossy when seed runs interleave).
   const runUUID = randomUUID();
 
   // Build the draft list once, insert one-by-one through the repo.
@@ -468,11 +468,11 @@ export async function stageB_Plans(
       plan_id: row.id,
       plan_year: 2026,
       plan_name: row.name,
-      // R3 Batch 4a (R3-C1) — non-empty EN required: Batch 3e wired
-      // `asLocaleText` into `plan-repo.ts:rowToPlan` which rejects
-      // empty `en` with `EmptyEnLocaleTextError`. Fallback the
-      // description to the plan name so the integrity invariant
-      // holds + the seed remains idempotent.
+      // Non-empty EN required: `asLocaleText` wired into
+      // `plan-repo.ts:rowToPlan` rejects empty `en` with
+      // `EmptyEnLocaleTextError`. Fallback the description to the
+      // plan name so the integrity invariant holds + the seed
+      // remains idempotent.
       description: { en: row.name.en, th: row.name.th, sv: row.name.sv },
       sort_order: row.sortOrder,
       plan_category: 'corporate',
@@ -483,9 +483,9 @@ export async function stageB_Plans(
       max_turnover_minor_units: row.maxTurnover,
       max_duration_years: row.maxDuration,
       max_member_age: row.maxAge,
-      // R2 Batch 3f (R2-S5) — wrap brand call in try/catch so a seed
-      // matrix that drifts (e.g., corporate row accidentally gets a
-      // partnership block) fails fast with [seed] context.
+      // Wrap brand call in try/catch so a seed matrix that drifts
+      // (e.g., corporate row accidentally gets a partnership block)
+      // fails fast with [seed] context.
       benefit_matrix: (() => {
         try {
           return asBenefitMatrix(row.matrix, 'corporate');
@@ -508,7 +508,7 @@ export async function stageB_Plans(
       plan_id: row.id,
       plan_year: 2026,
       plan_name: row.name,
-      // R3 Batch 4a (R3-C1) — non-empty EN required (see CORPORATE_SEED above).
+      // Non-empty EN required (see CORPORATE_SEED above).
       description: { en: row.name.en, th: row.name.th, sv: row.name.sv },
       sort_order: row.sortOrder,
       plan_category: 'partnership',
@@ -519,7 +519,7 @@ export async function stageB_Plans(
       max_turnover_minor_units: null,
       max_duration_years: null,
       max_member_age: null,
-      // R2 Batch 3f (R2-S5) — try/catch with [seed] context.
+      // try/catch with [seed] context (see CORPORATE_SEED above).
       benefit_matrix: (() => {
         try {
           return asBenefitMatrix(row.matrix, 'partnership');
@@ -537,27 +537,27 @@ export async function stageB_Plans(
     } as PlanDraftInput);
   }
 
-  // R3 Batch 4d (R3-S3) — wrap the 9 insert+audit pairs in a single
-  // `runInTenant` scope. Drizzle's tx callback semantics turn nested
-  // calls to `db.transaction(...)` inside planRepo.insert + audit
-  // adapter into SAVEPOINTs, so a failure on draft N rolls back drafts
-  // 1..N-1 cleanly + leaves no partial-audit-state behind. The previous
-  // implementation processed each draft in its own implicit tx, so a
-  // crash on draft 7 left 6 plans + 6 audit rows orphaned (the
-  // idempotency guard `if (existingCount > 0) return skipped:true`
-  // then prevented the next run from completing the catalogue).
+  // Wrap the 9 insert+audit pairs in a single `runInTenant` scope.
+  // Drizzle's tx callback semantics turn nested calls to
+  // `db.transaction(...)` inside planRepo.insert + audit adapter into
+  // SAVEPOINTs, so a failure on draft N rolls back drafts 1..N-1
+  // cleanly + leaves no partial-audit-state behind. Without this,
+  // each draft would run in its own implicit tx; a crash on draft 7
+  // would leave 6 plans + 6 audit rows orphaned and the idempotency
+  // guard `if (existingCount > 0) return skipped:true` would then
+  // prevent the next run from completing the catalogue.
   await runInTenant(ctx, async () => {
     for (const draft of drafts) {
       const inserted = await planRepo.insert(ctx, draft);
-      // R2 Batch 3f (R2-S4) — capture audit Result. F2 invariant
-      // (`recordAuditEvent`) requires audit success to be paired with
-      // domain mutation; seed scripts MUST honour the same rule or risk
+      // Capture audit Result. F2 invariant (`recordAuditEvent`)
+      // requires audit success to be paired with domain mutation;
+      // seed scripts MUST honour the same rule or risk
       // partially-audited seed data that breaks downstream invariants.
       const auditResult = await planAuditAdapter.record(
         {
           tenant: ctx,
           actorUserId: ownerUserId,
-          // R3 Batch 4d (R3-S3) — single correlation id (see runUUID
+          // Single correlation id (see runUUID
           // declaration above). The `seed-stageB-` prefix distinguishes
           // from ad-hoc `seed-<random>` emits in other scripts.
           requestId: `seed-stageB-${runUUID}`,

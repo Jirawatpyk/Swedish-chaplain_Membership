@@ -18,8 +18,7 @@
  *   - F4 invoice-paid hook flips `pending → applied` post-tx via
  *     `_internal.finaliseF2ScheduledPlanChangeForCycle` in
  *     `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-paid-callback.ts:41-164`
- *     (R2 Batch 2d closed the prior "Phase 5+ deferred" claim — F2
- *     state apply now lives there).
+ *     (F2 state apply lives there).
  *   - F4 invoice-creation hook reads the effective plan via
  *     `getEffectivePlanForRenewal` (no write).
  *
@@ -38,8 +37,8 @@ import type {
 export interface ScheduleNextRenewalPlanChangeDeps {
   readonly tenant: TenantContext;
   readonly repo: ScheduledPlanChangeRepo;
-  // Post-ship R6 I2 / D2 — audit emit for `plan_change_scheduled` (+
-  // `plan_change_superseded` when a prior pending row was bumped).
+  // Audit emit for `plan_change_scheduled` (+ `plan_change_superseded`
+  // when a prior pending row was bumped).
   // F8's `accept-tier-upgrade` calls the repo directly today rather
   // than this use-case; F8 wires its own post-tx emit via the F2
   // `planAuditAdapter` re-exported from `@/modules/plans/server`. Both
@@ -96,7 +95,7 @@ export async function scheduleNextRenewalPlanChange(
     });
   }
 
-  // Post-ship R6 I2 — emit F2-domain audit trail for the state change.
+  // Emit F2-domain audit trail for the state change.
   // Runs OUTSIDE the repo tx (the repo opens its own runInTenant), so
   // a failure here leaves the row in place + surfaces a typed error
   // for the caller to log; the audit-adapter ALSO logs internally at

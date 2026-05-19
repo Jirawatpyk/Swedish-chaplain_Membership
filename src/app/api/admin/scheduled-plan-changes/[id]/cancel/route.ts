@@ -1,35 +1,33 @@
 /**
- * R2 Batch 3h (R2-S3) — POST /api/admin/scheduled-plan-changes/[id]/cancel.
- *
- * Admin-only route that gives `cancelScheduledPlanChange` (the use-case
- * landed in Batch 2c) its first production caller. Without this route,
- * the use-case shipped as dead-on-arrival code — Round 2 review flagged
- * it (R2-S3); this batch closes the finding by wiring an actual caller.
+ * POST /api/admin/scheduled-plan-changes/[id]/cancel — admin-only
+ * route for cancelling a pending scheduled plan change.
  *
  * Behaviour:
  *   - Admin RBAC (`requireAdminContext('plan', 'write')`).
  *   - `Idempotency-Key` header required (mirrors F2 mutation routes).
  *   - Body: `{ memberId: uuid, effectiveAtCycleId: uuid, reason?: string|null }`
  *     (zod-validated). The actor identity comes from the auth ctx via
- *     the use-case's `deps.actorUserId` — input no longer accepts a
- *     separate `cancelledByUserId` (R3 Batch 4d).
+ *     the use-case's `deps.actorUserId` — input does not accept a
+ *     separate `cancelledByUserId`.
  *   - Path param `id` (scheduledChangeId) is the primary-key lookup
- *     handled by the use-case via the new `findById` repo method.
+ *     handled by the use-case via the `findById` repo method.
  *
  * Error mapping:
  *   - invalid_input (zod path or body) → 400
  *   - not_found                         → 404
  *   - already_terminal                  → 409
  *   - audit_failed                      → 200 + X-Audit-Backfill-Required: 1
- *                                        (R3 Batch 4d R3-S4 — the row IS
- *                                        already cancelled; surfacing
- *                                        500 mis-leads the UI into a
- *                                        retry on a successful mutation.
- *                                        Mirrors F5 `payment_environment_mismatch`
- *                                        UX pattern: 200 body + diagnostic
- *                                        header. Alert routing picks up
- *                                        the F2.PLAN_CHANGE.CANCEL_AUDIT_*
- *                                        errorId on the logger.error emit.)
+ *                                        (the row IS already cancelled;
+ *                                        surfacing 500 mis-leads the UI
+ *                                        into a retry on a successful
+ *                                        mutation. Mirrors F5
+ *                                        `payment_environment_mismatch`
+ *                                        UX pattern: 200 body +
+ *                                        diagnostic header. Alert
+ *                                        routing picks up the
+ *                                        F2.PLAN_CHANGE.CANCEL_AUDIT_*
+ *                                        errorId on the logger.error
+ *                                        emit.)
  *   - server_error                      → 500
  *   - idempotency_conflict              → 409
  *   - idempotency_reservation_failed    → 503 + Retry-After: 5
@@ -51,9 +49,9 @@ import {
 import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
-// R3 Batch 4a (R3-C2) — scheduledChangeId is a Postgres uuid column.
-// Reject non-UUIDs with 400 invalid_path instead of letting them slip
-// to the Drizzle adapter where SQLSTATE 22P02 would surface as 500.
+// scheduledChangeId is a Postgres uuid column. Reject non-UUIDs with
+// 400 invalid_path instead of letting them slip to the Drizzle
+// adapter where SQLSTATE 22P02 would surface as 500.
 const pathSchema = z.object({
   id: z.string().uuid(),
 });
@@ -75,7 +73,7 @@ export async function POST(
   });
   if ('response' in ctx) return ctx.response;
 
-  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  // Emergency maintenance freeze short-circuit.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
 
@@ -193,10 +191,10 @@ export async function POST(
         { status: 409 },
       );
     case 'audit_failed': {
-      // R3 Batch 4b (R3-I5) — attach errorId mapped from the
-      // preserved auditErrorType discriminator. Alert routing can
-      // distinguish zod-rejection (deploy-skew) from DB-rejection
-      // (column drift / pgEnum drift / RLS).
+      // Attach errorId mapped from the preserved auditErrorType
+      // discriminator. Alert routing can distinguish zod-rejection
+      // (deploy-skew) from DB-rejection (column drift / pgEnum drift
+      // / RLS).
       logger.error(
         {
           errorId:
@@ -208,7 +206,7 @@ export async function POST(
         },
         'cancel-scheduled-plan-change: audit write failed',
       );
-      // R3 Batch 4d (R3-S4) — the row IS cancelled (transitionStatus
+      // The row IS cancelled (transitionStatus
       // landed). Return 200 with the cancelled-row body + diagnostic
       // header so the UI does not retry a successful mutation. SRE
       // backfills the audit row out-of-band by alerting on the errorId

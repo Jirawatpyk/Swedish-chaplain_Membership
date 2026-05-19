@@ -58,10 +58,10 @@ type MembershipPlanRow = typeof membershipPlans.$inferSelect;
  * JSONB columns.
  */
 function cloneBenefitMatrix(m: BenefitMatrix): BenefitMatrix {
-  // R2 Batch 3e — BenefitMatrix is structural (no brand). Deep-clone
-  // for safety in the Drizzle insert path (JSONB columns require a
-  // writable object). Partnership integrity is validated upstream by
-  // `asBenefitMatrix` in `rowToPlan` + at API boundary by zod.
+  // BenefitMatrix is structural (no brand). Deep-clone for safety in
+  // the Drizzle insert path (JSONB columns require a writable object).
+  // Partnership integrity is validated upstream by `asBenefitMatrix`
+  // in `rowToPlan` + at API boundary by zod.
   return {
     ...m,
     partnership: m.partnership ? { ...m.partnership } : null,
@@ -80,15 +80,14 @@ function cloneLocaleText(t: {
 }
 
 function rowToPlan(row: MembershipPlanRow): Plan {
-  // R2 Batch 3e (R2-I13) — replace bare `as LocaleText` / `as
-  // BenefitMatrix` casts with smart-constructor calls. DB CHECK
-  // constraints (migration 0006/0007) already enforce these
-  // invariants; the smart constructors are defence-in-depth that
-  // catch (a) hand-crafted hydration paths bypassing `rowToPlan`,
-  // (b) DB CHECK drift during schema migrations, (c) manual SQL
-  // fixes that bypass the CHECK. `asBenefitMatrix` is the ONE site
-  // where `planCategory` is statically known for the partnership↔
-  // category integrity check.
+  // Use smart-constructor calls (asLocaleText / asBenefitMatrix)
+  // instead of bare `as` casts. DB CHECK constraints (migration
+  // 0006/0007) already enforce these invariants; the smart
+  // constructors are defence-in-depth that catch (a) hand-crafted
+  // hydration paths bypassing `rowToPlan`, (b) DB CHECK drift during
+  // schema migrations, (c) manual SQL fixes that bypass the CHECK.
+  // `asBenefitMatrix` is the ONE site where `planCategory` is
+  // statically known for the partnership↔category integrity check.
   return {
     tenant_id: asTenantSlug(row.tenantId),
     plan_id: asPlanSlug(row.planId),
@@ -444,10 +443,5 @@ export const planRepo: PlanRepo = {
       });
     });
   },
-
-  // NOTE: `countActiveForTenant` was retired in R7/R8 consolidation —
-  // it backed the fee-config currency immutability guard (T145), which
-  // is no longer needed since `tenant_fee_config` was dropped by
-  // migration 0029. Removed 2026-05-19 (post-ship R6 C5).
 };
 

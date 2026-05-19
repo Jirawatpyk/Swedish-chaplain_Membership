@@ -27,10 +27,10 @@ import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId as MemberIdBrand } from '@/modules/members';
 import type { RenewalsDeps } from '../renewals-deps';
 
-// Post-ship R6 Batch 2d — F2 scheduled-plan-change finalisation +
-// audit emit. Runs POST-tx; failures are logged + non-rollback
-// (mirrors the post-tx F2 emit pattern in `accept-tier-upgrade.ts`
-// where F4 has already committed by the time we reach this code).
+// F2 scheduled-plan-change finalisation + audit emit. Runs POST-tx;
+// failures are logged + non-rollback (mirrors the post-tx F2 emit
+// pattern in `accept-tier-upgrade.ts` where F4 has already committed
+// by the time we reach this code).
 async function finaliseF2ScheduledPlanChangeForCycle(
   deps: RenewalsDeps,
   evt: F4InvoicePaidEvent,
@@ -122,11 +122,11 @@ async function finaliseF2ScheduledPlanChangeForCycle(
       },
     );
     if (!auditResult.ok) {
-      // R3 Batch 4b (R3-I3) — errorId for alert-routing parity with
-      // the threw-branch (F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW)
-      // + the find/transition errorIds above. Sentry/Grafana alert
-      // rules built against `errorId: 'F2.PLAN_CHANGE.*'` now catch
-      // the persist_failed path too.
+      // errorId for alert-routing parity with the threw-branch
+      // (F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW) + the find/transition
+      // errorIds above. Sentry/Grafana alert rules built against
+      // `errorId: 'F2.PLAN_CHANGE.*'` now catch the persist_failed
+      // path too.
       logger.error(
         {
           errorId: 'F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_FAILED',
@@ -300,16 +300,14 @@ export function makeApplyTierUpgradeOnPaidCallback(
       await runInTenantFn(deps.tenant, (tx) => apply(tx, true));
     }
 
-    // R2 Batch 3a (R2-C1 correction) — F2 finaliser runs in its OWN
-    // `runInTenant` tx, which is SEPARATE from F4's `withTx` even on
-    // the happy path. The earlier "F4+F8 in-tx state is committed at
-    // this point" comment was inaccurate for the InTx branch: F4's
-    // commit happens AFTER this callback returns. The consequence is
-    // a bounded TEMPORAL divergence — if F4's commit subsequently
-    // fails (rare; commit-stage error), F2 has already advanced one
-    // step ahead. The next webhook retry (Stripe at-least-once) heals
-    // because (a) F4 mark-paid is idempotent on already-paid invoices
-    // and (b) F2 finaliser is idempotent on already-applied rows
+    // F2 finaliser runs in its OWN `runInTenant` tx, which is SEPARATE
+    // from F4's `withTx` even on the happy path. F4's commit happens
+    // AFTER this callback returns. The consequence is a bounded
+    // TEMPORAL divergence — if F4's commit subsequently fails (rare;
+    // commit-stage error), F2 has already advanced one step ahead.
+    // The next webhook retry (Stripe at-least-once) heals because
+    // (a) F4 mark-paid is idempotent on already-paid invoices and
+    // (b) F2 finaliser is idempotent on already-applied rows
     // (findPendingForCycle returns null for terminal-state).
     //
     // Operational signal: `renewalsMetrics.f2FinaliseBeforeF4Commit`

@@ -152,12 +152,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               }).then((r) => ({ inv, result: r })),
             ),
           );
-          // R3 Batch 4b (R3-I4) — aggregate per-invoice typed errors
-          // into a `Map<errorKind, count>` (capped at 5 distinct
-          // shapes) so a wide F5 outage spanning multiple error kinds
-          // gets attributed correctly to F5 dashboards. Previously
-          // only the first error survived; if 10 invoices failed
-          // across 3 distinct error shapes, operators saw only one.
+          // Aggregate per-invoice typed errors into a
+          // `Map<errorKind, count>` (capped at 5 distinct shapes) so
+          // a wide F5 outage spanning multiple error kinds gets
+          // attributed correctly to F5 dashboards. Previously only
+          // the first error survived; if 10 invoices failed across
+          // 3 distinct error shapes, operators saw only one.
           const failedInvoiceIds: string[] = [];
           const errorKindCounts = new Map<string, number>();
           const ERROR_KIND_CAP = 5;
@@ -206,9 +206,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
                 requestId: ctx.requestId,
                 failedInvoiceIds,
                 failedCount: failedInvoiceIds.length,
-                // R3 Batch 4b (R3-I4) — Map serialised to object for
-                // structured logs. Keys are error codes/kinds; values
-                // are occurrence counts.
+                // Map serialised to object for structured logs.
+                // Keys are error codes/kinds; values are occurrence
+                // counts.
                 errorKindCounts: Object.fromEntries(errorKindCounts),
                 errorKindsTruncatedAt:
                   errorKindCounts.size >= ERROR_KIND_CAP
@@ -219,13 +219,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             );
           }
         } else {
-          // R2 Batch 3d (R2-I10) — surface listInvoicesPaged Result.err
-          // (F5 disabled, kill-switch flipped, RBAC drift, etc.). Was
-          // silently dropping refundableInvoices to []. Outer try/catch
-          // only handles thrown exceptions; a typed Result.err would
-          // otherwise be invisible to ops.
-          // R3 Batch 4a (R3-S15) — errorId for alert-routing parity
-          // with the F2.PLAN_CHANGE.* convention used in F8 callbacks.
+          // Surface listInvoicesPaged Result.err (F5 disabled,
+          // kill-switch flipped, RBAC drift, etc.). The outer
+          // try/catch only handles thrown exceptions; a typed
+          // Result.err would otherwise be invisible to ops. The
+          // errorId provides alert-routing parity with the
+          // F2.PLAN_CHANGE.* convention used in F8 callbacks.
           logger.warn(
             {
               errorId: 'F2.PALETTE.REFUNDABLE_LIST_UNAVAILABLE',

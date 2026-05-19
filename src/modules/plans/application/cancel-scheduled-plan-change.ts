@@ -29,23 +29,22 @@ import {
 } from '../domain/scheduled-plan-change';
 
 /**
- * R2 Batch 3a (R2-C2) — zod schema at the Application boundary.
+ * Zod schema at the Application boundary.
  * Without uuid validation here, the audit-payload schema (which
  * requires `z.string().uuid()` on `member_id` + `effective_at_cycle_id`)
  * would reject AFTER the DB transition lands → divergent committed
  * state. The boundary schema fails-closed BEFORE any DB or audit work.
  */
 const cancelScheduledPlanChangeInputSchema = z.object({
-  // R3 Batch 4a (R3-C2) — `scheduled_plan_changes.scheduled_change_id`
-  // is a Postgres `uuid`. A non-UUID input would otherwise bypass the
-  // boundary check, reach `findById` Drizzle adapter, hit SQLSTATE
-  // 22P02 (invalid_text_representation), and surface as a generic
+  // `scheduled_plan_changes.scheduled_change_id` is a Postgres `uuid`.
+  // A non-UUID input would otherwise bypass the boundary check, reach
+  // `findById` Drizzle adapter, hit SQLSTATE 22P02
+  // (invalid_text_representation), and surface as a generic
   // server_error (500) instead of the correct invalid_input (400).
   scheduledChangeId: z.string().uuid(),
   memberId: z.string().uuid(),
   effectiveAtCycleId: z.string().uuid(),
-  // R3 Batch 4d (R3-S1) — `cancelledByUserId` dropped (was always
-  // equal to `deps.actorUserId`).
+  // No `cancelledByUserId` — it always equals `deps.actorUserId`.
   reason: z.string().max(500).nullable().optional(),
 });
 
@@ -68,7 +67,7 @@ export async function cancelScheduledPlanChange(
   deps: CancelScheduledPlanChangeDeps,
   input: CancelScheduledPlanChangeInput,
 ): Promise<Result<ScheduledPlanChange, CancelScheduledPlanChangeError>> {
-  // R2 Batch 3a — zod input validation at the Application boundary.
+  // Zod input validation at the Application boundary.
   // First-issue translation keeps the existing error union shape.
   const parsed = cancelScheduledPlanChangeInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -146,8 +145,8 @@ export async function cancelScheduledPlanChange(
       'cancelled',
     );
   } catch (e) {
-    // R3 Batch 4b (R3-I2) — TOCTOU race classification. Between
-    // findById (pending) and transitionStatus UPDATE, a concurrent
+    // TOCTOU race classification. Between findById (pending) and
+    // transitionStatus UPDATE, a concurrent
     // admin can apply/cancel/supersede the row. The repo's
     // conditional UPDATE only matches `status='pending'`, throws
     // "row not found or already terminal" when 0 rows updated. Re-
@@ -201,14 +200,12 @@ export async function cancelScheduledPlanChange(
     },
   });
   if (!auditResult.ok) {
-    // R3 Batch 4b (R3-I5) — preserve discriminator so the route can
-    // attach `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_*'` with the
-    // specific failure mode visible to alert routing.
-    //
-    // R3 Batch 4d (R3-S4) — carry `transitioned` so the route can
-    // return 200 + diagnostic header instead of a misleading 500.
-    // The row IS already cancelled; the audit failure is a separate,
-    // async-recoverable observability concern.
+    // Preserve discriminator so the route can attach
+    // `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_*'` with the specific
+    // failure mode visible to alert routing. Carry `transitioned` so
+    // the route can return 200 + diagnostic header instead of a
+    // misleading 500. The row IS already cancelled; the audit failure
+    // is a separate, async-recoverable observability concern.
     return err({
       code: 'audit_failed',
       auditErrorType: auditResult.error.type,

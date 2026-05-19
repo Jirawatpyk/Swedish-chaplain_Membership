@@ -37,12 +37,12 @@ import {
 // --- Row → Domain translation -----------------------------------------------
 
 function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
-  // R3 Batch 4e (R3-S6) — build the loose `MutableScheduledPlanChange`
-  // shape from raw DB columns, then have `assertValidScheduledPlanChange`
-  // narrow it to the discriminated `ScheduledPlanChange` union. The
-  // status↔timestamp invariant lives in the type system from this point
-  // on (consumers can `if (row.status === 'applied') row.appliedAt.length`
-  // without a non-null bang).
+  // Build the loose `MutableScheduledPlanChange` shape from raw DB
+  // columns, then have `assertValidScheduledPlanChange` narrow it to
+  // the discriminated `ScheduledPlanChange` union. The status↔timestamp
+  // invariant lives in the type system from this point on (consumers
+  // can `if (row.status === 'applied') row.appliedAt.length` without
+  // a non-null bang).
   const candidate: MutableScheduledPlanChange = {
     tenantId: row.tenantId,
     scheduledChangeId: row.scheduledChangeId,
@@ -59,12 +59,12 @@ function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
     supersededAt: row.supersededAt ? row.supersededAt.toISOString() : null,
     cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
   };
-  // R2 Batch 3a (R2-C4) — defence-in-depth status↔timestamp invariant.
-  // Throws `InvalidScheduledPlanChangeError` on DB CHECK drift; the
-  // canonical DB CHECK (migration 0095) should already enforce this.
-  // R3 Batch 4e (R3-S6) — the asserts predicate narrows `candidate`
-  // from `MutableScheduledPlanChange` to `ScheduledPlanChange`, so the
-  // return type now carries the type-level invariant.
+  // Defence-in-depth status↔timestamp invariant. Throws
+  // `InvalidScheduledPlanChangeError` on DB CHECK drift; the canonical
+  // DB CHECK (migration 0095) should already enforce this. The asserts
+  // predicate narrows `candidate` from `MutableScheduledPlanChange` to
+  // `ScheduledPlanChange`, so the return type carries the type-level
+  // invariant.
   assertValidScheduledPlanChange(candidate);
   return candidate;
 }
@@ -154,8 +154,8 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
     });
   },
 
-  // R2 Batch 3g (R2-I16) — primary-key lookup. RLS scopes to caller's
-  // tenant; explicit tenant_id filter intentionally omitted per the
+  // Primary-key lookup. RLS scopes to caller's tenant; explicit
+  // tenant_id filter intentionally omitted per the
   // two-layer defence pattern (research.md § 7.1).
   async findById(
     tenant: TenantContext,

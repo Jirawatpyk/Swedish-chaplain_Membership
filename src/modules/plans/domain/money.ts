@@ -22,9 +22,9 @@
  * Pure TypeScript — no framework imports.
  */
 
-// Post-ship R6 I9 / D4 (2026-05-19) — branded `Money` type. The
-// brand is a phantom `unique symbol` property that exists only at
-// the type level (never at runtime). Callers MUST construct Money
+// Branded `Money` type. The brand is a phantom `unique symbol`
+// property that exists only at the type level (never at runtime).
+// Callers MUST construct Money
 // values through `asMoney()` — direct object-literal construction
 // `{ amount_minor_units, currency_code } satisfies Money` fails
 // typecheck because it can't provide the brand property. This
@@ -106,8 +106,8 @@ export function asMinorUnits(value: number): number {
  * code that needs the cross-currency-safe brand (e.g., totalling
  * fees across plans without risking SEK+THB-without-conversion).
  *
- * R3 Batch 4c (R3-I12) — signature requires `CurrencyCode` (the
- * branded type), not `string`. Callers that already hold the brand
+ * The signature requires `CurrencyCode` (the branded type), not
+ * `string`. Callers that already hold the brand
  * (e.g., `getTenantTaxPolicy().currencyCode`) get a type-safe path;
  * callers with a raw `string` should call `asMoney(...)` directly
  * (which still re-validates via `isCurrencyCode`).

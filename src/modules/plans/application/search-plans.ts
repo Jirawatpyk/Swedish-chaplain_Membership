@@ -299,11 +299,11 @@ export async function searchPlans(
   input: SearchPlansInput,
   deps: SearchPlansDeps,
 ): Promise<Result<SearchPlansSuccess, SearchPlansError>> {
-  // R3 Batch 4d (R3-S9) — clamp user-controlled limit to 100 to bound
-  // the in-memory filter cost. At SweCham scale (~10 plans + ~50
-  // registry entries) this is a small protection, but a future
-  // multi-tenant ramp could see thousands of plans where an
-  // unclamped `limit: 10_000` would page the whole table.
+  // Clamp user-controlled limit to 100 to bound the in-memory filter
+  // cost. At SweCham scale (~10 plans + ~50 registry entries) this is
+  // a small protection, but a future multi-tenant ramp could see
+  // thousands of plans where an unclamped `limit: 10_000` would page
+  // the whole table.
   const limit = Math.min(input.limit ?? 20, 100);
   const currentYear = asPlanYear(deps.clock.currentYear());
   const q = input.q.trim();

@@ -26,7 +26,7 @@ export async function POST(
   });
   if ('response' in ctx) return ctx.response;
 
-  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  // Emergency maintenance freeze short-circuit.
   const roResp = readOnlyModeResponse();
   if (roResp) return roResp;
 

@@ -40,8 +40,8 @@ export function isTerminalStatus(s: ScheduledPlanChangeStatus): boolean {
 }
 
 /**
- * Error thrown by `assertValidScheduledPlanChange` (R2 Batch 3a / R2-C4)
- * when a row violates the status↔timestamp invariant. Defence-in-depth
+ * Error thrown by `assertValidScheduledPlanChange` when a row
+ * violates the status↔timestamp invariant. Defence-in-depth
  * runtime validator — the DB CHECK already enforces this; the assert
  * catches drift in hand-crafted test fixtures + in-memory contract
  * test repos + future hydration paths that bypass the canonical
@@ -57,8 +57,8 @@ export class InvalidScheduledPlanChangeError extends Error {
 /**
  * Aggregate row shape — mirrors `specs/011-renewal-reminders/data-model.md § 2.9` columns 1:1.
  *
- * R3 Batch 4e (R3-S6) — compile-time discriminated union over `status`.
- * The status↔timestamp invariant is now encoded in the TYPE (not just
+ * Compile-time discriminated union over `status`.
+ * The status↔timestamp invariant is encoded in the TYPE (not just
  * in JSDoc comments + the runtime `assertValidScheduledPlanChange`):
  *
  *   - status='pending'    ⇒ appliedAt/supersededAt/cancelledAt all null
@@ -228,8 +228,8 @@ export type ScheduleNextRenewalPlanChangeError =
   | { readonly code: 'server_error'; readonly message: string };
 
 /**
- * R2 Batch 3a (R2-C4) — runtime defence-in-depth validator for the
- * status↔timestamp invariant. The interface above encodes the
+ * Runtime defence-in-depth validator for the status↔timestamp
+ * invariant. The interface above encodes the
  * invariant in comments only ("non-null iff status === '…'");
  * nothing prevents constructing `{ status: 'applied', appliedAt: null,
  * supersededAt: '...', cancelledAt: '...' }`. This assert function
@@ -273,7 +273,7 @@ export function assertValidScheduledPlanChange(
   }
 }
 
-// --- F2 R6 Batch 2c (D7) — `cancelScheduledPlanChange` types -----------------
+// --- `cancelScheduledPlanChange` types ---------------------------------------
 
 /**
  * Caller-supplied fields when cancelling a pending scheduled plan change.
@@ -293,15 +293,14 @@ export interface CancelScheduledPlanChangeInput {
   /** The renewal cycle this change targets — required for the audit payload. */
   readonly effectiveAtCycleId: string;
   /**
-   * R2 Batch 3f (R2-S10) — explicit `string | null` (not `?: string`)
-   * to avoid the `exactOptionalPropertyTypes` spread footgun + align
-   * with the audit payload shape (`reason: string | null`). Callers
-   * pass `null` when no reason.
+   * Explicit `string | null` (not `?: string`) to avoid the
+   * `exactOptionalPropertyTypes` spread footgun + align with the audit
+   * payload shape (`reason: string | null`). Callers pass `null` when
+   * no reason.
    *
-   * R3 Batch 4d (R3-S1) — `cancelledByUserId` removed: it always
-   * equalled `deps.actorUserId` (route filled both from the auth ctx);
-   * audit payload doesn't include it. Single source of truth now via
-   * the use-case's `auditCtx.actorUserId`.
+   * `cancelledByUserId` is not on this input: it always equals
+   * `deps.actorUserId` (single source of truth via the use-case's
+   * `auditCtx.actorUserId`).
    */
   readonly reason: string | null;
 }
@@ -315,18 +314,18 @@ export type CancelScheduledPlanChangeError =
       readonly status: Exclude<ScheduledPlanChangeStatus, 'pending'>;
     }
   | {
-      // R3 Batch 4b (R3-I5) — preserve audit-error discriminator
-      // (`invalid_payload` vs `persist_failed`) so the route can map
-      // to distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'`
-      // vs `…_PERSIST_FAILED`. Without this, SRE cannot tell whether
-      // the audit row was rejected by zod (deploy-skew) or by the DB
+      // Preserve the audit-error discriminator (`invalid_payload` vs
+      // `persist_failed`) so the route can map to distinct
+      // `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'` vs
+      // `…_PERSIST_FAILED`. Without this, SRE cannot tell whether the
+      // audit row was rejected by zod (deploy-skew) or by the DB
       // (column drift / pgEnum drift / RLS) without raw stdout.
       //
-      // R3 Batch 4d (R3-S4) — carry the transitioned-row context so
-      // the route can return 200 with the cancelled-row body + the
-      // `X-Audit-Backfill-Required: 1` diagnostic header. The row IS
-      // already cancelled at this point; surfacing 500 would mis-lead
-      // the UI into retrying a successful mutation.
+      // Carry the transitioned-row context so the route can return 200
+      // with the cancelled-row body + the `X-Audit-Backfill-Required: 1`
+      // diagnostic header. The row IS already cancelled at this point;
+      // surfacing 500 would mis-lead the UI into retrying a successful
+      // mutation.
       readonly code: 'audit_failed';
       readonly auditErrorType: 'invalid_payload' | 'persist_failed';
       readonly message: string;
