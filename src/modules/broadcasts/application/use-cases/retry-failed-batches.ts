@@ -3,7 +3,11 @@
  *
  * Admin action: re-queue every batch_manifest stuck in `failed` for a
  * broadcast whose aggregate landed in `partially_sent`. Bounded by a
- * 3-attempt budget on `broadcasts.manual_retry_count` (FR-008a-d).
+ * 3-attempt budget on `broadcasts.manual_retry_count` (FR-008a).
+ * Related FRs implemented by sibling use cases: FR-008b transient
+ * retry state (this file emits both initiated + completed audits);
+ * FR-008c accept-partial → `accept-partial-delivery.ts`; FR-008d
+ * advisory-lock SC-007 → enforced via `broadcasts-retry:` namespace.
  *
  * Concurrency: per-broadcast `pg_advisory_xact_lock` keyed
  *   `broadcasts-retry:{tenantId}:{broadcastId}`

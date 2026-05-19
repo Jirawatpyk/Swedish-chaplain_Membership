@@ -20,11 +20,10 @@
  * dispatcher races in (cosmetic — the per-batch advisory lock would
  * serialise anyway, but the 30s window avoids unnecessary lock churn).
  *
- * NOTE: For Phase 3C.2 MVP this cron handler does NOT yet read the
- * per-tenant `tenant_broadcast_settings.dispatch_concurrency_cap`
- * value — it uses the Domain DEFAULT_CONCURRENCY_CAP (4) for every
- * tenant. Phase 3 Cluster 3C.3 / 3D will wire the tenant-settings
- * read once the settings repo lands.
+ * NOTE: per-tenant `tenant_broadcast_settings.dispatch_concurrency_cap`
+ * wire-up is closed in Phase 3F.4 (see line 254 read). Until that
+ * commit, this cron uses Domain DEFAULT_CONCURRENCY_CAP (4) — safe
+ * default for shared Resend account-tier limits per FR-002.
  *
  * Pin Node runtime — Bearer check + Drizzle + advisory locks all
  * require Node APIs.

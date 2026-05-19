@@ -7,11 +7,15 @@
  * gateway sequence, but per-batch with batch-specific idempotency key
  * and audience name).
  *
- * Concurrency contract (data-model § 4):
- *   - Acquires `pg_advisory_xact_lock('broadcasts-batch:{tenant}:{broadcast}:{batchIndex}')`
+ * Concurrency contract (plan.md § VIII Reliability):
+ *   - Attempts `pg_try_advisory_xact_lock('broadcasts-batch:{tenant}:{broadcast}:{batchIndex}')`
  *     via `AdvisoryLockPort` BEFORE Resend calls. Namespace DISJOINT
  *     from `broadcasts-retry:` (Phase 3 T047) and F7 MVP
- *     `broadcasts:` lock.
+ *     `broadcasts:` lock. NOTE: production wires `noOpAdvisoryLock`
+ *     because long-running gateway calls cannot sit inside a held tx
+ *     — per-batch race is mitigated by cron-job.org tick spacing +
+ *     T055 FOR UPDATE SKIP LOCKED + idempotency-key unique index
+ *     (see `noop-advisory-lock.ts` header for full rationale).
  *   - Caller (T046 batch-dispatcher) is responsible for the
  *     concurrency cap; this use case dispatches one batch.
  *

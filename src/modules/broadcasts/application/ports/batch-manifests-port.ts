@@ -9,20 +9,28 @@
  * batch is identified by `(tenant_id, broadcast_id, batch_index)`
  * (unique index in migration 0163).
  *
- * Advisory-lock contract (data-model § 4, FR-002): the
- * `dispatchBroadcastBatch` use case (Phase 3 T045) MUST acquire
- * `pg_advisory_xact_lock('broadcasts-batch:' || tenantId || ':' ||
+ * Advisory-lock contract (plan.md § VIII Reliability, FR-002): the
+ * `dispatchBroadcastBatch` use case (Phase 3 T045) attempts
+ * `pg_try_advisory_xact_lock('broadcasts-batch:' || tenantId || ':' ||
  * broadcastId || ':' || batchIndex)` BEFORE invoking the gateway, to
- * serialise concurrent retries against the same batch. This port's
+ * serialise concurrent retries against the same batch. Note: T045
+ * wires `noOpAdvisoryLock` in production (see `noop-advisory-lock.ts`
+ * header for the long-running-gateway-call rationale); per-batch
+ * race is mitigated by cron-job.org tick spacing + FOR UPDATE SKIP
+ * LOCKED in T055 eligible scan + idempotency-key unique index. This port's
  * implementations MUST NOT acquire the lock — that's the use case's
  * responsibility (so transaction boundaries align with the lock
  * lifetime).
  *
- * State machine (migration 0163 CHECK):
+ * State machine (enforced in `drizzle-batch-manifests-repo.ts`
+ * ALLOWED_TRANSITIONS map; migration 0163 CHECK enforces value
+ * membership only, NOT transitions):
  *   pending → sending → sent | failed
- *   pending → cancelled    (set by cancelBroadcast Phase 3 T163
- *                          when admin halts mid-dispatch per FR-004;
- *                          per data-model § 2.2 N1)
+ *   failed → pending    (retryFailedBatches re-queues; idempotency
+ *                        key rotated per Phase 3F.1 fix F-04)
+ *   pending → cancelled (set by cancelBroadcast Phase 3 T163 when
+ *                        admin halts mid-dispatch per FR-004;
+ *                        per data-model § 2.2 N1)
  *
  * Pure interface — no framework imports (Constitution Principle III
  * NON-NEGOTIABLE).
@@ -76,8 +84,12 @@ export interface NewBatchManifestInput {
   readonly recipientRangeStart: number;
   readonly recipientRangeEnd: number;
   /**
-   * Idempotency key format per data-model § 4:
+   * Idempotency key format per plan.md § VIII (Reliability):
    *   `broadcast-{broadcastId}-batch-{batchIndex}-attempt-{retryCount}`
+   * On auto-retry path (T056), key is rotated to
+   *   `broadcast-{broadcastId}-batch-{batchIndex}-attempt-0-autoretry-{retryCount}`
+   * so Resend's deduper doesn't short-circuit retried dispatches
+   * (Phase 3F.1 F-04 fix).
    */
   readonly idempotencyKey: string;
 }

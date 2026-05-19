@@ -30,9 +30,10 @@
  *     Cluster D advisory-lock-hardening.
  *
  * Idempotency: the webhook route already de-duplicates via
- * `email_delivery_events.svix_id UNIQUE` (F8 telemetry); duplicate
- * events would increment counters twice if reached here. Caller
- * MUST gate via the svix-id idempotency check upstream.
+ * `email_delivery_events.svix_id UNIQUE` (F1 email infrastructure,
+ * migration 0106); duplicate events would increment counters twice
+ * if reached here. Caller MUST gate via the svix-id idempotency
+ * check upstream.
  *
  * Pure orchestration — no framework imports (Constitution Principle III).
  */

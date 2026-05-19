@@ -4,9 +4,10 @@
  * FR-005: every batch_manifest that lands in `failed` state may be
  * auto-retried up to **5 times** (DB CHECK constraint on
  * `retry_count BETWEEN 0 AND 5` from migration 0163). When the budget
- * is exhausted, the row stays `failed` permanently and the
- * `reconcile-stuck-sending` admin escalation path (T047 manual retry
- * OR T048 accept-partial) takes over.
+ * is exhausted, the row stays `failed` permanently, the broadcast
+ * aggregate transitions to `partially_sent`, and admin-triggered
+ * fallbacks (T047 manual retry OR T048 accept-partial) become
+ * available via the broadcast detail page.
  *
  * This use case is the AUTOMATED counterpart to T047
  * `retryFailedBatches` (admin-triggered). Differences:

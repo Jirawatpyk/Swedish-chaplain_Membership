@@ -85,8 +85,10 @@ export interface SplitBroadcastIntoBatchesOutput {
 
 /**
  * Build the deterministic idempotency key for batch `i` on attempt `a`
- * per data-model § 4 + the `BatchManifestsPort.NewBatchManifestInput`
+ * per plan.md § VIII (Reliability) + the `BatchManifestsPort.NewBatchManifestInput`
  * port docs. Format: `broadcast-{uuid}-batch-{i}-attempt-{a}`.
+ * On auto-retry path (T056) key is rotated via `-autoretry-{n}` suffix
+ * to defeat Resend's deduper (Phase 3F.1 F-04 fix).
  */
 function makeIdempotencyKey(
   broadcastId: BroadcastId,
