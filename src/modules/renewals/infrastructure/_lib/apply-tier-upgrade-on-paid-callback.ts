@@ -1,31 +1,24 @@
 /**
- * F8 Phase 7 / Round 6 S-003 — extracted apply-pending-tier-upgrade
- * callback factory for `f8OnPaidCallbacks`.
+ * F4 onPaid callback factory — applies pending F8 tier-upgrade
+ * suggestions then finalises F2 scheduled-plan-change rows post-tx.
  *
- * The pre-Round-6 form inlined this 125-line closure as the second
- * entry of the `f8OnPaidCallbacks` array in `renewals-deps.ts`,
- * making the composition root unwieldy at ~280 lines and obscuring
- * the boundary between cycle-complete (callback[0]) and tier-upgrade
- * apply (callback[1]) logic. This helper isolates the apply path so
- * the unit test (`f8-on-paid-callbacks.test.ts`) and the callsite
- * (`renewals-deps.ts` callback[1]) reference the same factory.
+ * Returns a closure that the F8 composition root registers as
+ * `f8OnPaidCallbacks[1]`. Two-phase behaviour per invoice:
  *
- * Behaviour is preserved verbatim — the closure body is moved
- * unchanged, only the deps capture is now an explicit factory
- * parameter rather than a closed-over variable.
+ *   1. In-tx (F4 withTx): resolve the renewal cycle for the invoice;
+ *      if found, run `applyPendingTierUpgradeInTx` to transition any
+ *      `accepted_pending_apply` suggestions to `applied` + emit F8
+ *      audit. F4 commit fails ⇒ entire in-tx state rolls back.
  *
- * Post-ship R6 Batch 2d (D7) — extends the post-tx phase to flip the
- * F2 `scheduled_plan_changes` row from `pending` → `applied` and emit
- * `plan_change_applied`. Closes Item 4 of the R6 deferred-items list
- * (the `plan_change_applied` half of the audit-event TODO in
- * `src/modules/plans/domain/audit-event.ts`). The F8 `apply-pending-
- * tier-upgrade.ts` use-case comments at lines 13-25 explicitly marked
- * this F2 state flip as "Phase 5+ deferred" — Batch 2d closes that
- * deferred follow-up.
+ *   2. Post-tx (separate `runInTenant`): `_internal.finaliseF2
+ *      ScheduledPlanChangeForCycle` flips the F2
+ *      `scheduled_plan_changes` row pending → applied and emits the
+ *      F2 audit. Eventual-consistency window bounded by idempotency
+ *      (Stripe at-least-once retry self-heals; counter
+ *      `renewalsMetrics.f2FinaliseBeforeF4Commit` is the SRE signal).
  *
- * Pure Infrastructure — only `@/lib/db`, `@/lib/logger`,
- * `@/lib/metrics`, dynamic imports for circular-dep avoidance, and
- * F4 / F8 brand types.
+ * Pure Infrastructure — `@/lib/db`, `@/lib/logger`, `@/lib/metrics`,
+ * dynamic imports for circular-dep avoidance, F4 / F8 brand types.
  */
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';

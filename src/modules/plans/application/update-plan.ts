@@ -34,6 +34,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { planMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   AuditPort,
@@ -199,6 +200,10 @@ export async function updatePlan(
   //    trail; that path is now unreachable.
   const diff = computeDiff(existing, patch);
   if (Object.keys(diff).length === 0) {
+    // R2 Batch 3i (R2-S7) — observability signal for noisy clients
+    // submitting phantom-edit PATCHes. Counter is fire-and-forget;
+    // `safeMetric` inside the helper guarantees no exception leaks.
+    planMetrics.updateNoOpShortCircuit(deps.tenant.slug);
     return ok(existing);
   }
 

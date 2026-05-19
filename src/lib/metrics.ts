@@ -387,6 +387,33 @@ export const outboxMetrics = {
 //   - `document_type` ∈ {invoice, receipt, credit_note} (3 values)
 //   - `bounce_reason` ∈ {max_retries, invalid_recipient, no_template_handler} (3)
 
+// ============================================================
+// F2 — Plans
+// ============================================================
+
+export const planMetrics = {
+  /**
+   * R2 Batch 3i (R2-S7) — Plan PATCH no-op short-circuit count.
+   * `updatePlan` returns the existing row WITHOUT a DB write or audit
+   * emit when the computed diff is empty (client sent fields whose
+   * values match the stored row — common when a client re-submits a
+   * form with no actual changes). The counter detects noisy clients
+   * or buggy forms that repeatedly POST phantom edits.
+   */
+  updateNoOpShortCircuit(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'plans_update_no_op_short_circuit_total',
+        'F2 updatePlan returned existing row because diff was empty (no DB write, no audit)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+};
+
+// ============================================================
+// F4 — Invoicing
+// ============================================================
+
 export const invoicingMetrics = {
   /**
    * Successful invoice issuance count. Incremented inside the

@@ -94,20 +94,13 @@ export class InvalidBenefitMatrixError extends Error {
 }
 
 /**
- * Smart constructor for `BenefitMatrix` (post-ship R6 Batch 2a / D5).
+ * Smart constructor enforcing the partnership↔corporate integrity
+ * invariant at the Domain boundary (zod `benefitMatrixSchema` covers
+ * the HTTP edge; this catches non-zod construction paths like seed
+ * scripts, test fixtures, and `plan-repo.ts:rowToPlan` hydration).
  *
- * Validates the partnership↔corporate integrity invariant at the
- * Domain boundary — the existing `benefitMatrixSchema.superRefine`
- * zod validator in `plan-validators.ts` enforces the same rule at
- * the HTTP/API edge, but Domain code that bypasses zod (test
- * fixtures, seeders, future use-cases) was previously able to
- * construct a corporate-tier matrix with a populated partnership
- * block (or vice versa). This constructor closes that gap.
- *
- * @param input the structural shape
- * @param planCategory the owning plan's category — picks the rule:
- *   - `'corporate'` → `partnership` MUST be null
- *   - `'partnership'` → `partnership` MUST be non-null
+ * - `planCategory === 'corporate'` → `partnership` MUST be null
+ * - `planCategory === 'partnership'` → `partnership` MUST be non-null
  * @throws InvalidBenefitMatrixError on mismatch
  */
 export function asBenefitMatrix(

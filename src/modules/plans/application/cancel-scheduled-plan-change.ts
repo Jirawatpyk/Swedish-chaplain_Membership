@@ -1,28 +1,19 @@
 /**
- * Post-ship R6 Batch 2c (D7) — `cancelScheduledPlanChange` use-case.
- *
- * Cancels a `pending` scheduled plan change. Mirrors the structure of
- * `scheduleNextRenewalPlanChange` (Batch 1c / Wave B) and the
- * `accept-tier-upgrade` post-tx audit-emit pattern.
+ * `cancelScheduledPlanChange` use-case (F2).
  *
  * Lifecycle (specs/011-renewal-reminders/data-model.md § 2.9):
  *
  *     pending ──cancel──→ cancelled (terminal — this use-case)
  *
- * Closes the `plan_change_cancelled` half of the deferred-emitter TODO
- * in `domain/audit-event.ts` lines 53-62. The `plan_change_applied`
- * half lands separately in Batch 2d (F8 invoice-paid callback wiring).
+ * Emits `plan_change_cancelled` audit post-tx. Audit-emit failure
+ * returns `audit_failed` even though the row is already in the
+ * cancelled terminal state (non-rollback — same compromise as
+ * `scheduleNextRenewalPlanChange`).
  *
- * Caller surface:
- *   - **No API route + no admin UI in this batch** (intentional —
- *     scope was capped at the use-case so the future caller — a
- *     post-MVP admin "cancel scheduled change" surface, or the F8
- *     auto-supersede flow — can wire it without a second use-case
- *     refactor).
- *   - The use-case is ready-to-call: input + deps + Result + audit
- *     emit are fully defined and contract-stable.
+ * Caller: admin API route at
+ * `src/app/api/admin/scheduled-plan-changes/[id]/cancel/route.ts`.
  *
- * Pure Application code — no framework imports (Constitution Principle III).
+ * Pure Application — no framework imports (Constitution Principle III).
  */
 import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';

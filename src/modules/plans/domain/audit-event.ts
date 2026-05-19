@@ -22,6 +22,23 @@ import type { Plan } from './plan';
 
 // --- Event type union ---------------------------------------------------------
 
+// Emit sites:
+//   plan_{created,updated,cloned,activated,deactivated,soft_deleted,
+//         undeleted,not_found,cross_tenant_probe}
+//     → F2 Application use-cases under `src/modules/plans/application/**`
+//   plan_change_scheduled / plan_change_superseded
+//     → `src/modules/plans/application/schedule-next-renewal-plan-change.ts` +
+//       `src/modules/renewals/application/use-cases/accept-tier-upgrade.ts` post-tx
+//   plan_change_cancelled
+//     → `src/modules/plans/application/cancel-scheduled-plan-change.ts`
+//       (admin route at `src/app/api/admin/scheduled-plan-changes/[id]/cancel/route.ts`)
+//   plan_change_applied
+//     → `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`
+//       (post-tx, after F4 invoice-paid commits)
+//
+// `fee_config_updated` was retired in R7/R8 (migration 0029); the
+// pgEnum value remains in F1 schema for historical rows but is NOT in
+// this Domain union.
 export const F2_AUDIT_EVENT_TYPES = [
   'plan_created',
   'plan_updated',
@@ -32,39 +49,9 @@ export const F2_AUDIT_EVENT_TYPES = [
   'plan_undeleted',
   'plan_not_found',
   'plan_cross_tenant_probe',
-  // NOTE: `fee_config_updated` was retired in R7/R8 consolidation
-  // (migration 0029 dropped `tenant_fee_config`; F4 `tenant_invoice_settings`
-  // is now authoritative). The pgEnum value remains in F1 schema as
-  // legacy backward-compat for any historical audit rows. Removed from
-  // this Domain union 2026-05-19 (post-ship R6 C5).
-  // F8 Phase 2 Wave C T029c (migration 0095) — scheduled-plan-change
-  // lifecycle audit trail. Wave B G1 verify-run remediation carry-over.
-  // Emitted by the F2 scheduled-plan-change use-cases (Wave G+ when
-  // composition root wires the audit emit hook into the use-cases
-  // alongside the Drizzle adapter that ships per Phase 5+).
   'plan_change_scheduled',
-  // `plan_change_superseded` — emitted by F8 `accept-tier-upgrade.ts`
-  // after `supersedeAndInsertPendingAtomically` returns a non-null
-  // `superseded` row (cross-module composition wired at F8 composition
-  // root per post-ship R6 D2 — F8 deps inject F2's `planAuditAdapter`
-  // via the public `@/modules/plans` barrel; Constitution III honoured
-  // because composition roots may legitimately wire ports across
-  // modules without coupling Application layers).
   'plan_change_superseded',
-  // F2 R6 Batch 2c (D7) — `plan_change_cancelled` emitter is now
-  // wired via `cancelScheduledPlanChange` use-case
-  // (`application/cancel-scheduled-plan-change.ts`). Ready-to-call;
-  // no API caller yet (future admin "cancel scheduled change" surface
-  // or F8 auto-supersede flow wires the route at composition root).
   'plan_change_cancelled',
-  // F2 R6 Batch 2d (D7) — `plan_change_applied` emitter is now wired
-  // at the F8 invoice-paid callback (renewal-applier path) in
-  // `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-
-  // paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`
-  // (post-tx). Flips `scheduled_plan_changes.status` from `pending` →
-  // `applied` then emits the audit row. Non-rollback on F2-emit
-  // failure: F4+F8 state is committed by then; operator backfills
-  // from the structured log keyed on errorId `F2.PLAN_CHANGE.*`.
   'plan_change_applied',
 ] as const;
 
