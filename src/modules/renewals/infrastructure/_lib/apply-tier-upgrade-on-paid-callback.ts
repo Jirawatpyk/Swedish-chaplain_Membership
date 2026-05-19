@@ -14,6 +14,15 @@
  * unchanged, only the deps capture is now an explicit factory
  * parameter rather than a closed-over variable.
  *
+ * Post-ship R6 Batch 2d (D7) — extends the post-tx phase to flip the
+ * F2 `scheduled_plan_changes` row from `pending` → `applied` and emit
+ * `plan_change_applied`. Closes Item 4 of the R6 deferred-items list
+ * (the `plan_change_applied` half of the audit-event TODO in
+ * `src/modules/plans/domain/audit-event.ts`). The F8 `apply-pending-
+ * tier-upgrade.ts` use-case comments at lines 13-25 explicitly marked
+ * this F2 state flip as "Phase 5+ deferred" — Batch 2d closes that
+ * deferred follow-up.
+ *
  * Pure Infrastructure — only `@/lib/db`, `@/lib/logger`,
  * `@/lib/metrics`, dynamic imports for circular-dep avoidance, and
  * F4 / F8 brand types.
@@ -24,6 +33,142 @@ import type { TenantTx } from '@/lib/db';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId as MemberIdBrand } from '@/modules/members';
 import type { RenewalsDeps } from '../renewals-deps';
+
+// Post-ship R6 Batch 2d — F2 scheduled-plan-change finalisation +
+// audit emit. Runs POST-tx; failures are logged + non-rollback
+// (mirrors the post-tx F2 emit pattern in `accept-tier-upgrade.ts`
+// where F4 has already committed by the time we reach this code).
+async function finaliseF2ScheduledPlanChangeForCycle(
+  deps: RenewalsDeps,
+  evt: F4InvoicePaidEvent,
+  cycleId: string,
+): Promise<void> {
+  const memberId = evt.memberId as unknown as string;
+
+  let pending;
+  try {
+    pending = await deps.scheduledPlanChangeRepo.findPendingForCycle(
+      deps.tenant,
+      memberId,
+      cycleId,
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: evt.tenantId,
+        memberId,
+        cycleId,
+        invoiceId: evt.invoiceId,
+        errorId: 'F2.PLAN_CHANGE.FIND_PENDING_FAILED',
+      },
+      '[f8-onPaid] F2 scheduled-plan-change findPendingForCycle failed — F4 already committed; manual replay needed',
+    );
+    return;
+  }
+
+  // Cycles without a pending F2 scheduled-plan-change row (the common
+  // case — same-tier renewal, no plan switch scheduled) are a no-op.
+  // Idempotent on re-fire: already-applied rows return null from
+  // `findPendingForCycle` (terminal-state semantics, partial-unique
+  // guarantee).
+  if (pending === null) return;
+
+  let transitioned;
+  try {
+    transitioned = await deps.scheduledPlanChangeRepo.transitionStatus(
+      deps.tenant,
+      pending.scheduledChangeId,
+      'applied',
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: evt.tenantId,
+        memberId,
+        cycleId,
+        scheduledChangeId: pending.scheduledChangeId,
+        invoiceId: evt.invoiceId,
+        errorId: 'F2.PLAN_CHANGE.TRANSITION_APPLIED_FAILED',
+      },
+      '[f8-onPaid] F2 scheduled-plan-change transitionStatus("applied") failed — F4 already committed; manual replay needed',
+    );
+    return;
+  }
+
+  // Emit `plan_change_applied` on the F2 emitter. Same Result-typed
+  // pattern as accept-tier-upgrade.ts:358-414 — log the typed error
+  // but DO NOT roll back; the F2 row is already in `applied` terminal
+  // state. Operator can backfill the audit row from the structured
+  // log.
+  try {
+    const auditResult = await deps.f2AuditEmitter.record(
+      {
+        tenant: deps.tenant,
+        // F4 onPaid callbacks fire from webhook OR admin-offline-mark
+        // paths; the actor for the F2 cascade is the F4 contract, not
+        // the original admin. F2 `AuditContext.actorUserId` is a
+        // required `string`, so we use the canonical system sentinel
+        // (mirrors F1 audit pattern: `'system:webhook'` /
+        // `'system:cron'` actors).
+        actorUserId: 'system:f8-on-paid-webhook',
+        requestId: `f8-onPaid:${evt.invoiceId}`,
+        sourceIp: null,
+      },
+      {
+        event_type: 'plan_change_applied',
+        payload: {
+          member_id: memberId,
+          scheduled_change_id: pending.scheduledChangeId,
+          effective_at_cycle_id: cycleId,
+          from_plan_id: pending.fromPlanId,
+          to_plan_id: pending.toPlanId,
+          applied_at_invoice_id: evt.invoiceId as unknown as string,
+        },
+      },
+    );
+    if (!auditResult.ok) {
+      logger.error(
+        {
+          event: 'f8_onPaid.f2_audit_emit_failed',
+          audit_event: 'plan_change_applied',
+          err: auditResult.error,
+          tenantId: evt.tenantId,
+          memberId,
+          cycleId,
+          scheduledChangeId: transitioned.scheduledChangeId,
+          invoiceId: evt.invoiceId,
+        },
+        '[f8-onPaid] F2 plan_change_applied audit emit failed — F2+F8+F4 state committed; operator backfill needed',
+      );
+    }
+  } catch (auditErr) {
+    // Defence-in-depth — F2 emitter should not throw (wraps in
+    // try/catch + returns Result.err), but if it does, log critically
+    // so the audit gap can be reconstructed from the structured log.
+    logger.error(
+      {
+        event: 'f8_onPaid.f2_audit_emit_threw',
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        tenantId: evt.tenantId,
+        memberId,
+        cycleId,
+        scheduledChangeId: transitioned.scheduledChangeId,
+        invoiceId: evt.invoiceId,
+        errorId: 'F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW',
+      },
+      '[f8-onPaid] F2 plan_change_applied audit emit threw — manual replay needed',
+    );
+  }
+}
+
+// Re-export for unit testing of the F2 finalisation helper in
+// isolation (Batch 2d test surface — see
+// `tests/unit/renewals/apply-tier-upgrade-on-paid-callback.test.ts`).
+export const _internal = {
+  finaliseF2ScheduledPlanChangeForCycle,
+};
 
 export function makeApplyTierUpgradeOnPaidCallback(
   deps: RenewalsDeps,
@@ -40,6 +185,15 @@ export function makeApplyTierUpgradeOnPaidCallback(
       '@/lib/db'
     );
 
+    // Capture the resolved cycle id for the post-tx F2 finalisation.
+    // The original closure short-circuited on `!cycle`, so we surface
+    // the captured id (or null) upward via the outer scope so the
+    // post-tx Batch 2d path can decide whether to invoke the F2
+    // finaliser. Idempotent + cheap: the cycle row was just touched
+    // in-tx so still in the connection's read cache for any later
+    // read (which the F2 finaliser does NOT need — it only consults
+    // `scheduled_plan_changes`).
+    let resolvedCycleId: string | null = null;
     const apply = async (tx: TenantTx, isFallback: boolean) => {
       // Resolve the cycle linked to this invoice. Non-renewal
       // invoices return null and the callback is a no-op.
@@ -49,6 +203,7 @@ export function makeApplyTierUpgradeOnPaidCallback(
         evt.invoiceId,
       );
       if (!cycle) return;
+      resolvedCycleId = cycle.cycleId;
       try {
         await applyPendingTierUpgradeInTx(deps, tx, {
           tenantId: evt.tenantId,
@@ -144,6 +299,22 @@ export function makeApplyTierUpgradeOnPaidCallback(
         '[f8-onPaid] apply-pending received non-TenantTx — falling back to runInTenant; F4 callback contract drift suspected',
       );
       await runInTenantFn(deps.tenant, (tx) => apply(tx, true));
+    }
+
+    // Post-ship R6 Batch 2d — POST-TX phase. The F4 + F8 in-tx state
+    // is committed at this point (either via the inner `apply()`
+    // closure landing inside F4's tx, or via the runInTenant fallback
+    // when F4 dropped the tx handle). Flip F2's `scheduled_plan_
+    // changes` row to `applied` + emit `plan_change_applied`. Runs
+    // ONLY when the in-tx apply resolved a cycle for the invoice —
+    // non-renewal invoices skip the entire callback (cycle === null
+    // short-circuit above).
+    if (resolvedCycleId !== null) {
+      await finaliseF2ScheduledPlanChangeForCycle(
+        deps,
+        evt,
+        resolvedCycleId,
+      );
     }
   };
 }

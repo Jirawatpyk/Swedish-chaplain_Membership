@@ -56,13 +56,16 @@ export const F2_AUDIT_EVENT_TYPES = [
   // no API caller yet (future admin "cancel scheduled change" surface
   // or F8 auto-supersede flow wires the route at composition root).
   'plan_change_cancelled',
-  // TODO(renewal-applier): `plan_change_applied` emitter wires in
-  // Batch 2d at the F8 invoice-paid callback (renewal-applier path)
-  // when a scheduled change actually applies at the next cycle.
-  // Payload schema + severity map + adapter summarizer + F1 pgEnum
-  // value are already in place; only the F8 post-tx emit call is
-  // pending. Tracked as F8 post-ship maintenance — NOT the F9 Admin
-  // Dashboard feature per docs/phases-plan.md.
+  // F2 R6 Batch 2d (D7) — `plan_change_applied` emitter is now wired
+  // at the F8 invoice-paid callback (renewal-applier path) in
+  // `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-
+  // paid-callback.ts` — POST-tx, after F4+F8 in-tx state commits. The
+  // F2 `scheduled_plan_changes` row is flipped from `pending` →
+  // `applied` (the Phase 5+ deferred state-machine apply that
+  // `apply-pending-tier-upgrade.ts` lines 13-25 explicitly called
+  // out), then the audit row lands. Non-rollback on F2-emit failure:
+  // F4+F8 state is committed by then; operator backfills from the
+  // structured log.
   'plan_change_applied',
 ] as const;
 

@@ -127,6 +127,29 @@ vi.mock(
   }),
 );
 
+// Post-ship R6 Batch 2d — F8 onPaid callback now wires a POST-tx F2
+// finalisation step (flips `scheduled_plan_changes` pending → applied
+// and emits `plan_change_applied`). Stub the F2 server sub-barrel so
+// `makeRenewalsDeps` composes without touching live DB. The default
+// stub makes the F2 finaliser a no-op (findPendingForCycle returns
+// null = same-tier renewal, the common case + the test scenario here
+// since the existing assertions don't care about F2 state).
+vi.mock('@/modules/plans/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/modules/plans/server')>();
+  return {
+    ...actual,
+    drizzleScheduledPlanChangeRepo: {
+      supersedeAndInsertPendingAtomically: vi.fn(),
+      findPendingForCycle: vi.fn(async () => null),
+      transitionStatus: vi.fn(),
+      listForMember: vi.fn(),
+    },
+    planAuditAdapter: {
+      record: vi.fn(async () => ({ ok: true, value: undefined })),
+    },
+  };
+});
+
 // Stub the cycle-complete use-case at the dynamic-import path. The
 // f8OnPaidCallbacks dynamic-imports via `'../application/use-cases/...'`
 // (relative) but the SAME module is reachable via the alias path —
