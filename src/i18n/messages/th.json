@@ -1741,7 +1741,6 @@
           "failed": "ล้มเหลว",
           "cancelled": "ยกเลิก"
         },
-        "empty": "E-Blast นี้ยังไม่ได้ถูกแบ่งออกเป็นกลุ่ม",
         "notSplit": "E-Blast นี้ส่งเป็น audience เดียวเนื่องจากผู้รับน้อยพอ"
       },
       "retryDialog": {

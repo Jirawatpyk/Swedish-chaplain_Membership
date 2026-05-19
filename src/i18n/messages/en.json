@@ -1741,7 +1741,6 @@
           "failed": "Failed",
           "cancelled": "Cancelled"
         },
-        "empty": "This broadcast has not been split into batches yet.",
         "notSplit": "This broadcast was small enough to dispatch as a single audience and was not split."
       },
       "retryDialog": {

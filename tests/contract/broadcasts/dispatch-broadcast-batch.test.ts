@@ -271,4 +271,70 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     // production reality).
     expect(result.ok).toBe(true);
   });
+
+  // Phase 3F.11.4 (Round 2 test gap closures) — 3 error branches that
+  // had zero coverage prior to this commit. Per Constitution Principle
+  // II 80% branch threshold on Application use cases, these branches
+  // SHOULD have been tested at T045 ship.
+  it('manifest not in findByBroadcast list → BATCH_NOT_FOUND', async () => {
+    const { deps, gatewayCalls } = makeStubDeps({});
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-DOES-NOT-EXIST',
+      allRecipients,
+      broadcastContent,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe('BATCH_NOT_FOUND');
+    // Pre-condition fail → no gateway calls
+    expect(gatewayCalls).toEqual([]);
+  });
+
+  it('manifest.status !== pending → INVALID_STATE_TRANSITION', async () => {
+    const sendingManifest = makeManifest({ status: 'sending' });
+    const { deps, gatewayCalls } = makeStubDeps({ manifest: sendingManifest });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe('INVALID_STATE_TRANSITION');
+    expect((result.error as { currentStatus: string }).currentStatus).toBe('sending');
+    expect((result.error as { expected: string }).expected).toBe('pending');
+    expect(gatewayCalls).toEqual([]);
+  });
+
+  it('advisoryLock.acquire returns {acquired: false} → ALREADY_DISPATCHING_IN_PROGRESS', async () => {
+    const baseDeps = makeStubDeps({});
+    // Override advisoryLock.acquire to reject acquisition
+    const depsWithRejectedLock = {
+      ...(baseDeps.deps as Record<string, unknown>),
+      advisoryLock: {
+        async acquire() {
+          return { acquired: false as const };
+        },
+      },
+    };
+
+    const result = await dispatchBroadcastBatch(depsWithRejectedLock as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe('ALREADY_DISPATCHING_IN_PROGRESS');
+    // Lock not acquired → no gateway calls
+    expect(baseDeps.gatewayCalls).toEqual([]);
+  });
 });

@@ -74,6 +74,14 @@ const allRecipients = Array.from({ length: 30 }, (_, i) => ({
 function makeStubDeps(opts: {
   manifests: ReadonlyArray<BatchManifest>;
   failOnAudienceNames?: ReadonlySet<string>;
+  /**
+   * Phase 3F.11.4 (Round 2 test gap) — staggered-delay support. When
+   * provided, `createAudience` delays its resolution by the lookup
+   * (audienceName → ms delay). Used by the staggered-sort test to
+   * force completion-order to invert vs enqueue-order, which exercises
+   * `results.sort((a, b) => a.batchIndex - b.batchIndex)` non-trivially.
+   */
+  delayByAudienceName?: ReadonlyMap<string, number>;
 }): unknown {
   return {
     batchManifests: {
@@ -92,6 +100,10 @@ function makeStubDeps(opts: {
       async createAudience(audienceName: string) {
         if (opts.failOnAudienceNames?.has(audienceName)) {
           throw new Error(`createAudience-boom-${audienceName}`);
+        }
+        const delay = opts.delayByAudienceName?.get(audienceName);
+        if (delay !== undefined && delay > 0) {
+          await new Promise((res) => setTimeout(res, delay));
         }
         return { audienceId: `aud-${audienceName}` };
       },
@@ -265,5 +277,44 @@ describe('dispatchAllPendingBatches contract (Phase 3F.10)', () => {
     // Even though concurrencyCap=5 means all 5 workers might finish
     // out of order under load, the output is sorted by batchIndex.
     expect(result.results.map((r) => r.batchIndex)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  // Phase 3F.11.4 (Round 2 test gap) — Inject batches in REVERSED
+  // batchIndex order to verify the explicit `results.sort(...)` at
+  // batch-dispatcher.ts:160 is doing real work. The previous
+  // "results sorted by batchIndex" test passes trivially because
+  // pendingBatches were already in batchIndex order — a regression
+  // deleting the sort would still pass that test. This one feeds in
+  // [4,3,2,1,0] order; only an explicit sort produces [0,1,2,3,4].
+  //
+  // NOTE: setTimeout-based staggered completion was attempted to force
+  // out-of-order microtask resolution but timed out in vitest's worker
+  // runner. The reversed-input approach is the deterministic proxy.
+  it('reversed-input pendingBatches → results sorted ascending by batchIndex', async () => {
+    const manifestsAscending = Array.from({ length: 5 }, (_, i) =>
+      makeManifest({
+        id: `batch-${i}`,
+        batchIndex: i,
+        recipientRangeStart: i * 3,
+        recipientRangeEnd: i * 3 + 2,
+        recipientCount: 3,
+      }),
+    );
+    // Reverse the input order — pendingBatches=[4,3,2,1,0]
+    const manifestsReversed = [...manifestsAscending].reverse();
+    const deps = makeStubDeps({ manifests: manifestsAscending });
+
+    const result = await dispatchAllPendingBatches(deps as never, {
+      tenantId: tenant,
+      broadcastContent,
+      allRecipients: allRecipients.slice(0, 15),
+      pendingBatches: manifestsReversed,
+      concurrencyCap: 5,
+    });
+
+    // Despite reversed input, output is ascending [0,1,2,3,4] because
+    // of the explicit sort. Without the sort, this would be reversed.
+    expect(result.results.map((r) => r.batchIndex)).toEqual([0, 1, 2, 3, 4]);
+    expect(result.succeeded).toBe(5);
   });
 });

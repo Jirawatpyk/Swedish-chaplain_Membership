@@ -225,7 +225,10 @@ export function BatchBreakdown({
           className={cn(
             'flex cursor-pointer select-none items-center justify-between gap-4 p-4',
             'hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2',
-            'focus-visible:ring-ring',
+            // Phase 3F.11.4 (Round 2 LOW polish) — add ring-offset-2
+            // so the focus ring isn't flush against the summary border;
+            // matters on dark backgrounds and high-contrast themes.
+            'focus-visible:ring-ring focus-visible:ring-offset-2',
           )}
         >
           <div className="space-y-1">

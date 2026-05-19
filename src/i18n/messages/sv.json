@@ -1741,7 +1741,6 @@
           "failed": "Misslyckad",
           "cancelled": "Avbruten"
         },
-        "empty": "Detta utskick har inte delats i batcher ännu.",
         "notSplit": "Detta utskick var litet nog att skickas som en enskild audience och delades inte."
       },
       "retryDialog": {
