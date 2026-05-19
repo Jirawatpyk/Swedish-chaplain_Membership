@@ -183,8 +183,8 @@ export async function cancelScheduledPlanChange(
     });
   }
 
-  // Post-tx audit emit — mirror `scheduleNextRenewalPlanChange` (Batch
-  // 1c) + `accept-tier-upgrade` (Batch 1c F8 post-tx pattern). Runs
+  // Post-tx audit emit — mirror the same post-tx pattern used by
+  // `scheduleNextRenewalPlanChange` + `accept-tier-upgrade`. Runs
   // OUTSIDE the repo tx; on failure, return `audit_failed` typed
   // error. The row IS already cancelled at this point — the audit
   // failure is surfaced to the caller for logging + monitoring, but

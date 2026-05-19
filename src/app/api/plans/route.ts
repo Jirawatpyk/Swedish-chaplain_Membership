@@ -198,7 +198,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 409 },
     );
   }
-  // first — reserve the slot so concurrent workers conflict.
+  // Reserve the idempotency slot BEFORE create runs. Concurrent
+  // workers with the same Idempotency-Key see the reservation and
+  // back off with 409 idempotency_conflict instead of double-creating.
   // 503 on Redis outage instead of silently continuing (would let
   // retries create duplicate plans).
   const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);

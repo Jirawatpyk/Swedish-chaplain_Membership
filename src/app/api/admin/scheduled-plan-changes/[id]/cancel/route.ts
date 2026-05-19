@@ -32,8 +32,8 @@
  *   - idempotency_conflict              → 409
  *   - idempotency_reservation_failed    → 503 + Retry-After: 5
  *
- * No admin UI surface in this batch — a future Round-4+ feature wires
- * a "Cancel pending change" button in the member-detail timeline.
+ * No admin UI surface yet — a future feature will wire a "Cancel
+ * pending change" button in the member-detail timeline.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';

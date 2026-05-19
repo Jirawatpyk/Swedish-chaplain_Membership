@@ -301,12 +301,13 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
  * validates HTTP-boundary input; `F2AuditEvent` is the compile-time
  * contract that propagates through use-cases, ports, and adapters.
  *
- * **Drift defence**: the `_zodInferMatchesHandWritten` type-level
- * assertion below uses mutual structural assignability to fail
- * compilation if the hand-written union diverges from
- * `z.infer<typeof auditPayloadSchema>`. Any future payload-schema
- * change must update BOTH the zod schema (above) AND the hand-written
- * type (below) — TypeScript catches the drift instantly.
+ * **Drift defence**: the `_AssertHandWrittenMatchesZodInfer` type
+ * + `_handWrittenMatchesZodInfer` const witness below use mutual
+ * structural assignability to fail compilation if the hand-written
+ * union diverges from `z.infer<typeof auditPayloadSchema>`. Any
+ * future payload-schema change must update BOTH the zod schema
+ * (above) AND the hand-written type (below) — TypeScript catches
+ * the drift instantly.
  */
 export type F2AuditEvent =
   | {

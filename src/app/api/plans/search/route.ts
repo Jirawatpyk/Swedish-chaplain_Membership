@@ -153,11 +153,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             ),
           );
           // Aggregate per-invoice typed errors into a
-          // `Map<errorKind, count>` (capped at 5 distinct shapes) so
-          // a wide F5 outage spanning multiple error kinds gets
-          // attributed correctly to F5 dashboards. Previously only
-          // the first error survived; if 10 invoices failed across
-          // 3 distinct error shapes, operators saw only one.
+          // `Map<errorKind, count>` capped at 5 distinct shapes —
+          // best-effort attribution that covers the wide-outage case
+          // where multiple error kinds fire at once. Distinct-kind
+          // #6 onwards is dropped from the Map but counted in
+          // `errorKindsTruncatedAt` so totals reconcile and operators
+          // can spot when the cap was reached. Without this aggregator
+          // only the first error survived; if 10 invoices failed
+          // across 3 distinct error shapes, operators saw only one.
           const failedInvoiceIds: string[] = [];
           const errorKindCounts = new Map<string, number>();
           const ERROR_KIND_CAP = 5;
