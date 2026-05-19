@@ -156,13 +156,16 @@ export interface CancelScheduledPlanChangeInput {
   readonly memberId: string;
   /** The renewal cycle this change targets — required for the audit payload. */
   readonly effectiveAtCycleId: string;
-  readonly cancelledByUserId: string;
   /**
    * R2 Batch 3f (R2-S10) — explicit `string | null` (not `?: string`)
    * to avoid the `exactOptionalPropertyTypes` spread footgun + align
    * with the audit payload shape (`reason: string | null`). Callers
-   * pass `null` when no reason; the legacy `undefined` works too via
-   * the use-case's `input.reason ?? null` normalisation.
+   * pass `null` when no reason.
+   *
+   * R3 Batch 4d (R3-S1) — `cancelledByUserId` removed: it always
+   * equalled `deps.actorUserId` (route filled both from the auth ctx);
+   * audit payload doesn't include it. Single source of truth now via
+   * the use-case's `auditCtx.actorUserId`.
    */
   readonly reason: string | null;
 }
@@ -182,9 +185,16 @@ export type CancelScheduledPlanChangeError =
       // vs `…_PERSIST_FAILED`. Without this, SRE cannot tell whether
       // the audit row was rejected by zod (deploy-skew) or by the DB
       // (column drift / pgEnum drift / RLS) without raw stdout.
+      //
+      // R3 Batch 4d (R3-S4) — carry the transitioned-row context so
+      // the route can return 200 with the cancelled-row body + the
+      // `X-Audit-Backfill-Required: 1` diagnostic header. The row IS
+      // already cancelled at this point; surfacing 500 would mis-lead
+      // the UI into retrying a successful mutation.
       readonly code: 'audit_failed';
       readonly auditErrorType: 'invalid_payload' | 'persist_failed';
       readonly message: string;
+      readonly transitioned: ScheduledPlanChange;
     }
   | { readonly code: 'server_error'; readonly message: string };
 

@@ -785,10 +785,16 @@ export async function acceptTierUpgrade(
           '[accept-tier-upgrade] unhandled-arm audit emit failed — counter bumped',
         );
       }
+      // R3 Batch 4d (R3-S5) — return typed server_error instead of
+      // throwing into the outer catch. Preserves the compile-time
+      // exhaustiveness pin (`_exhaustive: never`) AND surfaces the
+      // unhandled-arm kind operationally so alert routing can match
+      // on `message: 'deploy-skew:unhandled-gateway-arm:*'`.
       const _exhaustive: never = gatewayResult;
-      throw new Error(
-        `[accept-tier-upgrade] unhandled GatewayResult kind '${(_exhaustive as { kind?: string }).kind ?? 'undefined'}' — possible new arm without audit emit wiring`,
-      );
+      return err({
+        kind: 'server_error',
+        message: `deploy-skew:unhandled-gateway-arm:${(_exhaustive as { kind?: string }).kind ?? 'undefined'}`,
+      });
     }
 
     return ok({

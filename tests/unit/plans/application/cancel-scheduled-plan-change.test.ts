@@ -56,7 +56,7 @@ const baseInput: CancelScheduledPlanChangeInput = {
   scheduledChangeId: SCHEDULED_ID,
   memberId: MEMBER_ID,
   effectiveAtCycleId: CYCLE_ID,
-  cancelledByUserId: 'admin-user-uuid',
+  // R3 Batch 4d (R3-S1) — `cancelledByUserId` removed (always equalled actorUserId).
   reason: null,
 };
 
@@ -209,7 +209,7 @@ describe('cancelScheduledPlanChange — invalid_input (R2 Batch 3a zod-validated
     ['scheduledChangeId', { scheduledChangeId: '' }],
     ['memberId', { memberId: '' }],
     ['effectiveAtCycleId', { effectiveAtCycleId: '' }],
-    ['cancelledByUserId', { cancelledByUserId: '' }],
+    // R3 Batch 4d (R3-S1) — `cancelledByUserId` removed from schema.
   ])('rejects empty %s with invalid_input', async (field, overrides) => {
     const deps = makeDeps();
     const result = await cancelScheduledPlanChange(deps, {
@@ -265,7 +265,7 @@ describe('cancelScheduledPlanChange — invalid_input (R2 Batch 3a zod-validated
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('invalid_input');
     // zod surfaces the FIRST failing field (schema order:
-    // scheduledChangeId → memberId → effectiveAtCycleId → cancelledByUserId)
+    // scheduledChangeId → memberId → effectiveAtCycleId)
     if (result.error.code !== 'invalid_input') throw new Error('unreachable');
     expect(result.error.field).toBe('scheduledChangeId');
   });
@@ -322,28 +322,35 @@ describe('cancelScheduledPlanChange — not_found', () => {
 describe('cancelScheduledPlanChange — already_terminal (defence-in-depth)', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('refuses to transition if the repo returns a terminal row', async () => {
-    // R2 Batch 3g — `findById` can return terminal rows (unlike the
-    // previous `findPendingForCycle` which filtered by status). The
-    // use-case explicitly checks `isTerminalStatus` to surface
-    // `already_terminal` as a distinct error code instead of silently
-    // masking as `not_found`.
-    const deps = makeDeps({
-      findByIdResult: makePending({
-        status: 'applied',
-        appliedAt: '2026-05-01T00:00:00Z',
-      }),
-    });
-    const result = await cancelScheduledPlanChange(deps, baseInput);
+  // R2 Batch 3g + R3 Batch 4d (R3-S10) — `findById` can return
+  // terminal rows. The use-case explicitly checks `isTerminalStatus`
+  // to surface `already_terminal` as a distinct error code. Parametric
+  // across all 3 terminal statuses.
+  it.each([
+    ['applied', { appliedAt: '2026-05-19T00:00:00Z' }],
+    ['superseded', { supersededAt: '2026-05-19T00:00:00Z' }],
+    ['cancelled', { cancelledAt: '2026-05-19T00:00:00Z' }],
+  ] as const)(
+    'refuses to transition if the repo returns a terminal row (status=%s)',
+    async (status, timestamps) => {
+      const deps = makeDeps({
+        findByIdResult: makePending({
+          status,
+          ...timestamps,
+        }),
+      });
+      const result = await cancelScheduledPlanChange(deps, baseInput);
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error('unreachable');
-    expect(result.error.code).toBe('already_terminal');
-    if (result.error.code !== 'already_terminal') throw new Error('unreachable');
-    expect(result.error.status).toBe('applied');
-    expect(deps.repo.transitionStatus).not.toHaveBeenCalled();
-    expect(deps.audit.record).not.toHaveBeenCalled();
-  });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('unreachable');
+      expect(result.error.code).toBe('already_terminal');
+      if (result.error.code !== 'already_terminal')
+        throw new Error('unreachable');
+      expect(result.error.status).toBe(status);
+      expect(deps.repo.transitionStatus).not.toHaveBeenCalled();
+      expect(deps.audit.record).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('cancelScheduledPlanChange — server_error paths', () => {
@@ -438,6 +445,12 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     // R3 Batch 4b (R3-I5) — discriminator preserved for alert routing.
     expect(result.error.auditErrorType).toBe('persist_failed');
     expect(result.error.message).toBe('DB connection refused');
+    // R3 Batch 4d (R3-S4) — transitioned row preserved so the route
+    // can return 200 + diagnostic header (the row IS already cancelled;
+    // a 500 would mis-lead the UI into retrying a successful mutation).
+    expect(result.error.transitioned).toBeDefined();
+    expect(result.error.transitioned.status).toBe('cancelled');
+    expect(result.error.transitioned.scheduledChangeId).toBe(SCHEDULED_ID);
     // Row IS already cancelled at this point — audit failure is NOT
     // a rollback trigger, but the typed error surfaces to the caller
     // for monitoring/logging.
@@ -459,5 +472,8 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     // R3 Batch 4b (R3-I5) — discriminator preserved.
     expect(result.error.auditErrorType).toBe('invalid_payload');
     expect(result.error.message).toContain('payload.member_id');
+    // R3 Batch 4d (R3-S4) — transitioned row preserved.
+    expect(result.error.transitioned).toBeDefined();
+    expect(result.error.transitioned.status).toBe('cancelled');
   });
 });

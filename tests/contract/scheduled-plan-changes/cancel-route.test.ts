@@ -5,12 +5,15 @@
  * Covers the full error mapping from `cancelScheduledPlanChange`
  * Result error union to HTTP status codes:
  *   - 200 happy path (cancelled row returned)
+ *   - 200 audit_failed — R3 Batch 4d (R3-S4): row IS cancelled, audit
+ *     emit failed; return 200 with body + `X-Audit-Backfill-Required: 1`
+ *     header (NOT 500 — mis-leads UI into retry).
  *   - 400 invalid_path / invalid_body / invalid_input
  *   - 401 unauthenticated
  *   - 403 manager attempts (admin-only)
  *   - 404 not_found
  *   - 409 already_terminal
- *   - 500 audit_failed / server_error
+ *   - 500 server_error
  *   - 503 idempotency_reservation_failed (Upstash outage)
  *
  * Mocks the auth context, idempotency, use-case, and `@/modules/plans/server`
@@ -221,13 +224,35 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(body.error.details.status).toBe('applied');
   });
 
-  it('500 audit_failed (auditErrorType=persist_failed)', async () => {
+  // R3 Batch 4d (R3-S4) — audit_failed now returns 200 + diagnostic
+  // header because the row IS cancelled at this point. The previous
+  // 500 mis-led the UI into retrying a successful mutation. SRE alert
+  // routing picks up the F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED
+  // errorId on the logger.error emit.
+  const cancelledRow = {
+    tenantId: 'test-swecham',
+    scheduledChangeId: SCHEDULED_ID,
+    memberId: MEMBER_ID,
+    effectiveAtCycleId: CYCLE_ID,
+    fromPlanId: 'corporate-regular',
+    toPlanId: 'corporate-premier',
+    scheduledByUserId: 'other-admin',
+    reason: null,
+    status: 'cancelled' as const,
+    scheduledAt: '2026-05-01T00:00:00Z',
+    appliedAt: null,
+    supersededAt: null,
+    cancelledAt: '2026-05-19T10:00:00Z',
+  };
+
+  it('200 audit_failed (auditErrorType=persist_failed) + X-Audit-Backfill-Required header', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'audit_failed',
         auditErrorType: 'persist_failed' as const,
         message: 'DB connection refused',
+        transitioned: cancelledRow,
       }),
     );
     const { POST } = await import(
@@ -236,20 +261,27 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     const res = await POST(makeRequest(validBody), {
       params: params(SCHEDULED_ID),
     });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Audit-Backfill-Required')).toBe('1');
+    expect(res.headers.get('X-Audit-Error-Type')).toBe('persist_failed');
     const body = await res.json();
-    expect(body.error.code).toBe('audit_failed');
+    expect(body).toEqual({
+      scheduled_change_id: SCHEDULED_ID,
+      status: 'cancelled',
+      cancelled_at: '2026-05-19T10:00:00Z',
+    });
   });
 
   // R3 Batch 4b (R3-I5) — invalid_payload discriminator maps to a
-  // distinct errorId in the log.
-  it('500 audit_failed (auditErrorType=invalid_payload)', async () => {
+  // distinct errorId in the log + distinct X-Audit-Error-Type header.
+  it('200 audit_failed (auditErrorType=invalid_payload) + X-Audit-Backfill-Required header', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'audit_failed',
         auditErrorType: 'invalid_payload' as const,
         message: 'payload.member_id: invalid',
+        transitioned: cancelledRow,
       }),
     );
     const { POST } = await import(
@@ -258,9 +290,15 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     const res = await POST(makeRequest(validBody), {
       params: params(SCHEDULED_ID),
     });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Audit-Backfill-Required')).toBe('1');
+    expect(res.headers.get('X-Audit-Error-Type')).toBe('invalid_payload');
     const body = await res.json();
-    expect(body.error.code).toBe('audit_failed');
+    expect(body).toEqual({
+      scheduled_change_id: SCHEDULED_ID,
+      status: 'cancelled',
+      cancelled_at: '2026-05-19T10:00:00Z',
+    });
   });
 
   it('500 server_error', async () => {

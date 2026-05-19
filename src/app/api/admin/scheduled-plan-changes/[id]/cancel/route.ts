@@ -10,7 +10,9 @@
  *   - Admin RBAC (`requireAdminContext('plan', 'write')`).
  *   - `Idempotency-Key` header required (mirrors F2 mutation routes).
  *   - Body: `{ memberId: uuid, effectiveAtCycleId: uuid, reason?: string|null }`
- *     (zod-validated). `cancelledByUserId` is filled from the auth ctx.
+ *     (zod-validated). The actor identity comes from the auth ctx via
+ *     the use-case's `deps.actorUserId` — input no longer accepts a
+ *     separate `cancelledByUserId` (R3 Batch 4d).
  *   - Path param `id` (scheduledChangeId) is the primary-key lookup
  *     handled by the use-case via the new `findById` repo method.
  *
@@ -18,7 +20,16 @@
  *   - invalid_input (zod path or body) → 400
  *   - not_found                         → 404
  *   - already_terminal                  → 409
- *   - audit_failed                      → 500
+ *   - audit_failed                      → 200 + X-Audit-Backfill-Required: 1
+ *                                        (R3 Batch 4d R3-S4 — the row IS
+ *                                        already cancelled; surfacing
+ *                                        500 mis-leads the UI into a
+ *                                        retry on a successful mutation.
+ *                                        Mirrors F5 `payment_environment_mismatch`
+ *                                        UX pattern: 200 body + diagnostic
+ *                                        header. Alert routing picks up
+ *                                        the F2.PLAN_CHANGE.CANCEL_AUDIT_*
+ *                                        errorId on the logger.error emit.)
  *   - server_error                      → 500
  *   - idempotency_conflict              → 409
  *   - idempotency_reservation_failed    → 503 + Retry-After: 5
@@ -132,7 +143,6 @@ export async function POST(
       scheduledChangeId: parsedPath.data.id,
       memberId: parsedBody.data.memberId,
       effectiveAtCycleId: parsedBody.data.effectiveAtCycleId,
-      cancelledByUserId: ctx.current.user.id,
       reason: parsedBody.data.reason ?? null,
     },
   );
@@ -182,7 +192,7 @@ export async function POST(
         },
         { status: 409 },
       );
-    case 'audit_failed':
+    case 'audit_failed': {
       // R3 Batch 4b (R3-I5) — attach errorId mapped from the
       // preserved auditErrorType discriminator. Alert routing can
       // distinguish zod-rejection (deploy-skew) from DB-rejection
@@ -194,19 +204,30 @@ export async function POST(
               ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
               : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
           requestId: ctx.requestId,
-          err: result.error,
+          err: { ...result.error, transitioned: undefined },
         },
         'cancel-scheduled-plan-change: audit write failed',
       );
-      return NextResponse.json(
-        {
-          error: {
-            code: 'audit_failed',
-            message: 'Audit trail write failed.',
-          },
-        },
-        { status: 500 },
-      );
+      // R3 Batch 4d (R3-S4) — the row IS cancelled (transitionStatus
+      // landed). Return 200 with the cancelled-row body + diagnostic
+      // header so the UI does not retry a successful mutation. SRE
+      // backfills the audit row out-of-band by alerting on the errorId
+      // above. Mirrors F5 `payment_environment_mismatch` UX pattern.
+      const body = {
+        scheduled_change_id: result.error.transitioned.scheduledChangeId,
+        status: result.error.transitioned.status,
+        cancelled_at: result.error.transitioned.cancelledAt,
+      };
+      const headers = new Headers({
+        'X-Audit-Backfill-Required': '1',
+        'X-Audit-Error-Type': result.error.auditErrorType,
+      });
+      await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
+        status: 200,
+        body,
+      });
+      return NextResponse.json(body, { status: 200, headers });
+    }
     case 'server_error':
     default:
       logger.error(

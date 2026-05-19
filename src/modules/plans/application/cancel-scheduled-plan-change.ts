@@ -44,7 +44,8 @@ const cancelScheduledPlanChangeInputSchema = z.object({
   scheduledChangeId: z.string().uuid(),
   memberId: z.string().uuid(),
   effectiveAtCycleId: z.string().uuid(),
-  cancelledByUserId: z.string().min(1),
+  // R3 Batch 4d (R3-S1) — `cancelledByUserId` dropped (was always
+  // equal to `deps.actorUserId`).
   reason: z.string().max(500).nullable().optional(),
 });
 
@@ -203,6 +204,11 @@ export async function cancelScheduledPlanChange(
     // R3 Batch 4b (R3-I5) — preserve discriminator so the route can
     // attach `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_*'` with the
     // specific failure mode visible to alert routing.
+    //
+    // R3 Batch 4d (R3-S4) — carry `transitioned` so the route can
+    // return 200 + diagnostic header instead of a misleading 500.
+    // The row IS already cancelled; the audit failure is a separate,
+    // async-recoverable observability concern.
     return err({
       code: 'audit_failed',
       auditErrorType: auditResult.error.type,
@@ -210,6 +216,7 @@ export async function cancelScheduledPlanChange(
         auditResult.error.type === 'invalid_payload'
           ? auditResult.error.issues.join('; ')
           : auditResult.error.message,
+      transitioned,
     });
   }
 

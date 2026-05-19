@@ -117,5 +117,18 @@ export function asBenefitMatrix(
       'asBenefitMatrix: partnership plan must have a non-null `partnership` block',
     );
   }
+  // R3 Batch 4d (R3-S8) — runtime-assert the narrow union when
+  // planCategory='partnership'. Zod enforces this at write boundary;
+  // DB JSONB return is `number` which the structural type widens.
+  // A migration-introduced typo (e.g., 1.25) would otherwise slip
+  // through hydration; the smart constructor now catches it.
+  if (planCategory === 'partnership' && input.partnership !== null) {
+    const v = input.partnership.video_duration_minutes;
+    if (v !== 1.0 && v !== 1.5) {
+      throw new InvalidBenefitMatrixError(
+        `asBenefitMatrix: partnership.video_duration_minutes must be 1.0 or 1.5, got ${v}`,
+      );
+    }
+  }
   return input;
 }

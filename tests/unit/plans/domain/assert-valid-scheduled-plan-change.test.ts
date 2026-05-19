@@ -123,6 +123,66 @@ describe('assertValidScheduledPlanChange — negative (illegal status↔timestam
     ).toThrow(InvalidScheduledPlanChangeError);
   });
 
+  // R3 Batch 4d (R3-S11) — extra illegal-combo grid coverage.
+  it.each([
+    // pending: every terminal timestamp MUST be null
+    [
+      'pending+supersededAt-set',
+      { status: 'pending' as const, supersededAt: '2026-05-19T00:00:00Z' },
+    ],
+    [
+      'pending+cancelledAt-set',
+      { status: 'pending' as const, cancelledAt: '2026-05-19T00:00:00Z' },
+    ],
+    // applied: only appliedAt should be set
+    [
+      'applied+cancelledAt-set',
+      {
+        status: 'applied' as const,
+        appliedAt: '2026-05-19T00:00:00Z',
+        cancelledAt: '2026-05-19T00:00:00Z',
+      },
+    ],
+    // superseded: only supersededAt should be set
+    [
+      'superseded+appliedAt-set',
+      {
+        status: 'superseded' as const,
+        supersededAt: '2026-05-19T00:00:00Z',
+        appliedAt: '2026-05-19T00:00:00Z',
+      },
+    ],
+    [
+      'superseded+cancelledAt-set',
+      {
+        status: 'superseded' as const,
+        supersededAt: '2026-05-19T00:00:00Z',
+        cancelledAt: '2026-05-19T00:00:00Z',
+      },
+    ],
+    // cancelled: only cancelledAt should be set
+    [
+      'cancelled+appliedAt-set',
+      {
+        status: 'cancelled' as const,
+        cancelledAt: '2026-05-19T00:00:00Z',
+        appliedAt: '2026-05-19T00:00:00Z',
+      },
+    ],
+    [
+      'cancelled+supersededAt-set',
+      {
+        status: 'cancelled' as const,
+        cancelledAt: '2026-05-19T00:00:00Z',
+        supersededAt: '2026-05-19T00:00:00Z',
+      },
+    ],
+  ])('throws on illegal combo: %s', (_label, overrides) => {
+    expect(() =>
+      assertValidScheduledPlanChange({ ...baseRow(), ...overrides }),
+    ).toThrow(InvalidScheduledPlanChangeError);
+  });
+
   it('error preserves Domain detail (status + scheduledChangeId in message)', () => {
     try {
       assertValidScheduledPlanChange({

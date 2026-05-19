@@ -451,6 +451,13 @@ export async function stageB_Plans(
     return { inserted: 0, skipped: true };
   }
 
+  // R3 Batch 4d (R3-S3) — single correlation id for ALL 9 plan_created
+  // audit emits so cross-event log queries can stitch the seed run
+  // together as one unit-of-work. Without this, each `randomUUID()` per
+  // emit produced 9 unrelated requestIds and forensics had to grep by
+  // payload.plan_id (lossy when seed runs interleave).
+  const runUUID = randomUUID();
+
   // Build the draft list once, insert one-by-one through the repo.
   // Could batch but one-per-call keeps the audit-event writer happy
   // and the loop is 9 iterations total.
@@ -530,39 +537,53 @@ export async function stageB_Plans(
     } as PlanDraftInput);
   }
 
-  for (const draft of drafts) {
-    const inserted = await planRepo.insert(ctx, draft);
-    // R2 Batch 3f (R2-S4) — capture audit Result. F2 invariant
-    // (`recordAuditEvent`) requires audit success to be paired with
-    // domain mutation; seed scripts MUST honour the same rule or risk
-    // partially-audited seed data that breaks downstream invariants.
-    const auditResult = await planAuditAdapter.record(
-      {
-        tenant: ctx,
-        actorUserId: ownerUserId,
-        requestId: `seed-${randomUUID()}`,
-        sourceIp: null,
-      },
-      {
-        event_type: 'plan_created',
-        payload: {
-          plan_id: inserted.plan_id,
-          plan_year: inserted.plan_year,
-          plan_name_en: inserted.plan_name.en,
-          annual_fee_minor_units: inserted.annual_fee_minor_units,
-          category: inserted.plan_category,
-          member_type_scope: inserted.member_type_scope,
+  // R3 Batch 4d (R3-S3) — wrap the 9 insert+audit pairs in a single
+  // `runInTenant` scope. Drizzle's tx callback semantics turn nested
+  // calls to `db.transaction(...)` inside planRepo.insert + audit
+  // adapter into SAVEPOINTs, so a failure on draft N rolls back drafts
+  // 1..N-1 cleanly + leaves no partial-audit-state behind. The previous
+  // implementation processed each draft in its own implicit tx, so a
+  // crash on draft 7 left 6 plans + 6 audit rows orphaned (the
+  // idempotency guard `if (existingCount > 0) return skipped:true`
+  // then prevented the next run from completing the catalogue).
+  await runInTenant(ctx, async () => {
+    for (const draft of drafts) {
+      const inserted = await planRepo.insert(ctx, draft);
+      // R2 Batch 3f (R2-S4) — capture audit Result. F2 invariant
+      // (`recordAuditEvent`) requires audit success to be paired with
+      // domain mutation; seed scripts MUST honour the same rule or risk
+      // partially-audited seed data that breaks downstream invariants.
+      const auditResult = await planAuditAdapter.record(
+        {
+          tenant: ctx,
+          actorUserId: ownerUserId,
+          // R3 Batch 4d (R3-S3) — single correlation id (see runUUID
+          // declaration above). The `seed-stageB-` prefix distinguishes
+          // from ad-hoc `seed-<random>` emits in other scripts.
+          requestId: `seed-stageB-${runUUID}`,
+          sourceIp: null,
         },
-      },
-    );
-    if (!auditResult.ok) {
-      console.error(
-        `[seed] plan_created audit failed for ${inserted.plan_id}:`,
-        auditResult.error,
+        {
+          event_type: 'plan_created',
+          payload: {
+            plan_id: inserted.plan_id,
+            plan_year: inserted.plan_year,
+            plan_name_en: inserted.plan_name.en,
+            annual_fee_minor_units: inserted.annual_fee_minor_units,
+            category: inserted.plan_category,
+            member_type_scope: inserted.member_type_scope,
+          },
+        },
       );
-      process.exit(1);
+      if (!auditResult.ok) {
+        // Throw inside the runInTenant scope so the outer tx rolls back
+        // every prior insert + audit (R3-S3 partial-state protection).
+        throw new Error(
+          `[seed] plan_created audit failed for ${inserted.plan_id}: ${JSON.stringify(auditResult.error)}`,
+        );
+      }
     }
-  }
+  });
 
   return { inserted: drafts.length, skipped: false };
 }
