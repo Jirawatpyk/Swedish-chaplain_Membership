@@ -146,6 +146,20 @@ docs/*.xls
 docs/~$*
 # Excel lock files anywhere in the repo
 ~$*.xls*
+
+# Real chamber attendee CSV exports (PII per SweCham member data) —
+# same rationale as the xlsx/xlsm/xls block above. Reference fixtures
+# for tests live under tests/integration/events/csv-fixtures/ instead.
+docs/Attendee list/
+docs/Attendee\ list/
+
+# Session-local temporary buffers (PR file lists, i18n check dumps,
+# ad-hoc grep outputs) that accumulate at repo root during /code-
+# review or /speckit-* workflows. Safe to delete at any time.
+/pr*_files.txt
+/tmp_*.txt
+/tmp_*.json
+
 # Demo seed data extracted from PII-containing workbooks (never commit).
 scripts/_demo-data/
 .vercel
