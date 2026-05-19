@@ -170,6 +170,33 @@ For the SweCham MVP (1-2 active admins; no realistic double-tab concurrency in o
 
 All 5 sub-checkpoints landed (3D.1 i18n / 3D.2 dialogs / 3D.3 detail-page wiring / 3D.4 flag gate / 3D.5 accepted-tradeoff documented). 13 F71A tasks closed in Phase 3 (T041-T058-T061). User Story 1 ships dark behind `FEATURE_F71A_US1_PAGINATION=false`. Pre-ship operator gates remain (cron-job.org coordinator setup for dispatch-batches endpoint, AdvisoryLock production hardening per Phase 3E, end-to-end smoke test with real Resend Broadcasts API on staging tenant).
 
+### Phase 3F — PR-Review Remediation CLOSED 2026-05-19
+
+After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findings across 6 specialized agents (code-reviewer, silent-failure-hunter, pr-test-analyzer, type-design-analyzer, comment-analyzer, enterprise-ux-designer), Phase 3F landed 6 commits closing 37+ findings:
+
+| Commit | Cluster | Items closed |
+|---|---|---|
+| `4ee3578d` | 3F.1 | 8 CRITICAL — F-17 splitBroadcastIntoBatches caller (new cron `/api/cron/broadcasts/split-large-broadcasts`) + F-04 idempotency rotation on auto-retry + F-01 cross-tenant probe audits + F-Finding-4+F-21 cancel-broadcast widen + atomic markCancelled + F-1 BYPASSRLS empty-catch + F-6 applyBatch audit wrap + Type Bottom #1 BroadcastRetryStatus → BroadcastStatus + 3 stale "noOp/Phase 3D" comments |
+| `f08800e1` | 3F.2 | 3 UX/WCAG Level-A — autoFocus on RetryDialog Cancel + `<caption sr-only>` on Table + `formatDispatchedAt` Asia/Bangkok TZ pin |
+| `0a0a2c50` | 3F.3 | 7 comment sweep — "F8 telemetry" → F1 + FR-008a-d → FR-008a + state-machine adapter vs migration CHECK + `data-model § 4` → `plan.md § VIII` + `pg_advisory_xact_lock` → try-variant naming |
+| `9e8e8f93` | 3F.4 | 6 reliability — F-05 FOR UPDATE SKIP LOCKED + F-10 tenant `dispatch_concurrency_cap` wire-up + F-3 dispatch updateStatus !ok log + F-4 Promise.allSettled + F-7/F-8 audit emit wraps |
+| `7b5f1c25` | 3F.7 | 10 polish — UX F-8/F-9/F-13/F-4/F-12/F-5 + F-12 automated:false marker + F-22 resolveTenantDisplayName + F-23 forensic audit on apply-batch not_found + F-24 acceptPartial quota fields |
+| `f63fb79d` | 3F.5 | 3 new contract test files (16 new test cases) — dispatchBroadcastBatch + applyBatchWebhookEvent + autoRetryFailedBatch (closes pr-test-analyzer CRITICAL/HIGH coverage gaps) |
+
+**Phase 3F closure stats**:
+- 174 → 190 broadcasts contract tests (+16 from 3F.5)
+- pnpm typecheck PASS, pnpm lint PASS for F71A scope (F2/F3 concurrent work has pre-existing issues, not blocking F71A)
+- pnpm check:i18n: 2987 → 2988 keys × 3 locales (+1 `tableCaption` from 3F.2)
+- 2 NEW schema migrations applied to live Neon (0171 cap-50k + 0172 chamber_app GRANTs from 3E.2)
+- 1 NEW cron coordinator needed pre-flag-flip: `/api/cron/broadcasts/split-large-broadcasts` (every 5 min, Bearer CRON_SECRET)
+- Phase 3E.5 noOp-advisory-lock accepted-tradeoff SUPERSEDED by 3E.1 + 3F.1 — retry path now uses real `pgAdvisoryLockAdapter` with withTx-scoped lock; dispatch path remains noOp by design (long-running gateway calls)
+
+**Deferred from 3F (out of session scope — total ~12 remaining findings)**:
+- 3F.6 type design refactor (TxToken brand cascade through ~10 files; F-06/F-07 widespread `as never` casts; discriminated `BatchStatusUpdate`; error-kind casing standardisation; `findBatchByProviderBroadcastIdBypassRls` rename) — risky refactor needs dedicated session
+- 5 NEW contract test files (route handlers + cron + service + webhook fallback + advisory-lock live-Neon integration) — pr-test Findings 2/5/8/9/20
+- 5 polish items: F-15 missing-providerBroadcastId backfill cron + F-14 admin detail fail-open inline error panel + UX F-6 focus-return on dialog close + F-19 FK CASCADE integration test + F-11 hostname normalization comment
+- Phase 6 operator gates (SC-002 50k perf bench)
+
 ---
 
 ## Phase 4: User Story 2 — Image embedding with allowlist (Priority: P1)
