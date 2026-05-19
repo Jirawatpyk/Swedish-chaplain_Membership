@@ -4,11 +4,11 @@
 -- Source of truth: specs/014-email-broadcast-advance/data-model.md § 7
 -- + research.md § 8 + plan.md § Constitution Check VIII.
 --
--- Postgres requirement: `ALTER TYPE … ADD VALUE` cannot run inside a
+-- Postgres requirement: ALTER TYPE ... ADD VALUE cannot run inside a
 -- transaction with other DDL statements. Each ADD VALUE ships in its
--- own statement separated by `--> statement-breakpoint` so drizzle-kit
--- migrate splits them into discrete transactions. Pattern matches
--- migration 0107 (F8 cron_dispatch_orchestrated).
+-- own statement separated by a drizzle statement-breakpoint marker so
+-- drizzle-kit migrate splits them into discrete transactions. Pattern
+-- matches migration 0107 (F8 cron_dispatch_orchestrated).
 --
 -- All 10 events default to 5-year retention via Constitution v1.4.0
 -- trigger on audit_log.retention_years (no per-event retention grant

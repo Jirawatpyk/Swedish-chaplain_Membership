@@ -7,17 +7,28 @@
 -- pre-push hook both run with --check and fail on drift.
 --
 -- Seeds 5 starter templates × 3 locales =
--- 15 rows per existing tenant. New tenants get seeded by
--- the onboarding flow (separate from this migration). The ON CONFLICT
--- clause makes the seed idempotent for re-application; the runtime
--- conflict-on-name detection + audit event emit happens in the
--- onboarding use-case, NOT in this migration.
+-- 15 rows per existing PRODUCTION tenant. Test tenants
+-- (`tenant_id LIKE 'test%'`) are excluded — they have their own seed
+-- lifecycle in test harness. New tenants get seeded by the onboarding
+-- flow (separate from this migration). The ON CONFLICT clause makes
+-- the seed idempotent for re-application; the runtime conflict-on-name
+-- detection + audit event emit happens in the onboarding use-case, NOT
+-- in this migration.
+--
+-- Tenant source: `SELECT DISTINCT tenant_id FROM members` filtered to
+-- production tenants. Verified 2026-05-19 against live Neon — the
+-- project has no central `tenants` table; `members.tenant_id` is the
+-- authoritative list of active tenants. F2 + F3 ensure every active
+-- tenant has at least one member row.
 
 DO $do$
 DECLARE
-  t_id uuid;
+  t_id text;
 BEGIN
-  FOR t_id IN SELECT id FROM tenants LOOP
+  FOR t_id IN
+    SELECT DISTINCT tenant_id FROM members
+     WHERE tenant_id NOT LIKE 'test%'
+  LOOP
     INSERT INTO broadcast_templates
       (tenant_id, name, subject, body_html, locale, is_seeded)
     VALUES
@@ -213,6 +224,6 @@ BEGIN
 <p>Deras stöd möjliggör medlemsevenemang, nätverksmöjligheter och kammartjänster under hela året.</p>
 <p>Intresserad av att bli sponsor? Kontakta oss på <a href="mailto:[sponsorship_email]">[sponsorship_email]</a>.</p>
 <p>Med uppskattning,<br><strong>{{chamber_name}}s styrelse</strong></p>', 'sv', TRUE)
-    ON CONFLICT ON CONSTRAINT broadcast_templates_tenant_name_locale_uniq DO NOTHING;
+    ON CONFLICT (tenant_id, name, locale) DO NOTHING;
   END LOOP;
 END $do$;
