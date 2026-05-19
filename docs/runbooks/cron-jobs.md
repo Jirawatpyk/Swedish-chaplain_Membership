@@ -42,9 +42,9 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
-| **F6 idempotency sweep** | **`POST /api/cron/eventcreate/sweep-idempotency-receipts`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
+| **F6 idempotency sweep** | **`POST /api/internal/retention/sweep-eventcreate-idempotency`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
-| **F6.1 error-CSV blob TTL sweep** (T058) | **`GET /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
+| **F6.1 error-CSV blob TTL sweep** (T058 — folded into F6 T154 on 2026-05-19) | **`POST /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
 | **F6 recompute match-rate gauge** (Phase 10 T126) | **`POST /api/internal/observability/recompute-match-rate`** | **`0 * * * *`** (hourly) | **`Authorization: Bearer ${CRON_SECRET}`** | [f6-match-rate-degradation-triage.md](./f6-match-rate-degradation-triage.md) — refreshes `eventcreate_match_rate_gauge` per tenant; powers SC-002 dashboard |
 
 **Daily-cadence jobs** stay in `vercel.json` (the 1×/day limit
@@ -499,7 +499,7 @@ TTL). Without the sweep, the table accumulates ~604,800 rows/year
 per tenant at sustained 60 req/min — operationally low but unbounded.
 
 - **Title**: `Chamber-OS · F6 eventcreate idempotency-receipts sweep`
-- **URL**: `${BASE}/api/cron/eventcreate/sweep-idempotency-receipts`
+- **URL**: `${BASE}/api/internal/retention/sweep-eventcreate-idempotency`
 - **Method**: POST
 - **Schedule**: `30 3 * * *` (daily 03:30 Asia/Bangkok)
 - **Auth**: `Authorization: Bearer ${CRON_SECRET}`
@@ -511,7 +511,7 @@ per tenant at sustained 60 req/min — operationally low but unbounded.
   - 503 → `FEATURE_F6_EVENTCREATE=false` (expected during dark-launch)
   - 500 → bug or transient DB blip (investigate logs)
 - **On-call response**: SLO-F6-004 alerts if `rate(swept) == 0` for ≥2 consecutive days while `tenant_webhook_configs` has live rows. First sweep after flag-flip should report `outcome=swept` rows = (initial table size); steady-state is ~daily-traffic-volume.
-- **Handler module**: `src/app/api/cron/eventcreate/sweep-idempotency-receipts/route.ts` (Phase 10 T116)
+- **Handler module**: `src/app/api/internal/retention/sweep-eventcreate-idempotency/route.ts` (Phase 10 T116)
 
 ## F6 — non-member PII pseudonymisation sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T113)
 

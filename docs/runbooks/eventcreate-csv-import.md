@@ -32,7 +32,7 @@ Two flags, both validated by zod at boot (`src/lib/env.ts`):
 
 ## 2. Daily TTL sweep cron
 
-**Endpoint**: `GET /api/internal/retention/sweep-error-csv-blobs`
+**Endpoint**: `POST /api/internal/retention/sweep-error-csv-blobs` (POST because the route mutates state — deletes Blob objects + clears DB columns; verb chosen 2026-05-15 to avoid web-crawler / browser-prefetch / Vercel-edge-cache GET-idempotency assumptions)
 **Authentication**: `Authorization: Bearer ${CRON_SECRET}` (≥16 chars; strict in ALL envs — no dev bypass).
 **Runtime**: Node.js.
 
@@ -60,7 +60,7 @@ If cron-job.org is offline OR shows ≥2 consecutive day failures (email alert p
 
 ```powershell
 # Replace YOUR_CRON_SECRET with the value from Vercel env.
-curl -X GET `
+curl -X POST `
      -H "Authorization: Bearer YOUR_CRON_SECRET" `
      https://swecham.zyncdata.app/api/internal/retention/sweep-error-csv-blobs
 ```
