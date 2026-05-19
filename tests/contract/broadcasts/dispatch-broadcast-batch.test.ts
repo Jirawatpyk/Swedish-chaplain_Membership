@@ -170,9 +170,19 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect(emits.some((e) => e.eventType === 'broadcast_send_started')).toBe(true);
   });
 
-  it('gateway throws at createBroadcast → manifest failed + failed_to_dispatch audit', async () => {
+  // Phase 3F.11.5 (Round 2 G-2 closure) — parametrised per-stage
+  // gateway failures. Pre-fix the test only exercised `createBroadcast`
+  // throwing; a refactor that misroutes the `gatewayStage` variable
+  // in the catch block (e.g., always reports `createAudience`) would
+  // have shipped green. Now all 4 stages are covered.
+  it.each([
+    ['createAudience', ['sending', 'failed']] as const,
+    ['addContactsToAudience', ['sending', 'failed']] as const,
+    ['createBroadcast', ['sending', 'failed']] as const,
+    ['sendBroadcast', ['sending', 'failed']] as const,
+  ])('gateway throws at %s → GATEWAY_ERROR with matching stage + failed_to_dispatch audit', async (stage, expectedStatuses) => {
     const { deps, emits, statusUpdates } = makeStubDeps({
-      gatewayThrowsAt: 'createBroadcast',
+      gatewayThrowsAt: stage,
     });
 
     const result = await dispatchBroadcastBatch(deps as never, {
@@ -185,10 +195,9 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected error');
     expect((result.error as { kind: string }).kind).toBe('GATEWAY_ERROR');
-    expect((result.error as { stage: string }).stage).toBe('createBroadcast');
+    expect((result.error as { stage: string }).stage).toBe(stage);
 
-    // status flipped pending→sending, then sending→failed
-    expect(statusUpdates.map((s) => s.status)).toEqual(['sending', 'failed']);
+    expect(statusUpdates.map((s) => s.status)).toEqual(expectedStatuses);
     expect(emits.some((e) => e.eventType === 'broadcast_failed_to_dispatch')).toBe(true);
   });
 

@@ -281,4 +281,67 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     expect(res.headers.get('X-Correlation-Id')).toBeTruthy();
     expect(res.headers.get('Cache-Control')).toBe('no-store, private');
   });
+
+  // Phase 3F.11.5 (Round 2 Findings 15+20 closure) — F71A batch
+  // routing fallback path. When F7 MVP single-audience lookup misses,
+  // the route falls through to `resolveTenantByBatchProviderBroadcastId`
+  // and routes successfully to `applyBatchWebhookEvent` for per-batch
+  // counter increment.
+  describe('F71A batch routing fallback (Findings 15+20)', () => {
+    it('F7 MVP miss + F71A hit → applyBatchWebhookEvent called, processWebhookEvent NOT called', async () => {
+      constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
+      resolveTenantByResendBroadcastIdMock.mockResolvedValue(null);
+      resolveTenantByBatchProviderBroadcastIdMock.mockResolvedValue({
+        tenantId: 'test-tenant',
+        broadcastId: '11111111-1111-1111-1111-111111111111',
+        batchManifestId: 'batch-id-1',
+        batchIndex: 0,
+        recipientCount: 100,
+      });
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+
+      expect(res.status).toBe(200);
+      // F7.1a per-batch path taken — F7 MVP single-audience NOT called.
+      expect(applyBatchWebhookEventMock).toHaveBeenCalledTimes(1);
+      expect(processWebhookEventMock).not.toHaveBeenCalled();
+      // The applyBatchWebhookEvent call carries the F71A batch context.
+      const call = applyBatchWebhookEventMock.mock.calls[0]!;
+      const input = call[1] as Record<string, unknown>;
+      expect(input.batchManifestId).toBe('batch-id-1');
+      expect(input.batchIndex).toBe(0);
+      expect(input.tenantId).toBe('test-tenant');
+    });
+
+    it('F7 MVP miss + F71A miss → 200 OK + unknown-resend audit (no use case calls)', async () => {
+      constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
+      resolveTenantByResendBroadcastIdMock.mockResolvedValue(null);
+      resolveTenantByBatchProviderBroadcastIdMock.mockResolvedValue(null);
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+
+      expect(res.status).toBe(200);
+      expect(applyBatchWebhookEventMock).not.toHaveBeenCalled();
+      expect(processWebhookEventMock).not.toHaveBeenCalled();
+      // Unknown-resend audit row emitted (FR-024 forensic trail).
+      expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('F7 MVP hit (early-return path) → F71A resolver NOT called (mutex routing)', async () => {
+      constructEventMock.mockReturnValue(buildVerifiedEvent('delivered'));
+      // F7 MVP lookup wins — default fixture from beforeEach returns a
+      // valid tenant. Verify F71A resolver is never even invoked.
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+
+      expect(res.status).toBe(200);
+      // F7 MVP path taken (default fixture)
+      expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
+      // F71A resolver NOT consulted — the two lookups are mutex per route
+      // doc § Step 5 ("mutually exclusive — a given Resend broadcast id
+      // maps to either ONE F7 MVP broadcast row OR ONE F7.1a batch_manifest
+      // row, never both").
+      expect(resolveTenantByBatchProviderBroadcastIdMock).not.toHaveBeenCalled();
+    });
+  });
 });
