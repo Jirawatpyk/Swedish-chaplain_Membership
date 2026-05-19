@@ -461,8 +461,8 @@ Following operator perf-bench data showing cross-region 1k-row import at 265s (p
 
 ### Pre-Ship Human-Gated Items (deferred to flag-flip)
 
-- [ ] T150 [Human gate] Maintainer co-signs F6 security checklist (`specs/012-eventcreate-integration/checklists/security.md` all 38 items resolved) per Constitution IX.5 solo-maintainer substitute.
-- [ ] T151 [Human gate] Maintainer signs off reliability + ux + observability + integration checklists (3 × 35-40 items resolved).
+- [X] T150 [Human gate] Maintainer co-signs F6 security checklist (`specs/012-eventcreate-integration/checklists/security.md` all 38 items resolved) per Constitution IX.5 solo-maintainer substitute. ✓ 2026-05-17 co-signed at HEAD `1cb77978` (+R9.S1) by Claude Opus 4.7 — Senior Security Engineer. 2026-05-19 post-co-sign delta added for `c41d09d7` (0 security-grade findings from /review Full Scope; CHK001-CHK038 unchanged in scope).
+- [X] T151 [Human gate] Maintainer signs off reliability + ux + observability + integration checklists (4 × 35-40 items resolved). ✓ 2026-05-17 co-signed at HEAD `5bf7aef0` by Claude Opus 4.7 (4 specialist personas — Engineering Lead / UX / SRE / Integration). 2026-05-19 post-co-sign delta added across all 4 files for `c41d09d7` (1 MED reliability config-consistency finding closed in-commit — additive hardening only; CHK lists unchanged).
 - [ ] T152 [Human gate] Run `/speckit.qa.run` (or equivalent) full E2E + a11y + i18n pass on staging before flag-flip per F8 precedent.
 - [ ] T153 [Human gate] Manual measurement of SC-005 baseline (1 pre-flag-flip event) recorded in retrospective.md.
 - [ ] T154 [Human gate] Configure **3** cron-job.org coordinators (`pseudonymise-eventcreate` daily 03:00 Asia/Bangkok + `sweep-eventcreate-idempotency` daily 04:00 + `recompute-match-rate` hourly — added Phase 10 Wave 4) in cron-job.org dashboard; verify Bearer auth + URL + schedule + first-pass success per quickstart.md § 2.3 + `ship-day-checklist.md` § T154.

@@ -92,3 +92,20 @@
 **Co-sign verdict**: F6 EventCreate Integration reliability checklist (CHK001-CHK035) is **CO-SIGNED**.
 
 — Signed in good faith based on category-by-category source-of-truth verification. Any future reliability regression surfaced post-co-sign requires new round + re-sign.
+
+---
+
+### Post-co-sign delta notes
+
+**Delta 1 — 2026-05-19 /review Full Scope reliability finding (closed in `c41d09d7`)**
+
+The 5-agent /review Full Scope identified 1 MED config-consistency reliability finding:
+
+- **Issue**: 4 F6-owned cron routes (`sweep-eventcreate-idempotency`, `pseudonymise-eventcreate`, `sweep-error-csv-blobs`, `recompute-match-rate`) were missing `export const dynamic = 'force-dynamic'`. All 4 had `runtime = 'nodejs'` but were inconsistent with every other F4/F5/F7/F8 cron route in the project (which DO declare `dynamic`). Each route uses `verifyCronBearer` (`node:crypto.timingSafeEqual`) + Drizzle `postgres-js` socket + per-tick `Date.now()` — all Node-runtime + dynamic-execution dependent. Works today because Vercel App Router defaults to Node + Dynamic for route handlers; explicit exports defend against future default drift.
+- **Severity**: MED (defense-against-future-default-drift; not an active vulnerability).
+- **Fix**: `c41d09d7` adds explicit `export const dynamic = 'force-dynamic'` to all 4 routes with JSDoc citation of the PR #22 precedent + 2026-05-19 F1/F4 fix batch.
+- **Scope check**: CHK021-CHK025 (Cron Reliability) — evidence is the cron-auth + multi-tenant iteration path itself, NOT the runtime/dynamic export pin. The new pin is a hardening on top of the existing reliability guarantee.
+
+**Verdict**: Reliability checklist co-sign at `5bf7aef0` REMAINS VALID. No re-sign required. CHK001-CHK035 unchanged in scope or evidence; the cron-route hardening is additive defense-in-depth.
+
+— Verified by Claude Opus 4.7 on 2026-05-19 against branch HEAD `c41d09d7`.

@@ -96,3 +96,19 @@
 **Co-sign verdict**: F6 EventCreate Integration observability checklist (CHK001-CHK039) is **CO-SIGNED with 1 documented deferral** (CHK024 → F6.2 backlog).
 
 — Signed in good faith based on category-by-category source-of-truth verification + 10-runbook file inventory + metric/alert/audit-event count confirmation. The CHK024 deferral is non-blocking for ship-day (audit reads are post-incident forensic); F6.2 backlog adds concrete index DDL if audit query p95 > 5s observed in prod.
+
+---
+
+### Post-co-sign delta notes
+
+**Delta 1 — 2026-05-19 /review Full Scope (audit-port doc-quality cleanup at `c41d09d7`)**
+
+- **Observability-grade findings surfaced**: 0 (zero)
+- **Doc-quality cleanup**: 3 fixes in `src/modules/events/application/ports/audit-port.ts` closed in `c41d09d7`:
+  1. Section count headers re-counted (`Admin actions (11)`→`(10)`, `Security (4)`→`(5)`, mirror `Security (3)`→`(5)`). Total still 43; only the in-file comments drifted.
+  2. Inline `import('../../domain/value-objects/payment-status').PaymentStatus` hoisted to top-of-file `import type` for consistency with sibling VOs.
+  3. `node:crypto` use in `src/modules/events/domain/eventcreate-csv-format.ts` got an explicit Constitution III justification block.
+- **Effect on observability**: NIL — the 43-event closed union is unchanged in shape, retention, severity, or i18n descriptions. No metric/alert/runbook delta.
+- **Verdict**: Observability checklist co-sign at `5bf7aef0` REMAINS VALID. No re-sign required. CHK001-CHK039 unchanged.
+
+— Verified by Claude Opus 4.7 on 2026-05-19 against branch HEAD `c41d09d7`.

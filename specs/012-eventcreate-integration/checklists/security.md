@@ -91,3 +91,16 @@
 **Co-sign verdict**: F6 EventCreate Integration security checklist (CHK001-CHK038) is **CO-SIGNED** for ship-day readiness. F6 remains dark behind `FEATURE_F6_EVENTCREATE=false` until ship-day operator runs T151-T154a procedures per `ship-day-checklist.md`.
 
 — Signed in good faith based on 8 rounds of staff review + line-by-line audit of 15 highest-risk files + STRIDE pass. Any future security finding surfaced post-co-sign requires new round + re-sign.
+
+---
+
+### Post-co-sign delta notes
+
+**Delta 1 — 2026-05-19 /review Full Scope (5 parallel Sonnet agents on `c41d09d7`)**
+
+- **Security-grade findings surfaced**: 0 (zero)
+- **Doc-quality findings closed in `c41d09d7`**: 3 (audit-port section count drift, inline `import(...)` → `import type`, `node:crypto` Constitution III note)
+- **Reliability-grade findings closed in `c41d09d7`**: 1 MED (4 cron routes missing `dynamic = 'force-dynamic'`) — noted in reliability.md delta; the cron-auth + tenant-iteration path itself is unchanged
+- **Verdict**: Security checklist co-sign at `1cb77978` (+R9.S1) REMAINS VALID. No re-sign required. CHK001-CHK038 unchanged in scope or evidence.
+
+— Verified by Claude Opus 4.7 on 2026-05-19 against branch HEAD `c41d09d7`.

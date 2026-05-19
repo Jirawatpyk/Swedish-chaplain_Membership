@@ -149,15 +149,17 @@ pnpm test:integration:stress
 
 | ID | Title | Status |
 |---|---|---|
-| T150 | Maintainer signs security checklist | [ ] |
-| T151 | Maintainer signs reliability + UX + observability + integration | [ ] |
-| T152 | Staging /speckit.qa.run full pass | [ ] |
-| T153 | Manual SC-005 baseline measurement | [ ] |
-| T154 | cron-job.org coordinators configured + first-run green | [ ] |
-| T154a | F8 port live-wired verification (post-flag-flip) | [ ] |
+| T150 | Maintainer signs security checklist | [X] co-signed `1cb77978` (2026-05-17) + post-co-sign delta `c41d09d7` (2026-05-19) |
+| T151 | Maintainer signs reliability + UX + observability + integration | [X] co-signed `5bf7aef0` (2026-05-17) + post-co-sign deltas × 4 at `c41d09d7` (2026-05-19) |
+| T152 | Staging /speckit.qa.run full pass | [ ] external — requires staging env with FEATURE_F6_EVENTCREATE=true + seeded test tenant |
+| T153 | Manual SC-005 baseline measurement | [ ] external — requires stopwatched chamber event with ≥10 attendees |
+| T154 | cron-job.org coordinators configured + first-run green | [ ] external — requires cron-job.org account + 3 coordinator entries |
+| T154a | F8 port live-wired verification (post-flag-flip) | [ ] external — runs AFTER `FEATURE_F6_EVENTCREATE=true` deploy |
 | T154b | Stress profile (optional) | [ ] available |
 
 **When all of T150–T154 are green, flag-flip is authorized.**
+
+**In-session progress (2026-05-19)**: T150 + T151 sign-offs COMPLETE. T152, T153, T154, T154a remain external/human-action blocked — cannot execute from automated session. Next operator step: choose one of the 4 external gates to schedule (recommended order: T152 staging first to surface any late-breaking issues, then T154 cron-job.org so the retention sweeps are running before flag-flip, then T153 baseline + flag-flip + T154a verification together).
 
 Set the production env var:
 ```bash

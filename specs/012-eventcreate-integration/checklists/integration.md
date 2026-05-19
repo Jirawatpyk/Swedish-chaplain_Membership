@@ -92,3 +92,16 @@
 **Co-sign verdict**: F6 EventCreate Integration integration checklist (CHK001-CHK035) is **CO-SIGNED**.
 
 — Signed in good faith based on category-by-category source-of-truth verification + implementation spot-checks. F8 port wiring is a load-bearing seam — verified at code level via direct read of `get-event-attendees-by-member.ts` + `drizzle-event-attendees-by-member.ts`. Any future integration-contract regression (Zapier deprecation announcement, new webhook source, schema v2 migration) requires new round + re-sign.
+
+---
+
+### Post-co-sign delta notes
+
+**Delta 1 — 2026-05-19 /review Full Scope (no integration-contract findings)**
+
+- **Integration-contract findings surfaced**: 0 (zero)
+- **Cross-module barrel discipline**: re-verified at `c41d09d7` — `BenefitMatrix` now imports through `@/modules/plans` barrel (Principle III); `safeAuditEmit` exposed via `@/modules/events` barrel; `src/lib/**` composition adapters no longer reach into `_helpers/`. All three were closed in the prior `/code-review` fix (`3dd87d2e`) — re-confirmed clean by the Full Scope agent #2.
+- **F8 EventAttendeesPort wiring**: re-verified clean — port adapter pattern unchanged; composition root selection still flag-gated on `FEATURE_F6_EVENTCREATE`.
+- **Verdict**: Integration checklist co-sign at `5bf7aef0` REMAINS VALID. No re-sign required. CHK001-CHK035 unchanged.
+
+— Verified by Claude Opus 4.7 on 2026-05-19 against branch HEAD `c41d09d7`.

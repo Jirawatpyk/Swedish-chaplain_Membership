@@ -101,3 +101,17 @@
 **Co-sign verdict**: F6 EventCreate Integration UX checklist (CHK001-CHK040) is **CO-SIGNED**.
 
 — Signed in good faith based on category-by-category source-of-truth verification + implementation spot-checks. Any future UX regression (surfaced via axe-core E2E, user-report, or visual review) post-co-sign requires new round + re-sign.
+
+---
+
+### Post-co-sign delta notes
+
+**Delta 1 — 2026-05-19 /review Full Scope (UX slice 5 of 5)**
+
+- **UX-grade findings surfaced**: 0 (zero)
+- **i18n parity check**: 2924 EN = 2924 TH = 2924 SV (perfect parity confirmed at `c41d09d7`; up from 2902 at co-sign time due to /code-review post-ship i18n additions in earlier commits — all 3 locales advanced together)
+- **A11y spot-check**: 4 AlertDialog usages on destructive surfaces (erase-pii-dialog, archive-event-button, event-category-toggles, event-mismatch-warning-dialog) confirmed WCAG 2.1 AA compliant
+- **Skeleton CLS-0 invariant**: confirmed at `loading.tsx` (motion-safe gate + aria-busy + aria-hidden semantics)
+- **Verdict**: UX checklist co-sign at `5bf7aef0` REMAINS VALID. No re-sign required. CHK001-CHK040 unchanged.
+
+— Verified by Claude Opus 4.7 on 2026-05-19 against branch HEAD `c41d09d7`.
