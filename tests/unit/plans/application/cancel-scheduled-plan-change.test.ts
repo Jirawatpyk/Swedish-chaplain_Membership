@@ -47,14 +47,16 @@ const SCHEDULED_ID = 'sched-uuid-001';
 const MEMBER_ID = '11111111-1111-1111-1111-111111111111';
 const CYCLE_ID = '22222222-2222-2222-2222-222222222222';
 
-// NOTE: `reason` is intentionally OMITTED rather than set to
-// `undefined` — under `exactOptionalPropertyTypes: true`, the latter
-// is a type error for an optional `string | undefined` field.
+// R2 Batch 3f (R2-S10) — `reason: null` is the explicit no-reason
+// signal. The Input type used to be `?: string`; now it's
+// `: string | null` to avoid the `exactOptionalPropertyTypes` spread
+// footgun + align with the audit payload shape.
 const baseInput: CancelScheduledPlanChangeInput = {
   scheduledChangeId: SCHEDULED_ID,
   memberId: MEMBER_ID,
   effectiveAtCycleId: CYCLE_ID,
   cancelledByUserId: 'admin-user-uuid',
+  reason: null,
 };
 
 function makePending(

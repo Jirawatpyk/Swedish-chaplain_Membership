@@ -18,6 +18,7 @@
  */
 
 import { z } from 'zod';
+import type { Plan } from './plan';
 
 // --- Event type union ---------------------------------------------------------
 
@@ -93,11 +94,49 @@ export const EVENT_SEVERITY: Record<F2AuditEventType, AuditSeverity> = {
 // --- Normative diff shape (critique P9) ---------------------------------------
 
 /**
+ * R2 Batch 3f (R2-S12) — typed enum of diffable Plan field names. A
+ * typo like `'plan_naem'` in an emit site would otherwise log under
+ * the wrong key + silently fail any downstream "diff keys must be
+ * valid Plan field names" assertion. The `as const satisfies` chain
+ * ties the runtime literal array to `keyof Plan` so a future Plan
+ * field rename fails compile here.
+ *
+ * `tenant_id` + identity fields (`plan_id`, `plan_year`) are EXCLUDED
+ * because they're immutable post-create — a diff entry referencing
+ * them would be a bug.
+ */
+export const KNOWN_DIFF_FIELDS = [
+  'plan_name',
+  'description',
+  'sort_order',
+  'plan_category',
+  'member_type_scope',
+  'annual_fee_minor_units',
+  'includes_corporate_plan_id',
+  'min_turnover_minor_units',
+  'max_turnover_minor_units',
+  'max_duration_years',
+  'max_member_age',
+  'benefit_matrix',
+  'is_active',
+  'deleted_at',
+  'updated_at',
+  'updated_by',
+] as const satisfies ReadonlyArray<keyof Plan>;
+
+export type DiffableField = (typeof KNOWN_DIFF_FIELDS)[number];
+
+/**
  * `{ [field]: { before, after } }` — only changed fields appear.
  * Create events have `before: null`; delete events have `after: null`.
+ *
+ * R2 Batch 3f (R2-S12) — keys constrained to `DiffableField`. Emit
+ * sites that pass an unknown field name are rejected at the zod
+ * boundary AND at the TypeScript level via the `AuditDiff` type
+ * below.
  */
 export const auditDiffSchema = z.record(
-  z.string(),
+  z.enum(KNOWN_DIFF_FIELDS),
   z.object({
     before: z.unknown(),
     after: z.unknown(),
@@ -109,14 +148,21 @@ export const auditDiffSchema = z.record(
  * could cause the recorded audit event to diverge from the caller's
  * intent if the write is async-interleaved.
  *
+ * R2 Batch 3f (R2-S12) — keys constrained to `DiffableField`. Emit
+ * sites that try to log under an arbitrary string key get a compile
+ * error. `Partial<>` because not every field is in every diff (only
+ * changed fields appear).
+ *
  * Use `MutableAuditDiff` for construction, then widen to `AuditDiff`.
  */
 export type AuditDiff = Readonly<
-  Record<string, Readonly<{ before: unknown; after: unknown }>>
+  Partial<Record<DiffableField, Readonly<{ before: unknown; after: unknown }>>>
 >;
 
 /** Mutable builder type — use for constructing diffs, then assign to `AuditDiff`. */
-export type MutableAuditDiff = Record<string, { before: unknown; after: unknown }>;
+export type MutableAuditDiff = Partial<
+  Record<DiffableField, { before: unknown; after: unknown }>
+>;
 
 // --- Per-event payload schemas (single source of truth per data-model § 2.6) --
 

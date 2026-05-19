@@ -111,9 +111,14 @@ export async function clonePlansToYear(
     if (cloneResult.error.type === 'source_year_empty') {
       return err({ type: 'source_year_empty' });
     }
+    // R2 Batch 3f (R2-S6) — exhaustiveness guard. If a future
+    // `CloneYearError` variant is added without a handler above, the
+    // `never` narrowing fails compile rather than producing the
+    // opaque `JSON.stringify(...)` blob the old fallback emitted.
+    const _exhaustive: never = cloneResult.error;
     return err({
       type: 'server_error',
-      message: `unhandled clone error: ${JSON.stringify(cloneResult.error)}`,
+      message: `unhandled clone error: ${JSON.stringify(_exhaustive)}`,
     });
   }
 

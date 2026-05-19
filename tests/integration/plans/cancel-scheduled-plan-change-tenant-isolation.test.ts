@@ -86,6 +86,7 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
         memberId,
         effectiveAtCycleId: cycleId,
         cancelledByUserId: adminA,
+        reason: null,
       },
     );
 
@@ -146,6 +147,7 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
         memberId,
         effectiveAtCycleId: cycleId,
         cancelledByUserId: adminA,
+        reason: null,
       },
     );
 
@@ -172,6 +174,7 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
         memberId: 'not-a-uuid',
         effectiveAtCycleId: randomUUID(),
         cancelledByUserId: randomUUID(),
+        reason: null,
       },
     );
 

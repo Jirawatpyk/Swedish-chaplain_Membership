@@ -155,7 +155,14 @@ export interface CancelScheduledPlanChangeInput {
   /** The renewal cycle this change targets — required for the audit payload. */
   readonly effectiveAtCycleId: string;
   readonly cancelledByUserId: string;
-  readonly reason?: string;
+  /**
+   * R2 Batch 3f (R2-S10) — explicit `string | null` (not `?: string`)
+   * to avoid the `exactOptionalPropertyTypes` spread footgun + align
+   * with the audit payload shape (`reason: string | null`). Callers
+   * pass `null` when no reason; the legacy `undefined` works too via
+   * the use-case's `input.reason ?? null` normalisation.
+   */
+  readonly reason: string | null;
 }
 
 export type CancelScheduledPlanChangeError =

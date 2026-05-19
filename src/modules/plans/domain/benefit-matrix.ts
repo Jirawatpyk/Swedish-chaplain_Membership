@@ -47,6 +47,13 @@ export type PartnershipBenefits = {
   readonly booth_included: boolean;
   readonly rollup_logo_at_events: boolean;
   readonly logo_on_merch: boolean;
+  // R2 Batch 3f (R2-S9) — narrow union `1.0 | 1.5` only enforced at
+  // zod write boundary (`partnershipBenefitsSchema`). DB returns
+  // `number`; `asBenefitMatrix` in `plan-repo.ts:rowToPlan`
+  // re-validates partnership↔category but NOT this specific value
+  // (zod accepts any number when reading from DB rows via the cast).
+  // Future hardening: tighten `asBenefitMatrix` to assert the narrow
+  // values when the planCategory is 'partnership'.
   readonly video_duration_minutes: 1.0 | 1.5;
   readonly video_frequency_scope: VideoFrequencyScope;
   readonly website_logo_months: number; // 12 / 6 / 3

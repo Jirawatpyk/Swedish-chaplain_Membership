@@ -466,9 +466,20 @@ async function stageB_Plans(
       max_turnover_minor_units: row.maxTurnover,
       max_duration_years: row.maxDuration,
       max_member_age: row.maxAge,
-      // Post-ship R6 Batch 2a — brand at the validated boundary
-      // (corporate category → enforces partnership=null invariant)
-      benefit_matrix: asBenefitMatrix(row.matrix, 'corporate'),
+      // R2 Batch 3f (R2-S5) — wrap brand call in try/catch so a seed
+      // matrix that drifts (e.g., corporate row accidentally gets a
+      // partnership block) fails fast with [seed] context.
+      benefit_matrix: (() => {
+        try {
+          return asBenefitMatrix(row.matrix, 'corporate');
+        } catch (e) {
+          console.error(
+            `[seed] benefit matrix integrity violation for ${row.id} (corporate):`,
+            (e as Error).message,
+          );
+          process.exit(1);
+        }
+      })(),
       isActive: true,
       createdBy: ownerUserId,
       updatedBy: ownerUserId,
@@ -490,9 +501,18 @@ async function stageB_Plans(
       max_turnover_minor_units: null,
       max_duration_years: null,
       max_member_age: null,
-      // Post-ship R6 Batch 2a — brand at the validated boundary
-      // (partnership category → enforces partnership-block non-null)
-      benefit_matrix: asBenefitMatrix(row.matrix, 'partnership'),
+      // R2 Batch 3f (R2-S5) — try/catch with [seed] context.
+      benefit_matrix: (() => {
+        try {
+          return asBenefitMatrix(row.matrix, 'partnership');
+        } catch (e) {
+          console.error(
+            `[seed] benefit matrix integrity violation for ${row.id} (partnership):`,
+            (e as Error).message,
+          );
+          process.exit(1);
+        }
+      })(),
       isActive: true,
       createdBy: ownerUserId,
       updatedBy: ownerUserId,
@@ -501,8 +521,11 @@ async function stageB_Plans(
 
   for (const draft of drafts) {
     const inserted = await planRepo.insert(ctx, draft);
-    // Audit — fire and forget, one event per plan
-    await planAuditAdapter.record(
+    // R2 Batch 3f (R2-S4) — capture audit Result. F2 invariant
+    // (`recordAuditEvent`) requires audit success to be paired with
+    // domain mutation; seed scripts MUST honour the same rule or risk
+    // partially-audited seed data that breaks downstream invariants.
+    const auditResult = await planAuditAdapter.record(
       {
         tenant: ctx,
         actorUserId: ownerUserId,
@@ -521,6 +544,13 @@ async function stageB_Plans(
         },
       },
     );
+    if (!auditResult.ok) {
+      console.error(
+        `[seed] plan_created audit failed for ${inserted.plan_id}:`,
+        auditResult.error,
+      );
+      process.exit(1);
+    }
   }
 
   return { inserted: drafts.length, skipped: false };

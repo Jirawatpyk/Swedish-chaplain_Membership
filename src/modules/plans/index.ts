@@ -78,6 +78,13 @@ export {
   EmptyEnLocaleTextError,
 } from './domain/locale-text';
 
+// R2 Batch 3f (R2-S11) — opt-in re-export of F1's `UserId` brand for
+// future F2 code that wants to brand `Plan.created_by` /
+// `ScheduledPlanChange.scheduledByUserId` / etc. The fields are
+// `string` today for back-compat; new code should adopt `UserId`
+// where it constructs these values to inherit F1's brand guarantees.
+export type { UserId } from '@/modules/auth';
+
 export type { Money, CurrencyCode } from './domain/money';
 export {
   asMinorUnits,
@@ -118,12 +125,14 @@ export type {
   AuditSeverity,
   AuditDiff,
   MutableAuditDiff,
+  DiffableField,
 } from './domain/audit-event';
 export {
   auditPayloadSchema,
   EVENT_SEVERITY,
   F2_AUDIT_EVENT_TYPES,
   isF2AuditEventType,
+  KNOWN_DIFF_FIELDS,
 } from './domain/audit-event';
 
 export {
