@@ -101,35 +101,38 @@ export async function applyBatchWebhookEvent(
 
   if (!result.ok) {
     if (result.error.kind === 'not_found') {
-      // Phase 3F.7 (F-23 fix) — emit a forensic audit on the not-found
-      // race path. BYPASSRLS lookup just resolved the tenantId, then
-      // the increment found 0 rows → either the batch was force-deleted
-      // between the two queries (admin ops action) OR the lookup
-      // returned a stale tenant (impossible under current schema but
-      // future-proof). Either way, forensic trail matters.
+      // Phase 3F.7 (F-23 fix) → Phase 3F.11.3 (M3 split) — emit a
+      // forensic audit on the not-found race path. BYPASSRLS lookup
+      // just resolved the tenantId, then the increment found 0 rows →
+      // either the batch was force-deleted between the two queries
+      // (admin ops action) OR the lookup returned a stale tenant
+      // (impossible under current schema but future-proof).
+      //
+      // Phase 3F.11.3 (M3 — Round 2 fix) — uses the operational-
+      // forensic event `broadcast_webhook_batch_missing` instead of
+      // the security-forensic `broadcast_cross_tenant_probe` (kept
+      // for admin/member-actor probes). The webhook race is benign;
+      // mis-categorising it as a security probe pollutes the SIEM
+      // feed with false-positive alerts.
       try {
         await deps.audit.emit(null, {
           tenantId: input.tenantId,
-          eventType: 'broadcast_cross_tenant_probe',
+          eventType: 'broadcast_webhook_batch_missing',
           actorUserId: 'system:resend-webhook',
           summary: `Webhook event for missing batch ${input.batchManifestId} (race window)`,
           payload: {
             broadcastId: input.broadcastId,
             batchManifestId: input.batchManifestId,
             batchIndex: input.batchIndex,
-            eventType: input.eventType,
+            resendEventType: input.eventType,
             resendEventId: input.resendEventId,
-            useCase: 'apply-batch-webhook-event',
           },
           requestId: input.requestId ?? null,
         });
       } catch (auditErr) {
         // Phase 3F.11.2 (H1 — Round 2 fix) — log on audit-port failure.
         // Constitution v1.4.0 Principle I sub-clause 4 — even on audit
-        // outage the forensic trail must reach pino ops feed. The Resend
-        // webhook source is `system:resend-webhook` — operational
-        // forensic rather than security; M3 will split this into a
-        // distinct event type once 0173 migration lands.
+        // outage the forensic trail must reach pino ops feed.
         logger.error(
           {
             err: auditErr,
@@ -141,7 +144,7 @@ export async function applyBatchWebhookEvent(
             resendEventId: input.resendEventId,
             useCase: 'apply-batch-webhook-event',
           },
-          'broadcasts.cross_tenant_probe.audit_emit_failed',
+          'broadcasts.webhook_batch_missing.audit_emit_failed',
         );
       }
       return err({
@@ -160,7 +163,7 @@ export async function applyBatchWebhookEvent(
   // F71A surface. Same event type so the F9 audit-viewer doesn't
   // need a new filter; payload distinguishes broadcast-level vs
   // batch-level via presence/absence of `batchManifestId`.
-  // Phase 3F.1 (F-6 silent-fail fix) — wrap audit emit in try/catch
+  // Phase 3F.4 (F-6 silent-fail fix) — wrap audit emit in try/catch
   // so an audit-port outage AFTER the counter increment doesn't
   // propagate to the webhook route's 500 path. A 500 → Svix retries
   // the webhook → the idempotent `incrementCounter` would increment

@@ -21,8 +21,10 @@
  * serialise anyway, but the 30s window avoids unnecessary lock churn).
  *
  * NOTE: per-tenant `tenant_broadcast_settings.dispatch_concurrency_cap`
- * wire-up is closed in Phase 3F.4 (see line 254 read). Until that
- * commit, this cron uses Domain DEFAULT_CONCURRENCY_CAP (4) — safe
+ * wire-up landed in Phase 3F.4 (see the "Phase 3F.4 (F-10 fix)" block
+ * below — the per-tenant settings row is read INSIDE the loop, then
+ * clamped via Domain `validateConcurrencyCap`). When the settings row
+ * is absent or NULL, Domain DEFAULT_CONCURRENCY_CAP (4) is used — safe
  * default for shared Resend account-tier limits per FR-002.
  *
  * Pin Node runtime — Bearer check + Drizzle + advisory locks all

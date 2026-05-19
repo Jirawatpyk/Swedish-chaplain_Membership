@@ -104,8 +104,11 @@ describe('applyBatchWebhookEvent contract (Phase 3F.5)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected error');
     expect((result.error as { kind: string }).kind).toBe('BATCH_NOT_FOUND');
-    // Phase 3F.7 F-23 fix — forensic audit emitted on the race-window path
-    expect(emits.some((e) => e.eventType === 'broadcast_cross_tenant_probe')).toBe(true);
+    // Phase 3F.11.3 (M3 — Round 2 fix) — operational-forensic event
+    // `broadcast_webhook_batch_missing` (split from security-forensic
+    // `broadcast_cross_tenant_probe` which now only covers admin/member-
+    // actor probes, not webhook races).
+    expect(emits.some((e) => e.eventType === 'broadcast_webhook_batch_missing')).toBe(true);
   });
 
   it('incrementCounter storage_error → server_error (no double-emit)', async () => {

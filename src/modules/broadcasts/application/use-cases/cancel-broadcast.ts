@@ -115,6 +115,41 @@ export async function cancelBroadcast(
         input.broadcastId,
       );
       if (existing === null) {
+        // Phase 3F.11.3 (M1 — Round 2 fix) — emit cross-tenant probe
+        // audit on admin probes of unknown broadcasts (mirrors the
+        // Phase 3F.1 pattern in retry-failed-batches + accept-partial-
+        // delivery). Member-actor branch BELOW intentionally returns
+        // the same `broadcast_not_found` shape without audit to avoid
+        // existence-leak (a member probing another member's broadcast
+        // must get the same response as a probe of a nonexistent one).
+        if (input.actor.kind === 'admin') {
+          try {
+            await deps.audit.emit(null, {
+              tenantId: deps.tenant.slug,
+              eventType: 'broadcast_cross_tenant_probe',
+              actorUserId,
+              summary: `Admin ${actorUserId} probed unknown broadcast ${input.broadcastId} (cancel path)`,
+              payload: {
+                broadcastId: input.broadcastId,
+                probedBroadcastId: input.broadcastId,
+                expectedTenantId: deps.tenant.slug,
+                useCase: 'cancel-broadcast',
+              },
+              requestId: input.requestId,
+            });
+          } catch (auditErr) {
+            logger.error(
+              {
+                err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+                tenantId: deps.tenant.slug,
+                probedBroadcastId: input.broadcastId as string,
+                actorUserId,
+                useCase: 'cancel-broadcast',
+              },
+              'broadcasts.cross_tenant_probe.audit_emit_failed',
+            );
+          }
+        }
         return err({
           kind: 'broadcast_not_found',
           broadcastId: input.broadcastId as string,
@@ -139,9 +174,17 @@ export async function cancelBroadcast(
       // into batches (F7.1a US1 path). When NO batches exist (F7 MVP
       // single-audience path), the original `sending → cutoff` rule
       // still applies — we can't recall a Resend-accepted broadcast.
+      // Phase 3F.11.3 (M1 — Round 2 fix) — skip findPendingByBroadcast
+      // for statuses that never carry batches (F7 MVP draft/submitted/
+      // cancelled/sent paths). Only `approved` + `sending` have
+      // potential batch state per the F7.1a US1 split-large-broadcasts
+      // cron lifecycle. Saves an extra DB roundtrip on every cancel of
+      // non-multi-audience broadcasts.
       let pendingBatchIds: readonly string[] = [];
       let hasBatches = false;
-      if (deps.batchManifests !== undefined) {
+      const statusMightHaveBatches =
+        existing.status === 'approved' || existing.status === 'sending';
+      if (deps.batchManifests !== undefined && statusMightHaveBatches) {
         const pendingBatches = await deps.batchManifests.findPendingByBroadcast(
           deps.tenant.slug as never,
           input.broadcastId,

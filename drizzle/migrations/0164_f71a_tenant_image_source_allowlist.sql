@@ -21,14 +21,16 @@
 -- Hostname format CHECK enforces RFC-1035 lowercase ASCII with at
 -- least one dot (explicit hosts only — wildcards forbidden per FR-010).
 --
--- Phase 3F.7 (F-11 note): the CHECK rejects uppercase letters which
--- means application-layer MUST normalise to lowercase before insert
--- — `manage-image-allowlist.ts` Phase 4 T072 use case is responsible
--- for `host.trim().toLowerCase()` at the boundary. Admin paste of
--- mixed-case hostnames (e.g., `cdn.SweCham.com` from browser bar)
--- should NOT 500 with constraint violation — the app should normalise
--- proactively. IDN/punycode is out of scope (FR-010 requires explicit
--- exact-match hosts; international domains expressed as ASCII punycode).
+-- Phase 3F.8 (F-11 note, attribution corrected in Phase 3F.11.3) — the
+-- CHECK rejects uppercase letters which means application-layer MUST
+-- normalise to lowercase before insert. Phase 4 T072 `manage-image-
+-- allowlist.ts` use case (NOT YET IMPLEMENTED) will be responsible for
+-- `host.trim().toLowerCase()` at the boundary. Until T072 lands, admin
+-- paste of mixed-case hostnames (e.g., `cdn.SweCham.com` from browser
+-- bar) WILL 500 with a constraint violation — there is no app-layer
+-- normalisation yet. The hostname-format CHECK is the only backstop.
+-- IDN/punycode is out of scope (FR-010 requires explicit exact-match
+-- hosts; international domains expressed as ASCII punycode).
 --
 -- Idempotency: IF NOT EXISTS on CREATE TABLE + CREATE UNIQUE INDEX —
 -- 2026-05-19 first-apply attempt left the table created but the seed
