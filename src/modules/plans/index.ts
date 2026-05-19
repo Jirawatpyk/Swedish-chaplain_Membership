@@ -56,6 +56,13 @@ export {
 
 export type {
   BenefitMatrix,
+  // R3 Batch 4f (R3-S7) — discriminated variants of `BenefitMatrix`
+  // by `partnership` field. Use these directly when a code site
+  // already knows the variant (e.g., the partnership-only editor
+  // panel) — the compiler will then refuse to access undefined
+  // partnership-only fields on a corporate-typed value.
+  CorporateBenefitMatrix,
+  PartnershipBenefitMatrix,
   PartnershipBenefits,
   WebsitePageType,
   HomepageLogoCategory,

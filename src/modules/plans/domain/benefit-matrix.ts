@@ -65,7 +65,12 @@ export type PartnershipBenefits = {
 
 // --- Full benefit matrix ------------------------------------------------------
 
-export type BenefitMatrix = {
+/**
+ * Base fields shared by every plan category. Discriminated subtypes
+ * (`CorporateBenefitMatrix` / `PartnershipBenefitMatrix`) below add the
+ * category-specific `partnership` shape.
+ */
+type BenefitMatrixBase = {
   // Brand Visibility (both categories)
   readonly eblast_per_year: number;
   readonly website_page_type: WebsitePageType | null;
@@ -77,14 +82,43 @@ export type BenefitMatrix = {
   readonly events_cobranded_access: boolean;
   readonly cultural_tickets_per_year: number;
 
-  // Additional corporate benefits
+  // Additional corporate benefits (semantically partnership plans don't
+  // expose M2M / referrals / tailor-made — schema/DB still stores
+  // boolean, validator enforces shape per data-model.md § 2.2).
   readonly m2m_benefits_access: boolean;
   readonly business_referrals: boolean;
   readonly tailor_made_services: boolean;
-
-  // Partnership-only — null for corporate plans
-  readonly partnership: PartnershipBenefits | null;
 };
+
+/**
+ * R3 Batch 4f (R3-S7) — compile-time discriminated union over the
+ * `partnership` field. The status↔partnership invariant
+ * (`plan_category === 'partnership'` ⇔ non-null `partnership`) is now
+ * encoded in the TYPE (not just in the smart constructor +
+ * data-model.md § 2.2 comments).
+ *
+ * Code consumers narrow via `if (matrix.partnership !== null)` to get
+ * `PartnershipBenefitMatrix`; the structural-union surface remains
+ * compatible with the existing ~19 reader call sites in
+ * `src/components/plans/**` + `src/app/(staff)/admin/plans/**`.
+ *
+ * Scope note: `Plan.benefit_matrix` continues to be `BenefitMatrix`
+ * (the union) rather than discriminating `Plan` itself. The discriminant
+ * is reachable via the matrix's `partnership` field — narrowing once
+ * via `matrix.partnership !== null` gives the consumer the variant
+ * shape it needs. Discriminating `Plan` per the original R3-S7 plan
+ * would force ~19 UI sites to narrow on `plan.plan_category` first
+ * (HIGH-risk per plan's Complexity Tracking entry).
+ */
+export type CorporateBenefitMatrix = BenefitMatrixBase & {
+  readonly partnership: null;
+};
+
+export type PartnershipBenefitMatrix = BenefitMatrixBase & {
+  readonly partnership: PartnershipBenefits;
+};
+
+export type BenefitMatrix = CorporateBenefitMatrix | PartnershipBenefitMatrix;
 
 export class InvalidBenefitMatrixError extends Error {
   constructor(message: string) {
@@ -94,6 +128,16 @@ export class InvalidBenefitMatrixError extends Error {
 }
 
 /**
+ * Loose input shape — accepts the structural type before the
+ * discriminated union narrows. Mirrors `MutableScheduledPlanChange`
+ * (R3 Batch 4e) — the smart constructor takes this looser shape,
+ * runtime-validates, and returns the discriminated variant.
+ */
+type BenefitMatrixInput = BenefitMatrixBase & {
+  readonly partnership: PartnershipBenefits | null;
+};
+
+/**
  * Smart constructor enforcing the partnership↔corporate integrity
  * invariant at the Domain boundary (zod `benefitMatrixSchema` covers
  * the HTTP edge; this catches non-zod construction paths like seed
@@ -101,10 +145,30 @@ export class InvalidBenefitMatrixError extends Error {
  *
  * - `planCategory === 'corporate'` → `partnership` MUST be null
  * - `planCategory === 'partnership'` → `partnership` MUST be non-null
+ *
+ * R3 Batch 4f (R3-S7) — overloads narrow the return type to the
+ * discriminated variant matching the caller's `planCategory`. A
+ * code site that calls `asBenefitMatrix(m, 'partnership')` now gets
+ * `PartnershipBenefitMatrix` (with non-null `partnership` field at
+ * the type level) — no need for `if (matrix.partnership !== null)`
+ * guards downstream.
+ *
  * @throws InvalidBenefitMatrixError on mismatch
  */
 export function asBenefitMatrix(
-  input: BenefitMatrix,
+  input: BenefitMatrixInput,
+  planCategory: 'corporate',
+): CorporateBenefitMatrix;
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
+  planCategory: 'partnership',
+): PartnershipBenefitMatrix;
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
+  planCategory: 'corporate' | 'partnership',
+): BenefitMatrix;
+export function asBenefitMatrix(
+  input: BenefitMatrixInput,
   planCategory: 'corporate' | 'partnership',
 ): BenefitMatrix {
   if (planCategory === 'corporate' && input.partnership !== null) {
@@ -130,5 +194,8 @@ export function asBenefitMatrix(
       );
     }
   }
-  return input;
+  // The runtime checks above narrow `input` to the matching variant.
+  // The discriminated-union type system can't statically track that
+  // narrowing across two distinct `if` branches, so cast to the union.
+  return input as BenefitMatrix;
 }

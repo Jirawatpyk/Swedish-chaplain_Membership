@@ -7,6 +7,8 @@ import {
   asBenefitMatrix,
   InvalidBenefitMatrixError,
   type BenefitMatrix,
+  type CorporateBenefitMatrix,
+  type PartnershipBenefitMatrix,
 } from '@/modules/plans/domain/benefit-matrix';
 
 describe('BenefitMatrix validation (via zod schemas)', () => {
@@ -204,5 +206,101 @@ describe('asBenefitMatrix — Domain smart constructor', () => {
     const lit: BenefitMatrix = corporateBase;
     const matrix: BenefitMatrix = lit;
     expect(matrix).toEqual(corporateBase);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// R3 Batch 4f (R3-S7) — BenefitMatrix discriminated union over `partnership`
+// ---------------------------------------------------------------------------
+//
+// The smart constructor now narrows the return type via overloads:
+//   - `asBenefitMatrix(m, 'corporate')`    → `CorporateBenefitMatrix`
+//   - `asBenefitMatrix(m, 'partnership')`  → `PartnershipBenefitMatrix`
+//
+// Consumers that previously needed `if (matrix.partnership !== null)`
+// guards on a flat type now get the variant directly. The runtime
+// invariant remains identical — the discriminant is a type-system
+// upgrade, not a behaviour change.
+describe('BenefitMatrix discriminated union (R3-S7)', () => {
+  const corporateBase = {
+    eblast_per_year: 6,
+    website_page_type: 'member_news_update' as const,
+    homepage_logo_category: 'premium' as const,
+    directory_listing_size: 'full_page' as const,
+    event_discount_scope: 'all_employees' as const,
+    events_cobranded_access: true,
+    cultural_tickets_per_year: 2,
+    m2m_benefits_access: true,
+    business_referrals: true,
+    tailor_made_services: true,
+  };
+  const partnershipSub: PartnershipBenefitMatrix['partnership'] = {
+    event_tickets_included: 4,
+    booth_included: false,
+    rollup_logo_at_events: true,
+    logo_on_merch: false,
+    video_duration_minutes: 1.5,
+    video_frequency_scope: 'three_selected_events',
+    website_logo_months: 6,
+    banner_per_year: 15,
+    newsletter_promotion: false,
+    enewsletter_logo: true,
+    directory_ad_position: 'first_pages',
+  };
+
+  it('asBenefitMatrix(_, "corporate") returns CorporateBenefitMatrix with partnership: null at type level', () => {
+    const result: CorporateBenefitMatrix = asBenefitMatrix(
+      { ...corporateBase, partnership: null },
+      'corporate',
+    );
+    // partnership is exactly `null` — assignable to `null` (not `null | PartnershipBenefits`)
+    const partnershipField: null = result.partnership;
+    expect(partnershipField).toBeNull();
+  });
+
+  it('asBenefitMatrix(_, "partnership") returns PartnershipBenefitMatrix with non-null partnership at type level', () => {
+    const result: PartnershipBenefitMatrix = asBenefitMatrix(
+      { ...corporateBase, partnership: partnershipSub },
+      'partnership',
+    );
+    // partnership is `PartnershipBenefits` — direct access without `?.`
+    // is required by the compiler (the optional-chain `?.` below would
+    // be flagged "unnecessary" if anyone reverts the discriminant).
+    expect(result.partnership.event_tickets_included).toBe(4);
+    expect(result.partnership.video_duration_minutes).toBe(1.5);
+  });
+
+  it('narrowing via `if (matrix.partnership !== null)` reaches PartnershipBenefitMatrix at type level', () => {
+    const matrix: BenefitMatrix = asBenefitMatrix(
+      { ...corporateBase, partnership: partnershipSub },
+      'partnership',
+    );
+    if (matrix.partnership !== null) {
+      // After this guard, TS narrows `matrix` to `PartnershipBenefitMatrix`
+      // and `matrix.partnership` to `PartnershipBenefits` (non-null).
+      const partnership: PartnershipBenefitMatrix['partnership'] =
+        matrix.partnership;
+      expect(partnership.video_frequency_scope).toBe('three_selected_events');
+    } else {
+      throw new Error('unreachable — fixture sets partnership non-null');
+    }
+  });
+
+  it('CorporateBenefitMatrix structurally assignable to BenefitMatrix (union member)', () => {
+    const corp: CorporateBenefitMatrix = {
+      ...corporateBase,
+      partnership: null,
+    };
+    const matrix: BenefitMatrix = corp;
+    expect(matrix.partnership).toBeNull();
+  });
+
+  it('PartnershipBenefitMatrix structurally assignable to BenefitMatrix (union member)', () => {
+    const partner: PartnershipBenefitMatrix = {
+      ...corporateBase,
+      partnership: partnershipSub,
+    };
+    const matrix: BenefitMatrix = partner;
+    expect(matrix.partnership).not.toBeNull();
   });
 });
