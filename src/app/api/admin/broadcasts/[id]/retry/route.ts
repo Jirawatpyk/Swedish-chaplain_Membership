@@ -28,6 +28,8 @@ import {
   retryFailedBatches,
   makeRetryFailedBatchesDeps,
   parseBroadcastId,
+  isF71aUs1Enabled,
+  f71aUs1DisabledReason,
   type RetryFailedBatchesError,
 } from '@/modules/broadcasts';
 import {
@@ -49,6 +51,18 @@ export async function POST(
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // T061 F71A US1 flag gate. When OFF: return 503 feature_disabled so
+  // the admin UI's retry button surface (T053 + T049) sees a clear
+  // signal that the feature is dark. Triple-flag check (F7 master +
+  // F71A master + US1 sub-flag) via `isF71aUs1Enabled`.
+  if (!isF71aUs1Enabled()) {
+    logger.info(
+      { correlationId, reason: f71aUs1DisabledReason() },
+      'admin.broadcasts.retry.feature_disabled',
+    );
+    return errorResponse(503, 'feature_disabled', correlationId);
+  }
 
   const { id } = await context.params;
   const parsedId = parseBroadcastId(id);

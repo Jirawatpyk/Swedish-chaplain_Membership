@@ -15,6 +15,7 @@ import {
   type BatchStatusForUi,
 } from '@/components/broadcast/admin/batch-breakdown';
 import {
+  isF71aUs1Enabled,
   makeGetBroadcastDeps,
   MANUAL_RETRY_BUDGET,
   parseBroadcastId,
@@ -86,14 +87,16 @@ export default async function AdminBroadcastDetailPage({
   // body indistinguishable from a whitespace-only draft.
   const sanitisedBody = renderTimeSanitise(broadcast.bodyHtml);
 
-  // F7.1a Phase 3 T049 — load per-batch manifests (if any). Empty
-  // result means this broadcast was small enough to dispatch as a
-  // single audience (F7 MVP path) and the BatchBreakdown component
-  // surfaces the "not split" fallback.
-  const batchManifests = await loadBatchBreakdownRows(
-    tenant.slug,
-    broadcast.broadcastId,
-  );
+  // F7.1a Phase 3 T049 + T061 — load per-batch manifests when US1
+  // pagination feature is enabled. When OFF: skip the DB query
+  // entirely (avoids surfacing legacy batch rows from a prior on/off
+  // toggle) and hide the BatchBreakdown surface. F7 MVP single-
+  // audience broadcasts dispatched while US1 is off would have NO
+  // manifests anyway — the gate is defence-in-depth.
+  const f71aUs1On = isF71aUs1Enabled();
+  const batchManifests = f71aUs1On
+    ? await loadBatchBreakdownRows(tenant.slug, broadcast.broadcastId)
+    : [];
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -189,17 +192,20 @@ export default async function AdminBroadcastDetailPage({
           (batches.length > 0) OR the broadcast is in a F7.1a-relevant
           status (partially_sent / sending — admin needs visibility
           into in-flight batches). Component shows "not split" fallback
-          for F7 MVP single-audience broadcasts. */}
-      <BatchBreakdown
-        broadcastId={broadcast.broadcastId as unknown as string}
-        broadcastStatus={broadcast.status}
-        manualRetryRemaining={manualRetryRemaining}
-        batches={batchManifests}
-        defaultOpen={
-          broadcast.status === 'partially_sent' ||
-          broadcast.status === 'partial_delivery_accepted'
-        }
-      />
+          for F7 MVP single-audience broadcasts. T061: entire surface
+          hidden when US1 flag is off. */}
+      {f71aUs1On ? (
+        <BatchBreakdown
+          broadcastId={broadcast.broadcastId as unknown as string}
+          broadcastStatus={broadcast.status}
+          manualRetryRemaining={manualRetryRemaining}
+          batches={batchManifests}
+          defaultOpen={
+            broadcast.status === 'partially_sent' ||
+            broadcast.status === 'partial_delivery_accepted'
+          }
+        />
+      ) : null}
 
       {broadcast.status === 'submitted' && !isReadOnlyManager && !sanitisedBody.error ? (
         <div className="flex justify-end">

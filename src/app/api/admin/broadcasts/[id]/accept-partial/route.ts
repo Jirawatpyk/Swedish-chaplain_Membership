@@ -25,6 +25,8 @@ import {
   makeAcceptPartialDeliveryDeps,
   parseBroadcastId,
   MAX_REASON_LENGTH,
+  isF71aUs1Enabled,
+  f71aUs1DisabledReason,
   type AcceptPartialDeliveryError,
 } from '@/modules/broadcasts';
 import {
@@ -50,6 +52,15 @@ export async function POST(
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // T061 F71A US1 flag gate — see retry/route.ts header for rationale.
+  if (!isF71aUs1Enabled()) {
+    logger.info(
+      { correlationId, reason: f71aUs1DisabledReason() },
+      'admin.broadcasts.accept_partial.feature_disabled',
+    );
+    return errorResponse(503, 'feature_disabled', correlationId);
+  }
 
   const { id } = await context.params;
   const parsedId = parseBroadcastId(id);

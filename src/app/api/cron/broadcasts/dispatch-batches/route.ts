@@ -43,6 +43,8 @@ import {
   asBroadcastId,
   resolveSegmentRecipients,
   tenantDefaultLocaleFor,
+  isF71aUs1Enabled,
+  f71aUs1DisabledReason,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
@@ -84,16 +86,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // 2. F7 master kill-switch — returns 200 so cron-job.org does not
-  //    retry-storm during a dark-launch period.
-  if (!env.features.f7Broadcasts) {
+  // 2. Feature kill-switch — F7 master + F71A master + US1 sub-flag
+  //    must ALL be on (T061). Returns 200 so cron-job.org does not
+  //    retry-storm during dark-launch.
+  if (!isF71aUs1Enabled()) {
     const tenantSlug = resolveTenantFromRequest(request).slug;
+    const reason = f71aUs1DisabledReason() ?? 'unknown';
     logger.info(
-      { tenantId: tenantSlug },
+      { tenantId: tenantSlug, reason },
       'cron.broadcasts.dispatch_batches.feature_disabled',
     );
     return NextResponse.json(
-      { skipped: true, reason: 'feature_disabled' },
+      { skipped: true, reason: `feature_disabled:${reason}` },
       { status: 200 },
     );
   }

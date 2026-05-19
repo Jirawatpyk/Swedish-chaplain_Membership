@@ -296,6 +296,11 @@ export {
   type ApplyBatchWebhookEventInput,
   type BatchWebhookEventType,
 } from './application/use-cases/apply-batch-webhook-event';
+export {
+  isF71aUs1Enabled,
+  f71aUs1DisabledReason,
+  type F71aUs1DisabledReason,
+} from './infrastructure/feature-flags';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------
 export {
