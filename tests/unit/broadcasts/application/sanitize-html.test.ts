@@ -139,11 +139,37 @@ describe('sanitize-html — Wave 6 (T064 GREEN)', () => {
     expect(out).not.toContain('<circle');
   });
 
-  it('strips <img> tags entirely (Critique 2026-04-29 E9/X3 — tracking-pixel vector)', () => {
-    const out = sanitize('<p>ok</p><img src="https://tracker.example/pixel.gif"/>');
-    expect(out).not.toContain('<img');
-    expect(out).not.toContain('tracker.example');
+  // F7.1a US2 (T078) — `<img>` reinstated at sanitiser layer with
+  // http(s)-only src enforcement; per-tenant source allowlist enforced
+  // at Application use-case layer (validateImageSourceAllowlist).
+  // Pre-F7.1a behavior (`<img>` stripped entirely as a tracking-pixel
+  // mitigation per Critique 2026-04-29 E9/X3) is superseded by FR-009
+  // + FR-010 + FR-014.
+  it('preserves <img> tags with http(s) src (F7.1a US2 — source allowlist runs at use-case layer)', () => {
+    const out = sanitize(
+      '<p>ok</p><img src="https://cdn.example.com/banner.png" alt="banner"/>',
+    );
+    expect(out).toContain('<img');
+    expect(out).toContain('cdn.example.com');
+    expect(out).toContain('alt="banner"');
     expect(out).toContain('<p>ok</p>');
+  });
+
+  it('strips src from <img> with non-http(s) schemes (FR-014)', () => {
+    const cases = [
+      'data:text/html,<script>alert(1)</script>',
+      'javascript:alert(1)',
+      'file:///etc/passwd',
+      'vbscript:msgbox(1)',
+    ];
+    for (const badSrc of cases) {
+      const out = sanitize(`<p>ok</p><img src="${badSrc}"/>`);
+      expect(out).not.toContain(badSrc);
+      // The <img> element survives but with src removed — visible
+      // signal to the author + harmless render. The use case at the
+      // submit boundary still enforces per-tenant source allowlist
+      // on any surviving src.
+    }
   });
 
   // ---- Forbidden attributes -----------------------------------------

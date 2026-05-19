@@ -6,14 +6,18 @@
  * (exact-pinned in package.json) with a frozen configuration object so
  * the same input always produces the same output across runs (T042).
  *
- * Allowlist (FR-002a + Critique 2026-04-29 E9/X3 — `<img>` REMOVED;
- * tracking-pixel vector):
+ * Allowlist (FR-002a + F7.1a US2 T078 reinstates `<img>` after the
+ * Critique 2026-04-29 E9/X3 removal; tenant-source allowlist enforcement
+ * now lives at the Application use-case layer via
+ * `validateImageSourceAllowlist` — see contracts/image-upload.md § 1.2):
  *   ALLOWED tags: p, br, strong, em, u, a[href], ul, ol, li,
- *                 h1, h2, h3, h4, blockquote, hr
- *   ALLOWED attrs: href, target, rel (target+rel are auto-forced via hook)
- *   ALLOWED URL schemes: http://, https://, mailto: only
+ *                 h1, h2, h3, h4, blockquote, hr, img[src,alt]
+ *   ALLOWED attrs: href, target, rel (auto-forced via link hook),
+ *                  src, alt (img only; non-http(s) src stripped via hook)
+ *   ALLOWED URL schemes: http://, https://, mailto: (anchors);
+ *                        http://, https:// only on <img src> (FR-014)
  *   FORBIDDEN tags: script, style, iframe, form, link, meta, base,
- *                   object, embed, svg, img
+ *                   object, embed, svg
  *   FORBIDDEN attrs: any `on*` event handler, inline `style`
  *
  * Hardening (review C3 — 2026-04-30):
@@ -55,10 +59,19 @@ const ALLOWED_TAGS = [
   'h4',
   'blockquote',
   'hr',
+  // F7.1a US2 (T078) — `<img>` reinstated; source-allowlist enforced
+  // at Application use-case layer (validateImageSourceAllowlist).
+  // Non-http(s) src is stripped by the img-src-scheme hook below.
+  'img',
 ] as const;
 
-const ALLOWED_ATTR = ['href', 'target', 'rel'] as const;
+const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'] as const;
 
+// Anchor scheme allowlist — `mailto:` is permitted alongside http(s).
+// `<img src>` scheme enforcement lives in the img-src-scheme hook
+// because DOMPurify's ALLOWED_URI_REGEXP applies to ALL URL-bearing
+// attributes; we need stricter rules for `<img src>` (http(s) only,
+// no mailto:) than for `<a href>`.
 const ALLOWED_URI_REGEXP = /^(?:https?:|mailto:)/i;
 
 const PURIFY_CONFIG = Object.freeze({
@@ -76,7 +89,6 @@ const PURIFY_CONFIG = Object.freeze({
     'object',
     'embed',
     'svg',
-    'img',
   ],
   FORBID_ATTR: ['style'],
   // KEEP_CONTENT: true — preserves text inside non-allowlisted-but-
@@ -89,6 +101,22 @@ const PURIFY_CONFIG = Object.freeze({
 
 let hookInstalled = false;
 
+/**
+ * T078 (F7.1a US2) — `<img>` source-scheme guard.
+ *
+ * `<img src>` is allowed by the ALLOWED_TAGS allowlist but the scheme
+ * MUST be http(s) per FR-014 (data:, javascript:, file:, vbscript:
+ * stripped). Implemented as an attribute-level removal inside the
+ * existing afterSanitizeAttributes hook so non-conforming `<img>`
+ * elements drop their `src` and render as broken images (visible
+ * signal to the author that the URL was rejected) instead of being
+ * removed silently.
+ *
+ * Why not rely on ALLOWED_URI_REGEXP alone: that regex governs ALL
+ * URL-bearing attributes (href, src, action…). We need `<a href>` to
+ * keep allowing `mailto:` while `<img src>` rejects it — the regex is
+ * too coarse. A per-attribute hook is the right surface.
+ */
 function installLinkHardeningHook(): void {
   if (hookInstalled) return;
   // Force every surviving anchor to be safe regardless of input.
@@ -105,9 +133,14 @@ function installLinkHardeningHook(): void {
       tagName?: string;
       hasAttribute?: (name: string) => boolean;
       setAttribute?: (name: string, value: string) => void;
+      getAttribute?: (name: string) => string | null;
+      removeAttribute?: (name: string) => void;
     };
+    if (el.nodeType !== 1) return;
+
+    // Link-hardening — force every surviving anchor to carry safe
+    // rel + target. Unchanged from F7 MVP.
     if (
-      el.nodeType === 1 &&
       el.tagName === 'A' &&
       typeof el.hasAttribute === 'function' &&
       typeof el.setAttribute === 'function' &&
@@ -115,6 +148,22 @@ function installLinkHardeningHook(): void {
     ) {
       el.setAttribute('rel', 'noopener noreferrer nofollow');
       el.setAttribute('target', '_blank');
+      return;
+    }
+
+    // T078 (F7.1a US2) — `<img>` source-scheme guard. Strip src when
+    // scheme is not http(s); FR-014. Application-layer
+    // `validateImageSourceAllowlist` enforces the per-tenant hostname
+    // allowlist on the surviving src URL.
+    if (
+      el.tagName === 'IMG' &&
+      typeof el.getAttribute === 'function' &&
+      typeof el.removeAttribute === 'function'
+    ) {
+      const src = el.getAttribute('src') ?? null;
+      if (src === null || !/^https?:\/\//i.test(src)) {
+        el.removeAttribute('src');
+      }
     }
   });
   hookInstalled = true;
