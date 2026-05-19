@@ -223,13 +223,19 @@ export async function POST(
         status: result.error.transitioned.status,
         cancelled_at: result.error.transitioned.cancelledAt,
       };
-      const headers = new Headers({
+      // R4-I1 — cache the diagnostic headers alongside body+status so
+      // idempotent replay re-emits them. SRE alert routing keyed on
+      // `X-Audit-Backfill-Required` / `X-Audit-Error-Type` would
+      // otherwise silently lose the discriminator on retry.
+      const headerEntries: Record<string, string> = {
         'X-Audit-Backfill-Required': '1',
         'X-Audit-Error-Type': result.error.auditErrorType,
-      });
+      };
+      const headers = new Headers(headerEntries);
       await rememberIdempotentResponse(tenant, guard.key, guard.bodyHash, {
         status: 200,
         body,
+        headers: headerEntries,
       });
       return NextResponse.json(body, { status: 200, headers });
     }

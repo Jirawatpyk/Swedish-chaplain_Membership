@@ -79,12 +79,19 @@ export async function runIdempotencyGuard(
   );
 
   if (classification.kind === 'replay') {
+    // R4-I1 — re-emit cached headers verbatim so diagnostic signals
+    // (X-Audit-Backfill-Required, X-Audit-Error-Type, etc.) survive
+    // the replay. Without this, SRE alert routing keyed on response
+    // headers silently loses the discriminator on retry.
+    const init: ResponseInit = {
+      status: classification.previousResponse.status,
+    };
+    if (classification.previousResponse.headers !== undefined) {
+      init.headers = new Headers(classification.previousResponse.headers);
+    }
     return {
       kind: 'response',
-      response: NextResponse.json(
-        classification.previousResponse.body,
-        { status: classification.previousResponse.status },
-      ),
+      response: NextResponse.json(classification.previousResponse.body, init),
     };
   }
 

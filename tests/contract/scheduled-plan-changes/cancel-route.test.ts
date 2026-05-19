@@ -346,6 +346,51 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(body.error.code).toBe('server_error');
   });
 
+  // R4-I10 — idempotent replay of the audit_failed 200 response.
+  // Stub classifyIdempotencyRequest to return `kind:'replay'` with a
+  // cached envelope INCLUDING the diagnostic headers. Assert the
+  // replay response re-emits the headers verbatim. Without this, SRE
+  // alert routing keyed on `X-Audit-Backfill-Required` silently
+  // loses the discriminator on retry.
+  it('R4-I10: replay of cached audit_failed response re-emits diagnostic headers', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    const idem = await import('@/lib/idempotency');
+    vi.mocked(idem.classifyIdempotencyRequest).mockResolvedValueOnce({
+      kind: 'replay',
+      previousResponse: {
+        status: 200,
+        body: {
+          scheduled_change_id: SCHEDULED_ID,
+          status: 'cancelled',
+          cancelled_at: '2026-05-19T10:00:00Z',
+        },
+        headers: {
+          'X-Audit-Backfill-Required': '1',
+          'X-Audit-Error-Type': 'persist_failed',
+        },
+      },
+    });
+
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Audit-Backfill-Required')).toBe('1');
+    expect(res.headers.get('X-Audit-Error-Type')).toBe('persist_failed');
+    const body = await res.json();
+    expect(body).toEqual({
+      scheduled_change_id: SCHEDULED_ID,
+      status: 'cancelled',
+      cancelled_at: '2026-05-19T10:00:00Z',
+    });
+    // The use-case mock was NOT invoked — short-circuit on replay.
+    expect(cancelScheduledPlanChangeMock).not.toHaveBeenCalled();
+  });
+
   it('503 idempotency_reservation_failed when Upstash reserve returns err', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     const idem = await import('@/lib/idempotency');
