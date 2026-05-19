@@ -42,10 +42,7 @@ import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import type { PlanDraftInput } from '@/modules/plans/application/ports';
-import type {
-  BenefitMatrix,
-  BenefitMatrixLiteral,
-} from '@/modules/plans/domain/benefit-matrix';
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { asBenefitMatrix } from '@/modules/plans';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -120,7 +117,7 @@ export const CORPORATE_SEED: ReadonlyArray<{
   readonly maxDuration: number | null;
   readonly maxAge: number | null;
   readonly memberType: 'company' | 'individual';
-  readonly matrix: BenefitMatrixLiteral;
+  readonly matrix: BenefitMatrix;
   readonly sortOrder: number;
 }> = [
   {
@@ -316,7 +313,7 @@ export const PARTNERSHIP_SEED: ReadonlyArray<{
   readonly name: { readonly en: string; readonly th: string; readonly sv: string };
   readonly fee: number;
   readonly sortOrder: number;
-  readonly matrix: BenefitMatrixLiteral;
+  readonly matrix: BenefitMatrix;
 }> = [
   {
     id: 'diamond',

@@ -11,14 +11,14 @@
  * spread + override:
  *   const partnershipMatrix = { ...DEFAULT_TEST_BENEFIT_MATRIX, partnership: 'gold' };
  */
-// Post-ship R6 Batch 2a — switched from branded `BenefitMatrix` to
-// structural `BenefitMatrixLiteral` so integration tests can construct
-// the fixture via object literal. Downstream test code that inserts
-// the matrix into `membership_plans` rows brands it at the persistence
-// boundary if needed via `asBenefitMatrix()` from `@/modules/plans`.
-import type { BenefitMatrixLiteral } from '@/modules/plans/domain/benefit-matrix';
+// R2 Batch 3e — dropped inert `BenefitMatrixLiteral` alias (was
+// `type X = X;` — no compile-time benefit). `BenefitMatrix` is
+// structural; integration tests can construct via object literal.
+// Test code that wants partnership↔corporate integrity validation
+// can opt into `asBenefitMatrix()` from `@/modules/plans`.
+import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 
-export const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrixLiteral = {
+export const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
   website_page_type: 'member_news_update',
   homepage_logo_category: 'regular',

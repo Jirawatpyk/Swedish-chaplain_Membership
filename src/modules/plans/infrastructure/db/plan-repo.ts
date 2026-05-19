@@ -43,8 +43,8 @@ import {
   type PlanSlug,
   type PlanYear,
 } from '../../domain/plan';
-import type { BenefitMatrix, BenefitMatrixLiteral } from '../../domain/benefit-matrix';
-import type { LocaleText } from '../../domain/locale-text';
+import { asBenefitMatrix, type BenefitMatrix } from '../../domain/benefit-matrix';
+import { asLocaleText, type LocaleText } from '../../domain/locale-text';
 import { detectLockedFieldChanges } from '../../domain/locked-field-rule';
 
 // --- Row → Domain translation -----------------------------------------------
@@ -57,16 +57,15 @@ type MembershipPlanRow = typeof membershipPlans.$inferSelect;
  * insert shape wants writable structurally-equivalent objects for
  * JSONB columns.
  */
-function cloneBenefitMatrix(m: BenefitMatrixLiteral): BenefitMatrix {
-  // Post-ship R6 Batch 2a — input is the structural literal; output
-  // is the branded BenefitMatrix. DB rows + cloned drafts have
-  // already been validated upstream (zod at the API boundary +
-  // `asBenefitMatrix` at row→Domain in `rowToPlan` below), so the
-  // brand cast is safe at the clone boundary.
+function cloneBenefitMatrix(m: BenefitMatrix): BenefitMatrix {
+  // R2 Batch 3e — BenefitMatrix is structural (no brand). Deep-clone
+  // for safety in the Drizzle insert path (JSONB columns require a
+  // writable object). Partnership integrity is validated upstream by
+  // `asBenefitMatrix` in `rowToPlan` + at API boundary by zod.
   return {
     ...m,
     partnership: m.partnership ? { ...m.partnership } : null,
-  } as BenefitMatrix;
+  };
 }
 
 function cloneLocaleText(t: {
@@ -81,12 +80,21 @@ function cloneLocaleText(t: {
 }
 
 function rowToPlan(row: MembershipPlanRow): Plan {
+  // R2 Batch 3e (R2-I13) — replace bare `as LocaleText` / `as
+  // BenefitMatrix` casts with smart-constructor calls. DB CHECK
+  // constraints (migration 0006/0007) already enforce these
+  // invariants; the smart constructors are defence-in-depth that
+  // catch (a) hand-crafted hydration paths bypassing `rowToPlan`,
+  // (b) DB CHECK drift during schema migrations, (c) manual SQL
+  // fixes that bypass the CHECK. `asBenefitMatrix` is the ONE site
+  // where `planCategory` is statically known for the partnership↔
+  // category integrity check.
   return {
     tenant_id: asTenantSlug(row.tenantId),
     plan_id: asPlanSlug(row.planId),
     plan_year: asPlanYear(row.planYear),
-    plan_name: row.planName as LocaleText,
-    description: row.description as LocaleText,
+    plan_name: asLocaleText(row.planName as { en: string; th?: string; sv?: string }),
+    description: asLocaleText(row.description as { en: string; th?: string; sv?: string }),
     sort_order: row.sortOrder,
     plan_category: row.planCategory,
     member_type_scope: row.memberTypeScope,
@@ -98,7 +106,7 @@ function rowToPlan(row: MembershipPlanRow): Plan {
     max_turnover_minor_units: row.maxTurnoverMinorUnits,
     max_duration_years: row.maxDurationYears,
     max_member_age: row.maxMemberAge,
-    benefit_matrix: row.benefitMatrix as BenefitMatrix,
+    benefit_matrix: asBenefitMatrix(row.benefitMatrix as BenefitMatrix, row.planCategory),
     is_active: row.isActive,
     deleted_at: row.deletedAt,
     created_at: row.createdAt,

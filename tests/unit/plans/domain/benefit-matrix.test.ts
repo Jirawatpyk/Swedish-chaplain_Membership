@@ -6,7 +6,7 @@ import {
 import {
   asBenefitMatrix,
   InvalidBenefitMatrixError,
-  type BenefitMatrixLiteral,
+  type BenefitMatrix,
 } from '@/modules/plans/domain/benefit-matrix';
 
 describe('BenefitMatrix validation (via zod schemas)', () => {
@@ -104,7 +104,7 @@ describe('BenefitMatrix validation (via zod schemas)', () => {
 // a single validating helper instead of duplicating the invariant
 // check at each call site.
 describe('asBenefitMatrix — Domain smart constructor', () => {
-  const corporateBase: BenefitMatrixLiteral = {
+  const corporateBase: BenefitMatrix = {
     eblast_per_year: 6,
     website_page_type: 'member_news_update',
     homepage_logo_category: 'premium',
@@ -118,7 +118,7 @@ describe('asBenefitMatrix — Domain smart constructor', () => {
     partnership: null,
   };
 
-  const partnershipBase: BenefitMatrixLiteral = {
+  const partnershipBase: BenefitMatrix = {
     ...corporateBase,
     partnership: {
       event_tickets_included: 6,
@@ -179,7 +179,7 @@ describe('asBenefitMatrix — Domain smart constructor', () => {
   });
 
   it('does not mutate input', () => {
-    const input: BenefitMatrixLiteral = { ...corporateBase };
+    const input: BenefitMatrix = { ...corporateBase };
     const snapshot = JSON.stringify(input);
     asBenefitMatrix(input, 'corporate');
     expect(JSON.stringify(input)).toBe(snapshot);
@@ -194,13 +194,15 @@ describe('asBenefitMatrix — Domain smart constructor', () => {
     expect(result.partnership?.directory_ad_position).toBe('pages_1_and_2');
   });
 
-  it('BenefitMatrixLiteral is structurally assignable to BenefitMatrix (soft pattern, no brand)', () => {
-    // Compile-time check: the alias is symmetric — same shape both
-    // directions. If a future round flips BenefitMatrix to branded,
-    // this test would fail and signal the need for explicit
-    // `asBenefitMatrix(...)` at all call sites that build literals.
-    const lit: BenefitMatrixLiteral = corporateBase;
-    const matrix: BenefitMatrixLiteral = lit;
+  it('BenefitMatrix is structural — object literal assignable without smart constructor (soft pattern)', () => {
+    // Compile-time check: BenefitMatrix is a structural type, so an
+    // object literal can be assigned without `asBenefitMatrix(...)`.
+    // If a future round flips BenefitMatrix to a branded
+    // intersection, this test would fail and signal the need for
+    // explicit `asBenefitMatrix(...)` at all call sites that build
+    // literals.
+    const lit: BenefitMatrix = corporateBase;
+    const matrix: BenefitMatrix = lit;
     expect(matrix).toEqual(corporateBase);
   });
 });

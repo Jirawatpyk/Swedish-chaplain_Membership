@@ -56,7 +56,6 @@ export {
 
 export type {
   BenefitMatrix,
-  BenefitMatrixLiteral,
   PartnershipBenefits,
   WebsitePageType,
   HomepageLogoCategory,
@@ -70,7 +69,7 @@ export {
   InvalidBenefitMatrixError,
 } from './domain/benefit-matrix';
 
-export type { LocaleText, LocaleTextLiteral, LocaleKey } from './domain/locale-text';
+export type { LocaleText, LocaleKey } from './domain/locale-text';
 export {
   LOCALE_KEYS,
   hasMissingTranslations,

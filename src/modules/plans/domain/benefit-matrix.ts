@@ -79,29 +79,6 @@ export type BenefitMatrix = {
   readonly partnership: PartnershipBenefits | null;
 };
 
-/**
- * Post-ship R6 Batch 2a (D5) — back-compat alias for the structural
- * shape. Symmetric with `LocaleTextLiteral` (Batch 1d): the type
- * stays structural so 131 existing call sites (plan-form-wizard +
- * benefit-matrix-editor + seed fixture + tests + F3/F7 consumers)
- * continue to compile against object literals; the `asBenefitMatrix`
- * smart constructor below is the recommended path for NEW Domain
- * code that wants partnership↔corporate integrity validation at the
- * Domain boundary.
- *
- * Full `unique symbol` brand was attempted but reverted — `Plan`
- * Domain type carries `benefit_matrix` in its identity, and branding
- * it propagated brand-property requirements across 131 call sites
- * that legitimately construct via literal (UI draft state, test
- * fixtures, seed data). Same conclusion as `LocaleText` Batch 1d —
- * smart constructor delivers integrity-validation value without
- * 131-file refactor churn. Brand-time validation kicks in at
- * `asBenefitMatrix` callers (seed-swecham-2026-plans + future
- * Domain use-cases); zod validates HTTP-boundary input; DB CHECK
- * constraint validates persisted state.
- */
-export type BenefitMatrixLiteral = BenefitMatrix;
-
 export class InvalidBenefitMatrixError extends Error {
   constructor(message: string) {
     super(message);
@@ -127,7 +104,7 @@ export class InvalidBenefitMatrixError extends Error {
  * @throws InvalidBenefitMatrixError on mismatch
  */
 export function asBenefitMatrix(
-  input: BenefitMatrixLiteral,
+  input: BenefitMatrix,
   planCategory: 'corporate' | 'partnership',
 ): BenefitMatrix {
   if (planCategory === 'corporate' && input.partnership !== null) {
