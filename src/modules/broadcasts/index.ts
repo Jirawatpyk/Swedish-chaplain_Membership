@@ -391,3 +391,52 @@ export {
   type BuildBroadcastCancelledEmailInput,
   type BroadcastNotificationLocale,
 } from './infrastructure/email/broadcast-notification-emails';
+
+// ---------------------------------------------------------------------------
+// F7.1a Phase 2 T030 — Domain-typed surface for the 3 new aggregates.
+//
+// Only TYPES are exported here (Constitution Principle III). Use-case
+// factories + composition root wiring land in Phase 3 (US1 batch
+// pagination), Phase 4 (US2 image embedding), Phase 5 (US7 template
+// library). Infrastructure adapters (`makeDrizzleBatchManifestsRepo`,
+// `makeDrizzleImageAllowlistRepo`, `makeDrizzleBroadcastTemplatesRepo`,
+// `makeClamavVirusScanner`) are wired inline via `broadcasts-deps.ts`
+// at those phases — NOT re-exported from this barrel.
+// ---------------------------------------------------------------------------
+
+// US1 (Pagination) — BatchManifest port types + Domain value types
+export type {
+  BatchManifest,
+  BatchManifestsPort,
+  BatchStatus,
+  BatchInsertError,
+  BatchUpdateError,
+  BatchStatusUpdate,
+  NewBatchManifestInput,
+} from './application/ports/batch-manifests-port';
+
+// US2 (Image embedding) — VirusScanner + ImageAllowlist port types
+export type {
+  VirusScannerPort,
+  VirusScanVerdict,
+} from './application/ports/virus-scanner-port';
+export type {
+  AllowlistEntry,
+  AllowlistAddError,
+  AllowlistRemoveError,
+  Hostname,
+  ImageAllowlistPort,
+} from './application/ports/image-allowlist-port';
+
+// US7 (Template library) — BroadcastTemplate port types + Domain value types
+export type {
+  BroadcastTemplate,
+  BroadcastTemplatesPort,
+  CreateTemplateInput,
+  ListTemplatesOpts,
+  TemplateCreateError,
+  TemplateDeleteError,
+  TemplateLocale,
+  TemplateUpdateError,
+  UpdateTemplateInput,
+} from './application/ports/broadcast-templates-port';

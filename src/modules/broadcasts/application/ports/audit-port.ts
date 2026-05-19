@@ -1,7 +1,7 @@
 /**
- * T028 — `AuditPort` Application port (F7).
+ * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 37 F7 audit event types as a const tuple + discriminated union for
+ * 53 audit event types as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -26,7 +26,8 @@
  *   - Plan-expiry edge (US6): 1 event
  *   - Clarifications session 5 (Q14 + Q15): 3 events
  *   - Phase 8 verify-fix R3: 2 events
- *   = 43 total
+ *   - F7.1a Phase 2 T031 (US1+US2+US7): 10 events
+ *   = 53 total
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -98,15 +99,35 @@ export const F7_AUDIT_EVENT_TYPES = [
   // (F3 archive cascade / contact deletion). Audit records the missed
   // notification so compliance review has a durable trail.
   'broadcast_dispatch_failure_notif_skipped_no_email',
+
+  // --- F7.1a US1 (Pagination + retry loop) — 4 events ----------------
+  // (T031 Phase 2, FR-002 / FR-008a-d). Migration 0167 added these enum
+  // values to the DB; this list mirrors the DB enum + data-model § 7
+  // taxonomy. All 5y retention via Constitution v1.4.0 trigger.
+  'broadcast_dispatched_in_batches',
+  'broadcast_retry_initiated',
+  'broadcast_retry_completed',
+  'broadcast_partial_delivery_accepted',
+
+  // --- F7.1a US2 (Image embedding + allowlist + scan) — 3 events ----
+  'broadcast_body_image_source_unsafe',
+  'broadcast_image_too_large',
+  'broadcast_image_allowlist_updated',
+
+  // --- F7.1a US7 (Template library CRUD) — 3 events -----------------
+  'broadcast_template_created',
+  'broadcast_template_updated',
+  'broadcast_template_deleted',
 ] as const;
 
 /**
- * Static assertion: count matches the declared 43. Catches drift if a
- * spec amendment adds an event without updating this file. The check
- * lives at type level; if the count is wrong, TypeScript errors here
- * with "Type '44' is not assignable to type '43'" (or similar).
+ * Static assertion: count matches the declared 53 (= 43 F7 MVP + 10
+ * F7.1a additions per T031 Phase 2). Catches drift if a spec amendment
+ * adds an event without updating this file. The check lives at type
+ * level; if the count is wrong, TypeScript errors here with "Type '54'
+ * is not assignable to type '53'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 43
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 53
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
