@@ -279,7 +279,51 @@ Batch 1a's C4 fix initially added `import { logger } from '@/lib/logger'` to `ge
 ### Out of scope (deferred to future rounds)
 
 - Full LocaleText brand (70+ call site refactor) + ESLint `no-restricted-syntax` rule
-- BenefitMatrix branding (every field already domain-typed; over-engineering per CLAUDE.md)
-- F3 + F4 + F6 idempotency-route 503 surface (shared lib now supports it; their routes ignore the new Result type — pre-existing fail-open behavior preserved until their own post-ship audits)
+- Full BenefitMatrix `unique symbol` brand (131 call sites — see Batch 2a soft-pattern note below)
 - F13 Admin Dashboard `plan_cross_tenant_probe` emitter (deferred per F2 spec; negative-coverage test `tests/unit/plans/cross-tenant-probe-emitter-coverage.test.ts` guards against accidental F2 emit until F13 ships)
-- `plan_change_{cancelled,applied}` audit emitters (no Domain caller exists in F2/F8 today; renewal-applier use-case wires them when it ships)
+
+---
+
+## Post-ship R6 audit closure — Batch 2 follow-up (2026-05-19)
+
+After Batch 1 closed the 21 audit findings, a follow-up `/plan แก้ defer` sweep tackled the 5 deferred items above. 3/5 closed in this round; 1 (F13) stays deferred to F13 feature ship; 1 (full LocaleText brand) stays deferred as scope work.
+
+### Resolved decisions (Batch 2)
+
+- **D5 (Item 1) — BenefitMatrix integrity validator**. Adopted the LocaleText soft-pattern from Batch 1d: `BenefitMatrix` stays structural; new `asBenefitMatrix(input, planCategory)` smart constructor validates partnership↔corporate integrity at the Domain boundary. Full `unique symbol` brand was attempted but reverted after exploration showed it broke 131 call sites (UI draft state, seed fixtures, F2/F3/F4/F5/F6/F7/F8 integration tests). Smart constructor + zod (HTTP edge) + DB CHECK constraint deliver the integrity-validation value without the 131-file refactor churn. `BenefitMatrixLiteral` back-compat alias parallels `LocaleTextLiteral`.
+- **D6 (Item 2) — F3/F4 idempotency 503 surface**. Surfaced the `reserveIdempotencyRecord` Result from Batch 1d across 8 F3 routes (members create / bulk / PATCH / archive / undelete / inline-edit / contacts add / contacts PATCH-DELETE) + 1 F4 route (tenant-invoice-settings/logo). Each route now returns 503 + `Retry-After: 5` + `error.code: idempotency_reservation_failed` when reservation fails. **Bonus**: 14 test mocks that returned `undefined` (would crash on `reserved.ok` access) were updated to `{ ok: true, value: { kind: 'reserved' } }` — closing a pre-existing Batch 1d regression in the 7 F2 plans contract suites that had been failing since `b5ce6f66`.
+- **D7 (Item 4) — `plan_change_{cancelled,applied}` audit emitters**. Closes the full audit-event-deferred-emitter TODO in `src/modules/plans/domain/audit-event.ts`:
+  - `_cancelled` wired via new F2 use-case `cancelScheduledPlanChange` (no API/UI caller yet — ready-to-call for future admin "cancel scheduled change" surface or F8 auto-supersede flow)
+  - `_applied` wired at F8 `f8OnPaidCallbacks[1]` post-tx (in `apply-tier-upgrade-on-paid-callback.ts`). The F2 `scheduled_plan_changes` state transition `pending → applied` itself was Phase 5+ deferred per `apply-pending-tier-upgrade.ts:13-25`; Batch 2d delivers both the state flip AND the audit emit. Non-rollback failure semantics mirror the post-tx F2 emit in `accept-tier-upgrade.ts:340-433`.
+
+### Commit chain (Batch 2)
+
+```
+bc473c68  Batch 2d — D7 (plan_change_applied emit at F8 onPaid)
+65b33901  Batch 2c — D7 (cancelScheduledPlanChange + plan_change_cancelled emit)
+036bac2b  Batch 2b — D6 (F3/F4 idempotency 503 + 14 test-mock fixes)
+797c062a  Batch 2a — D5 (BenefitMatrix soft-pattern smart constructor)
+```
+
+### Outcome metrics (Batch 2)
+
+- **3/4 actionable deferred items closed** (Items 1, 2, 4-full); F13 stays deferred to F13 feature ship
+- **4 atomic commits** + 7 NEW unit/contract test cases for `asBenefitMatrix` + 13 NEW for `cancelScheduledPlanChange` + 6 NEW for the F2 finaliser helper + 1 NEW 503 contract case for `POST /api/members`
+- **3 F2 state-machine transitions now have F2 audit trail**: schedule (Batch 1c) + supersede (Batch 1c) + cancel (Batch 2c) + apply (Batch 2d) = 4/4 lifecycle events emitting `plan_change_*`
+- Pre-existing Batch 1d regression in 7 F2 plans contract suites silently FIXED at the test-mock layer (was crashing on `reserved.ok` of undefined — discovered + fixed during D6 wave)
+- `pnpm typecheck` / `check:i18n` (2987 keys × 3) / `check:layout` (98 pairs) all PASS at every batch boundary
+- Concurrent F7.1a session work strictly excluded from every Batch 2 commit; no merge conflicts
+
+### State machine — F2 scheduled-plan-change (data-model.md § 2.9) lifecycle audit coverage
+
+| Transition | Audit event | Emit site | Emitted in |
+|---|---|---|---|
+| (insert) `pending` | `plan_change_scheduled` | F2 `scheduleNextRenewalPlanChange` use-case + F8 `accept-tier-upgrade` post-tx | Batch 1c |
+| `pending` → `superseded` | `plan_change_superseded` | F8 `accept-tier-upgrade` post-tx (when prior pending row bumped) | Batch 1c |
+| `pending` → `cancelled` | `plan_change_cancelled` | F2 `cancelScheduledPlanChange` use-case (ready-to-call; no API caller yet) | Batch 2c |
+| `pending` → `applied` | `plan_change_applied` | F8 `apply-tier-upgrade-on-paid-callback` POST-tx | Batch 2d |
+
+### Out of scope (still deferred after Batch 2)
+
+- Full LocaleText brand (70+ call sites) + parallel full BenefitMatrix brand (131 call sites) — both blocked behind "value vs. churn" cost analysis; soft-pattern smart constructors deliver runtime safety today
+- F13 Admin Dashboard `plan_cross_tenant_probe` emitter — F13 feature itself not yet scoped; negative-coverage test in place
