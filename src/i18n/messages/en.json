@@ -1714,6 +1714,7 @@
         "expandLabel": "Show per-batch breakdown",
         "collapseLabel": "Hide per-batch breakdown",
         "summary": "{succeeded} sent · {failed} failed · {pending} pending of {total} batches",
+        "tableCaption": "Per-batch dispatch breakdown, {count} batches",
         "columns": {
           "batchIndex": "Batch",
           "recipientRange": "Range",

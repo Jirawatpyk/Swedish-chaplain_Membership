@@ -122,7 +122,16 @@ export function RetryConfirmationDialog({
           <p className="text-muted-foreground">{t('warning')}</p>
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
+          {/*
+            Phase 3F.2 (UX Finding 1 — WCAG SC 2.4.3 + 3.2.1 fix):
+            autoFocus on Cancel so the destructive Confirm is NOT the
+            initial keyboard focus. Prevents accidental Enter-press
+            triggering a Resend-quota-consuming retry. Matches
+            docs/ux-standards.md § 6.2 destructive-action convention.
+          */}
+          <AlertDialogCancel disabled={pending} autoFocus>
+            {t('cancel')}
+          </AlertDialogCancel>
           <AlertDialogAction
             disabled={pending || retriesRemaining <= 0}
             className={cn(

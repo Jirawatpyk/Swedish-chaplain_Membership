@@ -31,7 +31,7 @@
  * pre-resolved by the admin detail page (T049) + handed in via props.
  */
 import { useMemo, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -123,21 +123,25 @@ function batchStatusLabel(
   }
 }
 
-function formatDispatchedAt(iso: string | null): string {
+function formatDispatchedAt(iso: string | null, locale: string): string {
   if (iso === null) return '—';
-  // Display in viewer's locale — server pages route through Next-intl
-  // formatters but this client component uses native Intl for
-  // simplicity. The detail page (T049) passes ISO UTC; the user sees
-  // their browser-local time. Bangkok wall-time helpers (see
-  // `src/components/broadcast/bangkok-datetime.ts`) are reserved for
-  // member-facing surfaces where the contract is explicit.
+  // Phase 3F.2 (UX Finding 3 fix): pin Asia/Bangkok TZ + use the
+  // active next-intl locale. Previously `toLocaleString(undefined,
+  // …)` used browser-default TZ → Vercel sin1 servers rendered
+  // Singapore time (+0:30 off Bangkok wall-time advertised by the
+  // metadata block above the table). Now the timestamp matches the
+  // server page's `timeZone: 'Asia/Bangkok'` convention. For `th`
+  // locale we also pass `ca-buddhist` for BE-year display (matches
+  // existing F4 invoicing convention).
   try {
-    return new Date(iso).toLocaleString(undefined, {
+    const resolvedLocale = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
+    return new Date(iso).toLocaleString(resolvedLocale, {
       year: 'numeric',
       month: 'short',
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'Asia/Bangkok',
     });
   } catch {
     return iso;
@@ -152,6 +156,7 @@ export function BatchBreakdown({
   defaultOpen = false,
 }: BatchBreakdownProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.batches');
+  const locale = useLocale();
   const tDialogs = useTranslations('admin.broadcasts');
   const [retryOpen, setRetryOpen] = useState(false);
   const [acceptPartialOpen, setAcceptPartialOpen] = useState(false);
@@ -247,6 +252,17 @@ export function BatchBreakdown({
 
           <div className="overflow-x-auto">
             <Table>
+              {/*
+                Phase 3F.2 (UX Finding 2 — WCAG SC 1.3.1 + 4.1.2 fix):
+                screen-reader-only caption gives the data-table a
+                programmatic name. Without this, axe-core flags
+                `table-duplicate-name`/`scope-attr-valid` and SR users
+                navigating with table-jump keystrokes hear nothing
+                identifying the table before column headers.
+              */}
+              <caption className="sr-only">
+                {t('tableCaption', { count: batches.length })}
+              </caption>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[60px]">{t('columns.batchIndex')}</TableHead>
@@ -282,7 +298,7 @@ export function BatchBreakdown({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {formatDispatchedAt(batch.dispatchedAt)}
+                      {formatDispatchedAt(batch.dispatchedAt, locale)}
                     </TableCell>
                     <TableCell className="text-right">
                       {batch.deliveredCount.toLocaleString()}

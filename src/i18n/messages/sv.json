@@ -1714,6 +1714,7 @@
         "expandLabel": "Visa batch-detaljer",
         "collapseLabel": "Dölj batch-detaljer",
         "summary": "{succeeded} skickade · {failed} misslyckade · {pending} väntar av totalt {total} batcher",
+        "tableCaption": "Leveransdetaljer per batch, {count} batcher",
         "columns": {
           "batchIndex": "Batch",
           "recipientRange": "Intervall",

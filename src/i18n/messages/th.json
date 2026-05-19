@@ -1714,6 +1714,7 @@
         "expandLabel": "แสดงรายละเอียดต่อกลุ่ม",
         "collapseLabel": "ซ่อนรายละเอียดต่อกลุ่ม",
         "summary": "ส่งสำเร็จ {succeeded} · ล้มเหลว {failed} · รอส่ง {pending} จาก {total} กลุ่ม",
+        "tableCaption": "รายละเอียดการส่งแบบแบ่งกลุ่ม {count} กลุ่ม",
         "columns": {
           "batchIndex": "กลุ่ม",
           "recipientRange": "ช่วง",
