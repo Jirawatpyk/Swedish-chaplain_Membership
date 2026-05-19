@@ -11,9 +11,14 @@
  * spread + override:
  *   const partnershipMatrix = { ...DEFAULT_TEST_BENEFIT_MATRIX, partnership: 'gold' };
  */
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+// Post-ship R6 Batch 2a — switched from branded `BenefitMatrix` to
+// structural `BenefitMatrixLiteral` so integration tests can construct
+// the fixture via object literal. Downstream test code that inserts
+// the matrix into `membership_plans` rows brands it at the persistence
+// boundary if needed via `asBenefitMatrix()` from `@/modules/plans`.
+import type { BenefitMatrixLiteral } from '@/modules/plans/domain/benefit-matrix';
 
-export const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrix = {
+export const DEFAULT_TEST_BENEFIT_MATRIX: BenefitMatrixLiteral = {
   eblast_per_year: 1,
   website_page_type: 'member_news_update',
   homepage_logo_category: 'regular',

@@ -42,7 +42,11 @@ import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import type { PlanDraftInput } from '@/modules/plans/application/ports';
-import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import type {
+  BenefitMatrix,
+  BenefitMatrixLiteral,
+} from '@/modules/plans/domain/benefit-matrix';
+import { asBenefitMatrix } from '@/modules/plans';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { runInTenant } from '@/lib/db';
@@ -116,7 +120,7 @@ export const CORPORATE_SEED: ReadonlyArray<{
   readonly maxDuration: number | null;
   readonly maxAge: number | null;
   readonly memberType: 'company' | 'individual';
-  readonly matrix: BenefitMatrix;
+  readonly matrix: BenefitMatrixLiteral;
   readonly sortOrder: number;
 }> = [
   {
@@ -312,7 +316,7 @@ export const PARTNERSHIP_SEED: ReadonlyArray<{
   readonly name: { readonly en: string; readonly th: string; readonly sv: string };
   readonly fee: number;
   readonly sortOrder: number;
-  readonly matrix: BenefitMatrix;
+  readonly matrix: BenefitMatrixLiteral;
 }> = [
   {
     id: 'diamond',
@@ -465,7 +469,9 @@ async function stageB_Plans(
       max_turnover_minor_units: row.maxTurnover,
       max_duration_years: row.maxDuration,
       max_member_age: row.maxAge,
-      benefit_matrix: row.matrix,
+      // Post-ship R6 Batch 2a — brand at the validated boundary
+      // (corporate category → enforces partnership=null invariant)
+      benefit_matrix: asBenefitMatrix(row.matrix, 'corporate'),
       isActive: true,
       createdBy: ownerUserId,
       updatedBy: ownerUserId,
@@ -487,7 +493,9 @@ async function stageB_Plans(
       max_turnover_minor_units: null,
       max_duration_years: null,
       max_member_age: null,
-      benefit_matrix: row.matrix,
+      // Post-ship R6 Batch 2a — brand at the validated boundary
+      // (partnership category → enforces partnership-block non-null)
+      benefit_matrix: asBenefitMatrix(row.matrix, 'partnership'),
       isActive: true,
       createdBy: ownerUserId,
       updatedBy: ownerUserId,

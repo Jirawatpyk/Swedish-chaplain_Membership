@@ -43,7 +43,7 @@ import {
   type PlanSlug,
   type PlanYear,
 } from '../../domain/plan';
-import type { BenefitMatrix } from '../../domain/benefit-matrix';
+import type { BenefitMatrix, BenefitMatrixLiteral } from '../../domain/benefit-matrix';
 import type { LocaleText } from '../../domain/locale-text';
 import { detectLockedFieldChanges } from '../../domain/locked-field-rule';
 
@@ -57,11 +57,16 @@ type MembershipPlanRow = typeof membershipPlans.$inferSelect;
  * insert shape wants writable structurally-equivalent objects for
  * JSONB columns.
  */
-function cloneBenefitMatrix(m: BenefitMatrix): BenefitMatrix {
+function cloneBenefitMatrix(m: BenefitMatrixLiteral): BenefitMatrix {
+  // Post-ship R6 Batch 2a — input is the structural literal; output
+  // is the branded BenefitMatrix. DB rows + cloned drafts have
+  // already been validated upstream (zod at the API boundary +
+  // `asBenefitMatrix` at row→Domain in `rowToPlan` below), so the
+  // brand cast is safe at the clone boundary.
   return {
     ...m,
     partnership: m.partnership ? { ...m.partnership } : null,
-  };
+  } as BenefitMatrix;
 }
 
 function cloneLocaleText(t: {
