@@ -11,13 +11,15 @@
  * Contract spec: specs/014-email-broadcast-advance/contracts/batch-dispatch.md § 1.3.
  *
  * SC-007 concurrent-retry guard (admin double-click protection): the
- * use case acquires advisory lock `broadcasts-retry:{tenant}:{bid}`
- * BEFORE incrementing the budget. Adapter wiring for the lock is
- * currently `noOpAdvisoryLock` (see header of
- * `src/modules/broadcasts/infrastructure/noop-advisory-lock.ts` for
- * the Phase 3 Cluster 3D hardening plan + interim UI-level
- * mitigation: the admin retry confirmation modal T053 disables the
- * Submit button on first click).
+ * use case wraps its entire body in `broadcasts.withTx(async tx => …)`
+ * and acquires `pg_try_advisory_xact_lock(hashtextextended('broadcasts-
+ * retry:{tenant}:{bid}', 0))` INSIDE that tx (Phase 3E hardening
+ * 2026-05-19 — production `pgAdvisoryLockAdapter` replaces the
+ * earlier `noOpAdvisoryLock` stub). The lock auto-releases at tx
+ * commit/rollback so the snapshot read + budget increment + batch
+ * fan-out + audit emits are one atomic unit. Concurrent calls see
+ * `{acquired: false}` and surface ALREADY_RETRYING_IN_PROGRESS
+ * without consuming the budget.
  *
  * Empty request body — the broadcast id is in the URL, the actor id
  * comes from the admin session.

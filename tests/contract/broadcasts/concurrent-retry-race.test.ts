@@ -61,7 +61,7 @@ const broadcastId = asBroadcastId('44444444-4444-4444-4444-444444444444');
 function makeAdvisoryLockSimulator(): {
   acquireCalls: string[];
   port: {
-    acquire: (lockKey: string) => Promise<{ acquired: boolean }>;
+    acquire: (tx: unknown, lockKey: string) => Promise<{ acquired: boolean }>;
   };
 } {
   const acquireCalls: string[] = [];
@@ -69,7 +69,9 @@ function makeAdvisoryLockSimulator(): {
   return {
     acquireCalls,
     port: {
-      async acquire(lockKey: string) {
+      // Phase 3E hardening — production signature now takes tx first
+      // arg. Simulator ignores tx (in-memory lock state).
+      async acquire(_tx: unknown, lockKey: string) {
         acquireCalls.push(lockKey);
         if (heldLockKey === null) {
           heldLockKey = lockKey;
@@ -86,7 +88,7 @@ function makeAdvisoryLockSimulator(): {
 }
 
 function makeStubDeps(advisoryLock: {
-  acquire: (lockKey: string) => Promise<{ acquired: boolean }>;
+  acquire: (tx: unknown, lockKey: string) => Promise<{ acquired: boolean }>;
 }): {
   emits: Array<{ eventType: string }>;
   manualRetryCountAfter: () => number;
@@ -105,7 +107,10 @@ function makeStubDeps(advisoryLock: {
         },
       },
       broadcasts: {
-        async findById(_t: unknown, _id: unknown) {
+        async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+          return fn('mock-tx');
+        },
+        async findById(_t: unknown, _id: unknown, _tx?: unknown) {
           return {
             tenantId: 'test-tenant',
             broadcastId,
@@ -113,16 +118,25 @@ function makeStubDeps(advisoryLock: {
             manualRetryCount,
           };
         },
-        async incrementManualRetryCount(_t: unknown, _id: unknown) {
+        async incrementManualRetryCount(
+          _t: unknown,
+          _id: unknown,
+          _tx?: unknown,
+        ) {
           manualRetryCount += 1;
           return { ok: true, value: manualRetryCount };
         },
       },
       batchManifests: {
-        async findByBroadcast(_t: unknown, _id: unknown) {
+        async findByBroadcast(_t: unknown, _id: unknown, _tx?: unknown) {
           return [{ id: 'batch-1', batchIndex: 0, status: 'failed' as const }];
         },
-        async updateStatus(_t: unknown, _id: unknown, _u: unknown) {
+        async updateStatus(
+          _t: unknown,
+          _id: unknown,
+          _u: unknown,
+          _tx?: unknown,
+        ) {
           return { ok: true, value: {} };
         },
       },
@@ -194,7 +208,7 @@ describe('concurrent retry race contract (T035, SC-007)', () => {
     const { retryFailedBatches } = await importRetryUseCase();
     // Simulator that ALWAYS denies
     const denyingLock = {
-      async acquire(_lockKey: string) {
+      async acquire(_tx: unknown, _lockKey: string) {
         return { acquired: false };
       },
     };

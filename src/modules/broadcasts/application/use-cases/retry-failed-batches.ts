@@ -89,129 +89,145 @@ export async function retryFailedBatches(
   input: RetryFailedBatchesInput,
 ): Promise<Result<RetryFailedBatchesOutput, RetryFailedBatchesError>> {
   const tenantSlug = input.tenantId.slug;
-
-  // 1. Read broadcast snapshot (CHEAP read — pre-validate state before
-  //    bothering to acquire the advisory lock).
-  const snapshot = await deps.broadcasts.findById(
-    tenantSlug,
-    input.broadcastId,
-  );
-  if (snapshot === null) {
-    return err({ kind: 'BROADCAST_NOT_FOUND', broadcastId: input.broadcastId });
-  }
-
-  if (snapshot.status !== 'partially_sent') {
-    return err({
-      kind: 'INVALID_STATE_TRANSITION',
-      currentStatus: snapshot.status,
-      expected: 'partially_sent',
-    });
-  }
-
-  if (snapshot.manualRetryCount >= MANUAL_RETRY_BUDGET) {
-    return err({
-      kind: 'MANUAL_RETRY_BUDGET_EXHAUSTED',
-      broadcastId: input.broadcastId,
-      budget: MANUAL_RETRY_BUDGET,
-    });
-  }
-
-  // 2. Acquire per-broadcast advisory lock (SC-007). Returns
-  //    `{acquired: false}` without throwing on contention.
   const lockKey = makeRetryLockKey(tenantSlug, input.broadcastId);
-  const lock = await deps.advisoryLock.acquire(lockKey);
-  if (!lock.acquired) {
-    return err({
-      kind: 'ALREADY_RETRYING_IN_PROGRESS',
-      broadcastId: input.broadcastId,
-      lockKey,
-    });
-  }
 
-  // 3. Atomic increment of manual_retry_count. The DB CHECK constraint
-  //    catches the case where the budget was hit between the snapshot
-  //    read and the lock acquire (TOCTOU) — adapter returns
-  //    `check_violation` and we map it to BUDGET_EXHAUSTED.
-  const incResult = await deps.broadcasts.incrementManualRetryCount(
-    tenantSlug,
-    input.broadcastId,
-  );
-  if (!incResult.ok) {
-    if (incResult.error.kind === 'check_violation') {
+  // Phase 3E SC-007 hardening — wrap the entire orchestration in a
+  // single tx so the advisory-lock acquire shares scope with the
+  // snapshot read + increment + batch fan-out + audit emit. Lock auto-
+  // releases at tx commit/rollback (`pg_try_advisory_xact_lock`
+  // semantics).
+  return deps.broadcasts.withTx(async (tx) => {
+    // 1. Read broadcast snapshot (cheap; same tx so the snapshot read
+    //    sees what subsequent writes will mutate — no torn read).
+    const snapshot = await deps.broadcasts.findById(
+      tenantSlug,
+      input.broadcastId,
+      tx,
+    );
+    if (snapshot === null) {
+      return err({
+        kind: 'BROADCAST_NOT_FOUND',
+        broadcastId: input.broadcastId,
+      });
+    }
+
+    if (snapshot.status !== 'partially_sent') {
+      return err({
+        kind: 'INVALID_STATE_TRANSITION',
+        currentStatus: snapshot.status,
+        expected: 'partially_sent',
+      });
+    }
+
+    if (snapshot.manualRetryCount >= MANUAL_RETRY_BUDGET) {
       return err({
         kind: 'MANUAL_RETRY_BUDGET_EXHAUSTED',
         broadcastId: input.broadcastId,
         budget: MANUAL_RETRY_BUDGET,
       });
     }
-    if (incResult.error.kind === 'not_found') {
+
+    // 2. Acquire per-broadcast advisory lock INSIDE the tx. Held until
+    //    this withTx callback returns + the outer tx commits.
+    //    Concurrent `retryFailedBatches` on the same broadcastId will
+    //    see `{acquired: false}` here while our tx holds the lock.
+    const lock = await deps.advisoryLock.acquire(tx, lockKey);
+    if (!lock.acquired) {
       return err({
-        kind: 'BROADCAST_NOT_FOUND',
+        kind: 'ALREADY_RETRYING_IN_PROGRESS',
         broadcastId: input.broadcastId,
+        lockKey,
       });
     }
-    return err({
-      kind: 'retry_failed_batches.server_error',
-      message: incResult.error.detail,
+
+    // 3. Atomic increment of manual_retry_count INSIDE the locked tx.
+    //    DB CHECK still catches budget-exhausted (defence-in-depth);
+    //    inside the lock, the snapshot read's value is the canonical
+    //    pre-increment count.
+    const incResult = await deps.broadcasts.incrementManualRetryCount(
+      tenantSlug,
+      input.broadcastId,
+      tx,
+    );
+    if (!incResult.ok) {
+      if (incResult.error.kind === 'check_violation') {
+        return err({
+          kind: 'MANUAL_RETRY_BUDGET_EXHAUSTED',
+          broadcastId: input.broadcastId,
+          budget: MANUAL_RETRY_BUDGET,
+        });
+      }
+      if (incResult.error.kind === 'not_found') {
+        return err({
+          kind: 'BROADCAST_NOT_FOUND',
+          broadcastId: input.broadcastId,
+        });
+      }
+      return err({
+        kind: 'retry_failed_batches.server_error',
+        message: incResult.error.detail,
+      });
+    }
+    const retryAttempt = incResult.value;
+    const now = deps.clock.now();
+
+    // 4. Emit `broadcast_retry_initiated` INSIDE the locked tx so the
+    //    audit row is atomic with the budget increment (no half-state
+    //    where the count bumped but the audit trail says it didn't).
+    await deps.audit.emit(tx, {
+      tenantId: tenantSlug,
+      eventType: 'broadcast_retry_initiated',
+      actorUserId: input.actorUserId,
+      summary: `Admin ${input.actorUserId} initiated retry attempt ${retryAttempt} on broadcast ${input.broadcastId}`,
+      payload: {
+        broadcastId: input.broadcastId,
+        retryAttempt,
+        lockKey,
+        initiatedAt: now.toISOString(),
+      },
+      requestId: input.requestId ?? null,
     });
-  }
-  const retryAttempt = incResult.value;
-  const now = deps.clock.now();
 
-  // 4. Emit `broadcast_retry_initiated` (audit pre-condition for the
-  //    re-dispatch sweep). Same `tx` semantics as F7 MVP — null on
-  //    auto-commit path; production wrapping in `runInTenant()` may
-  //    thread the tx via context.
-  await deps.audit.emit(null, {
-    tenantId: tenantSlug,
-    eventType: 'broadcast_retry_initiated',
-    actorUserId: input.actorUserId,
-    summary: `Admin ${input.actorUserId} initiated retry attempt ${retryAttempt} on broadcast ${input.broadcastId}`,
-    payload: {
-      broadcastId: input.broadcastId,
-      retryAttempt,
-      lockKey,
-      initiatedAt: now.toISOString(),
-    },
-    requestId: input.requestId ?? null,
-  });
+    // 5. Re-queue every failed batch_manifest INSIDE the locked tx so
+    //    the read + batch updates share snapshot consistency.
+    const allBatches = await deps.batchManifests.findByBroadcast(
+      tenantSlug,
+      input.broadcastId,
+      tx,
+    );
+    const failedBatches = allBatches.filter((b) => b.status === 'failed');
 
-  // 5. Re-queue every failed batch_manifest. Real dispatcher (T046)
-  //    will pick the rows back up on the next cron tick. Here we
-  //    transition them `failed → pending` so the dispatcher's pending
-  //    sweep finds them again.
-  const allBatches = await deps.batchManifests.findByBroadcast(
-    tenantSlug,
-    input.broadcastId,
-  );
-  const failedBatches = allBatches.filter((b) => b.status === 'failed');
+    for (const batch of failedBatches) {
+      await deps.batchManifests.updateStatus(
+        tenantSlug,
+        batch.id,
+        {
+          status: 'pending',
+          retryCount: (batch.retryCount ?? 0) + 1,
+        },
+        tx,
+      );
+    }
 
-  for (const batch of failedBatches) {
-    await deps.batchManifests.updateStatus(tenantSlug, batch.id, {
-      status: 'pending',
-      retryCount: (batch.retryCount ?? 0) + 1,
+    // 6. Emit `broadcast_retry_completed` — same tx so the entire
+    //    retry orchestration is one atomic unit.
+    await deps.audit.emit(tx, {
+      tenantId: tenantSlug,
+      eventType: 'broadcast_retry_completed',
+      actorUserId: input.actorUserId,
+      summary: `Retry attempt ${retryAttempt} requeued ${failedBatches.length} failed batches on broadcast ${input.broadcastId}`,
+      payload: {
+        broadcastId: input.broadcastId,
+        retryAttempt,
+        retriedBatchCount: failedBatches.length,
+        retriedAt: now.toISOString(),
+      },
+      requestId: input.requestId ?? null,
     });
-  }
 
-  // 6. Emit `broadcast_retry_completed` — all failed batches have been
-  //    re-queued; per-batch ACK from Resend lands as `broadcast_sent`
-  //    events via the webhook handler (Phase 3C T057).
-  await deps.audit.emit(null, {
-    tenantId: tenantSlug,
-    eventType: 'broadcast_retry_completed',
-    actorUserId: input.actorUserId,
-    summary: `Retry attempt ${retryAttempt} requeued ${failedBatches.length} failed batches on broadcast ${input.broadcastId}`,
-    payload: {
-      broadcastId: input.broadcastId,
+    return ok({
       retryAttempt,
       retriedBatchCount: failedBatches.length,
-      retriedAt: now.toISOString(),
-    },
-    requestId: input.requestId ?? null,
-  });
-
-  return ok({
-    retryAttempt,
-    retriedBatchCount: failedBatches.length,
+    });
   });
 }

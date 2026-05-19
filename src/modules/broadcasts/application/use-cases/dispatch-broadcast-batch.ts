@@ -144,7 +144,13 @@ export async function dispatchBroadcastBatch(
     input.broadcastContent.broadcastId,
     manifest.batchIndex,
   );
-  const lock = await deps.advisoryLock.acquire(lockKey);
+  // Phase 3E 2026-05-19 — `acquire(tx, lockKey)` signature. T045
+  // is NOT yet tx-wrapped (gateway calls inside a held tx would be
+  // an anti-pattern); cron handler wires `noOpAdvisoryLock` here so
+  // null tx is acceptable for the stub. Phase 3E.2 hardening for
+  // T045 would require splitting the use case body across
+  // pre-gateway-lock-tx + gateway + post-gateway-update-tx.
+  const lock = await deps.advisoryLock.acquire(null, lockKey);
   if (!lock.acquired) {
     return err({
       kind: 'ALREADY_DISPATCHING_IN_PROGRESS',

@@ -144,6 +144,13 @@ export interface BatchManifestsPort {
   findByBroadcast(
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
+    /**
+     * Phase 3E hardening — when provided, reuses the caller's tx so
+     * the read participates in the same lock-protected scope. Test
+     * stubs ignoring `tx` satisfy this via TS structural trailing-
+     * optional rule.
+     */
+    tx?: unknown,
   ): Promise<readonly BatchManifest[]>;
 
   /**
@@ -180,6 +187,7 @@ export interface BatchManifestsPort {
     tenantId: TenantSlug,
     batchManifestId: string,
     update: BatchStatusUpdate,
+    tx?: unknown,
   ): Promise<Result<BatchManifest, BatchUpdateError>>;
 
   /**

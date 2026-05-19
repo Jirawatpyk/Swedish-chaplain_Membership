@@ -34,13 +34,20 @@ export interface AcquireResult {
 
 export interface AdvisoryLockPort {
   /**
-   * Try to acquire an advisory lock by string key. Returns
-   * `{acquired: false}` on contention WITHOUT throwing — caller
-   * decides whether to retry, fail open, or fail closed.
+   * Try to acquire an advisory lock by string key INSIDE the caller's
+   * transaction. Returns `{acquired: false}` on contention WITHOUT
+   * throwing — caller decides whether to retry, fail open, or fail
+   * closed.
    *
    * Real impl: `SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))`
-   * inside a tx. The hash converts the variable-length key into the
-   * `bigint` advisory-lock space.
+   * via the passed `tx`. The lock auto-releases at tx commit/rollback
+   * — so the caller MUST hold its withTx scope open across every
+   * mutation that depends on the lock (Phase 3 Cluster 3E hardening
+   * — replaces the Phase 3C.1 noOpAdvisoryLock stub).
+   *
+   * The hash converts the variable-length key into the `bigint`
+   * advisory-lock space; collisions are statistically negligible at
+   * F71A scale (one lock per (tenant, broadcast) pair).
    */
-  acquire(lockKey: string): Promise<AcquireResult>;
+  acquire(tx: unknown, lockKey: string): Promise<AcquireResult>;
 }

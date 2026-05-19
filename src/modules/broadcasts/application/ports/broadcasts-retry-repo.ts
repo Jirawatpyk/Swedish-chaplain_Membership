@@ -58,6 +58,17 @@ export interface AcceptPartialInput {
 
 export interface BroadcastsRetryRepo {
   /**
+   * Phase 3E hardening — opens a tx for atomic retry orchestration.
+   * T047 wraps its entire body in `withTx` so the advisory lock +
+   * snapshot read + increment + batch fan-out + audit emit all share
+   * one tx. Lock auto-releases at commit; rollback on uncaught error
+   * also releases.
+   *
+   * Drizzle impl: `runInTenant(ctx, async tx => fn(tx))`.
+   */
+  withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
+
+  /**
    * Read the broadcast row's retry-relevant snapshot. Returns `null`
    * if the row doesn't exist OR is hidden by RLS (cross-tenant).
    * Callers SHOULD emit `broadcast_cross_tenant_probe` audit on null.
@@ -65,10 +76,16 @@ export interface BroadcastsRetryRepo {
    * Caller passes the tenant context's `slug` string. The Drizzle
    * adapter runs the SELECT inside `runInTenant(slug, ...)` so RLS
    * confines visibility to the matching tenant.
+   *
+   * Trailing optional `tx` — when provided, reuses the caller's tx
+   * (Phase 3E withTx pattern); when omitted, opens own runInTenant.
+   * Test stubs that ignore tx satisfy this signature via TS structural
+   * trailing-optional rule.
    */
   findById(
     tenantId: string,
     broadcastId: BroadcastId,
+    tx?: unknown,
   ): Promise<BroadcastRetrySnapshot | null>;
 
   /**
@@ -80,6 +97,7 @@ export interface BroadcastsRetryRepo {
   incrementManualRetryCount(
     tenantId: string,
     broadcastId: BroadcastId,
+    tx?: unknown,
   ): Promise<Result<number, IncrementError>>;
 
   /**

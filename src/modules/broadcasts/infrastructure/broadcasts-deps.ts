@@ -50,7 +50,7 @@ import type { AutoRetryFailedBatchesDeps } from '../application/use-cases/auto-r
 import type { ApplyBatchWebhookEventDeps } from '../application/use-cases/apply-batch-webhook-event';
 import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
 import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
-import { noOpAdvisoryLock } from './noop-advisory-lock';
+import { pgAdvisoryLockAdapter } from './pg-advisory-lock-adapter';
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
@@ -496,7 +496,11 @@ export function makeRetryFailedBatchesDeps(
   return {
     broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
     batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
-    advisoryLock: noOpAdvisoryLock,
+    // Phase 3E production AdvisoryLockPort — replaces the 3C.1 noOp
+    // stub. T047 retry use case now wraps its body in
+    // `broadcasts.withTx` so the lock holds across snapshot read +
+    // increment + batch fan-out + audit emit (true SC-007 semantics).
+    advisoryLock: pgAdvisoryLockAdapter,
     audit: f7AuditAdapter,
     clock: systemClock,
   };

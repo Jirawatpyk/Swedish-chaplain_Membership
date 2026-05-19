@@ -105,7 +105,14 @@
 import type { AdvisoryLockPort } from '../application/ports/advisory-lock-port';
 
 export const noOpAdvisoryLock: AdvisoryLockPort = {
-  async acquire(_lockKey: string) {
+  // Phase 3E 2026-05-19: signature updated to match the hardened
+  // `AdvisoryLockPort.acquire(tx, lockKey)` shape. The stub still
+  // ignores tx — kept ONLY for T045 `dispatchBroadcastBatch` wiring
+  // where a withTx refactor is OUT OF SCOPE (long-running Resend
+  // gateway calls cannot sit inside a held DB tx). T045's per-batch
+  // race is mitigated by cron-job.org tick spacing + FOR UPDATE SKIP
+  // LOCKED in T055 eligible-row scan.
+  async acquire(_tx: unknown, _lockKey: string) {
     return { acquired: true };
   },
 };

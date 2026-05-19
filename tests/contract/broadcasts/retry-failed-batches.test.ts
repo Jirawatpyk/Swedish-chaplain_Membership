@@ -74,7 +74,12 @@ function makeStubDeps(broadcast: BroadcastFixture): {
         },
       },
       broadcasts: {
-        async findById(_t: unknown, _id: unknown) {
+        // Phase 3E withTx wrapper — tests run with a sentinel tx token
+        // ('mock-tx') passed to every port method that accepts it.
+        async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+          return fn('mock-tx');
+        },
+        async findById(_t: unknown, _id: unknown, _tx?: unknown) {
           return {
             tenantId: 'test-tenant',
             broadcastId,
@@ -82,7 +87,11 @@ function makeStubDeps(broadcast: BroadcastFixture): {
             manualRetryCount,
           };
         },
-        async incrementManualRetryCount(_t: unknown, _id: unknown) {
+        async incrementManualRetryCount(
+          _t: unknown,
+          _id: unknown,
+          _tx?: unknown,
+        ) {
           if (manualRetryCount >= 3) {
             return { ok: false, error: { kind: 'check_violation' as const } };
           }
@@ -91,19 +100,24 @@ function makeStubDeps(broadcast: BroadcastFixture): {
         },
       },
       batchManifests: {
-        async findByBroadcast(_t: unknown, _id: unknown) {
+        async findByBroadcast(_t: unknown, _id: unknown, _tx?: unknown) {
           return broadcast.failedBatchIds.map((id, i) => ({
             id,
             batchIndex: i,
             status: 'failed' as const,
           }));
         },
-        async updateStatus(_t: unknown, _id: unknown, _u: unknown) {
+        async updateStatus(
+          _t: unknown,
+          _id: unknown,
+          _u: unknown,
+          _tx?: unknown,
+        ) {
           return { ok: true, value: {} };
         },
       },
       advisoryLock: {
-        async acquire(_lockKey: string) {
+        async acquire(_tx: unknown, _lockKey: string) {
           return { acquired: true };
         },
       },

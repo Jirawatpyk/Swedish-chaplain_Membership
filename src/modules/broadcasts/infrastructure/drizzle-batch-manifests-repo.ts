@@ -123,12 +123,29 @@ export function makeDrizzleBatchManifestsRepo(
 ): BatchManifestsPort {
   const ctx = asTenantContext(tenantId);
 
+  /**
+   * Phase 3E SC-007 hardening helper — when the caller passes a tx
+   * (via T047's `broadcasts.withTx(async tx => …)` wrapper), delegate
+   * to it so the read/write participates in the same advisory-lock-
+   * protected scope. When omitted, open our own runInTenant tx.
+   */
+  async function withTxOr<T>(
+    txMaybe: unknown,
+    fn: (tx: import('@/lib/db').TenantTx) => Promise<T>,
+  ): Promise<T> {
+    if (txMaybe !== undefined && txMaybe !== null) {
+      return fn(txMaybe as import('@/lib/db').TenantTx);
+    }
+    return runInTenant(ctx, async (tx) => fn(tx));
+  }
+
   return {
     async findByBroadcast(
       _tenantId: TenantSlug,
       broadcastId: BroadcastId,
+      txMaybe?: unknown,
     ): Promise<readonly BatchManifest[]> {
-      return runInTenant(ctx, async (tx) => {
+      return withTxOr(txMaybe, async (tx) => {
         const rows = await tx
           .select()
           .from(broadcastBatchManifests)
@@ -216,8 +233,9 @@ export function makeDrizzleBatchManifestsRepo(
       _tenantId: TenantSlug,
       batchManifestId: string,
       update: BatchStatusUpdate,
+      txMaybe?: unknown,
     ): Promise<Result<BatchManifest, BatchUpdateError>> {
-      return runInTenant(ctx, async (tx) => {
+      return withTxOr(txMaybe, async (tx) => {
         // Read the current row (RLS scopes by tenant_id automatically)
         const [current] = await tx
           .select()

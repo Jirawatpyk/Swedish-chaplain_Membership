@@ -41,12 +41,33 @@ export function makeDrizzleBroadcastsRetryRepo(
 ): BroadcastsRetryRepo {
   const ctx = asTenantContext(tenantId);
 
+  /**
+   * Phase 3E SC-007 hardening helper — when the caller passes a tx
+   * (via the withTx wrapper around T047 retry use case body),
+   * delegate directly so the read/write participates in the same
+   * lock-protected tx. When omitted, open our own runInTenant tx.
+   */
+  async function withTxOr<T>(
+    txMaybe: unknown,
+    fn: (tx: import('@/lib/db').TenantTx) => Promise<T>,
+  ): Promise<T> {
+    if (txMaybe !== undefined && txMaybe !== null) {
+      return fn(txMaybe as import('@/lib/db').TenantTx);
+    }
+    return runInTenant(ctx, async (tx) => fn(tx));
+  }
+
   return {
+    async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return runInTenant(ctx, async (tx) => fn(tx));
+    },
+
     async findById(
       _tenantId: string,
       broadcastId: BroadcastId,
+      txMaybe?: unknown,
     ): Promise<BroadcastRetrySnapshot | null> {
-      return runInTenant(ctx, async (tx) => {
+      return withTxOr(txMaybe, async (tx) => {
         const [row] = await tx
           .select({
             tenantId: broadcasts.tenantId,
@@ -77,9 +98,10 @@ export function makeDrizzleBroadcastsRetryRepo(
     async incrementManualRetryCount(
       _tenantId: string,
       broadcastId: BroadcastId,
+      txMaybe?: unknown,
     ): Promise<Result<number, IncrementError>> {
       try {
-        return await runInTenant(ctx, async (tx) => {
+        return await withTxOr(txMaybe, async (tx) => {
           const [updated] = await tx
             .update(broadcasts)
             .set({
