@@ -120,7 +120,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // Post-ship R6 C3 — 503 on Redis outage.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'idempotency_reservation_failed',
+          message:
+            'Idempotency reservation temporarily unavailable. Retry shortly.',
+        },
+      },
+      { status: 503, headers: { 'Retry-After': '5' } },
+    );
+  }
 
   const deps = buildPlansDeps(tenant);
   const sourceIp = ctx.sourceIp ?? null;

@@ -74,4 +74,23 @@ describe('resolveTenantFromHeaders', () => {
     ]);
     expect(() => resolveTenantFromHeaders(headers)).toThrow();
   });
+
+  it('post-ship R6 C2 — propagates `headers.forEach` exceptions instead of silently falling back to env.tenant.slug', () => {
+    // Constitution v1.4.0 Principle I forbids tenant-isolation fallbacks.
+    // Prior to 2026-05-19 a try/catch swallowed `forEach` throws and
+    // returned `env.tenant.slug`; F10 multi-tenant rollout would have
+    // silently routed cross-tenant probes to the deployed tenant. The
+    // new contract: fail loud, let Next.js error boundaries surface
+    // the 500 + ops dashboards alert.
+    const throwingHeaders = {
+      get: () => null,
+      has: () => false,
+      forEach: () => {
+        throw new Error('synthetic Proxy wrapper failure');
+      },
+    };
+    expect(() => resolveTenantFromHeaders(throwingHeaders)).toThrow(
+      'synthetic Proxy wrapper failure',
+    );
+  });
 });

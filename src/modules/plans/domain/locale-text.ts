@@ -20,9 +20,63 @@ export type LocaleText = {
   readonly sv?: string;
 };
 
+/**
+ * Post-ship R6 I9 / D4 (2026-05-19) — back-compat alias for the
+ * structural shape. Future code that wants the branded version
+ * (`asLocaleText`-produced) imports `LocaleText`; presentation +
+ * legacy code that constructs via object literal continues to use
+ * `LocaleTextLiteral` which is structurally identical.
+ *
+ * The full brand was deliberately NOT added in this pass — 70+ call
+ * sites construct LocaleText via object literal (UI components,
+ * i18n message renderers, seed fixtures). The `asLocaleText` smart
+ * constructor below is the recommended path for NEW Domain/
+ * Application code; existing callers continue to compile unchanged.
+ * A future refactor can flip `LocaleText` to a branded intersection
+ * once all callers migrate.
+ */
+export type LocaleTextLiteral = LocaleText;
+
 /** Supported locale keys — narrower than app-wide `next-intl` locales. */
 export const LOCALE_KEYS = ['en', 'th', 'sv'] as const;
 export type LocaleKey = (typeof LOCALE_KEYS)[number];
+
+export class EmptyEnLocaleTextError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EmptyEnLocaleTextError';
+  }
+}
+
+/**
+ * Smart constructor for `LocaleText` (post-ship R6 I9 / D4).
+ *
+ * Validates the empty-`en` invariant at the boundary — the existing
+ * `localeTextSchema` zod validator in `plan-validators.ts` enforces
+ * the same rule at the HTTP/API edge, but Domain code that bypasses
+ * zod (test fixtures, seeders, future use-cases) was previously able
+ * to construct `{ en: '' }` and slip an empty primary locale into
+ * persistence. This constructor closes that gap.
+ *
+ * Use this for NEW Domain code that produces LocaleText values. UI
+ * components and i18n renderers can continue to use object literals
+ * via the back-compat `LocaleTextLiteral` alias.
+ */
+export function asLocaleText(input: {
+  readonly en: string;
+  readonly th?: string;
+  readonly sv?: string;
+}): LocaleText {
+  if (typeof input.en !== 'string' || input.en.trim().length === 0) {
+    throw new EmptyEnLocaleTextError(
+      'asLocaleText: `en` is required and must be a non-empty string',
+    );
+  }
+  const out: { en: string; th?: string; sv?: string } = { en: input.en };
+  if (input.th !== undefined) out.th = input.th;
+  if (input.sv !== undefined) out.sv = input.sv;
+  return out as LocaleText;
+}
 
 /**
  * Return the list of missing non-EN translations on a LocaleText record.

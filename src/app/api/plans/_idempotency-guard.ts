@@ -103,7 +103,26 @@ export async function runIdempotencyGuard(
     };
   }
 
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // Post-ship R6 C3 (2026-05-19) — surface Redis-down as 503 instead
+  // of silently continuing. The prior fire-and-forget call meant a
+  // retry could create a duplicate plan/clone/etc. when the
+  // reservation was dropped during an Upstash outage.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return {
+      kind: 'response',
+      response: NextResponse.json(
+        {
+          error: {
+            code: 'idempotency_reservation_failed',
+            message:
+              'Idempotency reservation temporarily unavailable. Retry shortly.',
+          },
+        },
+        { status: 503, headers: { 'Retry-After': '5' } },
+      ),
+    };
+  }
 
   return { kind: 'proceed', key: keyCheck.key, bodyHash, tenant };
 }

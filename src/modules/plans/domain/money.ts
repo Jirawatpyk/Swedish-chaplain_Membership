@@ -22,10 +22,23 @@
  * Pure TypeScript — no framework imports.
  */
 
+// Post-ship R6 I9 / D4 (2026-05-19) — branded `Money` type. The
+// brand is a phantom `unique symbol` property that exists only at
+// the type level (never at runtime). Callers MUST construct Money
+// values through `asMoney()` — direct object-literal construction
+// `{ amount_minor_units, currency_code } satisfies Money` fails
+// typecheck because it can't provide the brand property. This
+// prevents the off-by-100x (THB vs satang) class of bug at the
+// boundary instead of at runtime via `asMinorUnits` invariants.
+//
+// Template borrowed from `src/modules/tenants/domain/iana-timezone.ts`
+// — the A-grade reference for branded value types in this codebase.
+declare const MoneyBrand: unique symbol;
+
 export type Money = {
   readonly amount_minor_units: number;
   readonly currency_code: CurrencyCode;
-};
+} & { readonly [MoneyBrand]: true };
 
 /** ISO 4217 currency codes recognised by Chamber-OS F2. */
 export const SUPPORTED_CURRENCIES = [
@@ -86,17 +99,21 @@ export function asMinorUnits(value: number): number {
   return value;
 }
 
-/** Construct a validated `Money` record. */
+/** Construct a validated `Money` record (the only blessed path —
+ *  see brand note on the `Money` type). */
 export function asMoney(amountMinorUnits: number, currencyCode: string): Money {
   if (!isCurrencyCode(currencyCode)) {
     throw new InvalidMoneyError(
       `Unknown currency code ${JSON.stringify(currencyCode)}. Allowed: ${SUPPORTED_CURRENCIES.join(', ')}`,
     );
   }
+  // Validated — brand cast at the smart-constructor boundary. The
+  // `MoneyBrand` symbol never exists at runtime, so this cast does
+  // not affect the actual object shape.
   return {
     amount_minor_units: asMinorUnits(amountMinorUnits),
     currency_code: currencyCode,
-  };
+  } as Money;
 }
 
 function assertSameCurrency(a: Money, b: Money): void {

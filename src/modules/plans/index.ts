@@ -65,11 +65,13 @@ export type {
   DirectoryAdPosition,
 } from './domain/benefit-matrix';
 
-export type { LocaleText, LocaleKey } from './domain/locale-text';
+export type { LocaleText, LocaleTextLiteral, LocaleKey } from './domain/locale-text';
 export {
   LOCALE_KEYS,
   hasMissingTranslations,
   pickLocaleText,
+  asLocaleText,
+  EmptyEnLocaleTextError,
 } from './domain/locale-text';
 
 export type { Money, CurrencyCode } from './domain/money';
