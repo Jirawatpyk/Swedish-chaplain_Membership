@@ -141,13 +141,24 @@ export const auditDiffSchema = z.record(
  *
  * Use `MutableAuditDiff` for construction, then widen to `AuditDiff`.
  */
+// R4-I5 — `before?: unknown; after?: unknown` (optional, not required)
+// to match the zod inference of `z.unknown()` which makes fields
+// optional. The drift guard at the bottom of this file now asserts
+// mutual assignability between this hand-written type and
+// `z.infer<typeof auditPayloadSchema>`; making the fields optional
+// here aligns the two sides without altering runtime semantics
+// (callers always supply both fields in practice — `recordAuditEvent`
+// emit sites build diffs via `MutableAuditDiff` and never partially
+// populate).
 export type AuditDiff = Readonly<
-  Partial<Record<DiffableField, Readonly<{ before: unknown; after: unknown }>>>
+  Partial<
+    Record<DiffableField, Readonly<{ before?: unknown; after?: unknown }>>
+  >
 >;
 
 /** Mutable builder type — use for constructing diffs, then assign to `AuditDiff`. */
 export type MutableAuditDiff = Partial<
-  Record<DiffableField, { before: unknown; after: unknown }>
+  Record<DiffableField, { before?: unknown; after?: unknown }>
 >;
 
 // --- Per-event payload schemas (single source of truth per data-model § 2.6) --
@@ -331,7 +342,7 @@ export type F2AuditEvent =
       readonly payload: {
         readonly plan_id: string;
         readonly plan_year: number;
-        readonly diff?: AuditDiff;
+        readonly diff?: AuditDiff | undefined;
       };
     }
   | {
@@ -339,7 +350,7 @@ export type F2AuditEvent =
       readonly payload: {
         readonly plan_id: string;
         readonly plan_year: number;
-        readonly diff?: AuditDiff;
+        readonly diff?: AuditDiff | undefined;
       };
     }
   | {
@@ -347,7 +358,7 @@ export type F2AuditEvent =
       readonly payload: {
         readonly plan_id: string;
         readonly plan_year: number;
-        readonly diff?: AuditDiff;
+        readonly diff?: AuditDiff | undefined;
       };
     }
   | {
@@ -355,7 +366,7 @@ export type F2AuditEvent =
       readonly payload: {
         readonly plan_id: string;
         readonly plan_year: number;
-        readonly diff?: AuditDiff;
+        readonly diff?: AuditDiff | undefined;
       };
     }
   | {
@@ -385,7 +396,7 @@ export type F2AuditEvent =
         readonly effective_at_cycle_id: string;
         readonly from_plan_id: string;
         readonly to_plan_id: string;
-        readonly reason?: string | null;
+        readonly reason?: string | null | undefined;
       };
     }
   | {
@@ -394,7 +405,7 @@ export type F2AuditEvent =
         readonly member_id: string;
         readonly scheduled_change_id: string;
         readonly effective_at_cycle_id: string;
-        readonly superseded_by_scheduled_change_id?: string | null;
+        readonly superseded_by_scheduled_change_id?: string | null | undefined;
       };
     }
   | {
@@ -403,7 +414,7 @@ export type F2AuditEvent =
         readonly member_id: string;
         readonly scheduled_change_id: string;
         readonly effective_at_cycle_id: string;
-        readonly reason?: string | null;
+        readonly reason?: string | null | undefined;
       };
     }
   | {
@@ -414,7 +425,7 @@ export type F2AuditEvent =
         readonly effective_at_cycle_id: string;
         readonly from_plan_id: string;
         readonly to_plan_id: string;
-        readonly applied_at_invoice_id?: string | null;
+        readonly applied_at_invoice_id?: string | null | undefined;
       };
     };
 
@@ -422,12 +433,36 @@ export type F2AuditEvent =
 // the hand-written union (above) and the zod-inferred type (below).
 // If either diverges, this assertion fails compile and the maintainer
 // must update BOTH.
-type _ZodInfer = z.infer<typeof auditPayloadSchema>;
-type _AssertHandWrittenMatchesZodInfer = F2AuditEvent extends _ZodInfer
-  ? _ZodInfer extends F2AuditEvent
-    ? true
-    : never
-  : never;
+//
+// R4-I5 — the pattern uses a mutual-conditional TUPLE with a const
+// witness so the assertion is actually evaluated. A bare unused
+// `type` alias that resolves to `never` does NOT trigger a compile
+// error in TypeScript — only assignment of an incompatible value
+// (`true` to `never`) does. Mirror of `_gatewayResultArmsLocked` in
+// `src/modules/renewals/application/use-cases/accept-tier-upgrade.ts`.
+//
+// Both sides are normalised via `DeepReadonly` before comparison so
+// readonly-modifier drift (the hand-written union uses
+// `readonly`/`ReadonlyArray`; zod infers mutable arrays/objects)
+// does not cause spurious divergence. The drift guard fails ONLY on
+// genuine field-shape divergence — extra/missing/renamed fields,
+// wrong literal types, etc.
+type DeepReadonly<T> = T extends ReadonlyArray<infer U>
+  ? ReadonlyArray<DeepReadonly<U>>
+  : T extends object
+    ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
+    : T;
+type _ZodInfer = DeepReadonly<z.infer<typeof auditPayloadSchema>>;
+type _F2AuditEventCanonical = DeepReadonly<F2AuditEvent>;
+type _AssertHandWrittenMatchesZodInfer = [
+  _F2AuditEventCanonical extends _ZodInfer ? true : never,
+  _ZodInfer extends _F2AuditEventCanonical ? true : never,
+];
+const _handWrittenMatchesZodInfer: _AssertHandWrittenMatchesZodInfer = [
+  true,
+  true,
+];
+void _handWrittenMatchesZodInfer;
 
 /** Narrow runtime check that a value is one of the 13 F2 event types. */
 export function isF2AuditEventType(value: unknown): value is F2AuditEventType {

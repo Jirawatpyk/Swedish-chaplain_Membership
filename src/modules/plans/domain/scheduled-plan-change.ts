@@ -331,7 +331,19 @@ export type CancelScheduledPlanChangeError =
       readonly message: string;
       readonly transitioned: ScheduledPlanChange;
     }
-  | { readonly code: 'server_error'; readonly message: string };
+  | {
+      readonly code: 'server_error';
+      readonly message: string;
+      /**
+       * R4-I3 — when the TOCTOU recheck `findById` itself throws
+       * (RLS / connection-pool exhaustion / etc.), the inner catch
+       * preserves the recheck error message here so the route can
+       * emit a distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`
+       * log alongside the original transitionStatus error. Without
+       * this, the cascading inner failure is invisible.
+       */
+      readonly recheckErrMessage?: string;
+    };
 
 /** Resolved plan for a renewal cycle — output of `getEffectivePlanForRenewal`. */
 export interface EffectivePlanForRenewal {

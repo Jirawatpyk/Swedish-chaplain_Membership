@@ -41,6 +41,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
+import { planMetrics } from '@/lib/metrics';
 import { cancelScheduledPlanChange } from '@/modules/plans';
 import {
   drizzleScheduledPlanChangeRepo,
@@ -206,6 +207,12 @@ export async function POST(
         },
         'cancel-scheduled-plan-change: audit write failed',
       );
+      // R4-I2 — emit metric counter so SRE backfill SLO can be graphed
+      // (log-based attribution would be lossy on sampled pipelines).
+      planMetrics.cancelAuditBackfillRequired(
+        tenant.slug,
+        result.error.auditErrorType,
+      );
       // The row IS cancelled (transitionStatus
       // landed). Return 200 with the cancelled-row body + diagnostic
       // header so the UI does not retry a successful mutation. SRE
@@ -227,7 +234,24 @@ export async function POST(
       return NextResponse.json(body, { status: 200, headers });
     }
     case 'server_error':
-    default:
+    default: {
+      // R4-I3 — emit a distinct errorId for the inner-recheck failure
+      // cascade so SRE can correlate the original transitionStatus
+      // error with the recheck-itself-failed signal (typically RLS /
+      // connection-pool exhaustion).
+      if (
+        'recheckErrMessage' in result.error &&
+        result.error.recheckErrMessage !== undefined
+      ) {
+        logger.warn(
+          {
+            errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
+            requestId: ctx.requestId,
+            recheckErrMessage: result.error.recheckErrMessage,
+          },
+          'cancel-scheduled-plan-change: TOCTOU recheck failed; surfacing original transitionStatus error',
+        );
+      }
       logger.error(
         { requestId: ctx.requestId, err: result.error },
         'cancel-scheduled-plan-change: unhandled error',
@@ -238,5 +262,6 @@ export async function POST(
         },
         { status: 500 },
       );
+    }
   }
 }

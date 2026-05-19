@@ -152,6 +152,12 @@ export async function cancelScheduledPlanChange(
     // "row not found or already terminal" when 0 rows updated. Re-
     // read via findById; if row is terminal, return `already_terminal`
     // (409) — operationally distinct from `server_error` (500).
+    // R4-I3 — capture inner-recheck failure (if any) so the route can
+    // log it under `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`.
+    // Without this, an RLS / connection-pool exhaustion on the recheck
+    // is invisible — operator only sees the original transitionStatus
+    // error and can't diagnose the cascading failure.
+    let recheckErrMessage: string | undefined;
     try {
       const recheck = await deps.repo.findById(
         deps.tenant,
@@ -167,12 +173,13 @@ export async function cancelScheduledPlanChange(
           >,
         });
       }
-    } catch {
-      // re-read itself failed — fall through to server_error
+    } catch (recheckErr) {
+      recheckErrMessage = (recheckErr as Error)?.message ?? 'unknown';
     }
     return err({
       code: 'server_error',
       message: `cancelScheduledPlanChange.transitionStatus: ${(e as Error)?.message ?? 'unknown'}`,
+      ...(recheckErrMessage !== undefined && { recheckErrMessage }),
     });
   }
 

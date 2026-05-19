@@ -445,6 +445,50 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.error.code !== 'server_error') throw new Error('unreachable');
     expect(result.error.message).toContain('original transitionStatus');
   });
+
+  // R4-I3 — the inner recheck catch{} used to swallow the recheck
+  // failure silently; an RLS / connection-pool exhaustion on the
+  // re-read was invisible. Now the typed server_error variant
+  // optionally carries `recheckErrMessage` so the route can log a
+  // distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`.
+  it('R4-I3: server_error.recheckErrMessage carries inner recheck failure for alert routing', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.repo.findById)
+      .mockResolvedValueOnce(makePending())
+      .mockRejectedValueOnce(new Error('rls: connection-pool exhausted'));
+    vi.mocked(deps.repo.transitionStatus).mockRejectedValueOnce(
+      new Error('transitionStatus: row not found or already terminal'),
+    );
+
+    const result = await cancelScheduledPlanChange(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('server_error');
+    if (result.error.code !== 'server_error') throw new Error('unreachable');
+    expect(result.error.message).toContain('transitionStatus');
+    expect(result.error.recheckErrMessage).toBe(
+      'rls: connection-pool exhausted',
+    );
+  });
+
+  it('R4-I3: server_error.recheckErrMessage is absent when recheck succeeded', async () => {
+    const deps = makeDeps();
+    // Recheck returns null (no terminal row) → falls through to
+    // server_error WITHOUT a recheck error.
+    vi.mocked(deps.repo.findById)
+      .mockResolvedValueOnce(makePending())
+      .mockResolvedValueOnce(null);
+    vi.mocked(deps.repo.transitionStatus).mockRejectedValueOnce(
+      new Error('transitionStatus: simulated failure'),
+    );
+
+    const result = await cancelScheduledPlanChange(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('server_error');
+    if (result.error.code !== 'server_error') throw new Error('unreachable');
+    expect(result.error.recheckErrMessage).toBeUndefined();
+  });
 });
 
 describe('cancelScheduledPlanChange — audit_failed paths', () => {

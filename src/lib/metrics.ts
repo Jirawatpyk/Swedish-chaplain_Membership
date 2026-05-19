@@ -393,12 +393,12 @@ export const outboxMetrics = {
 
 export const planMetrics = {
   /**
-   * R2 Batch 3i (R2-S7) — Plan PATCH no-op short-circuit count.
-   * `updatePlan` returns the existing row WITHOUT a DB write or audit
-   * emit when the computed diff is empty (client sent fields whose
-   * values match the stored row — common when a client re-submits a
-   * form with no actual changes). The counter detects noisy clients
-   * or buggy forms that repeatedly POST phantom edits.
+   * Plan PATCH no-op short-circuit count. `updatePlan` returns the
+   * existing row WITHOUT a DB write or audit emit when the computed
+   * diff is empty (client sent fields whose values match the stored
+   * row — common when a client re-submits a form with no actual
+   * changes). The counter detects noisy clients or buggy forms that
+   * repeatedly POST phantom edits.
    */
   updateNoOpShortCircuit(tenantId: string): void {
     safeMetric(() => {
@@ -406,6 +406,26 @@ export const planMetrics = {
         'plans_update_no_op_short_circuit_total',
         'F2 updatePlan returned existing row because diff was empty (no DB write, no audit)',
       ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `cancelScheduledPlanChange` returned 200 + `X-Audit-Backfill-Required: 1`
+   * because the cancel mutation already landed but the audit emit
+   * failed. SRE backfill SLO depth = sum(this counter) - sum(audit
+   * rows successfully backfilled). Labels distinguish the failure
+   * mode (zod-rejection vs DB-rejection) so dashboards can split
+   * deploy-skew investigations from RLS/connection-pool issues.
+   */
+  cancelAuditBackfillRequired(
+    tenantId: string,
+    auditErrorType: 'invalid_payload' | 'persist_failed',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'plans_cancel_audit_backfill_required_total',
+        'F2 cancelScheduledPlanChange returned 200 + X-Audit-Backfill-Required because audit emit failed but the cancel mutation already committed',
+      ).add(1, { tenant: tenantId, audit_error_type: auditErrorType });
     });
   },
 };

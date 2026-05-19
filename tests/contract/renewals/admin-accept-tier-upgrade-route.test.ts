@@ -155,4 +155,23 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept
     expect(body.error.code).toBe('feature_disabled');
     expect(loggerErrorMock).not.toHaveBeenCalled();
   });
+
+  // R4-I4 (Batch 5b) — outer catch emits errorId.
+  it('500 uncaught throw — outer catch emits errorId F8.ACCEPT_TIER.UNEXPECTED', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockRejectedValueOnce(
+      new Error('simulated async-arm regression — defence-in-depth probe'),
+    );
+
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+
+    expect(res.status).toBe(500);
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    const [structured, message] = loggerErrorMock.mock.calls[0]!;
+    expect(structured.errorId).toBe('F8.ACCEPT_TIER.UNEXPECTED');
+    expect(structured.correlationId).toBe('corr-accept-1');
+    expect(structured.suggestionId).toBe(SUGGESTION_ID);
+    expect(message).toBe('admin.renewals.tier-upgrades.accept_unexpected_error');
+  });
 });

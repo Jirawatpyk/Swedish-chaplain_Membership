@@ -63,6 +63,21 @@ vi.mock('@/lib/idempotency', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
+// R4-I2 — observe the new planMetrics.cancelAuditBackfillRequired
+// counter. We mock the whole `@/lib/metrics` module so the assertion
+// can inspect `planMetrics.cancelAuditBackfillRequired.mock.calls`.
+vi.mock('@/lib/metrics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/metrics')>(
+    '@/lib/metrics',
+  );
+  return {
+    ...actual,
+    planMetrics: {
+      ...actual.planMetrics,
+      cancelAuditBackfillRequired: vi.fn(),
+    },
+  };
+});
 
 const adminContext = {
   current: {
@@ -270,10 +285,17 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
       status: 'cancelled',
       cancelled_at: '2026-05-19T10:00:00Z',
     });
+    // R4-I2 — metric counter increments with the audit_error_type label
+    // so SRE backfill SLO can be graphed from OTel directly.
+    const metricsMod = await import('@/lib/metrics');
+    expect(metricsMod.planMetrics.cancelAuditBackfillRequired).toHaveBeenCalledWith(
+      'test-swecham',
+      'persist_failed',
+    );
   });
 
-  // R3 Batch 4b (R3-I5) — invalid_payload discriminator maps to a
-  // distinct errorId in the log + distinct X-Audit-Error-Type header.
+  // invalid_payload discriminator maps to a distinct errorId in the
+  // log + distinct X-Audit-Error-Type header.
   it('200 audit_failed (auditErrorType=invalid_payload) + X-Audit-Backfill-Required header', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
@@ -299,6 +321,13 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
       status: 'cancelled',
       cancelled_at: '2026-05-19T10:00:00Z',
     });
+    // R4-I2 — metric counter label = 'invalid_payload' splits the
+    // SRE dashboard differently from the persist_failed case above.
+    const metricsMod = await import('@/lib/metrics');
+    expect(metricsMod.planMetrics.cancelAuditBackfillRequired).toHaveBeenCalledWith(
+      'test-swecham',
+      'invalid_payload',
+    );
   });
 
   it('500 server_error', async () => {
