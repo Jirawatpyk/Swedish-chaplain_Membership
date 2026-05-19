@@ -50,6 +50,14 @@ const {
   tierUpgradeApplyPostPaidFailedMock,
   applyPendingInvalidTxAdd,
   auditEmitterEmitMock,
+  // R2 Batch 3b (R2-I8) — F2 finaliser invocation assertions need
+  // access to the F2 stub's `findPendingForCycle` + `transitionStatus`
+  // + audit `record` spies so per-test mockResolvedValueOnce can drive
+  // pending-row scenarios.
+  f2FindPendingForCycleMock,
+  f2TransitionStatusMock,
+  f2AuditRecordMock,
+  f2FinaliseBeforeF4CommitMock,
 } = vi.hoisted(() => ({
   onPaidInvalidTxAdd: vi.fn(),
   onPaidUnknownOutcomeKindAdd: vi.fn(),
@@ -61,6 +69,10 @@ const {
   tierUpgradeApplyPostPaidFailedMock: vi.fn(),
   applyPendingInvalidTxAdd: vi.fn(),
   auditEmitterEmitMock: vi.fn(),
+  f2FindPendingForCycleMock: vi.fn(),
+  f2TransitionStatusMock: vi.fn(),
+  f2AuditRecordMock: vi.fn(),
+  f2FinaliseBeforeF4CommitMock: vi.fn(),
 }));
 
 vi.mock('@/lib/metrics', async (importOriginal) => {
@@ -76,6 +88,10 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       onPaidUnknownOutcomeKind: { add: onPaidUnknownOutcomeKindAdd },
       tierUpgradeApplyPostPaidFailed: tierUpgradeApplyPostPaidFailedMock,
       applyPendingInvalidTx: { add: applyPendingInvalidTxAdd },
+      // R2 Batch 3a (R2-C1) — operational counter for F2 finaliser
+      // invocations. R2-I8 asserts this fires exactly once per
+      // post-tx finaliser call.
+      f2FinaliseBeforeF4Commit: f2FinaliseBeforeF4CommitMock,
     },
   };
 });
@@ -134,18 +150,23 @@ vi.mock(
 // stub makes the F2 finaliser a no-op (findPendingForCycle returns
 // null = same-tier renewal, the common case + the test scenario here
 // since the existing assertions don't care about F2 state).
+// R2 Batch 3b (R2-I8) — F2 spies via hoisted refs so per-test
+// `mockResolvedValueOnce` drives pending-row vs no-row scenarios.
+// Defaults: findPendingForCycle returns null (same-tier renewal),
+// audit record returns ok. transitionStatus is a no-op spy (callers
+// only invoke it when findPendingForCycle returned a pending row).
 vi.mock('@/modules/plans/server', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/modules/plans/server')>();
   return {
     ...actual,
     drizzleScheduledPlanChangeRepo: {
       supersedeAndInsertPendingAtomically: vi.fn(),
-      findPendingForCycle: vi.fn(async () => null),
-      transitionStatus: vi.fn(),
+      findPendingForCycle: f2FindPendingForCycleMock,
+      transitionStatus: f2TransitionStatusMock,
       listForMember: vi.fn(),
     },
     planAuditAdapter: {
-      record: vi.fn(async () => ({ ok: true, value: undefined })),
+      record: f2AuditRecordMock,
     },
   };
 });
@@ -229,6 +250,15 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     auditEmitterEmitMock.mockReset();
     cyclesRepoFindByInvoiceIdInTxMock.mockReset();
     cyclesRepoFindByIdInTxMock.mockReset();
+    // R2 Batch 3b — F2 stub default: no pending row (common-case
+    // same-tier renewal), audit record returns ok, finaliser counter
+    // not bumped by default until per-test setup overrides.
+    f2FindPendingForCycleMock.mockReset();
+    f2FindPendingForCycleMock.mockResolvedValue(null);
+    f2TransitionStatusMock.mockReset();
+    f2AuditRecordMock.mockReset();
+    f2AuditRecordMock.mockResolvedValue({ ok: true, value: undefined });
+    f2FinaliseBeforeF4CommitMock.mockReset();
   });
 
   it('valid TenantTx threaded → InTx variant called, no metric bumped (I3 atomic-tx happy path)', async () => {
@@ -476,5 +506,118 @@ describe('f8OnPaidCallbacks dispatch — R4-I2 + R4-S1 guard-rail tests', () => 
     // logger.error / logger.fatal NOT fired — replay is a normal path.
     expect(loggerErrorMock).not.toHaveBeenCalled();
     expect(loggerFatalMock).not.toHaveBeenCalled();
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  // R2 Batch 3b (R2-I8) — F2 finaliser integration assertions.
+  //
+  // The Batch 2d helper-level unit test (`f8-onPaid-f2-finalise.test`)
+  // covers `finaliseF2ScheduledPlanChangeForCycle` in isolation via
+  // `_internal` export. This integration assertion pins the OUTER
+  // callback factory's wiring:
+  //   1. `resolvedCycleId` is captured from the in-tx cycle lookup.
+  //   2. The `if (resolvedCycleId !== null)` gate fires the F2
+  //      finaliser exactly once on renewal-cycle invoices.
+  //   3. The `renewalsMetrics.f2FinaliseBeforeF4Commit` counter is
+  //      bumped before the finaliser runs.
+  //   4. On non-renewal invoices (cycle === null short-circuit), the
+  //      F2 finaliser MUST NOT be invoked + the metric MUST NOT bump.
+  // A refactor that drops the `resolvedCycleId = cycle.cycleId`
+  // assignment at the apply()-closure site would fail (3).
+  // ─────────────────────────────────────────────────────────────────
+
+  it('R2-I8: F2 finaliser fires + metric bumps when renewal cycle resolved and pending F2 row exists', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
+      cycleId: 'cyc-with-pending-plan-change',
+      memberId: 'mem-1',
+    });
+    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce({
+      suggestionsApplied: ['sug-A'],
+    });
+    // F2 finaliser path: pending row exists for (member, cycle).
+    f2FindPendingForCycleMock.mockResolvedValueOnce({
+      tenantId: 'test-tenant',
+      scheduledChangeId: 'sched-applied-target',
+      memberId: '22222222-2222-2222-2222-222222222222',
+      effectiveAtCycleId: 'cyc-with-pending-plan-change',
+      fromPlanId: 'corporate-standard',
+      toPlanId: 'corporate-premium',
+      scheduledByUserId: 'admin',
+      reason: 'tier_upgrade_accepted:sug-A',
+      status: 'pending',
+      scheduledAt: '2026-05-01T00:00:00Z',
+      appliedAt: null,
+      supersededAt: null,
+      cancelledAt: null,
+    });
+    f2TransitionStatusMock.mockResolvedValueOnce({
+      tenantId: 'test-tenant',
+      scheduledChangeId: 'sched-applied-target',
+      memberId: '22222222-2222-2222-2222-222222222222',
+      effectiveAtCycleId: 'cyc-with-pending-plan-change',
+      fromPlanId: 'corporate-standard',
+      toPlanId: 'corporate-premium',
+      scheduledByUserId: 'admin',
+      reason: 'tier_upgrade_accepted:sug-A',
+      status: 'applied',
+      scheduledAt: '2026-05-01T00:00:00Z',
+      appliedAt: '2026-05-19T10:00:00Z',
+      supersededAt: null,
+      cancelledAt: null,
+    });
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    // F2 finaliser was invoked exactly once
+    expect(f2FindPendingForCycleMock).toHaveBeenCalledTimes(1);
+    expect(f2TransitionStatusMock).toHaveBeenCalledTimes(1);
+    // Audit emit fires with plan_change_applied event_type + correct payload
+    expect(f2AuditRecordMock).toHaveBeenCalledTimes(1);
+    const [, event] = f2AuditRecordMock.mock.calls[0]!;
+    expect((event as { event_type: string }).event_type).toBe(
+      'plan_change_applied',
+    );
+    // R2-C1 operational counter — bumped exactly once before finaliser
+    expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledTimes(1);
+    expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledWith('test-tenant');
+  });
+
+  it('R2-I8: F2 finaliser NOT invoked + metric NOT bumped when cycle is null (non-renewal invoice)', async () => {
+    // Non-renewal invoice: cyclesRepo.findByInvoiceIdInTx returns null
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue(null);
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    // F8 in-tx work skipped (cycle null short-circuit inside apply())
+    expect(applyPendingTierUpgradeInTxMock).not.toHaveBeenCalled();
+    // F2 finaliser MUST NOT fire (resolvedCycleId stays null)
+    expect(f2FindPendingForCycleMock).not.toHaveBeenCalled();
+    expect(f2TransitionStatusMock).not.toHaveBeenCalled();
+    expect(f2AuditRecordMock).not.toHaveBeenCalled();
+    // Counter MUST NOT bump
+    expect(f2FinaliseBeforeF4CommitMock).not.toHaveBeenCalled();
+  });
+
+  it('R2-I8: F2 finaliser is no-op (no audit emit) when cycle resolved but no pending row exists (same-tier renewal)', async () => {
+    cyclesRepoFindByInvoiceIdInTxMock.mockResolvedValue({
+      cycleId: 'cyc-no-pending',
+      memberId: 'mem-1',
+    });
+    applyPendingTierUpgradeInTxMock.mockResolvedValueOnce({
+      suggestionsApplied: [],
+    });
+    // Default beforeEach already sets f2FindPendingForCycleMock to null.
+
+    const callbacks = f8OnPaidCallbacks('test-tenant');
+    await callbacks[1]!(buildEvent(), fakeValidTenantTx);
+
+    // Counter fires (we ENTER the finaliser code path) but lookup
+    // returns null → no transition + no audit.
+    expect(f2FinaliseBeforeF4CommitMock).toHaveBeenCalledTimes(1);
+    expect(f2FindPendingForCycleMock).toHaveBeenCalledTimes(1);
+    expect(f2TransitionStatusMock).not.toHaveBeenCalled();
+    expect(f2AuditRecordMock).not.toHaveBeenCalled();
   });
 });
