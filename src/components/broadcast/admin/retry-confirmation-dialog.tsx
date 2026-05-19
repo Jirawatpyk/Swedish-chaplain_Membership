@@ -19,7 +19,7 @@
  *
  * i18n keys: admin.broadcasts.retryDialog.* + admin.broadcasts.toast.*
  */
-import { useTransition } from 'react';
+import { useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -129,16 +129,19 @@ export function RetryConfirmationDialog({
     });
   }
 
-  // Phase 3F.11.14 (Round 3 UX M1) — function variant of `finalFocus`
-  // so we can fall back to `fallbackFocusRef` when the trigger button
-  // has been unmounted (`canRetry` flipped to false post-retry, or
-  // router.refresh remount). Base UI accepts `RefObject | function |
-  // boolean | null` for finalFocus; function variant returning the
-  // first non-null ref gives the deterministic refuge.
-  const finalFocus =
-    triggerRef !== undefined || fallbackFocusRef !== undefined
-      ? () => triggerRef?.current ?? fallbackFocusRef?.current ?? null
-      : undefined;
+  // Phase 3F.11.14 + 3F.11.17 — `finalFocus` function (always passed,
+  // useCallback-wrapped) chains the trigger-then-fallback heading
+  // refs. When the trigger button is unmounted (canRetry → false
+  // post-retry, router.refresh remount), the function returns the
+  // heading ref; if both refs are null, returns null → Base UI's
+  // default body fallback. useCallback satisfies the react-hooks/refs
+  // rule (ref access is deferred to Base UI's invocation, not at
+  // render). Base UI: `finalFocus?: RefObject | function | boolean`.
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      triggerRef?.current ?? fallbackFocusRef?.current ?? null,
+    [triggerRef, fallbackFocusRef],
+  );
 
   return (
     // Phase 3F.11.1 (C1 — Round 2 fix) — Base UI `finalFocus` is a prop
@@ -148,10 +151,7 @@ export function RetryConfirmationDialog({
     // Moved to AlertDialogContent here. Phase 3F.11.14 added the
     // `fallbackFocusRef` for trigger-unmount cases. WCAG SC 2.4.3 + 2.4.11.
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent
-        className="max-w-lg"
-        {...(finalFocus !== undefined ? { finalFocus } : {})}
-      >
+      <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>

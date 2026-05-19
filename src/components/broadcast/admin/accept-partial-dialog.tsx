@@ -21,7 +21,7 @@
  *
  * i18n keys: admin.broadcasts.acceptPartialDialog.* + admin.broadcasts.toast.*
  */
-import { useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -143,20 +143,18 @@ export function AcceptPartialDialog({
 
   // Phase 3F.11.14 (UX M1) — function variant of finalFocus so we can
   // fall back to fallbackFocusRef when the trigger button is unmounted.
-  // See RetryConfirmationDialog for the same pattern.
-  const finalFocus =
-    triggerRef !== undefined || fallbackFocusRef !== undefined
-      ? () => triggerRef?.current ?? fallbackFocusRef?.current ?? null
-      : undefined;
+  // See RetryConfirmationDialog for the lint-fix rationale (3F.11.17).
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      triggerRef?.current ?? fallbackFocusRef?.current ?? null,
+    [triggerRef, fallbackFocusRef],
+  );
 
   return (
     // Phase 3F.11.1 (C1 — Round 2 fix) — see RetryConfirmationDialog
     // header doc.
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent
-        className="max-w-lg"
-        {...(finalFocus !== undefined ? { finalFocus } : {})}
-      >
+      <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('description')}</AlertDialogDescription>

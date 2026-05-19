@@ -326,6 +326,32 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 **Purpose**: Observability, runbooks, ship-day operator checklist items, manual QA gates.
 
+**Phase 6 scope status (Staff Review 2026-05-19)**: F7.1a originally
+planned 3 USs (US1 + US2 + US7). Only **US1 (Phase 3)** is implemented
+on this branch. **Phase 4 (US2) + Phase 5 (US7) are deferred to a
+follow-up branch** (F7.1a-Phase-2). Consequently:
+
+- Phase 6 tasks that depend on US2 artefacts (ClamAV runbooks T124-T125,
+  image-allowlist probes T128, ClamAV deploy T139, US2 flag flip T145)
+  are blocked until Phase 4 ships.
+- Phase 6 tasks that depend on US7 artefacts (template probes T129,
+  template seed generator T134, US7 flag flip T144) are blocked until
+  Phase 5 ships.
+- Phase 6 tasks scoped to US1 only (cross-tenant probe expansion T127
+  for `pagination-cross-tenant-probe.test.ts`, CI gates T130-T133,
+  US1 flag flip T146, US1-relevant runbooks T126) remain in scope for
+  this branch's release.
+
+Within the US1-only ship of this branch:
+- **Genuine US1-pre-ship work**: T126 partial-send runbook, T130-T133
+  CI gates, T135 SR QA (5 surfaces narrows to 2: batch breakdown +
+  retry dialog), T140-T143/T146 operator gates, T147-T149 docs/release
+  tag, T150/T155-T162 spec/plan doc closures, T163 already [X], T164
+  F7 MVP regression suite.
+- **DEFERRED to F7.1a-Phase-2**: T122-T125, T127-T129, T134-T135 (US2
+  + US7 surfaces), T136 (3-US walkthrough → US1 walkthrough only),
+  T139, T144-T145, T151-T154 (US2 + US7 scope).
+
 ### Observability (per plan.md Principle VII)
 
 - [ ] T122 [P] Create `src/lib/metrics/broadcasts-f71a.ts` registering 5 new OpenTelemetry metrics: `broadcasts.batch_dispatch_duration_ms{tenant,batch_index}`, `broadcasts.partial_send_count{tenant}`, `broadcasts.manual_retry_count{tenant,broadcast_id}`, `broadcasts.image_scan_duration_ms{tenant,verdict}`, `broadcasts.clamav_signature_age_hours{}` (probed via `CLAMD VERSION` socket call)
@@ -342,7 +368,7 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 ### CI gates
 
-- [ ] T130 Verify `pnpm check:i18n` passes (all ~170 new EN/TH/SV keys parity); update CI workflow if needed
+- [X] T130 Verify `pnpm check:i18n` passes (all new EN/TH/SV keys parity). Verified 2026-05-19 across Phase 3F.11.x commits — 2989 keys × 3 locales GREEN. Final verification at Phase 3F.11.16 ship time.
 - [ ] T131 Verify `pnpm check:layout` passes (no layout-container drift introduced by F7.1a routes)
 - [ ] T132 Run full CI pipeline locally per CLAUDE.md: `pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm test:integration && pnpm test:e2e --workers=1` — confirm all green
 - [ ] T133 Verify coverage thresholds: Domain 100% line (batch-boundary, image-source-allowlist, template-snapshot pure functions); Application 80% line/branch; **100% branch on security-critical paths** (validate-image-source-allowlist, scan-inline-image-for-virus, snapshot-template-to-draft variable substitution, retry-failed-batches advisory-lock acquisition)

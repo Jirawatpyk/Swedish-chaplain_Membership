@@ -168,10 +168,8 @@ export async function retryFailedBatches(
     //    this withTx callback returns + the outer tx commits.
     //    Concurrent `retryFailedBatches` on the same broadcastId will
     //    see `{acquired: false}` here while our tx holds the lock.
-    // Phase 3F.11.11 (TxToken Step 2 ✅ DONE) — `tx` is now `TxToken`-
-    // typed via the widened `BroadcastsRetryRepo.withTx` callback
-    // signature, so the `asTxToken(tx)` brand-laundering line that
-    // Phase 3F.11.6 introduced is no longer needed here.
+    // Phase 3F.11.6+.11 — TxToken brand: `tx` arrives pre-branded
+    // from `BroadcastsRetryRepo.withTx`, no laundering needed.
     const lock = await deps.advisoryLock.acquire(tx, lockKey);
     if (!lock.acquired) {
       return err({
@@ -244,15 +242,13 @@ export async function retryFailedBatches(
     const failedBatches = allBatches.filter((b) => b.status === 'failed');
 
     for (const batch of failedBatches) {
-      // Phase 3F.11.1 (C2 — Round 2 fix): rotate idempotency key per
-      // manual retry attempt. Without rotation, Resend's deduper
-      // short-circuits the resend → 3-attempt manual budget burns to
-      // zero with silent no-ops.
-      // Phase 3F.11.15 (Type Bottom #6) — rotation via Domain factory
-      // `rotateForManualRetry` instead of inline string concatenation.
-      // Namespace `-manualretry-N` disjoint from auto-retry's
-      // `-autoretry-N` is encoded in the factory itself (single source
-      // of truth for the two retry-path namespace conventions).
+      // Phase 3F.11.1 + 3F.11.15 — rotate idempotency key per manual
+      // retry attempt via Domain factory. Without rotation, Resend's
+      // deduper short-circuits the resend → 3-attempt manual budget
+      // burns to zero with silent no-ops. Namespace `-manualretry-N`
+      // (disjoint from auto-retry's `-autoretry-N`) is encoded in
+      // `rotateForManualRetry` (single source of truth for retry-path
+      // namespaces).
       const rotatedKey = rotateForManualRetry(batch.idempotencyKey, retryAttempt);
       await deps.batchManifests.updateStatus(
         tenantSlug,
