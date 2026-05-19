@@ -35,6 +35,13 @@ import {
 } from '@/modules/events';
 
 export const runtime = 'nodejs';
+// /review Full Scope 2026-05-19 — explicit `force-dynamic` to match
+// project-wide cron-route convention (precedent: PR #22 +
+// 2026-05-19 F1/F4 fix batch). Route uses `verifyCronBearer`
+// (`node:crypto.timingSafeEqual`), HMAC-SHA-256 deterministic hasher,
+// Drizzle socket, per-tick `Date.now()` for cutoff — all Node-runtime
+// + dynamic-execution dependent.
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 const ROUTE = '/api/internal/retention/pseudonymise-eventcreate';

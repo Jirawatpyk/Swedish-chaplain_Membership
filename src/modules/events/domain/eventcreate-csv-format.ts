@@ -19,6 +19,20 @@
  *
  * Pure TypeScript + `node:crypto` (Node stdlib, not framework) —
  * Constitution Principle III (Domain layer, zero framework imports).
+ *
+ * /review Full Scope 2026-05-19 — explicit Constitution III reading
+ * for `node:crypto`. Principle III enumerates the prohibited framework
+ * imports as `next` / `drizzle-orm` / `resend` / `@upstash/*` / `react`
+ * (and per ESLint scope: `@react-pdf/renderer` / `@vercel/blob` /
+ * `sharp` / `stripe`). The Node-stdlib `node:crypto` module is a
+ * pure-function deterministic primitive (SHA-256 → hex), not a
+ * framework — it has no I/O, no state, no global side effects, and no
+ * lifecycle. Same usage class as `node:buffer` / `node:url` for byte
+ * + string normalisation. Co-locating `computeAttendeeFingerprint` in
+ * Domain keeps the FR-019a 8-step canonical hash next to its sole
+ * input type (`CsvAdapterMode`) and prevents the Application layer
+ * from drifting on the canonicalisation order. The fingerprint is a
+ * value-object identity, not infrastructure.
  */
 import { createHash } from 'node:crypto';
 

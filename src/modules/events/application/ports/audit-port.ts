@@ -46,6 +46,15 @@ import type { MatchType } from '../../domain/value-objects/match-type';
 import type { ProcessingOutcome } from '../../domain/value-objects/webhook-outcome';
 import type { SecretLastFour } from '../../domain/secret-last-four';
 import type { RequestId } from '../../domain/branded-types';
+// /review Full Scope 2026-05-19 — hoisted from the prior inline
+// `import('../../domain/value-objects/payment-status').PaymentStatus`
+// in the `csv_import_row_state_changed` payload type. The original
+// inline-import rationale (avoid pulling domain into port) was a
+// false economy: `MatchType` / `ProcessingOutcome` / `SecretLastFour`
+// are already imported above, and `PaymentStatus` is a `type` alias
+// with zero runtime footprint — top-of-file `import type` is the
+// project-wide convention and erased entirely by TS during compile.
+import type { PaymentStatus } from '../../domain/value-objects/payment-status';
 
 /**
  * Failure-stage taxonomy emitted as the `failureStage` payload field on
@@ -95,7 +104,9 @@ export const F6_AUDIT_EVENT_TYPES = [
   'quota_credit_back_refund',
   'quota_credit_back_archive',
   'quota_over_quota_warning',
-  // Admin actions (11)
+  // Admin actions (10) — /review Full Scope 2026-05-19 count fix:
+  // the planned `ingest_disabled_super_admin` was dropped at the type-
+  // surface tuple (lines 106-109 comment) so the count is 10, not 11.
   'registration_relinked',
   'event_archived',
   'event_partner_benefit_toggled',
@@ -115,7 +126,10 @@ export const F6_AUDIT_EVENT_TYPES = [
   'pii_erasure_completed',
   'pii_pseudonymised',
   'pii_pseudonymisation_sweep_run',
-  // Security (4)
+  // Security (5) — /review Full Scope 2026-05-19 count fix: section
+  // grew to 5 when `webhook_ingest_precondition_failed` was added in
+  // R6-W5 (migration 0137), and `event_detail_not_found_probe` in
+  // Phase B B2 (migration 0157).
   'cross_tenant_probe',
   // Phase B B2: discriminated event type for legitimate 404 lookups on
   // soft-deleted/archived events, separated from `cross_tenant_probe`
@@ -535,7 +549,9 @@ export interface AuditPayloads {
     readonly passDate: string; // DD
   };
 
-  // --- Security (3) -----------------------------------------------------
+  // --- Security (5) ----------------------------------------------------
+  // /review Full Scope 2026-05-19 count fix — matches the tuple-side
+  // section header above (line 118).
   cross_tenant_probe: {
     readonly severity: Severity;
     readonly probedTenantId: TenantId;
@@ -737,14 +753,16 @@ export interface AuditPayloads {
     readonly rowNumber: number;
     readonly registrationId: RegistrationId;
     /**
-     * Typed `PaymentStatus` brand instead
-     * of raw `string` so the closed-set guarantee survives audit
-     * consumers (dashboard renderers, GDPR exports). Indirect import
-     * via `import(...)` matches the registrations-repository pattern
-     * (avoids pulling the entire domain layer into the port file).
+     * Typed `PaymentStatus` brand instead of raw `string` so the
+     * closed-set guarantee survives audit consumers (dashboard
+     * renderers, GDPR exports). `PaymentStatus` is hoisted to the
+     * top-of-file `import type` block per /review Full Scope
+     * 2026-05-19 — consistent with `MatchType` / `ProcessingOutcome` /
+     * `SecretLastFour` already imported there. `import type` is
+     * fully erased by TS so there is no runtime cost.
      */
-    readonly previousPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
-    readonly newPaymentStatus: import('../../domain/value-objects/payment-status').PaymentStatus;
+    readonly previousPaymentStatus: PaymentStatus;
+    readonly newPaymentStatus: PaymentStatus;
     readonly rowHash: string;
   };
 

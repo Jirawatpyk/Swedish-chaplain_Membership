@@ -28,6 +28,15 @@ import {
 } from '@/modules/events';
 
 export const runtime = 'nodejs';
+// /review Full Scope 2026-05-19 — explicit `force-dynamic` to match
+// project-wide cron-route convention (precedent: PR #22 review for
+// `dispatch-scheduled` + 2026-05-19 post-ship fix on F1/F4 cron routes
+// outbox-dispatch/outbox-purge/lockout-cleanup). The route uses
+// `verifyCronBearer` (`node:crypto.timingSafeEqual`) + Drizzle
+// `postgres-js` socket + per-tick `Date.now()` reads — every primitive
+// depends on the Node runtime + dynamic execution. Defends against
+// future Vercel default drift.
+export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 const ROUTE = '/api/internal/retention/sweep-eventcreate-idempotency';

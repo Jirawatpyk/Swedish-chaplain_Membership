@@ -33,6 +33,13 @@ import { gateF6Cron } from '@/lib/events-cron-deps';
 import { runSweepExpiredErrorCsvBlobs } from '@/lib/events-csv-import-deps';
 
 export const runtime = 'nodejs';
+// /review Full Scope 2026-05-19 — explicit `force-dynamic` to match
+// project-wide cron-route convention (precedent: PR #22 +
+// 2026-05-19 F1/F4 fix batch). Route uses `verifyCronBearer`,
+// admin-bypass Drizzle reads + per-row Vercel Blob delete +
+// `runInTenant(...)` UPDATE under RLS — every primitive Node-runtime
+// + dynamic-execution dependent.
+export const dynamic = 'force-dynamic';
 
 const ROUTE = '/api/internal/retention/sweep-error-csv-blobs';
 

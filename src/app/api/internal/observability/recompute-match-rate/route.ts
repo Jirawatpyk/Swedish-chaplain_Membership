@@ -45,6 +45,12 @@ import { gateF6Cron } from '@/lib/events-cron-deps';
 import { asTenantContext } from '@/modules/tenants';
 
 export const runtime = 'nodejs';
+// /review Full Scope 2026-05-19 — explicit `force-dynamic` to match
+// project-wide cron-route convention (precedent: PR #22 +
+// 2026-05-19 F1/F4 fix batch). Route uses `verifyCronBearer`, per-tenant
+// `runInTenant(slug, ...)` Drizzle counts under RLS, and per-tick gauge
+// emission — Node-runtime + dynamic-execution dependent.
+export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const ROUTE = '/api/internal/observability/recompute-match-rate';
