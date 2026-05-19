@@ -138,4 +138,23 @@ describe('manageImageAllowlist contract — T064 (F7.1a US2)', () => {
     });
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
+
+  it('seeds platform default hosts on every invocation (C1 verify-run fix)', async () => {
+    const deps = makeDeps();
+    await manageImageAllowlist(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      action: 'add',
+      hostname: 'newcdn.example.com',
+      requestId: 'req-006',
+    });
+    // Per spec FR-010 + verify-run finding C1, the use-case MUST seed
+    // platform-mandated default hosts (resend.com etc.) so a fresh
+    // tenant's allowlist is never empty when an admin opens the
+    // settings page or a member uploads an inline image.
+    expect(deps.port.seedDefaults).toHaveBeenCalledWith(
+      TENANT,
+      expect.arrayContaining([expect.stringMatching(/resend\.com/)]),
+    );
+  });
 });

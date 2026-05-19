@@ -1,134 +1,151 @@
 /**
  * T065 (F7.1a US2 / Principle I Review-Gate) — Cross-tenant probe for
- * image-source allowlist.
+ * `tenant_image_source_allowlist`.
  *
- * Validates DB-layer RLS+FORCE (migration 0166) prevents tenant B from
- * reading, writing, or removing tenant A's `tenant_image_source_allowlist`
- * rows even when the application-layer tenant argument is forged.
+ * Validates DB-layer RLS+FORCE (migration 0166 + grants 0172) prevents
+ * tenant B from reading, writing, or removing tenant A's allowlist
+ * rows when running under `runInTenant(tenantB.ctx)`. Mirrors the
+ * F7.1a US1 pagination probe pattern (T036) — uses `tx` directly to
+ * exercise the DB-layer policy rather than going through repos
+ * (repos rely on the SAME RLS+FORCE chain; what we're verifying here
+ * IS the chain).
  *
- * 4 probe cases: READ + UPDATE + DELETE + audit-emission.
+ * 4 probe cases per data-model.md § 6:
+ *   READ      — tenant B cannot SELECT tenant A rows
+ *   UPDATE    — tenant B cannot UPDATE tenant A rows
+ *   DELETE    — tenant B cannot DELETE tenant A rows
+ *   INSERT    — tenant B cannot INSERT a row with tenantId=tenantA
  *
  * Runs against live Neon Singapore per CLAUDE.md "Commands" §
  * `pnpm test:integration`.
  */
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { db } from '@/lib/db';
-import { runInTenant } from '@/modules/tenants';
-import { asTenantContext } from '@/modules/tenants/domain';
-import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
-import { asHostname } from '@/modules/broadcasts/domain/value-objects/image-source-allowlist';
-import { tenantImageSourceAllowlist } from '@/modules/broadcasts/infrastructure/schema';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, and, inArray } from 'drizzle-orm';
+import { db, runInTenant } from '@/lib/db';
+import { tenantImageSourceAllowlist } from '@/modules/broadcasts/infrastructure/schema';
+import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
-const TENANT_A = 'tenant_t065_probe_a';
-const TENANT_B = 'tenant_t065_probe_b';
-const HOST_A = 'private-a.example.com';
+describe('F7.1a image-allowlist cross-tenant probe — REVIEW-GATE BLOCKER (T065)', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  const A_HOST = 'private-a.example.com';
+  const B_HOST = 'private-b.example.com';
 
-describe('image-allowlist cross-tenant probe — T065 (Principle I)', () => {
   beforeAll(async () => {
-    // Cleanup prior runs
-    await db
-      .delete(tenantImageSourceAllowlist)
-      .where(inArray(tenantImageSourceAllowlist.tenantId, [TENANT_A, TENANT_B]));
+    const pair = await createTwoTestTenants();
+    tenantA = pair.a;
+    tenantB = pair.b;
 
-    // Seed an admin-authored row in tenant A (RLS-scoped insert)
-    await runInTenant(asTenantContext(TENANT_A), async () => {
-      const repo = makeDrizzleImageAllowlistRepo();
-      const h = asHostname(HOST_A);
-      if (!h.ok) throw new Error('seed hostname invalid');
-      const r = await repo.add(TENANT_A as never, h.value, 'user_setup');
-      if (!r.ok) throw new Error(`seed add failed: ${r.error.kind}`);
-    });
+    // Seed one allowlist row per tenant via the schema-owner `db`
+    // client which BYPASSES RLS — the test setup needs cross-tenant
+    // write access (same pattern as F7.1a US1 pagination probe T036).
+    await db.insert(tenantImageSourceAllowlist).values([
+      {
+        tenantId: tenantA.ctx.slug,
+        hostname: A_HOST,
+        isDefault: false,
+        createdByUserId: null,
+      },
+      {
+        tenantId: tenantB.ctx.slug,
+        hostname: B_HOST,
+        isDefault: false,
+        createdByUserId: null,
+      },
+    ]);
   });
 
   afterAll(async () => {
     await db
       .delete(tenantImageSourceAllowlist)
-      .where(inArray(tenantImageSourceAllowlist.tenantId, [TENANT_A, TENANT_B]));
+      .where(
+        inArray(tenantImageSourceAllowlist.tenantId, [
+          tenantA.ctx.slug,
+          tenantB.ctx.slug,
+        ]),
+      );
   });
 
-  it('READ: tenant B cannot see tenant A allowlist entries', async () => {
-    const visibleToB = await runInTenant(
-      asTenantContext(TENANT_B),
-      async () => {
-        const repo = makeDrizzleImageAllowlistRepo();
-        return repo.findByTenantId(TENANT_B as never);
-      },
+  it('READ: tenant B cannot SELECT tenant A allowlist rows', async () => {
+    const rows = await runInTenant(tenantB.ctx, async (tx) =>
+      tx
+        .select()
+        .from(tenantImageSourceAllowlist)
+        .where(eq(tenantImageSourceAllowlist.tenantId, tenantA.ctx.slug)),
     );
-    const hosts = visibleToB.map((e) => e.hostname as string);
-    expect(hosts).not.toContain(HOST_A);
+    expect(rows).toEqual([]);
   });
 
-  it('UPDATE: tenant B cannot insert into tenant A allowlist (RLS scopes to current tenant)', async () => {
-    const HIJACK = 'hijack-attempt.example.com';
-    await runInTenant(asTenantContext(TENANT_B), async () => {
-      const repo = makeDrizzleImageAllowlistRepo();
-      const h = asHostname(HIJACK);
-      if (!h.ok) throw new Error('host invalid');
-      // Even if attacker forges tenantId arg as TENANT_A, RLS USING
-      // (tenant_id = current_setting('app.current_tenant')) forces the
-      // row to land in tenant B's slice (or fails outright depending
-      // on FORCE RLS).
-      await repo.add(TENANT_A as never, h.value, 'attacker_b').catch(() => {
-        // RLS rejection is acceptable
-      });
-    });
-    // Outside of any tenant ctx — admin/bypass read to verify tenant A
-    // does NOT contain the hijacked row. We use the bypass-RLS service
-    // role via raw query, scoped by explicit WHERE.
-    const rows = await db
+  it('READ: tenant A cannot SELECT tenant B allowlist rows', async () => {
+    const rows = await runInTenant(tenantA.ctx, async (tx) =>
+      tx
+        .select()
+        .from(tenantImageSourceAllowlist)
+        .where(eq(tenantImageSourceAllowlist.tenantId, tenantB.ctx.slug)),
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it('UPDATE: tenant A cannot UPDATE tenant B allowlist rows (rows invisible to USING filter)', async () => {
+    const updated = await runInTenant(tenantA.ctx, async (tx) =>
+      tx
+        .update(tenantImageSourceAllowlist)
+        .set({ isDefault: true })
+        .where(eq(tenantImageSourceAllowlist.tenantId, tenantB.ctx.slug))
+        .returning({ id: tenantImageSourceAllowlist.id }),
+    );
+    expect(updated).toEqual([]);
+    // Verify tenant B's row is unchanged via bypass-RLS read
+    const bRows = await db
       .select()
       .from(tenantImageSourceAllowlist)
       .where(
         and(
-          eq(tenantImageSourceAllowlist.tenantId, TENANT_A),
-          eq(tenantImageSourceAllowlist.hostname, HIJACK),
+          eq(tenantImageSourceAllowlist.tenantId, tenantB.ctx.slug),
+          eq(tenantImageSourceAllowlist.hostname, B_HOST),
         ),
       );
-    expect(rows.length).toBe(0);
+    expect(bRows).toHaveLength(1);
+    expect(bRows[0]?.isDefault).toBe(false);
   });
 
-  it('DELETE: tenant B cannot remove tenant A entries', async () => {
-    await runInTenant(asTenantContext(TENANT_B), async () => {
-      const repo = makeDrizzleImageAllowlistRepo();
-      const h = asHostname(HOST_A);
-      if (!h.ok) throw new Error('host invalid');
-      await repo.remove(TENANT_A as never, h.value).catch(() => {
-        // RLS rejection acceptable
-      });
-    });
-    // Verify the seed row still exists in tenant A's view
-    const stillThere = await runInTenant(
-      asTenantContext(TENANT_A),
-      async () => {
-        const repo = makeDrizzleImageAllowlistRepo();
-        const entries = await repo.findByTenantId(TENANT_A as never);
-        return entries.map((e) => e.hostname as string);
-      },
+  it('DELETE: tenant A cannot DELETE tenant B allowlist rows', async () => {
+    const deleted = await runInTenant(tenantA.ctx, async (tx) =>
+      tx
+        .delete(tenantImageSourceAllowlist)
+        .where(eq(tenantImageSourceAllowlist.tenantId, tenantB.ctx.slug))
+        .returning({ id: tenantImageSourceAllowlist.id }),
     );
-    expect(stillThere).toContain(HOST_A);
+    expect(deleted).toEqual([]);
+    // Verify tenant B's row still exists via bypass-RLS read
+    const bRows = await db
+      .select()
+      .from(tenantImageSourceAllowlist)
+      .where(eq(tenantImageSourceAllowlist.tenantId, tenantB.ctx.slug));
+    expect(bRows).toHaveLength(1);
   });
 
-  it('AUDIT: tenant B audit emissions land in tenant B context only (no leakage)', async () => {
-    // This probe uses a fake in-memory audit collector to verify that
-    // the use-case + adapter chain does NOT misroute an audit event to
-    // tenant A's RLS slice when invoked under tenant B context.
-    const events: Array<{ tenantId: string | null; eventType: string }> = [];
-    await runInTenant(asTenantContext(TENANT_B), async () => {
-      const repo = makeDrizzleImageAllowlistRepo();
-      const h = asHostname('tenant-b-asset.example.com');
-      if (!h.ok) throw new Error('host invalid');
-      // Wrap an audit collector — for the probe we instrument the
-      // repo's downstream port path. Add the row first so we can
-      // emit an audit-like entry from the test layer.
-      const r = await repo.add(TENANT_B as never, h.value, 'user_b');
-      if (r.ok) {
-        events.push({
-          tenantId: TENANT_B,
-          eventType: 'broadcast_image_allowlist_updated',
-        });
-      }
-    });
-    expect(events.every((e) => e.tenantId === TENANT_B)).toBe(true);
+  it('INSERT: tenant A cannot INSERT a row with tenantId=tenantB (WITH CHECK rejects)', async () => {
+    await expect(async () => {
+      await runInTenant(tenantA.ctx, async (tx) =>
+        tx.insert(tenantImageSourceAllowlist).values({
+          tenantId: tenantB.ctx.slug,
+          hostname: 'forged-by-a.example.com',
+          isDefault: false,
+          createdByUserId: null,
+        }),
+      );
+    }).rejects.toThrow();
+    // Verify no forged row was created via bypass-RLS read
+    const forged = await db
+      .select()
+      .from(tenantImageSourceAllowlist)
+      .where(
+        and(
+          eq(tenantImageSourceAllowlist.tenantId, tenantB.ctx.slug),
+          eq(tenantImageSourceAllowlist.hostname, 'forged-by-a.example.com'),
+        ),
+      );
+    expect(forged).toHaveLength(0);
   });
 });

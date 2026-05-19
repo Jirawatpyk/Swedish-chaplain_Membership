@@ -209,4 +209,61 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     const putCall = (deps.storage.put as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(JSON.stringify(putCall)).not.toContain('<script>');
   });
+
+  it('auto-allowlists blob hostname after successful upload (C1/E1 verify-run fix)', async () => {
+    const deps = makeDeps();
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      draftId: DRAFT,
+      requestId: 'req-008',
+      fileBytes: PNG_4MB,
+      filename: 'banner.png',
+      mimeType: 'image/png',
+    });
+    expect(r.ok).toBe(true);
+    // After successful storage.put returning the Vercel Blob URL,
+    // the use-case MUST idempotently seed the resulting hostname into
+    // the tenant allowlist so the subsequent submit-time validation
+    // accepts the <img src=blobUrl> the editor inserted.
+    expect(deps.allowlistPort.seedDefaults).toHaveBeenCalledWith(
+      TENANT,
+      expect.arrayContaining([
+        expect.stringMatching(/assets\.swecham\.zyncdata\.app/),
+      ]),
+    );
+  });
+
+  it('does NOT auto-allowlist when upload is rejected (oversize)', async () => {
+    const deps = makeDeps();
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      draftId: DRAFT,
+      requestId: 'req-009',
+      fileBytes: JPG_6MB,
+      filename: 'huge.jpg',
+      mimeType: 'image/jpeg',
+    });
+    expect(r.ok).toBe(false);
+    expect(deps.allowlistPort.seedDefaults).not.toHaveBeenCalled();
+  });
+
+  it('does NOT auto-allowlist when upload is rejected (scanner verdict=infected)', async () => {
+    const deps = makeDeps({ scanVerdict: 'infected' });
+    const r = await uploadInlineImage(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      actorEmail: ACTOR_EMAIL,
+      draftId: DRAFT,
+      requestId: 'req-010',
+      fileBytes: PNG_4MB,
+      filename: 'evil.png',
+      mimeType: 'image/png',
+    });
+    expect(r.ok).toBe(false);
+    expect(deps.allowlistPort.seedDefaults).not.toHaveBeenCalled();
+  });
 });

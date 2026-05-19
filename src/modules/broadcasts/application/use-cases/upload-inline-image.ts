@@ -19,6 +19,8 @@
  */
 import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import { asHostname } from '../../domain/value-objects/image-source-allowlist';
 import type {
   ImageAllowlistPort,
 } from '../ports/image-allowlist-port';
@@ -143,6 +145,37 @@ export async function uploadInlineImage(
     sanitisedFilename,
   });
   const hostname = safeUrlHostname(blobUrl) ?? '';
+
+  // C1/E1 fix (verify-run 2026-05-20) — close the upload→submit
+  // linkage gap: the blob storage host is platform-controlled (we own
+  // the Vercel Blob store) but isn't necessarily in the tenant's
+  // allowlist on first upload. Idempotently add it as a default-seed
+  // entry so the subsequent `validateImageSourceAllowlist` at submit
+  // boundary accepts the blob URL the editor inserted.
+  //
+  // Best-effort: if the seed fails (DB hiccup), we log + continue.
+  // The upload still returned successfully; if the seed didn't
+  // persist, validation at submit will surface the same allowlist
+  // error path that an attacker's external-host paste would, and the
+  // next upload by the same tenant will re-attempt the seed.
+  if (hostname) {
+    const hRes = asHostname(hostname);
+    if (hRes.ok) {
+      try {
+        await deps.allowlistPort.seedDefaults(input.tenantId, [hRes.value]);
+      } catch (e) {
+        logger.warn(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            tenantId: input.tenantId,
+            hostname,
+          },
+          'broadcasts.uploadInlineImage.allowlist_seed_failed',
+        );
+      }
+    }
+  }
+
   return ok({ blobUrl, allowlistedHostname: hostname, contentHash });
 }
 

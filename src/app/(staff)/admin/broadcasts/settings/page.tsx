@@ -25,6 +25,7 @@ import {
   type AllowlistRow,
 } from '@/components/broadcast/admin-image-allowlist-editor';
 import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
+import { seedPlatformDefaults } from '@/modules/broadcasts/application/use-cases/manage-image-allowlist';
 import { isF71aUs2Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -50,9 +51,13 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
   const rows: readonly AllowlistRow[] = await runInTenant(
     tenantCtx,
     async () => {
-      const entries = await makeDrizzleImageAllowlistRepo().findByTenantId(
-        tenantCtx.slug as never,
-      );
+      const repo = makeDrizzleImageAllowlistRepo();
+      // C1 fix (verify-run 2026-05-20) — seed platform-mandated default
+      // hosts (resend.com etc.) on every page visit so the admin sees a
+      // non-empty allowlist row set on first contact with the surface.
+      // Idempotent at storage layer via ON CONFLICT DO NOTHING.
+      await seedPlatformDefaults(repo, tenantCtx.slug as never);
+      const entries = await repo.findByTenantId(tenantCtx.slug as never);
       return entries.map((e) => ({
         hostname: e.hostname as string,
         isDefault: e.isDefault,
