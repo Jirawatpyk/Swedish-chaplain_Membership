@@ -1,0 +1,88 @@
+
+> swecham-membership@0.1.0 test:integration C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> vitest run --config vitest.integration.config.ts --passWithNoTests "tests/integration/broadcasts/"
+
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/integration/broadcasts/tenant-isolation.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 9121[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)[2m > [22mbroadcasts[2m > [22mA.update(B broadcast) affects 0 rows [33m337[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)[2m > [22mbroadcasts[2m > [22mA.delete(B broadcast) affects 0 rows [33m339[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)[2m > [22mmarketing_unsubscribes[2m > [22mA.update(B marketing_unsubscribes) affects 0 rows [33m338[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)[2m > [22mbroadcast_segment_definitions[2m > [22mA.update(B segment_definition) affects 0 rows [33m333[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/unsubscribe-token.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 20622[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 public unsubscribe integration (T138)[2m > [22mvalid token first click → marketing_unsubscribes row inserted + audit emitted [33m12707[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 public unsubscribe integration (T138)[2m > [22midempotent replay → no duplicate row + no duplicate broadcast_unsubscribed audit [33m1188[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 public unsubscribe integration (T138)[2m > [22mtampered MAC → broadcast_unsubscribe_token_invalid audit + no row mutation [33m503[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 public unsubscribe integration (T138)[2m > [22mcross-tenant token: tenant B token does NOT land row in tenant A slice [33m3598[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/halt-flag-precondition.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/us3-tenant-isolation.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 6455[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 US3 Tenant isolation — new repo methods (Principle I clause 3)[2m > [22maggregateDeliveryCountsForBroadcast — broadcast with no deliveries returns all zeros (no NaN leak) [33m518[2mms[22m[39m
+{"level":"info","time":1779208443622,"service":"swecham-membership","env":"test","eventId":"msg-t151-valid","eventType":"email.delivered","outcome":"recorded","tenantId":"test-swecham-447795cb","correlationId":"1b5e00ef-4f9f-4b85-8743-0d81bd97c0cc","requestId":"019e4116-550f-7bbd-91d4-dc94d231cbd8","msg":"broadcasts.webhook.dispatched"}
+ [32m✓[39m tests/integration/broadcasts/webhook-signature.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 4371[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 webhook signature integration (T151)[2m > [22mvalid signature → 200 + delivery row inserted [33m1315[2mms[22m[39m
+{"level":"warn","time":1779208450034,"service":"swecham-membership","env":"test","tenantId":"test-swecham-6c514213","broadcastId":"dddddddd-1234-5678-9abc-def012345679","resendAudienceId":"aud-test-broadcast-test-s","resendBroadcastId":"bcast-test-b7f56b6e","msg":"broadcasts.dispatch.concurrent_transition_lost"}
+ [32m✓[39m tests/integration/broadcasts/cron-dispatch-idempotency.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 5060[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)[2m > [22mtwo concurrent dispatchScheduledBroadcast calls → exactly ONE Resend send + ONE sending transition [33m1841[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)[2m > [22mparallel dispatches → exactly ONE sending transition (G1 closure: expectedFromStatus guard) + same idempotency key [33m1551[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/broadcasts/benefits-page-perf.test.ts [2m([22m[2m5 tests[22m[2m | [22m[33m5 skipped[39m[2m)[22m
+{"level":"error","time":1779208454550,"service":"swecham-membership","env":"test","tenantId":"test-swecham-5dca0f31","broadcastId":"88888888-8888-8888-8888-888888888888","subKind":"server_5xx","reason":"[REDACTED]","scheduledFor":"2026-06-15T03:55:00.000Z","epochForBudget":"2026-06-15T03:55:00.000Z","sendMode":"scheduled","elapsedMs":3900000,"severity":"critical","msg":"broadcasts.dispatch.retry_budget_exhausted"}
+{"level":"info","time":1779208454838,"service":"swecham-membership","env":"test","tenantId":"test-swecham-5dca0f31","notificationType":"broadcast_failed_to_dispatch_notification","toHash":"14f590aa5bbc","locale":"en","msg":"broadcasts.member_notification.enqueued"}
+{"level":"warn","time":1779208456368,"service":"swecham-membership","env":"test","tenantId":"test-swecham-5dca0f31","broadcastId":"aaaaaaaa-1111-2222-3333-444444444444","subKind":"server_5xx","reason":"[REDACTED]","msg":"broadcasts.dispatch.gateway_retryable"}
+ [32m✓[39m tests/integration/broadcasts/dispatch-failure-notification.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 6691[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 / Slice E — dispatch-failure-notification integration (live Neon)[2m > [22mpast-budget retryable failure → outbox row inserted with broadcast_failed_to_dispatch_notification + tenant isolation holds [33m1993[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 / Slice E — dispatch-failure-notification integration (live Neon)[2m > [22mwithin-budget retryable failure → NO outbox row (row stays approved) [33m1360[2mms[22m[39m
+{"level":"info","time":1779208460729,"service":"swecham-membership","env":"test","tenantId":"test-tenant","memberId":"mem-archived-1","cancelledCount":3,"skippedConcurrentCount":0,"unexpectedErrorCount":0,"cascade":"f3_member_archival_or_erasure","msg":"broadcasts.cascade.completed"}
+{"level":"warn","time":1779208460730,"service":"swecham-membership","env":"test","err":"Concurrent mutation on broadcast bc-101: observed status sending","tenantId":"test-tenant","broadcastId":"bc-101","memberId":"mem-archived-1","previousStatus":"approved","observedStatus":"sending","useCase":"cancel-in-flight-broadcasts-for-member","msg":"broadcasts.cascade.concurrent_skip"}
+{"level":"info","time":1779208460731,"service":"swecham-membership","env":"test","tenantId":"test-tenant","memberId":"mem-archived-1","cancelledCount":2,"skippedConcurrentCount":1,"unexpectedErrorCount":0,"cascade":"f3_member_archival_or_erasure","msg":"broadcasts.cascade.completed"}
+{"level":"info","time":1779208460731,"service":"swecham-membership","env":"test","tenantId":"test-tenant","memberId":"mem-archived-1","cancelledCount":1,"skippedConcurrentCount":0,"unexpectedErrorCount":0,"cascade":"f3_member_archival_or_erasure","msg":"broadcasts.cascade.completed"}
+ [32m✓[39m tests/integration/broadcasts/member-erasure-cascade.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+{"level":"info","time":1779208462927,"service":"swecham-membership","env":"test","eventId":"t152a-f7-only-dba5ecde-c687-4860-98c5-400efe2f1ff7","eventType":"email.delivered","outcome":"recorded","tenantId":"test-swecham-7b56f1df","correlationId":"8b29c79b-b45a-4977-8a59-0b6d85e3c855","requestId":"019e4116-a0ca-7ae9-b89f-6efaa74d04f6","msg":"broadcasts.webhook.dispatched"}
+ [32m✓[39m tests/integration/broadcasts/transactional-broadcast-separation.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 4232[2mms[22m[39m
+   [33m[2m✓[22m[39m F1 transactional vs F7 Broadcasts API separation (T152a / FR-019)[2m > [22mF1 transactional webhook: writes ONLY to email_delivery_events [33m841[2mms[22m[39m
+   [33m[2m✓[22m[39m F1 transactional vs F7 Broadcasts API separation (T152a / FR-019)[2m > [22mF7 webhook: writes ONLY to broadcast_deliveries (not email_delivery_events) [33m635[2mms[22m[39m
+{"level":"info","time":1779208466746,"service":"swecham-membership","env":"test","eventId":"t152-evt-08306752-fd86-4bd1-9158-a453382edbdb","eventType":"email.delivered","outcome":"recorded","tenantId":"test-swecham-153a3153","correlationId":"5b4d91ba-fd32-4bc9-ba6b-595a8e7c956f","requestId":"019e4116-af83-79f6-944e-043322582469","msg":"broadcasts.webhook.dispatched"}
+{"level":"info","time":1779208467282,"service":"swecham-membership","env":"test","eventId":"t152-evt-08306752-fd86-4bd1-9158-a453382edbdb","eventType":"email.delivered","outcome":"duplicate","tenantId":"test-swecham-153a3153","correlationId":"e8967791-a3b0-49a9-a2bf-513d896cff72","requestId":"019e4116-b1e2-7db7-8c88-4e3ed38f72f3","msg":"broadcasts.webhook.dispatched"}
+{"level":"info","time":1779208467888,"service":"swecham-membership","env":"test","eventId":"t152-distinct-a-d2fe5190-045f-466d-a60c-c6527a64e8ee","eventType":"email.delivered","outcome":"recorded","tenantId":"test-swecham-153a3153","correlationId":"c790d56f-b6c7-4213-a1e4-4aba79c0bbe4","requestId":"019e4116-b3fb-7256-8395-e859392bf6eb","msg":"broadcasts.webhook.dispatched"}
+{"level":"info","time":1779208468332,"service":"swecham-membership","env":"test","eventId":"t152-distinct-b-54218f57-e27b-4335-9ae5-e21f5a50909c","eventType":"email.bounced","outcome":"recorded","tenantId":"test-swecham-153a3153","correlationId":"78085d3e-f16d-42cc-b30b-a71f6e990231","requestId":"019e4116-b5b1-7060-826c-427e1b69d832","msg":"broadcasts.webhook.dispatched"}
+ [32m✓[39m tests/integration/broadcasts/webhook-idempotency.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5184[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 webhook idempotency integration (T152)[2m > [22mreplay same svix-id → second call is no-op (FR-025 UNIQUE) [33m1698[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 webhook idempotency integration (T152)[2m > [22mdifferent svix-id same broadcast + recipient → second row inserted [33m1071[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/immutable-after-submit.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 4045[2mms[22m[39m
+   [33m[2m✓[22m[39m F7 immutable-after-submit DB trigger (R6 W-T1)[2m > [22mUPDATE status (legitimate lifecycle transition) → succeeds [33m519[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/pagination-cross-tenant-probe.test.ts [2m([22m[2m7 tests[22m[2m | [22m[33m1 skipped[39m[2m)[22m[33m 4936[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/f-15-orphan-provider-id-sweep.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 874[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/custom-recipient-validation.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+{"level":"info","time":1779208481035,"service":"swecham-membership","env":"test","tenantId":"swecham","memberId":"member-swecham-1","cancelledCount":1,"skippedConcurrentCount":0,"unexpectedErrorCount":0,"cascade":"f3_member_archival_or_erasure","msg":"broadcasts.cascade.completed"}
+{"level":"info","time":1779208481038,"service":"swecham-membership","env":"test","tenantId":"jcc-test","memberId":"member-jcc-test-1","cancelledCount":1,"skippedConcurrentCount":0,"unexpectedErrorCount":0,"cascade":"f3_member_archival_or_erasure","msg":"broadcasts.cascade.completed"}
+ [32m✓[39m tests/integration/broadcasts/jcc-test-tenant-fixture.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/audience-cap.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 339[2mms[22m[39m
+   [33m[2m✓[22m[39m audience-cap integration (T049)[2m > [22mDB CHECK constraint (estimated_recipient_count ≤ 5000)[2m > [22mraw INSERT with estimated_recipient_count=5001 fails CHECK constraint [33m301[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/pagination-7500-end-to-end.test.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 1471[2mms[22m[39m
+   [33m[2m✓[22m[39m F7.1a US1 7,500-end-to-end lean integration (T037)[2m > [22m7,500 recipients → exactly 1 batch row persisted with correct range [33m412[2mms[22m[39m
+   [33m[2m✓[22m[39m F7.1a US1 7,500-end-to-end lean integration (T037)[2m > [22mre-invocation with same broadcastId → BATCH_ALREADY_DISPATCHED (idempotency) [33m586[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/prune-expired-drafts.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 6379[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 / T171a — prune-expired-drafts integration (live Neon)[2m > [22mprunes draft rows older than 30 days, leaves non-draft + recent rows intact [33m1945[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 / T171a — prune-expired-drafts integration (live Neon)[2m > [22mtenant isolation — pruning tenant A drafts does NOT touch tenant B drafts [33m894[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/pg-advisory-lock-adapter.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1702[2mms[22m[39m
+   [33m[2m✓[22m[39m pgAdvisoryLockAdapter integration (Phase 3F.11.5 / Finding 5)[2m > [22mlock auto-releases on tx commit — next tx can acquire same key [33m352[2mms[22m[39m
+   [33m[2m✓[22m[39m pgAdvisoryLockAdapter integration (Phase 3F.11.5 / Finding 5)[2m > [22mlock auto-releases on tx rollback — next tx can acquire same key [33m351[2mms[22m[39m
+   [33m[2m✓[22m[39m pgAdvisoryLockAdapter integration (Phase 3F.11.5 / Finding 5)[2m > [22mconcurrent acquire from DIFFERENT tx on same key → second tx sees {acquired:false} [33m611[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/batch-manifests-fk-cascade.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 1010[2mms[22m[39m
+   [33m[2m✓[22m[39m F7.1a batch-manifests FK CASCADE (Phase 3F.8 / F-19)[2m > [22mDELETE broadcasts cascades to broadcast_batch_manifests [33m529[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/html-sanitiser.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/kill-switch.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 28[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/event-attendees-stub.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 1[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/suppression-explain.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 5576[2mms[22m[39m
+   [33m[2m✓[22m[39m T208 — RLS overhead bounded ≤ 5ms p95[2m > [22mtenant-bound query latency stays within budget on a small table [33m5160[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/custom-list-explain.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 197[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/integration/broadcasts/pagination-50k-end-to-end.test.ts [2m([22m[2m1 test[22m[2m | [22m[33m1 skipped[39m[2m)[22m
+ [32m✓[39m tests/integration/broadcasts/notification-type-parity.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 56[2mms[22m[39m
+ [32m✓[39m tests/integration/broadcasts/audit-event-type-parity.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 94[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m27 passed[39m[22m[2m | [22m[33m2 skipped[39m[90m (29)[39m
+[2m      Tests [22m [1m[32m136 passed[39m[22m[2m | [22m[33m7 skipped[39m[90m (143)[39m
+[2m   Start at [22m 23:33:21
+[2m   Duration [22m 98.72s[2m (transform 3.74s, setup 76ms, collect 8.33s, tests 88.49s, environment 0ms, prepare 135ms)[22m
+

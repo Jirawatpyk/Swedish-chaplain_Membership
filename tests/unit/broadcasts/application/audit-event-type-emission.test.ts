@@ -49,8 +49,24 @@ const ROOTS_TO_GREP = [
  *
  * The list is intentionally empty post-R6 — every F7 audit event type
  * has a verified emission site in the production tree.
+ *
+ * Phase 3F.11.19 update (2026-05-19) — F71A US2 + US7 audit events
+ * declared in Phase 2 (T031 + migration 0167) but emit sites NOT
+ * YET IMPLEMENTED. US2 (image embedding) = Phase 4; US7 (multi-
+ * template library) = Phase 5. Both phases deferred to F7.1a-Phase-2
+ * follow-up branch per Staff Review W-1 (2026-05-19). Removing these
+ * from KNOWN_NOT_YET_EMITTED when Phase 4 + Phase 5 ship.
  */
-const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [];
+const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
+  // F71A US2 (Phase 4 — not implemented on this branch)
+  'broadcast_body_image_source_unsafe',
+  'broadcast_image_too_large',
+  'broadcast_image_allowlist_updated',
+  // F71A US7 (Phase 5 — not implemented on this branch)
+  'broadcast_template_created',
+  'broadcast_template_updated',
+  'broadcast_template_deleted',
+];
 
 function listTsFiles(root: string): string[] {
   const out: string[] = [];

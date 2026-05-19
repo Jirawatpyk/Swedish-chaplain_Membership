@@ -1,0 +1,62 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Jirawat.p/Documents/Swedish chaplain_membership[39m
+
+ [32m✓[39m tests/contract/broadcasts/dispatch-broadcast-batch.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/retry-failed-batches.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/batch-dispatcher.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-reconcile-stuck-sending.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1288[2mms[22m[39m
+   [33m[2m✓[22m[39m cron reconcile-stuck-sending — wire contract[2m > [22mmissing Authorization → 401 unauthorized [33m1226[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-unsubscribe-token.contract.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 4620[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /unsubscribe/[token] (T136 contract)[2m > [22mvalid token → renders confirmation + invokes unsubscribeRecipient with verified payload [33m4583[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-webhooks-resend-broadcasts-events.contract.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 4664[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/webhooks/resend-broadcasts (T149 contract)[2m > [22memail.sent event: route returns 200 + invokes processWebhookEvent with branded broadcastId [33m4593[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-broadcasts-draft.contract.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 6547[2mms[22m[39m
+   [33m[2m✓[22m[39m POST/PUT /api/broadcasts/draft — Wave 6 GREEN (T036)[2m > [22mPOST 201: returns { broadcastId, status:draft, createdAt, updatedAt, subject, segmentType } [33m6343[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-proxy-submit.contract.test.ts [2m([22m[2m18 tests[22m[2m)[22m[33m 6594[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)[2m > [22m200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, actorRole:admin_proxy } [33m6370[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/concurrent-retry-race.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-reject.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 9686[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m200 happy: returns { broadcastId, status, rejectedAt, reservationReleased } [33m6249[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m400 invalid_body: malformed JSON [33m1458[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)[2m > [22m500 internal_error: use-case returns reject.server_error [33m939[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-broadcasts-gauges.contract.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 1406[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/internal/metrics/broadcasts-gauges — wire contract[2m > [22mmissing Authorization → 401 unauthorized [33m1365[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/batch-dispatch.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-admin-broadcasts-sla-stats.contract.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 2891[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)[2m > [22m200: full envelope shape with stats [33m2846[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/cron-dispatch-batches.contract.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1730[2mms[22m[39m
+   [33m[2m✓[22m[39m cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)[2m > [22mmissing Authorization → 401 unauthorized [33m1711[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/apply-batch-webhook-event.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/accept-partial-delivery.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-broadcasts-submit.contract.test.ts [2m([22m[2m24 tests[22m[2m)[22m[33m 16488[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, reviewSlaTargetHours } [33m6380[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m400 invalid_body: subject empty [33m1471[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m401: no session [33m1028[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_member_halted_pending_review (FR-002 precondition k) [33m1460[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m429 broadcast_rate_limit_exceeded with Retry-After header [33m2526[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m422 broadcast_member_missing_primary_contact_email (FR-002 precondition j) [33m958[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/broadcasts/submit — Wave 6 GREEN (T037)[2m > [22m500 internal_error: thrown [33m870[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/post-admin-broadcasts-approve.contract.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 16607[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m200 send_now: { broadcastId, status:approved, approvedAt, scheduledFor, resendBroadcastId:null } [33m6480[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m400 invalid_body: schedule without scheduledFor [33m1565[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m400 invalid_body: unknown decision discriminator [33m1092[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m404 broadcast_not_found: use-case not_found [33m3937[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m500 internal_error: use-case throws [33m998[2mms[22m[39m
+   [33m[2m✓[22m[39m POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)[2m > [22m500 internal_error: use-case returns approve.server_error [33m913[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/dialog-final-focus.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/admin-accept-partial-route.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 4109[2mms[22m[39m
+   [33m[2m✓[22m[39m admin accept-partial route — wire contract (Phase 3F.11.5 / Finding 8b)[2m > [22madmin auth rejection → returns the auth response (401/403) [33m4076[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/admin-retry-route.contract.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 4048[2mms[22m[39m
+   [33m[2m✓[22m[39m admin retry route — wire contract (Phase 3F.11.5 / Finding 8a)[2m > [22madmin auth rejection → returns the auth rejection response (401/403) [33m4018[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/auto-retry-failed-batches.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m tests/contract/broadcasts/get-broadcasts-quota.contract.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 6694[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m200: returns the contract envelope { planId, eblastPerYear, quotaYear, used, reserved, remaining, nextResetAt, tenantTimezone } [33m4122[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m200: remaining = eblastPerYear - used - reserved invariant holds [33m1829[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /api/broadcasts/quota — T127 RED (US3 contract)[2m > [22m404 when use-case returns quota.member_not_found [33m637[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m23 passed[39m[22m[90m (23)[39m
+[2m      Tests [22m [1m[32m238 passed[39m[22m[90m (238)[39m
+[2m   Start at [22m 23:32:35
+[2m   Duration [22m 33.35s[2m (transform 7.58s, setup 16.54s, collect 30.62s, tests 87.53s, environment 55.36s, prepare 12.73s)[22m
+

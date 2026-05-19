@@ -23,7 +23,13 @@ import {
 } from '@/modules/broadcasts';
 
 describe('BROADCAST_STATUSES', () => {
-  it('contains all 8 lifecycle states', () => {
+  it('contains all 10 lifecycle states (8 F7 MVP + 2 F71A US1)', () => {
+    // Phase 3F.11.19 — F71A US1 added `partially_sent` +
+    // `partial_delivery_accepted` (migration 0169 + 0173). The
+    // BROADCAST_STATUSES tuple in `domain/value-objects/broadcast-status.ts`
+    // grew from 8 → 10. State-machine matrix correctness for the new
+    // states is covered by `cancel-cutoff-policy.test.ts` +
+    // `broadcast-phase.test.ts`.
     expect(BROADCAST_STATUSES).toEqual([
       'draft',
       'submitted',
@@ -33,11 +39,13 @@ describe('BROADCAST_STATUSES', () => {
       'rejected',
       'cancelled',
       'failed_to_dispatch',
+      'partially_sent',
+      'partial_delivery_accepted',
     ]);
   });
 
-  it('count matches data-model + DB enum (8 values)', () => {
-    expect(BROADCAST_STATUSES).toHaveLength(8);
+  it('count matches data-model + DB enum (10 values after F71A US1)', () => {
+    expect(BROADCAST_STATUSES).toHaveLength(10);
   });
 });
 
