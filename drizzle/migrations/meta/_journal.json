@@ -1191,6 +1191,13 @@
 			"when": 1797321600000,
 			"tag": "0169_f71a_broadcast_status_partially_sent",
 			"breakpoints": true
+		},
+		{
+			"idx": 170,
+			"version": "7",
+			"when": 1797408000000,
+			"tag": "0170_f71a_batch_provider_broadcast_id",
+			"breakpoints": true
 		}
 	]
 }

@@ -273,6 +273,8 @@ export {
   makeRetryFailedBatchesDeps,
   makeAcceptPartialDeliveryDeps,
   makeAutoRetryFailedBatchesDeps,
+  makeApplyBatchWebhookEventDeps,
+  resolveTenantByBatchProviderBroadcastId,
 } from './infrastructure/broadcasts-deps';
 export {
   autoRetryFailedBatch,
@@ -287,6 +289,13 @@ export {
   type AutoRetrySweepOutcome,
   type AutoRetrySweepOutput,
 } from './application/use-cases/auto-retry-failed-batches';
+export {
+  applyBatchWebhookEvent,
+  type ApplyBatchWebhookEventDeps,
+  type ApplyBatchWebhookEventError,
+  type ApplyBatchWebhookEventInput,
+  type BatchWebhookEventType,
+} from './application/use-cases/apply-batch-webhook-event';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------
 export {

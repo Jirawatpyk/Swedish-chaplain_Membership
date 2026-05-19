@@ -616,6 +616,7 @@ export const broadcastBatchManifests = pgTable(
       .default('pending'),
 
     providerAudienceId: text('provider_audience_id'),
+    providerBroadcastId: text('provider_broadcast_id'),
     idempotencyKey: text('idempotency_key').notNull(),
     retryCount: integer('retry_count').notNull().default(0),
 
@@ -661,6 +662,10 @@ export const broadcastBatchManifests = pgTable(
     index('broadcast_batch_manifests_tenant_status_idx').on(
       table.tenantId,
       table.status,
+    ),
+    // T057 webhook lookup — partial index (only non-null after dispatch)
+    index('broadcast_batch_manifests_provider_broadcast_id_idx').on(
+      table.providerBroadcastId,
     ),
   ],
 );

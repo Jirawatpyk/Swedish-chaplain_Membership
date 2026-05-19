@@ -26,6 +26,9 @@ const processWebhookEventMock = vi.fn();
 const resolveTenantByResendBroadcastIdMock = vi.fn();
 const constructEventMock = vi.fn();
 const dbExecuteMock = vi.fn();
+// F7.1a Phase 3 T057 — batch routing fallback
+const resolveTenantByBatchProviderBroadcastIdMock = vi.fn();
+const applyBatchWebhookEventMock = vi.fn();
 
 const envMock = {
   features: { f7Broadcasts: true },
@@ -68,6 +71,14 @@ vi.mock('@/modules/broadcasts', () => ({
   f7AuditAdapter: {
     emit: (...args: unknown[]) => f7AuditEmitMock(...args),
   },
+  // F7.1a Phase 3 T057 — batch fallback symbols. Default: lookup
+  // returns null (existing tests assume single-audience F7 MVP path).
+  // The new T057-specific tests will override per-case.
+  resolveTenantByBatchProviderBroadcastId: (...args: unknown[]) =>
+    resolveTenantByBatchProviderBroadcastIdMock(...args),
+  applyBatchWebhookEvent: (...args: unknown[]) =>
+    applyBatchWebhookEventMock(...args),
+  makeApplyBatchWebhookEventDeps: () => ({}),
 }));
 
 const VALID_BROADCAST_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -131,6 +142,12 @@ beforeEach(() => {
     tenantId: 'test-tenant',
     broadcastId: VALID_BROADCAST_ID,
   });
+  // F7.1a Phase 3 T057 — default batch lookup returns null so existing
+  // F7 MVP path tests continue to behave identically.
+  resolveTenantByBatchProviderBroadcastIdMock.mockReset();
+  resolveTenantByBatchProviderBroadcastIdMock.mockResolvedValue(null);
+  applyBatchWebhookEventMock.mockReset();
+  applyBatchWebhookEventMock.mockResolvedValue({ ok: true, value: undefined });
   processWebhookEventMock.mockResolvedValue(
     ok({
       kind: 'recorded',

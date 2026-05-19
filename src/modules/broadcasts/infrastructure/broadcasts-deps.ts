@@ -47,6 +47,7 @@ import type { SplitBroadcastIntoBatchesDeps } from '../application/use-cases/spl
 import type { RetryFailedBatchesDeps } from '../application/use-cases/retry-failed-batches';
 import type { AcceptPartialDeliveryDeps } from '../application/use-cases/accept-partial-delivery';
 import type { AutoRetryFailedBatchesDeps } from '../application/use-cases/auto-retry-failed-batches';
+import type { ApplyBatchWebhookEventDeps } from '../application/use-cases/apply-batch-webhook-event';
 import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
 import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
 import { noOpAdvisoryLock } from './noop-advisory-lock';
@@ -530,5 +531,52 @@ export function makeAutoRetryFailedBatchesDeps(
     batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
     audit: f7AuditAdapter,
     clock: systemClock,
+  };
+}
+
+/**
+ * T057 — composition root for `applyBatchWebhookEvent`. Called by
+ * `/api/webhooks/resend-broadcasts/route.ts` after the bypass-RLS
+ * batch lookup resolves the tenant context.
+ */
+export function makeApplyBatchWebhookEventDeps(
+  tenantId: string,
+): ApplyBatchWebhookEventDeps {
+  return {
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * Bypass-RLS lookup helper for the F7.1a webhook routing fallback.
+ * Mirrors `resolveTenantByResendBroadcastId` (F7 MVP single-audience
+ * lookup) but scans `broadcast_batch_manifests` instead of `broadcasts`.
+ * Caller is the webhook route handler — runs BEFORE
+ * `app.current_tenant` is bound, so we use a placeholder repo and
+ * call the bypass-RLS method directly.
+ */
+export async function resolveTenantByBatchProviderBroadcastId(
+  providerBroadcastId: string,
+): Promise<{
+  readonly tenantId: string;
+  readonly broadcastId: string;
+  readonly batchManifestId: string;
+  readonly batchIndex: number;
+  readonly recipientCount: number;
+} | null> {
+  const placeholderRepo = makeDrizzleBatchManifestsRepo('lookup');
+  const lookup =
+    await placeholderRepo.findBatchByProviderBroadcastIdBypassRls(
+      providerBroadcastId,
+    );
+  if (lookup === null) return null;
+  return {
+    tenantId: lookup.tenantId,
+    broadcastId: lookup.broadcastId as unknown as string,
+    batchManifestId: lookup.batchManifestId,
+    batchIndex: lookup.batchIndex,
+    recipientCount: lookup.recipientCount,
   };
 }

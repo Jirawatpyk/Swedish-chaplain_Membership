@@ -23,16 +23,19 @@
  */
 
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../domain/broadcast';
 import { asBroadcastId } from '../domain/broadcast';
 import type {
+  BatchCounterField,
+  BatchCounterIncrementError,
   BatchInsertError,
   BatchManifest,
   BatchManifestsPort,
+  BatchProviderLookup,
   BatchStatus,
   BatchStatusUpdate,
   BatchUpdateError,
@@ -65,6 +68,7 @@ function rowToManifest(row: BroadcastBatchManifestRow): BatchManifest {
     recipientRangeEnd: row.recipientRangeEnd,
     status: row.status as BatchStatus,
     providerAudienceId: row.providerAudienceId,
+    providerBroadcastId: row.providerBroadcastId,
     idempotencyKey: row.idempotencyKey,
     retryCount: row.retryCount,
     deliveredCount: row.deliveredCount,
@@ -251,6 +255,9 @@ export function makeDrizzleBatchManifestsRepo(
         if (update.providerAudienceId !== undefined) {
           patch.providerAudienceId = update.providerAudienceId;
         }
+        if (update.providerBroadcastId !== undefined) {
+          patch.providerBroadcastId = update.providerBroadcastId;
+        }
         if (update.dispatchedAt !== undefined) {
           patch.dispatchedAt = update.dispatchedAt;
         }
@@ -294,6 +301,43 @@ export function makeDrizzleBatchManifestsRepo(
       });
     },
 
+    async incrementCounter(
+      _tenantId: TenantSlug,
+      batchManifestId: string,
+      field: BatchCounterField,
+    ): Promise<Result<void, BatchCounterIncrementError>> {
+      // Map TypeScript camelCase → DB column. Fixed mapping keeps the
+      // raw SQL safe from injection (no user-controlled column names).
+      const columnMap: Record<BatchCounterField, string> = {
+        deliveredCount: 'delivered_count',
+        bouncedCount: 'bounced_count',
+        complainedCount: 'complained_count',
+        unsubscribedCount: 'unsubscribed_count',
+      };
+      const dbColumn = columnMap[field];
+      try {
+        return await runInTenant(ctx, async (tx) => {
+          const result = (await tx.execute(sql`
+            UPDATE broadcast_batch_manifests
+            SET ${sql.raw(dbColumn)} = ${sql.raw(dbColumn)} + 1,
+                updated_at = now()
+            WHERE tenant_id = ${ctx.slug}
+              AND id = ${batchManifestId}
+            RETURNING id
+          `)) as unknown as Array<{ id: string }>;
+          if (result.length === 0) {
+            return err({ kind: 'not_found' });
+          }
+          return ok(undefined);
+        });
+      } catch (e) {
+        return err({
+          kind: 'storage_error',
+          detail: errorChainMessage(e),
+        });
+      }
+    },
+
     async findFailedRetryEligible(
       _tenantId: TenantSlug,
       opts: {
@@ -315,6 +359,45 @@ export function makeDrizzleBatchManifestsRepo(
         `)) as unknown as Array<BroadcastBatchManifestRow>;
         return rows.map(rowToManifest);
       });
+    },
+
+    async findBatchByProviderBroadcastIdBypassRls(
+      providerBroadcastId: string,
+    ): Promise<BatchProviderLookup | null> {
+      // BYPASSRLS path — webhook handler resolves tenant ctx BEFORE
+      // `app.current_tenant` is bound. Uses module-level `db` (the
+      // schema-owner-bound client) NOT `runInTenant`. Mirrors F7 MVP
+      // `findByResendBroadcastIdBypassRls` pattern.
+      try {
+        const rows = (await db.execute(sql`
+          SELECT
+            tenant_id,
+            broadcast_id::text AS broadcast_id,
+            id::text AS batch_manifest_id,
+            batch_index,
+            recipient_count
+          FROM broadcast_batch_manifests
+          WHERE provider_broadcast_id = ${providerBroadcastId}
+          LIMIT 1
+        `)) as unknown as Array<{
+          tenant_id: string;
+          broadcast_id: string;
+          batch_manifest_id: string;
+          batch_index: number;
+          recipient_count: number;
+        }>;
+        if (rows.length === 0) return null;
+        const row = rows[0]!;
+        return {
+          tenantId: row.tenant_id,
+          broadcastId: asBroadcastId(row.broadcast_id),
+          batchManifestId: row.batch_manifest_id,
+          batchIndex: row.batch_index,
+          recipientCount: row.recipient_count,
+        };
+      } catch {
+        return null;
+      }
     },
 
     async markCancelled(

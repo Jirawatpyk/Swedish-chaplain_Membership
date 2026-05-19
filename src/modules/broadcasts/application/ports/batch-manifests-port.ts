@@ -49,6 +49,13 @@ export interface BatchManifest {
   readonly recipientRangeEnd: number;
   readonly status: BatchStatus;
   readonly providerAudienceId: string | null;
+  /**
+   * Resend broadcast resource id (from `gateway.createBroadcast`).
+   * NULL until `dispatchBroadcastBatch` (T045) reaches the
+   * `createBroadcast` stage. Used by the webhook handler (T057) to
+   * route per-batch `email.*` events back to the correct manifest.
+   */
+  readonly providerBroadcastId: string | null;
   readonly idempotencyKey: string;
   readonly retryCount: number;
   readonly deliveredCount: number;
@@ -89,10 +96,43 @@ export type BatchUpdateError =
 export interface BatchStatusUpdate {
   readonly status: BatchStatus;
   readonly providerAudienceId?: string;
+  readonly providerBroadcastId?: string;
   readonly dispatchedAt?: Date;
   readonly failedAt?: Date;
   readonly failureReason?: string;
   readonly retryCount?: number;
+}
+
+/**
+ * Per-event counter delta — used by T057 webhook handler to increment
+ * delivered / bounced / complained / unsubscribed on the batch row
+ * atomically. The adapter applies the delta via
+ *   UPDATE … SET {column} = {column} + 1, updated_at = now()
+ *   WHERE tenant_id = $ AND id = $
+ * Only one field set per call (mutually exclusive Resend event types).
+ */
+export type BatchCounterField =
+  | 'deliveredCount'
+  | 'bouncedCount'
+  | 'complainedCount'
+  | 'unsubscribedCount';
+
+export type BatchCounterIncrementError =
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'storage_error'; readonly detail: string };
+
+/**
+ * Cross-tenant lookup payload for T057 webhook routing. Returned by
+ * `findBatchByProviderBroadcastIdBypassRls` — adapter reads with the
+ * schema-owner role (BYPASSRLS) so the webhook can resolve tenant
+ * context BEFORE binding `app.current_tenant`.
+ */
+export interface BatchProviderLookup {
+  readonly tenantId: string;
+  readonly broadcastId: BroadcastId;
+  readonly batchManifestId: string;
+  readonly batchIndex: number;
+  readonly recipientCount: number;
 }
 
 export interface BatchManifestsPort {
@@ -155,6 +195,25 @@ export interface BatchManifestsPort {
   ): Promise<number>;
 
   /**
+   * Increment a per-batch counter atomically (T057 webhook handler).
+   * The Drizzle adapter runs:
+   *   UPDATE broadcast_batch_manifests
+   *   SET {column} = {column} + 1, updated_at = now()
+   *   WHERE tenant_id = $1 AND id = $2
+   * inside `runInTenant(ctx)` so RLS+FORCE confines visibility. Only
+   * one counter field is incremented per call (mutually exclusive
+   * Resend event types: delivered/bounced/complained/unsubscribed).
+   *
+   * Returns `not_found` if 0 rows updated (cross-tenant lookup race;
+   * webhook handler logs + 200-OKs so Resend doesn't retry).
+   */
+  incrementCounter(
+    tenantId: TenantSlug,
+    batchManifestId: string,
+    field: BatchCounterField,
+  ): Promise<Result<void, BatchCounterIncrementError>>;
+
+  /**
    * Cross-broadcast scan for `auto-retry-failed-batches` use case
    * (Phase 3 T056, FR-005 — 5-attempt auto-retry budget). Returns
    * batches in `failed` state with `retry_count < retryBudget` whose
@@ -172,4 +231,17 @@ export interface BatchManifestsPort {
       readonly limit: number;
     },
   ): Promise<readonly BatchManifest[]>;
+
+  /**
+   * Cross-tenant lookup for T057 Resend webhook routing. Reads with
+   * the schema-owner role (BYPASSRLS) — webhook arrives BEFORE
+   * `app.current_tenant` is bound. Returns `null` for unknown ids
+   * (legacy Resend dispatches from archived tenants OR misrouted
+   * events from a leaked secret); caller logs + 200-OKs to prevent
+   * Resend retry storm. Mirrors F7 MVP
+   * `BroadcastsRepo.findByResendBroadcastIdBypassRls` pattern.
+   */
+  findBatchByProviderBroadcastIdBypassRls(
+    providerBroadcastId: string,
+  ): Promise<BatchProviderLookup | null>;
 }

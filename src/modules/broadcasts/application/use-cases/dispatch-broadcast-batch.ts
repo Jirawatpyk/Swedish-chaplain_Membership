@@ -260,25 +260,30 @@ export async function dispatchBroadcastBatch(
     });
   }
 
-  // 6. Persist providerAudienceId on success. Status remains
-  //    'sending' — webhook (Phase 3 T057) flips to 'sent' on
-  //    `email.sent` event for the last recipient.
+  // 6. Persist providerAudienceId + providerBroadcastId on success.
+  //    Status remains 'sending' — webhook (Phase 3 T057) flips to
+  //    'sent' on `email.sent` event for the last recipient. The
+  //    `providerBroadcastId` IS the routing key for the webhook
+  //    (`BatchManifestsPort.findBatchByProviderBroadcastIdBypassRls`).
   const persistAudience = await deps.batchManifests.updateStatus(
     tenantSlug,
     manifest.id,
     {
       status: 'sending',
       providerAudienceId,
+      providerBroadcastId: resendBroadcastId,
     },
   );
   if (!persistAudience.ok) {
-    // Audience ID lost — log via audit so on-call can backfill from
-    // Resend dashboard. The send already happened externally.
+    // Provider IDs lost — log via audit so on-call can backfill from
+    // Resend dashboard. The send already happened externally; the
+    // webhook will NOT be able to route events back to this batch
+    // until ops manually patches the row.
     await deps.audit.emit(null, {
       tenantId: tenantSlug,
       eventType: 'broadcast_resend_resource_missing',
       actorUserId: 'system',
-      summary: `Batch ${manifest.batchIndex} dispatched to Resend but providerAudienceId persist failed`,
+      summary: `Batch ${manifest.batchIndex} dispatched to Resend but provider id persist failed`,
       payload: {
         broadcastId: input.broadcastContent.broadcastId,
         batchManifestId: manifest.id,
