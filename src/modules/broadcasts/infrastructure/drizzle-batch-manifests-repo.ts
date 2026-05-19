@@ -294,6 +294,29 @@ export function makeDrizzleBatchManifestsRepo(
       });
     },
 
+    async findFailedRetryEligible(
+      _tenantId: TenantSlug,
+      opts: {
+        readonly retryBudget: number;
+        readonly cooloffSeconds: number;
+        readonly limit: number;
+      },
+    ): Promise<readonly BatchManifest[]> {
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT * FROM broadcast_batch_manifests
+          WHERE tenant_id = ${ctx.slug}
+            AND status = 'failed'
+            AND retry_count < ${opts.retryBudget}
+            AND failed_at IS NOT NULL
+            AND failed_at < now() - (${opts.cooloffSeconds}::int * INTERVAL '1 second')
+          ORDER BY failed_at ASC
+          LIMIT ${opts.limit}
+        `)) as unknown as Array<BroadcastBatchManifestRow>;
+        return rows.map(rowToManifest);
+      });
+    },
+
     async markCancelled(
       _tenantId: TenantSlug,
       batchManifestIds: readonly string[],

@@ -153,4 +153,23 @@ export interface BatchManifestsPort {
     tenantId: TenantSlug,
     batchManifestIds: readonly string[],
   ): Promise<number>;
+
+  /**
+   * Cross-broadcast scan for `auto-retry-failed-batches` use case
+   * (Phase 3 T056, FR-005 — 5-attempt auto-retry budget). Returns
+   * batches in `failed` state with `retry_count < retryBudget` whose
+   * `failed_at` is older than `cooloffSeconds` (avoid rapid retry
+   * storms after a transient Resend outage).
+   *
+   * Ordered by `failed_at ASC` (oldest first — fair queue).
+   * Bounded by `limit` (cron handler caps per-tick fan-out).
+   */
+  findFailedRetryEligible(
+    tenantId: TenantSlug,
+    opts: {
+      readonly retryBudget: number;
+      readonly cooloffSeconds: number;
+      readonly limit: number;
+    },
+  ): Promise<readonly BatchManifest[]>;
 }

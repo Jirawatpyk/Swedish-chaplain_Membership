@@ -46,6 +46,7 @@ import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-mem
 import type { SplitBroadcastIntoBatchesDeps } from '../application/use-cases/split-broadcast-into-batches';
 import type { RetryFailedBatchesDeps } from '../application/use-cases/retry-failed-batches';
 import type { AcceptPartialDeliveryDeps } from '../application/use-cases/accept-partial-delivery';
+import type { AutoRetryFailedBatchesDeps } from '../application/use-cases/auto-retry-failed-batches';
 import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
 import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
 import { noOpAdvisoryLock } from './noop-advisory-lock';
@@ -512,6 +513,21 @@ export function makeAcceptPartialDeliveryDeps(
 ): AcceptPartialDeliveryDeps {
   return {
     broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T056 — composition root for `autoRetryFailedBatches` /
+ * `sweepAutoRetryFailedBatches` (reconcile-stuck-sending cron
+ * extension). FR-005: 5-attempt auto-retry budget per batch.
+ */
+export function makeAutoRetryFailedBatchesDeps(
+  tenantId: string,
+): AutoRetryFailedBatchesDeps {
+  return {
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
     audit: f7AuditAdapter,
     clock: systemClock,
   };

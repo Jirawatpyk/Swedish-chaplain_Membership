@@ -272,7 +272,21 @@ export {
   makeSplitBroadcastIntoBatchesDeps,
   makeRetryFailedBatchesDeps,
   makeAcceptPartialDeliveryDeps,
+  makeAutoRetryFailedBatchesDeps,
 } from './infrastructure/broadcasts-deps';
+export {
+  autoRetryFailedBatch,
+  sweepAutoRetryFailedBatches,
+  AUTO_RETRY_BUDGET,
+  AUTO_RETRY_COOLOFF_SECONDS,
+  type AutoRetryFailedBatchesDeps,
+  type AutoRetryFailedBatchesError,
+  type AutoRetryFailedBatchesInput,
+  type AutoRetryFailedBatchesOutput,
+  type AutoRetrySweepInput,
+  type AutoRetrySweepOutcome,
+  type AutoRetrySweepOutput,
+} from './application/use-cases/auto-retry-failed-batches';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------
 export {

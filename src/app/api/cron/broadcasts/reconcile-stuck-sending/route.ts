@@ -25,6 +25,9 @@ import {
   asBroadcastId,
   makeReconcileStuckSendingDeps,
   reconcileStuckSending,
+  // F7.1a Phase 3 T056 — per-batch auto-retry sweep (FR-005 / 5-attempt budget)
+  makeAutoRetryFailedBatchesDeps,
+  sweepAutoRetryFailedBatches,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -195,8 +198,61 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await Promise.allSettled(chunk.map(handleOne));
   }
 
+  // F7.1a Phase 3 T056 — per-batch auto-retry sweep (FR-005). After
+  // the broadcast-level reconciliation completes, sweep failed
+  // batch_manifests with retry_count < 5 + cool-off elapsed and
+  // re-queue them. The dispatch-batches cron (T055) picks them up
+  // on the next 5-min tick.
+  //
+  // Run AFTER the broadcast loop so that any broadcast just
+  // reconciled `sending → sent` doesn't have its individual batches
+  // unnecessarily retried. The batch-level sweep is idempotent
+  // regardless — the use case checks `status='failed' AND retry_count
+  // < 5` at the moment of mutation; a flipped-since-scan row just
+  // surfaces as a no-op.
+  let batchSweep: Awaited<ReturnType<typeof sweepAutoRetryFailedBatches>> = {
+    eligibleCount: 0,
+    retriedCount: 0,
+    errorCount: 0,
+    outcomes: [],
+  };
+  try {
+    const autoRetryDeps = makeAutoRetryFailedBatchesDeps(tenant.slug);
+    batchSweep = await sweepAutoRetryFailedBatches(autoRetryDeps, {
+      tenantId: tenant,
+      requestId: null,
+    });
+    if (batchSweep.errorCount > 0) {
+      logger.warn(
+        {
+          tenantId: tenant.slug,
+          batchSweep: {
+            eligible: batchSweep.eligibleCount,
+            retried: batchSweep.retriedCount,
+            errored: batchSweep.errorCount,
+          },
+        },
+        'cron.broadcasts.reconcile.batch_auto_retry_partial_failure',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenant.slug,
+      },
+      'cron.broadcasts.reconcile.batch_auto_retry_threw',
+    );
+  }
+
   logger.info(
-    { tenantId: tenant.slug, ...summary },
+    {
+      tenantId: tenant.slug,
+      ...summary,
+      batch_auto_retry_eligible: batchSweep.eligibleCount,
+      batch_auto_retry_retried: batchSweep.retriedCount,
+      batch_auto_retry_errors: batchSweep.errorCount,
+    },
     'cron.broadcasts.reconcile.tick_complete',
   );
 
@@ -226,8 +282,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // appropriate (transient DB blip, in-process state issue). Per-row
   // try/catch already logged + audited each row; this 500 is the
   // tick-level escalation hook for cron-job.org dashboard.
+  const responseBody = {
+    ...summary,
+    batch_auto_retry: {
+      eligible: batchSweep.eligibleCount,
+      retried: batchSweep.retriedCount,
+      errored: batchSweep.errorCount,
+    },
+  };
   if (summary.uncaught_error > 0 || summary.server_error > 0) {
-    return NextResponse.json(summary, { status: 500 });
+    return NextResponse.json(responseBody, { status: 500 });
   }
-  return NextResponse.json(summary, { status: 200 });
+  return NextResponse.json(responseBody, { status: 200 });
 }
