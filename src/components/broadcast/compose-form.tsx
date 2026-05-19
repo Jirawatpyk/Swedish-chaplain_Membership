@@ -40,6 +40,8 @@ const TiptapEditor = loadTiptapEditor<{
   onChange: (html: string) => void;
   disabled?: boolean;
   labelledById?: string;
+  imagesEnabled?: boolean;
+  draftId?: string | null;
 }>(() => import('./tiptap-editor'));
 
 const SubmitSchema = z.object({
@@ -97,6 +99,13 @@ export interface ComposeFormProps {
   readonly initialSubject?: string;
   readonly initialBodyHtml?: string;
   readonly initialQuota?: QuotaSnapshot | null;
+  /**
+   * F7.1a US2 (T078) — when true, the Tiptap editor registers the
+   * image extension + renders the inline-image uploader. Resolved
+   * server-side via `isF71aUs2Enabled()` so the surface only appears
+   * when the kill-switch is fully ON.
+   */
+  readonly imagesEnabled?: boolean;
 }
 
 export function ComposeForm({
@@ -104,6 +113,7 @@ export function ComposeForm({
   initialSubject = '',
   initialBodyHtml = '<p></p>',
   initialQuota = null,
+  imagesEnabled = false,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -387,6 +397,8 @@ export function ComposeForm({
               }}
               disabled={submitting}
               labelledById="broadcast-body-label"
+              imagesEnabled={imagesEnabled}
+              draftId={initialDraftId}
             />
             {serverError?.field === 'body' ? (
               <p

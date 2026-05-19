@@ -10,6 +10,7 @@ import {
   computeQuotaCounter,
   makeComputeQuotaDeps,
 } from '@/modules/broadcasts';
+import { isF71aUs2Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
 /**
@@ -74,10 +75,15 @@ export default async function ComposeBroadcastPage(): Promise<React.ReactElement
     initialQuota = null;
   }
 
+  // F7.1a US2 (T078) — resolve the kill-switch server-side so the
+  // toolbar surface only appears when all three flag layers
+  // (f7Broadcasts + f71aBroadcastAdvanced + f71aUs2Images) are ON.
+  const imagesEnabled = isF71aUs2Enabled();
+
   return (
     <FormContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <ComposeForm initialQuota={initialQuota} />
+      <ComposeForm initialQuota={initialQuota} imagesEnabled={imagesEnabled} />
     </FormContainer>
   );
 }

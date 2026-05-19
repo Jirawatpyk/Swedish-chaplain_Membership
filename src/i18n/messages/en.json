@@ -3538,6 +3538,7 @@
           "progressAria": "Image upload progress",
           "uploadedToast": "Image uploaded.",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
+          "draftRequiredHint": "Save this draft first to enable image uploads.",
           "errors": {
             "broadcast_image_too_large": "Image is larger than 5 MB.",
             "broadcast_image_unsafe": "Image was flagged by the virus scanner. The upload was rejected.",

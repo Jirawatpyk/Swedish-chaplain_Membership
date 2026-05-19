@@ -3538,6 +3538,7 @@
           "progressAria": "Förlopp för bilduppladdning",
           "uploadedToast": "Bilden har laddats upp.",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
           "errors": {
             "broadcast_image_too_large": "Bilden är större än 5 MB.",
             "broadcast_image_unsafe": "Bilden markerades av virusskannern och avvisades.",
