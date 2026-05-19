@@ -52,6 +52,8 @@ export interface AcceptPartialDialogProps {
    * the focus-return rationale. WCAG SC 2.4.3 / SC 2.4.11.
    */
   readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  /** Phase 3F.11.14 (UX M1) — see RetryConfirmationDialog. */
+  readonly fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function AcceptPartialDialog({
@@ -61,6 +63,7 @@ export function AcceptPartialDialog({
   open,
   onOpenChange,
   triggerRef,
+  fallbackFocusRef,
 }: AcceptPartialDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.acceptPartialDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
@@ -138,14 +141,21 @@ export function AcceptPartialDialog({
     });
   }
 
+  // Phase 3F.11.14 (UX M1) — function variant of finalFocus so we can
+  // fall back to fallbackFocusRef when the trigger button is unmounted.
+  // See RetryConfirmationDialog for the same pattern.
+  const finalFocus =
+    triggerRef !== undefined || fallbackFocusRef !== undefined
+      ? () => triggerRef?.current ?? fallbackFocusRef?.current ?? null
+      : undefined;
+
   return (
     // Phase 3F.11.1 (C1 — Round 2 fix) — see RetryConfirmationDialog
-    // header doc. finalFocus moved from <AlertDialog> Root (silent drop)
-    // to <AlertDialogContent> Popup (where Base UI consumes it).
+    // header doc.
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent
         className="max-w-lg"
-        {...(triggerRef ? { finalFocus: triggerRef } : {})}
+        {...(finalFocus !== undefined ? { finalFocus } : {})}
       >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>

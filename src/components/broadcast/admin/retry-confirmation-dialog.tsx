@@ -54,6 +54,14 @@ export interface RetryConfirmationDialogProps {
    * SC 2.4.11 Focus Not Obscured.
    */
   readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  /**
+   * Phase 3F.11.14 (Round 3 UX M1) — fallback focus target when the
+   * trigger button has been unmounted (e.g. canRetry → false after a
+   * successful retry). Base UI's default body-fallback leaves SR users
+   * orienting from scratch on long admin pages; preferring a landmark
+   * heading is a deterministic refuge.
+   */
+  readonly fallbackFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 export function RetryConfirmationDialog({
@@ -63,6 +71,7 @@ export function RetryConfirmationDialog({
   open,
   onOpenChange,
   triggerRef,
+  fallbackFocusRef,
 }: RetryConfirmationDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.retryDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
@@ -120,17 +129,28 @@ export function RetryConfirmationDialog({
     });
   }
 
+  // Phase 3F.11.14 (Round 3 UX M1) — function variant of `finalFocus`
+  // so we can fall back to `fallbackFocusRef` when the trigger button
+  // has been unmounted (`canRetry` flipped to false post-retry, or
+  // router.refresh remount). Base UI accepts `RefObject | function |
+  // boolean | null` for finalFocus; function variant returning the
+  // first non-null ref gives the deterministic refuge.
+  const finalFocus =
+    triggerRef !== undefined || fallbackFocusRef !== undefined
+      ? () => triggerRef?.current ?? fallbackFocusRef?.current ?? null
+      : undefined;
+
   return (
     // Phase 3F.11.1 (C1 — Round 2 fix) — Base UI `finalFocus` is a prop
     // of `Dialog.Popup` (= `<AlertDialogContent>`), NOT `Dialog.Root`.
     // The previous 3F.9 wiring spread the prop on `<AlertDialog>` Root,
     // which silently dropped it → focus did NOT return to trigger.
-    // Moved to AlertDialogContent here. Trigger unmount fallback to body
-    // is still the Base UI default behavior. WCAG SC 2.4.3 + 2.4.11.
+    // Moved to AlertDialogContent here. Phase 3F.11.14 added the
+    // `fallbackFocusRef` for trigger-unmount cases. WCAG SC 2.4.3 + 2.4.11.
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent
         className="max-w-lg"
-        {...(triggerRef ? { finalFocus: triggerRef } : {})}
+        {...(finalFocus !== undefined ? { finalFocus } : {})}
       >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>

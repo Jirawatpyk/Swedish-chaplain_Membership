@@ -165,6 +165,14 @@ export function BatchBreakdown({
   // instead of <body> after dialog dismissal. WCAG SC 2.4.3.
   const retryTriggerRef = useRef<HTMLButtonElement>(null);
   const acceptPartialTriggerRef = useRef<HTMLButtonElement>(null);
+  // Phase 3F.11.14 (Round 3 UX M1) — fallback focus target for when
+  // the trigger button has been unmounted (canRetry → false after
+  // successful retry, router.refresh DOM remount). Base UI's body-
+  // fallback leaves SR users orienting from scratch on a long admin
+  // detail page; landing on the batches heading is a stable refuge
+  // and pairs with `<section aria-labelledby="batches-breakdown-heading">`
+  // landmark navigation.
+  const fallbackHeadingRef = useRef<HTMLHeadingElement>(null);
 
   const counts = useMemo(() => {
     let succeeded = 0;
@@ -233,8 +241,14 @@ export function BatchBreakdown({
         >
           <div className="space-y-1">
             <h3
+              ref={fallbackHeadingRef}
               id="batches-breakdown-heading"
               className="text-base font-semibold"
+              // Phase 3F.11.14 — fallbackHeadingRef threaded through
+              // to dialog's onCloseAutoFocus when trigger is unmounted.
+              // `tabIndex={-1}` so we can programmatically focus() it
+              // without making it part of the regular tab sequence.
+              tabIndex={-1}
             >
               {t('title')}
             </h3>
@@ -407,6 +421,7 @@ export function BatchBreakdown({
         open={retryOpen}
         onOpenChange={setRetryOpen}
         triggerRef={retryTriggerRef}
+        fallbackFocusRef={fallbackHeadingRef}
       />
       <AcceptPartialDialog
         broadcastId={broadcastId}
@@ -415,6 +430,7 @@ export function BatchBreakdown({
         open={acceptPartialOpen}
         onOpenChange={setAcceptPartialOpen}
         triggerRef={acceptPartialTriggerRef}
+        fallbackFocusRef={fallbackHeadingRef}
       />
     </section>
   );

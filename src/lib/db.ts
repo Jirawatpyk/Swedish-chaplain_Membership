@@ -109,6 +109,25 @@ export class TenantContextAssertionError extends Error {
 export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
+ * Phase 3F.11.14 (TxToken Step 4) — centralised unbrand helper. Used
+ * by infrastructure adapters that receive a `TxToken`-typed parameter
+ * (per the F71A port contracts at `@/modules/broadcasts/application/
+ * ports/advisory-lock-port.ts`) and need the raw Drizzle `TenantTx`
+ * to call `tx.execute(...)`. The unbrand is structural (TxToken is a
+ * compile-time brand wrapped over the runtime Drizzle tx shape), so
+ * the double cast `as unknown as TenantTx` is the unavoidable TS
+ * mechanism — this helper centralises it in ONE file so future audits
+ * see exactly one place where the brand barrier is crossed.
+ *
+ * Generic-typed input so any adapter-internal `TxToken | unknown`
+ * shape can satisfy it without callers needing to know the brand
+ * mechanism.
+ */
+export function unbrandTx(token: unknown): TenantTx {
+  return token as unknown as TenantTx;
+}
+
+/**
  * Tx parameter type for bare `db.transaction(...)` callbacks (i.e.
  * cross-tenant flows that do NOT go through `runInTenant`). Structurally
  * identical to `TenantTx` — Drizzle's tx shape is the same either way.

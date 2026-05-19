@@ -31,7 +31,7 @@ import type {
   AdvisoryLockPort,
   TxToken,
 } from '../application/ports/advisory-lock-port';
-import type { TenantTx } from '@/lib/db';
+import { unbrandTx } from '@/lib/db';
 
 export const pgAdvisoryLockAdapter: AdvisoryLockPort = {
   async acquire(
@@ -51,11 +51,13 @@ export const pgAdvisoryLockAdapter: AdvisoryLockPort = {
         'pgAdvisoryLockAdapter.acquire requires a tx argument (got null/undefined) — caller MUST wrap in withTx scope so the lock is held across the dependent mutations',
       );
     }
-    // Phase 3F.11.6 (Type Bottom #2 partial) — single cast at the
-    // infrastructure boundary unbrands TxToken → TenantTx. The Drizzle
-    // tx shape is a runtime-equivalent type; the brand was a compile-
-    // time barrier only.
-    const tx = txToken as unknown as TenantTx;
+    // Phase 3F.11.14 (TxToken Step 4) — delegate the unbrand cast to
+    // the centralised `unbrandTx` helper in `@/lib/db`. Single source
+    // of truth for the brand-boundary crossing across the F71A
+    // codebase. Same compile-time barrier (TxToken → TenantTx via
+    // structural `as unknown as ...`), now expressed as a helper call
+    // for future audits.
+    const tx = unbrandTx(txToken);
     const result = (await tx.execute(
       sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) AS acquired`,
     )) as unknown as Array<{ acquired: boolean }>;

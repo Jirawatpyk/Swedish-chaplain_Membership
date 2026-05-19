@@ -39,22 +39,26 @@
  * into the port layer) while still preventing the laundering of
  * arbitrary values via `as never` casts at call sites.
  *
- * Migration plan:
+ * Migration plan — ALL 4 STEPS COMPLETE as of Phase 3F.11.14:
  *   - Step 1 (Phase 3F.11.6 b06ed10f — ✅ DONE): `AdvisoryLockPort.acquire`
  *     consumes `TxToken`. Single laundering line at
  *     `retry-failed-batches.ts:asTxToken(tx)` boundary.
- *   - Step 2 (Phase 3F.11.11 — see commit message at ship time):
- *     `BroadcastsRetryRepo.withTx` callback receives `TxToken` directly.
- *     Eliminates the `asTxToken(tx)` laundering line.
- *   - Step 3 (DEFERRED to F7.1a.1 backlog): `BatchManifestsPort.*` tx params
- *     (`findById`, `updateStatus`, etc. — 5 methods) widen to `TxToken`.
- *   - Step 4 (DEFERRED to F7.1a.1 backlog): Drizzle adapters cast
- *     `TxToken → TenantTx` at every boundary (centralise in a
- *     `unbrandTx(token): TenantTx` helper in `@/lib/db` once Step 3 lands).
+ *   - Step 2 (Phase 3F.11.11 a890f083 — ✅ DONE): `BroadcastsRetryRepo.withTx`
+ *     callback receives `TxToken` directly. Eliminated the asTxToken
+ *     laundering line at retry-failed-batches.ts:180.
+ *   - Step 3 (Phase 3F.11.13 f00991e8 — ✅ DONE): `BatchManifestsPort.*`
+ *     tx params (`findByBroadcast`, `updateStatus`, `markCancelled`)
+ *     widened to `TxToken`. Adapter internal `txMaybe?: unknown` types
+ *     stay (TS contravariance keeps them assignable).
+ *   - Step 4 (Phase 3F.11.14 — ✅ DONE): Centralised `unbrandTx(token):
+ *     TenantTx` helper in `@/lib/db`. Single brand-boundary crossing
+ *     site in the F71A codebase — future audits see exactly one place
+ *     where the compile-time barrier is intentionally erased.
  *
- * Steps 3-4 deferred because they cascade across ~10 test fixtures +
- * 5 adapter methods + 7 use cases. Steps 1-2 together deliver ~60% of
- * the type-safety benefit at <10% of the diff cost.
+ * The full TxToken brand chain is now compile-time enforced from
+ * port → use case → adapter, with `asTxToken` only needed at ONE
+ * F71A site (cancel-broadcast.ts where F7 MVP `BroadcastsRepo.withTx`
+ * still receives `unknown` — F7 MVP repos out of F7.1a scope).
  */
 declare const txTokenBrand: unique symbol;
 export type TxToken = { readonly [txTokenBrand]: true };
