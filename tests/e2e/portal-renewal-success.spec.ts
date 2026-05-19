@@ -10,9 +10,12 @@
  *   AS-success-3: activeCycle null → processing div + back-to-portal CTA
  *
  * Each test mutates the seed cycle then signs in as the member and
- * navigates to the success URL. testid markers (added in round-2):
- *   - receipt-download-link / view-invoices-fallback (action row)
- *   - processing-back-to-portal (Round-3 M4 fix)
+ * navigates to the success URL. testid markers (added in round-2,
+ * split in R9 to disambiguate invoice vs. receipt download semantics):
+ *   - receipt-download-link  — paid + receipt PDF rendered
+ *   - invoice-download-link  — paid + receipt-pending, OR unpaid invoice
+ *   - view-invoices-fallback — invoice fetch failed / forbidden / not-found
+ *   - processing-back-to-portal — Round-3 M4 fix (no activeCycle)
  *
  * Gate: skips when FEATURE_F8_RENEWALS=false.
  */

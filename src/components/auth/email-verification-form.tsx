@@ -17,7 +17,23 @@ type SubmitState =
   | { kind: 'success' }
   | { kind: 'error'; code: 'invalid' | 'not_yet_active' | 'rate_limited' | 'server'; retrySeconds?: number };
 
-export function EmailVerificationForm({ token }: { token: string }) {
+export interface EmailVerificationFormProps {
+  readonly token: string;
+  /**
+   * B9 (post-ship 2026-05-17) — destination after a successful
+   * verification. The server page passes `/admin` for staff users +
+   * `/portal` for members. Pre-B9 the CTA was hardcoded to `/admin`,
+   * which sent member users into the staff portal where the role
+   * guard immediately bounced them back to sign-in — a confusing
+   * redirect loop.
+   */
+  readonly redirectTo?: string;
+}
+
+export function EmailVerificationForm({
+  token,
+  redirectTo = '/admin',
+}: EmailVerificationFormProps) {
   const t = useTranslations('auth.emailVerification');
   const [state, setState] = useState<SubmitState>({ kind: 'submitting' });
   const attempted = useRef(false);
@@ -97,7 +113,7 @@ export function EmailVerificationForm({ token }: { token: string }) {
           {t('successMessage')}
         </p>
         <a
-          href="/admin"
+          href={redirectTo}
           className="inline-flex items-center text-sm font-medium underline underline-offset-4"
         >
           {t('signInCta')}

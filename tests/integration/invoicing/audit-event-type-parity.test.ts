@@ -43,7 +43,19 @@ describe('F4 audit_event_type ↔ F4AuditEventType parity', () => {
         'tenant_invoice_settings_',
         'pdf_render_',
       ],
-      extraInclude: ['auto_email_delivery_failed'],
+      // F5R3 (2026-05-16) — extraInclude entries that don't match the
+      // prefix list cleanly but belong to F4:
+      //   * 'auto_email_delivery_failed' — original baseline
+      //   * 'tenant_receipt_prefix_changed' — starts with `tenant_` not
+      //     `receipt_`; tax-document audit emitted by
+      //     updateTenantInvoiceSettings (migration 0145)
+      //   * 'invoices_csv_exported' — starts with `invoices_` (plural)
+      //     not `invoice_`; emitted by exportPaidInvoicesCsv (mig 0149)
+      extraInclude: [
+        'auto_email_delivery_failed',
+        'tenant_receipt_prefix_changed',
+        'invoices_csv_exported',
+      ],
     });
 
     expect(

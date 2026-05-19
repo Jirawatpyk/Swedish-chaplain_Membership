@@ -83,7 +83,18 @@ export function parseBreadcrumbPath({
     // Clicking the "renewals" breadcrumb segment should bounce back to
     // the Settings index, not 404. See `src/app/(staff)/admin/settings/
     // page.tsx` for the index page itself.
-    ['settings', new Set(['renewals'])],
+    //
+    // F6 (round-6 verify-fix 2026-05-13) — `/admin/settings/integrations/
+    // <source>` lives UNDER `settings` (not directly under `admin` —
+    // the original round-5 entry under the `admin` parent never matched
+    // because the real semantic parent of `integrations` in the
+    // configured URL is `settings`, not `admin`). Walking up from
+    // `eventcreate` finds `integrations`; walking up from `integrations`
+    // finds `settings` — so the rule MUST key `integrations` under the
+    // `settings` parent. Without this, clicking the `Integrations`
+    // breadcrumb segment fell through to a real link at
+    // `/admin/settings/integrations` which has no `page.tsx` → 404.
+    ['settings', new Set(['renewals', 'integrations'])],
   ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;

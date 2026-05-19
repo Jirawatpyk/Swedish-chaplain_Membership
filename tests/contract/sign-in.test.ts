@@ -136,4 +136,26 @@ describe('POST /api/auth/sign-in', () => {
     const body = await response.json();
     expect(body.error).toBe('account-disabled');
   });
+
+  // G4 (Round 2): B3 outer try/catch surfaces infra throws as a
+  // structured 500-with-requestId, not an opaque Next.js HTML 500.
+  it('500 with requestId when sign-in throws (infra error)', async () => {
+    signInMock.mockRejectedValueOnce(
+      new Error('neon: connection terminated unexpectedly'),
+    );
+
+    const response = await POST(
+      makeRequest({
+        email: 'admin@swecham.se',
+        password: 'whatever',
+        portal: 'staff',
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe('server-error');
+    expect(typeof body.requestId).toBe('string');
+    expect(body.requestId.length).toBeGreaterThan(0);
+  });
 });

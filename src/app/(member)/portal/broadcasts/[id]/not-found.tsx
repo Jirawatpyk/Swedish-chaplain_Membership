@@ -16,7 +16,7 @@
  * status nuance.
  */
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, FileQuestion } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -27,16 +27,27 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
   const tErrors = await getTranslations('errors');
 
   return (
+    // F2 UX hardening — full empty-state anatomy per ux-standards § 3.1:
+    // muted icon (48px), heading, explanatory paragraph, primary CTA.
+    // Previously: just a flat `<p>` — visually anaemic and SR users had
+    // no heading landmark for the state.
     <DetailContainer>
       <PageHeader title={t('title')} />
       <div
         data-testid="broadcast-not-found"
-        className="rounded-md border p-8 text-center"
+        className="flex flex-col items-center gap-3 rounded-md border p-12 text-center"
       >
-        <p className="text-sm text-muted-foreground">{tErrors('notFound')}</p>
+        <FileQuestion
+          className="h-12 w-12 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <h2 className="text-lg font-semibold">{tErrors('notFound')}</h2>
+        <p className="max-w-md text-sm text-muted-foreground">
+          {tErrors('notFound')}
+        </p>
         <Link
           href="/portal/benefits/e-blasts"
-          className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-4 inline-flex items-center`}
+          className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-2 inline-flex items-center`}
         >
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
           {t('back')}

@@ -151,3 +151,10 @@ scripts/_demo-data/
 .vercel
 .env*.local
 .e2e-seed.json
+
+# ============================================
+# F6 perf-bench local results (R9 B.3 — orchestrator output)
+# Local-environment runs are per-developer noise; only canonical
+# staging baselines are committed (env-prefixed `staging-*.json`).
+# ============================================
+specs/012-eventcreate-integration/perf-results/local-*.json

@@ -6,14 +6,14 @@
  *
  *   1. Happy path — user + invitation + enqueue + audit all succeed.
  *   2. invalid-input — malformed email short-circuits before opening the tx.
- *   3. email-taken — dup check inside tx throws CreateUserAbort; repo
+ *   3. email-taken — dup check inside tx throws TxAbort; repo
  *      writes (createPending, createInvitation, audit) are never called.
  *   4. invitation-create-failed via unexpected throw — TokenRepo throws
  *      mid-tx; `db.transaction` rolls back; outer handler re-throws
  *      (not mapped to typed err, because the throw was not a
- *      CreateUserAbort).
+ *      TxAbort).
  *   5. invitation-create-failed via enqueue err — enqueueInvitationInTx
- *      returns err; use case throws CreateUserAbort; tx rolls back;
+ *      returns err; use case throws TxAbort; tx rolls back;
  *      outer catch returns err('invitation-create-failed').
  *   6. enqueue failure emits the metric + log (observability gate).
  *   7. Locale passthrough — `th` propagates to enqueueInvitationInTx.
@@ -35,7 +35,7 @@ vi.mock('@/lib/metrics', () => ({
   },
 }));
 // `db.transaction(fn)` mock — invokes callback with fake tx; re-throws
-// anything thrown inside so the outer catch can observe CreateUserAbort.
+// anything thrown inside so the outer catch can observe TxAbort.
 vi.mock('@/lib/db', () => ({
   db: {
     transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({} as never)),
@@ -101,7 +101,12 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     createInvitation: vi.fn(),
     createInvitationInTx: vi
       .fn()
-      .mockResolvedValue({ id: INVITATION_ID, userId: PENDING_USER.id }),
+      .mockResolvedValue({
+        // E2 — createInvitationInTx now returns { plaintext, invitation }
+        // shape. Tests don't care about the hash so we reuse the same id.
+        plaintext: INVITATION_ID,
+        invitation: { id: INVITATION_ID, userId: PENDING_USER.id },
+      }),
     findInvitationById: vi.fn(),
     markInvitationConsumed: vi.fn(),
     createReset: vi.fn(),
@@ -189,7 +194,7 @@ describe('createUser (Path C atomic flow)', () => {
     expect(deps.audit.appendInTx).not.toHaveBeenCalled();
   });
 
-  it('email-taken: dup check inside tx throws CreateUserAbort — no writes executed', async () => {
+  it('email-taken: dup check inside tx throws TxAbort — no writes executed', async () => {
     const deps = makeDeps();
     (deps.users.findByEmailInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       user: PENDING_USER,
@@ -213,7 +218,7 @@ describe('createUser (Path C atomic flow)', () => {
       deps.tokens.createInvitationInTx as ReturnType<typeof vi.fn>
     ).mockRejectedValueOnce(new Error('db connection reset'));
 
-    // Path C: an unexpected throw (not CreateUserAbort) propagates out
+    // Path C: an unexpected throw (not TxAbort) propagates out
     // of the outer catch so the route handler maps it to 500. This is
     // different from pre-Path-C where the throw was caught + mapped to
     // invitation-create-failed.
@@ -228,7 +233,7 @@ describe('createUser (Path C atomic flow)', () => {
     expect(deps.audit.appendInTx).not.toHaveBeenCalled();
   });
 
-  it('enqueue err: CreateUserAbort + rollback; returns typed invitation-create-failed', async () => {
+  it('enqueue err: TxAbort + rollback; returns typed invitation-create-failed', async () => {
     const deps = makeDeps({
       enqueueInvitationInTx: vi
         .fn()

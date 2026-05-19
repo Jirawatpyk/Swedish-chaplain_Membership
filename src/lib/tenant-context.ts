@@ -34,16 +34,84 @@
 
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { env } from './env';
+import { logger } from './logger';
 
 const X_TENANT_HEADER = 'x-tenant';
 
+/**
+ * Server-component convenience for
+ * tenant resolution.
+ *
+ * Server components do not receive a `Request` object — only a
+ * `ReadonlyHeaders` from `headers()`. Prior code wrapped this in a
+ * synthetic `new Request('http://localhost:3100', { headers })`
+ * + cast it `as never` to satisfy `resolveTenantFromRequest`. The
+ * cast pattern was spreading across F4/F6 page surfaces; this helper
+ * centralises it so future tweaks (e.g. switching to a proper
+ * `IncomingHeaders` overload on the resolver) happen in one file.
+ *
+ * @param headers — Result of `await headers()` from a server component.
+ * @returns The resolved `TenantContext` brand.
+ */
+export function resolveTenantFromHeaders(
+  headers: ReadonlyHeaders,
+): TenantContext {
+  // Resolver reads `x-tenant` only; all headers forwarded for
+  // forward-compat (future signed-claim parsing). Defence-in-depth
+  // try/catch around the flatten — forEach() on Next.js's
+  // ReadonlyHeaders is not documented to throw today, but a future
+  // Proxy wrapper could; we'd rather fall through to env.tenant.slug
+  // than explode the server component.
+  let flat: Record<string, string>;
+  try {
+    flat = {};
+    headers.forEach((value, key) => {
+      flat[key] = value;
+    });
+  } catch (e) {
+    // Empty headers → resolver defaults to env.tenant.slug — safe.
+    // Log loudly: a sustained pattern of `resolve_tenant_headers_flatten_throw`
+    // signals a Next.js refactor we need to track. Without this log
+    // the fallback would be invisible to ops.
+    logger.warn(
+      {
+        event: 'resolve_tenant_headers_flatten_throw',
+        err: e instanceof Error ? e.message : String(e),
+      },
+      '[tenant-context] headers.forEach threw — falling back to env.tenant.slug',
+    );
+    flat = {};
+  }
+  // TODO(F10 multi-tenant): replace the synthetic `new Request(...)`
+  // construction below with a proper headers-only overload on
+  // `resolveTenantFromRequest`. The hardcoded `http://localhost:3100`
+  // URL is harmless today (the resolver only inspects `x-tenant` +
+  // host headers, never `pseudoReq.url`), but if a future signed-
+  // claim resolver introspects the URL the bridge needs to disappear.
+  // Phase 5 review-fix S-09 (2026-05-13) — marker for the MTA rollout
+  // PR to surface this site.
+  const pseudoReq = new Request('http://localhost:3100', { headers: flat });
+  return resolveTenantFromRequest(pseudoReq);
+}
+
+/**
+ * Minimal structural shape we need from Next.js's `ReadonlyHeaders`
+ * (the type emitted by `await headers()` in server components). Kept
+ * inline so this lib file doesn't depend on `next/server` types.
+ */
+interface ReadonlyHeaders {
+  get(name: string): string | null;
+  has(name: string): boolean;
+  forEach(cb: (value: string, key: string) => void): void;
+}
+
 export function resolveTenantFromRequest(req?: Request): TenantContext {
   // T115t — test-only header override. Gate triple-locked:
-  //   1. Build-time: env.tenant.xHeaderEnabled is only TRUE when the
-  //      NODE_ENV != 'production' check at boot lets the flag through.
-  //   2. Runtime: the flag must be explicitly set in .env.local.
-  //   3. Request: the header must be present AND pass the same slug
-  //      validator the env path uses (`asTenantContext` re-validates).
+  // 1. Build-time: env.tenant.xHeaderEnabled is only TRUE when the
+  // NODE_ENV != 'production' check at boot lets the flag through.
+  // 2. Runtime: the flag must be explicitly set in .env.local.
+  // 3. Request: the header must be present AND pass the same slug
+  // validator the env path uses (`asTenantContext` re-validates).
   // Missing any of the 3 → fall through to env.tenant.slug.
   if (req && env.tenant.xHeaderEnabled) {
     const headerSlug = req.headers.get(X_TENANT_HEADER);

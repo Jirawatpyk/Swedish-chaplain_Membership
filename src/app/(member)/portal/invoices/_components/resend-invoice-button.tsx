@@ -74,7 +74,15 @@ export function ResendInvoiceButton({
           return;
         }
         toast.error(t('toast.resendFailed'));
-      } catch {
+      } catch (err) {
+        // Round 6 (R5-SF-L1 parity) — log network error to console
+        // so the user-facing toast still shows but operators retain
+        // the underlying cause (DNS / CORS / offline / TLS) for
+        // diagnosis. Bare catch swallowed this previously.
+        console.error('[portal-resend-invoice] network error', {
+          invoiceId,
+          err,
+        });
         toast.error(t('toast.resendFailed'));
       }
     });
@@ -93,7 +101,10 @@ export function ResendInvoiceButton({
       className={className}
     >
       {isPending ? (
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        // Round 6 (R5-UX-M2 parity) — `motion-safe:` prefix so users
+        // with `prefers-reduced-motion: reduce` don't see a continuously
+        // spinning icon.
+        <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden="true" />
       ) : (
         <Mail className="size-4" aria-hidden="true" />
       )}

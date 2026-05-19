@@ -35,6 +35,32 @@ import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/server';
 
 import { eventAttendeesStub } from './event-attendees-stub';
+// Phase 10 T122 — F6 → F8 bridge: when FEATURE_F6_EVENTCREATE is on,
+// swap the stub for the real F6 adapter so the at-risk-scorer can
+// consult actual event attendance data. The F6 adapter is shape-
+// matched (structural typing) to `EventAttendeesPort` without F6
+// importing the F8 port type (avoids backwards module dependency).
+//
+// **CRITICAL SILENT-FAILURE RISK** (analyze finding U-1): if this
+// swap is forgotten, F8 stays on the stub forever in production and
+// `eventAttendanceFactorSkipped: true` flags every at-risk score
+// invisibly. Verification mitigations:
+//   1. Code-level: tests/integration/events/f8-port-wiring.test.ts
+//      asserts the flag-on path uses the real adapter.
+//   2. Deploy-level: T154a human gate at flag-flip queries F8 at-risk
+//      score for a member with seeded event attendance + asserts
+//      score reflects real attendance data (NOT empty stub).
+import { drizzleEventAttendeesAdapter } from '@/modules/events';
+import { env } from '@/lib/env';
+
+/**
+ * F6 → F8 bridge selector. Computed once at module load — env vars
+ * are read from `src/lib/env.ts` zod-validated cache so a misconfig
+ * crashes the boot rather than silently falling back to stub.
+ */
+const eventAttendeesPort = env.features.f6EventCreate
+  ? drizzleEventAttendeesAdapter
+  : eventAttendeesStub;
 import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
 import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-for-renewal-drizzle';
@@ -328,13 +354,13 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     f5RefundBridge,
     f4InvoicingBridge: f4InvoicingForRenewalBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
-    eventAttendees: eventAttendeesStub,
+    eventAttendees: eventAttendeesPort,
     schedulePolicyRepo: makeDrizzleTenantRenewalSchedulePolicyRepo(tenant),
     atRiskOutreachReadRepo: makeDrizzleAtRiskOutreachReadRepo(tenant),
     atRiskOutreachWriteRepo: makeDrizzleAtRiskOutreachWriteRepo(tenant),
     atRiskScorer: makeDrizzleAtRiskScorer({
       tenant,
-      eventAttendees: eventAttendeesStub,
+      eventAttendees: eventAttendeesPort,
       tenantRenewalSettingsRepo: makeDrizzleTenantRenewalSettingsRepo(tenant),
     }),
     escalationTaskRepo: makeDrizzleRenewalEscalationTaskRepo(tenant),

@@ -5,47 +5,30 @@
  *
  * Single `<input type="datetime-local">` paired with a "Send for review
  * immediately" checkbox. When checked, the input is disabled and value
- * cleared. TH locale displays the current selection in Buddhist Era
- * via `Intl.DateTimeFormat('th-TH-u-ca-buddhist')` for a confirmation
- * helper; the underlying value remains ISO-8601 UTC.
+ * cleared. All wall-time conversion uses **Bangkok wall-time** (not
+ * browser-local) so the system matches the microcopy promise and the
+ * admin approve dialog (F7 UX hardening E2). Preview formatter pins
+ * `timeZone: 'Asia/Bangkok'`.
+ *
+ * Schedule lead-time uses Bangkok now + 5 min as the min value (matches
+ * server-side NFR-PERF-002).
  */
 import { useMemo } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  bangkokInputToIso,
+  isoToBangkokInput,
+  bangkokMinInputAfterMinutes,
+} from './bangkok-datetime';
 
 export interface SchedulePickerProps {
   /** ISO-8601 UTC string or null when "send immediately" is selected. */
   readonly value: string | null;
   readonly onChange: (next: string | null) => void;
   readonly disabled?: boolean;
-}
-
-function toLocalDateTimeInputValue(iso: string | null): string {
-  if (iso === null) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  // Strip seconds; datetime-local expects YYYY-MM-DDTHH:mm
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalDateTimeInputValue(local: string): string | null {
-  if (local === '') return null;
-  const parsed = new Date(local);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
-
-/**
- * Compute the minimum acceptable datetime-local value: now + 5 minutes.
- * Prevents members from picking past dates that the server would reject.
- */
-function minLocalDateTime(): string {
-  const future = new Date(Date.now() + 5 * 60 * 1000);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`;
 }
 
 export function SchedulePicker({
@@ -56,21 +39,27 @@ export function SchedulePicker({
   const t = useTranslations('portal.broadcasts.compose.fields');
   const locale = useLocale();
 
-  const localValue = useMemo(() => toLocalDateTimeInputValue(value), [value]);
+  const localValue = useMemo(() => isoToBangkokInput(value), [value]);
 
   const previewText = useMemo(() => {
     if (value === null) return '';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return '';
+    // Pin formatter to Asia/Bangkok so the displayed wall-time matches
+    // the contract the picker asks the user to provide (E2 UX hardening
+    // — previously this defaulted to the BROWSER local TZ, so an admin
+    // travelling abroad would see a different time than they typed).
     const formatter =
       locale === 'th'
         ? new Intl.DateTimeFormat('th-TH-u-ca-buddhist', {
             dateStyle: 'long',
             timeStyle: 'short',
+            timeZone: 'Asia/Bangkok',
           })
         : new Intl.DateTimeFormat(locale, {
             dateStyle: 'long',
             timeStyle: 'short',
+            timeZone: 'Asia/Bangkok',
           });
     return formatter.format(date);
   }, [value, locale]);
@@ -103,9 +92,9 @@ export function SchedulePicker({
             id="schedule-when"
             type="datetime-local"
             value={localValue}
-            min={minLocalDateTime()}
+            min={bangkokMinInputAfterMinutes(5)}
             onChange={(e) =>
-              onChange(fromLocalDateTimeInputValue(e.target.value))
+              onChange(bangkokInputToIso(e.target.value))
             }
             disabled={disabled}
             aria-describedby="schedule-when-preview"

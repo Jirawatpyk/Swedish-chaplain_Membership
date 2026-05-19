@@ -1,5 +1,5 @@
 /**
- * T055 — initiatePayment use-case (F5 / payments-api.md § 1).
+ * initiatePayment use-case (F5 / payments-api.md § 1).
  *
  * Member-initiated payment-intent creation. See `payments-api.md § 1` for
  * the full error table. Returns `Result<InitiatePaymentSuccess,
@@ -99,6 +99,17 @@ export type InitiatePaymentError =
   | { readonly code: 'invoice_not_found' }
   | { readonly code: 'forbidden_invoice' }
   | { readonly code: 'invoice_not_payable'; readonly currentStatus: string }
+  /**
+   * F5R3v3 H-1 (2026-05-16) — bridge detected a malformed F4 invoice
+   * (currently: negative `totalSatang` from data corruption or dropped
+   * CHECK constraint). The use-case short-circuits BEFORE the Stripe
+   * call so we don't fabricate a `createPaymentIntent({ amount: 0n })`
+   * call that Stripe would reject as `amount_too_small` + create a
+   * misleading audit row. Route handler maps to 422 with a runbook
+   * pointer; the underlying data corruption is logged + counter-emitted
+   * inside the bridge for SRE triage.
+   */
+  | { readonly code: 'invoice_data_corrupt'; readonly invoiceId: string }
   | { readonly code: 'online_payment_disabled' }
   | { readonly code: 'method_not_enabled'; readonly requestedMethod: PaymentMethod }
   | {
@@ -215,7 +226,8 @@ export async function initiatePayment(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'initiate_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene; see confirm-payment.ts.
+          message: e instanceof Error ? e.constructor.name : 'initiate_threw',
         });
         throw e;
         /* v8 ignore stop */
@@ -236,7 +248,7 @@ async function initiatePaymentBody(
   input: InitiatePaymentInput,
 ): Promise<Result<InitiatePaymentSuccess, InitiatePaymentError>> {
   // Step 1: tenant settings — distinct error code for "no row exists"
-  // vs "row exists with missing fields" (audit 2026-04-25 finding #1).
+  // vs "row exists with missing fields".
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
     return err({
@@ -304,6 +316,15 @@ async function initiatePaymentBody(
         code: e.code === 'not_found' ? 'invoice_not_found' : 'forbidden_invoice',
       });
     }
+    // F5R3v3 H-1 (2026-05-16) — surface bridge data-corruption as a
+    // typed 422 INSTEAD of feeding a zero-amount PI to Stripe. Bridge
+    // already logger.error'd + bumped the counter; this branch just
+    // routes to the typed-error path so the route handler can render
+    // a deterministic "invoice data corrupt — contact admin" UX
+    // without a Stripe round-trip.
+    if (e.code === 'corrupted_total') {
+      return err({ code: 'invoice_data_corrupt', invoiceId: e.invoiceId });
+    }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });
   }
@@ -324,7 +345,7 @@ async function initiatePaymentBody(
 
   // Step 5 + 6: withTx → resume or insert+createIntent+audit.
   return await deps.paymentsRepo.withTx(async (tx) => {
-    // R2 fix (2026-04-27): advisory lock on (tenantId, invoiceId) so
+    // advisory lock on (tenantId, invoiceId) so
     // two concurrent initiate calls for the same invoice are serialised
     // at the DB layer. Without it, the findPending TOCTOU window lets
     // two callers both miss the pending row and both reach Stripe

@@ -66,6 +66,7 @@ import { logger } from '@/lib/logger';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const voidInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -193,6 +194,14 @@ export async function voidInvoice(
       if (!settings) return err({ code: 'settings_missing' });
 
       // D. Re-render with VOID overlay (pinned template version per FR-016).
+      // Round-3 fix R3-H3 — pass pinned template version so v1 invoices
+      // (rendered before the v2 logo feature) re-render byte-identical
+      // (logo suppressed for v1).
+      const tenantLogo = await loadTenantLogo(
+        deps.blob,
+        loaded.tenantIdentitySnapshot.logo_blob_key,
+        loaded.pdf.templateVersion,
+      );
       let rendered;
       try {
         rendered = await deps.pdfRender.render({
@@ -202,6 +211,7 @@ export async function voidInvoice(
           issueDate: loaded.issueDate,
           dueDate: loaded.dueDate,
           tenant: loaded.tenantIdentitySnapshot,
+          tenantLogo,
           member: loaded.memberIdentitySnapshot,
           lines: loaded.lines,
           subtotal: loaded.subtotal,

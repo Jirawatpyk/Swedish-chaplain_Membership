@@ -69,7 +69,18 @@ describe('env.ts — F5 cross-field assertions', () => {
   });
 
   it('throws when E2E_X_TENANT_HEADER_ENABLED=true in production', async () => {
-    stubEnv({ NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_live_0000000000', STRIPE_LIVE_MODE: 'true', E2E_X_TENANT_HEADER_ENABLED: 'true' });
+    // `tests/setup.ts` forces `FEATURE_F6_EVENTCREATE='true'` for the
+    // unit suite; the F6.1 ZAPIER_DPA_EXECUTED guard now runs BEFORE
+    // the E2E_X_TENANT_HEADER_ENABLED guard, so to actually reach the
+    // E2E check under NODE_ENV=production we must satisfy the F6 DPA
+    // pre-condition first.
+    stubEnv({
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_live_0000000000',
+      STRIPE_LIVE_MODE: 'true',
+      ZAPIER_DPA_EXECUTED: 'true',
+      E2E_X_TENANT_HEADER_ENABLED: 'true',
+    });
     await expect(import('@/lib/env')).rejects.toThrow(/E2E_X_TENANT_HEADER_ENABLED.*false.*when NODE_ENV=production/i);
   });
 });

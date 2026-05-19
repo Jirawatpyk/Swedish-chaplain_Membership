@@ -20,6 +20,10 @@ const setCookieMock = vi.fn(async (id: string) => { void id; });
 vi.mock('@/modules/auth', () => ({
   redeemInvite: (...args: unknown[]) => redeemInviteMock(...args),
   asTokenId: (s: string) => s,
+  asInvitationTokenId: (s: string) => s,
+  // I3 (Round 2): validating parse function; in tests we pass-through.
+  parseInvitationTokenId: (s: string) => s,
+  MalformedTokenError: class MalformedTokenError extends Error {},
 }));
 
 vi.mock('@/lib/auth-cookies', () => ({
@@ -91,7 +95,8 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
     expect(body.issues).toContain('too-short');
   });
 
-  it('404 on link-invalid when reason=not-found', async () => {
+  // B1 — collapsed 404/410 to uniform 410 for enumeration safety.
+  it('410 on link-invalid when reason=not-found (uniform with expired/used)', async () => {
     redeemInviteMock.mockResolvedValueOnce(
       err({ code: 'link-invalid', reason: 'not-found' as const }),
     );
@@ -99,7 +104,7 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
     const { POST } = await import('@/app/api/auth/redeem-invite/route');
     const res = await POST(makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }));
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(410);
     const body = await res.json();
     expect(body.error).toBe('link-invalid');
   });
@@ -151,5 +156,25 @@ describe('contract: POST /api/auth/redeem-invite (T110)', () => {
       }),
     );
     expect(res.status).toBe(400);
+  });
+
+  // G4 (Round 2): the B3 outer try/catch must surface infra throws as
+  // a structured 500 with requestId — never as opaque Next.js HTML.
+  // Pin the contract so a future refactor that swallows the catch (or
+  // forgets requestId) fails CI.
+  it('500 with requestId when the use case throws an infra error', async () => {
+    redeemInviteMock.mockRejectedValueOnce(
+      new Error('neon: connection terminated unexpectedly'),
+    );
+
+    const { POST } = await import('@/app/api/auth/redeem-invite/route');
+    const res = await POST(
+      makeRequest({ token: 'a'.repeat(64), password: 'Good-P@ss-2026!' }),
+    );
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('server-error');
+    expect(body.requestId).toBe('test-req-id');
   });
 });

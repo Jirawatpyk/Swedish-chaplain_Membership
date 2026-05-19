@@ -15,6 +15,7 @@
  * audit. No external Stripe/F4 — sweep is pure DB recovery.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -145,7 +146,7 @@ describe('sweepStalePendingRefunds — live Neon (T130a)', () => {
         memberId,
         method: 'card',
         status: 'succeeded',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         currency: 'THB',
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorChargeId: `ch_test_${randomUUID().slice(0, 8)}`,
@@ -175,7 +176,7 @@ describe('sweepStalePendingRefunds — live Neon (T130a)', () => {
         tenantId: tenant.ctx.slug,
         paymentId,
         invoiceId,
-        amountSatang: 100_000n,
+        amountSatang: asSatang(100_000n),
         reason: 'stale 30h',
         status: 'pending',
         processorRefundId: null,
@@ -188,7 +189,7 @@ describe('sweepStalePendingRefunds — live Neon (T130a)', () => {
         tenantId: tenant.ctx.slug,
         paymentId,
         invoiceId,
-        amountSatang: 200_000n,
+        amountSatang: asSatang(200_000n),
         reason: 'stale 48h',
         status: 'pending',
         processorRefundId: null,
@@ -201,7 +202,7 @@ describe('sweepStalePendingRefunds — live Neon (T130a)', () => {
         tenantId: tenant.ctx.slug,
         paymentId,
         invoiceId,
-        amountSatang: 50_000n,
+        amountSatang: asSatang(50_000n),
         reason: 'fresh 1h',
         status: 'pending',
         processorRefundId: null,

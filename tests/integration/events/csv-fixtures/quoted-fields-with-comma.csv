@@ -1,0 +1,3 @@
+event_external_id,event_name,event_start,event_location,attendee_email,attendee_name
+event_qc_1,Networking,2026-06-21T18:00:00+07:00,"Anantara Riverside, Bangkok",guest@example.com,Test Guest
+event_qc_2,Mixer,2026-07-15T18:00:00+07:00,"Le Méridien, Sukhumvit",another@example.com,Another Guest

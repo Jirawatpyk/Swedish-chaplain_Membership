@@ -44,10 +44,10 @@ The mid-tier severity is identical to F5's webhook attack — both involve recip
 
 4. **Audit-log forensic check** (for abuse signal).
    ```sql
-   SELECT count(*) AS attempts, date_trunc('hour', emitted_at) AS hour
+   SELECT count(*) AS attempts, date_trunc('hour', "timestamp") AS hour
      FROM audit_log
     WHERE event_type='broadcast_webhook_signature_rejected'
-      AND emitted_at > now() - interval '1 hour'
+      AND "timestamp" > now() - interval '1 hour'
     GROUP BY 2
     ORDER BY 2 DESC;
    ```

@@ -28,6 +28,7 @@ import {
 const DEBOUNCE_MS = 300;
 
 const STATUS_VALUES = ['active', 'inactive', 'archived'] as const;
+const RISK_BANDS = ['healthy', 'warning', 'at-risk', 'critical'] as const;
 
 export type PlanOption = {
   readonly id: string;
@@ -50,6 +51,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
   const currentPlan = searchParams.get('plan_id') ?? 'all';
+  const currentRisk = searchParams.get('risk_band') ?? 'all';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -79,11 +81,14 @@ export function DirectoryFilters({ plans = [] }: Props) {
   };
 
   const hasAnyFilter =
-    Boolean(currentQ) || currentStatus !== 'all' || currentPlan !== 'all';
+    Boolean(currentQ) ||
+    currentStatus !== 'all' ||
+    currentPlan !== 'all' ||
+    currentRisk !== 'all';
   const clearAll = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (inputRef.current) inputRef.current.value = '';
-    pushUrl({ q: null, status: null, plan_id: null });
+    pushUrl({ q: null, status: null, plan_id: null, risk_band: null });
   };
 
   return (
@@ -160,6 +165,44 @@ export function DirectoryFilters({ plans = [] }: Props) {
           </SelectContent>
         </Select>
       )}
+
+      {/* I1 round-10 ui-design-specialist — quick filter on F8-derived
+          at-risk band. One of the marquee F3 smart features per docs/
+          smart-chamber-features.md; until now it was visible in the
+          column only. With this filter, admins doing renewal triage
+          can scan all "at-risk" + "critical" members in one click. */}
+      <Select
+        value={currentRisk}
+        onValueChange={(v) => pushUrl({ risk_band: v === 'all' ? null : v })}
+      >
+        <SelectTrigger
+          className="sm:w-44"
+          aria-label={t('filters.risk.label')}
+        >
+          <TranslatedSelectValue
+            placeholder={t('filters.risk.label')}
+            translate={(v) => {
+              const keys: Record<string, string> = {
+                all: 'filters.risk.all',
+                healthy: 'filters.risk.healthy',
+                warning: 'filters.risk.warning',
+                'at-risk': 'filters.risk.at-risk',
+                critical: 'filters.risk.critical',
+              };
+              const key = keys[v || 'all'];
+              return key ? t(key) : v;
+            }}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">{t('filters.risk.all')}</SelectItem>
+          {RISK_BANDS.map((b) => (
+            <SelectItem key={b} value={b}>
+              {t(`filters.risk.${b}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {hasAnyFilter && (
         <Button

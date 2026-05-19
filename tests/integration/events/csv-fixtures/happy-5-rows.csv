@@ -1,0 +1,6 @@
+event_external_id,event_name,event_start,event_category,attendee_email,attendee_name,attendee_company,ticket_type,payment_status,registered_at
+event_001,Midsummer 2026,2026-06-21T18:00:00+07:00,cultural,jane@example.com,Jane Andersson,Fogmaker International AB,Member Free,paid,2026-06-01T10:23:15Z
+event_001,Midsummer 2026,2026-06-21T18:00:00+07:00,cultural,lars@example.com,Lars Larsson,ABB Thailand,Non-Member,paid,2026-06-02T14:10:00Z
+event_001,Midsummer 2026,2026-06-21T18:00:00+07:00,cultural,visitor@gmail.com,External Visitor,,Walk-In,paid,2026-06-02T18:00:00Z
+event_002,Networking Mixer,2026-08-15T18:00:00+07:00,networking,partner@volvo.se,Partner Person,Volvo,Member,paid,2026-08-01T09:00:00Z
+event_002,Networking Mixer,2026-08-15T18:00:00+07:00,networking,guest@example.com,Guest Person,Guest Co,Non-Member,pending,2026-08-05T12:00:00Z

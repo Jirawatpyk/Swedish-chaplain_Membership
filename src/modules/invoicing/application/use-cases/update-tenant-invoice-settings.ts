@@ -14,6 +14,7 @@
  * receives raw logo bytes (FR-034).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { z } from 'zod';
 import type {
   TenantSettingsRepo,
@@ -89,7 +90,8 @@ export async function updateTenantInvoiceSettings(
     ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
     ...(input.vatRate !== undefined && { vatRate: input.vatRate }),
     ...(input.registrationFeeSatang !== undefined && {
-      registrationFeeSatang: input.registrationFeeSatang,
+      // F5R3 H-5 (2026-05-16) — brand at HTTP-boundary update.
+      registrationFeeSatang: asSatang(input.registrationFeeSatang),
     }),
     ...(input.legalNameTh !== undefined && { legalNameTh: input.legalNameTh }),
     ...(input.legalNameEn !== undefined && { legalNameEn: input.legalNameEn }),
@@ -136,6 +138,18 @@ export async function updateTenantInvoiceSettings(
   // Violation would breach Constitution v1.4.0 Principle I clause 4
   // (audit-in-same-tx, NON-NEGOTIABLE).
   await deps.tenantSettingsRepo.withTx(input.tenantId, async (tx) => {
+    // Round-3 fix R3-H1 — read priorSettings INSIDE the tx with
+    // `SELECT … FOR UPDATE` so a concurrent admin save cannot flip
+    // the prefix between read + upsert. Without the lock the §87
+    // forensic-trail audit could record the wrong "old" value (e.g.
+    // P1 reads INV, P2 reads INV, P1 writes AAA, P2 writes BBB →
+    // P2's audit says "old=INV → new=BBB" when on-disk truth was
+    // "INV → AAA → BBB"). Null on first-time bootstrap.
+    const priorSettings = await deps.tenantSettingsRepo.getForUpdateInTx(
+      tx,
+      input.tenantId,
+    );
+
     await deps.tenantSettingsRepo.upsert(input.tenantId, patch, tx);
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
@@ -147,6 +161,100 @@ export async function updateTenantInvoiceSettings(
       })`,
       payload: auditPayload,
     });
+
+    // §87 forensic trail — emit a SEPARATE event when any document-
+    // number prefix flips on a tenant that already has prior settings.
+    // First-time bootstrap (priorSettings === null) is NOT a flip —
+    // there's no "old" value to compare against.
+    if (priorSettings !== null) {
+      const changedPrefixes: Record<
+        string,
+        { old: string | null; new: string | null }
+      > = {};
+      if (
+        input.invoiceNumberPrefix !== undefined &&
+        input.invoiceNumberPrefix !== priorSettings.invoiceNumberPrefix
+      ) {
+        changedPrefixes.invoice_number_prefix = {
+          old: priorSettings.invoiceNumberPrefix,
+          new: input.invoiceNumberPrefix,
+        };
+      }
+      if (
+        input.creditNoteNumberPrefix !== undefined &&
+        input.creditNoteNumberPrefix !== priorSettings.creditNoteNumberPrefix
+      ) {
+        changedPrefixes.credit_note_number_prefix = {
+          old: priorSettings.creditNoteNumberPrefix,
+          new: input.creditNoteNumberPrefix,
+        };
+      }
+      if (
+        input.receiptNumberPrefix !== undefined &&
+        input.receiptNumberPrefix !== (priorSettings.receiptNumberPrefix ?? null)
+      ) {
+        // Round-3 fix R3-HIGH1 — preserve null fidelity. Previously
+        // `?? ''` coerced an explicit null (combined-mode = no
+        // separate receipt prefix) to empty string in the audit
+        // payload, breaking the RD auditor's ability to distinguish
+        // "explicit nullification" from "set to empty string".
+        changedPrefixes.receipt_number_prefix = {
+          old: priorSettings.receiptNumberPrefix ?? null,
+          new: input.receiptNumberPrefix ?? null,
+        };
+      }
+
+      if (Object.keys(changedPrefixes).length > 0) {
+        // Round-3 fix R3-C1 — payload now matches the migration 0145
+        // contract: includes `last_sequences` (per-doc-type last seq
+        // used under the OLD prefix, derived from
+        // `tenant_document_sequences.next_sequence_number - 1`) so
+        // the RD forensic SELECT can reconstruct "where did the old
+        // prefix stop?" without joining external tables.
+        //
+        // Round-4 fix R4-RD-H1 — `last_sequences` semantics:
+        //   - [] (empty array) ⇒ tenant has NEVER issued any document
+        //     under the old prefix (pre-issue tenant). The prefix-
+        //     change audit row is still emitted so the §87 forensic
+        //     trail captures the rename, but there is no "where did
+        //     the old prefix stop?" anchor because nothing was issued
+        //     yet.
+        //   - [{ last_sequence_number: 0, ... }] ⇒ the row exists in
+        //     `tenant_document_sequences` (lazy-allocated by the
+        //     fiscal-year init path) but no INSERT has consumed it
+        //     yet. Treat the same as "no documents issued" for the
+        //     given (document_type, fiscal_year).
+        //   - [{ last_sequence_number: N>0, ... }] ⇒ N documents have
+        //     been issued under the OLD prefix; the next document
+        //     under the NEW prefix will be sequence N+1.
+        // RD auditor SQL should LEFT JOIN this array against
+        // `audit_log` rows of type `invoice_issued` / `credit_note_issued`
+        // / `invoice_paid` to verify the boundary.
+        const sequences = await deps.tenantSettingsRepo.readSequencesInTx(
+          tx,
+          input.tenantId,
+        );
+        const lastSequences = sequences.map((s) => ({
+          document_type: s.documentType,
+          fiscal_year: s.fiscalYear,
+          last_sequence_number: Math.max(0, s.nextSequenceNumber - 1),
+        }));
+
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          eventType: 'tenant_receipt_prefix_changed',
+          actorUserId: input.actorUserId,
+          summary: `Tenant document-number prefix(es) changed: ${Object.keys(changedPrefixes).join(', ')}`,
+          payload: {
+            changed_prefixes: changedPrefixes,
+            receipt_numbering_mode:
+              input.receiptNumberingMode ?? priorSettings.receiptNumberingMode,
+            last_sequences: lastSequences,
+          },
+        });
+      }
+    }
   });
 
   return ok(undefined);

@@ -15,17 +15,20 @@
  * `refund-not-exceeding-remainder.ts`.
  *
  * Pure TypeScript — no framework/ORM imports.
+ *
+ * Branded at boundary per F5R3v2 H-5 — see commit `1203403f`.
  */
+import { asSatang, type Satang } from '@/lib/money';
 
 export interface RefundableAmountInput {
   /** Total settled amount on the Payment (`payments.amount_satang`). */
-  readonly paymentAmountSatang: bigint;
+  readonly paymentAmountSatang: Satang;
   /** Cumulative sum of `refunds.amount_satang WHERE status='succeeded'`. */
-  readonly succeededSumSatang: bigint;
+  readonly succeededSumSatang: Satang;
 }
 
 export interface RefundableAmount {
-  readonly remainingSatang: bigint;
+  readonly remainingSatang: Satang;
   readonly fullyRefunded: boolean;
 }
 
@@ -55,10 +58,12 @@ export function computeRefundableAmount(
     );
   }
   if (input.succeededSumSatang >= input.paymentAmountSatang) {
-    return { remainingSatang: 0n, fullyRefunded: true };
+    return { remainingSatang: asSatang(0n), fullyRefunded: true };
   }
   return {
-    remainingSatang: input.paymentAmountSatang - input.succeededSumSatang,
+    remainingSatang: asSatang(
+      input.paymentAmountSatang - input.succeededSumSatang,
+    ),
     fullyRefunded: false,
   };
 }

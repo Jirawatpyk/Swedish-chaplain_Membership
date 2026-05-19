@@ -34,7 +34,7 @@ test.describe('@perf T209 — admin queue DOM count + virtualization', () => {
   }) => {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     // WebKit's `waitForURL` waits for `load` event which never fires
     // in a reasonable budget under Next.js dev mode. Use URL-poll via

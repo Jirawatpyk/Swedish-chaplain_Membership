@@ -410,6 +410,75 @@ const schema = z.object({
   //   5. After 30 days, remove FALLBACK.
   // Steady state = only PRIMARY set. SECRET — redacted in logs.
   RENEWAL_LINK_TOKEN_SECRET_FALLBACK: z.string().min(32).optional().describe('SECRET — do not log'),
+
+  // --- F6 EventCreate Integration -------------------------------------------
+  // Kill-switch for F6 EventCreate Integration. When FALSE every
+  // `/api/webhooks/eventcreate/v1/**`, `/api/admin/events/**`,
+  // `/api/admin/integrations/eventcreate/**`, and the two F6 retention crons
+  // return 503/404 `feature_disabled` via the kill-switch helper. Default
+  // FALSE — F6 ships dark per `plan.md § Production gate`; flip to TRUE per
+  // tenant after (a) Zapier setup wizard complete, (b) test-webhook
+  // round-trip green, (c) maintainer co-signed security checklist.
+  //
+  // When TRUE at boot, `EVENTCREATE_PII_PSEUDONYM_SALT` MUST also be set
+  // (≥32 bytes base64). The cross-field validator below refuses to start
+  // when the flag is true but the salt is missing — this prevents the
+  // FR-032 retention sweep from running with a default/empty salt and
+  // accidentally producing non-deterministic / collidable pseudonyms.
+  FEATURE_F6_EVENTCREATE: booleanFromString.default(false),
+
+  // F6.1 sub-flag — controls the EventCreate-format CSV adapter at
+  // `src/modules/events/infrastructure/eventcreate-csv-adapter.ts`. When
+  // TRUE (default), the adapter detects EventCreate-format uploads via
+  // the presence-of-6-required-columns heuristic (FR-001 / R2) and
+  // routes them through the EventCreate column-mapping path. When
+  // FALSE, the route forces the generic-CSV path even if EventCreate
+  // signature is detected — rollback safety net per Spec § Rollback
+  // Plan (>5 admin support issues attributable to F6.1 in first 7 days
+  // post-launch triggers a flag-flip).
+  //
+  // Asymmetry note: this env-var follows the project-wide
+  // `booleanFromString` helper (accepts `"true"`/`"1"` case-insensitive
+  // trimmed). The form-field `force_proceed` in
+  // `csv-import-eventcreate-api.md` accepts a wider set (`"true"`/`"1"`
+  // /`"yes"`) for admin friendliness — intentional, do NOT harmonize.
+  FEATURE_F6_EVENTCREATE_ADAPTER: booleanFromString.default(true),
+
+  // Deterministic per-tenant pseudonymisation salt for the F6 non-member
+  // PII retention sweep (FR-032 / SC-011). The cron emits sha256(salt ||
+  // tenant_id || external_attendee_id) as the pseudonym, replacing the
+  // raw attendee name + email + company in `event_registrations` rows
+  // older than 2 years for non-member match types. Same salt MUST be
+  // used for the lifetime of the deployment — rotating it would break
+  // forensic linkage between historical pseudonyms and any subsequent
+  // re-imports.
+  //
+  // ≥32 bytes raw entropy, base64-encoded. Generate with:
+  //   openssl rand -base64 32
+  //
+  // OPTIONAL at the schema layer so dev/staging deployments without F6
+  // enabled boot cleanly. The cross-field validator below ENFORCES that
+  // the salt is set whenever `FEATURE_F6_EVENTCREATE=true`. SECRET —
+  // redacted in logs (pino redact list extended for this exact env-var
+  // name in `src/lib/logger.ts` T002).
+  EVENTCREATE_PII_PSEUDONYM_SALT: z
+    .string()
+    .min(32)
+    .optional()
+    .describe('SECRET — do not log'),
+
+  // Phase 5 review-fix W-06 (2026-05-13) — Zapier DPA execution flag.
+  // F6 attendee PII transits Zapier (US) en route from EventCreate
+  // (US) to Vercel sin1. PDPA §28 / GDPR Art. 28 require an executed
+  // Data Processing Agreement with the third-party processor (Zapier)
+  // before live attendee data flows. The DPIA outstanding-items list
+  // (`docs/compliance/dpia-template.md`) tracks the legal task; this
+  // env var is the technical backstop that refuses to boot when
+  // `FEATURE_F6_EVENTCREATE=true` is set without ZAPIER_DPA_EXECUTED
+  // = true, mirroring the `EVENTCREATE_PII_PSEUDONYM_SALT` pattern.
+  // Default false — production deployments where F6 is dark are
+  // unaffected.
+  ZAPIER_DPA_EXECUTED: booleanFromString.default(false),
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -484,6 +553,49 @@ if (raw.NODE_ENV === 'production' && raw.DEBUG_RLS_STATE) {
         'Dev/staging deployments must use sk_test_ keys to prevent accidental live charges.',
     );
   }
+}
+
+// F6: when FEATURE_F6_EVENTCREATE=true the deterministic pseudonymisation
+// salt MUST also be set so the FR-032 retention sweep produces stable,
+// non-collidable pseudonyms. The optional() at the schema layer keeps
+// dev/staging deployments boot-clean when F6 is dark; this cross-field
+// gate fails loud the moment a tenant flag-flips F6 on without providing
+// the salt — surfaces the misconfiguration at boot, not silently at the
+// first 03:00 cron pass that would write null-salt pseudonyms.
+if (raw.FEATURE_F6_EVENTCREATE && !raw.EVENTCREATE_PII_PSEUDONYM_SALT) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - EVENTCREATE_PII_PSEUDONYM_SALT must be set (≥32 bytes base64) ' +
+      'when FEATURE_F6_EVENTCREATE=true. Generate with: openssl rand -base64 32.',
+  );
+}
+
+// Phase 5 review-fix W-06 (2026-05-13) — Zapier DPA technical backstop.
+// F6 must NOT be flag-flipped to true in production until the Zapier
+// DPA has been executed (PDPA §28 / GDPR Art. 28 cross-border
+// safeguard for the US-resident processor). Once the legal team has
+// the signed agreement on file, the operator sets ZAPIER_DPA_EXECUTED
+// = true in Vercel env alongside the F6 flag flip. The boot refusal
+// fires loud rather than silently allowing un-DPA'd attendee PII to
+// transit Zapier — same posture as the pseudonym-salt guard above.
+//
+// Bypass in non-production (NODE_ENV ≠ production) is intentional so
+// local dev + staging environments can iterate on F6 without
+// requiring a DPA flag flip — but production refuses.
+if (
+  raw.NODE_ENV === 'production' &&
+  raw.FEATURE_F6_EVENTCREATE &&
+  !raw.ZAPIER_DPA_EXECUTED
+) {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - ZAPIER_DPA_EXECUTED must be true in production when ' +
+      'FEATURE_F6_EVENTCREATE=true. F6 attendee PII transits Zapier; ' +
+      'PDPA §28 / GDPR Art. 28 require an executed Data Processing ' +
+      'Agreement before live data flows. See docs/compliance/dpia-template.md ' +
+      'outstanding-items list. Set ZAPIER_DPA_EXECUTED=true in Vercel env ' +
+      'after legal counsel confirms the DPA is signed and on file.',
+  );
 }
 
 // T115t — E2E_X_TENANT_HEADER_ENABLED must NEVER be set in production.
@@ -572,6 +684,8 @@ export const env = {
     f7Broadcasts: raw.FEATURE_F7_BROADCASTS,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
+    f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
+    f6EventCreateAdapter: raw.FEATURE_F6_EVENTCREATE_ADAPTER,
   },
 
   // F4 Invoicing
@@ -617,6 +731,23 @@ export const env = {
   renewals: {
     linkTokenSecretPrimary: raw.RENEWAL_LINK_TOKEN_SECRET_PRIMARY,
     linkTokenSecretFallback: raw.RENEWAL_LINK_TOKEN_SECRET_FALLBACK ?? null,
+  },
+
+  // F6 EventCreate Integration. The salt is `null` when the F6 flag is
+  // false (allowed at boot per the cross-field validator above) and a
+  // non-empty string when the flag is true. Consumers in the retention
+  // sweep cron (`pseudonymise-stale-non-member-pii.ts`) MUST narrow
+  // before using — a runtime null-check is intentional defence-in-depth
+  // against a future contributor enabling F6 without redeploying.
+  eventcreate: {
+    piiPseudonymSalt: raw.EVENTCREATE_PII_PSEUDONYM_SALT ?? null,
+    // Phase 5 review-fix W-06 — exposed for compliance audit + DPIA
+    // automation. Consumers should NOT branch on this at request time
+    // (the boot guard already refused to start when this is false in
+    // production with F6 on). Surfaced here so a dedicated
+    // `/api/admin/health` style endpoint or a CLI helper can read the
+    // executed-DPA status without reaching back into env.ts.
+    zapierDpaExecuted: raw.ZAPIER_DPA_EXECUTED,
   },
 } as const;
 

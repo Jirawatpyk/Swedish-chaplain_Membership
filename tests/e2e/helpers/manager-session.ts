@@ -23,7 +23,8 @@ export async function signInAsManager(page: Page): Promise<void> {
   }
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), email);
-  await fillField(page.getByLabel(/password/i), password);
+  // R9.B1 / F1 PasswordInput regression — see admin-session.ts:27.
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL('**/admin', { timeout: 30_000 });
 }

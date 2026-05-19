@@ -124,7 +124,15 @@ async function openPaySheet(page: Page): Promise<void> {
   // page arrives here already on `/portal` with a valid session cookie.
   await stubInitiateEndpoint(page);
   await page.goto(`/portal/invoices/${ISSUED_INVOICE_ID!}?pay=1`);
-  await page.waitForLoadState('networkidle');
+  // F5R6+ fix — replaced `networkidle` with a deterministic
+  // pay-sheet-visible wait. Vercel analytics + Stripe.js iframe
+  // load can keep network active >30s on mobile-safari project
+  // rendering FHD viewport (3x slowdown vs native projects). The
+  // pay-sheet contract is "drawer open within reasonable time" —
+  // 15s is generous for the slowest dev-mode first-compile path.
+  await page
+    .getByTestId('pay-sheet-content')
+    .waitFor({ state: 'visible', timeout: 15_000 });
 
   const sheet = page.getByTestId('pay-sheet-content');
   await expect(sheet).toBeVisible({ timeout: 5_000 });
@@ -430,15 +438,18 @@ test.describe('PaySheet viewport + mobile layout — @payment @a11y @f5', () => 
           // `ready` on a microtask, so the real gate is the
           // useMinDelay floor.
           const submit = page.getByTestId('pay-sheet-card-submit');
-          await expect(submit).toBeVisible({ timeout: 5_000 });
+          await expect(submit).toBeVisible({ timeout: 10_000 });
+          await expect(submit).toBeEnabled({ timeout: 10_000 });
           await submit.click();
 
           // Assert the confirmation panel renders + the download CTA
           // meets the ≥ 44×44 tap-target contract (WCAG 2.5.5 /
-          // SC 2.5.8).
+          // SC 2.5.8). Bumped to 10s — the stub microtask + 300 ms
+          // min-delay + state-machine transition can race past 5 s on
+          // mobile-chrome under workers=1 load (observed flake 2026-05-17).
           await expect(
             page.getByTestId('pay-sheet-confirmation-panel'),
-          ).toBeVisible({ timeout: 5_000 });
+          ).toBeVisible({ timeout: 10_000 });
           await expectMinTapTarget(page, 'pay-sheet-download-receipt');
         });
       });

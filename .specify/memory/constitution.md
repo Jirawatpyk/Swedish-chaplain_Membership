@@ -1,6 +1,41 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.4.1 → 1.4.2  (PATCH: add canonical
+                "structured markdown co-sign footer template" pattern as
+                a Principle IX solo-maintainer-substitute precedent.
+                Triggered by F6 R10 retrospective recommendation #4
+                (T150 + T151 closure that co-signed 5 quality checklists
+                using a structured footer documenting signer + date +
+                branch HEAD + verification method + per-category
+                evidence + Constitution gate). The pattern was already
+                established via the F6 T150 (security) + T151
+                (reliability + UX + observability + integration) co-
+                signs — this amendment promotes the 5-checklist
+                precedent from convention to canonical template so
+                future feature checklists adopt it consistently.
+                Format note: markdown bullets with bold-labelled keys
+                (NOT machine-parseable YAML, despite earlier draft
+                language). PATCH bump: no principle removed,
+                renumbered, or redefined; existing rules unchanged.
+                Solo-maintainer substitute applies.)
+
+Version change: 1.4.0 → 1.4.1  (PATCH: add canonical
+                "silent-failure prevention via observable verification"
+                pattern as a Principle VIII precedent. Triggered by F6
+                R10 retrospective recommendation #3 (post-flag-flip
+                F8 live-wired verification automated via
+                `pnpm verify:f6-f8`). The pattern was already established
+                in F4 (`check:audit-events`) + F5 (`check:multi-tenant`)
+                + F6 (`verify:f6-f8`) — this amendment promotes the
+                cross-feature pattern from convention to canonical
+                precedent so future features adopt it consistently.
+                PATCH bump: no principle is removed, renumbered, or
+                redefined; existing rules unchanged. New text is a
+                "Reusable patterns" sub-section under Principle VIII
+                documenting the precedent. Solo-maintainer substitute
+                applies — no second human reviewer available.)
+
 Version change: 1.3.1 → 1.4.0  (MINOR: SaaS pivot — add explicit
                 tenant-isolation clause to Principle I NON-NEGOTIABLE for
                 multi-tenant deployments. Triggered by the 2026-04-11
@@ -101,6 +136,38 @@ History:
                          the canonical record. The default ≥2-reviewers + no-
                          direct-push rules remain unchanged for multi-maintainer
                          projects.
+  - 1.4.2 (2026-05-18) — PATCH precedent. Principle IX gains a
+                         "Co-sign footer template" sub-section
+                         documenting the canonical structured-markdown
+                         footer for solo-maintainer-substitute co-signs
+                         on quality checklists. Template enables
+                         retroactive audit (signer + date + branch
+                         HEAD + verification method + per-category
+                         evidence + Constitution gate). Format is
+                         markdown bullets with bold-labelled keys
+                         (NOT machine-parseable YAML — extendable
+                         with frontmatter later if CI aggregation
+                         needed).
+                         Precedents: F6 T150 (security 38/38) + T151
+                         (reliability 35/35 + UX 40/40 + observability
+                         39/39 + integration 35/35) all use this
+                         structure. Triggered by F6 R10 retrospective
+                         recommendation #4. PATCH bump: no principle
+                         removed, renumbered, or redefined; existing
+                         rules unchanged. Solo-maintainer substitute
+                         applies.
+  - 1.4.1 (2026-05-18) — PATCH precedent. Principle VIII gains a "Reusable
+                         pattern — silent-failure prevention via observable
+                         verification" sub-section documenting the canonical
+                         `pnpm verify:{feature}-{downstream}` script pattern
+                         for any feature that wires a critical bridge between
+                         bounded contexts behind a feature flag (F6→F8 was
+                         the surfacing precedent; F4 `check:audit-events` +
+                         F5 `check:multi-tenant` were earlier instances of
+                         the same pattern). Triggered by F6 R10 retrospective
+                         recommendation #3. No principle removed, renumbered,
+                         or redefined; existing rules unchanged. Solo-
+                         maintainer substitute applies.
   - 1.4.0 (2026-04-11) — SaaS pivot. Chamber-OS is pivoting from single-tenant
                          SweCham deployment into a multi-tenant SaaS platform
                          serving chambers of commerce and membership
@@ -469,6 +536,39 @@ The system MUST degrade gracefully and preserve data integrity.
 **Rationale**: Membership and payment systems must be trustworthy records. Audit and
 integrity controls turn incidents from mysteries into investigations.
 
+**Reusable pattern — silent-failure prevention via observable verification** (v1.4.1
+precedent): when a feature wires a critical bridge between bounded contexts behind a
+feature flag (e.g., F6 `EventAttendeesPort` for F8 at-risk scoring), the composition-
+root swap is a silent-failure surface — if it's bypassed or misconfigured, the
+downstream feature reads from the stub forever in production without any observable
+signal. Each such bridge MUST ship with an automated verification script
+`scripts/verify-{feature}-{downstream}-live-wired.ts` invocable via
+`pnpm verify:{feature}-{downstream}` that:
+
+1. Reads the feature flag from `process.env` (via the validated `env.ts` boot cache).
+2. Mirrors the composition-root selection logic (real adapter when flag-on, stub when
+   flag-off).
+3. Calls a cheap `isAvailable()` or equivalent probe on the selected port (verifies
+   the real adapter reaches the DB; verifies the stub returns false).
+4. Asserts that port behaviour matches flag state (real adapter → available; stub →
+   unavailable). Exits non-zero on mismatch with a CRITICAL diagnostic.
+
+Precedents:
+- **F4** — `pnpm check:audit-events` validates audit event-type enum vs taxonomy
+- **F5** — `pnpm check:multi-tenant` validates RLS + tenant-binding readiness
+- **F6** — `pnpm verify:f6-f8` validates the F6→F8 EventAttendeesPort wiring
+
+Run this verification:
+- LOCALLY: post any change to the composition-root swap site.
+- POST-FLAG-FLIP: as a 2-layer protocol (Layer 1 = automated script; Layer 2 =
+  seeded-data behavioural assertion via use-case invocation). Documented per
+  feature in `ship-day-checklist.md` (e.g., F6 T154a).
+
+The pattern is OPTIONAL where no cross-feature bridge exists (e.g., a feature that
+only writes within its own bounded context). Where a bridge exists, this pattern is
+MANDATORY before flag-flip — it converts a silent-failure class into an alertable
+gate.
+
 ### IX. Code Quality Standards
 
 The codebase MUST maintain strict, automated quality gates.
@@ -517,6 +617,59 @@ The codebase MUST maintain strict, automated quality gates.
   This exemption is **per-repo, not per-commit**: a solo-dev project may push
   directly throughout, but a multi-maintainer project must use PRs for every
   change. Reverts to the default rule when a second maintainer joins.
+
+**Co-sign footer template** (v1.4.2 canonical precedent for solo-maintainer
+substitute documentation): when a solo maintainer co-signs a feature's quality
+checklist (security / reliability / UX / observability / integration), the co-sign
+MUST be appended as a **structured markdown footer** at the bottom of the
+checklist file using this structure (verbatim field order; field values per-
+checklist). The format is markdown bullets with bold-labelled keys — chosen for
+human readability inside the markdown checklist file. It is NOT machine-parseable
+YAML; if CI aggregation of co-sign status is needed later, the template MAY be
+extended with a YAML frontmatter block (separate from the markdown body) per the
+`retrospective.md` precedent without changing the field semantics defined here.
+
+```yaml
+## Co-Sign Footer
+
+**T{nnn} Operator Gate — {Checklist Name} Co-Sign**
+
+- **Co-signer**: {AI maintainer identity or human name}
+- **Date**: YYYY-MM-DD
+- **Branch**: {git branch}
+- **Branch HEAD at co-sign**: `{git sha}` ({commit subject})
+- **Verification method**: {how each item was verified — e.g., read-only
+  category-by-category audit via Explore agent, automated gate, manual probe}
+- **Result**: **N/N PASS** · M DEFERRED · K N/A (+ rationale line per non-PASS)
+- **Key evidence per category**: bulleted list, one per category, each citing
+  file:line OR §FR-xxx OR commit SHA
+- **Constitution v1.4.x**: per-principle PASS/PARTIAL/N/A with 1-line rationale
+
+**Co-sign verdict**: {Checklist Name} (CHK{nnn}-CHK{mmm}) is **CO-SIGNED** [with
+N documented deferrals to F6.2 / next feature].
+
+— Signed in good faith based on {verification-method-summary}. Any future
+{class-of-regression} surfaced post-co-sign requires new round + re-sign.
+```
+
+This template enables retroactive audit of every co-sign decision: a future
+maintainer (or compliance reviewer) reading the footer can verify (a) what was
+checked, (b) how it was checked, (c) what the branch state was at co-sign time,
+(d) which Constitution principles were satisfied. The "Verification method"
+field is load-bearing — it distinguishes between "bulk sed [X] without spot-check"
+(insufficient) vs "category-by-category audit via Explore agent" (sufficient).
+
+Precedents (all F6 R10 cycle, commits `5bf7aef0` + `1add8c47` + `a51917cd`):
+- **T150** — `checklists/security.md` 38/38 PASS
+- **T151** — `checklists/reliability.md` 35/35 PASS
+- **T151** — `checklists/ux.md` 40/40 PASS
+- **T151** — `checklists/observability.md` 39/39 PASS (1 deferred → closed in same commit)
+- **T151** — `checklists/integration.md` 35/35 PASS
+
+The template is MANDATORY for any solo-maintainer-substitute co-sign of a
+quality checklist. Where ≥2 human maintainers are available, the conventional
+PR review-approval chain replaces the co-sign footer; no template is required
+in that case.
 
 **Rationale**: Automated gates catch what humans miss and keep the bar constant as the
 team grows. For solo-dev projects the default ≥2-reviewers rule creates a
@@ -727,4 +880,4 @@ Swedish law).
 - Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
   files). Those files are subordinate to this constitution.
 
-**Version**: 1.4.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-04-11
+**Version**: 1.4.2 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-05-18

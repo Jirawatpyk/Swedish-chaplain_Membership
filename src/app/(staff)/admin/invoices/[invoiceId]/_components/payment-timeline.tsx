@@ -23,7 +23,6 @@ import {
   BanknoteIcon,
   CheckCircle2Icon,
   ExternalLinkIcon,
-  InfoIcon,
   RefreshCcwIcon,
   XCircleIcon,
   XOctagonIcon,
@@ -45,7 +44,7 @@ import { getInvoicePaymentActivity } from '../_lib/cached-payment-activity';
 // detail page (settings repo, credit-note repo) — F1 has no
 // Application-layer `getStaffUser` use-case yet, and we only need a
 // read-only `userId → email` resolution for actor display.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { logger } from '@/lib/logger';
@@ -110,47 +109,50 @@ function formatTimestamp(date: Date, locale: string): string {
   });
 }
 
-function eventIcon(type: SyntheticEventType) {
-  switch (type) {
-    case 'payment_initiated':
-      return BanknoteIcon;
-    case 'payment_succeeded':
-      return CheckCircle2Icon;
-    case 'payment_failed':
-      return XCircleIcon;
-    case 'payment_canceled':
-      return XOctagonIcon;
-    case 'invoice_paid':
-      return CheckCircle2Icon;
-    case 'refund_initiated':
-      return RefreshCcwIcon;
-    case 'refund_succeeded':
-      return ArrowDownToLineIcon;
-    case 'refund_failed':
-      return XCircleIcon;
-    default:
-      return InfoIcon;
-  }
-}
+/**
+ * F5R1-S8 — record-driven event visual table. The previous two
+ * switch statements (`eventIcon` + `eventIconClass`) duplicated the
+ * 8-value SyntheticEventType key list across ~40 lines. The
+ * `Record<SyntheticEventType, ...>` shape forces compile-time
+ * exhaustiveness: if a new SyntheticEventType variant is added, the
+ * Record literal must list it OR the file fails to compile.
+ *
+ * emerald-600 + dark:emerald-400 keeps the success-icon contrast
+ * ≥ 4.5:1 in both themes (WCAG 1.4.11) — pre-fix emerald-600 alone
+ * failed dark-mode on `bg-card`.
+ */
+const EVENT_VISUAL: Record<
+  SyntheticEventType,
+  { icon: typeof BanknoteIcon; cls: string }
+> = {
+  payment_initiated: { icon: BanknoteIcon, cls: 'text-foreground' },
+  payment_succeeded: {
+    icon: CheckCircle2Icon,
+    cls: 'text-emerald-600 dark:text-emerald-400',
+  },
+  payment_failed: { icon: XCircleIcon, cls: 'text-destructive' },
+  payment_canceled: { icon: XOctagonIcon, cls: 'text-muted-foreground' },
+  invoice_paid: {
+    icon: CheckCircle2Icon,
+    cls: 'text-emerald-600 dark:text-emerald-400',
+  },
+  refund_initiated: { icon: RefreshCcwIcon, cls: 'text-foreground' },
+  refund_succeeded: {
+    icon: ArrowDownToLineIcon,
+    cls: 'text-emerald-600 dark:text-emerald-400',
+  },
+  refund_failed: { icon: XCircleIcon, cls: 'text-destructive' },
+};
 
-function eventIconClass(type: SyntheticEventType): string {
-  switch (type) {
-    case 'payment_succeeded':
-    case 'invoice_paid':
-    case 'refund_succeeded':
-      // Verify-fix U-I2 (2026-04-26): emerald-600 alone fails dark-mode
-      // contrast on `bg-card` — paired with `dark:text-emerald-400` so
-      // the success icon stays ≥ 4.5:1 in both themes (WCAG 1.4.11).
-      return 'text-emerald-600 dark:text-emerald-400';
-    case 'payment_failed':
-    case 'refund_failed':
-      return 'text-destructive';
-    case 'payment_canceled':
-      return 'text-muted-foreground';
-    default:
-      return 'text-foreground';
-  }
-}
+// F5R3 SIMPLIFY-H4 (2026-05-16) — `eventIcon` + `eventIconClass`
+// helpers deleted. `EVENT_VISUAL` is `Record<SyntheticEventType, …>`
+// so `EVENT_VISUAL[event.type]` is non-nullable at the type level —
+// the `?? InfoIcon` / `?? 'text-foreground'` fallbacks were dead
+// code that misled readers into thinking a new SyntheticEventType
+// variant could compile without updating EVENT_VISUAL. Record<T,V>
+// exhaustiveness already prevents that. Call sites now inline
+// `const visual = EVENT_VISUAL[event.type]` then read `visual.icon`
+// + `visual.cls` directly.
 
 function buildStripeDashboardUrl(
   environment: 'test' | 'live',
@@ -377,7 +379,7 @@ export async function PaymentTimeline({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        {/* T099 — processor charge id chip + copy + dashboard link.
+        {/* processor charge id chip + copy + dashboard link.
             Hidden when no succeeded payment exists. */}
         {processorRef && dashboardUrl && latestSucceeded && (
           // Verify-fix S8 (2026-04-26): on narrow viewports (<sm) the chip
@@ -426,7 +428,7 @@ export async function PaymentTimeline({
           </div>
         )}
 
-        {/* T098 — empty state.
+        {/* empty state.
             Verify-fix S4 (2026-04-26): admin viewers get a secondary
             "Record payment manually" CTA when the invoice is still
             `issued` — it's the most likely next action when no online
@@ -437,24 +439,49 @@ export async function PaymentTimeline({
               className="size-12 text-muted-foreground"
               aria-hidden="true"
             />
-            <p className="text-sm font-medium">{t('empty.title')}</p>
-            <p className="text-xs text-muted-foreground max-w-md">
-              {t('empty.body')}
-            </p>
-            {isAdmin && invoiceStatus === 'issued' && (
-              <a
-                href={`/admin/invoices/${invoiceId}#record-payment`}
-                data-testid="empty-state-record-payment-link"
-                className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
-              >
-                {t('empty.recordManualLink')}
-              </a>
+            {/* F5R1-UX4 — distinguish two empty-state semantics:
+                  (a) Invoice not paid yet (issued/overdue) — current
+                      copy "no online payment activity yet" + record-
+                      manually CTA. Bookkeeper expects this when they
+                      first issue an invoice.
+                  (b) Invoice paid via manual record (cash, bank xfer,
+                      cheque) — no F5 events were emitted (manual
+                      record-payment bypasses the F5 webhook pipeline).
+                      Previously the timeline showed the "no online
+                      payment activity yet" copy here, suggesting the
+                      record-payment action had silently failed. Show
+                      a paid-manually copy instead so the bookkeeper
+                      sees the action took effect. */}
+            {invoicePaidAt !== null ? (
+              <>
+                <p className="text-sm font-medium">{t('emptyPaidManual.title')}</p>
+                <p className="text-xs text-muted-foreground max-w-md">
+                  {t('emptyPaidManual.body')}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">{t('empty.title')}</p>
+                <p className="text-xs text-muted-foreground max-w-md">
+                  {t('empty.body')}
+                </p>
+                {isAdmin && invoiceStatus === 'issued' && (
+                  <a
+                    href={`/admin/invoices/${invoiceId}#record-payment`}
+                    data-testid="empty-state-record-payment-link"
+                    className="text-sm font-medium text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+                  >
+                    {t('empty.recordManualLink')}
+                  </a>
+                )}
+              </>
             )}
           </div>
         ) : (
           <ol className="flex flex-col gap-3">
             {events.map((event) => {
-              const Icon = eventIcon(event.type);
+              const visual = EVENT_VISUAL[event.type];
+              const Icon = visual.icon;
               return (
                 <li
                   key={event.id}
@@ -462,7 +489,7 @@ export async function PaymentTimeline({
                   className="flex items-start gap-3 rounded-md border bg-card px-3 py-2.5"
                 >
                   <Icon
-                    className={`mt-0.5 size-4 shrink-0 ${eventIconClass(event.type)}`}
+                    className={`mt-0.5 size-4 shrink-0 ${visual.cls}`}
                     aria-hidden="true"
                   />
                   <div className="flex-1 text-sm">

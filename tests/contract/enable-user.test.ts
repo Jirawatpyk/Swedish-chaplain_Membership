@@ -116,4 +116,18 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
     const body = await res.json();
     expect(body.error).toBe('not-disabled');
   });
+
+  // N4 (Round 3) — B3 outer try/catch.
+  it('500 with requestId when enable-user throws (infra error)', async () => {
+    const { assertRoute500WithRequestId } = await import(
+      './_helpers/assert-route-500'
+    );
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    enableUserMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
+
+    const { POST } = await import('@/app/api/auth/users/[id]/enable/route');
+    const res = await POST(makeRequest(), { params: routeParams });
+
+    await assertRoute500WithRequestId(res);
+  });
 });

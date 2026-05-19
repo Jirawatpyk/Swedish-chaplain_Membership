@@ -1,0 +1,11 @@
+
+> swecham-membership@0.1.0 typecheck C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsc --noEmit
+
+scripts/cleanup-orphan-receipts.ts(51,25): error TS2532: Object is possibly 'undefined'.
+scripts/cleanup-orphan-receipts.ts(81,47): error TS2532: Object is possibly 'undefined'.
+scripts/debug-f6-missing-6.ts(68,39): error TS18048: 'evt' is possibly 'undefined'.
+scripts/debug-f6-missing-6.ts(69,36): error TS18048: 'evt' is possibly 'undefined'.
+scripts/debug-f6-missing-6.ts(71,14): error TS18048: 'evt' is possibly 'undefined'.
+scripts/debug-f6-missing-6.ts(73,26): error TS18048: 'evt' is possibly 'undefined'.
+ ELIFECYCLE  Command failed with exit code 2.

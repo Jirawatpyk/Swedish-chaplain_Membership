@@ -69,6 +69,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       updatePreferredLocaleInTx: vi.fn(),
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
+    findPendingInvitationsForMember: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

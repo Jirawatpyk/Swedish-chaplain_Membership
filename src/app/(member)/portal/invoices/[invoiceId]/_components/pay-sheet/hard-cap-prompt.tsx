@@ -43,7 +43,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
   const t = useTranslations('portal.payment.hardCap');
   // WCAG 2.4.3 Focus Order: alertdialog must receive focus on mount so
   // keyboard + SR users land on the decision target without a stray
-  // Tab press (audit 2026-04-25 finding #14).
+  // Tab press.
   const continueButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     continueButtonRef.current?.focus();
@@ -60,7 +60,7 @@ export function HardCapPrompt({ onContinue, onCancel }: HardCapPromptProps) {
 
   return (
     <section
-      // R3 I-10: this <section> renders INSIDE Radix <Sheet> (which
+      // this <section> renders INSIDE Radix <Sheet> (which
       // already provides role="dialog" + aria-modal). Nesting another
       // alertdialog caused JAWS/NVDA to announce "dialog dialog" on
       // mount. Demote to role="alert" — the Sheet is the modality

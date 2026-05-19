@@ -1,14 +1,11 @@
 /**
- * T055 + R7-B1 — GET /api/invoices/[invoiceId]/pdf.
+ * GET /api/invoices/[invoiceId]/pdf — admin-scope invoice PDF download.
  *
- * Historically this route 307-redirected to a public Vercel Blob URL.
- * That URL is stable + permanent + untokenized — any capture (browser
- * history, email forwarding, corp SWG, proxy logs, screenshot) grants
- * anonymous access to financial PII for the life of the Blob.
- *
- * B1 fix: stream the PDF bytes THROUGH this route. The Blob URL is
- * never emitted to the client; only server-to-Blob traffic is via
- * the URL. Clients see `Content-Disposition: attachment` + the bytes.
+ * Bytes are proxied through this route (R7-B1) so the signed Vercel
+ * Blob URL never leaves the server; capture (history, email forward,
+ * proxy log) cannot grant permanent untokenised access. R10-S1
+ * extracted the fetch+stream stage to `streamPdfFromBlob` which adds
+ * a 15s abort timeout (R10-E1) and is shared across all 6 PDF routes.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdminContext } from '@/lib/admin-context';
@@ -16,7 +13,8 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getInvoicePdfSignedUrl, makeGetInvoicePdfSignedUrlDeps } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
-import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
+import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
 export async function GET(
   request: NextRequest,
@@ -28,16 +26,32 @@ export async function GET(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
-  const result = await getInvoicePdfSignedUrl(
-    makeGetInvoicePdfSignedUrlDeps(tenantCtx.slug),
-    {
-      tenantId: tenantCtx.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role,
-      requestId,
-      invoiceId,
-    },
-  );
+  // The use-case emits an audit event on success; if `audit.emit`
+  // throws (Neon transient, RLS constraint), the use-case rejects.
+  // Map that to a structured 500 instead of letting the throw crash
+  // the Next.js worker (parity with the receipt PDF route).
+  let result: Awaited<ReturnType<typeof getInvoicePdfSignedUrl>>;
+  try {
+    result = await getInvoicePdfSignedUrl(
+      makeGetInvoicePdfSignedUrlDeps(tenantCtx.slug),
+      {
+        tenantId: tenantCtx.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: ctx.current.user.role,
+        requestId,
+        invoiceId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
+      'GET /api/invoices/[id]/pdf — getInvoicePdfSignedUrl threw',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     logger.warn(
       {
@@ -45,67 +59,27 @@ export async function GET(
         tenantId: tenantCtx.slug,
         invoiceId,
         errorCode: result.error.code,
+        // Surface the missing blob key so operators triaging
+        // "Invoice PDF unavailable" toasts can locate the orphaned
+        // object in Vercel Blob without joining back to the invoice row.
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
       },
       'GET /api/invoices/[id]/pdf failed',
     );
-    // R7-S5 — distinct status codes for distinct causes so operators
-    // can telemetry-split "missing on Blob" from "access denied".
-    const status =
-      result.error.code === 'invoice_not_found'
-        ? 404
-        : result.error.code === 'blob_missing'
-          ? 502
-          : 403;
-    return NextResponse.json({ error: { code: result.error.code } }, { status });
-  }
-
-  // R7-B1 — server-side fetch of the Blob URL. The signed URL (still
-  // a stable public URL in the current @vercel/blob SDK) is used only
-  // to read bytes on the server; it never leaves this process.
-  let blobResponse: Response;
-  try {
-    blobResponse = await fetch(result.value.url);
-  } catch (err) {
-    logger.error(
-      { requestId, tenantId: tenantCtx.slug, invoiceId, err },
-      'GET /api/invoices/[id]/pdf — blob fetch failed',
-    );
+    // Distinct status codes for distinct causes so operators can
+    // telemetry-split "missing on Blob" from "access denied".
     return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
-    );
-  }
-  if (!blobResponse.ok || !blobResponse.body) {
-    logger.error(
-      {
-        requestId,
-        tenantId: tenantCtx.slug,
-        invoiceId,
-        blobStatus: blobResponse.status,
-      },
-      'GET /api/invoices/[id]/pdf — blob upstream non-OK',
-    );
-    return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
+      { error: { code: result.error.code } },
+      { status: pdfRouteErrorStatus(result.error.code) },
     );
   }
 
-  // RFC 6266-compliant Content-Disposition — shared helper applies
-  // CR/LF + quote + non-ASCII sanitisation (T121).
-  const raw = result.value.filename;
-  const contentDisposition = buildAttachmentContentDisposition(raw);
-  const contentLength = blobResponse.headers.get('content-length');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': contentDisposition,
-    'Cache-Control': 'no-store',
-    // Signal to middleboxes that the response is opaque to content
-    // sniffing — browsers should not reinterpret the bytes.
-    'X-Content-Type-Options': 'nosniff',
-  };
-  if (contentLength) headers['Content-Length'] = contentLength;
-
-  return new NextResponse(blobResponse.body, { status: 200, headers });
+  return streamPdfFromBlob({
+    url: result.value.url,
+    filename: result.value.filename,
+    logContext: { requestId, tenantId: tenantCtx.slug, invoiceId },
+    route: '/api/invoices/[id]/pdf',
+  });
 }

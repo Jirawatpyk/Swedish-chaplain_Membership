@@ -4,16 +4,17 @@
  * Maps the Result union from `resetPassword()` to HTTP status codes:
  *   200 — { ok: true, signInUrl }
  *   400 — invalid-input / weak-password
- *   404/410 — link-invalid (single public slug — no leak between the
- *           three underlying reasons: missing, expired, used)
+ *   410 — link-invalid (uniform Gone status across all reasons —
+ *         missing/expired/used — per B1 enumeration safety)
  *   429 — rate-limited (with Retry-After)
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { resetPassword, asTokenId } from '@/modules/auth';
+import { resetPassword, parseResetTokenId } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
+import { parseTokenOrLinkInvalid } from '@/lib/auth-route-helpers';
 
 const inputSchema = z.object({
   token: z.string().min(32).max(128),
@@ -22,8 +23,9 @@ const inputSchema = z.object({
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
-
-  let payload: unknown;
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
+  try {
+    let payload: unknown;
   try {
     payload = await request.json();
   } catch {
@@ -41,8 +43,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // I3 (Round 2) + O3 (Round 3) — parse-or-link-invalid via shared
+  // helper. Validates 64-hex at the trust boundary so a malformed URL
+  // gets a uniform 410 link-invalid instead of silently never matching
+  // in the repo sha256Hex lookup.
+  const parsedTokenResult = parseTokenOrLinkInvalid(
+    parseResetTokenId,
+    parsed.data.token,
+    { requestId, routeName: 'reset-password' },
+  );
+  if (parsedTokenResult.kind === 'link-invalid') return parsedTokenResult.response;
+
   const result = await resetPassword({
-    token: asTokenId(parsed.data.token),
+    token: parsedTokenResult.value,
     newPassword: parsed.data.newPassword,
     sourceIp: getClientIp(request),
     requestId,
@@ -58,16 +71,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { error } = result;
   switch (error.code) {
     case 'link-invalid': {
-      // The public body is intentionally uniform across the three
-      // reasons (missing / expired / used) — the route MUST NOT leak
-      // which bucket a given token fell into, so the JSON body carries
-      // only `link-invalid`. HTTP status, however, does distinguish:
-      //   - 404 when the token id is simply not in the DB
-      //   - 410 Gone when a token that DID exist is now expired or used
-      // auth-api.md § 4 documents this split for clients / crawlers
-      // that want a machine-readable hint about retryability.
-      const status = error.reason === 'not-found' ? 404 : 410;
-      return NextResponse.json({ error: 'link-invalid' }, { status });
+      // B1 (post-ship 2026-05-17) — collapsed 404/410 split to a uniform
+      // 410 Gone. The previous split (404=not-found, 410=expired|used)
+      // re-introduced enumeration leakage at the status-code layer:
+      // an attacker submitting random 64-hex strings could probe which
+      // prefixes match real issued tokens by counting 404 vs 410. No
+      // legitimate client benefits from distinguishing (the UI shows
+      // the same "request a new link" either way). Internal logs +
+      // metrics still discriminate via `error.reason`.
+      logger.warn(
+        { requestId, reason: error.reason },
+        'reset-password.link-invalid',
+      );
+      return NextResponse.json({ error: 'link-invalid' }, { status: 410 });
     }
     case 'weak-password':
       return NextResponse.json(
@@ -89,5 +105,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       logger.error({ requestId }, 'reset-password: unhandled error variant');
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
+  }
+  } catch (error) {
+    logger.error({ err: error, requestId }, 'reset-password.infra-error');
+    return NextResponse.json(
+      { error: 'server-error', requestId },
+      { status: 500 },
+    );
   }
 }

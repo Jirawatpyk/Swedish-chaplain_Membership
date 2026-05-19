@@ -30,7 +30,7 @@ vi.mock('@/lib/auth-deps', () => ({
 import { signIn, expectedPortal } from '@/modules/auth/application/sign-in';
 import type { SignInDeps } from '@/modules/auth/application/sign-in';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import { asUserId, asEmailAddress, asPasswordHash, asSessionId } from '@/modules/auth/domain/branded';
+import { asUserId, asEmailAddress, asPasswordHash, asSessionToken } from '@/modules/auth/domain/branded';
 import type { Session } from '@/modules/auth/domain/session';
 import { authMetrics } from '@/lib/metrics';
 
@@ -40,7 +40,7 @@ import { authMetrics } from '@/lib/metrics';
 
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-abc-123');
-const SESSION_ID = asSessionId('sess-xyz-456');
+const SESSION_ID = asSessionToken('sess-xyz-456');
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
   return {
@@ -569,5 +569,100 @@ describe('signIn use case', () => {
     });
     const result = await signIn({ ...BASE_INPUT, portal: 'staff' }, deps);
     expect(result.ok).toBe(true);
+  });
+
+  // ── G3 (Round 2): MalformedHashError branch ─────────────────────────────
+  // When the stored hash is corrupted, sign-in MUST:
+  //   1. NOT increment failedSignInCount (the user did not type wrong)
+  //   2. NOT setLocked (DB corruption is not credential brute-force)
+  //   3. Emit password_malformed_hash_detected audit (operator signal)
+  //   4. Return invalid-credentials (UX consistent with wrong-password)
+  // Pre-B4 the malformed-hash error was swallowed to false and the
+  // flow locked the legitimate user out — covered by this pin.
+  it('MalformedHashError: skips lockout + emits dedicated audit + returns invalid-credentials', async () => {
+    const { MalformedHashError } = await import(
+      '@/modules/auth/infrastructure/password/argon2-hasher'
+    );
+    const targetUser = makeUser({ role: 'admin', failedSignInCount: 0 });
+    const incrementSpy = vi.fn().mockResolvedValue(1);
+    const setLockedSpy = vi.fn().mockResolvedValue(undefined);
+    const auditSpy = vi.fn().mockResolvedValue(undefined);
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi
+          .fn()
+          .mockResolvedValue({ user: targetUser, passwordHash: PASS_HASH }),
+        incrementFailedCount: incrementSpy,
+        setLocked: setLockedSpy,
+        clearFailedCount: vi.fn(),
+        updateLastSignIn: vi.fn(),
+      } as unknown as SignInDeps['users'],
+      hasher: {
+        verify: vi.fn().mockRejectedValue(
+          new MalformedHashError(new Error('argon2: invalid encoded hash')),
+        ),
+        verifyDummy: vi.fn().mockResolvedValue(undefined),
+        hash: vi.fn(),
+      } as unknown as SignInDeps['hasher'],
+      audit: { append: auditSpy } as unknown as SignInDeps['audit'],
+    });
+
+    const result = await signIn(BASE_INPUT, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invalid-credentials');
+
+    // NO lockout path executed
+    expect(incrementSpy).not.toHaveBeenCalled();
+    expect(setLockedSpy).not.toHaveBeenCalled();
+
+    // O6 (Round 3) — verifyDummy MUST NOT be called either. The
+    // malformed-hash branch is purely a peek-detect-and-skip path:
+    // we already KNOW the user exists (we just loaded their row)
+    // and the hash is broken, so spending the argon2 cost to feign
+    // a constant-time path is pointless + slows the request.
+    const hasherMock = deps.hasher as unknown as {
+      verifyDummy: ReturnType<typeof vi.fn>;
+    };
+    expect(hasherMock.verifyDummy).not.toHaveBeenCalled();
+
+    // Dedicated audit event emitted
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'password_malformed_hash_detected',
+        actorUserId: targetUser.id,
+        targetUserId: targetUser.id,
+        // O6 (Round 3) — pin that the summary surfaces the
+        // operator-relevant signal so an alert on "malformed" in
+        // the audit_log.summary column reliably fires.
+        summary: expect.stringContaining('malformed'),
+      }),
+    );
+  });
+
+  it('MalformedHashError: re-throws non-malformed verify errors', async () => {
+    const targetUser = makeUser({ role: 'admin' });
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi
+          .fn()
+          .mockResolvedValue({ user: targetUser, passwordHash: PASS_HASH }),
+        incrementFailedCount: vi.fn(),
+        clearFailedCount: vi.fn(),
+        updateLastSignIn: vi.fn(),
+      } as unknown as SignInDeps['users'],
+      hasher: {
+        verify: vi
+          .fn()
+          .mockRejectedValue(new Error('argon2: native module crashed')),
+        verifyDummy: vi.fn().mockResolvedValue(undefined),
+        hash: vi.fn(),
+      } as unknown as SignInDeps['hasher'],
+    });
+
+    await expect(signIn(BASE_INPUT, deps)).rejects.toThrow(
+      'argon2: native module crashed',
+    );
   });
 });

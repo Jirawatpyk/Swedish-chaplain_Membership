@@ -27,10 +27,17 @@ describe('argon2Hasher', () => {
     await expect(argon2Hasher.verify(hashed, 'wrongpassword')).resolves.toBe(false);
   });
 
-  it('verify returns false (does not throw) on a malformed hash string', async () => {
+  // B4 (post-ship 2026-05-17) — promoted malformed-hash to a typed
+  // throw so sign-in can route the user to a dedicated audit event +
+  // skip the failedSignInCount/lockout path. Pre-B4 this returned
+  // false silently, conflating DB corruption with wrong-password.
+  it('verify throws MalformedHashError on a malformed hash string', async () => {
+    const { MalformedHashError } = await import(
+      '@/modules/auth/infrastructure/password/argon2-hasher'
+    );
     await expect(
       argon2Hasher.verify(asPasswordHash('not-a-real-hash'), 'anything'),
-    ).resolves.toBe(false);
+    ).rejects.toBeInstanceOf(MalformedHashError);
   });
 
   it('verifyDummy resolves without throwing for any input', async () => {

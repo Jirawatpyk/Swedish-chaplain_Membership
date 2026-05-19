@@ -1,0 +1,3 @@
+> tsx scripts/check-i18n-coverage.ts
+
+[check:i18n] OK — 2902 keys present in all 3 locales (+ F5 decline-reasons parity verified)

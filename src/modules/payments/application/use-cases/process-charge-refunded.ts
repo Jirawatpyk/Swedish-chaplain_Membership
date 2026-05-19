@@ -49,6 +49,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type {
   AuditPort,
   ClockPort,
+  LoggerPort,
   PaymentsRepo,
   ProcessorEventsRepo,
   RefundsRepo,
@@ -70,6 +71,17 @@ export interface ProcessChargeRefundedInput {
   readonly refundIds: readonly string[];
   /** Charge amount in satang (`event.data.object.amount` projected by adapter). */
   readonly amountSatang: bigint;
+  /**
+   * F5R3v3 H-4 (2026-05-16) — `true` iff the webhook verifier's
+   * defensive amount projection (C-1) failed for THIS event. When
+   * true, `amountSatang` is the `?? 0n` default and MUST NOT be
+   * compared against existing refund rows — doing so would flag
+   * EVERY pending refund (existing > 0) as
+   * `refund_amount_mismatch_detected`, creating an audit storm on a
+   * single fuzzed/drifted webhook. Skip the mismatch comparison
+   * entirely; out-of-band sweep cron reconciles.
+   */
+  readonly amountProjectionFailed?: boolean;
   /**
    * Stripe `event.livemode` projected to processor-env label. Powers the
    * T141 `out_of_band_refund_rejected_total{tenant, processor_env}`
@@ -120,6 +132,14 @@ export interface ProcessChargeRefundedDeps {
    * Constitution Principle III determinism.
    */
   readonly clock: ClockPort;
+  /**
+   * F5R3 SB-1 (2026-05-16) — optional logger for the
+   * parent_status_recovery race-warn (concurrent writer flipped the
+   * parent before this branch could). Optional so existing test
+   * scaffolding without a logger still compiles; production
+   * composition root threads the real pino logger.
+   */
+  readonly logger?: LoggerPort;
 }
 
 export async function processChargeRefunded(
@@ -136,6 +156,20 @@ export async function processChargeRefunded(
   // charge → same PaymentIntent → same invoice, so reading the first
   // DB-existing refund is sufficient.
   let refundedInvoiceId: string | undefined;
+  // F5R3 H-3 (2026-05-16) — schema-drift detection: Stripe's
+  // `charge.refunded` event ALWAYS carries at least one refund per the
+  // API contract. Receiving zero refundIds means the webhook-verifier
+  // projection drifted (Stripe API changed, fixture malformed, etc.).
+  // Pre-fix the for-loop just silently no-op'd → markProcessed → 200
+  // ack → no forensic signal. Now we bump a counter so SRE alerts on
+  // sustained empty-payload rate. Still mark processed (Stripe stops
+  // retrying) but the schema drift is no longer invisible.
+  if (input.refundIds.length === 0) {
+    paymentsMetrics.webhookDuplicateIgnored(
+      input.tenantId,
+      'charge.refunded.empty_refund_ids',
+    );
+  }
   try {
     await deps.paymentsRepo.withTx(async (tx) => {
       for (const refundId of input.refundIds) {
@@ -147,6 +181,26 @@ export async function processChargeRefunded(
         if (existing && refundedInvoiceId === undefined) {
           refundedInvoiceId = existing.invoiceId;
         }
+        // F5R3 H-3 (2026-05-16) — already-finalised idempotent path:
+        // Stripe re-delivered a `charge.refunded` for a refund that
+        // our DB has already marked `succeeded` or `failed` (e.g.
+        // issueRefund's Phase B happy-path landed BEFORE this
+        // webhook arrived, or Stripe re-sent due to its own retry
+        // logic). Pre-fix this was a silent no-op — chronic
+        // duplicate deliveries from Stripe clock-drift or webhook
+        // misconfiguration were invisible. Bump the duplicate
+        // counter with a granular event_type so SRE can alert on
+        // sustained high duplicate rate (>0.1% of `charge.refunded`
+        // throughput = re-delivery anomaly worth paging).
+        if (
+          existing &&
+          (existing.status === 'succeeded' || existing.status === 'failed')
+        ) {
+          paymentsMetrics.webhookDuplicateIgnored(
+            input.tenantId,
+            'charge.refunded.already_finalised',
+          );
+        }
         // H-1 (review 2026-04-27): if `issueRefund`'s Phase B
         // double-faulted, the in-app row stays `pending` and the
         // webhook is the natural reconciliation point — flip it to
@@ -156,6 +210,61 @@ export async function processChargeRefunded(
         // a concurrent writer that already finalised the row to
         // `succeeded`/`failed` is left alone (idempotent webhook).
         if (existing && existing.status === 'pending') {
+          // F5R1-E13 (partial fix) — sanity-check the DB refund amount
+          // against the Stripe charge's TOTAL refunded amount. If the
+          // DB row's amount exceeds the total Stripe-confirmed on this
+          // charge, the DB and Stripe have diverged (e.g. admin edited
+          // the refund via Stripe Dashboard, or partial-update bug).
+          // Flag it loudly and SKIP the flip so an admin can reconcile.
+          //
+          // FULL per-refund amount invariance requires extending the
+          // webhook-verifier projection to emit `refunds.data[i].amount`
+          // per refund id (currently only `refundIds: string[]` + total
+          // `amountSatang`). Tracked as R2 follow-up — see
+          // `specs/009-online-payment/r10-carryover-from-f4.md` and
+          // F5R1 review report.
+          // F5R3v3 H-4 (2026-05-16) — skip mismatch comparison when
+          // the verifier flagged the amount projection as failed
+          // (input.amountSatang is the `?? 0n` default, not a real
+          // value). Pre-fix every existing > 0 tripped the mismatch
+          // branch → audit storm on a single fuzzed event. Sweep
+          // cron reconciles the actual amount out of band.
+          if (
+            !input.amountProjectionFailed &&
+            existing.amountSatang > input.amountSatang
+          ) {
+            // F5R2-SF-6 — dedicated `refund_amount_mismatch_detected`
+            // event type (migration 0151) replaces the F5R1-E13
+            // partial-fix that bucketed amount-mismatches under the
+            // generic `out_of_band_refund_detected`. Operator
+            // dashboards filtering for genuine OOB refunds (admin-via-
+            // Stripe-Dashboard) now get a clean signal; the divergence
+            // class has its own SRE alert pivot.
+            await deps.audit.emit(tx, {
+              tenantId: input.tenantId,
+              requestId: input.requestId,
+              eventType: 'refund_amount_mismatch_detected',
+              actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+              summary: `Refund amount mismatch: DB row ${existing.id} amount ${existing.amountSatang} satang exceeds Stripe charge total refunded ${input.amountSatang} satang — admin must reconcile`,
+              payload: {
+                refund_id: existing.id,
+                // existing.paymentId is the FK on the refund row to
+                // its parent payment — the typed audit payload uses
+                // string (not branded) since this is downstream of
+                // the Domain boundary.
+                payment_id: existing.paymentId,
+                db_amount_satang: existing.amountSatang.toString(),
+                stripe_amount_satang: input.amountSatang.toString(),
+                runbook_url: RUNBOOK_URL,
+              },
+              retentionYears: retentionFor('refund_amount_mismatch_detected'),
+            });
+            paymentsMetrics.outOfBandRefundRejected(
+              input.tenantId,
+              input.processorEnv,
+            );
+            continue;
+          }
           await deps.refundsRepo.updateStatus(tx, {
             refundId: existing.id,
             tenantId: input.tenantId,
@@ -164,6 +273,63 @@ export async function processChargeRefunded(
             completedAt: new Date(deps.clock.nowMs()),
             expectedCurrentStatus: 'pending',
           });
+          // F5R3 SB-1 (2026-05-16) — flip the parent Payment.status too.
+          // The original webhook-recovery path only updated the refund row
+          // and left Payment.status drifted (still 'succeeded' even though
+          // a refund was now succeeded). issueRefund's Phase B happy-path
+          // updates BOTH atomically (issue-refund.ts:475-480) — a
+          // double-fault that drops Phase B and lands here MUST mirror
+          // the same parent-payment update or SC-013 ("succeeded payment
+          // maps cleanly to invoice-paid/refunded states") silently
+          // breaks. Read the new succeededSum + payment row, derive
+          // next status, update with `expectedCurrentStatus` race-guard.
+          const ctx = await deps.refundsRepo.getRefundContextForUpdate(
+            tx,
+            input.tenantId,
+            existing.paymentId,
+          );
+          const parent = await deps.paymentsRepo.lockForUpdate(
+            tx,
+            existing.paymentId,
+            input.tenantId,
+          );
+          let parentRecoveredTo: 'partially_refunded' | 'refunded' | null = null;
+          if (
+            parent != null &&
+            (parent.status === 'succeeded' ||
+              parent.status === 'partially_refunded')
+          ) {
+            const isFullyRefunded =
+              ctx.succeededSumSatang >= parent.amountSatang;
+            const nextPaymentStatus: 'partially_refunded' | 'refunded' =
+              isFullyRefunded ? 'refunded' : 'partially_refunded';
+            if (parent.status !== nextPaymentStatus) {
+              const updated = await deps.paymentsRepo.updateStatus(tx, {
+                paymentId: existing.paymentId,
+                tenantId: input.tenantId,
+                nextStatus: nextPaymentStatus,
+                expectedCurrentStatus: parent.status,
+                completedAt: new Date(deps.clock.nowMs()),
+              });
+              if (updated !== null) {
+                parentRecoveredTo = nextPaymentStatus;
+              } else {
+                // expectedCurrentStatus race — concurrent writer flipped
+                // the parent before we could; refund row is fine, parent
+                // status was set by someone else. Silent no-op (idempotent).
+                deps.logger?.warn(
+                  'process_charge_refunded.parent_status_recovery_race',
+                  {
+                    tenantId: input.tenantId,
+                    paymentId: existing.paymentId,
+                    refundId: existing.id,
+                    expectedStatus: parent.status,
+                    attemptedNextStatus: nextPaymentStatus,
+                  },
+                );
+              }
+            }
+          }
           await deps.audit.emit(tx, {
             tenantId: input.tenantId,
             requestId: input.requestId,
@@ -176,6 +342,7 @@ export async function processChargeRefunded(
               processor_refund_id: refundId,
               processor_charge_id: input.chargeId,
               recovery_path: 'webhook_charge_refunded',
+              parent_payment_status_recovered_to: parentRecoveredTo,
             },
             retentionYears: retentionFor('refund_succeeded'),
           });

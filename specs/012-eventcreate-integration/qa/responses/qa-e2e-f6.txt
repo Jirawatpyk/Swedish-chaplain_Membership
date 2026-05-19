@@ -1,0 +1,10 @@
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results\csv-mapping-remap-F6-1-A-C-59225-eaders-and-completes-import-chromium-retry2\video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\csv-mapping-remap-F6-1-A-C-59225-eaders-and-completes-import-chromium-retry2\error-context.md
+
+  1 failed
+    [chromium] › tests\e2e\csv-mapping-remap.spec.ts:42:7 › F6.1-A CSV remap — non-canonical header admin flow › admin remaps non-canonical CSV headers and completes import 
+ ELIFECYCLE  Command failed with exit code 1.

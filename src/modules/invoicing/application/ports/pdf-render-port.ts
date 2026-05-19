@@ -64,6 +64,20 @@ export interface PdfRenderInput {
       readonly total: Money;
     }>;
   } | null;
+  /**
+   * Tenant logo bytes — render-time-only (NOT persisted on the
+   * invoice snapshot). When set, the template renders the logo above
+   * the tenant identity block. Loaded from Blob by `loadTenantLogo`
+   * using the `logo_blob_key` from the tenant identity snapshot.
+   *
+   * Determinism: bytes are stable (immutable Blob object) → same input
+   * → same seed → byte-identical re-render. The deterministic-render
+   * replacer hashes Uint8Array values to keep the seed-input compact.
+   */
+  readonly tenantLogo?: {
+    readonly bytes: Uint8Array;
+    readonly format: 'png' | 'jpg';
+  } | null;
 }
 
 export interface PdfRenderResult {

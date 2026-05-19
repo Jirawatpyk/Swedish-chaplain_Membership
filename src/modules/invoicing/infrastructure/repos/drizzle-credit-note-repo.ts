@@ -7,6 +7,7 @@
  * filter.
  */
 import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
+import { asSatang } from '@/lib/money';
 import type { CreditNoteRepo } from '../../application/ports/credit-note-repo';
 import {
   asCreditNoteId,
@@ -319,7 +320,7 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
         readonly originalInvoiceId: string;
         readonly originalInvoiceNumberRaw: string | null;
         readonly memberLegalName: string;
-        readonly totalSatang: bigint;
+        readonly totalSatang: import('@/lib/money').Satang;
         readonly reason: string;
       }[];
       readonly total: number;
@@ -387,7 +388,8 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
             originalInvoiceId: r.originalInvoiceId,
             originalInvoiceNumberRaw: r.originalInvoiceNumberRaw,
             memberLegalName: snap?.legal_name ?? '—',
-            totalSatang: BigInt(r.totalSatang as unknown as string),
+            // F5R3 H-5 (2026-05-16) — brand at DB→Domain boundary.
+            totalSatang: asSatang(BigInt(r.totalSatang as unknown as string)),
             reason: r.reason,
           };
         });

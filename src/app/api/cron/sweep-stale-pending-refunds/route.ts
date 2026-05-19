@@ -23,8 +23,9 @@
  * not block the rest.
  *
  * Authentication: gated by `CRON_SECRET` (Bearer token in the
- * `Authorization` header). Dev-mode accepts unauthenticated calls
- * for manual operator triggering.
+ * `Authorization` header). F5R1-E10 removed the previous dev-mode
+ * unauthenticated fallback — every request MUST carry the bearer
+ * token regardless of NODE_ENV.
  *
  * Idempotent: re-running the cron is safe — already-swept rows are
  * already in `failed` status and won't match `WHERE status='pending'`.
@@ -38,9 +39,9 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 // invocation. No top-level Application use case exists for cross-
 // tenant orchestration — it is a maintenance path, not a user
 // flow. Documented escape hatch (mirrors lockout-cleanup pattern).
-/* eslint-disable no-restricted-imports */
+ 
 import { tenantPaymentSettings } from '@/modules/payments/infrastructure/schema';
-/* eslint-enable no-restricted-imports */
+ 
 import { eq } from 'drizzle-orm';
 import {
   sweepStalePendingRefunds,
@@ -48,6 +49,7 @@ import {
 } from '@/modules/payments';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { paymentsMetrics } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 
 export const runtime = 'nodejs';
@@ -58,18 +60,14 @@ const DEFAULT_OLDER_THAN_HOURS = 24;
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
 
-  const authHeader = request.headers.get('authorization');
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    if (!verifyCronBearer(authHeader, expected)) {
-      logger.warn({ requestId }, 'cron.sweep_stale_pending_refunds.unauthorized');
-      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-    }
-  } else if (!env.isDevelopment) {
-    logger.error(
-      { requestId },
-      'cron.sweep_stale_pending_refunds.no_secret_configured',
-    );
+  // F5R1-E10 fix — use the zod-validated `env.cron.secret` instead of
+  // raw `process.env.CRON_SECRET`. The validated env refuses to boot
+  // when the var is unset (zod `.min(16)` on line 198 of env.ts), so
+  // the previous `else if (!env.isDevelopment)` dev-mode fallback that
+  // allowed unauthenticated access on a misconfigured deploy is no
+  // longer reachable — the app would not have started.
+  if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
+    logger.warn({ requestId }, 'cron.sweep_stale_pending_refunds.unauthorized');
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
@@ -137,6 +135,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         }
       } else {
         tenantsErrored += 1;
+        // F5R1-E11 — emit metric counter so SRE alert rules attached
+        // to OTel counters (not log strings) can fire on sustained
+        // per-tenant sweep failures. Pino logs alone roll off in
+        // 30 days; alert rules + the audit-log forensic trail (5y)
+        // are the long-term compliance anchors.
+        paymentsMetrics.cronSweepTenantFailed(tenantId);
         logger.error(
           { requestId, tenantId, cause: result.error.cause },
           'cron.sweep_stale_pending_refunds.tenant_failed',
@@ -144,6 +148,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       }
     } catch (e) {
       tenantsErrored += 1;
+      paymentsMetrics.cronSweepTenantFailed(tenantId);
       logger.error(
         { requestId, tenantId, errKind: e instanceof Error ? e.constructor.name : 'unknown' },
         'cron.sweep_stale_pending_refunds.tenant_threw',

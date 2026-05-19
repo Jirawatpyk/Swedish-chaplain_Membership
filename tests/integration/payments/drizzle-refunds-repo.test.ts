@@ -20,6 +20,7 @@
  * Mocking policy: this file hits live Postgres. No SUT mocks.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
@@ -163,7 +164,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         invoiceId,
         memberId,
         method: 'promptpay',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -195,7 +196,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         tenantId: tenantA.ctx.slug,
         paymentId: paymentIdA,
         invoiceId,
-        amountSatang: 100_000n,
+        amountSatang: asSatang(100_000n),
         reason: 'first partial',
         status: 'pending',
         processorRefundId: null,
@@ -223,7 +224,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         tenantId: tenantA.ctx.slug,
         paymentId: paymentIdA,
         invoiceId,
-        amountSatang: 50_000n,
+        amountSatang: asSatang(50_000n),
         reason: 'will fail',
         status: 'pending',
         processorRefundId: null,
@@ -258,7 +259,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           tenantId: tenantA.ctx.slug,
           paymentId: paymentIdA,
           invoiceId,
-          amountSatang: 25_000n,
+          amountSatang: asSatang(25_000n),
           reason: `bulk-${i}`,
           status: 'pending',
           processorRefundId: null,

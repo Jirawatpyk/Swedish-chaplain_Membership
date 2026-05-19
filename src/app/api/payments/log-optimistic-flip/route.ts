@@ -65,9 +65,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Unexpected throw from requireMemberContext (DB outage,
     // misconfigured env, etc.) — log so ops doesn't see a silent
     // 500 spike. Pattern matches `/api/payments/initiate` route.
+    // F5R3 CR-2 (2026-05-16) — H-4 PCI/PDPA hygiene: log error
+    // class only (e.constructor.name). Drizzle/Postgres errors carry
+    // SQL fragments, table names, and partial parameter bindings in
+    // .message — replicates the pattern enforced across all other F5
+    // catch sites (drizzle-payments-audit:94, stripe webhook:148, etc.).
     logger.error(
       {
-        err: e instanceof Error ? e.message : String(e),
+        err: e instanceof Error ? e.constructor.name : 'unknown',
         correlationId,
       },
       'payments.log_optimistic_flip.member_context_throw',
@@ -109,11 +114,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return noContent(400);
   }
 
+  // F5R1-E5 — hash the invoiceId before logging. The route documents
+  // that it does not validate ownership (forged ids only pollute the
+  // log stream — they cannot grant access or change state). Pre-fix
+  // the raw invoiceId went into pino, so an attacker could spray
+  // forged ids to contaminate forensic queries (SRE searches
+  // "client_optimistic_flip for invoice X" would return false
+  // positives from any member). Hashing preserves the SRE workflow
+  // (the legitimate client computes the same hash via lib/log-id)
+  // while denying attackers chosen-input control over the log stream.
   logger.info(
     {
       event: 'client_optimistic_flip',
       tenantId: tenantCtx.slug,
-      invoiceId: parsedBody.invoiceId,
+      invoiceIdHash: hashId(parsedBody.invoiceId),
       userIdHash: hashId(actorUserId),
       correlationId,
     },

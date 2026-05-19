@@ -27,6 +27,7 @@ export function PaymentForm({
   documentNumber,
   issueDate,
   onSuccess,
+  onCancel,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -43,6 +44,14 @@ export function PaymentForm({
    * fall back to the previous navigate-and-refresh behaviour.
    */
   onSuccess?: () => void;
+  /**
+   * F5R1-UX5 — optional cancel callback for the RecordPaymentDialog
+   * overlay. When provided, renders a Cancel button next to Submit
+   * (financial-action heuristic: every form modifying money state
+   * should offer an explicit Cancel affordance, not rely solely on
+   * Esc / outside-click). Legacy full-page callers omit it.
+   */
+  onCancel?: () => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
@@ -163,10 +172,31 @@ export function PaymentForm({
           rows={3}
         />
       </div>
-      <div className="flex justify-end">
-        <Button type="submit" disabled={pending} aria-busy={pending}>
+      <div className="flex justify-end gap-2">
+        {onCancel && (
+          // F5R2-UX-F2 — `cancel` key copy ("Back to invoice") was
+          // written for the now-deleted full-page route. Inside a
+          // dialog, `cancelDialog` ("Cancel" / "ยกเลิก" / "Avbryt")
+          // is the standard dismiss copy. F5R2-UX-F3 — min-h-[44px]
+          // satisfies WCAG 2.5.8 touch-target on mobile.
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-[44px]"
+            onClick={onCancel}
+            disabled={pending}
+          >
+            {t('cancelDialog')}
+          </Button>
+        )}
+        <Button
+          type="submit"
+          className="min-h-[44px]"
+          disabled={pending}
+          aria-busy={pending}
+        >
           {pending && (
-            <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
           )}
           {pending ? t('submitting') : t('submit')}
         </Button>

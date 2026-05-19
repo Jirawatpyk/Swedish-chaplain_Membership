@@ -10,13 +10,24 @@
  * inferred row shape never leaks into Application per Principle III.
  */
 
-import { and, eq, ilike, inArray, or, sql, asc } from 'drizzle-orm';
+import { and, eq, gt, ilike, inArray, isNull, or, sql, asc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
+// MIGRATION 0017 SECURITY CONTRACT — chamber_app can SELECT only:
+//   • invitations.user_id
+//   • invitations.consumed_at
+//   • invitations.expires_at
+// The `id` column IS the raw 7-day invite token + `created_at` is
+// owner-role only. Adding either to ANY `.select({...})` in this file
+// triggers Postgres 42501 (insufficient_privilege) at runtime with no
+// TypeScript guard. See `findPendingInvitationsForMember` below for
+// the canonical example; the C6 regression that surfaced "Could not
+// load pending invitations" in dev was caused by ignoring this rule.
+import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
 import { rowToContact } from './drizzle-contact-repo';
@@ -392,6 +403,10 @@ export const drizzleMemberRepo: MemberRepo = {
         conds.push(eq(members.country, filter.country));
       if (filter.planId !== undefined)
         conds.push(eq(members.planId, filter.planId));
+      // I1 round-10 ui-design-specialist — same filter on the cursor
+      // path. See searchDirectoryWithCount for rationale.
+      if (filter.riskBand !== undefined)
+        conds.push(eq(members.riskScoreBand, filter.riskBand));
 
       // Cursor: decode base64 → "<iso>|<memberId>" or "NULL|<memberId>"
       if (filter.cursor) {
@@ -573,6 +588,12 @@ export const drizzleMemberRepo: MemberRepo = {
           conds.push(eq(members.country, filter.country));
         if (filter.planId !== undefined)
           conds.push(eq(members.planId, filter.planId));
+        // I1 round-10 ui-design-specialist — filter by F8-derived
+        // risk_score_band. Members with `null` band (not yet scored)
+        // are excluded when this filter is active (eq() over the
+        // nullable column matches only rows with the exact value).
+        if (filter.riskBand !== undefined)
+          conds.push(eq(members.riskScoreBand, filter.riskBand));
 
         const whereClause = and(
           or(...statuses.map((s) => eq(members.status, s)))!,
@@ -966,6 +987,71 @@ export const drizzleMemberRepo: MemberRepo = {
       const row = arr[0];
       if (!row || row.changed_at == null) return ok(null);
       return ok(new Date(row.changed_at));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  /**
+   * C6 round-10 ui-design-specialist — pending portal invitations for
+   * this member's contacts. Cross-schema Drizzle join (auth.invitations
+   * × members.contacts via contacts.linked_user_id = invitations.user_id).
+   *
+   * Tenant scope: `contacts` RLS scopes the join under runInTenant +
+   * chamber_app role. `invitations` is cross-tenant by design (a user
+   * holds tenant-agnostic invites), so the join via contacts is what
+   * enforces the boundary. The `contacts.removed_at IS NULL` filter
+   * hides invitations for archived/removed contacts.
+   *
+   * Column visibility (migration 0017, staff-review R001):
+   * `chamber_app` sees only `invitations.user_id`,
+   * `invitations.consumed_at`, `invitations.expires_at`. The `id`
+   * (raw 7-day token) and `created_at` are owner-role only — selecting
+   * either returns Postgres 42501 (permission denied). The SELECT
+   * list below sticks to the allowed 3 columns; the UI keys the
+   * inline badge off `contactId` rather than `invitationId`, and
+   * sorts by `expiresAt ASC` (soonest-to-expire first) since we can't
+   * sort by `createdAt`.
+   *
+   * "Pending" = `consumed_at IS NULL AND expires_at > NOW()`. LIMIT 50
+   * caps pathological cases.
+   */
+  async findPendingInvitationsForMember(ctx, memberId) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) =>
+        tx
+          .select({
+            expiresAt: invitations.expiresAt,
+            contactId: contacts.contactId,
+            firstName: contacts.firstName,
+            lastName: contacts.lastName,
+            email: contacts.email,
+          })
+          .from(invitations)
+          .innerJoin(
+            contacts,
+            eq(contacts.linkedUserId, invitations.userId),
+          )
+          .where(
+            and(
+              eq(contacts.memberId, memberId),
+              isNull(contacts.removedAt),
+              isNull(invitations.consumedAt),
+              gt(invitations.expiresAt, sql`NOW()`),
+            ),
+          )
+          .orderBy(asc(invitations.expiresAt))
+          .limit(50),
+      );
+      return ok(
+        rows.map((r) => ({
+          contactId: r.contactId as string,
+          contactFirstName: r.firstName,
+          contactLastName: r.lastName,
+          contactEmail: r.email,
+          expiresAt: r.expiresAt,
+        })),
+      );
     } catch (e) {
       return err(unexpected(e));
     }

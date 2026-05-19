@@ -1,5 +1,5 @@
 /**
- * T058 — failPayment use-case (F5 / stripe-webhook.md § 4.2).
+ * failPayment use-case (F5 / stripe-webhook.md § 4.2).
  *
  * Handles `payment_intent.payment_failed`. No F4 invocation, no refund.
  */
@@ -57,7 +57,19 @@ export type FailPaymentOutcome =
 
 export type FailPaymentError =
   | { readonly code: 'illegal_transition'; readonly from: string }
-  | { readonly code: 'processor_unavailable'; readonly reason: string };
+  | { readonly code: 'processor_unavailable'; readonly reason: string }
+  /**
+   * F5R2-CRIT-2 — dedicated permanent code for tenant-settings-missing.
+   * Mirrors the confirm-payment pattern (`bridge_error` /
+   * `tenant_settings_missing` detail). The dispatcher's
+   * `categorisePermanence` reads `error.code`, so reusing
+   * `'processor_unavailable'` for this configuration gap caused the
+   * dispatcher to classify it as transient → Stripe retries 72h on a
+   * config gap that cannot self-heal. The dedicated `bridge_error`
+   * code is in `PERMANENT_SUB_USE_CASE_DETAILS` → permanent → Stripe
+   * stops retrying + ops sees a forensic 200-ack audit row.
+   */
+  | { readonly code: 'bridge_error'; readonly detail: string };
 
 export interface FailPaymentDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -97,7 +109,8 @@ export async function failPayment(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'fail_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene; see confirm-payment.ts.
+          message: e instanceof Error ? e.constructor.name : 'fail_threw',
         });
         throw e;
       } finally {
@@ -113,7 +126,12 @@ async function failPaymentBody(
 ): Promise<Result<FailPaymentOutcome, FailPaymentError>> {
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
-    return err({ code: 'processor_unavailable', reason: 'tenant_settings_missing' });
+    // F5R2-CRIT-2 — return dedicated bridge_error code (in PERMANENT
+    // sub-use-case-details set) so dispatcher classifies as permanent
+    // → route returns 200 + forensic audit instead of 500 → Stripe
+    // stops retrying. Pre-fix this path triggered a 72h Stripe retry
+    // storm on a configuration gap.
+    return err({ code: 'bridge_error', detail: 'tenant_settings_missing' });
   }
 
   return await deps.paymentsRepo.withTx(async (tx) => {
@@ -123,7 +141,7 @@ async function failPaymentBody(
       input.tenantId,
     );
     if (!payment) {
-      // Ops-visibility audit (audit 2026-04-25 finding #10).
+      // Ops-visibility audit.
       // best-effort emit (tx=null) per audit-port contract — audit
       // outage MUST NOT roll back markProcessed (avoids stuck-row
       // class on probe paths). markProcessed stays inside `tx` so it
@@ -150,7 +168,7 @@ async function failPaymentBody(
           invoiceId: payment.invoiceId,
         });
       }
-      // R4 I-3: illegal_transition (e.g. succeeded → failed) is a
+      // illegal_transition (e.g. succeeded → failed) is a
       // PERMANENT webhook-side mismatch. H-11 ack via dedicated event.
       await markProcessedIfPresent(deps, input, tx);
       await emitTerminalStateAck(deps.audit, {
@@ -176,7 +194,7 @@ async function failPaymentBody(
       settings.processorAccountId,
     );
     if (!retrieved.ok) {
-      // R3 I-9: forensic audit so ops see Stripe outages during failPayment
+      // forensic audit so ops see Stripe outages during failPayment
       // (mirrors confirmPayment retrieve-fail trail). Best-effort emit on
       // null tx — outer withTx is about to roll back; emitting through
       // `tx` would discard the row we want ops to see.
@@ -203,10 +221,22 @@ async function failPaymentBody(
     const reasonCode =
       retrieved.value.lastPaymentErrorCode ?? PAYMENT_FAILURE_REASON_UNKNOWN;
 
+    // F5R3 CR-1 (2026-05-16) — defence-in-depth `expectedCurrentStatus`
+    // mirroring R2-CRIT-1 in cancel-payment. The single-tx + FOR UPDATE
+    // pattern here keeps the row locked across the Stripe retrieve call
+    // (~10s timeout) so a concurrent webhook cannot flip pending→succeeded
+    // mid-tx — the WHERE clause is currently a build-time invariant
+    // matching the canTransition gate above. The guard exists so a
+    // future refactor that splits this into two phases (mirroring
+    // cancel-payment's lock-release-then-re-lock pattern) cannot
+    // silently regress into the same financial-integrity break R2-CRIT-1
+    // closed. canTransition narrowed payment.status to a value where
+    // 'failed' is reachable; the guard pins that value.
     await deps.paymentsRepo.updateStatus(tx, {
       paymentId: payment.id,
       tenantId: input.tenantId,
       nextStatus: 'failed',
+      expectedCurrentStatus: payment.status,
       failureReasonCode: reasonCode,
       completedAt,
     });
@@ -221,7 +251,7 @@ async function failPaymentBody(
         payment_id: payment.id,
         invoice_id: payment.invoiceId,
         failure_reason_code: reasonCode,
-        // R3 I-1: card metadata intentionally OMITTED. A failed payment
+        // card metadata intentionally OMITTED. A failed payment
         // never produces a tax document, so card_brand/card_last4 have
         // no receipt-correlation purpose — keeping them only widens the
         // PCI surface in the long-retention audit_log.

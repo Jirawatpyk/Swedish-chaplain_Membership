@@ -30,21 +30,20 @@ export function ReviewActions({
   const [rejectOpen, setRejectOpen] = useState<boolean>(false);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <Button
-        size="sm"
-        variant="default"
-        onClick={() => setApproveOpen(true)}
-      >
-        <CheckCircle2 className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+    // D3 UX hardening — Approve + Reject are primary decision actions
+    // (FR-011, FR-012); align to size="default" (h-9 / 36 px) per
+    // shadcn-customizations.md base + ux-standards § 19. Previously
+    // size="sm" (h-7) failed WCAG 2.5.5 minimum touch target on mobile.
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="default" onClick={() => setApproveOpen(true)}>
+        <CheckCircle2 className="mr-1 size-4" aria-hidden="true" />
         {t('confirm')}
       </Button>
       <Button
-        size="sm"
         variant="destructive-outline"
         onClick={() => setRejectOpen(true)}
       >
-        <XCircle className="mr-1 h-3.5 w-3.5" aria-hidden="true" />
+        <XCircle className="mr-1 size-4" aria-hidden="true" />
         {tReject('confirm')}
       </Button>
       <ApproveDialog

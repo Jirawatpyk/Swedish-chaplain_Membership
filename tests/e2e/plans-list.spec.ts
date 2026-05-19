@@ -36,7 +36,7 @@ test.describe('plans list — US1 @i18n', () => {
   async function signIn(page: Page): Promise<void> {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); }, { timeout: 10_000 });
   }
@@ -96,7 +96,7 @@ test.describe('plans list — US1 @i18n', () => {
 
     await page.goto('/portal/sign-in');
     await page.getByLabel(/email/i).fill(memberEmail!);
-    await page.getByLabel(/password/i).fill(memberPassword!);
+    await page.getByRole('textbox', { name: /^password$/i }).fill(memberPassword!);
     await page.getByRole('button', { name: /sign in/i }).click();
     // Member signs in to portal — manual navigation to /admin/plans must
     // redirect away. page.goto() follows redirects so the final status is

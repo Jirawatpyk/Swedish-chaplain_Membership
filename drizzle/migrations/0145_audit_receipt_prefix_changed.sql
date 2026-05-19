@@ -1,0 +1,42 @@
+-- Add `tenant_receipt_prefix_changed` audit event type.
+--
+-- Emitted by `updateTenantInvoiceSettings` when an admin flips
+-- `receipt_number_prefix` (and/or `invoice_number_prefix` /
+-- `credit_note_number_prefix`) mid-fiscal-year. Thai RD §87 verifies
+-- continuity by document number (prefix + year + sequence) — a prefix
+-- change creates an apparent gap (e.g. RE-2026-000001 → RC-2026-000002
+-- skips RC-2026-000001). The forensic trail (when, who, last seq under
+-- old prefix) needs to be reconstructable from audit on a future RD
+-- audit. 10-year retention class — tax-document touching.
+--
+-- Payload shape (Round-3-aligned with `updateTenantInvoiceSettings` impl):
+--   {
+--     changed_prefixes: {
+--       invoice_number_prefix?:     { old: string | null, new: string | null },
+--       credit_note_number_prefix?: { old: string | null, new: string | null },
+--       receipt_number_prefix?:     { old: string | null, new: string | null }
+--     },
+--     receipt_numbering_mode: 'combined' | 'separate',
+--     last_sequences: Array<{
+--       document_type: 'invoice' | 'receipt' | 'credit_note',
+--       fiscal_year:   number,
+--       last_sequence_number: number    -- = next_sequence_number - 1
+--                                       -- (0 if no docs issued yet)
+--     }>
+--   }
+--
+-- `last_sequences` lets the RD forensic auditor reconstruct "where did
+-- the old prefix stop?" — e.g. `last_invoice_seq` under fiscal_year=2026
+-- before the prefix flipped from INV→TH-INV. Each entry is a snapshot
+-- taken inside the same tx as the upsert (FOR UPDATE on settings + read
+-- of `tenant_document_sequences`) so it is causally consistent with the
+-- prefix-flip commit.
+--
+-- A separate event (not just bundled inside
+-- `tenant_invoice_settings_updated`) so a §87 forensic SELECT can
+-- WHERE event_type = 'tenant_receipt_prefix_changed' to surface ALL
+-- prefix flips in one query without parsing JSON payloads.
+
+DO $$ BEGIN
+  ALTER TYPE "audit_event_type" ADD VALUE 'tenant_receipt_prefix_changed';
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;

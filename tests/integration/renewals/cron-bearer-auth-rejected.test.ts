@@ -35,7 +35,7 @@
  * signal of a sustained CRON_SECRET-rotation incident.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -88,6 +88,11 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     await tenant.cleanup().catch(() => {});
   }, 60_000);
 
+  // F5R5 cleanup (2026-05-16) — pre-fix skip rationale removed.
+  // The historical "RLS-context gap" theory was wrong; the actual
+  // root cause was a filter literal mismatch (see inline F5R3v4
+  // comment at the SELECT site below). Both tests pass under the
+  // payload-route filter.
   it('missing Bearer → 401 + cron_bearer_auth_rejected audit row in audit_log', async () => {
     const ROUTE = '/api/cron/renewals/dispatch-coordinator';
 
@@ -97,22 +102,19 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(401);
 
-    // The helper emits via env.tenant.slug (bookkeeping tenant), NOT
-    // the test tenant — so we cannot filter by tenant slug. Instead
-    // pin via the route discriminator + a recent timestamp window.
-    // The audit row's `tenant_id` reflects the env-level
-    // bookkeeping-tenant value; for production single-tenant deploy
-    // this is `swecham` (or the test runner's env override).
+    // F5R3v4 fix (2026-05-16) — root cause of the pre-fix skip: the
+    // gate helper emits with no `summary` field set, so the emitter's
+    // `buildSummary` default fires (`F8 cron_bearer_auth_rejected
+    // (tenant=...)`) — NOT the literal `'cron bearer rejected on ...'`
+    // the pre-fix filter was looking for. Filter by event type +
+    // payload-route extraction (the actual forensic discriminator).
     const recentRows = await db
       .select()
       .from(auditLog)
       .where(
         and(
-          eq(
-            auditLog.eventType,
-            'cron_bearer_auth_rejected' as never,
-          ),
-          eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
+          eq(auditLog.eventType, 'cron_bearer_auth_rejected' as never),
+          sql`payload->>'route' = ${ROUTE}`,
         ),
       );
     // At least one row must have landed for THIS test execution; we
@@ -139,16 +141,16 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     expect(response).not.toBeNull();
     expect(response!.status).toBe(401);
 
+    // F5R3v4 fix (2026-05-16) — filter by payload route (the actual
+    // forensic discriminator) instead of the prior summary literal
+    // mismatch. See sibling test 1 for full root-cause comment.
     const rows = await db
       .select()
       .from(auditLog)
       .where(
         and(
-          eq(
-            auditLog.eventType,
-            'cron_bearer_auth_rejected' as never,
-          ),
-          eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
+          eq(auditLog.eventType, 'cron_bearer_auth_rejected' as never),
+          sql`payload->>'route' = ${ROUTE}`,
         ),
       );
     const landed = rows.find((r) => {
@@ -171,19 +173,20 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     });
 
     const ROUTE = '/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator';
+    // F5R5 H-2 fix (2026-05-16) — filter by payload.route (the actual
+    // forensic discriminator) matches the new tests 1+2 pattern.
+    // Pre-fix used a `summary` literal that the emitter NEVER
+    // produces (buildSummary default is `F8 cron_bearer_auth_rejected
+    // (tenant=...)`), so before/after both returned 0, and the
+    // assertion passed trivially regardless of actual emit behaviour.
+    // A regression that DID emit on the rate-limit path would have
+    // slipped through. R4 review HIGH-1 / H-2 / LOW-2.
+    const filter = and(
+      eq(auditLog.eventType, 'cron_bearer_auth_rejected' as never),
+      sql`payload->>'route' = ${ROUTE}`,
+    );
     const auditCountBefore = (
-      await db
-        .select({ count: auditLog.id })
-        .from(auditLog)
-        .where(
-          and(
-            eq(
-              auditLog.eventType,
-              'cron_bearer_auth_rejected' as never,
-            ),
-            eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
-          ),
-        )
+      await db.select({ count: auditLog.id }).from(auditLog).where(filter)
     ).length;
 
     const response = await gateCronBearerOrRespond(makeRequest({}), {
@@ -199,18 +202,7 @@ describe('F8 cron-bearer auth-rejected — Phase 9 / T258a', () => {
     // re-recording the same probe N times floods audit_log without
     // adding signal).
     const auditCountAfter = (
-      await db
-        .select({ count: auditLog.id })
-        .from(auditLog)
-        .where(
-          and(
-            eq(
-              auditLog.eventType,
-              'cron_bearer_auth_rejected' as never,
-            ),
-            eq(auditLog.summary, `cron bearer rejected on ${ROUTE}`),
-          ),
-        )
+      await db.select({ count: auditLog.id }).from(auditLog).where(filter)
     ).length;
     expect(auditCountAfter).toBe(auditCountBefore);
   });

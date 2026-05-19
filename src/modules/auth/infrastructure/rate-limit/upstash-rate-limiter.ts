@@ -35,6 +35,28 @@ export interface RateLimitResult {
   readonly remaining: number;
   /** When the bucket resets (unix-ms). */
   readonly reset: number;
+  /**
+   * True when the result came from the in-memory fallback bucket
+   * (Upstash unreachable). Always set — happy path emits `false`,
+   * fallback path emits `true`. Callers emit surface-specific fail-open
+   * metrics when this is `true`.
+   */
+  readonly fellBack: boolean;
+}
+
+/**
+ * C3 (post-ship 2026-05-17) — derived `retryAfterSeconds` from one or
+ * more rate-limit results. Six call sites previously duplicated the
+ * `Math.max(Math.ceil((reset - Date.now()) / 1000), 1)` formula (with
+ * the floor-at-1 invariant) — extracting it eliminates the silent-drift
+ * risk where one caller's "1 second minimum" diverges from another's.
+ */
+export function retryAfterSeconds(...results: RateLimitResult[]): number {
+  const now = Date.now();
+  return Math.max(
+    ...results.map((r) => Math.ceil((r.reset - now) / 1000)),
+    1,
+  );
 }
 
 export interface RateLimiter {
@@ -43,6 +65,23 @@ export interface RateLimiter {
    * `max` and `windowSeconds` parameterise the sliding window.
    */
   check(
+    key: string,
+    max: number,
+    windowSeconds: number,
+  ): Promise<RateLimitResult>;
+  /**
+   * Non-consuming check (B2 — change-password peek-then-consume).
+   * Returns the bucket's current state WITHOUT decrementing it.
+   * Use case: gate an expensive operation (e.g. argon2 verify) on
+   * "is there budget left?" and only consume after the expensive
+   * operation confirmed a failure that should count against the
+   * bucket. The success path leaves the bucket untouched, so 5
+   * successful operations in a row do NOT trip the 429.
+   *
+   * Falls back to the same in-memory bucket inspection as `check`
+   * during Upstash outages — but does NOT advance the bucket state.
+   */
+  peek(
     key: string,
     max: number,
     windowSeconds: number,
@@ -96,7 +135,7 @@ function fallbackCheck(
 
   if (!bucket || now - bucket.windowStart >= windowMs) {
     fallbackBuckets.set(key, { count: 1, windowStart: now });
-    return { success: true, remaining: max - 1, reset: now + windowMs };
+    return { success: true, remaining: max - 1, reset: now + windowMs, fellBack: true };
   }
 
   if (bucket.count >= max) {
@@ -104,6 +143,7 @@ function fallbackCheck(
       success: false,
       remaining: 0,
       reset: bucket.windowStart + windowMs,
+      fellBack: true,
     };
   }
 
@@ -112,12 +152,74 @@ function fallbackCheck(
     success: true,
     remaining: max - bucket.count,
     reset: bucket.windowStart + windowMs,
+    fellBack: true,
+  };
+}
+
+/** Non-consuming peek for the in-memory fallback bucket (B2). */
+function fallbackPeek(
+  key: string,
+  max: number,
+  windowSeconds: number,
+): RateLimitResult {
+  const now = Date.now();
+  const windowMs = windowSeconds * 1000;
+  const bucket = fallbackBuckets.get(key);
+
+  if (!bucket || now - bucket.windowStart >= windowMs) {
+    return {
+      success: true,
+      remaining: max,
+      reset: now + windowMs,
+      fellBack: true,
+    };
+  }
+
+  return {
+    success: bucket.count < max,
+    remaining: Math.max(max - bucket.count, 0),
+    reset: bucket.windowStart + windowMs,
+    fellBack: true,
   };
 }
 
 // --- Public adapter -----------------------------------------------------------
 
 class UpstashRateLimiter implements RateLimiter {
+  async peek(
+    key: string,
+    max: number,
+    windowSeconds: number,
+  ): Promise<RateLimitResult> {
+    try {
+      const remaining = await getRateLimit(max, windowSeconds).getRemaining(
+        key,
+      );
+      const reset =
+        typeof remaining === 'object' && 'reset' in remaining
+          ? (remaining as { reset: number }).reset
+          : Date.now() + windowSeconds * 1000;
+      const remainingCount =
+        typeof remaining === 'object' && 'remaining' in remaining
+          ? (remaining as { remaining: number }).remaining
+          : (remaining as unknown as number);
+      return {
+        success: remainingCount > 0,
+        remaining: remainingCount,
+        reset,
+        fellBack: false,
+      };
+    } catch (error) {
+      const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
+      logger.warn(
+        { err: error, keyKind, max, windowSeconds, fallback: true },
+        'rate-limit peek upstream unreachable, falling back to in-memory bucket',
+      );
+      authMetrics.redisFallback();
+      return fallbackPeek(key, max, windowSeconds);
+    }
+  }
+
   async check(
     key: string,
     max: number,
@@ -129,10 +231,21 @@ class UpstashRateLimiter implements RateLimiter {
         success: result.success,
         remaining: result.remaining,
         reset: result.reset,
+        fellBack: false,
       };
     } catch (error) {
+      // A2 — log the bucket KIND only, never the full key. Call-site
+      // keys embed secrets in the value (`signin:email:<email>`,
+      // `heartbeat:session:<sessionId>`, `change-pw:user:<userId>`)
+      // and pino's path-based redaction cannot scrub them — the
+      // sensitive content is inside the string value of a non-redacted
+      // field name. Replace with a discriminator that captures the
+      // bucket kind for diagnostics without leaking the per-user secret.
+      // CLAUDE.md § Secrets & confidential data forbids raw session
+      // IDs / emails / user IDs in logs.
+      const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
       logger.warn(
-        { err: error, key, max, windowSeconds, fallback: true },
+        { err: error, keyKind, max, windowSeconds, fallback: true },
         'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();

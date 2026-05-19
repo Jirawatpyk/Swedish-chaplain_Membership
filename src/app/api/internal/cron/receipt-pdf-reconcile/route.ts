@@ -70,16 +70,20 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
-// Cross-module deep imports — documented escape hatch for cross-
-// tenant ops surface (mirrors `sweep-stale-pending-refunds` pattern).
-// Top-level Application use case for cross-tenant orchestration is
-// out of scope; this is a maintenance path, not a user flow.
-/* eslint-disable no-restricted-imports */
+import {
+  receiptPdfRenderEnqueueAdapter,
+  f4AuditAdapter,
+} from '@/modules/invoicing';
+// `invoices` schema + `auditLog` schema deep-imports remain — documented
+// escape hatch for cross-tenant maintenance paths (mirrors `sweep-stale-
+// pending-refunds` pattern). The F4 barrel does not (yet) re-export raw
+// Drizzle table objects; doing so would invite raw-SQL coupling from
+// product code. This route is operational infrastructure, not a user
+// flow, so the carve-out is acceptable.
+ 
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
-import { receiptPdfRenderEnqueueAdapter } from '@/modules/invoicing/infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
-import { f4AuditAdapter } from '@/modules/invoicing/infrastructure/adapters/audit-adapter';
-/* eslint-enable no-restricted-imports */
+ 
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -42,7 +42,13 @@ import {
 import { disableUser } from '@/modules/auth/application/disable-user';
 import { changeRole } from '@/modules/auth/application/change-role';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
-import { asTokenId, asUserId } from '@/modules/auth/domain/branded';
+import {
+  asInvitationTokenId,
+  asTokenId,
+  asUserId,
+} from '@/modules/auth/domain/branded';
+void asTokenId; // referenced indirectly via other helpers
+import { sha256Hex } from '@/lib/crypto';
 import { asTenantSlug } from '@/modules/tenants/domain/tenant-slug';
 import { ok } from '@/lib/result';
 import {
@@ -57,11 +63,35 @@ import {
 // returns Result<T,E>). The tx argument is ignored — the stub just
 // records a synthetic outbox id so we exercise the post-enqueue code
 // path without hitting notifications_outbox.
-const stubEnqueueInvitationInTx = async () =>
-  ok({ outboxRowId: 'stub-outbox-id' });
+//
+// E2 (post-ship hardening) — the stub also captures the plaintext
+// invitation token that production code would put into the email
+// URL. The test uses this plaintext to drive a downstream `redeemInvite`
+// call; the DB row stores `sha256(plaintext)` as id and the use case
+// hashes incoming before lookup.
+function makeCapturingEnqueueStub() {
+  let captured: string | null = null;
+  const stub = async (_tx: unknown, request: { token: string }) => {
+    captured = request.token;
+    return ok({ outboxRowId: 'stub-outbox-id' });
+  };
+  return {
+    stub,
+    getPlaintext: () => {
+      if (!captured) throw new Error('plaintext not captured');
+      return asInvitationTokenId(captured);
+    },
+  };
+}
 
 const unlimitedLimiter = {
   check: async () => ({
+    success: true,
+    limit: 100,
+    remaining: 99,
+    reset: Date.now() + 60_000,
+  }),
+  peek: async () => ({
     success: true,
     limit: 100,
     remaining: 99,
@@ -87,6 +117,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
   it('createUser then redeemInvite completes the lifecycle', async () => {
     // 1. Invite
     const inviteRequestId = `it-invite-${Date.now()}`;
+    const capture = makeCapturingEnqueueStub();
     const inviteResult = await createUser(
       {
         email: inviteeEmail,
@@ -97,13 +128,17 @@ describe('integration: invitation flow (happy path + replay)', () => {
         requestId: inviteRequestId,
         tenantId: asTenantSlug('swecham'),
       },
-      { ...defaultCreateUserDeps, enqueueInvitationInTx: stubEnqueueInvitationInTx },
+      { ...defaultCreateUserDeps, enqueueInvitationInTx: capture.stub },
     );
     expect(inviteResult.ok).toBe(true);
     if (!inviteResult.ok) return;
     const { user: pendingUser, invitationId } = inviteResult.value;
     expect(pendingUser.status).toBe('pending');
     expect(pendingUser.role).toBe('manager');
+    // E2 — `invitationId` is sha256(plaintext); plaintext came through
+    // the capture stub above.
+    const invitationPlaintext = capture.getPlaintext();
+    expect(invitationId).toBe(sha256Hex(invitationPlaintext));
 
     // 2. Account_created audit
     const createdAudits = await db
@@ -117,12 +152,12 @@ describe('integration: invitation flow (happy path + replay)', () => {
       );
     expect(createdAudits.length).toBeGreaterThanOrEqual(1);
 
-    // 3. Redeem
+    // 3. Redeem with the plaintext token (E2 — hash-at-rest model).
     const redeemRequestId = `it-redeem-${Date.now()}`;
     const newPassword = `Redeem-${Date.now()}-Xy!2026`;
     const redeemResult = await redeemInvite(
       {
-        token: asTokenId(invitationId),
+        token: invitationPlaintext,
         password: newPassword,
         displayName: 'Activated Manager',
         sourceIp: '203.0.113.12',
@@ -166,7 +201,7 @@ describe('integration: invitation flow (happy path + replay)', () => {
     // 7. Replay: consumed invitation cannot be re-redeemed
     const replayResult = await redeemInvite(
       {
-        token: asTokenId(invitationId),
+        token: invitationPlaintext,
         password: `Another-${Date.now()}-Xy!2026`,
         sourceIp: '203.0.113.12',
         requestId: `${redeemRequestId}-replay`,

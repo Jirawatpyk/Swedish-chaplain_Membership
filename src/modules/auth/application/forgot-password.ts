@@ -34,6 +34,7 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import type { EmailSender } from '@/modules/auth/infrastructure/email/resend-client';
 // `buildResetPasswordEmail` is a PURE template function (no DB, no
 // network). The function VALUE is injected via `ForgotPasswordDeps`
@@ -126,12 +127,10 @@ export async function forgotPassword(
     RATE_LIMIT_PER_IP.windowSeconds,
   );
   if (!emailLimit.success || !ipLimit.success) {
-    const retryAfter = Math.max(
-      Math.ceil((emailLimit.reset - Date.now()) / 1000),
-      Math.ceil((ipLimit.reset - Date.now()) / 1000),
-      1,
-    );
-    return err({ code: 'rate-limited', retryAfterSeconds: retryAfter });
+    return err({
+      code: 'rate-limited',
+      retryAfterSeconds: retryAfterSeconds(emailLimit, ipLimit),
+    });
   }
 
   // 3. Look up user
@@ -155,14 +154,22 @@ export async function forgotPassword(
   const now = deps.now();
 
   // 4. Invalidate existing unconsumed tokens and create a fresh one.
+  //    E2 — `createReset` now returns `{ plaintext, token }`. The
+  //    plaintext is delivered in the email URL; the persisted row
+  //    stores `sha256(plaintext)` as id. We only log the hash via
+  //    `token.id` (safe for audit correlation).
   await deps.tokens.invalidateAllUnconsumedForUser(user.id, now);
-  const token = await deps.tokens.createReset({ userId: user.id, now });
+  const { plaintext, token } = await deps.tokens.createReset({
+    userId: user.id,
+    now,
+  });
+  void token; // referenced by audit emit below; keep for clarity.
 
   // 5. Send the email. Failure is logged but does NOT change the HTTP
   //    response (enumeration safety).
   const built = deps.buildResetPasswordEmail({
     toEmail: user.email,
-    token: token.id,
+    token: plaintext,
     locale: input.locale,
   });
   const sendResult = await deps.email.send({
@@ -179,6 +186,19 @@ export async function forgotPassword(
       },
       'forgot_password.email_send_failed',
     );
+    // B5 — dedicated audit event so the trail records the failure
+    // alongside the password_reset_requested row below. Pre-B5 the
+    // audit trail read "request issued + presumed email sent" when
+    // Resend retries had actually exhausted — operators investigating
+    // "I never got the email" had no audit link to the cause.
+    await deps.audit.append({
+      eventType: 'password_reset_email_failed',
+      actorUserId: user.id,
+      targetUserId: user.id,
+      sourceIp: input.sourceIp,
+      summary: `Resend exhausted: ${sendResult.error.code}`,
+      requestId: input.requestId,
+    });
   }
 
   // 6. Audit (only for existing active accounts)

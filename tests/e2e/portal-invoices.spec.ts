@@ -21,6 +21,13 @@
  */
 import { expect, test } from './fixtures';
 import { signInViaForm, waitForLayoutContainer } from './helpers/layout';
+import { clearE2ERateLimits } from './helpers/rate-limit';
+
+// Reset Upstash auth-rate-limit between tests — keeps member sign-in
+// preconditions clean when many tests stack across browsers.
+test.beforeEach(async () => {
+  await clearE2ERateLimits();
+});
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -188,10 +195,16 @@ test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
     const rowCount = await page.getByRole('row').count();
     expect(rowCount, 'expected header + ≥1 body row').toBeGreaterThanOrEqual(2);
 
-    // At least one PDF download link wired per the AS1 "download
-    // buttons" requirement.
-    const downloadLinks = page.locator('a[download][href*="/api/portal/invoices/"]');
-    expect(await downloadLinks.count()).toBeGreaterThan(0);
+    // At least one PDF download affordance per the AS1 contract.
+    // F5R6+ — implementation switched from <a download href> to
+    // <button onClick> (drives /api/portal/invoices/<id>/pdf via JS
+    // so a 4xx body can be surfaced as a toast instead of an opaque
+    // browser download error). Match the button data-testid set by
+    // `PortalPdfDownloadButton` instead of the old anchor pattern.
+    const downloadButtons = page.locator(
+      'button[data-testid^="portal-pdf-download"], button[aria-label*="invoice" i], button[aria-label*="receipt" i]',
+    );
+    expect(await downloadButtons.count()).toBeGreaterThan(0);
   });
 
   // US3 AS3 — dedicated empty-state copy assertion. Gated on

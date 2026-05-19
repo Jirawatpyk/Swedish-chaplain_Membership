@@ -24,7 +24,7 @@ test.describe('idle-warning dialog a11y (WCAG 2.1 AA)', () => {
   }) => {
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), E2E_ADMIN_EMAIL);
-    await fillField(page.getByLabel(/password/i), E2E_ADMIN_PASSWORD);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), E2E_ADMIN_PASSWORD);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 30_000 });
     await page.waitForLoadState('networkidle');

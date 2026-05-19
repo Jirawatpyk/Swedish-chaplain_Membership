@@ -52,6 +52,7 @@ function oneAdminRepo(): UserRepo {
     findByEmail: (email) => userRepo.findByEmail(email),
     findByEmailInTx: (tx, email) => userRepo.findByEmailInTx(tx, email),
     findById: (id) => userRepo.findById(id),
+    findByIdInTx: (tx, id) => userRepo.findByIdInTx(tx, id),
     updateLastSignIn: (id, at) => userRepo.updateLastSignIn(id, at),
     incrementFailedCount: (id) => userRepo.incrementFailedCount(id),
     clearFailedCount: (id) => userRepo.clearFailedCount(id),
@@ -64,7 +65,12 @@ function oneAdminRepo(): UserRepo {
     deletePending: (id) => userRepo.deletePending(id),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),
+    setPasswordHashInTx: (tx, id, hash, now) =>
+      userRepo.setPasswordHashInTx(tx, id, hash, now),
     activate: (id, now) => userRepo.activate(id, now),
+    activateInTx: (tx, id, now) => userRepo.activateInTx(tx, id, now),
+    clearLockAndFailedCountInTx: (tx, id) =>
+      userRepo.clearLockAndFailedCountInTx(tx, id),
     disable: (id) => userRepo.disable(id),
     enable: (id) => userRepo.enable(id),
     setRole: (id, role) => userRepo.setRole(id, role),

@@ -19,6 +19,7 @@
  * paths: DB, RLS, sequence allocator, audit emission.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -225,7 +226,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeSatang: 0n,
+        registrationFeeSatang: asSatang(0n),
         legalNameTh: 'ทดสอบ',
         legalNameEn: 'Test',
         taxId: '0000000000000',
@@ -403,7 +404,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         tenantId: tenant.ctx.slug,
         paymentId,
         invoiceId,
-        amountSatang: 53_500n,
+        amountSatang: asSatang(53_500n),
         reason: 'Customer requested partial refund',
         // `pending` here so the succeeded-iff biconditional CHECK lets us
         // insert without processor_refund_id + credit_note_id. F5 refund
@@ -420,7 +421,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         tenantId: tenant.ctx.slug,
         invoiceId,
         refundId,
-        amountSatang: 53_500n, // partial refund (50% of total)
+        amountSatang: asSatang(53_500n), // partial refund (50% of total)
         reason: 'Customer requested partial refund',
         actorUserId: user.userId,
       });
@@ -472,7 +473,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         tenantId: tenant.ctx.slug,
         actorUserId: user.userId,
         invoiceId,
-        creditTotalSatang: 10_000n,
+        creditTotalSatang: asSatang(10_000n),
         reason: 'F4 manual issue',
       });
     });

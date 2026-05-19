@@ -5,6 +5,7 @@
  * critical mutating path collecting member payment intent).
  */
 import { describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import {
   confirmRenewal,
   selfServiceFailureReason,
@@ -35,6 +36,9 @@ const CYCLE_UUID = '00000000-0000-0000-0000-0000000c1220';
 const NEW_PLAN_ID = 'plan-premium-2026';
 
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish — stub `db` to fix collection error from
+  // F8/infra adapter import chain ("No 'db' export defined on mock").
+  db: {},
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
     fn({} as unknown),
 }));
@@ -100,7 +104,7 @@ function fakeDeps(args: {
         status: 'issued',
         invoiceId: 'inv-1',
         invoiceNumber: 'INV-2026-0001',
-        totalSatang: 5_000_000n,
+        totalSatang: asSatang(5_000_000n),
       },
   );
   const emitInTxMock = vi.fn(args.emitInTxImpl ?? (async () => {}));

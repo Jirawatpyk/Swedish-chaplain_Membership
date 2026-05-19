@@ -16,13 +16,53 @@
  */
 
 export class WebhookSignatureError extends Error {
-  readonly kind: 'missing_header' | 'malformed' | 'bad_signature' | 'tampered_body';
+  readonly kind:
+    | 'missing_header'
+    | 'malformed'
+    | 'bad_signature'
+    | 'tampered_body'
+    /**
+     * F5R1-TY8 — Stripe webhook ≥5-min clock-skew rejection
+     * (data-model.md § 5.3). The Infrastructure class
+     * (`infrastructure/stripe/errors.ts`) has carried this variant
+     * for a while; aligning the Application port closes the declared-
+     * vs-thrown drift the F5R1 review flagged.
+     */
+    | 'clock_skew';
   constructor(kind: WebhookSignatureError['kind'], message: string) {
     super(message);
     this.name = 'WebhookSignatureError';
     this.kind = kind;
   }
 }
+
+/**
+ * F5R3 H-6 (2026-05-16) — single source of truth for the Stripe
+ * event types F5's dispatcher handles. Pre-fix the dispatcher
+ * `switch (event.type) { case 'payment_intent.succeeded': … }` and
+ * the webhook route's revalidatePath allow-list each carried their
+ * own copy of the string literals — adding a new type to one but
+ * forgetting the other silently skipped cache invalidation. Both
+ * consumers now import this constant so drift is a compile error
+ * (typed exhaustiveness on `F5HandledEventType` switch + `Set`
+ * membership lookup at the route).
+ */
+export const F5_HANDLED_EVENT_TYPES = [
+  'payment_intent.succeeded',
+  'payment_intent.payment_failed',
+  'payment_intent.canceled',
+  'charge.refunded',
+  'charge.dispute.created',
+] as const;
+export type F5HandledEventType = (typeof F5_HANDLED_EVENT_TYPES)[number];
+
+/**
+ * Set form for O(1) membership checks (used by the route's
+ * revalidate-path allow-list).
+ */
+export const F5_HANDLED_EVENT_TYPES_SET: ReadonlySet<string> = new Set(
+  F5_HANDLED_EVENT_TYPES,
+);
 
 /**
  * Minimal verified envelope surfaced to Application. Mirrors the
@@ -50,7 +90,22 @@ export interface VerifiedStripeEvent {
     readonly refundIds?: readonly string[];
     readonly lastPaymentErrorCode?: string | null;
     readonly disputeId?: string | null;
-    readonly amountSatang?: bigint;
+    readonly amountSatang?: import('@/lib/money').Satang;
+    /**
+     * F5R3v3 H-4 (2026-05-16) — `true` iff the verifier's defensive
+     * amount projection (C-1) caught a brand failure (negative, NaN,
+     * Infinity, fractional, missing). When true, `amountSatang` is
+     * omitted AND downstream consumers MUST NOT treat
+     * `amountSatang ?? 0n` as a real amount. Pre-fix the missing
+     * flag let `process-charge-refunded` flag every pending refund
+     * as `refund_amount_mismatch_detected` (existing > 0 vs default
+     * 0) — a single fuzzed webhook caused a mismatch-audit storm.
+     * Similarly `dispute_created` audit rows wrote `amount_satang:
+     * '0'` (a known-wrong value retained 10 years per RD §87 / GDPR
+     * Art. 6(1)(c)). With this flag, consumers route to dead-letter
+     * / sentinel paths instead of substituting a misleading 0.
+     */
+    readonly amountProjectionFailed?: boolean;
   };
 }
 

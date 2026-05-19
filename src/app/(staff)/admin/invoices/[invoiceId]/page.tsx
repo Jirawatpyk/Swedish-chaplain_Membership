@@ -1,6 +1,17 @@
 /**
  * T056 — /admin/invoices/[invoiceId] detail page.
+ *
+ * F5R6+ fix — `export const dynamic = 'force-dynamic'` paired with
+ * the sibling `not-found.tsx` is required for `notFound()` to set
+ * HTTP status 404 (not 200) under Next.js 16 RSC streaming. Mirrors
+ * the F7 broadcast pattern at `src/app/(member)/portal/broadcasts/
+ * [id]/page.tsx:44`. Without `force-dynamic`, response headers commit
+ * before `notFound()` resolves and 200 leaks even when the body
+ * renders the not-found UI. Pinned by `tests/e2e/invoice-draft-issue
+ * .spec.ts` AS6.
  */
+export const dynamic = 'force-dynamic';
+
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -27,14 +38,14 @@ import {
 // Direct infra import for the settings read — same escape-hatch as
 // the B2 settings page. This is a READ against the public port
 // `getForIssue`, not a deep reach into internals.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
 // Same escape-hatch as the tenant-settings repo read above: a public-
 // port read (`findByOriginalInvoice`) used to populate the "Credit
 // Notes attached" section. No Application-layer use-case exists yet
 // for this list (Phase 10 candidate); the infra repo is called
 // directly.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { makeDrizzleCreditNoteRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-credit-note-repo';
 import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
@@ -45,7 +56,7 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
 // Raw repo read mirrors the escape hatch used by /admin/users page.tsx —
 // an Application-layer `getStaffUser` would be a passthrough. Read is
 // admin-gated by the layout guard.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
 import { DetailContainer } from '@/components/layout';
@@ -398,6 +409,8 @@ export default async function InvoiceDetailPage({
                     (invoice.tenantIdentitySnapshot as { currency_code?: string } | null)
                       ?.currency_code ?? 'THB'
                   }
+                  receiptDocumentNumberRaw={invoice.receiptDocumentNumberRaw}
+                  invoiceDocumentNumber={invoice.documentNumber?.raw ?? null}
                 />
               </Suspense>
             )}
@@ -406,21 +419,39 @@ export default async function InvoiceDetailPage({
                 action row exposes only primary/destructive CTAs as
                 standalone buttons. Menu returns null when nothing to
                 show. T107 visibility rules preserved inside the menu. */}
-            {!isDraft && (
-              <InvoiceMoreMenu
-                invoiceId={invoice.invoiceId}
-                documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
-                showDownload={Boolean(invoice.pdf)}
-                showResendInvoice={
-                  isAdmin && invoice.status !== 'void' && Boolean(invoice.pdf)
-                }
-                showResendReceipt={
-                  isAdmin &&
-                  invoice.status === 'paid' &&
-                  Boolean(invoice.receiptPdf)
-                }
-              />
-            )}
+            {!isDraft && (() => {
+              // Combined-mode rule (Thai RD §86/4 + §105ทวิ): ONE
+              // legal document with dual function. Best-practice menu:
+              //   - paid+combined → hide the pre-payment invoice PDF +
+              //     pre-payment resend (both are stale drafts); show
+              //     only the final combined receipt PDF + resend.
+              //   - paid+separate → show all 4 items (2 distinct
+              //     legal documents, each with its own §87 number).
+              //   - issued / void → show invoice PDF only.
+              const isPaidCombined =
+                invoice.status === 'paid' &&
+                invoice.receiptDocumentNumberRaw === null;
+              const hasReceiptPdf =
+                invoice.status === 'paid' && Boolean(invoice.receiptPdf);
+
+              return (
+                <InvoiceMoreMenu
+                  invoiceId={invoice.invoiceId}
+                  documentNumber={invoice.documentNumber?.raw ?? invoice.invoiceId}
+                  showDownload={Boolean(invoice.pdf) && !isPaidCombined}
+                  showResendInvoice={
+                    isAdmin &&
+                    invoice.status !== 'void' &&
+                    Boolean(invoice.pdf) &&
+                    !isPaidCombined
+                  }
+                  showResendReceipt={isAdmin && hasReceiptPdf}
+                  showDownloadReceipt={hasReceiptPdf}
+                  // combinedModeReceipt is derived inside the menu
+                  // component from (showDownloadReceipt && !showDownload).
+                />
+              );
+            })()}
           </>
         }
       />
@@ -452,6 +483,21 @@ export default async function InvoiceDetailPage({
               <dt className="text-muted-foreground">{t('fields.dueDate')}</dt>
               <dd>{formatDate(invoice.dueDate, userLocale)}</dd>
             </div>
+            {/* Receipt No. — visible only on paid invoices issued under
+                separate-mode numbering (the receipt has its own §87
+                sequence). Combined-mode rows reuse invoice doc number
+                and intentionally render nothing here. */}
+            {invoice.status === 'paid' && invoice.receiptDocumentNumberRaw && (
+              <div>
+                <dt className="text-muted-foreground">{t('fields.receiptNumber')}</dt>
+                <dd
+                  className="font-mono"
+                  data-testid="invoice-receipt-number"
+                >
+                  {invoice.receiptDocumentNumberRaw}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-muted-foreground">{t('fields.subtotal')}</dt>
               <dd>{formatSatang(displaySubtotalSatang)} THB</dd>

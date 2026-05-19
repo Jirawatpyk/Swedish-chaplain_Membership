@@ -1,8 +1,10 @@
 /**
- * T054 — F5 Audit port.
+ * F5 Audit port.
  *
- * 17 F5 audit event types per data-model.md § 7. Discriminated union so
- * callers cannot emit an unknown event_type.
+ * F5 audit event types per data-model.md § 7. Discriminated union so
+ * callers cannot emit an unknown event_type. The `F5AuditEventType`
+ * union literal below is the authoritative list — count against it
+ * directly rather than baking a number into prose (F5R2-F-1).
  *
  * `tx` semantics mirror F4's AuditPort:
  *   - mutation path (initiate / confirm / fail / cancel): pass tx handle
@@ -12,10 +14,11 @@
  */
 
 /**
- * The 17 event types below are the authoritative F5 audit catalogue
+ * The event types below are the authoritative F5 audit catalogue
  * (data-model.md § 7). Not all are wired to a use-case in Group D —
  * the following fire from later-phase surfaces and are declared up-
- * front so the enum matches the DB migration 0040 exactly and
+ * front so the enum matches the DB migration sequence (0040 + 0046
+ * + 0047 + 0048 + 0049 + 0052 + 0148 + 0151) exactly and the
  * `check:audit-events` drift-check (scripts/check-audit-event-count.ts)
  * stays truthful:
  *   - `payment_auto_refunded_concurrent_manual_mark` → emitted by a
@@ -31,6 +34,7 @@ export type F5AuditEventType =
   | 'payment_succeeded'
   | 'payment_failed'
   | 'payment_canceled'
+  | 'payment_cancel_attempt_failed'
   // Migration 0049 — distinct from `payment_canceled` (which means
   // user-abandon / sweep-cron / explicit cancel). Method-switch is
   // a different forensic class: the user did NOT abandon — they
@@ -96,7 +100,22 @@ export type F5AuditEventType =
   // typed-emitter path AND closes the audit_event_type ↔ F5AuditEventType
   // drift surface caught by `tests/integration/payments/audit-event-type-parity.test.ts`.
   | 'payment_initiate_rate_limited'
-  | 'payment_cancel_rate_limited';
+  | 'payment_cancel_rate_limited'
+  // F5R2-SF-6 (migration 0151) — emitted by `processChargeRefunded`
+  // when the local refund row's `amount_satang` exceeds Stripe's
+  // confirmed charge total. Pre-fix these mismatches were bucketed
+  // under `out_of_band_refund_detected` → operator dashboards
+  // pivoting on actual OOB refunds saw amount-mismatch false
+  // positives. Dedicated type isolates the genuine DB↔Stripe
+  // divergence class. 5y operational retention.
+  | 'refund_amount_mismatch_detected'
+  // F5R2-C2 (migration 0151) — emitted by the webhook route when
+  // `process-webhook-event` returns `permanence: 'permanent'` (route
+  // 200-acks Stripe to break the 72h retry storm). Honours the
+  // process-webhook-event.ts:156 docstring promise that pre-R2 was
+  // unfulfilled (only pino-logged, which rolls off in 30d). 5y
+  // forensic compliance retention.
+  | 'webhook_dispatch_permanent_failure';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -148,10 +167,21 @@ export interface F5AuditPayloadByType {
     payment_id: string;
     invoice_id: string;
     actor_type: 'member' | 'webhook' | 'admin';
-    /** Set on Stripe-failure path (cancel-payment.ts:170). Omitted on happy path. */
-    outcome?: 'stripe_error';
-    /** Stripe gateway error.kind on the failure path. */
-    processor_error_kind?: 'retryable' | 'permanent' | 'idempotency_conflict';
+  };
+  /**
+   * F5R1-E4 — distinct event type for cancel attempts that failed at
+   * Stripe. Pre-fix `payment_canceled` doubled as "cancel succeeded"
+   * AND "cancel attempt failed" (disambiguated only by
+   * `payload.outcome: 'stripe_error'`). Audit-log dashboards filtering
+   * `event_type='payment_canceled'` silently over-counted successes
+   * unless they ALSO projected the outcome discriminator. New
+   * dedicated event type closes that ambiguity.
+   */
+  payment_cancel_attempt_failed: {
+    payment_id: string;
+    invoice_id: string;
+    actor_type: 'member' | 'webhook' | 'admin';
+    processor_error_kind: 'retryable' | 'permanent' | 'idempotency_conflict';
   };
   payment_method_switched: {
     payment_id: string;
@@ -189,13 +219,16 @@ export interface F5AuditPayloadByType {
   };
   /**
    * Two emit shapes:
-   *   (a) admin-initiated refund (issue-refund.ts:492) — creates F4 CN
-   *       and flips payment/invoice status; payload carries the full
+   *   (a) admin-initiated refund (`issueRefund` use-case,
+   *       `path: 'admin_initiated'` emit) — creates F4 CN and flips
+   *       payment/invoice status; payload carries the full
    *       state-transition record.
-   *   (b) webhook-driven recovery (process-charge-refunded.ts:155) —
-   *       Stripe `charge.refunded` event arrives for a known refund
-   *       row that was stuck `pending`; payload carries Stripe ids +
-   *       recovery_path discriminator.
+   *   (b) webhook-driven recovery (`processChargeRefunded` use-case,
+   *       `path: 'webhook_recovery'` emit) — Stripe `charge.refunded`
+   *       event arrives for a known refund row that was stuck
+   *       `pending`; payload carries Stripe ids + recovery_path
+   *       discriminator. (R3 comment-rot fix: symbolic refs replace
+   *       precise line numbers that rotted past R1+R2.)
    */
   /**
    * R3 TD-2 (2026-04-28): explicit `path` discriminator on both arms
@@ -222,6 +255,17 @@ export interface F5AuditPayloadByType {
         processor_refund_id: string;
         processor_charge_id: string;
         recovery_path: 'webhook_charge_refunded';
+        /**
+         * F5R3 SB-1 (2026-05-16) — when the webhook recovery flips a
+         * stuck-pending refund row, it ALSO atomically recovers the
+         * parent Payment.status (mirrors issueRefund Phase B).
+         *   `'partially_refunded' | 'refunded'` — parent was advanced
+         *   `null` — parent already at the correct status (no-op) OR
+         *     a concurrent writer raced us (race-guard returned null);
+         *     the refund-row flip still committed, parent status was
+         *     correct without our help.
+         */
+        parent_payment_status_recovered_to: 'partially_refunded' | 'refunded' | null;
       };
   refund_failed: {
     refund_id: string;
@@ -284,6 +328,25 @@ export interface F5AuditPayloadByType {
   // payload fields today (only summary + actorUserId + requestId).
   payment_initiate_rate_limited: Record<string, unknown>;
   payment_cancel_rate_limited: Record<string, unknown>;
+  // F5R2-SF-6 — typed payload to keep PII out (no member email, no
+  // raw SQL, no Stripe charge object). Just the IDs + amounts needed
+  // to reconcile the divergence in the SRE runbook.
+  refund_amount_mismatch_detected: {
+    readonly refund_id: string;
+    readonly payment_id: string;
+    readonly db_amount_satang: string;
+    readonly stripe_amount_satang: string;
+    readonly runbook_url: string;
+  };
+  // F5R2-C2 — forensic 200-ack record. Detail is the
+  // ProcessWebhookEventError.detail string (already PII-scrubbed by
+  // the dispatcher's err-construction).
+  webhook_dispatch_permanent_failure: {
+    readonly event_id: string;
+    readonly stripe_event_type: string;
+    readonly dispatch_failure_kind: string;
+    readonly dispatch_failure_detail: string;
+  };
 }
 
 /**
@@ -344,7 +407,14 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   payment_succeeded: 10,
   payment_failed: 5,
   payment_canceled: 5,
-  payment_method_switched: 10,
+  payment_cancel_attempt_failed: 5,
+  // F5R1-IMP7 — method-switch cancels one PaymentIntent and creates a
+  // new one BEFORE settlement; it does NOT touch a tax document so the
+  // 10y class (Thai RD §86/10) does not apply. Downgraded to 5y to
+  // match payment_initiated / payment_canceled (operational, not
+  // financial-settlement). The settled `payment_succeeded` row keeps
+  // its 10y class as the actual financial-settlement record.
+  payment_method_switched: 5,
   payment_auto_refunded_stale_invoice: 10,
   payment_auto_refunded_concurrent_manual_mark: 10,
   refund_initiated: 10,
@@ -372,6 +442,9 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // Migration 0043 — operational rate-limit events; 5y retention.
   payment_initiate_rate_limited: 5,
   payment_cancel_rate_limited: 5,
+  // F5R2 — operational/audit class events; 5y per Constitution VIII.
+  refund_amount_mismatch_detected: 5,
+  webhook_dispatch_permanent_failure: 5,
 };
 
 /**

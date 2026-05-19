@@ -41,7 +41,9 @@ import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import type { AuditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { PasswordHasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { MalformedHashError } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import type { RateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
+import { retryAfterSeconds } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { defaultChangePasswordDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -92,19 +94,20 @@ export async function changePassword(
   input: ChangePasswordInput,
   deps: ChangePasswordDeps = defaultChangePasswordDeps,
 ): Promise<Result<ChangePasswordSuccess, ChangePasswordError>> {
-  // 1. Per-user rate limit (wrong-current brute force defence)
-  const limit = await deps.limiter.check(
-    `change-pw:user:${input.user.id}`,
+  // 1. Per-user rate limit — peek-then-consume (B2). Peek to gate;
+  //    the bucket is only debited on the wrong-current branch below,
+  //    so legitimate password rotations do not trip the cap. See
+  //    review-20260517-post-ship-hardening.md § B2 for rationale.
+  const bucketKey = `change-pw:user:${input.user.id}`;
+  const peek = await deps.limiter.peek(
+    bucketKey,
     RATE_LIMIT_PER_USER.max,
     RATE_LIMIT_PER_USER.windowSeconds,
   );
-  if (!limit.success) {
+  if (!peek.success) {
     return err({
       code: 'rate-limited',
-      retryAfterSeconds: Math.max(
-        Math.ceil((limit.reset - Date.now()) / 1000),
-        1,
-      ),
+      retryAfterSeconds: retryAfterSeconds(peek),
     });
   }
 
@@ -117,16 +120,64 @@ export async function changePassword(
     return err({ code: 'wrong-current-password' });
   }
 
-  // 3. Verify current password
-  const currentOk = await deps.hasher.verify(
-    found.passwordHash,
-    input.currentPassword,
-  );
+  // 3. Verify current password. Round 2 (post-ship review § E-HIGH1
+  //    silent-failure, 2026-05-17) — catch
+  //    MalformedHashError separately so a DB-corruption incident does
+  //    NOT bubble as an opaque 500 with no audit row. Pre-fix the
+  //    B4 catch existed only in sign-in; change-password silently
+  //    propagated the throw past the wrong-current branch.
+  let currentOk: boolean;
+  try {
+    currentOk = await deps.hasher.verify(
+      found.passwordHash,
+      input.currentPassword,
+    );
+  } catch (verifyError) {
+    if (verifyError instanceof MalformedHashError) {
+      await deps.audit.append({
+        eventType: 'password_malformed_hash_detected',
+        actorUserId: input.user.id,
+        targetUserId: input.user.id,
+        sourceIp: input.sourceIp,
+        summary:
+          'stored password hash is malformed — user cannot change password until reset',
+        requestId: input.requestId,
+      });
+      // Surface as wrong-current so the UI route is consistent with
+      // sign-in's malformed-hash UX. The user should then use
+      // /forgot-password which writes a fresh hash (E2 hash-at-rest
+      // path) overwriting the corrupt row.
+      return err({ code: 'wrong-current-password' });
+    }
+    throw verifyError;
+  }
   if (!currentOk) {
+    // 3a. NOW consume the bucket (B2). Wrong-current is the only
+    //     event that should count against the user's brute-force
+    //     budget. If `check` here pushes the count over `max`, the
+    //     NEXT call's peek will return rate-limited.
+    await deps.limiter.check(
+      bucketKey,
+      RATE_LIMIT_PER_USER.max,
+      RATE_LIMIT_PER_USER.windowSeconds,
+    );
     logger.warn(
       { userIdHash: hashId(input.user.id), requestId: input.requestId },
       'change_password.wrong_current',
     );
+    // B5 — audit emit on wrong-current. Pre-B5 the failure was
+    // logger.warn only — an attacker probing the user's password to
+    // elevate via /change-password had zero audit-trail footprint.
+    // Auto-swallow contract (A1) means a Neon hiccup here can't
+    // mask the user-facing error path.
+    await deps.audit.append({
+      eventType: 'password_change_failed',
+      actorUserId: input.user.id,
+      targetUserId: input.user.id,
+      sourceIp: input.sourceIp,
+      summary: 'wrong current password on /change-password',
+      requestId: input.requestId,
+    });
     return err({ code: 'wrong-current-password' });
   }
 

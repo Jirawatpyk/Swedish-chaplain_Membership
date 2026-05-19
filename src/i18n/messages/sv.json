@@ -2,6 +2,9 @@
   "auth": {
     "signIn": {
       "title": "Logga in",
+      "cardDescription": "Personalportal",
+      "memberCardDescription": "Medlemsportal",
+      "securityUpdateBanner": "Vi har uppdaterat säkerheten. Vänligen logga in igen.",
       "emailLabel": "E-post",
       "passwordLabel": "Lösenord",
       "submit": "Logga in",
@@ -17,16 +20,23 @@
     "signOut": {
       "label": "Logga ut"
     },
+    "passwordReveal": {
+      "show": "Visa lösenord",
+      "hide": "Dölj lösenord"
+    },
     "forgotPassword": {
       "title": "Återställ ditt lösenord",
       "description": "Ange din e-post så skickar vi en återställningslänk.",
       "emailLabel": "E-post",
       "submit": "Skicka återställningslänk",
       "submitted": "Om e-posten matchar ett konto är en återställningslänk på väg.",
-      "resend": "Fick du inget mejl? Skicka igen"
+      "resend": "Fick du inget mejl? Skicka igen",
+      "resendCountdown": "Skicka igen ({seconds}s)"
     },
     "resetPassword": {
       "title": "Välj ett nytt lösenord",
+      "cardDescription": "Välj ett nytt lösenord för ditt konto.",
+      "requestNewLink": "Begär en ny länk",
       "newPasswordLabel": "Nytt lösenord",
       "confirmPasswordLabel": "Bekräfta nytt lösenord",
       "submit": "Uppdatera lösenord",
@@ -35,7 +45,9 @@
         "tokenExpired": "Den här återställningslänken har gått ut. Begär en ny.",
         "tokenUsed": "Den här återställningslänken har redan använts.",
         "weakPassword": "Välj ett starkare lösenord.",
-        "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat."
+        "passwordBreached": "Det här lösenordet har förekommit i ett känt dataläckage. Välj ett annat.",
+        "tooShort": "Lösenordet måste vara minst 12 tecken",
+        "passwordMismatch": "Lösenorden måste stämma överens"
       }
     },
     "passwordStrength": {
@@ -58,13 +70,15 @@
     },
     "invite": {
       "title": "Slutför ditt konto",
+      "cardDescription": "Aktivera ditt inbjudna konto genom att välja ett lösenord.",
       "emailLabel": "E-post",
       "displayNameLabel": "Ditt namn",
       "passwordLabel": "Välj ett lösenord",
       "submit": "Aktivera konto",
       "errors": {
         "tokenExpired": "Den här inbjudan har gått ut. Be en administratör skicka en ny.",
-        "tokenUsed": "Den här inbjudan har redan använts."
+        "tokenUsed": "Den här inbjudan har redan använts.",
+        "contactAdminCta": "Kontakta en administratör för att begära en ny inbjudan."
       }
     },
     "idleWarning": {
@@ -236,7 +250,6 @@
         "invite": "Bjud in användare",
         "disable": "Inaktivera",
         "enable": "Aktivera",
-        "changeRole": "Byt roll",
         "self": "Det är du"
       },
       "confirm": {
@@ -545,7 +558,11 @@
       "title": "Språk för aviseringar",
       "description": "Åsidosätt språket som denna medlem tar emot transaktionsmejl på (utskicksgodkännanden, fakturor m.m.). Lämna på \"Använd kammarens standardspråk\" för att följa kammarens inställning.",
       "useTenantDefault": "Använd kammarens standardspråk",
-      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
       "save": "Spara",
       "savedToast": "Aviseringsspråk uppdaterat.",
       "errorToast": "Kunde inte spara inställningen. Försök igen.",
@@ -582,6 +599,7 @@
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
+        "managerReadOnlyBanner": "Skrivskyddad vy — chefer kan bläddra och söka men inte redigera, arkivera eller utföra massåtgärder. Kontakta en systemadministratör för att göra ändringar.",
         "searchPlaceholder": "Sök på företag, kontaktnamn eller e-post",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
@@ -596,6 +614,14 @@
           "plan": {
             "label": "Paket",
             "all": "Alla paket"
+          },
+          "risk": {
+            "label": "Riskband",
+            "all": "Alla riskband",
+            "healthy": "God status",
+            "warning": "Varning",
+            "at-risk": "I riskzon",
+            "critical": "Kritisk"
           }
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
@@ -611,8 +637,9 @@
           "notes": "Anteckningar"
         },
         "riskPlaceholder": "—",
-        "riskNotComputed": "—",
+        "riskNotComputed": "Ingen poäng än",
         "riskNotComputedAria": "Riskpoäng inte beräknad ännu",
+        "riskNotComputedTooltip": "Riskpoängen beräknas efter 30 dagars aktivitet. Nyligen tillagda medlemmar får poäng när data har samlats in.",
         "rowAriaLabel": "Öppna {company} detaljer",
         "noPrimary": "Ingen primär kontakt",
         "loadMore": "Ladda fler",
@@ -640,13 +667,29 @@
       },
       "detail": {
         "title": "{companyName}",
+        "subtitle": "{plan} · År {year}",
+        "subtitleArchived": "{plan} · År {year} · Arkiverad",
+        "timelinePreview": {
+          "viewAll": "Visa all aktivitet",
+          "empty": "Ingen aktivitet ännu."
+        },
+        "pendingInvitations": {
+          "title": "Väntande portalinbjudningar",
+          "subtitle": "Inbjudningar skickade men ännu inte inlösta.",
+          "rowLabel": "Inbjuden {date}",
+          "expiresAt": "Går ut {date}",
+          "expiresInDays": "{days, plural, =0 {Går ut idag} one {Går ut om # dag} other {Går ut om # dagar}}",
+          "empty": "Inga väntande inbjudningar.",
+          "loadError": "Kunde inte läsa in väntande inbjudningar."
+        },
         "sections": {
           "company": "Företag",
           "contacts": "Kontakter",
           "primary": "Primär kontakt",
           "secondary": "Övriga kontakter",
           "plan": "Paket",
-          "audit": "Senaste aktivitet"
+          "audit": "Senaste aktivitet",
+          "contactStatusBadges": "Kontaktstatus"
         },
         "fields": {
           "memberId": "Medlems-ID",
@@ -690,7 +733,7 @@
         "emergencyPrimary": {
           "ariaLabel": "Hjälp — nödöverföring av primär kontakt",
           "title": "Nödöverföring av primär kontakt",
-          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Klicka på Lägg till kontakt för att skapa en sekundär kontakt med den nya personens uppgifter och använd sedan Befordra för att göra dem till den nya primära. Den gamla primära nedgraderas automatiskt."
+          "body": "Behöver du överföra den primära kontakten till en ny person (t.ex. den tidigare primära har lämnat företaget)? Öppna Redigera-sidan och lägg till den nya personen under \"Övriga kontakter\", återgå sedan hit och använd Befordra för att göra dem till den primära. Den gamla primära nedgraderas automatiskt."
         },
         "portal": {
           "linked": "Portalansluten"
@@ -711,7 +754,8 @@
         "totalEvents": "{count, plural, one {# händelse} other {# händelser}}",
         "payload": {
           "primary": "primär",
-          "primaryContactPromoted": "primär kontakt befordrad"
+          "primaryContactPromoted": "primär kontakt befordrad",
+          "archiveReason": "Anledning: {reason}"
         },
         "invoiceDraftCreated": "Fakturautkast skapat",
         "invoiceIssued": "Faktura {documentNumber} utställd",
@@ -876,6 +920,7 @@
         "toolbarLabel": "Massåtgärder",
         "selectedCount": "{count, plural, one {# vald} other {# valda}}",
         "overCap": "Max {max} medlemmar per omgång. Dela upp urvalet.",
+        "overCapHelper": "{count} av {total} valda — endast {max} kan behandlas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att smalna av listan innan du markerar om.",
         "actions": {
           "archive": "Arkivera",
           "change_plan": "Byt plan",
@@ -902,6 +947,9 @@
         "statusUpdated": "Status uppdaterad",
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
+        "saved": "Sparat",
+        "columnHeaderHint": "Redigerbar",
+        "columnHeaderHintTooltip": "Dubbelklicka på en cell i denna kolumn för att redigera direkt. Tryck Enter för att spara, Escape för att avbryta.",
         "toggleStatus": "Växla status (nuvarande: {current})",
         "editCountry": "Redigera land",
         "editCountryHint": "Dubbelklicka för att redigera landskod (ISO 3166-1 alpha-2)",
@@ -931,11 +979,11 @@
         "bannerTitle": "Arkiverad {date}",
         "withinWindow": "{daysRemaining, plural, one {# dag kvar} other {# dagar kvar}} i 90-dagars återställningsfönstret.",
         "windowExpired": "Arkiverad för {daysSinceArchive} dagar sedan — utanför 90-dagars återställningsfönstret.",
-        "windowExpiredTooltip": "Arkiverad > 90 dagar — kontakta plattformsadministratören för att återställa.",
+        "windowExpiredTooltip": "Arkiverad > 90 dagar — kontakta systemadministratören för att återställa.",
         "undeleteCta": "Återställ",
         "undeleteSuccess": "Medlemmen har återställts.",
         "undeleteError": "Kunde inte återställa. Försök igen.",
-        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta plattformsadministratören för att återställa."
+        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa."
       },
       "undelete": {
         "cta": "Återställ",
@@ -1164,7 +1212,11 @@
         "setupRequired": "Slutför fakturakonfiguration för att börja fakturera.",
         "actions": {
           "new": "Ny faktura",
-          "download": "PDF",
+          "download": "Faktura",
+          "downloadReceipt": "Kvitto",
+          "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+          "downloadReceiptAria": "Ladda ner kvitto-PDF för {number}",
+          "receiptPreparing": "Förbereder kvitto…",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering"
         },
@@ -1176,7 +1228,8 @@
           "total": "Totalt",
           "actions": "",
           "member": "Medlem",
-          "method": "Metod"
+          "method": "Metod",
+          "receiptNumber": "Kvittonr."
         },
         "statuses": {
           "draft": "Utkast",
@@ -1197,7 +1250,29 @@
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
         "creditedTooltip": "{count, plural, one {# kreditnota} other {# kreditnotor}} · {amount} THB krediterat",
-        "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat"
+        "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
+        "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
+        "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)"
+      },
+      "csvExport": {
+        "trigger": "Exportera CSV",
+        "dialog": {
+          "title": "Exportera betalda fakturor till CSV",
+          "description": "För månatlig thailändsk momsdeklaration (ภ.พ.30). CSV-filen innehåller alla betalda fakturor vars betalningsdatum ligger inom intervallet nedan."
+        },
+        "fields": {
+          "from": "Från",
+          "to": "Till"
+        },
+        "actions": {
+          "cancel": "Avbryt",
+          "download": "Ladda ner CSV"
+        },
+        "errors": {
+          "invalidDate": "Välj giltiga datum.",
+          "rangeInverted": "Från-datumet måste vara samma dag eller före Till-datumet.",
+          "rangeTooWide": "Intervallet får inte överstiga ett år."
+        }
       },
       "new": {
         "title": "Nytt fakturautkast",
@@ -1238,7 +1313,7 @@
         "actions": {
           "preview": "Förhandsgranska",
           "issue": "Utfärda…",
-          "download": "Ladda ner PDF",
+          "download": "Ladda ner faktura-PDF",
           "pay": "Registrera betalning",
           "void": "Annullera…",
           "issueCreditNote": "Utfärda kreditnota",
@@ -1246,6 +1321,10 @@
           "resendReceipt": "Skicka kvitto-mejl igen",
           "resendInvoiceAria": "Mejla en ny kopia av faktura {number} till medlemmens primära kontakt",
           "resendReceiptAria": "Mejla en ny kopia av kvitto {number} till medlemmens primära kontakt",
+          "downloadReceipt": "Ladda ner kvitto-PDF",
+          "downloadCombined": "Ladda ner faktura/kvitto",
+          "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
+          "downloadInvoiceAria": "Ladda ner faktura-PDF för faktura {number}",
           "more": "Fler",
           "moreAria": "Fler åtgärder för {number}"
         },
@@ -1254,13 +1333,26 @@
           "resendRateLimited": "Dokumentet skickades nyligen igen. Vänta några minuter och försök igen.",
           "resendNoReceipt": "Det finns inget kvitto att skicka (kombinerat läge eller obetald).",
           "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
-          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
+          "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
+          "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
+          "receiptForbidden": "Du har inte behörighet till detta kvitto.",
+          "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen.",
+          "receiptSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+          "receiptRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
+          "invoiceForbidden": "Du har inte behörighet till denna faktura.",
+          "invoiceNotFound": "Faktura hittades inte.",
+          "invoiceUnavailable": "Faktura-PDF är inte tillgänglig just nu. Försök igen.",
+          "invoiceSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+          "invoiceRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
+          "downloadInProgress": "Förbereder nedladdning…"
         },
         "fields": {
           "memberId": "Medlem",
           "plan": "Paket / år",
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
+          "receiptNumber": "Kvittonummer",
           "subtotal": "Delsumma",
           "vat": "Moms",
           "total": "Totalt"
@@ -1354,6 +1446,7 @@
         "success": "Betalning registrerad",
         "successDetail": "Faktura {number} är nu betald.",
         "cancel": "Tillbaka",
+        "cancelDialog": "Avbryt",
         "errors": {
           "failed": "Kunde inte registrera betalning",
           "invalidStatus": "Endast utfärdade fakturor kan betalas (nuvarande status: {status}).",
@@ -1427,7 +1520,7 @@
           "fromDate": "Från",
           "toDate": "Till",
           "apply": "Tillämpa filter",
-          "reset": "Återställ"
+          "reset": "Återställ filter"
         },
         "columns": {
           "submittedAt": "Inskickad",
@@ -1480,6 +1573,12 @@
           "submittedAt": "Inskickad",
           "scheduledFor": "Schemalagd till",
           "actorRole": "Aktörsroll"
+        },
+        "segmentType": {
+          "all_members": "Alla medlemmar",
+          "tier": "Per medlemsnivå",
+          "event_attendees_last_90d": "Deltagare (senaste 90 dagarna)",
+          "custom": "Anpassad mottagarlista"
         },
         "audit": {
           "title": "Livscykelstidslinje",
@@ -2202,7 +2301,10 @@
         "description": "Återbetala hela eller delar av denna betalning. Motsvarande kreditnota utfärdas och skickas till medlemmen via e-post.",
         "cancel": "Avbryt",
         "confirm": "Utfärda återbetalning",
-        "processing": "Bearbetar återbetalning…"
+        "processing": "Bearbetar återbetalning…",
+        "refsInvoice": "Faktura-nr",
+        "refsReceipt": "Kvitto-nr",
+        "refsCombinedHint": "kombinerat"
       },
       "form": {
         "amount": {
@@ -2287,11 +2389,659 @@
           "title": "Inga onlinebetalningar ännu",
           "body": "Onlinebetalningar via kort eller PromptPay visas här när en medlem genomför en. Manuellt registrerade betalningar visas i avsnittet Betalningsdetaljer ovan.",
           "recordManualLink": "Registrera en betalning manuellt"
+        },
+        "emptyPaidManual": {
+          "title": "Betald via manuell registrering",
+          "body": "Denna faktura markerades som betald via dialogen Registrera betalning (kontant, banköverföring, check eller annat). Manuellt registrerade betalningsuppgifter visas i avsnittet Betalningsdetaljer ovan — tidslinjen följer endast onlinebetalningshändelser."
         }
       }
     },
     "paymentSettings": {
       "title": "Betalningsinställningar"
+    },
+    "events": {
+      "list": {
+        "title": "Evenemang",
+        "subtitle": "Importerade evenemangsregistreringar från EventCreate.",
+        "tableCaption": "Importerade evenemang sorterade efter startdatum, nyast först.",
+        "errorState": "Det gick inte att läsa in evenemangen. Uppdatera sidan.",
+        "importCsvCta": "Importera CSV",
+        "searchPlaceholder": "Sök evenemang efter namn…",
+        "searchLabel": "Sök evenemang",
+        "searchSubmit": "Sök",
+        "resultsAnnouncement": "{count, plural, =0 {Inga evenemang} one {1 evenemang} other {# evenemang}}",
+        "resultsAnnouncementWithQuery": "{count, plural, =0 {Inga evenemang} one {1 evenemang} other {# evenemang}} för ''{query}''",
+        "columns": {
+          "date": "Datum",
+          "name": "Namn",
+          "category": "Kategori",
+          "registrations": "Registreringar",
+          "partnerBenefit": "Partnerförmån",
+          "matchRate": "Matchningsgrad"
+        },
+        "badges": {
+          "archived": "Arkiverad",
+          "partnerBenefit": "Partnerförmån",
+          "culturalEvent": "Kulturevenemang"
+        },
+        "matchRateBand": {
+          "high": "Stark matchningsgrad",
+          "medium": "Blandad matchningsgrad",
+          "low": "Låg matchningsgrad",
+          "none": "Inga registreringar"
+        },
+        "matchRateOf": "{matched} av {total}",
+        "filters": {
+          "partnerBenefitOnly": "Räknas som partnerförmån",
+          "culturalEventOnly": "Räknas som kulturevenemang",
+          "showArchived": "Visa arkiverade evenemang",
+          "hideArchived": "Dölj arkiverade evenemang",
+          "clearAll": "Rensa filter",
+          "partnerBenefitOnlyActive": "Räknas som partnerförmån (aktivt)",
+          "culturalEventOnlyActive": "Räknas som kulturevenemang (aktivt)"
+        },
+        "emptyState": {
+          "filteredEmpty": "Inga evenemang matchar dina filter.",
+          "clearFilters": "Rensa filter",
+          "genericEmpty": "Inga evenemang att visa ännu.",
+          "noIntegration": {
+            "title": "Inga evenemang ännu",
+            "body": "Konfigurera din EventCreate-integration för att automatiskt importera deltagare.",
+            "cta": "Konfigurera EventCreate-integration"
+          },
+          "noDeliveries": {
+            "title": "Väntar på första evenemanget",
+            "body": "Din Zap ska leverera nya deltagardata inom cirka 15 minuter efter en EventCreate-registrering. Du kan också skicka en testwebhook för att bekräfta anslutningen.",
+            "primaryCta": "Skicka en testhändelse",
+            "cta": "Visa integrationsinställningar",
+            "illustrationAlt": "Illustration av tom inkorg"
+          },
+          "allArchived": {
+            "title": "Alla evenemang är arkiverade",
+            "body": "{count, plural, one {1 evenemang har arkiverats.} other {# evenemang har arkiverats.}}",
+            "cta": "{count, plural, one {Visa 1 arkiverat evenemang} other {Visa # arkiverade evenemang}}"
+          }
+        }
+      },
+      "detail": {
+        "title": "Evenemangsdetaljer",
+        "subtitle": "Importerade deltagare, matchningsstatus och kvoteffekter.",
+        "errorSubtitle": "Det gick inte att läsa in evenemanget.",
+        "errorBody": "Uppdatera sidan. Om problemet kvarstår, kontakta supporten.",
+        "backToList": "Tillbaka till evenemang",
+        "header": {
+          "matchRate": "Matchningsgrad",
+          "matchRateValue": "{pct}% ({matched} av {total})",
+          "matchRateValueStacked": "{matched} av {total} deltagare matchade",
+          "matchRateNone": "Inga registreringar ännu",
+          "matchRateBandHigh": "Stark — de flesta deltagarna är matchade",
+          "matchRateBandMedium": "Blandad — granska omatchade rader",
+          "matchRateBandLow": "Låg — många deltagare behöver granskas",
+          "totalRegistrations": "Registreringar totalt",
+          "archived": "Arkiverad",
+          "partnerBenefit": "Partnerförmån",
+          "culturalEvent": "Kulturevenemang",
+          "viewOnEventCreate": "Visa på EventCreate",
+          "opensInNewTab": "(öppnas i en ny flik)",
+          "lastUpdatedAt": "Senast uppdaterad",
+          "lastUpdatedAtTooltip": "Tidpunkt för senaste deltagaresynk eller evenemangsuppdatering.",
+          "actionsLabel": "Evenemangsåtgärder"
+        },
+        "attendees": {
+          "heading": "Deltagare",
+          "tableCaption": "Deltagare med matchningsstatus, biljett, kvoteffekt och registreringstid.",
+          "searchPlaceholder": "Sök på e-post eller namn…",
+          "searchLabel": "Sök deltagare",
+          "searchSubmit": "Sök",
+          "showUnmatchedOnly": "Visa endast omatchade",
+          "showUnmatchedOnlyActive": "Visar endast omatchade",
+          "filterByPaymentStatusLabel": "Filtrera efter betalningsstatus",
+          "allPaymentStatuses": "Alla statusar",
+          "empty": "Inga deltagare matchar dessa filter. Prova att rensa filtren eller visa hela listan.",
+          "emptyHeading": "Inga matchningar hittades",
+          "clearFilters": "Rensa filter",
+          "filtersCleared": "Filter rensade",
+          "paymentStatusFilterDropped": "Filtret för betalningsstatus kändes inte igen — visar alla statusar.",
+          "columns": {
+            "attendee": "Deltagare",
+            "match": "Matchning",
+            "ticket": "Biljett",
+            "quota": "Kvot",
+            "registered": "Registrerad",
+            "actions": "Åtgärder"
+          },
+          "resultCount": "{count, plural, =0 {Inga deltagare} one {1 deltagare} other {# deltagare}}",
+          "copyEmail": "Kopiera e-post",
+          "copyEmailAria": "Kopiera {email} till urklipp",
+          "copyEmailSuccess": "E-post kopierad till urklipp",
+          "copyEmailFailed": "Kunde inte kopiera — kopiera manuellt"
+        },
+        "relink": {
+          "relinkCta": "Länka om",
+          "triggerAriaLabel": "Länka om {attendee} ({email}) till en annan medlem",
+          "dialogTitle": "Länka om {attendee} till en medlem",
+          "dialogDescription": "Välj den medlem som detta deltagande tillhör. Den tidigare matchningen krediteras tillbaka och den nya medlemmens kvot omvärderas. Åtgärden är spårbar.",
+          "searchSrLabel": "Sök medlemmar",
+          "searchPlaceholder": "Sök efter företag eller kontakt…",
+          "searchPrompt": "Börja skriva för att söka medlemmar.",
+          "searching": "Söker medlemmar…",
+          "noResults": "Inga medlemmar matchar.",
+          "searchFailed": "Kunde inte ladda medlemmar. Kontrollera anslutningen och försök igen.",
+          "pendingAnnouncement": "Länkar om deltagande…",
+          "successToast": "Omlänkad till {companyName}",
+          "noopToast": "Ingen ändring",
+          "noopToastDescription": "Detta deltagande var redan länkat till {companyName}.",
+          "errorToast": "Kunde inte länka om — försök igen",
+          "errorToastNetwork": "Anslutningen bröts — kontrollera ditt internet och försök igen",
+          "errorToastConflict": "Kan inte länka om just nu — händelsestatus kan ha ändrats. Uppdatera sidan och försök igen.",
+          "notFoundToast": "Målmedlem är inte längre tillgänglig",
+          "disallowedShort": "PII raderad — kan inte länka om",
+          "disallowedPseudonymised": "Kan inte länka om — deltagarens PII har raderats enligt lagringspolicyn. Den ursprungliga identiteten kan inte återställas. Importera registreringen igen via CSV om du har originaldata."
+        },
+        "archive": {
+          "archiveCta": "Arkivera evenemang",
+          "confirmTitle": "Arkivera detta evenemang?",
+          "confirmBody": "Arkivering försätter evenemanget i ett kvotneutralt läge. Alla räknade partner- och kulturbiljetter på detta evenemang krediteras tillbaka till respektive medlem. Framtida webbhooksleveranser för evenemanget registreras men förbrukar ingen ny kvot. Åtgärden är spårbar; det finns ingen avarkivering i produkten i v1.",
+          "cancel": "Avbryt",
+          "confirm": "Arkivera",
+          "successTitle": "Evenemang arkiverat",
+          "successDescription": "{count, plural, =0 {Inga kvotåterföringar behövdes.} one {1 registrering krediterades tillbaka.} other {# registreringar krediterades tillbaka.}}",
+          "alreadyArchivedTitle": "Redan arkiverat",
+          "alreadyArchivedDescription": "En annan administratör arkiverade detta evenemang i en samtidig begäran. Sidan har uppdaterats.",
+          "errorTitle": "Kunde inte arkivera evenemang",
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
+          "loading": "Arkiverar evenemang…"
+        },
+        "erase": {
+          "triggerCta": "Radera personuppgifter",
+          "triggerAriaLabel": "Radera personuppgifter för {attendeeName}",
+          "confirmTitle": "Radera personuppgifter för {attendeeName}?",
+          "confirmBody": "Detta tar permanent bort deltagarens namn, e-post och företag från registreringsposten. Räknad kvot krediteras tillbaka. Granskningsspåret för raderingen (administratör, tidsstämpel, orsak) behålls för efterlevnad. Åtgärden kan inte ångras — importera om manuellt via CSV om originaldata finns kvar.",
+          "reasonLabel": "Orsak till radering",
+          "reasonPlaceholder": "t.ex. GDPR artikel 17-begäran från deltagaren, PDPA § 30-begäran, fel i ursprunglig inlämning…",
+          "reasonHint": "{remaining, plural, =0 {0 tecken kvar} one {1 tecken kvar} other {# tecken kvar}}",
+          "cancel": "Avbryt",
+          "confirm": "Radera personuppgifter",
+          "successTitle": "Personuppgifter raderade",
+          "successDescription": "Kvotåterföring: {partnership} partner, {cultural} kultur.",
+          "alreadyErasedTitle": "Redan raderad",
+          "alreadyErasedDescription": "En annan administratör raderade denna registrering i en samtidig begäran.",
+          "pathMismatchTitle": "Kan inte radera",
+          "pathMismatchDescription": "Denna registrering tillhör ett annat evenemang. Uppdatera sidan och försök igen.",
+          "errorTitle": "Kunde inte radera personuppgifter",
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
+          "tryAgain": "Försök igen",
+          "loading": "Raderar personuppgifter…",
+          "pageTitle": "Radera personuppgifter — {attendeeName}",
+          "pageBackToEventLabel": "Tillbaka till evenemangsdetaljer",
+          "pageHint": "Denna destruktiva åtgärd loggas. Bekräftelsedialogen öppnas automatiskt."
+        },
+        "ticketsRemaining": "{remaining, plural, one {# biljett kvar} other {# biljetter kvar}} av {total}",
+        "auditEvents": {
+          "webhook_receipt_verified": "Webbhok-leverans verifierad",
+          "webhook_signature_rejected": "Webbhok-signatur avvisad",
+          "webhook_replay_rejected": "Webbhok-uppspelning avvisad",
+          "webhook_duplicate_rejected": "Duplikat webbhok avvisad",
+          "webhook_malformed_rejected": "Felaktigt webbhok-payload avvisad",
+          "webhook_rolled_back": "Webbhok-inläsning återställd",
+          "webhook_secret_grace_used": "Webbhok signerad med övergångsnyckel",
+          "webhook_test_invoked": "Administratör körde testwebbhok",
+          "webhook_ingest_precondition_failed": "Förutsättning för webbhok ej uppfylld",
+          "webhook_rate_limit_exceeded": "Webbhok överskred frekvensgräns",
+          "attendee_matched_member_contact": "Deltagare matchad mot medlemskontakt",
+          "attendee_matched_member_domain": "Deltagare matchad via domän",
+          "attendee_matched_member_fuzzy": "Deltagare matchad (oskarp)",
+          "attendee_non_member": "Deltagare identifierad som icke-medlem",
+          "attendee_unmatched": "Deltagare omatchad",
+          "quota_partnership_decremented": "Partnerbiljett förbrukad",
+          "quota_cultural_decremented": "Kulturbiljett förbrukad",
+          "quota_credit_back_refund": "Kvot återförd (återbetalning)",
+          "quota_credit_back_archive": "Kvot återförd (arkivering)",
+          "quota_over_quota_warning": "Varning för överskriden kvot",
+          "event_partner_benefit_toggled": "Partnerförmånsmarkering uppdaterad",
+          "event_cultural_event_toggled": "Kulturevenemangsmarkering uppdaterad",
+          "event_archived": "Evenemang arkiverat",
+          "event_created": "Evenemang skapat (administratör manuellt)",
+          "registration_relinked": "Deltagande omlänkad",
+          "webhook_secret_generated": "Webbhok-nyckel genererad",
+          "webhook_secret_rotated": "Webbhok-nyckel roterad",
+          "webhook_secret_force_expired": "Webbhok-nyckel tvångsspärrad",
+          "ingest_disabled_tenant_admin": "Inläsning inaktiverad av kammaradministratör",
+          "csv_import_completed": "CSV-import slutförd",
+          "csv_import_row_failed": "CSV-import: rad misslyckades",
+          "csv_import_error_csv_downloaded": "Error-CSV hämtad av administratör",
+          "csv_import_cross_tenant_probe": "Tvärs-organisations-probe vid CSV-import",
+          "csv_import_event_mismatch_overridden": "CSV-import åsidosatte evenemangskontroll",
+          "csv_import_row_cancelled_no_prior": "Avbokningsrad hoppades över (ingen tidigare registrering)",
+          "csv_import_row_state_changed": "CSV-rad ändrade tillstånd vid återinläsning",
+          "pii_erasure_requested": "Begäran om radering av personuppgifter",
+          "pii_erasure_completed": "Radering av personuppgifter slutförd",
+          "pii_pseudonymised": "Deltagaruppgifter pseudonymiserade",
+          "pii_pseudonymisation_sweep_run": "Pseudonymiseringssvep kört",
+          "cross_tenant_probe": "Tvärs-organisations-probe blockerad",
+          "event_detail_not_found_probe": "Eventdetalj hittades inte (info-nivå)",
+          "role_violation_blocked": "Rollöverträdelse blockerad"
+        },
+        "toggles": {
+          "flagPartnerBenefit": "Markera som partnerförmån",
+          "unflagPartnerBenefit": "Ta bort partnerflagga",
+          "flagCulturalEvent": "Markera som kulturevenemang",
+          "unflagCulturalEvent": "Ta bort kulturflagga",
+          "confirmFlagPartnerTitle": "Markera detta evenemang som en partnerförmån?",
+          "confirmFlagPartnerBody": "Alla matchade och betalda deltagare omvärderas mot sin partnertiers biljettilldelning. Medlemmar med kvarvarande kvot får en biljett dragen; deltagare utan kvot sparas utan att förbruka kvoten.",
+          "confirmUnflagPartnerTitle": "Ta bort partnerförmånsmarkeringen?",
+          "confirmUnflagPartnerBody": "Alla räknade partnerbiljetter på detta evenemang krediteras tillbaka till medlemmarna. Åtgärden är spårbar och reversibel genom att markera igen.",
+          "confirmFlagCulturalTitle": "Markera detta evenemang som ett kulturevenemang?",
+          "confirmFlagCulturalBody": "Alla matchade och betalda deltagare omvärderas mot Corporate-medlemskapets årliga kulturbiljettilldelning. Medlemmar med kvarvarande kvot får en biljett dragen; deltagare utan kvot sparas utan att förbruka kvoten.",
+          "confirmUnflagCulturalTitle": "Ta bort kulturevenemangsmarkeringen?",
+          "confirmUnflagCulturalBody": "Alla räknade kulturbiljetter på detta evenemang krediteras tillbaka till medlemmarna för det aktuella kalenderåret.",
+          "cancel": "Avbryt",
+          "confirm": "Tillämpa",
+          "successTitle": "Kategorimarkering uppdaterad",
+          "successDescription": "{count, plural, =0 {Inga registreringar behövde omvärderas.} one {1 registrering omvärderades.} other {# registreringar omvärderades.}}",
+          "archivedTitle": "Evenemang arkiverat",
+          "archivedDescription": "Arkiverade evenemang är kvotneutrala och kan inte återmarkeras.",
+          "errorTitle": "Kunde inte uppdatera markering",
+          "errorDescription": "Försök igen. Om problemet kvarstår, kontakta support.",
+          "loadingPartnerBenefit": "Uppdaterar partnerförmånsmarkering…",
+          "loadingCulturalEvent": "Uppdaterar kulturevenemangsmarkering…"
+        }
+      },
+      "matchType": {
+        "member_contact": "Verifierad (e-post)",
+        "member_domain": "Verifierad (domän)",
+        "member_fuzzy": "Trolig matchning",
+        "non_member": "Icke-medlem",
+        "unmatched": "Behöver granskning"
+      },
+      "matchTypeTooltip": {
+        "member_contact": "E-postadressen matchar en aktiv medlemskontakt i din kammare.",
+        "member_domain": "E-postdomänen tillhör ett medlemsföretag.",
+        "member_fuzzy": "Nära en medlemskontakt men inte exakt matchning — granska gärna.",
+        "non_member": "E-post och domän är inte registrerade hos någon medlem.",
+        "unmatched": "Kunde inte matchas automatiskt — koppla manuellt eller markera som icke-medlem."
+      },
+      "quotaEffect": {
+        "partnership": "Partnerförmån",
+        "cultural": "Kulturkvot",
+        "overQuota": "Över kvot",
+        "none": "Ej räknad"
+      },
+      "quotaEffectTooltip": {
+        "partnership": "Denna biljett förbrukade en av medlemmens partnerförmånsbiljetter.",
+        "cultural": "Denna biljett förbrukade en av medlemmens årliga kulturbiljetter.",
+        "overQuota": "Medlemmens tilldelning är slut — biljetten registreras utan att ny kvot förbrukas.",
+        "none": "Ingen kvoteffekt — icke-medlem, gratisbiljett eller evenemanget är inte partnerförmån/kulturevenemang."
+      },
+      "paymentStatus": {
+        "paid": "Betald",
+        "pending": "Väntar",
+        "refunded": "Återbetald",
+        "free": "Gratis",
+        "waitlisted": "Väntelista",
+        "no_show": "Uteblev"
+      },
+      "import": {
+        "pageTitle": "Importera deltagare från CSV",
+        "pageSubtitle": "Ladda upp en CSV-export av EventCreate-deltagare. Använd detta för backfill, återställning efter Zapier-avbrott eller som primär importväg när Zapier inte är tillgängligt.",
+        "formTitle": "Ladda upp CSV-fil",
+        "formDescription": "Vi matchar deltagare mot dina befintliga medlemmar och tillämpar samma kvotregler som direkta webhook-leveranser.",
+        "fileInputLabel": "Välj en .csv-fil",
+        "fileInputHelp": "Maximal filstorlek 5 MiB. UTF-8-kodad; kommaseparerad; använd \"\" för att escape:a citattecken. Obligatoriska kolumner: event_external_id, event_name, event_start, attendee_email, attendee_name.",
+        "confirmCta": "Bekräfta och importera",
+        "cancelCta": "Avbryt",
+        "submittingCta": "Importerar — vänta",
+        "uploadInProgressSr": "CSV-import pågår. Vänta.",
+        "importCompleteSr": "Importen är klar. Se sammanfattningen nedan.",
+        "resetToUploadSr": "Formuläret är återställt. Ladda upp en ny CSV-fil.",
+        "importSuccessToast": "Importen är klar",
+        "importSuccessToastDesc": "{count, plural, =0 {Inga nya rader — alla har redan importerats.} one {1 rad importerad.} other {# rader importerade.}}",
+        "retryCta": "Försök igen",
+        "uploadAnother": "Ladda upp en till CSV",
+        "preview": {
+          "fileNameLabel": "Fil",
+          "columnMappingTitle": "Identifierade kolumner",
+          "columnMappingLegend": "Obligatoriska kolumner visas i grönt; valfria i dämpad stil. Saknade obligatoriska kolumner blockerar importen.",
+          "optionalColumnTooltip": "Valfri — lägger till mer detaljerad evenemangsinformation om den finns.",
+          "previewRowsTitle": "Förhandsgranskning ({count, plural, one {# rad} other {# rader}})",
+          "missingColumnsTitle": "CSV saknar obligatoriska kolumner",
+          "missingColumnsDescription": "Exportera filen på nytt efter att du lagt till dessa kolumner:",
+          "tableAriaLabel": "CSV-förhandsgranskning för {fileName}",
+          "totalRowsHint": "{columns} kolumner × visar {sampled} av {total, plural, one {# rad} other {# rader}}",
+          "tableHelpText": "Håll muspekaren över en cell för att se hela innehållet. Kanoniska kolumner är markerade; resten skickas vidare oförändrat vid import.",
+          "emptyCell": "(tom)",
+          "confirmCtaWithCount": "Bekräfta och importera {count, plural, one {# rad} other {# rader}}"
+        },
+        "result": {
+          "regionLabel": "Resultat av CSV-import",
+          "title": "Importen är klar",
+          "rowsProcessedLabel": "Rader importerade",
+          "rowsAlreadyImportedLabel": "Redan importerade",
+          "rowsAlreadyImportedDescription": "Dessa rader matchar en tidigare uppladdning och hoppades över (idempotent).",
+          "rowsStateChangedLabel": "Statusändrad",
+          "rowsStateChangedDescription": "Återuppladdade rader vars Status ändrades (t.ex. Pending → Attending).",
+          "eventsCreatedLabel": "Evenemang skapade",
+          "eventsUpdatedLabel": "Evenemang uppdaterade",
+          "durationLabel": "Varaktighet",
+          "matchBreakdownTitle": "Matchningsöversikt",
+          "errorRowsTitle": "Rader med fel ({count})",
+          "errorRowLabel": "Rad {rowNumber}",
+          "noErrorRows": "Alla rader importerades utan fel.",
+          "recordIdLabel": "Referens-ID",
+          "historyDegraded": "Importhistoriken kunde inte sparas — raderna ovan är fortfarande säkert införda, men granskningstabellen saknar en rad för denna import. Ange referens-ID:t ovan om du behöver kontakta supporten i efterhand.",
+          "auditDegraded": "Granskningsspåret är ofullständigt — raderna importerades men granskningsraden för denna import sparades inte. Ange referens-ID:t till supporten vid incidenthantering.",
+          "safetyNetUnavailable": "Dubblettskydd otillgängligt — säkerhetskontrollen för felaktigt valt evenemang kunde inte köras för denna import. Verifiera att rätt evenemang valdes innan du litar på resultaten."
+        },
+        "errors": {
+          "networkErrorTitle": "Nätverksfel",
+          "headerInvalidTitle": "CSV-rubriken är ogiltig",
+          "badRequestTitle": "Kunde inte importera",
+          "badRequestDetail": "Din CSV kunde inte bearbetas. Kontrollera formatet och försök igen.",
+          "fileTooLargeTitle": "Filen är för stor",
+          "fileTooLargeDetail": "CSV-filer får vara högst 5 MiB. Dela upp filen eller ta bort äldre rader.",
+          "rateLimitedTitle": "För många importer",
+          "rateLimitedDetail": "Du har nått gränsen på 5 importer per timme. Försök igen om {retryAfter} sekunder.",
+          "timeoutTitle": "Importen tog för lång tid",
+          "timeoutDetail": "En del av importen slutfördes. Ladda upp samma CSV igen — redan bearbetade rader hoppas över automatiskt.",
+          "unexpectedTitle": "Något gick fel",
+          "unexpectedDetail": "Oväntat fel. Försök igen; kvarstår problemet, kontakta support.",
+          "eventNotSelectedTitle": "Inget evenemang valt",
+          "eventNotSelectedDetail": "Välj ett evenemang från rullgardinsmenyn innan du laddar upp."
+        },
+        "eventPicker": {
+          "fieldLabel": "Evenemang",
+          "fieldHelp": "Välj evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
+          "selectedPrefix": "Valt",
+          "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan för att fortsätta.",
+          "triggerAriaLabel": "Välj evenemang för CSV-import",
+          "loading": "Hämtar evenemang…",
+          "placeholder": "Välj ett evenemang…",
+          "searchPlaceholder": "Sök evenemang efter namn…",
+          "searchAriaLabel": "Sök efter evenemang",
+          "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
+          "createInlineCta": "+ Skapa nytt evenemang",
+          "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
+          "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
+          "createNewCta": "Skapa nytt evenemang",
+          "refreshAriaLabel": "Uppdatera evenemangslistan",
+          "inlineCreateModal": {
+            "title": "Skapa nytt evenemang",
+            "description": "Skapa ett nytt kammarevenemang så att denna CSV-import kan riktas till det. Efter skapande väljs evenemanget automatiskt i rullgardinsmenyn ovan.",
+            "submitCta": "Skapa evenemang",
+            "submittingCta": "Skapar…",
+            "cancelCta": "Avbryt",
+            "createdToast": "Evenemang skapat",
+            "createdToastDesc": "{name} är nu tillgängligt i evenemangslistan.",
+            "alreadyExistsToast": "Evenemang finns redan",
+            "alreadyExistsToastDesc": "Evenemanget \"{name}\" finns redan och valdes.",
+            "fields": {
+              "externalIdLabel": "Externt ID",
+              "externalIdPlaceholder": "t.ex. agm-2026",
+              "externalIdHelp": "Unik kodad slug (1-100 alfanumeriska tecken + bindestreck). Samma värde som CSV använder för event_external_id.",
+              "nameLabel": "Evenemangsnamn",
+              "namePlaceholder": "t.ex. SweCham AGM 2026",
+              "nameHelp": "Publikt evenemangsnamn som visas i importhistoriken och granskningstabellen (högst 500 tecken).",
+              "startDateLabel": "Startdatum och tid",
+              "startDateHelp": "Lokal tid i kammarens primära tidszon — lagras som UTC.",
+              "categoryLabel": "Kategori (valfri)",
+              "categoryPlaceholder": "t.ex. AGM, Nätverk, Workshop",
+              "categoryHelp": "Fri text som används för filtrering i evenemangslistan.",
+              "errors": {
+                "externalIdRequired": "Externt ID krävs.",
+                "externalIdTooLong": "Externt ID får vara högst 100 tecken.",
+                "externalIdInvalid": "Använd endast alfanumeriska tecken och bindestreck (t.ex. agm-2026).",
+                "nameRequired": "Evenemangsnamn krävs.",
+                "nameTooLong": "Evenemangsnamn får vara högst 500 tecken.",
+                "startDateRequired": "Startdatum och tid krävs.",
+                "categoryTooLong": "Kategori får vara högst 100 tecken."
+              }
+            },
+            "errors": {
+              "invalidStartDateTitle": "Ogiltigt startdatum",
+              "invalidStartDateDetail": "Välj ett giltigt datum och tid innan du skickar.",
+              "networkErrorTitle": "Nätverksfel",
+              "networkErrorDetail": "Kunde inte nå servern. Kontrollera din anslutning och försök igen.",
+              "validationTitle": "Validering misslyckades",
+              "validationDetail": "Ett eller flera fält är ogiltiga. Granska formuläret och försök igen.",
+              "rateLimitTitle": "För många försök",
+              "rateLimitDetail": "Du har skapat för många evenemang den senaste timmen. Vänta en stund och försök igen.",
+              "rateLimitDetailWithSeconds": "Frekvensgräns nådd: 30 evenemang/timme per administratör. Försök igen om {seconds, plural, one {# sekund} other {# sekunder}}.",
+              "unexpectedTitle": "Oväntat fel",
+              "unexpectedDetail": "Något gick fel på vår sida. Försök igen; om det kvarstår, kontakta support."
+            }
+          },
+          "filenameMatchHintWithScore": "Auto-föreslagen från filnamnet: {eventName} — {score}% matchning"
+        },
+        "eventMismatch": {
+          "title": "Denna CSV kan tillhöra ett annat evenemang",
+          "description": "Vi hittade {count} tidigare import(er) inom de senaste 30 dagarna med samma deltagare som riktades till ett annat evenemang. Bekräfta att du menade att importera till det valda evenemanget.",
+          "priorImportsHeading": "Tidigare importer med samma deltagare:",
+          "priorImportRow": "Uppladdat {uploadedAt}",
+          "cancelCta": "Avbryt",
+          "continueCta": "Fortsätt ändå"
+        },
+        "history": {
+          "pageTitle": "CSV-importhistorik",
+          "pageSubtitle": "Tidigare deltagarimporter för denna kammare. Ladda ner felraderna från en tidigare import för att rätta i Excel och ladda upp på nytt.",
+          "tableAriaLabel": "Tabell över CSV-importhistorik",
+          "columns": {
+            "uploadedAt": "Uppladdat",
+            "file": "Fil",
+            "sourceFormat": "Källformat",
+            "outcome": "Resultat",
+            "rowsProcessed": "Bearbetade",
+            "rowsSkipped": "Hoppade över",
+            "rowsFailed": "Misslyckade",
+            "actions": "Åtgärder"
+          },
+          "sourceFormat": {
+            "eventcreate_csv": "EventCreate",
+            "generic_csv": "Generisk"
+          },
+          "outcome": {
+            "running": "Pågår…",
+            "completed": "Klar",
+            "timeout": "Tidsgräns nådd",
+            "partial_failure": "Delvis fel",
+            "invalid_header": "Ogiltig rubrik",
+            "event_not_found": "Evenemang saknas",
+            "event_not_owned_by_tenant": "Fel kammare",
+            "unexpected_error": "Misslyckades"
+          },
+          "downloadErrorCsv": "Ladda ner fel-CSV",
+          "downloadErrorCsvAriaLabel": "Ladda ner fel-CSV för importen {recordId}",
+          "expiredBadge": "Utgången",
+          "expiredTooltip": "Fel-CSV-filen för denna import utgick efter 30 dagar. Kör om importen för att återskapa filen.",
+          "noErrorRows": "Inga fel",
+          "emptyState": "Inga importer ännu. Använd uppladdningssidan för att ta in en CSV.",
+          "loadError": "Kunde inte läsa in CSV-importhistorik.",
+          "loadErrorRetry": "Ladda om",
+          "pagination": {
+            "previous": "Föregående",
+            "next": "Nästa",
+            "pageOf": "Sida {page} av {totalPages}",
+            "showing": "Visar {from}–{to} av {totalRecords}",
+            "navAriaLabel": "Sidnavigering"
+          },
+          "emptyStateTitle": "Inga importer ännu",
+          "emptyStateBody": "Tidigare importer visas här efter uppladdning av en CSV-fil.",
+          "emptyStateCta": "Ladda upp CSV",
+          "autoRefreshing": "Uppdateras automatiskt var 5:e sekund medan importer pågår",
+          "backToImport": "Tillbaka till import"
+        }
+      }
+    },
+    "integrations": {
+      "eventcreate": {
+        "_bootstrap": "EventCreate-integration",
+        "placeholder": {
+          "title": "EventCreate-integration",
+          "subtitle": "Konfigurera den Zapier-drivna importpipelinen för deltagare.",
+          "heading": "Kommer snart",
+          "body": "Konfigurationsguiden för EventCreate-integrationen lanseras inom kort. Kontakta tills vidare administratören för hjälp med att konfigurera din Zap.",
+          "backToEvents": "Tillbaka till evenemang"
+        },
+        "page": {
+          "title": "EventCreate-integration",
+          "subtitle": "Anslut Zapier så att deltagarregistreringar från EventCreate importeras automatiskt.",
+          "loading": "Laddar EventCreate-integration…",
+          "error": {
+            "title": "Kunde inte ladda integrationen",
+            "body": "Något gick fel när EventCreate-integrationen skulle laddas. Försök att ladda om sidan; om problemet kvarstår, kontakta support med referensen nedan.",
+            "digest": "Referens: {digest}",
+            "retry": "Försök igen"
+          }
+        },
+        "wizard": {
+          "stepsLabel": "EventCreate-konfigurationssteg",
+          "phaseAStep": "Generera nyckel",
+          "phaseBStep": "Anslut Zapier",
+          "phaseCStep": "Testa och hantera",
+          "phaseAIntro": "Generera en ny webhook-nyckel för den här kammaren. Värdet visas i klartext endast en gång — spara det i en lösenordshanterare innan du fortsätter.",
+          "tierNotice": {
+            "title": "EventCreate Corporate-plan krävs",
+            "body": "EventCreate-API:et och Zapier-integrationen är endast tillgängliga från Corporate-planen och uppåt. Free- och Pro-planerna visar inte den API-nyckel som behövs nedan.",
+            "csvFallback": "Om din plan inte stöder Zapier, <csvLink>ladda upp deltagare som CSV i stället</csvLink> — samma matchning, kvot och granskningslogik, ingen Zapier behövs."
+          },
+          "generateButton": "Generera webhook-nyckel",
+          "generating": "Genererar…",
+          "generateFailed": "Det gick inte att generera en webhook-nyckel. Försök igen eller kontakta support.",
+          "generateAlreadyExists": "En webhook-nyckel finns redan för den här kammaren. Använd åtgärden Rotera nyckel i stället.",
+          "postRefreshResyncFailed": "Din webhook-nyckel sparades, men sidan uppdaterades inte korrekt. Ladda om för att se den maskerade nyckeln.",
+          "back": "Tillbaka",
+          "connectComplete": "Jag har konfigurerat Zap — fortsätt",
+          "webhookUrlLabel": "Webhook-URL",
+          "webhookUrlAriaLabel": "Webhook-URL att kopiera till Zapier",
+          "copyUrl": "Kopiera webhook-URL till urklipp",
+          "secretLabel": "Aktuell nyckel",
+          "secretAriaLabel": "Maskerad webhook-nyckel — endast de fyra sista tecknen visas",
+          "rotateButton": "Rotera nyckel",
+          "graceActiveUntil": "Gammal nyckel verifierar fortfarande till {timestamp}",
+          "viewSetupGuide": "Visa konfigurationsguide (Zapier-genomgång)",
+          "graceBanner": {
+            "title": "Webhook-hemlighet roterad — respitperiod aktiv",
+            "description": "Den föregående hemligheten fortsätter verifiera webhook-leveranser fram till {graceActiveUntil}. Uppdatera hemligheten i Zapier i god tid innan dess för att undvika att signaturer avvisas."
+          }
+        },
+        "phaseA": {
+          "secretLabel": "Webhook-nyckel (visas en gång)",
+          "revealSecret": "Visa nyckel",
+          "hideSecret": "Dölj nyckel",
+          "copySecret": "Kopiera nyckel till urklipp",
+          "copied": "Kopierat till urklipp",
+          "copyFailed": "Kopiering misslyckades — markera och kopiera manuellt",
+          "warning": "Spara värdet i en lösenordshanterare omedelbart. Det visas inte igen.",
+          "savedInPasswordManager": "Jag har sparat nyckeln i en lösenordshanterare",
+          "savedHint": "Bekräfta sista 4: {lastFour}",
+          "continueToSetup": "Fortsätt till Zapier-installation"
+        },
+        "phaseB": {
+          "title": "Anslut EventCreate via Zapier",
+          "stepsLabel": "Zapier-konfigurationsguide",
+          "englishOnlyNotice": "Zapier-webbappen är endast tillgänglig på engelska. Beskrivningarna nedan är lokaliserade; skärmbilderna visar Zapiers engelska gränssnitt.",
+          "imagePlaceholderNotice": "Referensbild — slutgiltiga skärmbilder väntar på intressentgranskning. Följ beskrivningen ovan.",
+          "step1": {
+            "title": "Steg 1: Logga in på Zapier",
+            "body": "Öppna zapier.com och logga in på (eller skapa) det Zapier-konto som Zap:en ska köras från.",
+            "alt": "Inloggningsskärm för Zapier"
+          },
+          "step2": {
+            "title": "Steg 2: Skapa en ny Zap",
+            "body": "Klicka på den orange Create Zap-knappen i toppmenyn.",
+            "alt": "Zapiers startsida med Create Zap-knappen markerad"
+          },
+          "step3": {
+            "title": "Steg 3: Välj EventCreate som trigger",
+            "body": "Sök efter EventCreate, välj New Attendee Registration som händelse, och anslut ditt EventCreate-konto.",
+            "alt": "Trigger-konfiguration med EventCreate"
+          },
+          "step4": {
+            "title": "Steg 4: Lägg till en Webhooks by Zapier-åtgärd",
+            "body": "Lägg till ett nytt åtgärdssteg, välj Webhooks by Zapier → POST. Klistra in denna webhook-URL i URL-fältet: <code>{webhookUrl}</code>",
+            "alt": "Konfiguration av Webhooks by Zapier-åtgärd"
+          },
+          "step5": {
+            "title": "Steg 5: Mappa nyttolastens fält",
+            "body": "Mappa varje EventCreate-fält mot JSON-bodyns nycklar (event.externalId, attendee.email m.fl.). Använd referensen för fältmappning nedan vid behov.",
+            "alt": "Skärm för fältmappning"
+          },
+          "step6": {
+            "title": "Steg 6: Lägg till signaturheader",
+            "body": "Under Headers, lägg till en rad för X-Chamber-Signature med HMAC-SHA256 av bodyn med din webhook-nyckel. Zapiers Crypto-verktyg gör detta enkelt.",
+            "alt": "Headers-konfiguration med signaturrad"
+          },
+          "step7": {
+            "title": "Steg 7: Testa Zap:en",
+            "body": "Kör Zapiers inbyggda test — du ska se ett 200 OK-svar från Chamber-OS som bekräftar att den syntetiska deltagaren importerades.",
+            "alt": "Indikator för lyckat Zapier-test"
+          },
+          "step8": {
+            "title": "Steg 8: Publicera",
+            "body": "Sätt på Zap:en. Nya EventCreate-deltagarregistreringar flödar nu in i Chamber-OS inom ~15 minuter.",
+            "alt": "Zap-publiceringsknapp"
+          }
+        },
+        "phaseC": {
+          "test": {
+            "sendTest": "Skicka testhändelse",
+            "inProgress": "Skickar testhändelse…",
+            "success": "Testhändelse levererad",
+            "successWithOutcome": "Testhändelse levererad ({outcome}, {durationMs}ms)",
+            "failure": "Testhändelsen misslyckades",
+            "failureWithHint": "Testhändelsen misslyckades — {hint}",
+            "rateLimited": "För många testhändelser den här timmen. Vänta och försök igen.",
+            "rateLimitedWithRetry": "För många testhändelser den här timmen. Försök igen om {seconds} sek.",
+            "serverError": "Serverfel vid testkörning. Försök igen eller kontakta support.",
+            "networkError": "Det gick inte att nå webhook-slutpunkten. Kontrollera anslutningen."
+          },
+          "rotate": {
+            "preTitle": "Rotera webhook-nyckel?",
+            "preDescription": "En ny nyckel genereras. Den aktuella nyckeln verifierar leveranser i 24 timmar så att du kan uppdatera Zapier utan driftstopp.",
+            "confirm": "Rotera nu",
+            "cancel": "Avbryt",
+            "postTitle": "Nyckel roterad",
+            "postDescription": "Gammal nyckel verifierar tills {graceActiveUntil}. Spara den nya nyckeln direkt och uppdatera Zapier inom 24 timmar.",
+            "acknowledge": "Klar",
+            "close": "Stäng",
+            "success": "Webhook-nyckeln roterades",
+            "failed": "Rotation misslyckades — försök igen eller kontakta support",
+            "rateLimited": "Rotationsgräns nådd (3/timme). Vänta och försök igen.",
+            "rateLimitedWithRetry": "Rotationsgräns nådd. Försök igen om {seconds} sek."
+          },
+          "recentDeliveries": {
+            "title": "Senaste leveranser",
+            "empty": "Inga senaste leveranser ännu. Trigga en Zap eller tryck på \"Skicka testhändelse\" för att se trafik.",
+            "includeTestDeliveriesLabel": "Inkludera testleveranser",
+            "updating": "Uppdaterar senaste leveranser…",
+            "listSummary": "{count, plural, =0 {Inga leveranser} one {# leverans visas} other {# leveranser visas}}",
+            "table": {
+              "caption": "Senaste webhook-leveranser — de 10 senaste",
+              "received": "Mottagen",
+              "requestId": "Begäran-ID",
+              "signature": "Signatur",
+              "processing": "Bearbetning"
+            },
+            "signature": {
+              "verified": "Verifierad",
+              "rejected": "Signatur avvisad",
+              "unknown": "Okänd"
+            },
+            "processing": {
+              "matched_member_contact": "Matchad medlem (kontakt)",
+              "matched_member_domain": "Matchad medlem (domän)",
+              "matched_member_fuzzy": "Matchad medlem (fuzzy)",
+              "non_member": "Icke-medlem",
+              "unmatched": "Omatchad",
+              "short_circuited_test": "Testhändelse",
+              "duplicate": "Duplikat (idempotens)",
+              "malformed": "Felaktig nyttolast",
+              "rolled_back": "Återställd",
+              "rate_limited": "Hastighetsbegränsad",
+              "ingest_disabled": "Inmatning inaktiverad"
+            }
+          }
+        }
+      }
     }
   },
   "palette": {
@@ -2330,7 +3080,10 @@
       "renewalSchedules": "Förnyelseschemaprinciper",
       "escalationTasks": "Uppföljningsuppgifter",
       "escalationTasksMine": "Uppföljningsuppgifter: mina",
-      "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade"
+      "escalationTasksOverdue": "Uppföljningsuppgifter: endast försenade",
+      "eventsList": "Evenemang",
+      "eventcreateIntegration": "EventCreate-integration",
+      "csvImportHistory": "CSV-importhistorik"
     }
   },
   "nav": {
@@ -2341,6 +3094,8 @@
       "settings": "Inställningar",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
+      "settingsIntegrationEventcreate": "EventCreate-integration",
+      "events": "Evenemang",
       "sections": {
         "main": "Allmänt",
         "settings": "Inställningar"
@@ -2385,7 +3140,10 @@
     "void": "Annullera",
     "pay": "Registrera betalning",
     "renewals": "Förnyelser",
-    "schedules": "Påminnelseschema"
+    "schedules": "Påminnelseschema",
+    "invoicing": "Fakturainställningar",
+    "integrations": "Integrationer",
+    "eventcreate": "EventCreate"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -2419,10 +3177,12 @@
       "title": "Fakturor",
       "subtitle": "Ditt företags fakturor och skattekvitton.",
       "empty": "Inga fakturor ännu. Fakturor visas här när de utfärdas.",
+      "loadFailed": "Vi kunde inte ladda dina fakturor just nu. Uppdatera sidan eller försök igen om en stund.",
       "notLinked": "Ditt konto är inte kopplat till en medlem. Kontakta din administratör.",
       "loaded": "Fakturalistan laddad.",
       "columns": {
         "documentNumber": "Nr",
+        "receiptNumber": "Kvittonr.",
         "status": "Status",
         "issueDate": "Utfärdad",
         "dueDate": "Förfaller",
@@ -2431,6 +3191,12 @@
       },
       "actions": {
         "download": "PDF",
+        "downloadInvoiceAria": "Ladda ner faktura-PDF för {number}",
+        "downloadReceipt": "Kvitto",
+        "downloadReceiptAria": "Ladda ner kvitto-PDF för faktura {number}",
+        "downloadCombined": "Ladda ner faktura / kvitto",
+        "downloadCombinedAria": "Ladda ner kombinerat dokument (faktura / kvitto) för {number}",
+        "receiptPreparing": "Förbereder kvitto…",
         "viewDetail": "Visa faktura",
         "emailCopy": "Mejla mig en kopia",
         "emailCopyAria": "Mejla en ny kopia av faktura {number} till din registrerade adress"
@@ -2438,10 +3204,24 @@
       "filters": {
         "noMatch": "Inga fakturor matchar dina filter."
       },
+      "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
+      "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
       "toast": {
         "resendSuccess": "Köad — du får en ny kopia inom kort.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
-        "resendFailed": "Kunde inte köa en ny kopia. Försök igen."
+        "resendFailed": "Kunde inte köa en ny kopia. Försök igen.",
+        "downloadInProgress": "Förbereder nedladdning…",
+        "invoiceForbidden": "Du har inte behörighet till denna faktura.",
+        "invoiceNotFound": "Faktura hittades inte.",
+        "invoiceUnavailable": "Faktura-PDF är inte tillgänglig just nu. Försök igen.",
+        "invoiceSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+        "invoiceRateLimited": "För många nedladdningar. Vänta en stund och försök igen.",
+        "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
+        "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
+        "receiptForbidden": "Du har inte behörighet till detta kvitto.",
+        "receiptUnavailable": "Kvitto-PDF är inte tillgänglig just nu. Försök igen.",
+        "receiptSessionExpired": "Din session har gått ut. Logga in igen för att ladda ner.",
+        "receiptRateLimited": "För många nedladdningar. Vänta en stund och försök igen."
       },
       "summary": {
         "heading": "Senaste fakturor",
@@ -2464,6 +3244,7 @@
           "issueDate": "Utfärdad",
           "dueDate": "Förfaller",
           "paidDate": "Betald",
+          "receiptNumber": "Kvittonummer",
           "planYear": "Paketår"
         },
         "lines": {
@@ -2734,6 +3515,10 @@
       "portalLinked": "Portalkopplad",
       "noContacts": "Inga kontakter hittades.",
       "fields": {
+        "memberId": "Medlems-ID",
+        "memberIdHelp": "Ange detta ID när du kontaktar kammarens support.",
+        "memberIdCopy": "Kopiera medlems-ID",
+        "memberIdCopied": "Medlems-ID kopierat",
         "companyName": "Företagsnamn",
         "legalEntityType": "Juridisk form",
         "country": "Land",
@@ -2981,6 +3766,8 @@
         },
         "processing": "Din förnyelse behandlas. Det nya utgångsdatumet visas här så snart betalningsbekräftelsen kommer in.",
         "downloadReceipt": "Ladda ner kvitto (PDF)",
+        "downloadInvoice": "Ladda ner faktura (PDF)",
+        "receiptPreparing": "Förbereder kvitto…",
         "viewAllInvoices": "Visa alla fakturor",
         "backToPortal": "Tillbaka till portalens startsida"
       }
@@ -3026,10 +3813,54 @@
       "at_risk_snoozed": "Riskvarning pausad",
       "at_risk_outreach_recorded": "Kontakt registrerad",
       "at_risk_compute_partial_failure": "Riskpoängsberäkning delvis misslyckad",
+      "at_risk_skipped_below_min_tenure": "Riskpoäng hoppades över — under min. medlemstid",
+      "escalation_task_created": "Eskaleringsuppgift skapad",
+      "escalation_task_completed": "Eskaleringsuppgift slutförd",
+      "escalation_task_reassigned": "Eskaleringsuppgift omfördelad",
+      "escalation_task_skipped": "Eskaleringsuppgift hoppad",
+      "lapsed_member_admin_reactivated": "Förfallen medlem återaktiverad",
+      "lapsed_member_admin_reactivation_rejected": "Återaktivering avvisad",
+      "lapsed_member_admin_reactivation_timed_out": "Återaktivering tidsavbruten",
+      "manual_outreach_required": "Manuell kontakt krävs",
+      "member_auto_reactivation_blocked": "Autoåteraktivering blockerad",
+      "member_auto_reactivation_unblocked": "Autoåteraktivering avblockerad",
+      "member_email_unverified_threshold_crossed": "Tröskel för overifierad e-post överskriden",
+      "renewal_completed": "Förnyelse slutförd",
+      "renewal_completed_post_lapse": "Förnyelse slutförd efter utgång",
+      "renewal_cross_member_probe": "Korsmedlemsundersökning upptäckt",
+      "renewal_cross_tenant_probe": "Korstenant-undersökning (förnyelser)",
+      "renewal_cycle_cancelled": "Förnyelsecykel avbruten",
+      "renewal_cycle_completed_offline": "Förnyelse slutförd offline",
+      "renewal_cycle_price_frozen": "Förnyelsepris låst",
+      "renewal_invoice_created": "Förnyelsefaktura skapad",
+      "renewal_lapsed": "Förnyelse utgången",
+      "renewal_reminder_deferred_read_only": "Förnyelsepåminnelse uppskjuten — skrivskyddat läge",
+      "renewal_reminder_retried": "Förnyelsepåminnelse försökt igen",
+      "renewal_reminder_send_failed": "Förnyelsepåminnelse misslyckades",
+      "renewal_reminder_send_failed_permanent": "Förnyelsepåminnelse permanent misslyckad",
+      "renewal_reminder_sent": "Förnyelsepåminnelse skickad",
+      "renewal_reminder_skipped": "Förnyelsepåminnelse hoppad",
+      "renewal_schedule_policy_updated": "Förnyelseschemapolicy uppdaterad",
+      "renewal_schedule_rescheduled": "Förnyelse omplanerad",
+      "renewal_schedule_reschedule_skipped": "Förnyelseomplanering hoppad",
+      "renewal_self_service_initiated": "Medlemsinitierad förnyelse",
+      "renewal_skipped_no_joined_at": "Förnyelse hoppad — inget anslutningsdatum",
+      "renewal_token_clicked_on_completed_cycle": "Förnyelselänk klickad på slutförd cykel",
+      "renewal_token_invalid": "Ogiltig förnyelsetoken",
+      "renewal_with_plan_change": "Förnyelse med paketbyte",
       "tier_upgrade_suggested": "Nivåuppgradering föreslagen",
       "tier_upgrade_accepted": "Nivåuppgradering godkänd",
       "tier_upgrade_dismissed": "Nivåuppgradering avvisad",
       "tier_upgrade_already_at_target": "Redan på målnivå",
+      "tier_upgrade_applied_at_renewal": "Nivåuppgradering tillämpad vid förnyelse",
+      "tier_upgrade_apply_post_invoice_paid_failed": "Nivåuppgradering misslyckades efter betald faktura",
+      "tier_upgrade_catalogue_row_dropped": "Nivåuppgraderingsrad borttagen ur katalog",
+      "tier_upgrade_pending_admin_verification_due": "Nivåuppgradering — admin-verifiering förfallen",
+      "tier_upgrade_pending_member_notified": "Nivåuppgradering — medlem aviserad",
+      "tier_upgrade_pending_member_notify_failed": "Nivåuppgradering — medlemavisering misslyckades",
+      "tier_upgrade_pending_member_notify_skipped": "Nivåuppgradering — medlemavisering hoppad",
+      "tier_upgrade_pending_orphan_detected": "Föräldralös nivåuppgradering upptäckt",
+      "tier_upgrade_pending_superseded_by_manual_change": "Nivåuppgradering ersatt av manuell ändring",
       "tier_upgrade_skipped_no_thresholds_configured": "Nivåuppgradering hoppades över — inga tröskelvärden",
       "tier_upgrade_tenant_disabled": "Nivåuppgradering inaktiverad för denna kammare",
       "cron_bearer_auth_rejected": "Cron-autentisering nekad",
@@ -3050,7 +3881,12 @@
       "pdf_render_failed": "PDF-rendering misslyckades",
       "pdf_render_permanently_failed": "PDF-rendering misslyckades permanent",
       "auto_email_delivery_failed": "Automatisk e-postleverans misslyckades",
-      "receipt_rendered": "Kvitto renderat"
+      "receipt_rendered": "Kvitto renderat",
+      "receipt_pdf_downloaded": "Kvitto-PDF nedladdat",
+      "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat"
+    },
+    "eventcreate": {
+      "_bootstrap": "EventCreate granskningshändelser"
     }
   },
   "pagination": {

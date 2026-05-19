@@ -40,7 +40,7 @@ We MUST never process an event with a rejected signature — the route handler e
    - If they differ AND `webhook_api_version_mismatch_total` is also alerting → see `api-version-mismatch.md` runbook.
 
 4. **Audit-log forensic check** (for abuse signal).
-   - `SELECT event_type, count(*), date_trunc('hour', emitted_at) FROM audit_log WHERE event_type='webhook_signature_rejected' AND emitted_at > now() - interval '1 hour' GROUP BY 1, 3 ORDER BY 3 DESC;`
+   - `SELECT event_type, count(*), date_trunc('hour', "timestamp") FROM audit_log WHERE event_type='webhook_signature_rejected' AND "timestamp" > now() - interval '1 hour' GROUP BY 1, 3 ORDER BY 3 DESC;`
    - If the source IP / User-Agent pattern looks scanner-like (rapid burst, no Stripe-User-Agent header), block at Vercel WAF or escalate to security review.
    - All `webhook_signature_rejected` rows are 10y retention (forensic).
 

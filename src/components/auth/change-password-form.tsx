@@ -21,28 +21,35 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { passwordPairFields, refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
   estimatePasswordStrength,
 } from './password-strength';
 
-const schema = z
-  .object({
-    currentPassword: z.string().min(1),
-    newPassword: z.string().min(12).max(256),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    path: ['confirmPassword'],
-    message: 'Passwords must match',
-  });
+// H2 + O1 (Round 2/3) — schema built inside component via shared
+// helpers in src/lib/zod-i18n.ts. I1 (Round 4) — helper signature
+// now preserves inferred shape so the cast is dropped.
+type FormValues = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
 
-type FormValues = z.infer<typeof schema>;
+function buildSchema(tooShort: string, passwordMismatch: string) {
+  return refinePasswordPair(
+    z.object({
+      currentPassword: z.string().min(1),
+      ...passwordPairFields(tooShort),
+    }),
+    passwordMismatch,
+  );
+}
 
 export function ChangePasswordForm() {
   const t = useTranslations('auth.changePassword');
@@ -59,7 +66,12 @@ export function ChangePasswordForm() {
     reset,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      buildSchema(
+        tReset('errors.tooShort'),
+        tReset('errors.passwordMismatch'),
+      ),
+    ),
     defaultValues: {
       currentPassword: '',
       newPassword: '',
@@ -141,15 +153,21 @@ export function ChangePasswordForm() {
     <form onSubmit={handleFormSubmit} className="space-y-4" noValidate>
       <div className="space-y-2">
         <Label htmlFor="current-password">{t('currentPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="current-password"
-          type="password"
           autoComplete="current-password"
           aria-invalid={errors.currentPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.currentPassword ? 'current-password-error' : undefined
+          }
           {...register('currentPassword')}
         />
         {errors.currentPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="current-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.currentPassword.message}
           </p>
         ) : null}
@@ -157,16 +175,26 @@ export function ChangePasswordForm() {
 
       <div className="space-y-2">
         <Label htmlFor="new-password">{t('newPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="new-password"
-          type="password"
           autoComplete="new-password"
           aria-invalid={errors.newPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.newPassword
+              ? 'new-password-error'
+              : 'new-password-strength'
+          }
           {...register('newPassword')}
         />
-        <PasswordStrength level={strength} />
+        <div id="new-password-strength">
+          <PasswordStrength level={strength} />
+        </div>
         {errors.newPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="new-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.newPassword.message}
           </p>
         ) : null}
@@ -174,15 +202,21 @@ export function ChangePasswordForm() {
 
       <div className="space-y-2">
         <Label htmlFor="confirm-password">{tReset('confirmPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="confirm-password"
-          type="password"
           autoComplete="new-password"
           aria-invalid={errors.confirmPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.confirmPassword ? 'confirm-password-error' : undefined
+          }
           {...register('confirmPassword')}
         />
         {errors.confirmPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="confirm-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.confirmPassword.message}
           </p>
         ) : null}
@@ -191,7 +225,10 @@ export function ChangePasswordForm() {
       <Button type="submit" className="w-full" size="lg" disabled={submitting}>
         {submitting ? (
           <>
-            <Loader2Icon className="size-4 animate-spin" aria-hidden />
+            <Loader2Icon
+              className="size-4 motion-safe:animate-spin"
+              aria-hidden
+            />
             {t('submit')}
           </>
         ) : (

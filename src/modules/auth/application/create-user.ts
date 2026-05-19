@@ -36,7 +36,7 @@
  *   - `TenantTx`/`DbTx` types are structurally identical; repos accept
  *     either via the `DbTx` alias.
  *
- * Error mapping: `CreateUserAbort<E>` sentinel throws inside the tx
+ * Error mapping: `TxAbort<E>` sentinel throws inside the tx
  * callback and the outer catch maps it back to the typed
  * `CreateUserError` union. Any unexpected throw (DB connection loss,
  * statement timeout) bubbles out as-is so the route returns 500.
@@ -46,7 +46,12 @@ import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db, type DbTx } from '@/lib/db';
-import { asEmailAddress, type TokenId, type UserId } from '@/modules/auth/domain/branded';
+import {
+  asEmailAddress,
+  type InvitationTokenHash,
+  type InvitationTokenId,
+  type UserId,
+} from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
@@ -62,7 +67,7 @@ import type { EmailLocale } from '@/modules/auth/infrastructure/email/reset-pass
 // already holds a TenantSlug (members deps.tenant.slug), so the brand
 // is free at production callsites and tightens the API contract.
 import type { TenantSlug } from '@/modules/tenants/domain/tenant-slug';
-import { CreateUserAbort } from './tx-abort';
+import { TxAbort } from './tx-abort';
 import { defaultCreateUserDeps } from '@/lib/auth-deps';
 
 // --- Public types -------------------------------------------------------------
@@ -90,9 +95,15 @@ export interface CreateUserInput {
 
 export interface CreateUserSuccess {
   readonly user: UserAccount;
-  /** Branded token id — carry the type across the module boundary
-   * so callers can't accidentally log or compare it as a raw string. */
-  readonly invitationId: TokenId;
+  /**
+   * The stored HASH of the invitation (`sha256(plaintext)`, 64-hex).
+   * I1 (Round 2) — was `TokenId` pre-fix; now `InvitationTokenHash`
+   * so a caller emailing `result.invitationId` as a URL value fails
+   * to compile. The URL plaintext is captured separately by the
+   * `enqueueInvitationInTx` outbox enqueue (delivered to the user
+   * via the rendered email) and is NEVER returned to the inviter.
+   */
+  readonly invitationId: InvitationTokenHash;
 }
 
 export type CreateUserError =
@@ -108,7 +119,13 @@ export type CreateUserError =
  */
 export interface EnqueueInvitationRequest {
   readonly toEmail: string;
-  readonly token: TokenId;
+  /**
+   * Plaintext invitation token id — composed into the activation URL
+   * delivered by email. The DB stores `sha256(plaintext)` as the
+   * invitation row id (E2 hash-at-rest); this field is the value the
+   * user receives + types back into the redeem-invite endpoint.
+   */
+  readonly token: InvitationTokenId;
   readonly role: Role;
   readonly locale?: EmailLocale | undefined;
   /**
@@ -176,7 +193,7 @@ export async function createUser(
       //    (TOCTOU race eliminated).
       const existing = await deps.users.findByEmailInTx(tx, normalisedEmail);
       if (existing) {
-        throw new CreateUserAbort<CreateUserError>({ code: 'email-taken' });
+        throw new TxAbort<CreateUserError>({ code: 'email-taken' });
       }
 
       // 2. Create pending user.
@@ -186,20 +203,27 @@ export async function createUser(
         displayName: input.displayName ?? null,
       });
 
-      // 3. Create invitation.
-      const invitation = await deps.tokens.createInvitationInTx(tx, {
-        userId: user.id,
-        invitedByUserId: input.actorUserId,
-        intendedRole: input.role,
-        now,
-      });
+      // 3. Create invitation. E2 — `createInvitationInTx` returns
+      //    `{ plaintext, invitation }`. Plaintext goes into the
+      //    outbox payload (the email URL); the persisted row stores
+      //    `sha256(plaintext)` as id. `invitation.id` is the hash —
+      //    safe for return as `invitationId` (audit correlation only).
+      const { plaintext, invitation } = await deps.tokens.createInvitationInTx(
+        tx,
+        {
+          userId: user.id,
+          invitedByUserId: input.actorUserId,
+          intendedRole: input.role,
+          now,
+        },
+      );
 
       // 4. Enqueue outbox — atomic with steps 1-3. If this returns err
       //    the throw triggers rollback, so users + invitations inserts
       //    are undone without needing a compensating delete path.
       const enqueueResult = await deps.enqueueInvitationInTx(tx, {
         toEmail: user.email,
-        token: invitation.id,
+        token: plaintext,
         role: input.role,
         locale: input.locale,
         tenantId: input.tenantId,
@@ -215,7 +239,7 @@ export async function createUser(
           'create_user.invitation_enqueue_failed',
         );
         authMetrics.invitationEnqueueFailed(input.role, enqueueResult.error.code);
-        throw new CreateUserAbort<CreateUserError>({
+        throw new TxAbort<CreateUserError>({
           code: 'invitation-create-failed',
         });
       }
@@ -232,6 +256,9 @@ export async function createUser(
       });
 
       return { user, invitationId: invitation.id };
+      // ↑ `invitation.id` is the hash; safe for caller use (audit
+      //   correlation + admin "Invitation #abcd" rendering). NEVER
+      //   exposed via API responses or URLs.
     });
 
     // observability.md § 4.3 — invitation volume by role. Post-commit
@@ -239,7 +266,7 @@ export async function createUser(
     authMetrics.invitationSent(input.role);
     return ok(outcome);
   } catch (e) {
-    if (e instanceof CreateUserAbort) {
+    if (e instanceof TxAbort) {
       return err(e.error as CreateUserError);
     }
     // Unexpected DB / network error. Log with context, re-raise so the

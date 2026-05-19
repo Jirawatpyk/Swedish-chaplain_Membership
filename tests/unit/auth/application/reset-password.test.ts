@@ -2,8 +2,15 @@
  * Unit tests for `resetPassword` use case (T100, spec US3 AS2-4,
  * FR-005, FR-008, T-11).
  *
+ * A4 (post-ship 2026-05-17): the success path now runs inside
+ * `db.transaction(...)` so we mock `@/lib/db` with a stub that invokes
+ * the callback with a fake tx object and re-throws on abort.
+ * Application-layer mutations call `*InTx` repo variants; the failure
+ * paths (token-not-found / expired / consumed / user-not-active /
+ * weak-password / rate-limited) all short-circuit BEFORE the tx is
+ * opened and use the non-tx `audit.append`.
+ *
  * 100% line + branch + function coverage target.
- * Mock pattern mirrors tests/unit/members/application/archive-member.test.ts.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +26,15 @@ vi.mock('@/lib/metrics', () => ({
     passwordWeakRejected: vi.fn(),
     passwordChanged: vi.fn(),
     passwordResetCompleted: vi.fn(),
+    auditMissing: vi.fn(),
+  },
+}));
+// A4 — `db.transaction(fn)` stub: invokes fn with a fake tx and
+// re-throws (mirrors Drizzle's commit-on-return / rollback-on-throw
+// semantics).
+vi.mock('@/lib/db', () => ({
+  db: {
+    transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn({} as never)),
   },
 }));
 vi.mock('@/lib/auth-deps', () => ({
@@ -34,9 +50,19 @@ vi.mock('@/modules/auth/application/password-policy', () => ({
 import { resetPassword } from '@/modules/auth/application/reset-password';
 import type { ResetPasswordDeps } from '@/modules/auth/application/reset-password';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import { asUserId, asTokenId, asPasswordHash } from '@/modules/auth/domain/branded';
+import {
+  asUserId,
+  asResetTokenHash,
+  asResetTokenId,
+  asTokenId,
+  asPasswordHash,
+  asEmailAddress,
+} from '@/modules/auth/domain/branded';
 import type { PasswordResetToken } from '@/modules/auth/domain/token';
-import { checkPasswordPolicy, weakPasswordMetricBucket } from '@/modules/auth/application/password-policy';
+import {
+  checkPasswordPolicy,
+  weakPasswordMetricBucket,
+} from '@/modules/auth/application/password-policy';
 import { authMetrics } from '@/lib/metrics';
 
 // ---------------------------------------------------------------------------
@@ -46,6 +72,9 @@ import { authMetrics } from '@/lib/metrics';
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-rp-001');
 const TOKEN_ID = asTokenId('token-reset-abc-123');
+const TOKEN_HASH = asResetTokenHash('token-reset-hash-abc-123');
+const PLAINTEXT_TOKEN = asResetTokenId('token-reset-abc-123');
+void TOKEN_ID; // kept for backwards-compat with downstream contract tests
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash-for-reset');
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
@@ -58,60 +87,70 @@ function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
     lastSignInAt: null,
     lastPasswordChangedAt: null,
     failedSignInCount: 3,
-    lockedUntil: new Date(NOW.getTime() - 1000), // lock already expired
+    lockedUntil: new Date(NOW.getTime() - 1000),
     displayName: 'Test Member',
     emailVerified: true,
-    requiresPasswordReset: true, // this is why they are resetting
+    requiresPasswordReset: true,
     ...overrides,
   };
 }
 
-// Import asEmailAddress here — it was used in makeUser above
-import { asEmailAddress } from '@/modules/auth/domain/branded';
-
-function makeToken(overrides: Partial<PasswordResetToken> = {}): PasswordResetToken {
+function makeToken(
+  overrides: Partial<PasswordResetToken> = {},
+): PasswordResetToken {
   return {
-    id: TOKEN_ID,
+    // I1 (Round 2) — Domain `id` is now ResetTokenHash (the stored
+    // hash), not the URL plaintext. Tests use a fixed fake hash; the
+    // repo would normally fill this from sha256Hex(plaintext).
+    id: TOKEN_HASH,
     userId: USER_ID,
-    createdAt: new Date(NOW.getTime() - 10 * 60 * 1000), // 10 min ago
-    expiresAt: new Date(NOW.getTime() + 50 * 60 * 1000), // 50 min from now → valid
+    createdAt: new Date(NOW.getTime() - 10 * 60 * 1000),
+    expiresAt: new Date(NOW.getTime() + 50 * 60 * 1000),
     consumedAt: null,
     ...overrides,
   };
 }
 
 const BASE_INPUT = {
-  token: TOKEN_ID,
+  // E1 — input.token is plaintext (ResetTokenId); repo hashes
+  // internally. Use cases only see the plaintext brand.
+  token: PLAINTEXT_TOKEN,
   newPassword: 'BrandNewPass!789',
   sourceIp: '2.3.4.5',
   requestId: 'req-rp-001',
 };
 
-/** Build a fully-wired deps stub for reset-password, overridable per test. */
-function makeDeps(overrides: Partial<ResetPasswordDeps> = {}): ResetPasswordDeps {
+/** Build a fully-wired deps stub for reset-password — A4-aware. */
+function makeDeps(
+  overrides: Partial<ResetPasswordDeps> = {},
+): ResetPasswordDeps {
   return {
     users: {
       findById: vi.fn().mockResolvedValue(makeUser()),
-      setPasswordHash: vi.fn().mockResolvedValue(undefined),
-      clearLock: vi.fn().mockResolvedValue(undefined),
-      clearFailedCount: vi.fn().mockResolvedValue(undefined),
+      // *InTx variants used inside the tx
+      setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
+      clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
     } as unknown as ResetPasswordDeps['users'],
     tokens: {
       findResetById: vi.fn().mockResolvedValue(makeToken()),
-      markResetConsumed: vi.fn().mockResolvedValue(undefined),
-      invalidateAllUnconsumedForUser: vi.fn().mockResolvedValue(undefined),
+      markResetConsumedInTx: vi.fn().mockResolvedValue(undefined),
+      invalidateAllUnconsumedForUserInTx: vi.fn().mockResolvedValue(0),
     } as unknown as ResetPasswordDeps['tokens'],
     sessions: {
-      deleteByUserId: vi.fn().mockResolvedValue(0),
+      deleteByUserIdInTx: vi.fn().mockResolvedValue(0),
     } as unknown as ResetPasswordDeps['sessions'],
     audit: {
+      // Pre-tx failure paths use append; in-tx success paths use appendInTx.
       append: vi.fn().mockResolvedValue(undefined),
+      appendInTx: vi.fn().mockResolvedValue(undefined),
     } as unknown as ResetPasswordDeps['audit'],
     hasher: {
       hash: vi.fn().mockResolvedValue(NEW_HASH),
     } as unknown as ResetPasswordDeps['hasher'],
     limiter: {
-      check: vi.fn().mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
+      check: vi
+        .fn()
+        .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
     } as unknown as ResetPasswordDeps['limiter'],
     checkPolicy: checkPasswordPolicy,
     now: () => NOW,
@@ -126,16 +165,21 @@ function makeDeps(overrides: Partial<ResetPasswordDeps> = {}): ResetPasswordDeps
 describe('resetPassword use case', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default policy mock: pass every password through as valid.
-    vi.mocked(checkPasswordPolicy).mockResolvedValue({ ok: true, errors: [], strength: 'strong' });
+    vi.mocked(checkPasswordPolicy).mockResolvedValue({
+      ok: true,
+      errors: [],
+      strength: 'strong',
+    });
     vi.mocked(weakPasswordMetricBucket).mockReturnValue(null);
   });
 
-  // ── Rate limiting ──────────────────────────────────────────────────────────
+  // ── Rate limiting ────────────────────────────────────────────────────────
   it('returns rate-limited when IP bucket is exhausted', async () => {
     const deps = makeDeps({
       limiter: {
-        check: vi.fn().mockResolvedValue({ success: false, reset: Date.now() + 15_000 }),
+        check: vi
+          .fn()
+          .mockResolvedValue({ success: false, reset: Date.now() + 15_000 }),
       } as unknown as ResetPasswordDeps['limiter'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -151,7 +195,9 @@ describe('resetPassword use case', () => {
   it('uses minimum of 1 second for retryAfterSeconds when reset is past', async () => {
     const deps = makeDeps({
       limiter: {
-        check: vi.fn().mockResolvedValue({ success: false, reset: Date.now() - 2_000 }),
+        check: vi
+          .fn()
+          .mockResolvedValue({ success: false, reset: Date.now() - 2_000 }),
       } as unknown as ResetPasswordDeps['limiter'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -161,49 +207,41 @@ describe('resetPassword use case', () => {
     }
   });
 
-  // ── Token not found ────────────────────────────────────────────────────────
+  // ── Token not found ──────────────────────────────────────────────────────
   it('returns link-invalid with reason "not-found" when token does not exist', async () => {
     const deps = makeDeps({
       tokens: {
         findResetById: vi.fn().mockResolvedValue(null),
-        markResetConsumed: vi.fn(),
-        invalidateAllUnconsumedForUser: vi.fn(),
+        markResetConsumedInTx: vi.fn(),
+        invalidateAllUnconsumedForUserInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['tokens'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('link-invalid');
-      if (result.error.code === 'link-invalid') {
-        expect(result.error.reason).toBe('not-found');
-      }
+    if (!result.ok && result.error.code === 'link-invalid') {
+      expect(result.error.reason).toBe('not-found');
     }
-    // No audit event when token is missing (no target user to correlate)
     expect(deps.audit.append).not.toHaveBeenCalled();
   });
 
-  // ── Token expired ──────────────────────────────────────────────────────────
+  // ── Token expired ────────────────────────────────────────────────────────
   it('returns link-invalid with reason "expired" for an expired token', async () => {
     const expiredToken = makeToken({
-      expiresAt: new Date(NOW.getTime() - 1), // expired exactly 1ms ago
+      expiresAt: new Date(NOW.getTime() - 1),
       consumedAt: null,
     });
     const deps = makeDeps({
       tokens: {
         findResetById: vi.fn().mockResolvedValue(expiredToken),
-        markResetConsumed: vi.fn(),
-        invalidateAllUnconsumedForUser: vi.fn(),
+        markResetConsumedInTx: vi.fn(),
+        invalidateAllUnconsumedForUserInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['tokens'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('link-invalid');
-      if (result.error.code === 'link-invalid') {
-        expect(result.error.reason).toBe('expired');
-      }
+    if (!result.ok && result.error.code === 'link-invalid') {
+      expect(result.error.reason).toBe('expired');
     }
-    // Audit event IS emitted for expired/consumed tokens (token has a userId)
     expect(deps.audit.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'password_reset_failed',
@@ -212,78 +250,35 @@ describe('resetPassword use case', () => {
     );
   });
 
-  // ── Token consumed (used) ──────────────────────────────────────────────────
+  // ── Token consumed ───────────────────────────────────────────────────────
   it('returns link-invalid with reason "used" for an already-consumed token', async () => {
     const consumedToken = makeToken({
-      consumedAt: new Date(NOW.getTime() - 5 * 60 * 1000), // consumed 5 min ago
+      consumedAt: new Date(NOW.getTime() - 5 * 60 * 1000),
     });
     const deps = makeDeps({
       tokens: {
         findResetById: vi.fn().mockResolvedValue(consumedToken),
-        markResetConsumed: vi.fn(),
-        invalidateAllUnconsumedForUser: vi.fn(),
+        markResetConsumedInTx: vi.fn(),
+        invalidateAllUnconsumedForUserInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['tokens'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('link-invalid');
-      if (result.error.code === 'link-invalid') {
-        expect(result.error.reason).toBe('used');
-      }
+    if (!result.ok && result.error.code === 'link-invalid') {
+      expect(result.error.reason).toBe('used');
     }
     expect(deps.audit.append).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'password_reset_failed' }),
     );
   });
 
-  // ── User not found ─────────────────────────────────────────────────────────
+  // ── User not found ───────────────────────────────────────────────────────
   it('returns link-invalid with reason "used" when user does not exist', async () => {
     const deps = makeDeps({
       users: {
         findById: vi.fn().mockResolvedValue(null),
-        setPasswordHash: vi.fn(),
-        clearLock: vi.fn(),
-        clearFailedCount: vi.fn(),
-      } as unknown as ResetPasswordDeps['users'],
-    });
-    const result = await resetPassword(BASE_INPUT, deps);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('link-invalid');
-      if (result.error.code === 'link-invalid') {
-        expect(result.error.reason).toBe('used');
-      }
-    }
-  });
-
-  // ── User not active ────────────────────────────────────────────────────────
-  it('returns link-invalid with reason "used" when user is disabled', async () => {
-    const deps = makeDeps({
-      users: {
-        findById: vi.fn().mockResolvedValue(makeUser({ status: 'disabled' })),
-        setPasswordHash: vi.fn(),
-        clearLock: vi.fn(),
-        clearFailedCount: vi.fn(),
-      } as unknown as ResetPasswordDeps['users'],
-    });
-    const result = await resetPassword(BASE_INPUT, deps);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('link-invalid');
-      if (result.error.code === 'link-invalid') {
-        expect(result.error.reason).toBe('used');
-      }
-    }
-  });
-
-  it('returns link-invalid with reason "used" when user is pending', async () => {
-    const deps = makeDeps({
-      users: {
-        findById: vi.fn().mockResolvedValue(makeUser({ status: 'pending' })),
-        setPasswordHash: vi.fn(),
-        clearLock: vi.fn(),
-        clearFailedCount: vi.fn(),
+        setPasswordHashInTx: vi.fn(),
+        clearLockAndFailedCountInTx: vi.fn(),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -293,7 +288,37 @@ describe('resetPassword use case', () => {
     }
   });
 
-  // ── Weak password ──────────────────────────────────────────────────────────
+  it('returns link-invalid with reason "used" when user is disabled', async () => {
+    const deps = makeDeps({
+      users: {
+        findById: vi.fn().mockResolvedValue(makeUser({ status: 'disabled' })),
+        setPasswordHashInTx: vi.fn(),
+        clearLockAndFailedCountInTx: vi.fn(),
+      } as unknown as ResetPasswordDeps['users'],
+    });
+    const result = await resetPassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.code === 'link-invalid') {
+      expect(result.error.reason).toBe('used');
+    }
+  });
+
+  it('returns link-invalid with reason "used" when user is pending', async () => {
+    const deps = makeDeps({
+      users: {
+        findById: vi.fn().mockResolvedValue(makeUser({ status: 'pending' })),
+        setPasswordHashInTx: vi.fn(),
+        clearLockAndFailedCountInTx: vi.fn(),
+      } as unknown as ResetPasswordDeps['users'],
+    });
+    const result = await resetPassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok && result.error.code === 'link-invalid') {
+      expect(result.error.reason).toBe('used');
+    }
+  });
+
+  // ── Weak password ────────────────────────────────────────────────────────
   it('returns weak-password when policy rejects the new password', async () => {
     const policyErrors = [{ code: 'too-short' as const, minLength: 12 }];
     vi.mocked(checkPasswordPolicy).mockResolvedValue({
@@ -306,11 +331,8 @@ describe('resetPassword use case', () => {
     const deps = makeDeps();
     const result = await resetPassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.code).toBe('weak-password');
-      if (result.error.code === 'weak-password') {
-        expect(result.error.errors).toEqual(policyErrors);
-      }
+    if (!result.ok && result.error.code === 'weak-password') {
+      expect(result.error.errors).toEqual(policyErrors);
     }
     expect(authMetrics.passwordWeakRejected).toHaveBeenCalledWith('short');
   });
@@ -329,23 +351,22 @@ describe('resetPassword use case', () => {
     expect(authMetrics.passwordWeakRejected).not.toHaveBeenCalled();
   });
 
-  // ── Success: no active sessions ────────────────────────────────────────────
+  // ── Success: no active sessions ──────────────────────────────────────────
   it('succeeds with signInUrl and role, no concurrent_sessions_revoked when 0 sessions killed', async () => {
     const deps = makeDeps({
       sessions: {
-        deleteByUserId: vi.fn().mockResolvedValue(0),
+        deleteByUserIdInTx: vi.fn().mockResolvedValue(0),
       } as unknown as ResetPasswordDeps['sessions'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.role).toBe('member');
-      // member role → /portal/sign-in
       expect(result.value.signInUrl).toBe('/portal/sign-in');
     }
 
-    const auditCalls = vi.mocked(deps.audit.append).mock.calls.map(
-      (c) => (c[0] as { eventType: string }).eventType,
+    const auditCalls = vi.mocked(deps.audit.appendInTx).mock.calls.map(
+      (c) => (c[1] as { eventType: string }).eventType,
     );
     expect(auditCalls).toContain('password_reset_completed');
     expect(auditCalls).not.toContain('concurrent_sessions_revoked');
@@ -354,70 +375,83 @@ describe('resetPassword use case', () => {
     expect(authMetrics.passwordChanged).toHaveBeenCalledWith('reset');
   });
 
-  // ── Success: sessions killed → fires concurrent_sessions_revoked ───────────
+  // ── Success: sessions killed → fires concurrent_sessions_revoked ─────────
   it('emits concurrent_sessions_revoked when sessions were active at reset time', async () => {
     const deps = makeDeps({
       sessions: {
-        deleteByUserId: vi.fn().mockResolvedValue(2), // 2 sessions killed
+        deleteByUserIdInTx: vi.fn().mockResolvedValue(2),
       } as unknown as ResetPasswordDeps['sessions'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
 
-    const auditCalls = vi.mocked(deps.audit.append).mock.calls.map(
-      (c) => (c[0] as { eventType: string }).eventType,
+    const auditCalls = vi.mocked(deps.audit.appendInTx).mock.calls.map(
+      (c) => (c[1] as { eventType: string }).eventType,
     );
     expect(auditCalls).toContain('password_reset_completed');
     expect(auditCalls).toContain('concurrent_sessions_revoked');
 
-    const revokedCall = vi.mocked(deps.audit.append).mock.calls.find(
-      (c) => (c[0] as { eventType: string }).eventType === 'concurrent_sessions_revoked',
+    const revokedCall = vi.mocked(deps.audit.appendInTx).mock.calls.find(
+      (c) =>
+        (c[1] as { eventType: string }).eventType ===
+        'concurrent_sessions_revoked',
     );
-    expect((revokedCall?.[0] as { summary: string }).summary).toContain('2 session(s)');
+    expect((revokedCall?.[1] as { summary: string }).summary).toContain(
+      '2 session(s)',
+    );
   });
 
-  // ── Correct wiring: consume-then-set ordering ─────────────────────────────
-  it('calls markResetConsumed BEFORE setPasswordHash (W-01 ordering)', async () => {
+  // ── Correct wiring: consume-then-set ordering ────────────────────────────
+  it('calls markResetConsumedInTx BEFORE setPasswordHashInTx (W-01 ordering preserved under A4)', async () => {
     const callOrder: string[] = [];
     const deps = makeDeps({
       tokens: {
         findResetById: vi.fn().mockResolvedValue(makeToken()),
-        markResetConsumed: vi.fn().mockImplementation(async () => {
-          callOrder.push('markResetConsumed');
+        markResetConsumedInTx: vi.fn().mockImplementation(async () => {
+          callOrder.push('markResetConsumedInTx');
         }),
-        invalidateAllUnconsumedForUser: vi.fn().mockImplementation(async () => {
-          callOrder.push('invalidateAllUnconsumedForUser');
-        }),
+        invalidateAllUnconsumedForUserInTx: vi
+          .fn()
+          .mockImplementation(async () => {
+            callOrder.push('invalidateAllUnconsumedForUserInTx');
+            return 0;
+          }),
       } as unknown as ResetPasswordDeps['tokens'],
       users: {
         findById: vi.fn().mockResolvedValue(makeUser()),
-        setPasswordHash: vi.fn().mockImplementation(async () => {
-          callOrder.push('setPasswordHash');
+        setPasswordHashInTx: vi.fn().mockImplementation(async () => {
+          callOrder.push('setPasswordHashInTx');
         }),
-        clearLock: vi.fn().mockResolvedValue(undefined),
-        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
     });
     await resetPassword(BASE_INPUT, deps);
-    expect(callOrder.indexOf('markResetConsumed')).toBeLessThan(
-      callOrder.indexOf('setPasswordHash'),
+    expect(callOrder.indexOf('markResetConsumedInTx')).toBeLessThan(
+      callOrder.indexOf('setPasswordHashInTx'),
     );
-    expect(callOrder.indexOf('invalidateAllUnconsumedForUser')).toBeLessThan(
-      callOrder.indexOf('setPasswordHash'),
+    expect(callOrder.indexOf('invalidateAllUnconsumedForUserInTx')).toBeLessThan(
+      callOrder.indexOf('setPasswordHashInTx'),
     );
   });
 
-  it('calls clearLock and clearFailedCount on success', async () => {
+  it('calls clearLockAndFailedCountInTx on success (G8 merge)', async () => {
     const deps = makeDeps();
     await resetPassword(BASE_INPUT, deps);
-    expect(deps.users.clearLock).toHaveBeenCalledWith(USER_ID);
-    expect(deps.users.clearFailedCount).toHaveBeenCalledWith(USER_ID);
+    expect(deps.users.clearLockAndFailedCountInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      USER_ID,
+    );
+    expect(deps.users.clearLockAndFailedCountInTx).toHaveBeenCalledTimes(1);
   });
 
-  it('calls invalidateAllUnconsumedForUser with the correct userId', async () => {
+  it('calls invalidateAllUnconsumedForUserInTx with the correct userId', async () => {
     const deps = makeDeps();
     await resetPassword(BASE_INPUT, deps);
-    expect(deps.tokens.invalidateAllUnconsumedForUser).toHaveBeenCalledWith(USER_ID, NOW);
+    expect(deps.tokens.invalidateAllUnconsumedForUserInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      USER_ID,
+      NOW,
+    );
   });
 
   // ── signInUrl mapping for staff roles ────────────────────────────────────
@@ -425,9 +459,8 @@ describe('resetPassword use case', () => {
     const deps = makeDeps({
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ role: 'admin' })),
-        setPasswordHash: vi.fn().mockResolvedValue(undefined),
-        clearLock: vi.fn().mockResolvedValue(undefined),
-        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
+        clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);
@@ -442,9 +475,8 @@ describe('resetPassword use case', () => {
     const deps = makeDeps({
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ role: 'manager' })),
-        setPasswordHash: vi.fn().mockResolvedValue(undefined),
-        clearLock: vi.fn().mockResolvedValue(undefined),
-        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
+        clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
     });
     const result = await resetPassword(BASE_INPUT, deps);

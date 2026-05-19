@@ -23,6 +23,7 @@ import {
   makeIssueRefundDeps,
   makeLoadInvoicePaymentActivityDeps,
 } from '@/modules/payments';
+import { asSatang } from '@/lib/money';
 import type {
   F5RefundBridge,
   IssueRefundForInvoiceInput,
@@ -58,7 +59,8 @@ export const f5RefundBridge: F5RefundBridge = {
       {
         tenantId: input.tenantId,
         paymentId: remaining.paymentId,
-        amountSatang: remaining.remainingSatang,
+        // F5R3 H-5 (2026-05-16) — brand at F8→F5 bridge.
+        amountSatang: asSatang(remaining.remainingSatang),
         reason: input.reason,
         actorUserId: input.actorUserId,
         correlationId: input.correlationId,

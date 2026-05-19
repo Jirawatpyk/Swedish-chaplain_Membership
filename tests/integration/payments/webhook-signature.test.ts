@@ -31,14 +31,6 @@
  *
  * Pattern: uses vi.mock for the stripe verifier + a spy on NextRequest.text()
  * to count invocations. No real DB, no real Stripe SDK.
- *
- * RED reason: `src/app/api/webhooks/stripe/route.ts` and
- * `src/lib/stripe-webhook-verifier.ts` do NOT exist yet (Group C T048 + T053).
- * `@ts-expect-error` on each dynamic import suppresses TS2307 so
- * `pnpm typecheck` passes; MODULE_NOT_FOUND at runtime makes tests RED.
- *
- * Turns GREEN: Group C T048 (route handler) + Group C T053
- * (stripe-webhook-verifier helper).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -52,11 +44,23 @@ const processWebhookEventMock = vi.fn();
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest signature required so spread callers type-check (TS2556)
 const auditWriteMock = vi.fn(async (..._args: unknown[]) => undefined);
 
-vi.mock('@/lib/stripe-webhook-verifier', () => ({
-  webhookVerifier: {
-    constructEvent: (...args: unknown[]) => constructEventMock(...args),
-  },
-}));
+// F5R2-TY-B — route narrows verifier throws via `instanceof
+// WebhookSignatureError`, so the mock must re-export the real
+// error class. Importing from the original module preserves the
+// instanceof check for tests that throw via `new WebhookSignatureError(...)`.
+// Mocks that throw plain `Error` fall to the `verifier_internal_error`
+// branch (also returns 401, which is the assertion these tests check).
+vi.mock('@/lib/stripe-webhook-verifier', async () => {
+  const original = await vi.importActual<typeof import('@/lib/stripe-webhook-verifier')>(
+    '@/lib/stripe-webhook-verifier',
+  );
+  return {
+    webhookVerifier: {
+      constructEvent: (...args: unknown[]) => constructEventMock(...args),
+    },
+    WebhookSignatureError: original.WebhookSignatureError,
+  };
+});
 
 vi.mock('@/lib/stripe-webhook-deps', async () => {
   const auth = await import('@/modules/auth/infrastructure/db/audit-repo');
@@ -72,6 +76,21 @@ vi.mock('@/lib/stripe-webhook-deps', async () => {
 vi.mock('@/modules/payments', () => ({
   processWebhookEvent: (...args: unknown[]) => processWebhookEventMock(...args),
   makeProcessWebhookEventDeps: () => ({ db: {}, audit: {} }),
+  // F5R3 CR-3 wired the route to import this from the barrel for the
+  // typed-payload emit on permanent_failure path.
+  SYSTEM_ACTOR_STRIPE_WEBHOOK: 'system:webhook',
+}));
+
+// F5R3 CR-3 / CR-8 — mock the F5 audit adapter so CR-8 tests can
+// assert the typed-payload emit fired with the right shape on
+// permanence='permanent' dispatch failure. Re-exports the real
+// audit-port module so route's `retentionFor` import still resolves
+// to the canonical retention map.
+const f5AuditAdapterEmitMock = vi.fn(async (..._args: unknown[]) => undefined);
+vi.mock('@/modules/payments/infrastructure/audit/drizzle-payments-audit', () => ({
+  f5AuditAdapter: {
+    emit: (...args: unknown[]) => f5AuditAdapterEmitMock(...args),
+  },
 }));
 
 vi.mock('@/modules/invoicing', () => ({
@@ -264,7 +283,13 @@ describe('webhook-signature route contract: verify-before-parse invariant (T044)
   it('valid signature → req.text() called; processWebhookEvent called; 200', async () => {
     const event = JSON.parse(VALID_RAW_BODY) as Record<string, unknown>;
     constructEventMock.mockReturnValueOnce(event);
-    processWebhookEventMock.mockResolvedValueOnce({ outcome: 'processed' });
+    // F5R2-CRIT-2 — route now narrows via `if (!result.ok)` instead
+    // of the prior duck-type `(result as {ok?:boolean}).ok === false`
+    // check. The mock must return a proper `Result.ok` shape now.
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: true,
+      value: { kind: 'acknowledged_only' },
+    });
 
     const { req, textSpy } = makeSpiedRequest(VALID_RAW_BODY, {
       'stripe-signature': 't=1716000000,v1=validhex',
@@ -361,5 +386,149 @@ describe('webhook-signature route contract: verify-before-parse invariant (T044)
         && arg?.['reason'] === 'body_too_large';
     });
     expect(rejectionCall).toBeDefined();
+  });
+
+  // ===========================================================================
+  // F5R3 CR-8 (2026-05-16) — Permanence-routing regression coverage
+  // ===========================================================================
+  //
+  // R2-CRIT-2 fixed the route to map dispatch_failed errors by their
+  // typed `permanence` discriminator: 'transient' → 5xx (Stripe retries
+  // through the outage window) / 'permanent' → 200 + forensic audit
+  // (stops the 72h retry storm). Pre-fix the route used a duck-type
+  // `result.error` cast with `?? 'transient'` defaulting that erased
+  // the type-level guarantee. These tests pin the wire-level behaviour
+  // so a future regression that drops permanence classification fails
+  // CI loudly.
+  // ---------------------------------------------------------------------------
+
+  it('R2-CRIT-2: dispatch_failed transient → 5xx (Stripe retries through outage)', async () => {
+    const event = JSON.parse(VALID_RAW_BODY) as Record<string, unknown>;
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'dispatch_failed',
+        kind: 'sub_use_case_error',
+        eventType: 'payment_intent.succeeded',
+        detail: 'processor_unavailable',
+        permanence: 'transient',
+      },
+    });
+
+    const { req } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1716000000,v1=validhex',
+    });
+    const { POST } = (await importWebhookRoute()) as unknown as {
+      POST: (req: Request) => Promise<Response>;
+    };
+    const res = (await POST(req)) as Response;
+
+    // Must be 5xx so Stripe retries (transient outages recover within
+    // Stripe's 72h retry window).
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    // Permanent-failure audit MUST NOT fire on transient path.
+    const f5EmitCalls = f5AuditAdapterEmitMock.mock.calls as Array<Array<unknown>>;
+    const permanentEmits = f5EmitCalls.filter((call) => {
+      const event = call[1] as { eventType?: string } | undefined;
+      return event?.eventType === 'webhook_dispatch_permanent_failure';
+    });
+    expect(permanentEmits.length).toBe(0);
+  });
+
+  it('R2-CRIT-2: dispatch_failed permanent → 200 + webhook_dispatch_permanent_failure typed audit (stops Stripe 72h retry storm)', async () => {
+    const event = JSON.parse(VALID_RAW_BODY) as Record<string, unknown>;
+    constructEventMock.mockReturnValueOnce(event);
+    processWebhookEventMock.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        code: 'dispatch_failed',
+        kind: 'sub_use_case_error',
+        eventType: 'payment_intent.succeeded',
+        detail: 'tenant_settings_missing',
+        permanence: 'permanent',
+      },
+    });
+
+    const { req } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1716000000,v1=validhex',
+    });
+    const { POST } = (await importWebhookRoute()) as unknown as {
+      POST: (req: Request) => Promise<Response>;
+    };
+    const res = (await POST(req)) as Response;
+
+    // 200 ack so Stripe stops retrying (permanent error has zero
+    // chance of recovery — F4 misconfiguration / removed account).
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body['ok']).toBe(true);
+    expect(body['dispatched']).toBe(false);
+    expect(body['reason']).toBe('permanent_failure_acknowledged');
+    // Body MUST NOT leak the dispatch_failure_detail (visible in
+    // Stripe Dashboard webhook log to anyone with read access).
+    expect(body['detail']).toBeUndefined();
+
+    // F5R3 CR-3 — the typed payload emit fired through the F5
+    // adapter (NOT the F1 auditRepo.append, which doesn't persist
+    // payload). Adapter call shape: emit(null, F5AuditEvent).
+    const f5EmitCalls = f5AuditAdapterEmitMock.mock.calls as Array<Array<unknown>>;
+    const permanentEmit = f5EmitCalls.find((call) => {
+      const arg = call[1] as { eventType?: string } | undefined;
+      return arg?.eventType === 'webhook_dispatch_permanent_failure';
+    });
+    expect(permanentEmit).toBeDefined();
+    const eventArg = permanentEmit![1] as {
+      eventType: string;
+      payload: Record<string, unknown>;
+      retentionYears: number;
+    };
+    expect(eventArg.eventType).toBe('webhook_dispatch_permanent_failure');
+    expect(eventArg.payload['dispatch_failure_kind']).toBe('sub_use_case_error');
+    expect(eventArg.payload['dispatch_failure_detail']).toBe(
+      'tenant_settings_missing',
+    );
+    expect(eventArg.payload['stripe_event_type']).toBe(
+      'payment_intent.succeeded',
+    );
+    expect(eventArg.retentionYears).toBe(5);
+  });
+
+  it('R2-TY-B: verifier throws non-WebhookSignatureError (TypeError) → 401 verifier_internal_error branch (not webhook_signature_rejected reason)', async () => {
+    constructEventMock.mockImplementationOnce(() => {
+      throw new TypeError('cannot read property .secret of undefined');
+    });
+
+    const { req } = makeSpiedRequest(VALID_RAW_BODY, {
+      'stripe-signature': 't=1716000000,v1=validhex',
+    });
+    const { POST } = (await importWebhookRoute()) as unknown as {
+      POST: (req: Request) => Promise<Response>;
+    };
+    const res = (await POST(req)) as Response;
+
+    // 401 (matches the canonical signature-rejection status code).
+    expect(res.status).toBe(401);
+    expect(processWebhookEventMock).not.toHaveBeenCalled();
+
+    // Audit append fired with reason='verifier_internal_error', NOT
+    // a WebhookSignatureError kind label. R2-TY-B's instanceof
+    // WebhookSignatureError narrowing routes plain Error throws to
+    // this dedicated branch so SREs can distinguish "Stripe SDK
+    // crashed" from "attacker forged signature" in the alert log.
+    const { auditRepo } = await import('@/modules/auth/infrastructure/db/audit-repo');
+    const appendMock = vi.mocked(
+      auditRepo.append as unknown as (...a: unknown[]) => unknown,
+    );
+    const internalErrorCall = (appendMock.mock.calls as Array<Array<unknown>>).find(
+      (call) => {
+        const arg = call[0] as Record<string, unknown> | undefined;
+        return (
+          arg?.['eventType'] === 'webhook_signature_rejected' &&
+          arg?.['reason'] === 'verifier_internal_error'
+        );
+      },
+    );
+    expect(internalErrorCall).toBeDefined();
   });
 });

@@ -2,6 +2,9 @@
   "auth": {
     "signIn": {
       "title": "Sign in",
+      "cardDescription": "Staff portal",
+      "memberCardDescription": "Member portal",
+      "securityUpdateBanner": "We've updated our security. Please sign in again.",
       "emailLabel": "Email",
       "passwordLabel": "Password",
       "submit": "Sign in",
@@ -17,16 +20,23 @@
     "signOut": {
       "label": "Sign out"
     },
+    "passwordReveal": {
+      "show": "Show password",
+      "hide": "Hide password"
+    },
     "forgotPassword": {
       "title": "Reset your password",
       "description": "Enter your email and we'll send you a reset link.",
       "emailLabel": "Email",
       "submit": "Send reset link",
       "submitted": "If that email matches an account, a reset link is on the way.",
-      "resend": "Didn't get the email? Resend"
+      "resend": "Didn't get the email? Resend",
+      "resendCountdown": "Resend ({seconds}s)"
     },
     "resetPassword": {
       "title": "Choose a new password",
+      "cardDescription": "Choose a new password for your account.",
+      "requestNewLink": "Request a new link",
       "newPasswordLabel": "New password",
       "confirmPasswordLabel": "Confirm new password",
       "submit": "Update password",
@@ -35,7 +45,9 @@
         "tokenExpired": "This reset link has expired. Request a new one.",
         "tokenUsed": "This reset link has already been used.",
         "weakPassword": "Choose a stronger password.",
-        "passwordBreached": "This password appears in a known data breach. Choose a different one."
+        "passwordBreached": "This password appears in a known data breach. Choose a different one.",
+        "tooShort": "Password must be at least 12 characters",
+        "passwordMismatch": "Passwords must match"
       }
     },
     "passwordStrength": {
@@ -58,13 +70,15 @@
     },
     "invite": {
       "title": "Finish setting up your account",
+      "cardDescription": "Activate your invited account by setting a password.",
       "emailLabel": "Email",
       "displayNameLabel": "Your name",
       "passwordLabel": "Choose a password",
       "submit": "Activate account",
       "errors": {
         "tokenExpired": "This invitation has expired. Ask an administrator to send a new one.",
-        "tokenUsed": "This invitation has already been used."
+        "tokenUsed": "This invitation has already been used.",
+        "contactAdminCta": "Contact an administrator to request a new invitation."
       }
     },
     "idleWarning": {
@@ -236,7 +250,6 @@
         "invite": "Invite user",
         "disable": "Disable",
         "enable": "Enable",
-        "changeRole": "Change role",
         "self": "That's you"
       },
       "confirm": {
@@ -545,7 +558,11 @@
       "title": "Notification language",
       "description": "Override the language this member receives transactional emails in (broadcast approvals, invoices, etc.). Leave on \"Use chamber default\" to follow the tenant default.",
       "useTenantDefault": "Use chamber default",
-      "options": { "en": "English", "th": "ไทย", "sv": "Svenska" },
+      "options": {
+        "en": "English",
+        "th": "ไทย",
+        "sv": "Svenska"
+      },
       "save": "Save preference",
       "savedToast": "Notification language updated.",
       "errorToast": "Could not save preference. Please try again.",
@@ -582,6 +599,7 @@
       },
       "subtitle": "Member companies + primary contacts",
       "directory": {
+        "managerReadOnlyBanner": "Read-only view — managers can browse and search but cannot edit, archive, or bulk-action members. Contact an admin to make changes.",
         "searchPlaceholder": "Search by company, contact name, or email",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
@@ -596,6 +614,14 @@
           "plan": {
             "label": "Plan",
             "all": "All plans"
+          },
+          "risk": {
+            "label": "Risk band",
+            "all": "All risk bands",
+            "healthy": "Healthy",
+            "warning": "Warning",
+            "at-risk": "At-risk",
+            "critical": "Critical"
           }
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
@@ -611,8 +637,9 @@
           "notes": "Notes"
         },
         "riskPlaceholder": "—",
-        "riskNotComputed": "—",
+        "riskNotComputed": "Not yet scored",
         "riskNotComputedAria": "Risk score not yet computed",
+        "riskNotComputedTooltip": "Risk score is computed after the first 30 days of activity. Newly-added members will see a score once they accumulate enough data.",
         "rowAriaLabel": "Open {company} details",
         "noPrimary": "No primary contact",
         "loadMore": "Load more",
@@ -640,13 +667,29 @@
       },
       "detail": {
         "title": "{companyName}",
+        "subtitle": "{plan} · Year {year}",
+        "subtitleArchived": "{plan} · Year {year} · Archived",
+        "timelinePreview": {
+          "viewAll": "View all activity",
+          "empty": "No recent activity yet."
+        },
+        "pendingInvitations": {
+          "title": "Pending portal invitations",
+          "subtitle": "Invitations sent but not yet redeemed.",
+          "rowLabel": "Invited {date}",
+          "expiresAt": "Expires {date}",
+          "expiresInDays": "{days, plural, =0 {Expires today} one {Expires in # day} other {Expires in # days}}",
+          "empty": "No pending invitations.",
+          "loadError": "Could not load pending invitations."
+        },
         "sections": {
           "company": "Company",
           "contacts": "Contacts",
           "primary": "Primary contact",
           "secondary": "Other contacts",
           "plan": "Plan",
-          "audit": "Recent activity"
+          "audit": "Recent activity",
+          "contactStatusBadges": "Contact status"
         },
         "fields": {
           "memberId": "Member ID",
@@ -690,7 +733,7 @@
         "emergencyPrimary": {
           "ariaLabel": "Help — emergency primary contact transfer",
           "title": "Emergency primary contact transfer",
-          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Click Add contact to create a secondary contact with the new person's details, then use Promote to make them the new primary. The old primary is automatically demoted."
+          "body": "Need to transfer the primary contact to a new person (e.g. the previous primary has left the company)? Open the Edit page and add the new person under \"Other contacts\", then return here and use Promote to make them the primary. The old primary is automatically demoted."
         },
         "portal": {
           "linked": "Portal linked"
@@ -711,7 +754,8 @@
         "totalEvents": "{count, plural, one {# event} other {# events}}",
         "payload": {
           "primary": "primary",
-          "primaryContactPromoted": "primary contact promoted"
+          "primaryContactPromoted": "primary contact promoted",
+          "archiveReason": "Reason: {reason}"
         },
         "invoiceDraftCreated": "Invoice draft created",
         "invoiceIssued": "Invoice {documentNumber} issued",
@@ -876,6 +920,7 @@
         "toolbarLabel": "Bulk actions",
         "selectedCount": "{count, plural, one {# selected} other {# selected}}",
         "overCap": "Maximum {max} members per batch. Split the selection.",
+        "overCapHelper": "{count} of {total} selected — only {max} can be processed at once. Deselect rows past row {max}, or use filters to narrow the list before re-selecting.",
         "actions": {
           "archive": "Archive",
           "change_plan": "Change plan",
@@ -902,6 +947,9 @@
         "statusUpdated": "Status updated",
         "saveFailed": "Save failed. Reverted.",
         "saving": "Saving…",
+        "saved": "Saved",
+        "columnHeaderHint": "Editable",
+        "columnHeaderHintTooltip": "Double-click any cell in this column to edit inline. Press Enter to save, Escape to cancel.",
         "toggleStatus": "Toggle status (currently {current})",
         "editCountry": "Edit country",
         "editCountryHint": "Double-click to edit country (ISO 3166-1 alpha-2)",
@@ -931,14 +979,14 @@
         "bannerTitle": "Archived on {date}",
         "withinWindow": "{daysRemaining, plural, one {# day remaining} other {# days remaining}} in the 90-day undelete window.",
         "windowExpired": "Archived {daysSinceArchive} days ago — beyond the 90-day undelete window.",
-        "windowExpiredTooltip": "Archived > 90 days — contact platform admin to restore.",
-        "undeleteCta": "Undelete",
+        "windowExpiredTooltip": "Archived > 90 days — contact a system admin to restore.",
+        "undeleteCta": "Restore",
         "undeleteSuccess": "Member restored.",
         "undeleteError": "Could not restore. Please try again.",
-        "windowExpiredToast": "Archive window (90 days) has expired. Contact platform admin to restore."
+        "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore."
       },
       "undelete": {
-        "cta": "Undelete",
+        "cta": "Restore",
         "confirmTitle": "Restore member?",
         "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
         "success": "Member restored.",
@@ -1164,7 +1212,11 @@
         "setupRequired": "Finish invoice setup to start billing.",
         "actions": {
           "new": "New invoice",
-          "download": "PDF",
+          "download": "Invoice",
+          "downloadReceipt": "Receipt",
+          "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
+          "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
+          "receiptPreparing": "Receipt preparing…",
           "clearFilters": "Clear filters",
           "configureInvoicing": "Configure Invoicing"
         },
@@ -1176,7 +1228,8 @@
           "total": "Total",
           "actions": "Actions",
           "member": "Member",
-          "method": "Method"
+          "method": "Method",
+          "receiptNumber": "Receipt No."
         },
         "statuses": {
           "draft": "Draft",
@@ -1197,7 +1250,29 @@
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
         "creditedTooltip": "{count, plural, one {# credit note} other {# credit notes}} · {amount} THB credited",
-        "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited"
+        "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
+        "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
+        "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)"
+      },
+      "csvExport": {
+        "trigger": "Export CSV",
+        "dialog": {
+          "title": "Export paid invoices to CSV",
+          "description": "For Thai VAT monthly filing (ภพ.30). The CSV includes every paid invoice whose Paid-At date falls inside the range below."
+        },
+        "fields": {
+          "from": "From",
+          "to": "To"
+        },
+        "actions": {
+          "cancel": "Cancel",
+          "download": "Download CSV"
+        },
+        "errors": {
+          "invalidDate": "Please choose valid dates.",
+          "rangeInverted": "From-date must be on or before To-date.",
+          "rangeTooWide": "Range cannot exceed 1 year."
+        }
       },
       "new": {
         "title": "New invoice draft",
@@ -1238,7 +1313,7 @@
         "actions": {
           "preview": "Preview",
           "issue": "Issue…",
-          "download": "Download PDF",
+          "download": "Download invoice PDF",
           "pay": "Record payment",
           "void": "Void…",
           "issueCreditNote": "Issue credit note",
@@ -1246,6 +1321,10 @@
           "resendReceipt": "Resend receipt email",
           "resendInvoiceAria": "Email a fresh copy of invoice {number} to the member's primary contact",
           "resendReceiptAria": "Email a fresh copy of receipt {number} to the member's primary contact",
+          "downloadReceipt": "Download receipt PDF",
+          "downloadCombined": "Download invoice/receipt",
+          "downloadReceiptAria": "Download the official tax receipt PDF for invoice {number}",
+          "downloadInvoiceAria": "Download the tax invoice PDF for invoice {number}",
           "more": "More",
           "moreAria": "More actions for {number}"
         },
@@ -1254,13 +1333,26 @@
           "resendRateLimited": "This document was resent recently. Please wait a few minutes before retrying.",
           "resendNoReceipt": "No receipt PDF is available for this invoice (combined mode or unpaid).",
           "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
-          "resendFailed": "Could not queue a resend. Please try again."
+          "resendFailed": "Could not queue a resend. Please try again.",
+          "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
+          "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
+          "receiptForbidden": "You do not have access to this receipt.",
+          "receiptUnavailable": "Receipt PDF is not available right now. Please try again.",
+          "receiptSessionExpired": "Your session has expired. Please sign in again to download.",
+          "receiptRateLimited": "Too many download requests. Please wait a moment and try again.",
+          "invoiceForbidden": "You do not have access to this invoice.",
+          "invoiceNotFound": "Invoice not found.",
+          "invoiceUnavailable": "Invoice PDF is not available right now. Please try again.",
+          "invoiceSessionExpired": "Your session has expired. Please sign in again to download.",
+          "invoiceRateLimited": "Too many download requests. Please wait a moment and try again.",
+          "downloadInProgress": "Preparing your download…"
         },
         "fields": {
           "memberId": "Member",
           "plan": "Plan / Year",
           "issueDate": "Issue date",
           "dueDate": "Due date",
+          "receiptNumber": "Receipt No.",
           "subtotal": "Subtotal",
           "vat": "VAT",
           "total": "Total"
@@ -1354,6 +1446,7 @@
         "success": "Payment recorded",
         "successDetail": "Invoice {number} is now paid.",
         "cancel": "Back to invoice",
+        "cancelDialog": "Cancel",
         "errors": {
           "failed": "Could not record payment",
           "invalidStatus": "Only issued invoices can be paid (current status: {status}).",
@@ -1427,7 +1520,7 @@
           "fromDate": "From",
           "toDate": "To",
           "apply": "Apply filters",
-          "reset": "Reset"
+          "reset": "Reset filters"
         },
         "columns": {
           "submittedAt": "Submitted",
@@ -1480,6 +1573,12 @@
           "submittedAt": "Submitted at",
           "scheduledFor": "Scheduled for",
           "actorRole": "Actor role"
+        },
+        "segmentType": {
+          "all_members": "All members",
+          "tier": "By membership tier",
+          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "custom": "Custom recipient list"
         },
         "audit": {
           "title": "Lifecycle timeline",
@@ -2202,7 +2301,10 @@
         "description": "Refund all or part of this payment. The matching credit note will be issued and emailed to the member.",
         "cancel": "Cancel",
         "confirm": "Issue refund",
-        "processing": "Processing refund…"
+        "processing": "Processing refund…",
+        "refsInvoice": "Invoice no.",
+        "refsReceipt": "Receipt no.",
+        "refsCombinedHint": "combined"
       },
       "form": {
         "amount": {
@@ -2287,11 +2389,659 @@
           "title": "No online payment activity",
           "body": "Online payments via card or PromptPay will appear here once a member completes one. Manually-recorded payments are shown in the Payment details section above.",
           "recordManualLink": "Record a payment manually"
+        },
+        "emptyPaidManual": {
+          "title": "Paid via manual record",
+          "body": "This invoice was marked paid through the Record Payment dialog (cash, bank transfer, cheque, or other). Manually-recorded payment details are shown in the Payment details section above; the timeline tracks online payment events only."
         }
       }
     },
     "paymentSettings": {
       "title": "Payment settings"
+    },
+    "events": {
+      "list": {
+        "title": "Events",
+        "subtitle": "Imported event registrations from EventCreate.",
+        "tableCaption": "Imported events sorted by start date, most recent first.",
+        "errorState": "We couldn't load events. Please refresh the page.",
+        "importCsvCta": "Import CSV",
+        "searchPlaceholder": "Search events by name…",
+        "searchLabel": "Search events",
+        "searchSubmit": "Search",
+        "resultsAnnouncement": "{count, plural, =0 {No events} =1 {1 event} other {# events}}",
+        "resultsAnnouncementWithQuery": "{count, plural, =0 {No events} =1 {1 event} other {# events}} for ''{query}''",
+        "columns": {
+          "date": "Date",
+          "name": "Name",
+          "category": "Category",
+          "registrations": "Registrations",
+          "partnerBenefit": "Partner Benefit",
+          "matchRate": "Match Rate"
+        },
+        "badges": {
+          "archived": "Archived",
+          "partnerBenefit": "Partner benefit",
+          "culturalEvent": "Cultural event"
+        },
+        "matchRateBand": {
+          "high": "Strong match rate",
+          "medium": "Mixed match rate",
+          "low": "Low match rate",
+          "none": "No registrations"
+        },
+        "matchRateOf": "{matched} of {total}",
+        "filters": {
+          "partnerBenefitOnly": "Counted as partner benefit",
+          "culturalEventOnly": "Counted as cultural event",
+          "showArchived": "Show archived events",
+          "hideArchived": "Hide archived events",
+          "clearAll": "Clear filters",
+          "partnerBenefitOnlyActive": "Counted as partner benefit (active)",
+          "culturalEventOnlyActive": "Counted as cultural event (active)"
+        },
+        "emptyState": {
+          "filteredEmpty": "No events match your filters.",
+          "clearFilters": "Clear filters",
+          "genericEmpty": "No events to display yet.",
+          "noIntegration": {
+            "title": "No events yet",
+            "body": "Set up your EventCreate integration to start importing attendees automatically.",
+            "cta": "Set up EventCreate integration"
+          },
+          "noDeliveries": {
+            "title": "Waiting for first event",
+            "body": "Your Zap should deliver new attendee data within about 15 minutes after their EventCreate registration. You can also send a test webhook to verify the connection.",
+            "primaryCta": "Send a test event",
+            "cta": "View integration settings",
+            "illustrationAlt": "Empty inbox illustration"
+          },
+          "allArchived": {
+            "title": "All events are archived",
+            "body": "{count, plural, one {# event has been archived.} other {# events have been archived.}}",
+            "cta": "{count, plural, one {Show 1 archived event} other {Show # archived events}}"
+          }
+        }
+      },
+      "detail": {
+        "title": "Event detail",
+        "subtitle": "Imported attendees, match status, and quota effects.",
+        "errorSubtitle": "We couldn't load this event.",
+        "errorBody": "Please refresh the page. If the problem persists, contact support.",
+        "backToList": "Back to events",
+        "header": {
+          "matchRate": "Match rate",
+          "matchRateValue": "{pct}% ({matched} of {total})",
+          "matchRateValueStacked": "{matched} of {total} attendees matched",
+          "matchRateNone": "No registrations yet",
+          "matchRateBandHigh": "Strong — most attendees matched",
+          "matchRateBandMedium": "Mixed — review unmatched rows",
+          "matchRateBandLow": "Low — many attendees need review",
+          "totalRegistrations": "Total registrations",
+          "archived": "Archived",
+          "partnerBenefit": "Partner benefit",
+          "culturalEvent": "Cultural event",
+          "viewOnEventCreate": "View on EventCreate",
+          "opensInNewTab": "(opens in a new tab)",
+          "lastUpdatedAt": "Last updated",
+          "lastUpdatedAtTooltip": "Time of the last attendee sync or event update for this row.",
+          "actionsLabel": "Event actions"
+        },
+        "attendees": {
+          "heading": "Attendees",
+          "tableCaption": "Event attendees with match status, ticket, quota effect, and registration time.",
+          "searchPlaceholder": "Search by email or name…",
+          "searchLabel": "Search attendees",
+          "searchSubmit": "Search",
+          "showUnmatchedOnly": "Show unmatched only",
+          "showUnmatchedOnlyActive": "Showing unmatched only",
+          "filterByPaymentStatusLabel": "Filter by payment status",
+          "allPaymentStatuses": "All statuses",
+          "empty": "We couldn't find any attendees matching these filters. Try clearing one or browse the full list.",
+          "emptyHeading": "No matches found",
+          "clearFilters": "Clear filters",
+          "filtersCleared": "Filters cleared",
+          "paymentStatusFilterDropped": "The payment status filter wasn't recognised — showing all statuses.",
+          "columns": {
+            "attendee": "Attendee",
+            "match": "Match",
+            "ticket": "Ticket",
+            "quota": "Quota",
+            "registered": "Registered",
+            "actions": "Actions"
+          },
+          "resultCount": "{count, plural, =0 {No attendees} one {1 attendee} other {# attendees}}",
+          "copyEmail": "Copy email",
+          "copyEmailAria": "Copy {email} to clipboard",
+          "copyEmailSuccess": "Email copied to clipboard",
+          "copyEmailFailed": "Could not copy — please copy manually"
+        },
+        "relink": {
+          "relinkCta": "Relink",
+          "triggerAriaLabel": "Relink {attendee} ({email}) to a different member",
+          "dialogTitle": "Relink {attendee} to a member",
+          "dialogDescription": "Choose the member this attendance belongs to. The current match will be credited back and the new member's quota will be re-evaluated. This action is auditable.",
+          "searchSrLabel": "Search members",
+          "searchPlaceholder": "Search by company or contact…",
+          "searchPrompt": "Start typing to search members.",
+          "searching": "Searching members…",
+          "noResults": "No members match.",
+          "searchFailed": "Could not load members. Check your connection and try again.",
+          "pendingAnnouncement": "Relinking attendance…",
+          "successToast": "Relinked to {companyName}",
+          "noopToast": "No change",
+          "noopToastDescription": "This attendance was already linked to {companyName}.",
+          "errorToast": "Could not relink — please try again",
+          "errorToastNetwork": "Connection lost — check your internet and try again",
+          "errorToastConflict": "Cannot relink right now — the event state may have changed. Please refresh and try again.",
+          "notFoundToast": "Target member is no longer available",
+          "disallowedShort": "PII purged — cannot relink",
+          "disallowedPseudonymised": "Cannot relink — attendee PII has been retention-purged. The original attendee identity is no longer recoverable. Manually re-import the registration via CSV if you have the original data."
+        },
+        "archive": {
+          "archiveCta": "Archive event",
+          "confirmTitle": "Archive this event?",
+          "confirmBody": "Archiving sets the event to a quota-neutral state. Every counted partnership + cultural ticket on this event will be credited back to its member. Future webhook deliveries for this event will be recorded but will not consume any new quota. This action is auditable; there is no in-product un-archive in v1.",
+          "cancel": "Cancel",
+          "confirm": "Archive",
+          "successTitle": "Event archived",
+          "successDescription": "{count, plural, =0 {No quota reversals needed.} one {1 registration was credited back.} other {# registrations were credited back.}}",
+          "alreadyArchivedTitle": "Already archived",
+          "alreadyArchivedDescription": "Another admin archived this event in a concurrent request. The page has been refreshed.",
+          "errorTitle": "Could not archive event",
+          "errorDescription": "Please try again. If the issue persists, contact support.",
+          "loading": "Archiving event…"
+        },
+        "erase": {
+          "triggerCta": "Erase PII",
+          "triggerAriaLabel": "Erase personal data for {attendeeName}",
+          "confirmTitle": "Erase personal data for {attendeeName}?",
+          "confirmBody": "This permanently removes the attendee's name, email, and company from the registration record. Counted quota will be credited back. The audit trail of this erasure (admin, timestamp, reason) is retained for compliance. This action cannot be undone — manually re-import via CSV if you have the original data.",
+          "reasonLabel": "Reason for erasure",
+          "reasonPlaceholder": "e.g., GDPR Article 17 request from attendee, PDPA Section 30 request, mistake in original submission…",
+          "reasonHint": "{remaining, plural, =0 {0 characters remaining} one {1 character remaining} other {# characters remaining}}",
+          "cancel": "Cancel",
+          "confirm": "Erase PII",
+          "successTitle": "Personal data erased",
+          "successDescription": "Quota credit-back: {partnership} partnership, {cultural} cultural.",
+          "alreadyErasedTitle": "Already erased",
+          "alreadyErasedDescription": "Another admin erased this registration in a concurrent request.",
+          "pathMismatchTitle": "Cannot erase",
+          "pathMismatchDescription": "This registration belongs to a different event. Refresh the page and try again.",
+          "errorTitle": "Could not erase personal data",
+          "errorDescription": "Please try again. If the issue persists, contact support.",
+          "tryAgain": "Try again",
+          "loading": "Erasing personal data…",
+          "pageTitle": "Erase personal data — {attendeeName}",
+          "pageBackToEventLabel": "Back to event detail",
+          "pageHint": "This destructive action is logged. The confirmation dialog will open automatically."
+        },
+        "ticketsRemaining": "{remaining, plural, one {# ticket remaining} other {# tickets remaining}} of {total}",
+        "auditEvents": {
+          "webhook_receipt_verified": "Webhook delivery verified",
+          "webhook_signature_rejected": "Webhook signature rejected",
+          "webhook_replay_rejected": "Webhook replay rejected",
+          "webhook_duplicate_rejected": "Webhook duplicate rejected",
+          "webhook_malformed_rejected": "Webhook payload malformed",
+          "webhook_rolled_back": "Webhook ingest rolled back",
+          "webhook_secret_grace_used": "Webhook signed with grace secret",
+          "webhook_test_invoked": "Admin test webhook invoked",
+          "webhook_ingest_precondition_failed": "Webhook ingest precondition failed",
+          "webhook_rate_limit_exceeded": "Webhook rate limit exceeded",
+          "attendee_matched_member_contact": "Attendee matched member contact",
+          "attendee_matched_member_domain": "Attendee matched member domain",
+          "attendee_matched_member_fuzzy": "Attendee matched member (fuzzy)",
+          "attendee_non_member": "Attendee resolved as non-member",
+          "attendee_unmatched": "Attendee unmatched",
+          "quota_partnership_decremented": "Partnership ticket consumed",
+          "quota_cultural_decremented": "Cultural ticket consumed",
+          "quota_credit_back_refund": "Quota credited back (refund)",
+          "quota_credit_back_archive": "Quota credited back (archive)",
+          "quota_over_quota_warning": "Over-quota warning",
+          "event_partner_benefit_toggled": "Partner-benefit flag toggled",
+          "event_cultural_event_toggled": "Cultural-event flag toggled",
+          "event_archived": "Event archived",
+          "event_created": "Event created (admin manual)",
+          "registration_relinked": "Attendance relinked",
+          "webhook_secret_generated": "Webhook secret generated",
+          "webhook_secret_rotated": "Webhook secret rotated",
+          "webhook_secret_force_expired": "Webhook secret force-expired",
+          "ingest_disabled_tenant_admin": "Ingest disabled by tenant admin",
+          "csv_import_completed": "CSV import completed",
+          "csv_import_row_failed": "CSV import row failed",
+          "csv_import_error_csv_downloaded": "Error-CSV downloaded by admin",
+          "csv_import_cross_tenant_probe": "CSV import cross-tenant probe",
+          "csv_import_event_mismatch_overridden": "CSV import event-mismatch override",
+          "csv_import_row_cancelled_no_prior": "CSV cancellation row skipped (no prior)",
+          "csv_import_row_state_changed": "CSV row state changed on re-upload",
+          "pii_erasure_requested": "PII erasure requested",
+          "pii_erasure_completed": "PII erasure completed",
+          "pii_pseudonymised": "Attendee PII pseudonymised",
+          "pii_pseudonymisation_sweep_run": "PII pseudonymisation sweep run",
+          "cross_tenant_probe": "Cross-tenant probe blocked",
+          "event_detail_not_found_probe": "Event detail not found (info-level probe)",
+          "role_violation_blocked": "Role violation blocked"
+        },
+        "toggles": {
+          "flagPartnerBenefit": "Flag as partner benefit",
+          "unflagPartnerBenefit": "Remove partner-benefit flag",
+          "flagCulturalEvent": "Flag as cultural event",
+          "unflagCulturalEvent": "Remove cultural-event flag",
+          "confirmFlagPartnerTitle": "Flag this event as a partner benefit?",
+          "confirmFlagPartnerBody": "All matched paid attendees will be re-evaluated against their Partnership-tier ticket allotment. Members with remaining quota will have one ticket consumed; over-quota attendees will be persisted without consuming quota.",
+          "confirmUnflagPartnerTitle": "Remove partner-benefit flag?",
+          "confirmUnflagPartnerBody": "All counted partnership tickets on this event will be credited back to their members. This action is auditable and reversible by flagging again.",
+          "confirmFlagCulturalTitle": "Flag this event as a cultural event?",
+          "confirmFlagCulturalBody": "All matched paid attendees will be re-evaluated against their Corporate-tier annual cultural allotment. Members with remaining quota will have one ticket consumed; over-quota attendees will be persisted without consuming quota.",
+          "confirmUnflagCulturalTitle": "Remove cultural-event flag?",
+          "confirmUnflagCulturalBody": "All counted cultural tickets on this event will be credited back to their members for the current calendar year.",
+          "cancel": "Cancel",
+          "confirm": "Apply",
+          "successTitle": "Category flag updated",
+          "successDescription": "{count, plural, =0 {No registrations needed re-evaluation.} one {1 registration was re-evaluated.} other {# registrations were re-evaluated.}}",
+          "archivedTitle": "Event archived",
+          "archivedDescription": "Archived events are quota-neutral and cannot be re-flagged.",
+          "errorTitle": "Could not update flag",
+          "errorDescription": "Please try again. If the issue persists, contact support.",
+          "loadingPartnerBenefit": "Updating partner-benefit flag…",
+          "loadingCulturalEvent": "Updating cultural-event flag…"
+        }
+      },
+      "matchType": {
+        "member_contact": "Verified contact",
+        "member_domain": "Verified domain",
+        "member_fuzzy": "Likely match",
+        "non_member": "Non-member",
+        "unmatched": "Needs review"
+      },
+      "matchTypeTooltip": {
+        "member_contact": "Email matched an active member contact in your chamber.",
+        "member_domain": "Email's domain belongs to a member company.",
+        "member_fuzzy": "Close to a member contact but not an exact match — please review.",
+        "non_member": "Email and domain are not registered to any member.",
+        "unmatched": "Could not be matched automatically — please relink or mark as non-member."
+      },
+      "quotaEffect": {
+        "partnership": "Partner benefit",
+        "cultural": "Cultural quota",
+        "overQuota": "Over quota",
+        "none": "Not counted"
+      },
+      "quotaEffectTooltip": {
+        "partnership": "This ticket consumed one of the member's partner-benefit allotment.",
+        "cultural": "This ticket consumed one of the member's annual cultural-event allotment.",
+        "overQuota": "Member's allotment is exhausted — ticket recorded without consuming new quota.",
+        "none": "No quota effect — non-member, free ticket, or event is not a partner benefit / cultural event."
+      },
+      "paymentStatus": {
+        "paid": "Paid",
+        "pending": "Pending",
+        "refunded": "Refunded",
+        "free": "Free",
+        "waitlisted": "Waitlisted",
+        "no_show": "No show"
+      },
+      "import": {
+        "pageTitle": "Import attendees from CSV",
+        "pageSubtitle": "Upload a CSV export of EventCreate attendees. Use this for backfill, outage recovery, or as the primary ingest path when Zapier isn't available.",
+        "formTitle": "Upload CSV file",
+        "formDescription": "We'll match attendees to your existing members and apply the same quota rules as live webhook deliveries.",
+        "fileInputLabel": "Choose a .csv file",
+        "fileInputHelp": "Maximum file size 5 MiB. UTF-8 encoded; comma-separated; double-quote escape with \"\". Required columns: event_external_id, event_name, event_start, attendee_email, attendee_name.",
+        "confirmCta": "Confirm and import",
+        "cancelCta": "Cancel",
+        "submittingCta": "Importing — please wait",
+        "uploadInProgressSr": "CSV import in progress. Please wait.",
+        "importCompleteSr": "Import complete. Review the summary below.",
+        "resetToUploadSr": "Form reset. Upload a new CSV file.",
+        "importSuccessToast": "Import complete",
+        "importSuccessToastDesc": "{count, plural, =0 {No new rows — all already imported.} one {1 row imported.} other {# rows imported.}}",
+        "retryCta": "Try again",
+        "uploadAnother": "Upload another CSV",
+        "preview": {
+          "fileNameLabel": "File",
+          "columnMappingTitle": "Detected columns",
+          "columnMappingLegend": "Required columns in green; optional columns in muted style. Missing required columns block the import.",
+          "optionalColumnTooltip": "Optional — adds richer event metadata if present.",
+          "previewRowsTitle": "Preview ({count, plural, one {# row} other {# rows}})",
+          "missingColumnsTitle": "CSV is missing required columns",
+          "missingColumnsDescription": "Re-export the CSV after adding these columns:",
+          "tableAriaLabel": "CSV preview for {fileName}",
+          "totalRowsHint": "{columns} columns × showing {sampled} of {total, plural, one {# row} other {# rows}}",
+          "tableHelpText": "Hover a cell to see full content. Canonical columns are highlighted; the rest are passed through unchanged on import.",
+          "emptyCell": "(empty)",
+          "confirmCtaWithCount": "Confirm and import {count, plural, one {# row} other {# rows}}"
+        },
+        "result": {
+          "regionLabel": "CSV import result",
+          "title": "Import complete",
+          "rowsProcessedLabel": "Rows imported",
+          "rowsAlreadyImportedLabel": "Already imported",
+          "rowsAlreadyImportedDescription": "These rows match a prior upload and were skipped (idempotent).",
+          "rowsStateChangedLabel": "State changed",
+          "rowsStateChangedDescription": "Re-uploaded rows whose Status changed (e.g. Pending → Attending).",
+          "eventsCreatedLabel": "Events created",
+          "eventsUpdatedLabel": "Events updated",
+          "durationLabel": "Duration",
+          "matchBreakdownTitle": "Match breakdown",
+          "errorRowsTitle": "Rows with errors ({count})",
+          "errorRowLabel": "Row {rowNumber}",
+          "noErrorRows": "All rows imported cleanly — no errors to review.",
+          "recordIdLabel": "Reference ID",
+          "historyDegraded": "Import history could not be saved — the rows above are still committed safely, but the audit row is missing. Please quote the reference ID to support if you need to look this up later.",
+          "auditDegraded": "Audit trail degraded — rows were committed but the per-import audit row failed to save. Quote the reference ID to support during incident response.",
+          "safetyNetUnavailable": "Duplicate-protection unavailable — the event-mismatch safety net could not be checked for this import. Please verify the correct event was selected before relying on these results."
+        },
+        "errors": {
+          "networkErrorTitle": "Network error",
+          "headerInvalidTitle": "CSV header is invalid",
+          "badRequestTitle": "Couldn't import",
+          "badRequestDetail": "Your CSV could not be processed. Check the format and try again.",
+          "fileTooLargeTitle": "File too large",
+          "fileTooLargeDetail": "CSV files must be 5 MiB or smaller. Split the file or remove old rows.",
+          "rateLimitedTitle": "Too many imports",
+          "rateLimitedDetail": "You've reached the limit of 5 imports per hour. Try again in {retryAfter} seconds.",
+          "timeoutTitle": "Import timed out",
+          "timeoutDetail": "Part of the import completed. Re-upload the same CSV — already-processed rows will be skipped automatically.",
+          "unexpectedTitle": "Something went wrong",
+          "unexpectedDetail": "Unexpected error. Retry; if it persists, contact support.",
+          "eventNotSelectedTitle": "Event not selected",
+          "eventNotSelectedDetail": "Select an event from the dropdown before uploading."
+        },
+        "eventPicker": {
+          "fieldLabel": "Event",
+          "fieldHelp": "Choose the event this CSV should reconcile to. The dropdown selection is authoritative — any event columns in the CSV are overridden.",
+          "selectedPrefix": "Selected",
+          "submitGatedHint": "Select an event from the dropdown above to continue.",
+          "triggerAriaLabel": "Choose event for CSV import",
+          "loading": "Loading events…",
+          "placeholder": "Choose an event…",
+          "searchPlaceholder": "Search events by name…",
+          "searchAriaLabel": "Search events",
+          "emptyState": "No events match. Create one first or refine the search.",
+          "createInlineCta": "+ Create new event",
+          "loadErrorDetail": "Could not load events. Refresh and try again.",
+          "filenameMatchHint": "Auto-suggested from filename: {eventName}",
+          "createNewCta": "Create new event",
+          "refreshAriaLabel": "Refresh events list",
+          "inlineCreateModal": {
+            "title": "Create new event",
+            "description": "Seed a new chamber event so this CSV import can target it. After creation, the event is automatically selected in the dropdown above.",
+            "submitCta": "Create event",
+            "submittingCta": "Creating…",
+            "cancelCta": "Cancel",
+            "createdToast": "Event created",
+            "createdToastDesc": "{name} is now available in the events list.",
+            "alreadyExistsToast": "Event already exists",
+            "alreadyExistsToastDesc": "The event \"{name}\" already exists and was selected.",
+            "fields": {
+              "externalIdLabel": "External ID",
+              "externalIdPlaceholder": "e.g. agm-2026",
+              "externalIdHelp": "Unique typed slug (1-100 alphanumeric + hyphen). Same value the CSV uses for event_external_id.",
+              "nameLabel": "Event name",
+              "namePlaceholder": "e.g. SweCham AGM 2026",
+              "nameHelp": "Public-facing event title shown on the import history and audit log (up to 500 characters).",
+              "startDateLabel": "Start date & time",
+              "startDateHelp": "Local time in your tenant's primary timezone — stored as UTC.",
+              "categoryLabel": "Category (optional)",
+              "categoryPlaceholder": "e.g. AGM, Networking, Workshop",
+              "categoryHelp": "Free-text label used for filtering on the events list.",
+              "errors": {
+                "externalIdRequired": "External ID is required.",
+                "externalIdTooLong": "External ID must be at most 100 characters.",
+                "externalIdInvalid": "Use alphanumeric characters and hyphens only (e.g. agm-2026).",
+                "nameRequired": "Event name is required.",
+                "nameTooLong": "Event name must be at most 500 characters.",
+                "startDateRequired": "Start date & time is required.",
+                "categoryTooLong": "Category must be at most 100 characters."
+              }
+            },
+            "errors": {
+              "invalidStartDateTitle": "Invalid start date",
+              "invalidStartDateDetail": "Choose a valid date and time before submitting.",
+              "networkErrorTitle": "Network error",
+              "networkErrorDetail": "Could not reach the server. Check your connection and retry.",
+              "validationTitle": "Validation failed",
+              "validationDetail": "One or more fields are invalid. Review the form and retry.",
+              "rateLimitTitle": "Too many attempts",
+              "rateLimitDetail": "You have created too many events in the past hour. Wait a minute and retry.",
+              "rateLimitDetailWithSeconds": "Rate-limit reached: 30 events/hour per admin. Retry after {seconds, plural, one {# second} other {# seconds}}.",
+              "unexpectedTitle": "Unexpected error",
+              "unexpectedDetail": "Something went wrong on our side. Please retry; if it persists, contact support."
+            }
+          },
+          "filenameMatchHintWithScore": "Auto-suggested from filename: {eventName} — {score}% match"
+        },
+        "eventMismatch": {
+          "title": "This CSV may belong to a different event",
+          "description": "We found {count} earlier import(s) in the last 30 days with the same attendees that targeted a different event. Confirm you meant to import to the selected event.",
+          "priorImportsHeading": "Earlier imports with the same attendees:",
+          "priorImportRow": "Uploaded {uploadedAt}",
+          "cancelCta": "Cancel",
+          "continueCta": "Continue anyway"
+        },
+        "history": {
+          "pageTitle": "CSV import history",
+          "pageSubtitle": "Past attendee imports for this chamber. Download the error rows from any import to fix in Excel and re-upload.",
+          "tableAriaLabel": "CSV import history table",
+          "columns": {
+            "uploadedAt": "Uploaded",
+            "file": "File",
+            "sourceFormat": "Source",
+            "outcome": "Outcome",
+            "rowsProcessed": "Processed",
+            "rowsSkipped": "Skipped",
+            "rowsFailed": "Failed",
+            "actions": "Actions"
+          },
+          "sourceFormat": {
+            "eventcreate_csv": "EventCreate",
+            "generic_csv": "Generic"
+          },
+          "outcome": {
+            "running": "Running…",
+            "completed": "Completed",
+            "timeout": "Timed out",
+            "partial_failure": "Partial",
+            "invalid_header": "Invalid header",
+            "event_not_found": "Event not found",
+            "event_not_owned_by_tenant": "Wrong tenant",
+            "unexpected_error": "Failed"
+          },
+          "downloadErrorCsv": "Download error CSV",
+          "downloadErrorCsvAriaLabel": "Download error CSV for import {recordId}",
+          "expiredBadge": "Expired",
+          "expiredTooltip": "The error CSV for this import expired after 30 days. Re-run the import to regenerate.",
+          "noErrorRows": "No errors",
+          "emptyState": "No imports yet. Use the upload page to bring in a CSV.",
+          "loadError": "Could not load CSV import history.",
+          "loadErrorRetry": "Reload",
+          "pagination": {
+            "previous": "Previous",
+            "next": "Next",
+            "pageOf": "Page {page} of {totalPages}",
+            "showing": "Showing {from}–{to} of {totalRecords}",
+            "navAriaLabel": "Pagination"
+          },
+          "emptyStateTitle": "No imports yet",
+          "emptyStateBody": "Past imports appear here after you upload a CSV.",
+          "emptyStateCta": "Upload a CSV",
+          "autoRefreshing": "Auto-refreshing every 5s while imports are running",
+          "backToImport": "Back to import"
+        }
+      }
+    },
+    "integrations": {
+      "eventcreate": {
+        "_bootstrap": "EventCreate Integration",
+        "placeholder": {
+          "title": "EventCreate Integration",
+          "subtitle": "Set up the Zapier-powered attendee import pipeline.",
+          "heading": "Coming soon",
+          "body": "The EventCreate integration setup wizard is rolling out shortly. Until then, please contact your administrator for help configuring the Zap.",
+          "backToEvents": "Back to events"
+        },
+        "page": {
+          "title": "EventCreate integration",
+          "subtitle": "Connect Zapier so EventCreate attendee registrations import automatically.",
+          "loading": "Loading EventCreate integration…",
+          "error": {
+            "title": "Could not load the integration",
+            "body": "Something went wrong while loading the EventCreate integration. Try reloading; if the issue persists, contact support with the digest below.",
+            "digest": "Reference: {digest}",
+            "retry": "Try again"
+          }
+        },
+        "wizard": {
+          "stepsLabel": "EventCreate setup steps",
+          "phaseAStep": "Generate secret",
+          "phaseBStep": "Connect Zapier",
+          "phaseCStep": "Test & manage",
+          "phaseAIntro": "Generate a fresh webhook secret for this chamber. You'll see the plaintext value exactly once — copy it to your password manager before continuing.",
+          "tierNotice": {
+            "title": "EventCreate Corporate plan required",
+            "body": "The EventCreate API and Zapier integration are unlocked on the Corporate plan and up. Free and Pro plans do not expose the API key needed below.",
+            "csvFallback": "If your plan does not support Zapier, <csvLink>upload attendees as CSV instead</csvLink> — same matching, quota, and audit logic, no Zapier required."
+          },
+          "generateButton": "Generate webhook secret",
+          "generating": "Generating…",
+          "generateFailed": "Could not generate a webhook secret. Try again or contact support.",
+          "generateAlreadyExists": "A webhook secret already exists for this chamber. Use the rotate-secret action instead.",
+          "postRefreshResyncFailed": "Your webhook secret was saved, but the page didn't refresh cleanly. Reload to view the masked secret.",
+          "back": "Back",
+          "connectComplete": "I've set up the Zap — continue",
+          "webhookUrlLabel": "Webhook URL",
+          "webhookUrlAriaLabel": "Webhook URL to copy into Zapier",
+          "copyUrl": "Copy webhook URL to clipboard",
+          "secretLabel": "Current secret",
+          "secretAriaLabel": "Masked webhook secret — last four characters visible",
+          "rotateButton": "Rotate secret",
+          "graceActiveUntil": "Old secret still verifies until {timestamp}",
+          "viewSetupGuide": "View setup guide (Zapier walkthrough)",
+          "graceBanner": {
+            "title": "Webhook secret rotated — grace period active",
+            "description": "The previous secret will continue verifying webhook deliveries until {graceActiveUntil}. Update the secret in Zapier well before then to avoid signature rejections."
+          }
+        },
+        "phaseA": {
+          "secretLabel": "Webhook secret (one-time reveal)",
+          "revealSecret": "Reveal secret",
+          "hideSecret": "Hide secret",
+          "copySecret": "Copy secret to clipboard",
+          "copied": "Copied to clipboard",
+          "copyFailed": "Copy failed — select and copy manually",
+          "warning": "Store this value in a password manager now. It will not be shown again.",
+          "savedInPasswordManager": "I've saved this secret in a password manager",
+          "savedHint": "Confirm last 4: {lastFour}",
+          "continueToSetup": "Continue to Zapier setup"
+        },
+        "phaseB": {
+          "title": "Connect EventCreate via Zapier",
+          "stepsLabel": "Zapier setup walkthrough",
+          "englishOnlyNotice": "The Zapier web app is available in English only. The narration below is localised; the screenshots show Zapier's English interface.",
+          "imagePlaceholderNotice": "Reference screenshot — final captures pending stakeholder review. Follow the narration above.",
+          "step1": {
+            "title": "Step 1: Sign in to Zapier",
+            "body": "Open zapier.com and sign in to (or create) the Zapier account you want this Zap to run from.",
+            "alt": "Zapier sign-in screen"
+          },
+          "step2": {
+            "title": "Step 2: Create a new Zap",
+            "body": "Click the orange Create Zap button in the top navigation bar.",
+            "alt": "Zapier home with the Create Zap button highlighted"
+          },
+          "step3": {
+            "title": "Step 3: Pick EventCreate as the trigger",
+            "body": "Search for EventCreate, select New Attendee Registration as the event, and connect your EventCreate account.",
+            "alt": "Zap trigger configuration showing EventCreate"
+          },
+          "step4": {
+            "title": "Step 4: Add a Webhooks by Zapier action",
+            "body": "Add a new action step, choose Webhooks by Zapier → POST. Paste this webhook URL into the URL field: <code>{webhookUrl}</code>",
+            "alt": "Webhooks by Zapier action configuration"
+          },
+          "step5": {
+            "title": "Step 5: Map the payload fields",
+            "body": "Map each EventCreate field to the JSON body keys (event.externalId, attendee.email, etc.). Use the field mapping reference below if you need help.",
+            "alt": "Field mapping screen"
+          },
+          "step6": {
+            "title": "Step 6: Add the signature header",
+            "body": "Under Headers, add a row for X-Chamber-Signature with the HMAC-SHA256 of the body using your webhook secret. Zapier's Crypto utility makes this easy.",
+            "alt": "Headers configuration showing the signature row"
+          },
+          "step7": {
+            "title": "Step 7: Test the Zap",
+            "body": "Run Zapier's built-in test — you should see a 200 OK response from Chamber-OS confirming the synthetic attendee was imported.",
+            "alt": "Zapier test success indicator"
+          },
+          "step8": {
+            "title": "Step 8: Publish",
+            "body": "Turn the Zap on. New EventCreate attendee registrations now flow into Chamber-OS within ~15 minutes.",
+            "alt": "Zap publish toggle"
+          }
+        },
+        "phaseC": {
+          "test": {
+            "sendTest": "Send test event",
+            "inProgress": "Sending test event…",
+            "success": "Test event delivered successfully",
+            "successWithOutcome": "Test event delivered ({outcome}, {durationMs}ms)",
+            "failure": "Test event failed",
+            "failureWithHint": "Test event failed — {hint}",
+            "rateLimited": "Too many test events this hour. Wait and retry.",
+            "rateLimitedWithRetry": "Too many test events this hour. Try again in {seconds}s.",
+            "serverError": "Server error while running the test. Retry or contact support.",
+            "networkError": "Could not reach the webhook endpoint. Check connectivity."
+          },
+          "rotate": {
+            "preTitle": "Rotate webhook secret?",
+            "preDescription": "A new secret will be generated. The current secret continues to verify deliveries for 24 hours so you can update Zapier without downtime.",
+            "confirm": "Rotate now",
+            "cancel": "Cancel",
+            "postTitle": "Secret rotated",
+            "postDescription": "Old secret continues to verify until {graceActiveUntil}. Save the new secret immediately and update Zapier within 24 hours.",
+            "acknowledge": "Done",
+            "close": "Close",
+            "success": "Webhook secret rotated",
+            "failed": "Rotation failed — try again or contact support",
+            "rateLimited": "Rotation limit reached (3/hour). Wait and retry.",
+            "rateLimitedWithRetry": "Rotation limit reached. Try again in {seconds}s."
+          },
+          "recentDeliveries": {
+            "title": "Recent deliveries",
+            "empty": "No recent deliveries yet. Trigger a Zap or press \"Send test event\" to see traffic.",
+            "includeTestDeliveriesLabel": "Include test deliveries",
+            "updating": "Updating recent deliveries…",
+            "listSummary": "{count, plural, =0 {No recent deliveries} one {# delivery shown} other {# deliveries shown}}",
+            "table": {
+              "caption": "Recent webhook deliveries — most recent 10",
+              "received": "Received",
+              "requestId": "Request ID",
+              "signature": "Signature",
+              "processing": "Processing"
+            },
+            "signature": {
+              "verified": "Verified",
+              "rejected": "Signature rejected",
+              "unknown": "Unknown"
+            },
+            "processing": {
+              "matched_member_contact": "Matched member (contact)",
+              "matched_member_domain": "Matched member (domain)",
+              "matched_member_fuzzy": "Matched member (fuzzy)",
+              "non_member": "Non-member",
+              "unmatched": "Unmatched",
+              "short_circuited_test": "Test event",
+              "duplicate": "Duplicate (idempotency hit)",
+              "malformed": "Malformed payload",
+              "rolled_back": "Rolled back",
+              "rate_limited": "Rate-limited",
+              "ingest_disabled": "Ingest disabled"
+            }
+          }
+        }
+      }
     }
   },
   "palette": {
@@ -2330,7 +3080,10 @@
       "renewalSchedules": "Renewal schedule policies",
       "escalationTasks": "Escalation tasks queue",
       "escalationTasksMine": "Escalation tasks: my tray",
-      "escalationTasksOverdue": "Escalation tasks: overdue only"
+      "escalationTasksOverdue": "Escalation tasks: overdue only",
+      "eventsList": "Events",
+      "eventcreateIntegration": "EventCreate integration",
+      "csvImportHistory": "CSV import history"
     }
   },
   "nav": {
@@ -2339,8 +3092,10 @@
       "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
+      "events": "Events",
       "settingsInvoices": "Invoice Settings",
       "settingsRenewalSchedules": "Reminder schedules",
+      "settingsIntegrationEventcreate": "EventCreate integration",
       "sections": {
         "main": "Main",
         "settings": "Settings"
@@ -2385,7 +3140,10 @@
     "void": "Void",
     "pay": "Record Payment",
     "renewals": "Renewals",
-    "schedules": "Reminder schedules"
+    "schedules": "Reminder schedules",
+    "invoicing": "Invoice Settings",
+    "integrations": "Integrations",
+    "eventcreate": "EventCreate"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -2419,10 +3177,12 @@
       "title": "Invoices",
       "subtitle": "Your company's invoices and tax receipts.",
       "empty": "No invoices yet. Invoices will appear here once issued.",
+      "loadFailed": "We couldn't load your invoices right now. Please refresh the page or try again in a moment.",
       "notLinked": "Your account is not linked to a member. Please contact your administrator.",
       "loaded": "Invoices list loaded.",
       "columns": {
         "documentNumber": "Number",
+        "receiptNumber": "Receipt No.",
         "status": "Status",
         "issueDate": "Issued",
         "dueDate": "Due",
@@ -2431,6 +3191,12 @@
       },
       "actions": {
         "download": "PDF",
+        "downloadInvoiceAria": "Download tax invoice PDF for invoice {number}",
+        "downloadReceipt": "Receipt",
+        "downloadReceiptAria": "Download tax receipt PDF for invoice {number}",
+        "downloadCombined": "Download Tax Invoice / Receipt",
+        "downloadCombinedAria": "Download combined Tax Invoice / Official Receipt PDF for {number}",
+        "receiptPreparing": "Receipt preparing…",
         "viewDetail": "View invoice",
         "emailCopy": "Email me a copy",
         "emailCopyAria": "Email a fresh copy of invoice {number} to your address on file"
@@ -2438,10 +3204,24 @@
       "filters": {
         "noMatch": "No invoices match your filters."
       },
+      "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
+      "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
       "toast": {
         "resendSuccess": "Copy queued — check your inbox shortly.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
-        "resendFailed": "Could not queue a fresh copy. Please try again."
+        "resendFailed": "Could not queue a fresh copy. Please try again.",
+        "downloadInProgress": "Preparing your download…",
+        "invoiceForbidden": "You do not have access to this invoice.",
+        "invoiceNotFound": "Invoice not found.",
+        "invoiceUnavailable": "Invoice PDF is not available right now. Please try again.",
+        "invoiceSessionExpired": "Your session has expired. Please sign in again to download.",
+        "invoiceRateLimited": "Too many download requests. Please wait a moment and try again.",
+        "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
+        "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
+        "receiptForbidden": "You do not have access to this receipt.",
+        "receiptUnavailable": "Receipt PDF is not available right now. Please try again.",
+        "receiptSessionExpired": "Your session has expired. Please sign in again to download.",
+        "receiptRateLimited": "Too many download requests. Please wait a moment and try again."
       },
       "summary": {
         "heading": "Recent invoices",
@@ -2464,6 +3244,7 @@
           "issueDate": "Issued",
           "dueDate": "Due",
           "paidDate": "Paid",
+          "receiptNumber": "Receipt No.",
           "planYear": "Plan year"
         },
         "lines": {
@@ -2734,6 +3515,10 @@
       "portalLinked": "Portal linked",
       "noContacts": "No contacts found.",
       "fields": {
+        "memberId": "Member ID",
+        "memberIdHelp": "Reference this ID when contacting chamber support.",
+        "memberIdCopy": "Copy member ID",
+        "memberIdCopied": "Member ID copied",
         "companyName": "Company Name",
         "legalEntityType": "Legal Entity Type",
         "country": "Country",
@@ -2981,6 +3766,8 @@
         },
         "processing": "Your renewal is being processed. The new expiry date will appear here once payment confirmation arrives.",
         "downloadReceipt": "Download receipt PDF",
+        "downloadInvoice": "Download invoice PDF",
+        "receiptPreparing": "Receipt preparing…",
         "viewAllInvoices": "View all invoices",
         "backToPortal": "Back to portal home"
       }
@@ -3026,10 +3813,54 @@
       "at_risk_snoozed": "At-risk snoozed",
       "at_risk_outreach_recorded": "Outreach recorded",
       "at_risk_compute_partial_failure": "At-risk score partial failure",
+      "at_risk_skipped_below_min_tenure": "At-risk score skipped — below min tenure",
+      "escalation_task_created": "Escalation task created",
+      "escalation_task_completed": "Escalation task completed",
+      "escalation_task_reassigned": "Escalation task reassigned",
+      "escalation_task_skipped": "Escalation task skipped",
+      "lapsed_member_admin_reactivated": "Lapsed member reactivated by admin",
+      "lapsed_member_admin_reactivation_rejected": "Reactivation rejected",
+      "lapsed_member_admin_reactivation_timed_out": "Reactivation request timed out",
+      "manual_outreach_required": "Manual outreach required",
+      "member_auto_reactivation_blocked": "Auto-reactivation blocked",
+      "member_auto_reactivation_unblocked": "Auto-reactivation unblocked",
+      "member_email_unverified_threshold_crossed": "Email-unverified threshold crossed",
+      "renewal_completed": "Renewal completed",
+      "renewal_completed_post_lapse": "Renewal completed after lapse",
+      "renewal_cross_member_probe": "Cross-member probe detected",
+      "renewal_cross_tenant_probe": "Cross-tenant probe (renewals)",
+      "renewal_cycle_cancelled": "Renewal cycle cancelled",
+      "renewal_cycle_completed_offline": "Renewal completed offline",
+      "renewal_cycle_price_frozen": "Renewal price frozen",
+      "renewal_invoice_created": "Renewal invoice created",
+      "renewal_lapsed": "Renewal lapsed",
+      "renewal_reminder_deferred_read_only": "Renewal reminder deferred — read-only mode",
+      "renewal_reminder_retried": "Renewal reminder retried",
+      "renewal_reminder_send_failed": "Renewal reminder send failed",
+      "renewal_reminder_send_failed_permanent": "Renewal reminder permanently failed",
+      "renewal_reminder_sent": "Renewal reminder sent",
+      "renewal_reminder_skipped": "Renewal reminder skipped",
+      "renewal_schedule_policy_updated": "Renewal schedule policy updated",
+      "renewal_schedule_rescheduled": "Renewal rescheduled",
+      "renewal_schedule_reschedule_skipped": "Renewal reschedule skipped",
+      "renewal_self_service_initiated": "Member-initiated renewal",
+      "renewal_skipped_no_joined_at": "Renewal skipped — no join date",
+      "renewal_token_clicked_on_completed_cycle": "Renewal link clicked on completed cycle",
+      "renewal_token_invalid": "Invalid renewal token",
+      "renewal_with_plan_change": "Renewal with plan change",
       "tier_upgrade_suggested": "Tier upgrade suggested",
       "tier_upgrade_accepted": "Tier upgrade accepted",
       "tier_upgrade_dismissed": "Tier upgrade dismissed",
       "tier_upgrade_already_at_target": "Already at target tier",
+      "tier_upgrade_applied_at_renewal": "Tier upgrade applied at renewal",
+      "tier_upgrade_apply_post_invoice_paid_failed": "Tier-upgrade apply failed after invoice paid",
+      "tier_upgrade_catalogue_row_dropped": "Tier-upgrade catalogue row dropped",
+      "tier_upgrade_pending_admin_verification_due": "Tier upgrade — admin verification due",
+      "tier_upgrade_pending_member_notified": "Tier upgrade — member notified",
+      "tier_upgrade_pending_member_notify_failed": "Tier upgrade — member notify failed",
+      "tier_upgrade_pending_member_notify_skipped": "Tier upgrade — member notify skipped",
+      "tier_upgrade_pending_orphan_detected": "Tier-upgrade orphan detected",
+      "tier_upgrade_pending_superseded_by_manual_change": "Tier upgrade superseded by manual change",
       "tier_upgrade_skipped_no_thresholds_configured": "Tier upgrade skipped — no thresholds",
       "tier_upgrade_tenant_disabled": "Tier upgrade disabled for tenant",
       "cron_bearer_auth_rejected": "Cron auth rejected",
@@ -3050,7 +3881,12 @@
       "pdf_render_failed": "PDF render failed",
       "pdf_render_permanently_failed": "PDF render permanently failed",
       "auto_email_delivery_failed": "Auto email delivery failed",
-      "receipt_rendered": "Receipt rendered"
+      "receipt_rendered": "Receipt rendered",
+      "receipt_pdf_downloaded": "Receipt PDF downloaded",
+      "tenant_receipt_prefix_changed": "Document-number prefix changed"
+    },
+    "eventcreate": {
+      "_bootstrap": "EventCreate audit events"
     }
   },
   "pagination": {

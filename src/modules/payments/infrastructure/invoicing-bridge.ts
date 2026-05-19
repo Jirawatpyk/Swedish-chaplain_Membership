@@ -18,6 +18,9 @@
  * outer tx now unwinds BOTH writes atomically (SC-013 invariant holds).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { paymentsMetrics } from '@/lib/metrics';
+import { asSatang, type Satang } from '@/lib/money';
+import { logger } from '@/lib/logger';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
   markPaidFromProcessor as f4MarkPaidFromProcessor,
@@ -25,7 +28,6 @@ import {
   makeGetInvoiceDeps,
   type InvoiceForPayment as F4InvoiceForPayment,
   type GetInvoiceForPaymentError as F4GetInvoiceForPaymentError,
-  type MarkPaidFromProcessorError as F4MarkPaidFromProcessorError,
 } from '@/modules/invoicing';
 // Bridge response uses the public `CreditedInvoiceStatus` type — kept on
 // the port file so the F5 caller derives the value without re-reading.
@@ -36,16 +38,46 @@ import type {
   MarkPaidFromProcessorInput,
 } from '../application/ports/invoicing-bridge-port';
 
+/**
+ * F5R3v3 H-1 + H-3 (2026-05-16) — return a Result so a corrupt-total
+ * F4 invoice surfaces as a typed `corrupted_total` bridge error
+ * instead of silently capping at `asSatang(0n)`. The pre-fix path
+ * (Batch 1) substituted `0n` and let the use-case feed it into
+ * `createPaymentIntent({ amount: 0n })`, which Stripe rejects with
+ * `amount_too_small` → `processor_unavailable` retry storm + audit
+ * row with a wrong amount. Now: error path emits a metric counter +
+ * structured `logger.error` (Constitution Principle X — invariant
+ * violations are `error`, not `warn`) carrying tenantId + invoiceId
+ * + raw totalSatang + errKind for SRE triage, then propagates as
+ * `corrupted_total` so initiate-payment returns a deterministic
+ * `invoice_data_corrupt` 422 without a Stripe round-trip.
+ */
 function mapF4InvoiceForPayment(
   v: F4InvoiceForPayment,
-): InvoiceForPaymentDTO {
-  return {
+): Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError> {
+  let totalSatang: Satang;
+  try {
+    totalSatang = asSatang(v.totalSatang);
+  } catch (e) {
+    paymentsMetrics.f4BridgeUnknownErrorShape('f4_invoice_total_negative');
+    logger.error(
+      {
+        tenantId: v.tenantId,
+        invoiceId: v.id,
+        rawTotalSatang: String(v.totalSatang),
+        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+      },
+      'invoicing-bridge.f4_invoice_total_brand_failed',
+    );
+    return err({ code: 'corrupted_total', invoiceId: v.id });
+  }
+  return ok({
     id: v.id,
     status: v.status,
-    totalSatang: v.totalSatang,
+    totalSatang,
     memberId: v.memberId,
     tenantId: v.tenantId,
-  };
+  });
 }
 
 function mapF4GetError(
@@ -75,28 +107,61 @@ function mapF4GetError(
  * useful structured detail, add a typed branch here rather than
  * widening the JSON.stringify fallback.
  */
-function summariseF4Error(e: F4MarkPaidFromProcessorError): {
-  code: string;
-  detail: string;
-} {
-  const shape = e as {
-    code?: unknown;
-    kind?: unknown;
-    detail?: unknown;
-    reason?: unknown;
-  };
+/**
+ * F5R1-TY13 — generic over the F4 error shape. Pre-fix the helper
+ * accepted only `F4MarkPaidFromProcessorError` and forced the
+ * issueCreditNoteFromRefund call site to `as unknown as
+ * F4MarkPaidFromProcessorError` (double-cast) just to reuse the
+ * duck-type. Now any structural shape with the optional
+ * code/kind/detail/reason fields satisfies it — both bridge sites
+ * pass through type-checked, and the unsafe cast is gone.
+ */
+function summariseF4Error<E extends {
+  // F5R2-M4 — tightened from `unknown` → `string` (optional). The
+  // `unknown` form let TS accept a caller passing `code: number`
+  // even though the runtime guard then dropped it; the tighter
+  // constraint catches that drift at compile time while keeping
+  // the "at-least-one-of" flexibility (any optional string field
+  // suffices). All F4 error variants today satisfy this constraint.
+  readonly code?: string;
+  readonly kind?: string;
+  readonly detail?: string;
+  readonly reason?: string;
+}>(e: E, bridgeOp: string): { code: string; detail: string } {
   const code =
-    typeof shape.code === 'string'
-      ? shape.code
-      : typeof shape.kind === 'string'
-        ? shape.kind
+    typeof e.code === 'string'
+      ? e.code
+      : typeof e.kind === 'string'
+        ? e.kind
         : 'f4_error';
   const detail =
-    typeof shape.detail === 'string'
-      ? shape.detail
-      : typeof shape.reason === 'string'
-        ? shape.reason
+    typeof e.detail === 'string'
+      ? e.detail
+      : typeof e.reason === 'string'
+        ? e.reason
         : `unknown_f4_error_shape (code=${code})`;
+  // F5R2-SF-7 — bump dedicated counter when the unknown-shape fallback
+  // fires so SRE can page on this specific class. Pre-fix the dispatcher
+  // classified `'bridge_error'` as permanent → Stripe stops retrying →
+  // customer's payment is `succeeded` but F4 invoice may still be
+  // `issued`. Without the counter this silent data divergence was only
+  // visible by manually correlating audit-summary text.
+  //
+  // F5R3 H-2 (2026-05-16) — ALSO bump when `code` itself fell through
+  // to the generic `'f4_error'` literal (both `e.code` and `e.kind`
+  // were absent / wrong shape). Pre-fix only the `detail`-fallback path
+  // bumped the counter — a partial F4 error shape with `detail` present
+  // but `code`+`kind` missing silently returned `code: 'f4_error'`. The
+  // dispatcher's PERMANENT_SUB_USE_CASE_DETAILS set does NOT include
+  // `'f4_error'`, so it classified as transient → Stripe 72h retry
+  // storm on a permanently-malformed error shape. The two-path emit
+  // closes both halves of the silent-misclassification window.
+  if (
+    detail.startsWith('unknown_f4_error_shape') ||
+    code === 'f4_error'
+  ) {
+    paymentsMetrics.f4BridgeUnknownErrorShape(bridgeOp);
+  }
   return { code, detail };
 }
 
@@ -109,7 +174,10 @@ export const invoicingBridge: InvoicingBridgePort = {
       ...(input.actor ? { actor: input.actor } : {}),
     });
     if (!result.ok) return err(mapF4GetError(result.error));
-    return ok(mapF4InvoiceForPayment(result.value));
+    // F5R3v3 H-1 (2026-05-16) — bridge may surface its OWN typed err
+    // (corrupted_total) when F4 returns a money field that fails
+    // asSatang validation. Propagate verbatim.
+    return mapF4InvoiceForPayment(result.value);
   },
 
   async markPaidFromProcessor(
@@ -141,7 +209,7 @@ export const invoicingBridge: InvoicingBridgePort = {
     });
 
     if (!f4Result.ok) {
-      return err(summariseF4Error(f4Result.error));
+      return err(summariseF4Error(f4Result.error, 'markPaidFromProcessor'));
     }
     return ok(undefined);
   },
@@ -177,7 +245,7 @@ export const invoicingBridge: InvoicingBridgePort = {
       // Reuse the same scalar-only summariser used for
       // markPaidFromProcessor errors. F4's `IssueCreditNoteError` is
       // a discriminated union; the cast lets us share one helper.
-      return err(summariseF4Error(cn.error as unknown as F4MarkPaidFromProcessorError));
+      return err(summariseF4Error(cn.error, 'issueCreditNoteFromRefund'));
     }
 
     return ok({

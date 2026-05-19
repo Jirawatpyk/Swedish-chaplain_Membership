@@ -1,5 +1,5 @@
 /**
- * T047 — Payment aggregate root (F5).
+ * Payment aggregate root (F5).
  *
  * State machine (data-model.md § 2.5):
  *
@@ -23,6 +23,7 @@
  * Pure TypeScript — no framework/ORM imports.
  */
 import type { PaymentMethod } from './value-objects/payment-method';
+import type { Satang } from '@/lib/money';
 
 // ---------------------------------------------------------------------------
 // Status enum
@@ -111,7 +112,9 @@ export interface Payment {
   readonly method: PaymentMethod;
   readonly status: PaymentStatus;
 
-  readonly amountSatang: bigint;         // > 0
+  // F5R3 H-5 (2026-05-16) — branded Satang prevents unit confusion
+  // (baht vs satang) at compile time across F4+F5+F8.
+  readonly amountSatang: Satang;         // > 0
   readonly currency: 'THB';
 
   readonly processorPaymentIntentId: string;   // pi_…

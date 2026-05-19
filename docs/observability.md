@@ -620,6 +620,8 @@ SDK exporter.
 | `invoicing.pdf_render.duration_ms` | `invoicing_pdf_render_duration_ms` | ✅ Wired | `reactPdfRenderAdapter.render` labelled by `kind` ∈ {invoice, receipt_combined, receipt_separate, credit_note, void_stamped_invoice, invoice_preview} |
 | `invoicing.auto_email.bounces` | `invoicing_auto_email_bounces_total` | ✅ Wired | `/api/cron/outbox-dispatch` perm-fail branches — labelled by `reason` ∈ {invalid_recipient, max_retries, no_template_handler} |
 | `invoicing.cross_tenant_probe.count` | `invoicing_cross_tenant_probe_total` | ✅ Wired | `f4AuditAdapter.emit` fires on 3 probe event types — labelled by `probe_type` ∈ {invoice, credit_note, tenant_invoice_settings} |
+| `invoicing.logo_load_failed` | `invoicing_logo_load_failed_total` | ✅ Wired (Round-2 2026-05-15) | `loadTenantLogo` fires when Blob `downloadBytes` throws (404, ACL revoked, network). PDF render falls through to no-logo — Thai-RD compliance preserved. **Alert**: sustained non-zero rate per tenant ⇒ expired blob key or misconfigured upload. Negative-cached 60 s after a failure (Round-3) so a 5xx storm doesn't multiply this counter on every cron pass. |
+| `invoicing.receipt_failure_mark_suppressed` | `invoicing_receipt_failure_mark_suppressed_total` | ✅ Wired (Round-2 2026-05-15) | `renderReceiptPdf` fires when the async worker FAILS *and* the subsequent `applyReceiptPdfFailure` write ALSO fails (Neon outage). Row stuck `pending` without attempt-counter increment ⇒ never reaches `pdf_render_permanently_failed`. **Alert**: any non-zero rate ⇒ on-call investigates Neon health. |
 | `invoicing.seq_allocator.contention_retries` | `invoicing_seq_allocator_contention_retries_total` | ⏸ Instrument ready, no emit | `postgresSequenceAllocator.allocateNext` uses `pg_advisory_xact_lock` which BLOCKS rather than retrying; this counter awaits a future claim-release allocator rewrite. |
 | `invoicing.blob_upload.duration_ms` | — | ⏸ Deferred | Covered indirectly via `invoicing_issue_duration_ms` tail; add later if blob becomes the dominant issuance latency contributor. |
 | `invoicing.auto_email.enqueued` | — | ⏸ Deferred | Enqueue count derivable from `notifications_outbox` COUNT + dashboard join; low-signal separate counter. |
@@ -1256,3 +1258,146 @@ This is documented as a known limitation; consolidating to a single
 log shape would either pull pino into the client bundle (forbidden)
 or lose the structured-JSON property of pino logs. The dual-source
 scrape is the deliberate trade-off.
+
+---
+
+## 24. F6 EventCreate Integration — observability
+
+**Lineage**: spec.md § Functional Requirements FR-036; SC-003 webhook ingest p95; plan.md § VII Distributed tracing; round-6 staff-review (2026-05-13) closed agent-flagged BLOCKER (this section was missing — F7 § 22 + F8 § 23 set the parity bar).
+
+F6 ships dark behind `FEATURE_F6_EVENTCREATE=false` until SweCham completes the pre-flag-flip operator checklist (see `specs/012-eventcreate-integration/retrospective.md` § "Pre-flag-flip operator checklist"). All 11 metrics in this section MUST be wired before the production flag-flip; SLO alerts MUST be configured before any tenant onboards. Metrics declared but unwired (idempotency-sweep, pseudonymisation-sweep, secret-rotation) ship their handler in Phase 10 + Phase 8 respectively — the counter declarations exist now so dashboards can subscribe ahead of the handler landing.
+
+### 24.1 Metrics catalogue
+
+#### 24.1.1 Webhook ingest (Phase 3 — shipped)
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `eventcreate_webhook_receipts_total` | counter | `tenant`, `signature_outcome` (5-enum), `processing_outcome` (14-enum) | route.ts step 1-10 | FR-036 #1, SC-002 derived |
+| `eventcreate_webhook_ingest_latency_ms` | histogram (ms) | `tenant` | use-case end-to-end | FR-036 #2, SC-003 |
+| `eventcreate_webhook_body_oversized_total` | counter | `tenant` | route.ts step 2/3.5 | DoS guard |
+| `eventcreate_rate_limit_fallback_total` | counter | `tenant` | events-webhook-deps.ratelimitCheck | Upstash fail-open observability |
+| `eventcreate_audit_fallback_double_failure_total` | counter | `tenant`, `primary_stage` (4-enum) | ingest-webhook-attendee catch | FR-037 catastrophic |
+
+#### 24.1.2 Admin surface (Phase 4 — shipped)
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `admin_events_list_p95_ms` (derived from OTel span) | histogram | `tenant.id` | span `admin_events_list` | SLO-F6-002 |
+| `admin_events_detail_p95_ms` (derived from OTel span) | histogram | `tenant.id` | span `admin_events_detail` | SLO-F6-003 |
+
+Spans carry bounded-cardinality attributes only: `tenant.id`, `f6.page`, `f6.page_size`, `f6.unmatched_only`, `f6.has_search_query`. EventId is deliberately NOT a span attribute (potential PII / unbounded label).
+
+#### 24.1.3 Background sweep (declared in Group 2 R6-W4 — handler lands Phase 10 T116)
+
+| Metric | Type | Labels | Source | SLO ref |
+|---|---|---|---|---|
+| `eventcreate_idempotency_sweep_rows_total` | counter | `tenant`, `outcome` (swept|skipped) | (Phase 10) sweep cron handler | FR-036 #11 |
+| `eventcreate_pii_pseudonymisation_sweep_rows_total` | counter | `tenant`, `outcome` (pseudonymised|skipped) | (Phase 10) retention cron | FR-036 #10, SC-011 |
+
+#### 24.1.4 Phase 6+ deferred (declaration ships with each phase)
+
+| Metric | Phase | Notes |
+|---|---|---|
+| `eventcreate_match_rate` | Phase 4+ | observable gauge per tenant; computed from `eventcreate_webhook_receipts_total{processing_outcome=matched_*}` ratio |
+| `eventcreate_quota_partnership_decremented_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + plan tier (plan_tier='unknown' pending PERF-05 Phase 10 follow-up — payload threading) |
+| `eventcreate_quota_cultural_decremented_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + plan tier (plan_tier='unknown' pending PERF-05) |
+| `eventcreate_quota_credit_back_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + cause (refund|archive|relink) + scope (partnership|cultural) |
+| `eventcreate_quota_over_quota_warnings_total` | Phase 6 (shipped staff-review-4 WARN-1) | counter labelled tenant + scope (partnership|cultural) — burst threshold alert R10 |
+| `eventcreate_csv_import_duration_ms` | Phase 7 | **Shipped as `eventcreate_csv_import_duration_seconds`** (seconds, not ms — staff-review L-NEW-1 2026-05-16 reconciled the deferred-row name drift). Histogram per tenant. |
+| `eventcreate_webhook_secret_rotation_total` | Phase 8 | counter per tenant |
+| `eventcreate_tenant_ingest_disabled_gauge` | Phase 8 | observable gauge — 1 when tenant disabled |
+
+#### 24.1.5 F6.1 — CSV Import Primary Path + EventCreate Format Adapter (Feature 013, shipped staff-review T061 2026-05-16)
+
+| Metric | Type | Labels | Notes |
+|---|---|---|---|
+| `eventcreate_csv_adapter_mode_detected_total` | counter | `tenant`, `format` (`eventcreate_csv` \| `generic_csv`) | Emitted once per upload at top of `importCsv` use-case after parser format detection. Feeds rollback-trigger signal per spec § Rollback Plan and FR-025. Adoption tracking signal: drop to zero on tenants known to use EventCreate = header drift alert (see `f6_eventcreate_adapter_drift` below). |
+| `eventcreate_csv_error_csv_downloaded_total` | counter | `tenant` | Emitted on successful signed-URL generation in `generateErrorCsvSignedUrl` use-case, AFTER strict-audit emit (`csv_import_error_csv_downloaded`) succeeds. PII-access frequency signal. |
+| `eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}` | counter | `tenant`, `event_type` | Wired in `/api/admin/events/import/route.ts` cross-tenant probe failure path (staff-review H-2, 2026-05-16). Alerts on `rate > 0` because each emit failure is a forensic-trail gap on a Constitution Principle I clause 4 security event. Shares the existing `csvImportAuditEmitFailed` counter with `csv_import_completed` / `csv_import_row_failed` / `csv_import_event_mismatch_overridden` / `csv_import_row_state_changed` / `csv_import_row_cancelled_no_prior` / `event_created` so SRE dashboards can `group by event_type`. |
+| `eventcreate_csv_safety_net_fallback_total` | counter | `tenant`, `reason` (`result_err` \| `threw`) | Emitted by `importCsv` fingerprint safety-net (FR-019b) on query failure → fail-open path; non-zero rate signals DB/pool instability that is silently masking event-mismatch detection. `reason` discriminates between Result-Err return (`result_err`) and thrown exception (`threw`) — staff-review M-NEW-7 (2026-05-16) added this label to match the actual emit at `metrics.ts:3104`. |
+| `eventcreate_bridge_event_attendees_query_failed_total` | counter | `tenant` | Emitted by the F6 → F8 bridge adapter (`drizzleEventAttendeesQuery`) on any DB blip / RLS regression / pool exhaustion. Adapter fails open with `[]` per F8 `EventAttendeesPort` no-throw contract → at-risk scorer reads empty attendance → silent low-risk-scoring drift. **Alert: rate > 0 sustained ≥5 min, priority WARN** — see `docs/runbooks/f6-bridge-eventattendees-degraded.md`. Round 2 R2-I3 added the runbook. |
+| `eventcreate_cron_audit_emit_failed_total` | counter | `route` | F6 cron coordinator 401-path audit emit failed; the `cron_bearer_auth_rejected` audit row is lost. Wired via `gateCronBearerOrRespond({metricsCounter})` on all 4 F6 cron routes (B16). Alert on sustained rate > 0 → forensic-trail gap on Constitution Principle I clause 4 security event. |
+| `eventcreate_cron_redis_fallback_total` | counter | `route` | F6 cron coordinator rate-limit check fell back to in-memory bucket (Upstash unreachable). Wired via `gateCronBearerOrRespond({rateLimitFallbackCounter})` on all 4 F6 cron routes. Operational signal for Upstash degradation — security gate continues to deny. |
+| `eventcreate_match_resolution_invariant_violation_total` | counter | `tenant` | R3.4.2 / IMP-1 — emitted by `drizzleRegistrationsRepository.toAggregate` when `asMatchResolutionView` throws `MatchResolutionInvariantError` (read-time invariant). Migration 0136 CHECK prevents the write-time path; a non-zero rate signals DB CHECK regression OR RLS misconfig surfacing rows that violate the invariant. **Alert: rate > 0 sustained ≥1 min → P1 page** — DB CHECK regression suspected. |
+| `eventcreate_grace_state_invariant_violation_total` | counter | `tenant` | R5.1 / Round 4 C-1 — emitted by `drizzleTenantWebhookConfigRepository.toAggregate` + `events-webhook-deps.loadTenantWebhookConfig` when `asGraceState` throws `GraceStateInvariantError` (half-set pair at read time). Migration 0129 CHECK prevents the write-time path; non-zero rate signals DB CHECK regression OR RLS misconfig OR manual UPDATE bypassing the app layer. Mirrors the matchResolutionInvariantViolation pattern. **Alert: rate > 0 sustained ≥1 min → P1 page** — DB CHECK regression suspected. |
+| `eventcreate_csv_error_csv_download_rate_limit_exceeded_total` | counter | `tenant` | R6.W R011 / Staff R2 R035 — F6.1 error-CSV download rate-limit hit counter. Emitted by `/api/admin/events/import/{recordId}/error-csv` 429 path when an admin actor exceeds the 20/hr per-(tenant, actor) cap. Bounds PII bulk-exfiltration via compromised admin sessions. **Alert: rate > 5/min sustained ≥10 min → P3 page** — possible insider exfiltration; cross-reference with admin auth session activity. |
+
+### 24.2 SLOs
+
+| SLO ID | Target | Measurement source | Error budget |
+|---|---|---|---|
+| **SLO-F6-001** webhook ingest p95 | < 300 ms | `eventcreate_webhook_ingest_latency_ms` p95 over 5-min sliding window | 1% per 30d window |
+| **SLO-F6-002** admin list p95 | < 500 ms @ 100 events × 25/page | OTel span `admin_events_list` p95 | 1% per 30d |
+| **SLO-F6-003** admin detail p95 | < 800 ms @ 500 attendees × 50/page | OTel span `admin_events_detail` p95 | 1% per 30d |
+| **SLO-F6-004** idempotency-sweep liveness | rate(`*_sweep_rows_total{outcome=swept}`) > 0 over rolling 48h while table row count > 0 | counter + tenant_webhook_configs row count | 0% — paged on first failure |
+| **SLO-F6-005** match-rate availability | `eventcreate_match_rate` gauge ≥ 0.95 (SC-002) | gauge + alerting threshold | informational — soft target |
+| **SLO-F6-006** audit completeness | `eventcreate_audit_fallback_double_failure_total` == 0 over rolling 30d | counter | 0% — pages on first occurrence |
+| **SLO-F6-007** admin archive/toggle p95 (staff-review-4 PERF-R6-05) | < 5s @ N=50 / < 12s @ N=200 registrations | histograms `eventcreate_archive_duration_ms` + `eventcreate_toggle_duration_ms` emitted from `src/lib/events-admin-deps.ts` via try/finally on both success + error paths | informational at SweCham scale; hard target for MTA tenants with N>200. Bounded above by Vercel function `maxDuration = 60` (PERF-R6-01 closure) and `listForRequota` row cap of 2000 (SEC-R6-01 closure). |
+
+### 24.3 Alerts
+
+| Alert | Condition | Severity | Runbook |
+|---|---|---|---|
+| `f6_webhook_signature_burst` | rate(`eventcreate_webhook_receipts_total{signature_outcome!='verified'}`) > 5/min per tenant for 10 min | P2 | `docs/runbooks/f6-webhook-signature-burst.md` (Phase 10) |
+| `f6_webhook_precondition_burst` | rate(`audit_event_type='webhook_ingest_precondition_failed'`) > 2/min per tenant for 5 min | P2 | `docs/runbooks/f6-webhook-precondition-burst.md` (Phase 10) — Neon connectivity / RLS regression signal. Added R7-E staff-review fix 2026-05-13 closing the round-6 W5 follow-up gap. |
+| `f6_admin_event_detail_enumeration` | distinct `event_id_hash` from same `actor_user_id` ≥ 10 within 5 min | P2 | `docs/runbooks/f6-admin-event-detail-not-found.md` (Phase 10 T124+) |
+| `f6_cross_tenant_probe_burst` | `cross_tenant_probe` audit rate > 1/min per tenant for 5 min | P1 | (Phase 10 — covers webhook + admin surface) |
+| `f6_idempotency_sweep_stalled` | SLO-F6-004 violation | P2 | `docs/runbooks/f6-idempotency-sweep.md` (Phase 10) |
+| `f6_audit_fallback_double_failure` | counter increments by ≥1 in 5-min window | P1 page | `docs/runbooks/f6-audit-fallback-double-failure.md` (Phase 10) |
+| `f6_rate_limit_fallback_sustained` | rate(`eventcreate_rate_limit_fallback_total`) > 1/min for 10 min | P3 | Indicates Upstash incident — auth surface alert already covers root cause |
+| `f6_eventcreate_adapter_drift` | `rate(eventcreate_csv_adapter_mode_detected_total{format='eventcreate_csv'}) / rate(eventcreate_csv_adapter_mode_detected_total) < 0.5` over rolling 24h on tenants known to use EventCreate | P2 | `docs/runbooks/eventcreate-csv-import.md` § 4 — EventCreate header drift detection. Spec § Rollback Plan auto-trigger: > 5 admin issues attributable to F6.1 in 7d post-launch → flip `FEATURE_F6_EVENTCREATE_ADAPTER=false`. |
+| `f6_csv_cross_tenant_probe_audit_emit_failed` | rate(`eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}`) > 0 over rolling 5 min | P1 page | Each event = forensic-trail gap on Constitution Principle I clause 4 security event. Investigate Neon connectivity, pool exhaustion, audit-port regression. |
+| `f6_csv_error_csv_downloaded_burst` | rate(`eventcreate_csv_error_csv_downloaded_total`) > 5/min per tenant for 10 min | P3 | PII-access burst — possible admin operator audit-trail review session, but also possible compromised admin credentials downloading bulk attendee CSVs. Cross-reference with admin auth session activity. |
+| `f6_csv_error_csv_download_rate_limit_exceeded` | rate(`eventcreate_csv_error_csv_download_rate_limit_exceeded_total`) > 5/min per tenant for 10 min | P3 | R8.W / Staff R3 R058 — separate § 24.3 row for the rate-limit-hit counter (catalogue lives in § 24.1.5 line 1324). Non-zero rate means an admin actor is hitting the 20/hr per-(tenant, actor) error-CSV download cap. Possible insider PII-bulk-exfiltration via compromised admin session; differentiate from `f6_csv_error_csv_downloaded_burst` (successful downloads) by reading the underlying counter's `actor` label dimension. Cross-reference with admin auth session activity + recent role changes. |
+| `f6_csv_safety_net_fallback_nonzero` | rate(`eventcreate_csv_safety_net_fallback_total`) > 0 per tenant over rolling 5 min | P2 | Staff-review M-R3v2-3 (2026-05-16). Non-zero rate means the FR-019b event-mismatch safety-net query failed (DB error or thrown exception) and the import proceeded WITHOUT the prior-event detection that prevents admin-error mis-uploads. Indicates Neon/pool instability; cross-reference with Neon connection-pool dashboard + recent network events. Resolution: confirm DB recovery, then re-run failed imports to retroactively confirm event-mismatch detection passes. |
+| `f6_csv_import_record_stuck_running` | DB-query alert: `SELECT count(*) FROM csv_import_records WHERE outcome = 'running' AND uploaded_at < NOW() - INTERVAL '30 minutes'` > 0 | P3 | Staff-review L-R3v2-3 (2026-05-16). The `'running'` placeholder outcome (migration 0154) is set on the initial INSERT and flipped to a terminal value (`completed`/`timeout`/`partial_failure`/`invalid_header`/`event_not_found`/`event_not_owned_by_tenant`/`unexpected_error`) by `updateOutcome` at use-case end. If the Vercel function crashes between the INSERT and the UPDATE, the row stays `'running'` indefinitely — admins viewing history see "Running…" for an import that completed/failed >30 minutes ago. Implementation note: this is NOT an OTel counter alert (no metric is emitted on crash by design); requires either a cron-job.org periodic SQL check OR a Vercel Postgres scheduled query. At SweCham single-tenant scale 1 admin × ~50 imports/yr the residual rate is near-zero; pages alert only after manual review confirms the row should have been terminal. Resolution: manual UPDATE `outcome` to `'unexpected_error'` after verifying via Vercel function logs (search by `requestId`). |
+
+### 24.4 Forbidden-log-field additions (F6-specific)
+
+`src/lib/logger.ts` REDACT_PATHS covers:
+- `webhook_secret_active` + `webhook_secret_grace` (+ nested `*.` `*.*.` depth)
+- `X-Chamber-Signature` header value (case variants)
+- `attendee_email` + `attendeeEmail` (+ depth-2)
+- `attendee_name` + `attendeeName` (+ depth-2) — round-6 S20 fix
+- `attendee_company` + `attendeeCompany` (+ depth-2) — round-6 S20 fix
+- `EVENTCREATE_PII_PSEUDONYM_SALT` + `pii_pseudonym_salt` (Phase 10)
+
+Stack traces: route-handler + use-case + audit-port catch blocks scrub container paths + `node_modules` + `webpack-internal:///` URLs via `@/lib/redact-stack` before pino log + audit_log JSONB persistence (round-6 W2 fix; full coverage verified by `tests/integration/events/db-unavailable-during-tx.test.ts` showing `[redacted-path]` / `[redacted-file-url]` markers in the fatal-log output).
+
+### 24.5 Dashboard
+
+Recommended Vercel Observability dashboard layout when wiring:
+- **Top row**: SLO-F6-001 webhook p95 line graph (30d) + error-budget burn gauge + webhook_receipts_total stacked-area by signature_outcome
+- **Second row**: SLO-F6-002 + SLO-F6-003 admin spans (light blue lines) overlaid with admin error-rate counter
+- **Third row**: idempotency-sweep cron last-run timestamp gauge + audit-fallback-double-failure counter (must be 0)
+- **Fourth row**: cross_tenant_probe rate per tenant (P1 alert visibility) + role_violation_blocked rate (FR-035 informational)
+
+Sample-rate note: histograms emit 100% (low volume — webhook is Zapier-driven at ≤60 req/min/tenant); span sampling follows `@vercel/otel` defaults (head-based, 100% in dev, configurable in prod).
+
+### 24.6 Trace tree
+
+```
+webhook_ingest_eventcreate (route span — wraps full pipeline)
+├── (rate-limit check — Upstash, auto-instrumented)
+├── (loadTenantWebhookConfig — Drizzle, auto-instrumented)
+├── (verifyWebhookSignature — pure, no span)
+└── (when verified)
+    └── ingest-use-case strict-tx
+        ├── (idempotency receipt insert — Drizzle)
+        ├── (event upsert — Drizzle)
+        ├── (attendee match cascade — 4 Drizzle queries)
+        ├── (registration insert — Drizzle)
+        └── (audit emit — Drizzle inside same tx)
+
+admin_events_list (route span)
+└── runListEvents
+    └── (Drizzle list + getEmptyContext + getMatchCountsByEventIds — parallelised)
+
+admin_events_detail (route span)
+└── runLoadEventDetail
+    └── (Drizzle findById + findByEventId 3-parallel — events repo + registrations repo)
+```
+
+Tracer name: `swecham.events` (matches the rest of the codebase pattern `swecham.<module>`).
+

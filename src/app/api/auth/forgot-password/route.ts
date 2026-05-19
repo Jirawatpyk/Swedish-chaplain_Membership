@@ -22,8 +22,9 @@ const NEUTRAL_MESSAGE =
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const requestId = requestIdFromHeaders(request.headers);
-
-  let payload: unknown;
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
+  try {
+    let payload: unknown;
   try {
     payload = await request.json();
   } catch {
@@ -71,4 +72,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   return NextResponse.json({ message: NEUTRAL_MESSAGE }, { status: 200 });
+  } catch (error) {
+    logger.error({ err: error, requestId }, 'forgot-password.infra-error');
+    return NextResponse.json(
+      { error: 'server-error', requestId },
+      { status: 500 },
+    );
+  }
 }

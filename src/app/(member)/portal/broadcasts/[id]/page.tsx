@@ -24,6 +24,8 @@ import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
+import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -146,9 +148,18 @@ export default async function BroadcastDetailPage(props: {
           <div>
             <dt className="text-xs text-muted-foreground">{t('fields.status')}</dt>
             <dd className="mt-1">
-              <Badge variant="outline">
-                {tStatus(broadcast.status as Parameters<typeof tStatus>[0])}
-              </Badge>
+              {/* F1 UX hardening — use the shared `getBroadcastStatusBadgeProps`
+                  (H4) so rejected broadcasts show as destructive (red), sending
+                  pulses, etc. Previously every status rendered as a neutral
+                  outline badge, losing the colour signal. */}
+              {(() => {
+                const props = getBroadcastStatusBadgeProps(broadcast.status);
+                return (
+                  <Badge variant={props.variant} className={cn(props.className)}>
+                    {tStatus(broadcast.status as Parameters<typeof tStatus>[0])}
+                  </Badge>
+                );
+              })()}
             </dd>
           </div>
           <div>

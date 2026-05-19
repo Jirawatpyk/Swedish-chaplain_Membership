@@ -98,6 +98,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     updatePreferredLocaleInTx: async () => ok({ affected: 0, previousValue: null }),
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
     findLastPlanChangedAt: async () => ok(null),
+    findPendingInvitationsForMember: async () => ok([]),
   };
 
   const contactRepo: ContactRepo = {

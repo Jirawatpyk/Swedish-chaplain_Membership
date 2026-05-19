@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { SignInForm } from '@/components/auth/sign-in-form';
+import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
@@ -32,15 +33,21 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface MemberSignInPageProps {
-  searchParams: Promise<{ returnTo?: string | string[] }>;
+  searchParams: Promise<{
+    returnTo?: string | string[];
+    reason?: string | string[];
+  }>;
 }
 
 export default async function MemberSignInPage({
   searchParams,
 }: MemberSignInPageProps) {
-  const { returnTo: rawReturnTo } = await searchParams;
+  const { returnTo: rawReturnTo, reason: rawReason } = await searchParams;
   const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
   const validatedReturnTo = safeReturnTo(returnToCandidate, 'member');
+  // H3 (Round 2): see admin/sign-in/page.tsx for rationale.
+  const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
+  const showSecurityBanner = reasonCandidate === 'security-update';
 
   const current = await getCurrentSession();
   if (current) {
@@ -56,7 +63,7 @@ export default async function MemberSignInPage({
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
-    <main className="flex min-h-screen flex-col bg-muted/20">
+    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
       <header className="flex items-center justify-between p-4">
         <div className="text-sm font-semibold tracking-tight">{tenantName} · {tPortal('member')}</div>
         <ThemeToggle />
@@ -65,11 +72,12 @@ export default async function MemberSignInPage({
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>
-              Thailand-Swedish Chamber of Commerce — member portal
-            </CardDescription>
+            <CardDescription>{t('memberCardDescription')}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {showSecurityBanner ? (
+              <SecurityUpdateBanner message={t('securityUpdateBanner')} />
+            ) : null}
             <SignInForm portal="member" returnTo={validatedReturnTo} />
           </CardContent>
         </Card>

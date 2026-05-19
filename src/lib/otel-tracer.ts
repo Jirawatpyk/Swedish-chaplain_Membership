@@ -87,6 +87,30 @@ export function renewalsTracer(): Tracer {
 }
 
 /**
+ * F6 — OTel tracer for the events bounded context (EventCreate
+ * Integration). SC-003 webhook ingest p95 < 300ms SLO is unobservable
+ * without these spans.
+ *
+ * Trace tree:
+ * `webhook_ingest_eventcreate → idempotency_receipt →
+ *  event_upsert → attendee_match → registration_insert → audit_emit`.
+ *
+ * Attribute-redaction contract: no attendee_email, attendee_name,
+ * attendee_company raw, no webhook_secret_active/_grace, no
+ * X-Chamber-Signature values. Bounded-cardinality attributes only:
+ * tenant.id, f6.match_type, f6.source, f6.signature_outcome.
+ */
+const EVENTS_TRACER_NAME = 'swecham.events';
+let cachedEventsTracer: Tracer | null = null;
+
+export function eventsTracer(): Tracer {
+  if (!cachedEventsTracer) {
+    cachedEventsTracer = trace.getTracer(EVENTS_TRACER_NAME, '1.0.0');
+  }
+  return cachedEventsTracer;
+}
+
+/**
  * Round 5 simplification — span lifecycle helper.
  *
  * Wraps `tracer.startSpan(name, {attributes}) → fn(span) → catch:

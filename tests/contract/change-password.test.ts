@@ -178,4 +178,26 @@ describe('POST /api/auth/change-password', () => {
     expect(response.status).toBe(429);
     expect(response.headers.get('Retry-After')).toBe('420');
   });
+
+  // G4 (Round 2): B3 outer try/catch surfaces infra throws as a
+  // structured 500-with-requestId, not an opaque Next.js HTML 500.
+  it('500 with requestId when change-password throws (infra error)', async () => {
+    getCurrentSessionMock.mockResolvedValueOnce(adminSession);
+    changeMock.mockRejectedValueOnce(
+      new Error('neon: connection terminated unexpectedly'),
+    );
+
+    const response = await POST(
+      makeRequest({
+        currentPassword: 'x',
+        newPassword: 'AnotherStrongPass2026!',
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    const body = await response.json();
+    expect(body.error).toBe('server-error');
+    expect(typeof body.requestId).toBe('string');
+    expect(body.requestId.length).toBeGreaterThan(0);
+  });
 });

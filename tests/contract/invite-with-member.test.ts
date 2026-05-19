@@ -21,9 +21,13 @@
  * (e.g. direct invocation in tests) is handled only by requireAdminContext (session gate),
  * not by a secondary Origin check in the route.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NextResponse, NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
+
+// Type-only — the actual POST reference is loaded inside beforeAll
+// (see flake-fix note on the describe block).
+type InviteRouteModule = typeof import('@/app/api/auth/invite/route');
 
 // ---------------------------------------------------------------------------
 // Mock requireAdminContext — same approach as tests/contract/invite.test.ts.
@@ -126,14 +130,29 @@ function makeRequest(body: unknown, headers?: Record<string, string>): NextReque
 // Tests
 // ---------------------------------------------------------------------------
 
-// 30 s describe-level timeout (default 10 s) — the FIRST `it()` here pays
-// the full route-module compile + import cost (`@/app/api/auth/invite/route`
-// drags the auth + tenant + members module trees). On a standalone run the
-// import takes ~2.5 s; under `pnpm test:coverage` (V8 istanbul transform)
-// + worker-pool contention this can climb past 10 s on cold caches and
-// flake the whole suite. Subsequent `it()` calls reuse the cached module
-// so the budget covers them comfortably.
-describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { timeout: 30_000 }, () => {
+// Flake-fix (post-Round-4 QA): the FIRST `it()` here used to pay the
+// full route-module compile + import cost (`@/app/api/auth/invite/route`
+// drags the auth + tenant + members module trees — ~2.5s standalone /
+// ~10-30s under parallel load + V8 coverage transform). The dynamic
+// import was previously inside each `it()`, so the first one
+// non-deterministically blew through the 30s testTimeout when scheduled
+// against ~340 contemporary test files. Moved to `beforeAll` which
+// (a) runs under the global 60s `hookTimeout` (vitest.config.ts) and
+// (b) pays the cost deterministically once per describe block — every
+// subsequent `it()` uses the cached `POST` reference for free.
+describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () => {
+  let POST: InviteRouteModule['POST'];
+
+  beforeAll(async () => {
+    POST = (await import('@/app/api/auth/invite/route')).POST;
+  }, 180_000);
+  // ↑ 180s budget for the route-module cold load. The route drags the
+  // auth + tenant + members trees, and under full-parallel `pnpm vitest run`
+  // (~340 contemporary test files, each worker independently compiles +
+  // imports its slice on first touch) the cost can climb past the
+  // 60s global `hookTimeout`. Standalone the import lands in ~10s; under
+  // worker contention it lands closer to 90s. 180s gives 2× headroom.
+
   afterEach(() => {
     vi.clearAllMocks();
   });
@@ -145,9 +164,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
     it('400 when memberId is a non-UUID string', async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
-      // Dynamic import per it() — mirrors redeem-invite.test.ts idiom to
-      // avoid module-cache collisions in worker-pool mode.
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'new@swecham.test',
@@ -167,7 +183,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
     it('400 when memberId is an empty string', async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'new@swecham.test',
@@ -185,7 +200,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
     it('400 when memberId is a UUID-shaped string missing hyphens', async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'new@swecham.test',
@@ -209,7 +223,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
     it('400 when role=admin and memberId is provided', async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'admin2@swecham.test',
@@ -231,7 +244,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
     it('400 when role=manager and memberId is provided', async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'manager@swecham.test',
@@ -260,7 +272,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
       });
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         // Request WITHOUT an Origin header — in production the proxy
         // would have already rejected this with 403. Here we confirm
@@ -278,7 +289,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
       });
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({ email: 'x@y.com', role: 'member', memberId: VALID_MEMBER_UUID }),
       );
@@ -303,7 +313,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'member@swecham.test',
@@ -329,7 +338,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         err({ type: 'member_not_found' }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'member@swecham.test',
@@ -349,7 +357,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         err({ type: 'email_taken' }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'existing@swecham.test',
@@ -369,7 +376,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         err({ type: 'contact_already_linked' }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'linked@swecham.test',
@@ -389,7 +395,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         err({ type: 'email_belongs_to_other_member' }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'contact-of-other@swecham.test',
@@ -409,7 +414,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         err({ type: 'invalid_email' }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'bad@swecham.test',
@@ -429,7 +433,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         err({ type: 'server_error', message: 'tx failed' }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'member@swecham.test',
@@ -463,7 +466,6 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', { tim
         }),
       );
 
-      const { POST } = await import('@/app/api/auth/invite/route');
       const res = await POST(
         makeRequest({
           email: 'member-noid@swecham.test',

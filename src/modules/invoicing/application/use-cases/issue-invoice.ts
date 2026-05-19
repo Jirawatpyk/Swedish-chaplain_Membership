@@ -54,6 +54,7 @@
  * already-issued and returns the persisted invoice (short-circuit).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
@@ -82,6 +83,7 @@ import { invoicingMetrics } from '@/lib/metrics';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const issueInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -260,6 +262,11 @@ export async function issueInvoice(
     // Throws via `IssueInvoiceInternalError` on either failure so
     // `withTx` rolls back — sequence allocation is NOT consumed.
     const blobKey = `invoicing/${input.tenantId}/${fy}/${invoiceId}_v${deps.currentTemplateVersion}.pdf`;
+    const tenantLogo = await loadTenantLogo(
+      deps.blob,
+      tenantSnap.logo_blob_key,
+      deps.currentTemplateVersion,
+    );
     const rendered = await renderAndUploadPdf(
       { pdfRender: deps.pdfRender, blob: deps.blob },
       {
@@ -270,6 +277,7 @@ export async function issueInvoice(
           issueDate,
           dueDate,
           tenant: tenantSnap,
+          tenantLogo,
           member: memberSnap,
           lines: draft.lines,
           subtotal,
@@ -296,10 +304,11 @@ export async function issueInvoice(
         documentNumber: docNum.value.raw,
         issueDate,
         dueDate,
-        subtotalSatang: subtotal.satang,
+        // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
+        subtotalSatang: asSatang(subtotal.satang),
         vatRate: settings.vatRate.raw,
-        vatSatang: vat.satang,
-        totalSatang: total.satang,
+        vatSatang: asSatang(vat.satang),
+        totalSatang: asSatang(total.satang),
         proRatePolicySnapshot: settings.proRatePolicy,
         netDaysSnapshot: settings.defaultNetDays,
         tenantIdentitySnapshot: tenantSnap,

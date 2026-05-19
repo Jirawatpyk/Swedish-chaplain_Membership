@@ -20,6 +20,7 @@
  * the live member's tax_id AFTER issue do NOT flow into the receipt.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatang } from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
@@ -49,6 +50,7 @@ import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
@@ -304,7 +306,44 @@ export async function recordPayment(
     // `receipt_pdf_render` outbox row enqueued below drives async
     // render via the F4 dispatcher. Sequential numbering stays atomic
     // with the `paid` flip (Thai Revenue Code §86/§87 invariant).
+    //
+    // Combined-mode 2-file design (Thai RD §86/4 + §105ทวิ):
+    // ------------------------------------------------------------------
+    // The system persists TWO physical PDFs per paid invoice on
+    // BOTH combined and separate numbering modes:
+    //   - `invoice.pdf` — rendered at issue time, header "ใบกำกับภาษี
+    //     / Tax Invoice". This is the pre-payment document.
+    //   - `invoice.receiptPdf` — rendered at payment time, header
+    //     "ใบกำกับภาษี / ใบเสร็จรับเงิน" (combined mode) OR
+    //     "ใบเสร็จรับเงิน / Official Receipt" (separate mode). This
+    //     is the post-payment authoritative document.
+    //
+    // Why two files when combined-mode is "one legal document":
+    //   - Pre-payment: customer needs a tax invoice with no receipt
+    //     marking yet (per RD §86/4 issuance trigger = sale event).
+    //   - Post-payment: the SAME document number is re-rendered with
+    //     the dual-role header so it now ALSO functions as a receipt
+    //     (§105ทวิ). Thai bookkeeping treats the LATEST version as
+    //     the official record.
+    //   - This matches the upstream RD interpretation of "one document
+    //     doing dual function" — they're versions of the same logical
+    //     document at different points in time, not two distinct
+    //     §87 sequence allocations.
+    //
+    // UI surfaces enforce the convention:
+    //   - Admin invoice-detail menu HIDES "Download Invoice" when
+    //     `isPaidCombined` (the pre-payment version is a stale draft);
+    //     only the combined-receipt PDF is exposed for download.
+    //   - Separate-mode keeps BOTH downloads because the two docs
+    //     have distinct §87 sequence numbers and must be filed apart.
     const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${deps.currentTemplateVersion}.pdf`;
+    const tenantLogo = deps.asyncReceiptPdf
+      ? null
+      : await loadTenantLogo(
+          deps.blob,
+          loaded.tenantIdentitySnapshot.logo_blob_key,
+          deps.currentTemplateVersion,
+        );
     const rendered =
       deps.asyncReceiptPdf
         ? null
@@ -322,6 +361,7 @@ export async function recordPayment(
                 issueDate: loaded.issueDate,
                 dueDate: loaded.dueDate,
                 tenant: loaded.tenantIdentitySnapshot,
+                tenantLogo,
                 member: loaded.memberIdentitySnapshot,
                 lines: loaded.lines,
                 subtotal: loaded.subtotal,
@@ -358,6 +398,16 @@ export async function recordPayment(
                 blobKey: receiptBlobKey,
                 sha256: rendered.sha256,
                 templateVersion: deps.currentTemplateVersion,
+                // Persist the receipt doc number on the SYNC path too so
+                // the detail page + list column can read it back without
+                // re-parsing the PDF bytes. Previously only the async
+                // (pending) branch wrote this — sync invoices ended up
+                // with NULL on the row even when separate-mode allocated
+                // a real RC sequence number into the rendered PDF.
+                // NULL for combined-mode (receipt reuses invoice number).
+                receiptDocumentNumberRaw: combinedMode
+                  ? null
+                  : receiptDocNumRaw,
               }
             : {
                 kind: 'pending',
@@ -567,8 +617,10 @@ export async function recordPayment(
         invoiceId,
         memberId: loaded.memberId,
         paidAt: updated.paidAt ?? deps.clock.nowIso(),
-        amountSatang: loaded.total!.satang,
-        vatSatang: loaded.vat!.satang,
+        // F5R3 H-5 (2026-05-16) — brand at Money escape into the
+        // F4InvoicePaidEvent payload broadcast to F8 onPaid callbacks.
+        amountSatang: asSatang(loaded.total!.satang),
+        vatSatang: asSatang(loaded.vat!.satang),
         currency: loaded.currency,
         paymentMethod: eventPaymentMethod,
         triggeredBy: eventTrigger,

@@ -11,6 +11,8 @@ import {
   MegaphoneIcon,
   RefreshCwIcon,
   CalendarClockIcon,
+  CalendarDaysIcon,
+  PlugZapIcon,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -27,7 +29,27 @@ export interface NavItem {
   /** If set, item is visible only to these roles. Type-only for now — filtering
    *  logic deferred until a role-differentiated nav item exists. */
   readonly roles?: ReadonlyArray<Role>;
+  /**
+   * If set, the item is rendered ONLY when the named flag is `true` in
+   * the runtime visibility-flag map passed to the sidebar. Used by
+   * F6 T081 to hide `/admin/integrations/eventcreate` from sidebars
+   * of tenants that haven't configured the integration AND haven't
+   * received a webhook delivery in 30 days (round-2 R1).
+   */
+  readonly visibilityFlag?: NavVisibilityFlag;
 }
+
+/**
+ * Named visibility flags resolved at request time and passed to the
+ * sidebar. Keep this union closed so adding a new flag forces explicit
+ * registration in the resolver + layout — prevents "ghost" flags that
+ * silently default to `false` and hide items unintentionally.
+ */
+export type NavVisibilityFlag = 'eventcreateConfigured';
+
+export type NavVisibilityFlags = Readonly<
+  Partial<Record<NavVisibilityFlag, boolean>>
+>;
 
 /** An expandable/collapsible group of NavItems (e.g., Settings → Fees). */
 export interface NavGroup {
@@ -99,6 +121,17 @@ export const staffNavConfig: NavConfig = {
           href: '/admin/broadcasts',
           activePattern: '/admin/broadcasts',
         },
+        // F6 Events — surfaces the EventCreate-imported event list +
+        // attendee detail. The Phase 4 page shipped without a nav
+        // entry; this entry closes that gap so admins can reach the
+        // module without typing a direct URL. Manager has read-only
+        // access via the same route (FR-035).
+        {
+          titleKey: 'nav.staff.events',
+          icon: CalendarDaysIcon,
+          href: '/admin/events',
+          activePattern: '/admin/events',
+        },
         // F8 Renewals — top-level entry surfacing the renewal pipeline.
         // Sub-routes (tier-upgrades, tasks) live under /admin/renewals/*
         // and use the activePattern prefix-match to keep the parent
@@ -137,6 +170,25 @@ export const staffNavConfig: NavConfig = {
           icon: CalendarClockIcon,
           href: '/admin/settings/renewals/schedules',
           activePattern: '/admin/settings/renewals',
+        },
+        // F6 EventCreate integration. Spec round-2 R1 noted that the
+        // entry "is a navigation-affordance decision" — initially we
+        // gated visibility on `tenant_webhook_configs` row existence
+        // to avoid cluttering CSV-only tenants. Post-Phase-5
+        // shakedown showed first-time admins struggled to discover
+        // the setup wizard from the events-list empty-state CTA
+        // alone, so the entry now appears whenever the F6 kill-switch
+        // is on. CSV-only tenants who want to suppress it can still
+        // do so per-instance via the `visibilityFlag` mechanism if
+        // we add an explicit opt-out config later. The whole `/admin
+        // /integrations/eventcreate` route prefix is gated by kill-
+        // switch + admin-role at the route layer (FR-035), so showing
+        // the nav entry never leaks the surface to non-admin actors.
+        {
+          titleKey: 'nav.staff.settingsIntegrationEventcreate',
+          icon: PlugZapIcon,
+          href: '/admin/settings/integrations/eventcreate',
+          activePattern: '/admin/settings/integrations/eventcreate',
         },
       ],
     },

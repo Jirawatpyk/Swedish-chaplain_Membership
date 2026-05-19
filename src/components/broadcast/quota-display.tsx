@@ -205,7 +205,23 @@ export function QuotaDisplay({
             ) : null}
           </>
         ) : (
-          <Skeleton className="h-12 w-full" />
+          // G1 UX hardening — skeleton MUST mirror the real layout
+          // (4-counter grid + progress bar + footer line) or the
+          // page jumps when data arrives (CLS). Previous single h-12
+          // bar was ~48 px while the populated state is ~120-140 px.
+          <>
+            <div
+              className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2"
+              aria-hidden="true"
+            >
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+            </div>
+            <Skeleton className="h-2 w-full" aria-hidden="true" />
+            <Skeleton className="h-4 w-48" aria-hidden="true" />
+          </>
         )}
       </CardContent>
     </Card>

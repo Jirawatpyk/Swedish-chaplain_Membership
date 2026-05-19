@@ -144,8 +144,17 @@ describe('f5AuditAdapter — payment_method_switched persistence', () => {
     expect(payload?.cancel_outcome).toBe('stripe_error_bypassed');
   });
 
-  it('retention map returns 10 years for payment_method_switched (compliance baseline)', () => {
-    expect(retentionFor('payment_method_switched')).toBe(10);
+  it('retention map returns 5 years for payment_method_switched (F5R1-IMP7 corrected baseline)', () => {
+    // F5R1-IMP7 (review-20260427) corrected the retention class from
+    // 10y → 5y. Reasoning: `payment_method_switched` records an
+    // operational event (user chose card → switched to PromptPay
+    // mid-flow). It does NOT touch tax-document settlement state
+    // (the underlying `payment_succeeded` audit is the
+    // tax-document touch and carries its own 10y retention). Thus
+    // operational class per Constitution VIII §86/3 → 5y is the
+    // correct minimum. The original 10y was an over-classification
+    // caught by the R1 retention review.
+    expect(retentionFor('payment_method_switched')).toBe(5);
   });
 
   it('cross-tenant: tenant B SELECT under runInTenant cannot see tenant A audit rows (R3-fix IG-4)', async () => {

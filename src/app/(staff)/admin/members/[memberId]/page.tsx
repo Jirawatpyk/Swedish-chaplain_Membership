@@ -10,12 +10,14 @@
  */
 
 import type { Metadata } from 'next';
+import { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import {
   ArrowLeftIcon,
   HelpCircleIcon,
+  MailWarningIcon,
   PencilIcon,
   ClockIcon,
 } from 'lucide-react';
@@ -39,12 +41,17 @@ import { Separator } from '@/components/ui/separator';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
+import { CountryDisplay } from '@/components/members/country-display';
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
+import {
+  TimelinePreviewSection,
+  TimelinePreviewSkeleton,
+} from './_components/timeline-preview-section';
 import {
   Popover,
   PopoverContent,
@@ -61,17 +68,74 @@ interface PageProps {
   >;
 }
 
+/**
+ * P5 round-10 ui-design-specialist — request-scoped cached LIGHT
+ * member fetch for `generateMetadata` only. Returns just the
+ * `companyName` (the only field the `<title>` template needs).
+ *
+ * Round-11 review fix — was previously using the full `getMember`
+ * use-case with a synthetic `actorUserId: 'server-component'`. That
+ * sentinel polluted the audit trail: a cross-tenant probe via
+ * `/admin/members/<foreign-uuid>` would emit
+ * `member_cross_tenant_probe` attributed to 'server-component' rather
+ * than the real admin who clicked the URL. The page component below
+ * runs the FULL `getMember` use-case (with `session.user.id`) so the
+ * authoritative audit row is still written; this metadata-only path
+ * skips audit entirely.
+ *
+ * Cost: 1 extra `findById` DB round-trip per page load (single-row
+ * by PK — negligible). React.cache() still memoises the metadata
+ * call so multiple `generateMetadata` retries within the same render
+ * pass share the result.
+ */
+const cachedCompanyNameForTitle = cache(
+  async (memberId: string): Promise<string | null> => {
+    const h = await headers();
+    const pseudoReq = new Request('http://localhost:3100', { headers: h });
+    const tenant = resolveTenantFromRequest(pseudoReq as never);
+    const deps = buildMembersDeps(tenant);
+    const result = await deps.memberRepo.findById(
+      tenant,
+      memberId as MemberId,
+    );
+    if (result.ok) return result.value.companyName;
+    // Round-12 final-review fix (Finding 1) — emit an ops-level trace
+    // on the null-fallback so a future audit-log gap or middleware
+    // misconfig that lets unauthenticated traffic reach generateMetadata
+    // leaves a debugging breadcrumb. Intentionally NOT a full
+    // `member_cross_tenant_probe` audit row (that's the page
+    // component's job with the real actor); just an observability
+    // signal for SRE.
+    logger.debug(
+      {
+        event: 'metadata_company_name_lookup_failed',
+        memberId,
+        repoErr: result.error,
+      },
+      '[F3] cachedCompanyNameForTitle — repo returned err (metadata path falls back to generic title)',
+    );
+    return null;
+  },
+);
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { memberId } = await params;
-  const t = await getTranslations('admin.members');
-  // `admin.members.detail.title` is `{companyName}` interpolated;
-  // resolving it would require a DB lookup that the page itself
-  // already does. Use the list-page title for both branches —
-  // browser tab shows "Members · SweCham Membership" regardless.
-  if (!UUID_RE.test(memberId)) return { title: t('title') };
-  return { title: t('title') };
+  const tRoot = await getTranslations('admin.members');
+  const tDetail = await getTranslations('admin.members.detail');
+  // P5 round-10 — fetch the member through the request-scoped
+  // `cachedGetMember` so the page component below dedupes the same
+  // call (single DB round-trip per request). Falls back to the
+  // generic directory title when the member can't be resolved
+  // (invalid UUID / missing row / auth fail) so the metadata pipeline
+  // never throws — the page component handles the not-found render.
+  if (!UUID_RE.test(memberId)) return { title: tRoot('title') };
+  const companyName = await cachedCompanyNameForTitle(memberId);
+  if (!companyName) return { title: tRoot('title') };
+  return {
+    title: tDetail('title', { companyName }),
+  };
 }
 
 function Field({
@@ -123,18 +187,45 @@ function StatusBadge({ status }: { status: 'active' | 'inactive' | 'archived' })
   );
 }
 
+type PendingInvitation = {
+  /**
+   * Migration 0017 narrowed chamber_app's `invitations` visibility to
+   * just user_id / consumed_at / expires_at (the `id` column is the
+   * raw 7-day token and is owner-role only). The UI therefore knows
+   * only the expiry — sufficient for the inline "Expires in N days"
+   * badge.
+   */
+  readonly expiresAt: Date;
+  /**
+   * Round-11 review fix — precomputed at the page-level (single
+   * `Date.now()` call per request) instead of inside ContactBlock,
+   * which the react-hooks/purity lint flagged as impure-during-render.
+   * Server component still renders once per request so `Date.now()`
+   * is conceptually pure here, but the precompute makes the rule
+   * happy and centralises the "now" instant for any future
+   * snapshot-style consistency requirement.
+   */
+  readonly daysUntilExpiry: number;
+};
+
 function ContactBlock({
   contact,
   memberId,
+  pendingInvitation,
   t,
 }: {
   contact: Contact;
   memberId: string;
+  pendingInvitation?: PendingInvitation | undefined;
   t: Awaited<ReturnType<typeof getTranslations<'admin.members.detail'>>>;
 }) {
   // "Invite to portal" is only shown when the contact has an email and
   // is not already linked to an F1 portal account (FR-012 / T056).
   const canInvite = Boolean(contact.email) && !contact.linkedUserId;
+  // Round-11 review fix — `daysUntilExpiry` is precomputed at the page
+  // level (single `Date.now()` per request) and passed in via the
+  // `pendingInvitation` prop.
+  const daysUntilExpiry = pendingInvitation?.daysUntilExpiry ?? null;
   // Rendered as a plain flat row (no border, no bg) inside the outer
   // Contacts Card. Multiple contacts are separated by <Separator />
   // elements in the parent CardContent — no nested cards, no visual
@@ -142,19 +233,53 @@ function ContactBlock({
   return (
     <div>
       <div className="mb-3 flex flex-row items-start justify-between gap-4">
-        <h3 className="text-base font-semibold">
-          {`${contact.firstName} ${contact.lastName}`.trim()}
-          {contact.isPrimary && (
-            <Badge className="ml-2" variant="default">
-              {t('sections.primary')}
-            </Badge>
-          )}
-          {contact.linkedUserId && (
-            <Badge className="ml-2" variant="secondary">
-              {t('portal.linked')}
-            </Badge>
-          )}
-        </h3>
+        {/* Round-11 review fix — badges moved OUT of the <h3> so the
+            heading text reads cleanly to screen readers (was producing
+            "John Smith Primary Portal linked Expires in 5 days" as a
+            single heading-tree node on VoiceOver). Heading + badge
+            cluster live in adjacent flex containers, separated by
+            `gap-2`. The badge cluster ships its own aria-label so SRs
+            still hear the state info after the heading. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-semibold">
+            {`${contact.firstName} ${contact.lastName}`.trim()}
+          </h3>
+          <div
+            className="flex flex-wrap items-center gap-2"
+            aria-label={t('sections.contactStatusBadges')}
+          >
+            {contact.isPrimary && (
+              <Badge variant="default">{t('sections.primary')}</Badge>
+            )}
+            {contact.linkedUserId && !pendingInvitation && (
+              <Badge variant="secondary">{t('portal.linked')}</Badge>
+            )}
+            {/* C6 round-10 ui-design-specialist — inline pending-
+                invitation badge replaces "Portal linked" when the
+                user row exists but `consumed_at` is NULL. */}
+            {pendingInvitation && daysUntilExpiry !== null && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-amber-600 text-amber-900 dark:border-amber-500 dark:text-amber-100"
+                title={t('pendingInvitations.expiresAt', {
+                  date: pendingInvitation.expiresAt
+                    .toISOString()
+                    .slice(0, 10),
+                })}
+              >
+                <MailWarningIcon
+                  aria-hidden="true"
+                  className="size-3"
+                />
+                <span>
+                  {t('pendingInvitations.expiresInDays', {
+                    days: daysUntilExpiry,
+                  })}
+                </span>
+              </Badge>
+            )}
+          </div>
+        </div>
         {canInvite && (
           <InvitePortalButton memberId={memberId} contactId={contact.contactId} />
         )}
@@ -202,23 +327,27 @@ export default async function MemberDetailPage({
 
   const session = await requireSession('staff');
   const h = await headers();
-  // Pass a pseudo-Request so resolveTenantFromRequest can honour the
-  // T115t `x-tenant` header override used by throwaway-tenant E2E.
-  // Without this the fn falls back to env.tenant.slug, silently
-  // breaking test harnesses that target the member detail page.
+  // Pseudo-Request lets resolveTenantFromRequest honour the T115t
+  // `x-tenant` header override used by throwaway-tenant E2E.
   const pseudoReq = new Request('http://localhost:3100', { headers: h });
   const tenant = resolveTenantFromRequest(pseudoReq as never);
   const requestId = requestIdFromHeaders(h);
-
   const deps = buildMembersDeps(tenant);
+
+  // Round-11 review fix — call `getMember` use-case directly with the
+  // REAL session user as the actor. The earlier React.cache()-shared
+  // path attributed `member_cross_tenant_probe` audits to
+  // `'server-component'` (a synthetic sentinel from
+  // `generateMetadata`). `generateMetadata` now uses a separate light
+  // `findById`-only path (`cachedCompanyNameForTitle`) that emits no
+  // audit; the authoritative audit row is written here with the
+  // correct admin actorUserId.
   const result = await getMember(
     memberId as MemberId,
-    { actorUserId: 'server-component', requestId },
+    { actorUserId: session.user.id, requestId },
     deps,
   );
-
   const t = await getTranslations('admin.members.detail');
-  const tRoot = await getTranslations('admin.members');
 
   if (!result.ok) {
     if (result.error.type === 'not_found') {
@@ -260,6 +389,55 @@ export default async function MemberDetailPage({
     (c) => !c.isPrimary && c.removedAt === null,
   );
 
+  // C6 round-10 ui-design-specialist — fetch pending portal
+  // invitations and project as a Map<contactId, invitation> so each
+  // ContactBlock can render its own inline badge. Failures downgrade
+  // to an empty Map (no badges shown) — never blocks the page render.
+  let pendingInvitationsByContactId = new Map<string, PendingInvitation>();
+  try {
+    const pendingRes = await deps.memberRepo.findPendingInvitationsForMember(
+      tenant,
+      member.memberId,
+    );
+    if (pendingRes.ok) {
+      // Round-11 review fix — compute `daysUntilExpiry` once per
+      // request rather than inside ContactBlock. Server component
+      // renders once per HTTP request so `Date.now()` returns a
+      // single stable value for the duration of this render pass —
+      // the react-hooks/purity rule's general concern (re-render
+      // instability) does not apply to RSC. Disable inline.
+      // eslint-disable-next-line react-hooks/purity -- RSC: single render per request
+      const nowMs = Date.now();
+      const dayMs = 1000 * 60 * 60 * 24;
+      pendingInvitationsByContactId = new Map(
+        pendingRes.value.map((row) => [
+          row.contactId,
+          {
+            expiresAt: row.expiresAt,
+            daysUntilExpiry: Math.max(
+              0,
+              Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
+            ),
+          },
+        ]),
+      );
+    } else {
+      logger.warn(
+        { event: 'pending_invitations_repo_err', err: pendingRes.error, memberId },
+        '[F3] pending-invitations repo returned err — falling back to empty map',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        event: 'pending_invitations_threw',
+        err: e instanceof Error ? e.message : String(e),
+        memberId,
+      },
+      '[F3] pending-invitations fetch threw — falling back to empty map',
+    );
+  }
+
   // Resolve plan display name via PlanLookupPort (single-plan fetch,
   // no listPlans). Falls back to the slug if the plan row is missing
   // (defensive — shouldn't happen for an active member, but keeps the
@@ -282,7 +460,23 @@ export default async function MemberDetailPage({
     <DetailContainer>
       <PageHeader
         title={member.companyName}
-        subtitle={tRoot('subtitle')}
+        /* C2 round-10 ui-design-specialist — previous subtitle was the
+           generic directory blurb ("Manage chamber members…") which made
+           every member detail page look identical. Now: "{Plan} · Year
+           {year}" — the two attributes admins actually want to see
+           below the company name. Switches to "…  · Archived" when the
+           member is archived. */
+        subtitle={
+          member.status === 'archived'
+            ? t('subtitleArchived', {
+                plan: planDisplayName,
+                year: member.planYear,
+              })
+            : t('subtitle', {
+                plan: planDisplayName,
+                year: member.planYear,
+              })
+        }
         actions={
           <>
             {/* "Back to members" button removed per ux-standards.md § 11/19
@@ -356,7 +550,12 @@ export default async function MemberDetailPage({
               />
               <Field
                 label={t('fields.country')}
-                value={member.country}
+                /* C4 round-10 ui-design-specialist — flag + localised name
+                   instead of raw "TH" / "SE". `value=null` + the
+                   CountryDisplay rendered in `extra` keeps the Field
+                   primitive's label/value layout intact. */
+                value={null}
+                extra={<CountryDisplay code={member.country} />}
               />
               <Field
                 label={t('fields.legalEntityType')}
@@ -485,7 +684,14 @@ export default async function MemberDetailPage({
           </CardHeader>
           <CardContent className="flex flex-col gap-6">
             {primary ? (
-              <ContactBlock contact={primary} memberId={member.memberId} t={t} />
+              <ContactBlock
+                contact={primary}
+                memberId={member.memberId}
+                pendingInvitation={pendingInvitationsByContactId.get(
+                  primary.contactId,
+                )}
+                t={t}
+              />
             ) : null}
 
             {secondary.length > 0 && (
@@ -500,6 +706,9 @@ export default async function MemberDetailPage({
                     <ContactBlock
                       contact={c}
                       memberId={member.memberId}
+                      pendingInvitation={pendingInvitationsByContactId.get(
+                        c.contactId,
+                      )}
                       t={t}
                     />
                   </div>
@@ -525,6 +734,21 @@ export default async function MemberDetailPage({
             />
           </Suspense>
         )}
+
+        {/* I7 round-10 ui-design-specialist — inline 3-event timeline
+            preview. Saves a round-trip through /timeline for the
+            common "what happened recently" check. Own Suspense
+            boundary mirrors the invoices pattern: the audit-log query
+            is independent of getMember + contacts and can't block the
+            main paint. */}
+        <Suspense fallback={<TimelinePreviewSkeleton />}>
+          <TimelinePreviewSection
+            memberId={member.memberId}
+            actorUserId={session.user.id}
+            actorRole={session.user.role as 'admin' | 'manager' | 'member'}
+          />
+        </Suspense>
+
     </DetailContainer>
   );
 }

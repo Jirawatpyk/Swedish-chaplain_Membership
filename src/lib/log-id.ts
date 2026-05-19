@@ -26,3 +26,25 @@ export function hashId(id: string): string {
   }
   return (hash >>> 0).toString(16);
 }
+
+/**
+ * F5R3 SIMPLIFY-H1 (2026-05-16) — H-4 PCI/PDPA hygiene: log only the
+ * error CLASS name, never `e.message`. Drizzle/Postgres errors carry
+ * SQL fragments + table names + partial parameter bindings in
+ * `.message`; Stripe SDK errors carry endpoint URLs + idempotency
+ * keys; OTel trace spans + pino logs aggregate at the line-string
+ * level so a single leaked stack trace lands in dashboards visible
+ * across the org.
+ *
+ * Use at every `catch (e) { ... }` site that logs the error class:
+ *
+ *   logger.error({ err: errKind(e), …context }, 'op.failed');
+ *
+ * Previously inlined as
+ *   `e instanceof Error ? e.constructor.name : 'unknown'`
+ * at 15+ sites across F5 (route handlers, use-cases, audit adapter,
+ * cron handlers, log-optimistic-flip route).
+ */
+export function errKind(e: unknown): string {
+  return e instanceof Error ? e.constructor.name : 'unknown';
+}

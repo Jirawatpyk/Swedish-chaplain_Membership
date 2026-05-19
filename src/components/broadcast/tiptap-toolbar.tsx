@@ -204,11 +204,20 @@ export function TiptapToolbar({
             }}
           />
           <div className="flex justify-end gap-2">
+            {/* E6 UX hardening — Cancel must restore editor focus so
+                the keyboard user lands back in the message body instead
+                of on the Popover trigger button (Radix's default
+                focus-return target). Without this, the user has to
+                Tab/click back into the editor before continuing to
+                type — disruptive mid-compose. */}
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              onClick={() => setLinkOpen(false)}
+              onClick={() => {
+                setLinkOpen(false);
+                editor.commands.focus();
+              }}
             >
               {tForm('linkCancel')}
             </Button>

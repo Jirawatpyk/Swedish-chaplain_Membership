@@ -22,7 +22,7 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
   test('h1–h4 computed font-size matches FR-017 tokens', async ({ page }) => {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL((u) => { const p = new URL(u).pathname; return /^\/admin(\/|$)/.test(p) && !p.startsWith("/admin/sign-in"); });
 

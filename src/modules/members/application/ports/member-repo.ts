@@ -14,12 +14,22 @@ import type { TaxId } from '../../domain/value-objects/tax-id';
 
 // --- Directory search types (US2) -------------------------------------------
 
+export type RiskBand = 'healthy' | 'warning' | 'at-risk' | 'critical';
+
 export type DirectoryFilter = {
   readonly q?: string;
   readonly status?: readonly ('active' | 'inactive' | 'archived')[];
   readonly planYear?: number;
   readonly country?: string;
   readonly planId?: string;
+  /**
+   * I1 round-10 ui-design-specialist — filter members by at-risk band
+   * surfaced in the F8-fed `risk_score_band` column. Null/undefined =
+   * no filter (default). When provided, matches members whose band is
+   * the supplied value; members with `null` band (not yet scored) are
+   * excluded from the filtered result.
+   */
+  readonly riskBand?: RiskBand;
   readonly limit: number;
   readonly cursor?: string;
 };
@@ -36,6 +46,7 @@ export type DirectoryOffsetFilter = {
   readonly planYear?: number;
   readonly country?: string;
   readonly planId?: string;
+  readonly riskBand?: RiskBand;
   readonly limit: number;
   readonly offset: number;
 };
@@ -210,6 +221,46 @@ export interface MemberRepo {
     ctx: TenantContext,
     userId: string,
   ): Promise<Result<Member, RepoError>>;
+
+  /**
+   * C6 round-10 ui-design-specialist — list every pending portal
+   * invitation for the member's contacts. "Pending" =
+   * `invitations.consumed_at IS NULL AND invitations.expires_at >
+   * NOW()`. Cross-schema query joining auth `invitations` →
+   * members `contacts` via `contacts.linked_user_id = invitations.user_id`.
+   *
+   * Tenant scope: `contacts.tenant_id` is filtered explicitly in the
+   * adapter; the auth `invitations` table is cross-tenant by design
+   * (a single user can hold a tenant-agnostic invite), so the join
+   * via contacts is what enforces the tenant boundary.
+   *
+   * Column-level visibility (per migration 0017, staff-review R001):
+   * `chamber_app` can read ONLY `user_id`, `consumed_at`, `expires_at`
+   * from `invitations`. The `id` column (which IS the raw 7-day invite
+   * token) and `created_at` are owner-role only — selecting either
+   * triggers a Postgres `42501` permission denied. Therefore the
+   * return shape projects ONLY the columns chamber_app may read; the
+   * UI keys badges off `contactId` (1 pending invite per user is the
+   * common case), not a separate invitationId.
+   *
+   * Returns at most ~10 rows in practice (small contact lists), so no
+   * pagination needed.
+   */
+  findPendingInvitationsForMember(
+    ctx: TenantContext,
+    memberId: MemberId,
+  ): Promise<
+    Result<
+      ReadonlyArray<{
+        readonly contactId: string;
+        readonly contactFirstName: string;
+        readonly contactLastName: string;
+        readonly contactEmail: string;
+        readonly expiresAt: Date;
+      }>,
+      RepoError
+    >
+  >;
 
   /** US2 directory search — substring across company, contact name, email. */
   searchDirectory(

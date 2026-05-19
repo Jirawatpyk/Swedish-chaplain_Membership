@@ -17,6 +17,7 @@
  * Pure TypeScript — no framework/ORM imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { asSatangUnchecked, type UntrustedSatang } from '@/lib/money';
 import type { Money } from './value-objects/money';
 import type { DocumentNumber } from './value-objects/document-number';
 import type { FiscalYear } from './value-objects/fiscal-year';
@@ -99,11 +100,17 @@ export interface CreditNote {
   readonly updatedAt: string;
 }
 
+/**
+ * F5R3v4 M-5 (2026-05-16) — err-payload fields are `UntrustedSatang`
+ * (NOT `Satang`). The whole branch exists to preserve corrupt
+ * values for diagnostic display + audit; the distinct type prevents
+ * silent arithmetic-folding into trusted-value chains.
+ */
 export type CreditNoteBalanceError = {
   readonly kind: 'vat_balance_violated';
-  readonly creditAmountSatang: bigint;
-  readonly vatSatang: bigint;
-  readonly totalSatang: bigint;
+  readonly creditAmountSatang: UntrustedSatang;
+  readonly vatSatang: UntrustedSatang;
+  readonly totalSatang: UntrustedSatang;
 };
 
 /**
@@ -125,9 +132,15 @@ export function assertCreditNoteVatBalance(
   if (parts.creditAmount.satang + parts.vat.satang !== parts.total.satang) {
     return err({
       kind: 'vat_balance_violated',
-      creditAmountSatang: parts.creditAmount.satang,
-      vatSatang: parts.vat.satang,
-      totalSatang: parts.total.satang,
+      // F5R3v2 B-1 (2026-05-16) — `asSatangUnchecked` at error-payload
+      // escape: the WHOLE point of this err-branch is surfacing money
+      // imbalance, and `asSatang` would throw on the very negative
+      // value the diagnostic exists to record. Bypass validation here;
+      // downstream consumers MUST treat the values as untrusted (audit
+      // payload + UI display only; never arithmetic-fold).
+      creditAmountSatang: asSatangUnchecked(parts.creditAmount.satang),
+      vatSatang: asSatangUnchecked(parts.vat.satang),
+      totalSatang: asSatangUnchecked(parts.total.satang),
     });
   }
   return ok(undefined);

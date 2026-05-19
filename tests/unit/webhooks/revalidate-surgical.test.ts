@@ -91,17 +91,24 @@ describe('webhook surgical revalidatePath contract', () => {
     ).toBeTruthy();
   });
 
-  it('only fires revalidation for outcome-bearing event types (filters out api_version_mismatch, livemode_mismatch, etc.)', () => {
-    // The condition gating revalidation must include `evType === 'payment_intent.succeeded'`
-    // and similar mutating event types. Non-mutating events (signature
-    // rejected, env mismatch, duplicate delivery) should not churn
-    // caches.
+  it('only fires revalidation for outcome-bearing event types (filters out api_version_mismatch, livemode_mismatch, etc.)', async () => {
+    // F5R3 H-6 (2026-05-16) refactored the inline `evType === ...` OR
+    // chain into a single source-of-truth `F5_HANDLED_EVENT_TYPES_SET`
+    // membership check (route line ~658). The behavioural contract
+    // (mutating event types trigger revalidation; non-mutating ones do
+    // not) is now expressible via the Set's contents — assert at
+    // runtime rather than source-grep so the test survives the
+    // refactor pattern without losing coverage.
     expect(source).toMatch(
-      /evType\s*===\s*['"]payment_intent\.succeeded['"]/,
+      /F5_HANDLED_EVENT_TYPES_SET\.has\(\s*evType\s*\)/,
     );
-    expect(source).toMatch(
-      /evType\s*===\s*['"]payment_intent\.payment_failed['"]/,
+    const { F5_HANDLED_EVENT_TYPES_SET } = await import(
+      '@/modules/payments/application/ports/webhook-verifier-port'
     );
-    expect(source).toMatch(/evType\s*===\s*['"]charge\.refunded['"]/);
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('payment_intent.succeeded')).toBe(true);
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('payment_intent.payment_failed')).toBe(true);
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('charge.refunded')).toBe(true);
+    // Negative invariant: non-mutating events must NOT trigger revalidation.
+    expect(F5_HANDLED_EVENT_TYPES_SET.has('payment_intent.duplicate' as never)).toBe(false);
   });
 });

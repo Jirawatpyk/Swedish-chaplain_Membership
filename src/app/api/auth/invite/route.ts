@@ -67,16 +67,17 @@ const createUserPort: CreateUserPort = async (input) => {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireAdminContext(request);
   if ('response' in ctx) return ctx.response;
-
-  let payload: unknown;
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
   try {
-    payload = await request.json();
-  } catch {
-    return NextResponse.json(
-      { error: 'invalid-input', message: 'Body must be JSON' },
-      { status: 400 },
-    );
-  }
+    let payload: unknown;
+    try {
+      payload = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'invalid-input', message: 'Body must be JSON' },
+        { status: 400 },
+      );
+    }
 
   const parsed = inputSchema.safeParse(payload);
   if (!parsed.success) {
@@ -226,5 +227,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
       return NextResponse.json({ error: 'server-error' }, { status: 500 });
     }
+  }
+  } catch (error) {
+    logger.error(
+      { err: error, requestId: ctx.requestId },
+      'invite.infra-error',
+    );
+    return NextResponse.json(
+      { error: 'server-error', requestId: ctx.requestId },
+      { status: 500 },
+    );
   }
 }

@@ -21,6 +21,7 @@
  *     (verifies `onPaid` callback wiring + atomic state+audit)
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -246,10 +247,10 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         issueDate: '2026-05-15',
         dueDate: '2026-06-14',
         currency: 'THB',
-        subtotalSatang: 5_000_000n,
+        subtotalSatang: asSatang(5_000_000n),
         vatRateSnapshot: '0.0700',
-        vatSatang: 350_000n,
-        totalSatang: 5_350_000n,
+        vatSatang: asSatang(350_000n),
+        totalSatang: asSatang(5_350_000n),
         // F4 invariant `invoices_non_draft_has_snapshots` requires
         // ALL of these fields populated when status != 'draft'.
         // Minimum stubs for FK satisfaction; F4 production code
@@ -289,8 +290,8 @@ describe('F8 markPaidOffline — integration (T077)', () => {
             invoiceId: fakeInvoiceId,
             memberId: input.memberId,
             paidAt: fakePaidAt,
-            amountSatang: 5_000_000n,
-            vatSatang: 350_000n,
+            amountSatang: asSatang(5_000_000n),
+            vatSatang: asSatang(350_000n),
             currency: 'THB',
             paymentMethod: input.paymentMethod,
             triggeredBy: 'admin_offline_mark',

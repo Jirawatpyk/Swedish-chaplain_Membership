@@ -14,6 +14,7 @@
  * Mocking policy: this file hits live Postgres. No SUT mocks.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -79,7 +80,16 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
 
     aMemberId = randomUUID();
     bMemberId = randomUUID();
-    aInvoiceIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    // F5R3 H-9 (2026-05-16) — bumped 5 → 6 to seed the
+    // expectedCurrentStatus-mismatch SQL-guard test below.
+    aInvoiceIds = [
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+      randomUUID(),
+    ];
     bInvoiceId = randomUUID();
 
     // Seed payment-settings + F4 parent chain for both tenants.
@@ -191,7 +201,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
         processorPaymentIntentId: pi,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -232,7 +242,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 999_000n,
+        amountSatang: asSatang(999_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -255,7 +265,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 1_000_000n,
+        amountSatang: asSatang(1_000_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 2,
@@ -271,6 +281,12 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         card: null,
         completedAt: now,
       });
+      // F5R2-CRIT-1 — `updateStatus` returns `Payment | null` now;
+      // null only when `expectedCurrentStatus` was passed and missed.
+      // This call omits `expectedCurrentStatus` so the throw-on-zero
+      // path applies and a non-null Payment is guaranteed.
+      expect(updated).not.toBeNull();
+      if (!updated) throw new Error('expected non-null updated');
       expect(updated.status).toBe('succeeded');
       expect(updated.card).toBeNull();
       expect(updated.processorChargeId).toBe('ch_test_1');
@@ -301,7 +317,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'promptpay',
-        amountSatang: 250_000n,
+        amountSatang: asSatang(250_000n),
         processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -351,7 +367,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'card',
-        amountSatang: 3_200_000n,
+        amountSatang: asSatang(3_200_000n),
         processorPaymentIntentId: pi,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -386,7 +402,7 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
         invoiceId,
         memberId: aMemberId,
         method: 'card',
-        amountSatang: 3_200_000n,
+        amountSatang: asSatang(3_200_000n),
         processorPaymentIntentId: pi,
         processorEnvironment: 'test',
         attemptSeq: 1,
@@ -506,5 +522,91 @@ describe('DrizzlePaymentsRepo — live Neon', () => {
       rlsProbe.length,
       'tenant B MUST NOT see tenant A audit_log rows under RLS — Constitution Principle I clause 3',
     ).toBe(0);
+  });
+
+  // ===========================================================================
+  // F5R3 H-9 (2026-05-16) — live-Neon coverage of the
+  // `expectedCurrentStatus` defence-in-depth WHERE clause (R2-CRIT-1).
+  // ===========================================================================
+  //
+  // The unit tests for cancel-payment use a mocked PaymentsRepo that
+  // returns `null` on `updateStatus(expectedCurrentStatus: ...)`
+  // mismatch. That covers the Application-layer wiring but NOT the
+  // SQL semantics — a typo like `eq(payments.statu, ...)` (column
+  // name) or a missing `and(...)` join would silently drop the
+  // WHERE clause without unit tests noticing. The repo-level
+  // integration test below adversarially probes the actual SQL by
+  // seeding a row + mutating its status out-of-band + invoking
+  // updateStatus with the wrong expectedCurrentStatus, asserting:
+  //   1. Returns `null` (not throws)
+  //   2. The DB row is UNCHANGED (the most important invariant —
+  //      if the WHERE clause was dropped, the row would silently
+  //      flip to whatever nextStatus we asked for, which is the
+  //      exact silent-overwrite bug R2-CRIT-1 closed).
+  // ---------------------------------------------------------------------------
+
+  it('R3-H9: updateStatus with mismatched expectedCurrentStatus returns null + leaves DB row UNCHANGED (defence-in-depth SQL guard)', async () => {
+    const invoiceId = nextInvoice();
+    const repo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    const paymentId = makeUlid();
+    const now = new Date();
+
+    // Seed: insert a pending payment, then transition out-of-band
+    // to succeeded (simulates a concurrent webhook landing between
+    // the caller's lockForUpdate and the about-to-fire updateStatus).
+    await repo.withTx(async (tx) => {
+      await repo.insert(tx, {
+        id: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId,
+        memberId: aMemberId,
+        method: 'card',
+        amountSatang: asSatang(250_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: now,
+        actorUserId: user.userId,
+        correlationId: 'corr-r-h9-seed',
+      });
+      // Out-of-band flip pending → succeeded (no expectedCurrentStatus
+      // — represents the "concurrent webhook" that finalised the row).
+      await repo.updateStatus(tx, {
+        paymentId: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'succeeded',
+        processorChargeId: 'ch_test_h9_oob',
+        card: { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2027 },
+        completedAt: now,
+      });
+    });
+
+    // Now adversarially attempt to flip succeeded → canceled with
+    // `expectedCurrentStatus: 'pending'` (the value the caller saw
+    // BEFORE the out-of-band flip). The SQL WHERE clause should
+    // match zero rows and the adapter should return null. The DB
+    // row's status MUST stay 'succeeded' — if the WHERE clause was
+    // silently dropped, the row would flip to 'canceled' and SC-013
+    // would break (charged customer, DB says canceled).
+    await repo.withTx(async (tx) => {
+      const updated = await repo.updateStatus(tx, {
+        paymentId: paymentId as PaymentId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'canceled',
+        expectedCurrentStatus: 'pending',
+        completedAt: now,
+      });
+      expect(updated, 'mismatched expectedCurrentStatus must return null').toBeNull();
+    });
+
+    // Verify the actual DB row: status still 'succeeded' (the
+    // out-of-band write survived; the racing canceled attempt did
+    // NOT silently overwrite).
+    const verified = await repo.withTx(async (tx) =>
+      repo.lockForUpdate(tx, paymentId as PaymentId, tenantA.ctx.slug),
+    );
+    expect(verified, 'seeded payment row must still exist').not.toBeNull();
+    expect(verified!.status).toBe('succeeded');
+    expect(verified!.processorChargeId).toBe('ch_test_h9_oob');
   });
 });

@@ -1,5 +1,5 @@
 /**
- * T054 — PaymentsRepo port (F5 Application).
+ * PaymentsRepo port (F5 Application).
  *
  * Abstract persistence for the `payments` table. Implementation lives in
  * Infrastructure (Group E). Application layer calls these methods only
@@ -8,6 +8,7 @@
 import type { Payment, PaymentStatus, PaymentId, CardMetadata } from '../../domain/payment';
 import type { PaymentMethod } from '../../domain/value-objects/payment-method';
 import type { RefundStatus } from '../../domain/refund';
+import type { Satang } from '@/lib/money';
 
 export interface PaymentsRepo {
   /** Run `fn` inside a serializable transaction; rollback on throw. */
@@ -50,7 +51,7 @@ export interface PaymentsRepo {
       readonly invoiceId: string;
       readonly memberId: string;
       readonly method: PaymentMethod;
-      readonly amountSatang: bigint;
+      readonly amountSatang: Satang;
       readonly processorPaymentIntentId: string;
       readonly processorEnvironment: 'test' | 'live';
       readonly attemptSeq: number;
@@ -60,19 +61,53 @@ export interface PaymentsRepo {
     },
   ): Promise<Payment>;
 
-  /** Update status + terminal fields. */
+  /**
+   * Update status + terminal fields.
+   *
+   * F5R2-CRIT-1 — `expectedCurrentStatus` is a defence-in-depth WHERE
+   * clause (`payments.status = expectedCurrentStatus`). When provided
+   * AND the row's current status no longer matches (e.g., a webhook
+   * flipped pending→succeeded between the caller's lockForUpdate and
+   * this update), the UPDATE matches zero rows and the adapter returns
+   * `null` so the caller can detect the race. When omitted, the
+   * adapter throws on zero-match (preserves existing call-site
+   * semantics for sites that re-check via canTransition under their
+   * own lock).
+   *
+   * The cancel-payment Phase B race that motivated the addition: a
+   * succeeded webhook lands between Phase A release and Phase B
+   * re-lock; without this guard the adapter silently overwrote a
+   * succeeded payment with `canceled`, breaking SC-013 invariant
+   * (charged customer + DB says canceled).
+   *
+   * F5R3 H-4 (2026-05-16) — type-design reviewer flagged the loose
+   * return-nullability contract: callers without `expectedCurrentStatus`
+   * must currently defend against a `null` they cannot actually
+   * receive (the adapter throws on zero match in that path). A
+   * function-overload split (with-expected → `Promise<Payment | null>`
+   * vs without-expected → `Promise<Payment>`) was attempted but TS
+   * couldn't statically prove the adapter's runtime-throw narrows the
+   * union — the impl had to return `Promise<Payment | null>` to
+   * satisfy the wider overload, defeating the purpose. The unified
+   * `expectedCurrentStatus?` form is preserved; H-4 closed as
+   * "design-debt accepted" with this docstring as the only artifact.
+   * Mitigation: every caller passing `expectedCurrentStatus` MUST
+   * also handle the `null` race branch (enforced by code-review +
+   * `if (updated !== null)` patterns at every call site).
+   */
   updateStatus(
     tx: unknown,
     input: {
       readonly paymentId: PaymentId;
       readonly tenantId: string;
       readonly nextStatus: PaymentStatus;
+      readonly expectedCurrentStatus?: PaymentStatus;
       readonly processorChargeId?: string | null;
       readonly card?: CardMetadata | null;
       readonly failureReasonCode?: string | null;
       readonly completedAt: Date;
     },
-  ): Promise<Payment>;
+  ): Promise<Payment | null>;
 
   /**
    * Resume lookup: find the single pending payment for an (invoice, actor)
@@ -179,7 +214,7 @@ export interface RefundActivityDto {
   // lockstep — adding a new refund status (e.g. 'voided') becomes a
   // compile-error here automatically instead of silent drift.
   readonly status: RefundStatus;
-  readonly amountSatang: bigint;
+  readonly amountSatang: Satang;
   readonly reason: string;
   readonly initiatedAt: Date;
   readonly completedAt: Date | null;

@@ -212,6 +212,7 @@ const eslintConfig = defineConfig([
       "src/modules/payments/**",
       "src/modules/broadcasts/**",
       "src/modules/renewals/**",
+      "src/modules/events/**",
       // `src/lib/**` is the shared composition adapter layer.
       // Files here provide the glue between module internals and
       // Next.js route handlers (cookies, session lookup, db client,
@@ -369,6 +370,23 @@ const eslintConfig = defineConfig([
               ],
               message:
                 "Cross-module import must go through the renewals public barrel (`@/modules/renewals`). " +
+                "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
+            },
+            {
+              // F6 — events module public-barrel boundary (Phase 1 Setup T003).
+              group: [
+                "@/modules/events/domain/**",
+                "@/modules/events/application/**",
+                "@/modules/events/infrastructure/**",
+                "./modules/events/domain/**",
+                "./modules/events/application/**",
+                "./modules/events/infrastructure/**",
+                "../modules/events/domain/**",
+                "../modules/events/application/**",
+                "../modules/events/infrastructure/**",
+              ],
+              message:
+                "Cross-module import must go through the events public barrel (`@/modules/events`). " +
                 "Deep imports into domain/application/infrastructure from outside the module bypass Clean Architecture boundaries (Constitution Principle III).",
             },
           ],
@@ -596,6 +614,79 @@ const eslintConfig = defineConfig([
             "`t('literal')` per branch so every key is statically " +
             "discoverable. Forward-looking guidance — does NOT apply " +
             "to F1–F5 surfaces.",
+        },
+      ],
+    },
+  },
+  {
+    // H3.3 — `*Unchecked` branded-type constructors skip the UUID v4
+    // regex. They are INFRASTRUCTURE-ONLY: only Drizzle row-read
+    // adapters (where the DB type system guarantees UUID shape via
+    // `uuid DEFAULT gen_random_uuid()`) may use them. Every other
+    // caller MUST use the validated default (`asEventId` /
+    // `asRegistrationId`) which enforces the regex at the HTTP / CSV
+    // boundary.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: [
+      "src/modules/events/infrastructure/**",
+      "src/modules/events/domain/branded-types.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/modules/events",
+              importNames: [
+                "asEventIdUnchecked",
+                "asRegistrationIdUnchecked",
+                "tryEventIdUnchecked",
+                "tryRegistrationIdUnchecked",
+              ],
+              message:
+                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+                "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.",
+            },
+            // R3.4.1 / IMP-2 — defense-in-depth against relative-import
+            // bypass. The alias rule above catches `@/modules/events` +
+            // `@/modules/events/domain/branded-types`; this path-name
+            // catches direct deep-import via the full module path.
+            {
+              name: "@/modules/events/domain/branded-types",
+              importNames: [
+                "asEventIdUnchecked",
+                "asRegistrationIdUnchecked",
+                "tryEventIdUnchecked",
+                "tryRegistrationIdUnchecked",
+              ],
+              message:
+                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+                "Defense-in-depth: this rule mirrors the @/modules/events alias rule for direct path imports.",
+            },
+          ],
+          // R3.4.1 / IMP-2 — relative-import bypass coverage. A caller
+          // using `import { asEventIdUnchecked } from '../../../modules/events/domain/branded-types'`
+          // would route around the `paths` alias rule above. The
+          // `patterns` array catches arbitrary relative paths ending
+          // at `branded-types(.ts)`.
+          patterns: [
+            {
+              group: [
+                "**/modules/events/domain/branded-types",
+                "**/modules/events/domain/branded-types.ts",
+              ],
+              importNames: [
+                "asEventIdUnchecked",
+                "asRegistrationIdUnchecked",
+                "tryEventIdUnchecked",
+                "tryRegistrationIdUnchecked",
+              ],
+              message:
+                "Unchecked brand constructors are infrastructure-only (DB row reads). " +
+                "Relative-import bypass blocked — use asEventId / asRegistrationId at HTTP/CSV boundaries.",
+            },
+          ],
         },
       ],
     },

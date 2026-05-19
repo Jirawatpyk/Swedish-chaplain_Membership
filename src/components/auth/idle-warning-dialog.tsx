@@ -51,7 +51,7 @@ import {
 // use-case composition roots which load Node-only Infrastructure
 // modules (argon2, postgres-js, etc.) that fail SSR resolution.
 // The domain constant is pure and safe to import directly.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { IDLE_TIMEOUT_MS } from '@/modules/auth/domain/session';
 import { portalSignInPath } from '@/lib/portal-paths';
 

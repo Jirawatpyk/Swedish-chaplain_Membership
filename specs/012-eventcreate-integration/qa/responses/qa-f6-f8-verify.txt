@@ -1,0 +1,10 @@
+
+FEATURE_F6_EVENTCREATE: true
+
+Composition root selects: drizzleEventAttendeesAdapter
+isAvailable(): true
+
+✅ PASS — port behaviour matches flag (REAL ADAPTER)
+
+F8 at-risk-scorer will now consult real F6 event attendance.
+eventAttendanceFactorSkipped will be FALSE on next compute.

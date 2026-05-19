@@ -15,9 +15,9 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 // which pre-validation MUST NOT do (T-04 enumeration defence).
 // This direct infrastructure read is scoped to the single display
 // decision below and is the documented escape hatch.
-// eslint-disable-next-line no-restricted-imports
+ 
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
-import { isResetTokenValid, asTokenId } from '@/modules/auth';
+import { isResetTokenValid, asResetTokenId } from '@/modules/auth';
 
 /**
  * Reset-password page (T107) at URL `/reset-password/[token]`.
@@ -55,7 +55,7 @@ export default async function ResetPasswordPage({
   // tokens (missing, already-consumed, expired past TTL).
   let tokenDead = false;
   try {
-    const record = await tokenRepo.findResetById(asTokenId(token));
+    const record = await tokenRepo.findResetById(asResetTokenId(token));
     if (!record || !isResetTokenValid(record, new Date())) {
       tokenDead = true;
     }
@@ -64,7 +64,7 @@ export default async function ResetPasswordPage({
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-muted/20">
+    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
       <header className="flex items-center justify-between p-4">
         <div className="text-sm font-semibold tracking-tight">{process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}</div>
         <ThemeToggle />
@@ -73,9 +73,7 @@ export default async function ResetPasswordPage({
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>
-              Choose a new password for your account.
-            </CardDescription>
+            <CardDescription>{t('cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             {tokenDead ? (
@@ -90,7 +88,7 @@ export default async function ResetPasswordPage({
                   href="/forgot-password"
                   className="text-sm underline underline-offset-4"
                 >
-                  {t('submit')}
+                  {t('requestNewLink')}
                 </a>
               </div>
             ) : (

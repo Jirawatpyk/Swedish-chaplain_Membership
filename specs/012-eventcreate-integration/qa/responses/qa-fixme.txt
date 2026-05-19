@@ -1,0 +1,5 @@
+[32mPASS[0m (0/0) tests/e2e (excluding viewport-gated conditional skips)
+[32mPASS[0m (0/0) tests/contract
+
+[32m✓ check:fixme: all suites within budget[0m
+

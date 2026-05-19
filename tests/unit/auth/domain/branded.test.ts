@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   asUserId,
-  asSessionId,
+  asSessionToken,
   asTokenId,
   asAuditEventId,
   asPasswordHash,
@@ -14,8 +14,8 @@ describe('Branded type constructors', () => {
     expect(id).toBe('abc-123');
   });
 
-  it('asSessionId returns the input string', () => {
-    expect(asSessionId('sess-1')).toBe('sess-1');
+  it('asSessionToken returns the input string', () => {
+    expect(asSessionToken('sess-1')).toBe('sess-1');
   });
 
   it('asTokenId returns the input string', () => {

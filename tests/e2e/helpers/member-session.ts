@@ -79,7 +79,10 @@ export async function signInAsMember(page: Page): Promise<void> {
 
   await page.goto('/portal/sign-in');
   await fillField(page.getByLabel(/email/i), email);
-  await fillField(page.getByLabel(/password/i), password);
+  // R9.B1 / F1 PasswordInput regression — see admin-session.ts for
+  // full rationale. The older `getByLabel` pattern resolved to BOTH
+  // the password input AND the "Show password" toggle button.
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL('**/portal', { timeout: 30_000 });
 }

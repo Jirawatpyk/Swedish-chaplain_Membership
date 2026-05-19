@@ -14,6 +14,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish — stub `db` to fix "No 'db' export defined on
+  // mock" collection error from F3 infra adapter import chain.
+  db: {},
   runInTenant: vi.fn(
     async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>): Promise<T> =>
       fn({}),

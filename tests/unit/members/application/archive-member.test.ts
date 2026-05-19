@@ -69,6 +69,13 @@ function makeStubTx() {
 }
 
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish fix-up — F3 members test collection error
+  // ("No 'db' export defined on mock"). Recent infra adapter imports
+  // (email-change-token, user-email, audit-adapter, drizzle-timeline-repo)
+  // pull `db` from `@/lib/db` via the @/modules/members barrel chain.
+  // Stub is sufficient — use-cases don't call methods on `db` directly,
+  // they thread it through `runInTenant`.
+  db: {},
   runInTenant: vi.fn(
     async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>): Promise<T> => {
       return fn(makeStubTx());

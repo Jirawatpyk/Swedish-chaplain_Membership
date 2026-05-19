@@ -17,10 +17,12 @@ import { describe, it, expect } from 'vitest';
 describe('payments barrel — public API contract', () => {
   // Barrel smoke-tests resolve 30+ transitive `@/` aliases at runtime.
   // Under full-parallel run (~150 files) isolated-run ~2s scales to
-  // 10-15s; bump per-test timeout to 30s so CPU contention on dev
-  // laptops does not flake the suite. Isolated barrel-only runs
-  // complete at ~1.8s — this timeout is a ceiling, not a target.
-  it('exposes every expected Domain + Application + composition-root export', { timeout: 30_000 }, async () => {
+  // 20-30s after F5R2 grew the barrel (subUseCaseErr factory +
+  // new audit event types + new metric counters). Bump per-test
+  // timeout to 60s so CPU contention on dev laptops does not flake
+  // the suite. Isolated barrel-only runs complete at ~7s — this
+  // timeout is a ceiling, not a target.
+  it('exposes every expected Domain + Application + composition-root export', { timeout: 90_000 }, async () => {
     const mod = await import('@/modules/payments');
 
     // --- Domain ---------------------------------------------------------
@@ -82,7 +84,7 @@ describe('payments barrel — public API contract', () => {
     }
   });
 
-  it('composition factories return the expected Deps keys', async () => {
+  it('composition factories return the expected Deps keys', { timeout: 90_000 }, async () => {
     const mod = await import('@/modules/payments');
 
     // InitiatePaymentDeps shape

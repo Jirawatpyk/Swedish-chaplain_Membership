@@ -44,6 +44,22 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   FEATURE_F8_RENEWALS: 'true',
   RENEWAL_LINK_TOKEN_SECRET_PRIMARY:
     'test-renewal-link-token-secret-32-chars-min-padding',
+  // F6 EventCreate — admin route handlers (T060) gate on the global
+  // flag for the same surface-disclosure pattern as F8's dashboard
+  // 404. Phase 3 webhook route uses tenant-config gating instead, so
+  // before Phase 4 the flag had no effect on the test environment.
+  //
+  // **Side-effect note** (verify-finding F6, 2026-05-12): with the
+  // flag forced to 'true' in the unit/contract suite, any future test
+  // that wants to assert the kill-switch-OFF behaviour MUST override
+  // it via `vi.stubEnv('FEATURE_F6_EVENTCREATE','false')` (or pass it
+  // through `process.env` BEFORE `import 'src/lib/env'` resolves).
+  // The schema's transform-time validation reads from `process.env` at
+  // module load, so a runtime `delete process.env[…]` after env.ts
+  // imports has no effect.
+  FEATURE_F6_EVENTCREATE: 'true',
+  EVENTCREATE_PII_PSEUDONYM_SALT:
+    'dGVzdC1mNi1zYWx0LXBsYWNlaG9sZGVyLWF0LWxlYXN0LTMyLWJ5dGVzLWxvbmctZW5vdWdoLWFhYQo=',
 };
 
 for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {

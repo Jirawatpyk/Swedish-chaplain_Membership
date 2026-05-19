@@ -10,6 +10,7 @@ import type { PaymentId } from '../../domain/payment';
 // Single source of truth — Domain owns the status enum so a future
 // `'voided'` addition (post-MVP) cannot drift between Domain + Port.
 import type { RefundStatus } from '../../domain/refund';
+import type { Satang } from '@/lib/money';
 export type { RefundStatus };
 
 export interface RefundRow {
@@ -17,7 +18,7 @@ export interface RefundRow {
   readonly tenantId: string;
   readonly paymentId: PaymentId;
   readonly invoiceId: string;
-  readonly amountSatang: bigint;
+  readonly amountSatang: Satang;
   readonly status: RefundStatus;
   readonly processorRefundId: string | null;
 }
@@ -30,7 +31,7 @@ export interface RefundsRepo {
       readonly tenantId: string;
       readonly paymentId: PaymentId;
       readonly invoiceId: string;
-      readonly amountSatang: bigint;
+      readonly amountSatang: Satang;
       readonly reason: string;
       readonly status: RefundStatus;
       readonly processorRefundId: string | null;
@@ -100,7 +101,7 @@ export interface RefundsRepo {
     paymentId: PaymentId,
   ): Promise<{
     readonly pendingCount: number;
-    readonly succeededSumSatang: bigint;
+    readonly succeededSumSatang: Satang;
     readonly nextSeq: number;
   }>;
 
@@ -127,7 +128,7 @@ export interface RefundsRepo {
       readonly id: string;
       readonly paymentId: PaymentId;
       readonly invoiceId: string;
-      readonly amountSatang: bigint;
+      readonly amountSatang: Satang;
       readonly initiatedAt: Date;
       readonly correlationId: string;
       readonly initiatorUserId: string;

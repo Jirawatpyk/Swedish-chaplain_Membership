@@ -1,6 +1,7 @@
 /**
  * T032 — Tenant invoice settings repository port (F4).
  */
+import type { Satang } from '@/lib/money';
 import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import type { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 import type { ProRatePolicy } from '@/modules/invoicing/domain/value-objects/pro-rate-policy';
@@ -15,7 +16,7 @@ export interface TenantInvoiceSettingsView {
    */
   readonly currencyCode: string;
   readonly vatRate: VatRate;
-  readonly registrationFeeSatang: bigint;
+  readonly registrationFeeSatang: Satang;
   readonly invoiceNumberPrefix: string;
   readonly creditNoteNumberPrefix: string;
   /**
@@ -53,7 +54,7 @@ export interface TenantInvoiceSettingsPatch {
    */
   readonly currencyCode?: string;
   readonly vatRate?: string;
-  readonly registrationFeeSatang?: bigint;
+  readonly registrationFeeSatang?: Satang;
   readonly legalNameTh?: string;
   readonly legalNameEn?: string;
   readonly taxId?: string;
@@ -70,6 +71,16 @@ export interface TenantInvoiceSettingsPatch {
   readonly logoBlobKey?: string | null;
 }
 
+/**
+ * Sequence row shape — surfaced for §87 forensic-trail audit emit.
+ * One row per `(tenant_id, document_type, fiscal_year)` triple.
+ */
+export interface TenantDocumentSequenceRow {
+  readonly documentType: 'invoice' | 'receipt' | 'credit_note';
+  readonly fiscalYear: number;
+  readonly nextSequenceNumber: number;
+}
+
 export interface TenantSettingsRepo {
   /**
    * Load current settings for a tenant. Returns null if the settings
@@ -77,6 +88,33 @@ export interface TenantSettingsRepo {
    * FR-010 ("no invoice without settings").
    */
   getForIssue(tenantId: string): Promise<TenantInvoiceSettingsView | null>;
+
+  /**
+   * Round-3 fix R3-H1 — same shape as `getForIssue` but locks the
+   * row with `SELECT … FOR UPDATE` inside the caller's tx. Use this
+   * inside `withTx` when the read MUST be consistent with a
+   * subsequent upsert (e.g. comparing old vs new prefix to emit a
+   * §87 forensic-trail audit row). Without the lock a concurrent
+   * admin save can flip the prefix between the read + upsert,
+   * causing the audit to record the wrong "old" value.
+   */
+  getForUpdateInTx(
+    tx: unknown,
+    tenantId: string,
+  ): Promise<TenantInvoiceSettingsView | null>;
+
+  /**
+   * Round-3 fix R3-C1 — read every `tenant_document_sequences` row
+   * for a tenant inside the caller's tx. Surfaced for the
+   * `tenant_receipt_prefix_changed` audit emit so the forensic
+   * payload captures "last sequence used under the old prefix" per
+   * the migration 0145 contract. Returns [] if no sequences exist
+   * yet (pre-issue tenant).
+   */
+  readSequencesInTx(
+    tx: unknown,
+    tenantId: string,
+  ): Promise<readonly TenantDocumentSequenceRow[]>;
 
   /**
    * R7-B2 — Upsert (create-or-update) the settings row. First write

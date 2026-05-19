@@ -1,5 +1,5 @@
 /**
- * T034 — F5 RBAC policy matrix.
+ * F5 RBAC policy matrix.
  *
  * Exported constants + pure authorisation helper for F5 resource
  * families (`payments:*`, `refunds:*`, `payment-settings:*`). Per Main-

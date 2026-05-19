@@ -24,7 +24,18 @@ export async function signInAsAdmin(page: Page): Promise<void> {
   }
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), email);
-  await fillField(page.getByLabel(/password/i), password);
+  // R9.B1 / F1 PasswordInput regression — the older `getByLabel`
+  // pattern resolved to BOTH the password `<input>` AND the "Show
+  // password" toggle `<button aria-label="Show password">` added
+  // by F1 PasswordInput primitive (commit c340607d). Playwright
+  // strict mode rejected the ambiguous match. The role+name
+  // selector below disambiguates to the textbox only.
+  await fillField(page.getByRole('textbox', { name: /^password$/i }), password);
   await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL('**/admin', { timeout: 30_000 });
+  // R9.B1 follow-up — bumped 30s→60s to absorb Turbopack cold-compile
+  // of `/admin` route on first test in a worker. Without the bump the
+  // sign-in click succeeds, server sets cookie, but `/admin` route
+  // takes >30s to compile + serve → waitForURL times out before the
+  // navigation completes.
+  await page.waitForURL('**/admin', { timeout: 60_000 });
 }

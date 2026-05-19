@@ -14,28 +14,42 @@ export async function POST(
 ): Promise<NextResponse> {
   const ctx = await requireAdminContext(request);
   if ('response' in ctx) return ctx.response;
+  // B3 — outer try/catch (see sign-in/route.ts B3 note).
+  try {
+    const { id } = await params;
+    const result = await enableUser({
+      targetUserId: asUserId(id),
+      actorUserId: ctx.current.user.id,
+      sourceIp: ctx.sourceIp,
+      requestId: ctx.requestId,
+    });
 
-  const { id } = await params;
-  const result = await enableUser({
-    targetUserId: asUserId(id),
-    actorUserId: ctx.current.user.id,
-    sourceIp: ctx.sourceIp,
-    requestId: ctx.requestId,
-  });
-
-  if (result.ok) {
-    return NextResponse.json({ ok: true }, { status: 200 });
-  }
-
-  const { error } = result;
-  switch (error.code) {
-    case 'not-found':
-      return NextResponse.json({ error: 'not-found' }, { status: 404 });
-    case 'not-disabled':
-      return NextResponse.json({ error: 'not-disabled' }, { status: 409 });
-    default: {
-      logger.error({ requestId: ctx.requestId }, 'enable-user: unhandled error variant');
-      return NextResponse.json({ error: 'server-error' }, { status: 500 });
+    if (result.ok) {
+      return NextResponse.json({ ok: true }, { status: 200 });
     }
+
+    const { error } = result;
+    switch (error.code) {
+      case 'not-found':
+        return NextResponse.json({ error: 'not-found' }, { status: 404 });
+      case 'not-disabled':
+        return NextResponse.json({ error: 'not-disabled' }, { status: 409 });
+      default: {
+        logger.error(
+          { requestId: ctx.requestId },
+          'enable-user: unhandled error variant',
+        );
+        return NextResponse.json({ error: 'server-error' }, { status: 500 });
+      }
+    }
+  } catch (error) {
+    logger.error(
+      { err: error, requestId: ctx.requestId },
+      'enable-user.infra-error',
+    );
+    return NextResponse.json(
+      { error: 'server-error', requestId: ctx.requestId },
+      { status: 500 },
+    );
   }
 }

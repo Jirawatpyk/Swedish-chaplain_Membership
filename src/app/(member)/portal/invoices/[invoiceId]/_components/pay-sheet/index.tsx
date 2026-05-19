@@ -492,7 +492,7 @@ export function PaySheet({
                   // close-with-stale-cleanup path (FR-025c) runs for
                   // the NEW PI if the user dismisses before paying.
                   setPaymentSettled(false);
-                  // R5 review-round-3 B-NEW-2 (2026-04-25): re-arm
+                  // re-arm
                   // the polling-retry latch for the NEXT settlement
                   // cycle. Without this, a failure → retry → success
                   // path leaves `refreshFiredRef.current === true`

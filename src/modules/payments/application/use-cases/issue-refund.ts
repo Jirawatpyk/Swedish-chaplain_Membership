@@ -39,6 +39,7 @@
  * Pure Application — no framework / ORM imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { addSatang, asSatang, satangToProcessorAmount, subSatang, type Satang } from '@/lib/money';
 import type {
   AuditPort,
   ClockPort,
@@ -68,7 +69,8 @@ import { SpanStatusCode } from '@opentelemetry/api';
 export interface IssueRefundInput {
   readonly tenantId: string;
   readonly paymentId: string;       // route-side raw — parsed inside
-  readonly amountSatang: bigint;    // > 0
+  // F5R3 H-5 (2026-05-16) — branded Satang prevents unit confusion.
+  readonly amountSatang: Satang;    // > 0
   readonly reason: string;          // 1..500 chars; single-line (no CR/LF)
   readonly actorUserId: string;     // admin UUID from session
   readonly correlationId: string;
@@ -80,7 +82,7 @@ export interface IssueRefundSuccess {
     readonly id: string;
     readonly paymentId: string;
     readonly invoiceId: string;
-    readonly amountSatang: bigint;
+    readonly amountSatang: Satang;
     readonly reason: string;
     readonly status: 'succeeded';
     readonly processorRefundId: string;
@@ -91,8 +93,8 @@ export interface IssueRefundSuccess {
   readonly payment: {
     readonly id: string;
     readonly status: 'partially_refunded' | 'refunded';
-    readonly refundedAmountSatang: bigint;
-    readonly remainingRefundableSatang: bigint;
+    readonly refundedAmountSatang: Satang;
+    readonly remainingRefundableSatang: Satang;
   };
   readonly invoice: {
     readonly id: string;
@@ -109,8 +111,8 @@ export type IssueRefundError =
     }
   | {
       readonly code: 'refund_exceeds_remaining';
-      readonly requestedSatang: bigint;
-      readonly remainingSatang: bigint;
+      readonly requestedSatang: Satang;
+      readonly remainingSatang: Satang;
     }
   | { readonly code: 'refund_in_progress' }
   | {
@@ -222,7 +224,7 @@ export async function issueRefund(
       attributes: {
         'payments.payment_id': input.paymentId,
         'payments.tenant_id': input.tenantId,
-        'payments.amount_satang': Number(input.amountSatang),
+        'payments.amount_satang': satangToProcessorAmount(input.amountSatang),
       },
     },
     async (span) => {
@@ -236,7 +238,8 @@ export async function issueRefund(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'refund_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene; see confirm-payment.ts.
+          message: e instanceof Error ? e.constructor.name : 'refund_threw',
         });
         throw e;
       } finally {
@@ -268,7 +271,7 @@ async function issueRefundBody(
   // Phase A — prepareRefund tx: lock, validate, insert pending, audit init
   // -------------------------------------------------------------------------
   type PreparedRefund =
-    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly succeededSumBefore: bigint }
+    | { readonly kind: 'prepared'; readonly refundId: string; readonly idempotencyKey: string; readonly payment: Payment; readonly succeededSumBefore: Satang }
     | { readonly kind: 'rejected'; readonly error: IssueRefundError };
 
   const prepared: PreparedRefund = await deps.paymentsRepo.withTx(async (tx) => {
@@ -447,7 +450,12 @@ async function issueRefundBody(
   // Phase B (success) — finalise refund + payment status + audit succeeded
   // -------------------------------------------------------------------------
   const completedAt = new Date(deps.clock.nowMs());
-  const newSucceededSum = prepared.succeededSumBefore + input.amountSatang;
+  // F5R3 H-5 (2026-05-16) — use branded arithmetic helpers; addSatang
+  // preserves the brand so downstream comparisons stay typed.
+  const newSucceededSum = addSatang(
+    prepared.succeededSumBefore,
+    input.amountSatang,
+  );
   const isFullyRefunded = newSucceededSum >= prepared.payment.amountSatang;
   const nextPaymentStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
 
@@ -536,13 +544,27 @@ async function issueRefundBody(
         credit_note_number: cnResult.value.creditNoteNumber,
         phase_b_error_kind: detailKind,
       },
-    }).catch((finaliseError) => {
+    }).catch(async (finaliseError) => {
       // If even the failure-finalise tx throws, the pending row
       // stays — the T130a stale-pending-refund sweep cron is the
       // last-resort recovery (Phase 9 polish). R2 reliability fix:
       // emit a structured warn before suppressing so ops have a
       // signal to act on between sweeps. Constructor name only —
       // raw Postgres `error.message` may carry SQL fragments.
+      // F5R3 CR-7 (2026-05-16) — pre-fix only the optional logger
+      // fired (undefined logger in tests = silent), and pino logs
+      // roll off in 30 days. Money already moved (Stripe + F4 CN
+      // succeeded), local row stuck pending, sweep cron is the
+      // recovery (12h cadence). Bump dedicated counter + emit the
+      // `stale_pending_refund_detected` audit row SYNCHRONOUSLY
+      // so the forensic 10y-retention trail appears immediately
+      // (not waiting up to 12h for the sweep). Triggers the
+      // existing observability.md SRE alert on `>0 over 1h`.
+      const finaliseErrKind =
+        finaliseError instanceof Error
+          ? finaliseError.constructor.name
+          : 'unknown';
+      paymentsMetrics.refundFinaliseDoubleFault(input.tenantId);
       deps.logger?.warn('issue_refund.finalise_failed_double_fault', {
         tenantId: input.tenantId,
         refundId: prepared.refundId,
@@ -550,12 +572,39 @@ async function issueRefundBody(
         invoiceId: prepared.payment.invoiceId,
         processorRefundId: stripeRefund.value.id,
         creditNoteId: cnResult.value.creditNoteId,
-        finaliseErrKind:
-          finaliseError instanceof Error
-            ? finaliseError.constructor.name
-            : 'unknown',
+        finaliseErrKind,
         recovery: 'awaiting_stale_pending_refund_sweep',
       });
+      // Best-effort emit on null tx — outer tx is gone. Adapter
+      // log-and-swallows on failure so this never re-throws back
+      // into the .catch.
+      await deps.audit
+        .emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'stale_pending_refund_detected',
+          actorUserId: input.actorUserId,
+          summary: `Double-fault: issueRefund Phase B + finaliseFailedRefund both threw — refund ${prepared.refundId} stuck pending; Stripe ${stripeRefund.value.id} + F4 CN ${cnResult.value.creditNoteId} both succeeded; ops follow up via runbook`,
+          payload: {
+            refund_id: prepared.refundId,
+            payment_id: paymentId,
+            invoice_id: prepared.payment.invoiceId,
+            amount_satang: input.amountSatang.toString(),
+            // Age 0 — fired immediately at the double-fault, not
+            // by the sweep. Distinguishes this audit class from
+            // the sweep's age-driven detections.
+            age_minutes: 0,
+            original_initiator_user_id: input.actorUserId,
+            original_correlation_id: input.requestId ?? 'no-request-id',
+            runbook_url: 'docs/runbooks/stale-pending-refund-sweep.md',
+          },
+          retentionYears: retentionFor('stale_pending_refund_detected'),
+        })
+        .catch(() => {
+          // Triple-fault swallow — the audit adapter already log-
+          // and-swallows + bumps useCaseAuditEmitFailed. No further
+          // action available.
+        });
     });
     return err({ code: 'f4_bridge_error', detail: detailKind });
   }
@@ -577,9 +626,11 @@ async function issueRefundBody(
       id: paymentId,
       status: nextPaymentStatus,
       refundedAmountSatang: newSucceededSum,
+      // F5R3 H-5 — branded arithmetic; subSatang throws on underflow
+      // which is impossible here (isFullyRefunded gate above).
       remainingRefundableSatang: isFullyRefunded
-        ? 0n
-        : prepared.payment.amountSatang - newSucceededSum,
+        ? asSatang(0n)
+        : subSatang(prepared.payment.amountSatang, newSucceededSum),
     },
     invoice: {
       id: prepared.payment.invoiceId,

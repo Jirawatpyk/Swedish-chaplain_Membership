@@ -47,6 +47,14 @@ export function serialiseInvoice(invoice: Invoice) {
     pdf_blob_key: invoice.pdf?.blobKey ?? null,
     pdf_sha256: invoice.pdf?.sha256 ?? null,
     pdf_template_version: invoice.pdf?.templateVersion ?? null,
+    // Receipt-PDF surface (separate-mode keeps its own §87 sequence
+    // number + its own rendered bytes; combined-mode reuses the
+    // invoice document number with `receipt_document_number_raw` = null).
+    receipt_document_number_raw: invoice.receiptDocumentNumberRaw,
+    receipt_pdf_status: invoice.receiptPdfStatus,
+    receipt_pdf_blob_key: invoice.receiptPdf?.blobKey ?? null,
+    receipt_pdf_sha256: invoice.receiptPdf?.sha256 ?? null,
+    receipt_pdf_template_version: invoice.receiptPdf?.templateVersion ?? null,
     auto_email_on_issue: invoice.autoEmailOnIssue,
     created_at: invoice.createdAt,
     updated_at: invoice.updatedAt,

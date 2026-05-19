@@ -1,5 +1,5 @@
 /**
- * T071 — POST /api/webhooks/stripe (F5 / stripe-webhook.md § 3).
+ * POST /api/webhooks/stripe (F5 / stripe-webhook.md § 3).
  *
  * Pipeline (this route OWNS steps 1–5 + 7; `processWebhookEvent` starts
  * at step 6 / 8–10):
@@ -40,18 +40,39 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { asSatang } from '@/lib/money';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { webhookVerifier } from '@/lib/stripe-webhook-verifier';
+import { webhookVerifier, WebhookSignatureError } from '@/lib/stripe-webhook-verifier';
 import { baseHeaders } from '@/lib/payments-route-helpers';
 import {
   processWebhookEvent,
   makeProcessWebhookEventDeps,
+  SYSTEM_ACTOR_STRIPE_WEBHOOK,
+  type ProcessWebhookEventError,
 } from '@/modules/payments';
 import {
   resolveTenantByProcessorAccountId,
   insertRejectedProcessorEvent as insertRejectedProcessorEventImpl,
   auditRepo,
 } from '@/lib/stripe-webhook-deps';
+// F5R3 CR-3 (2026-05-16) — direct F5 audit-adapter + retention helper
+// import for the permanent-failure typed-payload emit. The route is a
+// Stripe-side system surface so this is composition-root code (not
+// Application — no Principle III violation). Convention across other
+// composition-root files (page.tsx + api/.../route.ts) is to silence
+// `no-restricted-imports` on the specific composition-root line.
+ 
+import { f5AuditAdapter } from '@/modules/payments/infrastructure/audit/drizzle-payments-audit';
+ 
+import {
+  retentionFor as f5RetentionFor,
+} from '@/modules/payments/application/ports/audit-port';
+// F5R3 H-6 (2026-05-16) — single-source-of-truth allow-list shared
+// with the F5 dispatcher (process-webhook-event.ts). Prevents drift
+// between which event types are dispatched vs which trigger
+// revalidatePath.
+ 
+import { F5_HANDLED_EVENT_TYPES_SET } from '@/modules/payments/application/ports/webhook-verifier-port';
 import { paymentsMetrics } from '@/lib/metrics';
 
 export const runtime = 'nodejs';
@@ -68,7 +89,10 @@ export const dynamic = 'force-dynamic';
  */
 const MAX_WEBHOOK_BODY_BYTES = 64 * 1024;
 
-const OK_RECEIVED = { received: true } as const;
+// F5R3 SIMPLIFY-L1 (2026-05-16) — single-use OK_RECEIVED const
+// inlined at the call site (one place). `as const` preserved no
+// observable behaviour through NextResponse.json's runtime
+// stringification.
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,6 +124,14 @@ async function auditReject(
     | 'webhook_signature_rejected'
     | 'payment_environment_mismatch'
     | 'webhook_api_version_mismatch',
+  // F5R3 CR-3 (2026-05-16) — `webhook_dispatch_permanent_failure`
+  // moved off this helper into a direct `f5AuditAdapter.emit(null,
+  // …)` call. Reason: F1's auditRepo.append doesn't persist the
+  // JSONB `payload` column, so the typed payload promised in
+  // F5AuditPayloadByType was silently dropped. The 3 events kept
+  // here are TRUE pre-tenant-resolution rejections that don't have a
+  // typed-payload contract (low-stakes ops events, F1-format
+  // `{reason}` is sufficient).
   reason: string,
   requestId: string,
 ): Promise<void> {
@@ -127,11 +159,17 @@ async function auditReject(
     });
   } catch (e) {
     // Audit write is best-effort on the reject path — never 500 a
-    // webhook request because the audit row failed to persist.
-    // H-4 (review 2026-04-27 — extended 2026-04-29 staff-review #4 A5.1
-    // closure): use constructor name only, never `e.message`. Audit-log
-    // writes go through Postgres; `e.message` on a Postgres failure can
-    // carry SQL params, table names, or interpolated values.
+    // webhook request because the audit row failed to persist. Use
+    // constructor name only (Postgres errors can carry SQL params /
+    // table names in .message).
+    //
+    // F5R1-E1 — emit a metric counter so SRE can alert on sustained
+    // audit-rail outage. Without this counter, a chronic audit-write
+    // failure would silently drop the forensic 5/10y compliance trail
+    // for signature-rejection / api-version-mismatch / livemode-
+    // mismatch events; pino logs roll off in 30 days. Mirrors the F8
+    // `coordinatorAuditEmitFailed` pattern.
+    paymentsMetrics.webhookRejectAuditFailed();
     logger.error(
       { err: e instanceof Error ? e.constructor.name : 'unknown', eventType, reason, requestId },
       'stripe-webhook.audit_reject_failed',
@@ -176,7 +214,7 @@ async function insertRejectedProcessorEvent(input: {
 }
 
 function jsonOk(correlationId: string): NextResponse {
-  return NextResponse.json(OK_RECEIVED, {
+  return NextResponse.json({ received: true }, {
     status: 200,
     headers: baseHeaders(correlationId),
   });
@@ -296,13 +334,34 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       env.stripe.webhookSecret,
     )) as unknown as Record<string, unknown>;
   } catch (e) {
-    // Duck-type on the `kind` discriminator rather than `instanceof
-    // WebhookSignatureError` so tests that mock only the verifier
-    // function (and omit the error class) still exercise this branch.
-    const kind =
-      typeof (e as { kind?: unknown })?.kind === 'string'
-        ? ((e as { kind: string }).kind)
-        : 'bad_signature';
+    // F5R2-TY-B — narrow via `instanceof WebhookSignatureError` (the
+    // canonical Application-port error class) so a future variant
+    // added to the `kind` union forces this consumer to handle it.
+    // Pre-fix duck-type on `e.kind` accepted ANY object with a string
+    // `kind` field — a thrown TypeError from an env-config bug
+    // (e.g. `cannot read .secret of undefined`) silently became
+    // `kind='bad_signature'` because TypeError has no `kind`. Now
+    // genuine-but-non-shape exceptions fall to the else branch and
+    // bump a distinct counter.
+    let kind: WebhookSignatureError['kind'] | 'verifier_internal_error';
+    if (e instanceof WebhookSignatureError) {
+      kind = e.kind;
+    } else {
+      // Internal verifier error (env/config drift, OOM, undici fetch
+      // crash). Pino-log the constructor name + bump a counter so
+      // SRE distinguishes "Stripe sent bad signature" from "our
+      // verifier exploded". Audit row still emitted via auditReject
+      // so the forensic trail is consistent across both classes.
+      logger.error(
+        {
+          err: e instanceof Error ? e.constructor.name : 'unknown',
+          correlationId,
+          requestId,
+        },
+        'stripe-webhook.verifier_internal_error',
+      );
+      kind = 'verifier_internal_error';
+    }
     await auditReject('webhook_signature_rejected', kind, requestId);
     return jsonUnauthorized('bad_signature', correlationId);
   }
@@ -322,17 +381,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const evLivemode = Boolean(rawEvent['livemode']);
   let evAccount = String(rawEvent['account'] ?? '');
 
-  // Direct-event fallback (T082 empirical webhook test 2026-04-24):
-  // when SweCham (or any tenant whose processor_account_id matches
-  // `env.stripe.accountIdSwecham`) creates a PaymentIntent, the
-  // Stripe gateway skips the `Stripe-Account` header (see
-  // `connectOptions()` in stripe-gateway.ts) so the event fires on
-  // the platform account itself with `event.account === ''`. Default
-  // to the platform owner tenant's account id so tenant resolution
-  // succeeds for single-tenant / platform-owner deployments. Multi-
-  // tenant Connect events carry their own `account` field and bypass
-  // this fallback entirely.
-  if (!evAccount && env.stripe.accountIdSwecham) {
+  // Direct-event fallback — when SweCham (the platform-owner tenant)
+  // creates a PaymentIntent, the gateway skips the `Stripe-Account`
+  // header (see `connectOptions` in stripe-gateway.ts) so the event
+  // fires on the platform account with `event.account === ''`.
+  //
+  // F5R1-IMP4 fix — gate the fallback on `env.tenant.slug ===
+  // 'swecham'`. On a multi-tenant deploy (F11), an empty `event.account`
+  // is NOT a missing-account-header signal — it is a malformed event
+  // or a platform-owner event from a non-SweCham deployment. Falling
+  // back to SweCham's account id would mis-route F11 tenant webhooks
+  // to the SweCham tenant context. Multi-tenant deploys land here
+  // with an empty account → tenant resolution returns null →
+  // acknowledged_only path emits + 200-acks Stripe without state change.
+  if (
+    !evAccount &&
+    env.stripe.accountIdSwecham &&
+    env.tenant.slug === 'swecham'
+  ) {
     evAccount = env.stripe.accountIdSwecham;
   }
 
@@ -463,9 +529,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const refundIdsFromVerifier = rawDataObject?.['refundIds'] as
     | readonly string[]
     | undefined;
-  const lastPaymentError = rawDataObject?.['last_payment_error'] as
-    | Record<string, unknown>
-    | undefined;
+  // F5R2-M5 — narrow `last_payment_error` extraction so the wide
+  // `Record<string, unknown>` object is NOT bound in the route's
+  // local scope. PCI SAQ-A risk: future logger/response-body additions
+  // could accidentally include the full Stripe error object (which
+  // can carry card_brand, card_last4, decline reason text). Extract
+  // ONLY the `code` string here; downstream consumers see a single
+  // `lastPaymentErrorCode` field instead of the wide envelope.
+  const lastPaymentErrorRawCode = (
+    rawDataObject?.['last_payment_error'] as Record<string, unknown> | undefined
+  )?.['code'];
   const lastPaymentErrorCodeFromVerifier = rawDataObject?.[
     'lastPaymentErrorCode'
   ] as string | undefined;
@@ -488,6 +561,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       type: String(
         rawDataObject?.['type'] ?? rawDataObject?.['object'] ?? '',
       ),
+      // F5R1-IMP5 docstring — `latestChargeId` is absent from the
+      // envelope when `extractLatestChargeId` returns undefined,
+      // which covers BOTH "field missing" AND "field present but
+      // not a string/object-with-id" (verifier's defensive null
+      // projection for object-form charges). Downstream consumers
+      // MUST NOT trust this field — `confirmPayment` + `failPayment`
+      // both re-fetch the PI via `retrievePaymentIntent` for card
+      // metadata. Documented here so a future consumer doesn't
+      // start trusting the envelope without re-verifying via the
+      // gateway.
       ...(latestCharge !== undefined && {
         latestChargeId: latestCharge,
       }),
@@ -502,14 +585,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           : {}),
       ...(typeof lastPaymentErrorCodeFromVerifier === 'string'
         ? { lastPaymentErrorCode: lastPaymentErrorCodeFromVerifier }
-        : typeof lastPaymentError?.['code'] === 'string'
-          ? { lastPaymentErrorCode: String(lastPaymentError['code']) }
+        : typeof lastPaymentErrorRawCode === 'string'
+          ? { lastPaymentErrorCode: lastPaymentErrorRawCode }
           : {}),
+      // F5R3 H-5 (2026-05-16) — brand at Stripe→Application boundary.
       ...(typeof amountVal === 'number' && {
-        amountSatang: BigInt(amountVal),
+        amountSatang: asSatang(BigInt(amountVal)),
       }),
       ...(typeof amountVal === 'bigint' && {
-        amountSatang: amountVal,
+        amountSatang: asSatang(amountVal),
       }),
     },
   };
@@ -564,14 +648,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // events (api_version_mismatch, livemode_mismatch, duplicate
     // delivery) don't churn caches.
     const isOk = (result as { ok?: boolean }).ok !== false;
-    if (
-      isOk &&
-      (evType === 'payment_intent.succeeded' ||
-        evType === 'payment_intent.payment_failed' ||
-        evType === 'payment_intent.canceled' ||
-        evType === 'charge.refunded' ||
-        evType === 'charge.dispute.created')
-    ) {
+    // F5R3 H-6 (2026-05-16) — single-source-of-truth membership check
+    // against `F5_HANDLED_EVENT_TYPES_SET`. Pre-fix the inline OR
+    // chain was a copy of the dispatcher's switch-case literal list;
+    // adding a new event type to one but forgetting the other
+    // silently dropped revalidation on the new branch. The Set lives
+    // next to the dispatcher's typed `F5HandledEventType` union so
+    // both consumers stay in lockstep.
+    if (isOk && evType !== null && F5_HANDLED_EVENT_TYPES_SET.has(evType)) {
       // R5 canonical fix (2026-04-25): surgical revalidation. The
       // sub-use-case (confirmPayment / failPayment / handleCancelEvent)
       // forwards `invoiceId` on outcome kinds that pivot on a known
@@ -587,6 +671,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // point; a 500 here would force Stripe into a 24-hour retry
       // loop chasing an already-processed event.
       try {
+        // F5R3 CR-5 (2026-05-16) — explicit ops-visibility log on the
+        // `auto_refund_given_up` outcome. The metric already fired at
+        // the use-case level; this complements it with a queryable
+        // pino line so SREs can correlate the give-up with surrounding
+        // request-id context. Pino message starts with the runbook-
+        // grep prefix so dashboards filtering on
+        // 'stripe-webhook.auto_refund_given_up' surface this class
+        // distinct from routine success.
+        const outcomeKind = (result as {
+          value?: { kind?: string };
+        }).value?.kind;
+        if (outcomeKind === 'auto_refund_given_up') {
+          logger.error(
+            {
+              eventId: evId,
+              eventType: evType,
+              tenantId,
+              correlationId,
+              requestId,
+              runbook: 'docs/runbooks/out-of-band-refund.md',
+            },
+            'stripe-webhook.auto_refund_given_up',
+          );
+        }
         const outcomeInvoiceId = (result as {
           value?: { invoiceId?: string };
         }).value?.invoiceId;
@@ -607,16 +715,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         revalidatePath('/portal/invoices', 'page');
         revalidatePath('/admin/invoices', 'page');
       } catch (e) {
-        // R5 N3 (2026-04-25): upgrade `warn` → `error`. A persistent
-        // revalidate failure means multi-tab/multi-user sync is
-        // silently degraded — admins won't see new "Paid"/"Refunded"
-        // status without manual reload. Surface this on the on-call
-        // dashboard via the higher log level. Webhook still returns
-        // 200 (markProcessed already committed) so Stripe doesn't
-        // retry-storm a non-deliverable side-effect failure.
+        // Upgrade warn → error: a persistent revalidate failure means
+        // multi-tab/multi-user sync is silently degraded — admins won't
+        // see new Paid/Refunded status without manual reload. Webhook
+        // still returns 200 (markProcessed already committed) so Stripe
+        // does not retry-storm a non-deliverable side-effect failure.
+        //
+        // F5R1-IMP3 — bump a metric counter so alert rules (attached
+        // to OTel counters, not log strings) can fire on sustained
+        // Next-cache outage. Plus H-4: use `e.constructor.name` not
+        // `e.message` — Next.js cache errors are framework-level and
+        // the raw string can carry path arguments; constructor name
+        // is sufficient diagnostic + matches the H-4 hygiene rule
+        // applied at every other catch in this file.
+        paymentsMetrics.webhookRevalidatePathFailed();
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
+            err: e instanceof Error ? e.constructor.name : 'unknown',
             eventId: evId,
             eventType: evType,
             correlationId,
@@ -626,13 +741,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if ((result as { ok?: boolean }).ok === false) {
-      // R5 S006 — pipe `kind` discriminator into pino so ops dashboards
-      // can filter dispatch failures by class (sub_use_case_error vs
+    if (!result.ok) {
+      // Pipe `kind` discriminator into pino so ops dashboards can
+      // filter dispatch failures by class (sub_use_case_error vs
       // dispatch_threw vs unknown_event_type_threw) without re-parsing
       // log lines.
-      const errorObj = (result as { error?: { kind?: string; detail?: string } })
-        .error;
+      //
+      // F5R2-CRIT-2 — narrow the result.error via the actual
+      // `ProcessWebhookEventError` type via `!result.ok` Result-union
+      // narrowing (the typed Result helper). Compile-time guarantee:
+      // `permanence` is required on every err() site in
+      // process-webhook-event.ts, so reading it directly cannot
+      // return undefined. The pre-fix `(result as {ok?:boolean}).ok
+      // === false` cast + `errorObj?.permanence ?? 'transient'`
+      // defaulting was a safety net that erased the type-level
+      // guarantee — if a future refactor accidentally dropped
+      // `permanence` from one err site, the route would silently
+      // mis-classify it as transient → Stripe 72h retry storm
+      // regression. Importing + narrowing on the proper type makes
+      // that regression a build error.
+      const dispatchError: ProcessWebhookEventError = result.error;
+      const permanence = dispatchError.permanence;
       logger.error(
         {
           eventId: evId,
@@ -640,11 +769,69 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           tenantId,
           correlationId,
           requestId,
-          dispatchFailureKind: errorObj?.kind ?? 'unknown',
-          dispatchFailureDetail: errorObj?.detail ?? 'unknown',
+          dispatchFailureKind: dispatchError.kind,
+          dispatchFailureDetail: dispatchError.detail,
+          permanence,
         },
         'stripe-webhook.dispatch_failed',
       );
+      // F5R1-E14 — metric counter for dispatch failure. Pino logs
+      // alone roll off in 30 days; SRE alert rules attached to OTel
+      // counters need this to fire on sustained dispatch failures
+      // (permanence + kind labels split transient infra outages from
+      // permanent F4 schema-drift class).
+      paymentsMetrics.webhookDispatchFailed(permanence, dispatchError.kind);
+
+      // F5R1-IMP2 — permanent errors must NOT cause Stripe retries
+      // (72h retry storm + audit-log pollution). 200-ack with a
+      // forensic flag in the response body so ops dashboards can
+      // distinguish these from successful dispatches when scanning
+      // Stripe's webhook delivery log. Transient errors stay 500 so
+      // Stripe retries through the outage window.
+      if (permanence === 'permanent') {
+        // F5R3 CR-3 (2026-05-16) — emit through F5 audit-adapter
+        // (typed payload persists in the JSONB `payload` column) NOT
+        // F1 auditRepo.append (which only writes the `reason` string
+        // and silently drops the typed shape promised by
+        // F5AuditPayloadByType). Pre-fix R2-C2 wired this through
+        // auditReject → auditRepo.append, leaving SRE queries that
+        // pivot on `payload->>'dispatch_failure_kind'` returning zero
+        // rows. The forensic data was visible only in pino logs +
+        // the human-readable summary string — both rotate after 30d
+        // while the audit row is supposed to carry 5y compliance
+        // retention. The adapter's null-tx path is best-effort
+        // (log-and-swallow + useCaseAuditEmitFailed counter), so the
+        // 200-ack to Stripe is never blocked by audit-rail outage.
+        await f5AuditAdapter.emit(null, {
+          tenantId,
+          requestId,
+          eventType: 'webhook_dispatch_permanent_failure',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `stripe webhook dispatch permanently failed: ${dispatchError.kind}/${dispatchError.detail}`,
+          payload: {
+            event_id: evId ?? 'unknown',
+            stripe_event_type: evType ?? 'unknown',
+            dispatch_failure_kind: dispatchError.kind,
+            dispatch_failure_detail: dispatchError.detail,
+          },
+          retentionYears: f5RetentionFor('webhook_dispatch_permanent_failure'),
+        });
+        // F5R2-C2 — drop `detail` from response body to avoid leaking
+        // F4 bridge taxonomy / internal error codes to the Stripe
+        // Dashboard webhook delivery log (visible to anyone with
+        // Stripe read access). The forensic detail is captured in
+        // the audit row + pino log line + metric counter above.
+        // Use baseHeaders() for consistent Cache-Control: no-store
+        // across all branches (F5R2-L2 — PCI F-01 cache hygiene).
+        return NextResponse.json(
+          {
+            ok: true,
+            dispatched: false,
+            reason: 'permanent_failure_acknowledged',
+          },
+          { status: 200, headers: baseHeaders(correlationId) },
+        );
+      }
       return jsonInternalError('dispatch_failed', correlationId);
     }
     return jsonOk(correlationId);

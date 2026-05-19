@@ -22,7 +22,8 @@ import {
   makeGetInvoicePdfSignedUrlDeps,
 } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
-import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
+import { streamPdfFromBlob } from '@/lib/stream-pdf-from-blob';
+import { pdfRouteErrorStatus } from '@/lib/pdf-route-error-status';
 
 export async function GET(
   request: NextRequest,
@@ -32,17 +33,33 @@ export async function GET(
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
 
-  const result = await getInvoicePdfSignedUrl(
-    makeGetInvoicePdfSignedUrlDeps(ctx.tenant.slug),
-    {
-      tenantId: ctx.tenant.slug,
-      actorUserId: ctx.current.user.id,
-      actorRole: 'member',
-      actorMemberId: ctx.memberId,
-      requestId: ctx.requestId,
-      invoiceId,
-    },
-  );
+  // R8-L2-code — wrap the use-case call in try/catch parity. The
+  // use-case now (R8-M1-code) emits `invoice_pdf_downloaded` on
+  // success; if `audit.emit` throws (Neon transient, retention
+  // constraint), surface as a 500 instead of letting the worker crash.
+  let result: Awaited<ReturnType<typeof getInvoicePdfSignedUrl>>;
+  try {
+    result = await getInvoicePdfSignedUrl(
+      makeGetInvoicePdfSignedUrlDeps(ctx.tenant.slug),
+      {
+        tenantId: ctx.tenant.slug,
+        actorUserId: ctx.current.user.id,
+        actorRole: 'member',
+        actorMemberId: ctx.memberId,
+        requestId: ctx.requestId,
+        invoiceId,
+      },
+    );
+  } catch (err) {
+    logger.error(
+      { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId, err },
+      'GET /api/portal/invoices/[id]/pdf — getInvoicePdfSignedUrl threw',
+    );
+    return NextResponse.json(
+      { error: { code: 'internal_error' } },
+      { status: 500 },
+    );
+  }
   if (!result.ok) {
     logger.warn(
       {
@@ -50,6 +67,12 @@ export async function GET(
         tenantId: ctx.tenant.slug,
         invoiceId,
         errorCode: result.error.code,
+        // R9-E2 — surface the missing blob key so operators triaging
+        // "Invoice PDF unavailable" toasts can locate the orphaned
+        // object in Vercel Blob without joining back to the invoice row.
+        ...(result.error.code === 'blob_missing'
+          ? { blobKey: result.error.key }
+          : {}),
       },
       'GET /api/portal/invoices/[id]/pdf failed',
     );
@@ -66,47 +89,16 @@ export async function GET(
         },
       );
     }
-    const status =
-      result.error.code === 'invoice_not_found'
-        ? 404
-        : result.error.code === 'blob_missing'
-          ? 502
-          : 403;
-    return NextResponse.json({ error: { code: result.error.code } }, { status });
-  }
-
-  // Server-side fetch — client never sees the Blob URL (R7-B1 pattern).
-  let blobResponse: Response;
-  try {
-    blobResponse = await fetch(result.value.url);
-  } catch (err) {
-    logger.error(
-      { requestId: ctx.requestId, invoiceId, err },
-      'portal PDF — blob fetch failed',
-    );
     return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
-    );
-  }
-  if (!blobResponse.ok || !blobResponse.body) {
-    return NextResponse.json(
-      { error: { code: 'blob_fetch_failed' } },
-      { status: 502 },
+      { error: { code: result.error.code } },
+      { status: pdfRouteErrorStatus(result.error.code) },
     );
   }
 
-  const raw = result.value.filename;
-  const contentDisposition = buildAttachmentContentDisposition(raw);
-  const contentLength = blobResponse.headers.get('content-length');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/pdf',
-    'Content-Disposition': contentDisposition,
-    'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff',
-  };
-  if (contentLength) headers['Content-Length'] = contentLength;
-
-  return new NextResponse(blobResponse.body, { status: 200, headers });
+  return streamPdfFromBlob({
+    url: result.value.url,
+    filename: result.value.filename,
+    logContext: { requestId: ctx.requestId, tenantId: ctx.tenant.slug, invoiceId },
+    route: '/api/portal/invoices/[id]/pdf',
+  });
 }

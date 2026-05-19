@@ -36,6 +36,16 @@ type Props = {
   readonly memberCompanyName: string;
   readonly remainingRefundableSatang: bigint;
   readonly currencyCode: string;
+  /**
+   * Receipt document number (e.g. `RC-2026-0001`) — surfaced in the
+   * dialog header so the bookkeeper can cross-reference the refund
+   * against the receipt without leaving the modal. NULL on combined-
+   * mode invoices (receipt reuses invoice number) — handled at
+   * render time.
+   */
+  readonly receiptDocumentNumberRaw?: string | null;
+  /** Invoice document number — shown alongside receipt for context. */
+  readonly invoiceDocumentNumber?: string | null;
 };
 
 export function RefundDialog({
@@ -44,6 +54,8 @@ export function RefundDialog({
   memberCompanyName,
   remainingRefundableSatang,
   currencyCode,
+  receiptDocumentNumberRaw,
+  invoiceDocumentNumber,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tDialog = useTranslations('admin.refund.dialog');
@@ -90,6 +102,31 @@ export function RefundDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{tDialog('title')}</AlertDialogTitle>
           <AlertDialogDescription>{tDialog('description')}</AlertDialogDescription>
+          {/* §87 cross-reference — show the invoice + receipt numbers
+              the refund applies to. Combined-mode rows have a NULL
+              receiptDocumentNumberRaw → fall back to invoiceDocumentNumber
+              with a "(combined)" hint label. */}
+          {(invoiceDocumentNumber || receiptDocumentNumberRaw) && (
+            <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
+              {invoiceDocumentNumber && (
+                <>
+                  <dt>{tDialog('refsInvoice')}</dt>
+                  <dd className="font-mono tabular-nums">{invoiceDocumentNumber}</dd>
+                </>
+              )}
+              <dt>{tDialog('refsReceipt')}</dt>
+              <dd className="font-mono tabular-nums">
+                {receiptDocumentNumberRaw ?? (
+                  <span>
+                    {invoiceDocumentNumber}{' '}
+                    <span className="text-xs">
+                      ({tDialog('refsCombinedHint')})
+                    </span>
+                  </span>
+                )}
+              </dd>
+            </dl>
+          )}
         </AlertDialogHeader>
         <RefundForm
           paymentId={paymentId}

@@ -474,6 +474,55 @@ export const invoicingMetrics = {
       'F4 cross-tenant probe audit emissions — alert on any non-zero rate',
     ).add(1, { probe_type: probeType });
   },
+
+  /**
+   * Receipt-PDF failure-mark suppression — fires when the async
+   * `renderReceiptPdf` worker fails AND the subsequent
+   * `applyReceiptPdfFailure` write ALSO fails (Neon outage, etc.).
+   * The invoice stays in `receipt_pdf_status='pending'` and the
+   * dispatcher will retry, but the per-attempt counter doesn't
+   * advance — under sustained DB issues the row can spin past 3
+   * retries without ever surfacing as `pdf_render_permanently_failed`.
+   * Alert: any non-zero rate.
+   */
+  receiptFailureMarkSuppressed(): void {
+    counter(
+      'invoicing_receipt_failure_mark_suppressed_total',
+      'Async-render failure-mark write itself failed — invoice stuck pending without attempt-counter increment',
+    ).add(1);
+  },
+
+  /**
+   * Tenant logo fetch failures — fires when `loadTenantLogo` catches
+   * a Blob outage / 404. The render path falls through to no-logo
+   * (intentional, Thai-RD compliance — issuance must not block on
+   * cosmetic logo). Alert: sustained non-zero rate per tenant
+   * indicates expired blob key or misconfigured logo upload.
+   */
+  logoLoadFailed(): void {
+    counter(
+      'invoicing_logo_load_failed_total',
+      'Tenant logo Blob fetch failures — render falls through to no-logo',
+    ).add(1);
+  },
+
+  /**
+   * F5R3 SB-3 (2026-05-16) — F4 audit emit failures on best-effort
+   * (null-tx) paths. Tx-bound emits still throw to roll back the
+   * caller; these are read-only / standalone audits where the work is
+   * already done (CSV built, PDF rendered) and losing the response
+   * would be worse than losing the audit row. Alert: any non-zero
+   * rate per `event_type` — likely audit_log table outage or
+   * retention_years constraint drift.
+   */
+  auditEmitFailed(eventType: string, tenantId: string | null): void {
+    safeMetric(() => {
+      counter(
+        'invoicing_audit_emit_failed_total',
+        'F4 best-effort (null-tx) audit emit failures — log-and-swallow',
+      ).add(1, { event_type: eventType, tenant: tenantId ?? 'unknown' });
+    });
+  },
 } as const;
 
 // --- F5 payments metrics -----------------------------------------------------
@@ -652,6 +701,56 @@ export const paymentsMetrics = {
   },
 
   /**
+   * F5R1-E1 — `webhook.reject_audit_failed_total` — fires when the
+   * audit-row write on a webhook-reject path (signature, api-version,
+   * livemode, or unknown-account) throws. Without this counter, a
+   * chronic audit-rail outage would silently drop the forensic trail
+   * since pino logs roll off in 30 days but the audit table holds
+   * 5/10y compliance retention. NO tenant label (pre-tenant-resolution).
+   */
+  webhookRejectAuditFailed(): void {
+    counter(
+      'payments_webhook_reject_audit_failed_total',
+      'Webhook reject-path audit-log write threw — forensic trail may be lost',
+    ).add(1);
+  },
+
+  /**
+   * F5R1-E14 — `webhook.dispatch_failed_total{permanence, kind}` —
+   * dispatcher returned Result.err (sub_use_case_error / dispatch_threw /
+   * unknown_event_type_threw). Labels split transient (Stripe retries)
+   * from permanent (200-ack drained the queue) so SRE alert rules can
+   * pivot on `permanence='transient' AND rate > 5/min` (genuine outage)
+   * vs `permanence='permanent' AND rate > 0` (schema drift).
+   * NO tenant label (failures are often pre-tenant-resolution).
+   */
+  webhookDispatchFailed(
+    permanence: 'transient' | 'permanent',
+    kind: string,
+  ): void {
+    counter(
+      'payments_webhook_dispatch_failed_total',
+      'Stripe webhook dispatcher returned Result.err; labels distinguish retry semantics',
+    ).add(1, { permanence, kind });
+  },
+
+  /**
+   * F5R1-E11 — `cron.sweep_tenant_failed_total{tenant}` — per-tenant
+   * stale-pending-refund sweep failed (use-case Result.err OR
+   * uncaught throw). SRE alert pivots on `> 0 over 1h` per tenant —
+   * a chronic failure for a single tenant indicates RLS context
+   * drift / Neon outage / refund-repo schema regression scoped to
+   * that tenant. Pino logs roll off in 30 days; this counter +
+   * alert anchors the long-term SLO compliance trail.
+   */
+  cronSweepTenantFailed(tenantId: string): void {
+    counter(
+      'payments_cron_sweep_tenant_failed_total',
+      'Stale-pending-refund cron sweep failed for a single tenant',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
    * `webhook.signature_rejected_total` — abuse / misconfiguration canary.
    * NO tenant label (rejected pre-verification, before tenant resolution).
    */
@@ -671,6 +770,162 @@ export const paymentsMetrics = {
       'payments_webhook_api_version_mismatch_total',
       'Webhook events with non-pinned api_version (acknowledged_only)',
     ).add(1);
+  },
+
+  /**
+   * F5R1-IMP3 — `webhook.revalidate_path_failed_total` — Next.js cache
+   * invalidation failure on webhook dispatch tail. Webhook still
+   * 200-acks (markProcessed already committed), but admin UI may show
+   * stale Paid/Refunded status until manual reload. NO tenant label
+   * (the path/cache failure is global to the Next runtime).
+   */
+  webhookRevalidatePathFailed(): void {
+    counter(
+      'payments_webhook_revalidate_path_failed_total',
+      'Webhook handler revalidatePath call threw — Next cache may be stale',
+    ).add(1);
+  },
+
+  /**
+   * F5R1-E8 — `webhook.dispatch_recovery_replay_total{tenant, eventType}`
+   * — fires when the webhook dispatcher's step-6 idempotency upsert
+   * detects an existing processor_events row whose `processed_at` is
+   * still NULL (i.e. the previous attempt committed step 6 but the
+   * function process died before the dispatch tx committed). The
+   * recovery path is safe (sub-use-cases are idempotent), but a
+   * sustained non-zero rate signals chronic mid-flight crashes
+   * (Vercel function timeouts, OOM, OTel exporter back-pressure)
+   * that pino logs alone cannot surface to alert rules.
+   */
+  webhookDispatchRecoveryReplay(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_dispatch_recovery_replay_total',
+      'Webhook dispatcher recovered from a mid-flight crash (processor_events row existed but processedAt was NULL)',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
+   * F5R2-SF-3 — `confirm_payment.give_up_phase_b_mark_processed_failed_total`
+   * — fires when the auto-refund give-up branch's Phase B
+   * `markProcessedIfPresent` throws. The give-up path returns ok to
+   * break Stripe's 72h retry storm; if the markProcessed write also
+   * fails, the audit row commits but `processor_events.processed_at`
+   * stays NULL → Stripe sees 200 (stops retrying) but DB says
+   * "never processed" → sweep cron does NOT catch it (sweep targets
+   * refund rows, not unprocessed events). Pino logs roll off in 30
+   * days; this counter anchors the long-term SLO so on-call gets
+   * paged on a stuck-row class that would otherwise survive forever.
+   * NO tenant label (give-up path is tenant-resolved but the metric
+   * pivots on overall give-up health, not per-tenant).
+   */
+  confirmPaymentGiveUpPhaseBMarkProcessedFailed(): void {
+    counter(
+      'payments_confirm_payment_give_up_phase_b_mark_processed_failed_total',
+      'Auto-refund give-up Phase B markProcessed throw — processor_events.processed_at left NULL',
+    ).add(1);
+  },
+
+  /**
+   * F5R3 CR-5 (2026-05-16) — fires whenever a webhook completes with
+   * the `auto_refund_given_up` outcome (R2-TY-A added the outcome
+   * variant; the metric was missing). Pivots on chronic Stripe outage
+   * during stale-invoice recovery: >0 in 24h = page ops to investigate
+   * the underlying issue. Distinct from the Phase B FAILURE counter
+   * above, which only fires when post-give-up markProcessed throws.
+   */
+  autoRefundGivenUpCount(tenantId: string): void {
+    counter(
+      'payments_auto_refund_given_up_total',
+      'Stale-invoice recovery gave up after 48h — Stripe-side outage class',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * F5R3 CR-6 (2026-05-16) — fires when the stale-refund Phase B
+   * markProcessed catch swallows. Pre-fix only `logger?.warn` fired
+   * (optional — undefined logger in tests = silent). Sibling to
+   * `confirmPaymentGiveUpPhaseBMarkProcessedFailed` for the
+   * stale-refund SUCCESS variant of the same Phase B race.
+   */
+  confirmPaymentStaleRefundPhaseBMarkFailed(): void {
+    counter(
+      'payments_confirm_payment_stale_refund_phase_b_mark_failed_total',
+      'Stale-refund Phase B markProcessed throw — processor_events.processed_at left NULL',
+    ).add(1);
+  },
+
+  /**
+   * F5R3 CR-7 (2026-05-16) — fires inside `issueRefund`'s
+   * finaliseFailedRefund double-fault catch. Money already moved
+   * (Stripe + F4 CN succeeded), local row stuck pending, sweep cron
+   * is the recovery — alert on >0 over 1h so ops can intervene
+   * before the next sweep (12h cadence).
+   */
+  refundFinaliseDoubleFault(tenantId: string): void {
+    counter(
+      'payments_refund_finalise_double_fault_total',
+      'issueRefund Phase B + finaliseFailedRefund both threw — money moved, local row stuck pending',
+    ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * F5R2-SF-4 / SF-5 — `use_case_audit_emit_failed_total{event_type}`
+   * — fires when an Application-layer `audit.emit(null, ...)` call
+   * throws (read-path probe / give-up forensic / cancel attempt
+   * failed / cross-tenant-probe). The route-side `webhookRejectAudit
+   * Failed` covers webhook-reject paths only; this counter covers the
+   * 11+ use-case-side `null`-tx audit emits. Without it, a chronic
+   * audit-rail outage silently drops the 5/10y forensic compliance
+   * trail because the adapter currently logs+swallows on probe paths.
+   * SRE alert on `> 0 over 5 min` matching the webhookRejectAudit
+   * Failed pattern. NO tenant label (audit-rail outages are tenant-
+   * agnostic infra failures).
+   */
+  useCaseAuditEmitFailed(eventType: string): void {
+    counter(
+      'payments_use_case_audit_emit_failed_total',
+      'Application-layer audit.emit(null, …) threw — forensic 5/10y compliance row may be lost',
+    ).add(1, { event_type: eventType });
+  },
+
+  /**
+   * F5R2-SF-7 — `f4_bridge_unknown_error_shape_total{bridge_op}` —
+   * fires when `summariseF4Error` falls through to its fallback path
+   * (the F4 error variant has no recognised `code`/`kind`/`detail`/
+   * `reason` field). The fallback degrades the F4 error to a generic
+   * `{code:'f4_error', detail:'unknown_f4_error_shape (...)'}` which
+   * the dispatcher then classifies as PERMANENT (because
+   * `'bridge_error'` IS in the permanent set) → Stripe stops retrying
+   * + customer's payment row is `succeeded` while F4 invoice may
+   * still be `issued`. Dedicated counter so SRE can page on this
+   * specific class instead of seeing it as just another generic
+   * `bridge_error`. The `bridge_op` label distinguishes
+   * markPaidFromProcessor vs issueCreditNoteFromRefund call sites.
+   */
+  f4BridgeUnknownErrorShape(bridgeOp: string): void {
+    counter(
+      'payments_f4_bridge_unknown_error_shape_total',
+      'summariseF4Error fell through to unknown-shape fallback — F4 error variant unrecognised',
+    ).add(1, { bridge_op: bridgeOp });
+  },
+
+  /**
+   * `payments_gateway_boundary_amount_brand_failed_total{operation}` —
+   * F5R3v3 H-2/H-5 counter (2026-05-16). The Stripe→Domain `asSatang`
+   * brand check (or the upstream `Number.isFinite/>=0` guard)
+   * rejected a money field that just round-tripped through Stripe.
+   * Class of cause: SDK drift, fuzz, partial-refund response edge.
+   * SRE pages on a non-zero rate — typically a Stripe API-version
+   * mismatch or a recently-introduced metadata-causing partial-refund
+   * scenario. The `operation` label distinguishes call sites
+   * (currently: `refund_create`). Pre-fix the comment promised "Log
+   * + counter so SREs see API drift" but no counter actually fired.
+   */
+  gatewayBoundaryAmountBrandFailed(operation: string): void {
+    counter(
+      'payments_gateway_boundary_amount_brand_failed_total',
+      'Stripe response money field failed asSatang brand check at gateway boundary',
+    ).add(1, { operation });
   },
 
   /**
@@ -2371,6 +2626,872 @@ export const renewalsMetrics = {
         'renewals_escalation_task_audit_emit_failed_total',
         'F8 escalation task audit emit failed inside use-case tx (rolls back per Constitution VIII)',
       ).add(1, { tenant, event_type });
+    });
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// F6 EventCreate Integration — FR-036 metrics (Phase 3 minimum subset)
+//
+// `eventcreate_webhook_receipts_total` powers the R10 signature-rejection-
+// burst alert; `eventcreate_webhook_ingest_latency_ms` powers the
+// SC-003 p95 < 300ms SLO. Remaining FR-036 metrics (#3 match_rate_gauge,
+// #4 csv_import_duration, #5–7 quota/refund, #8 secret_rotation,
+// #9 ingest_disabled_gauge, #10 pseudonymisation_sweep, #11
+// idempotency_sweep) land in their respective feature phases.
+// ---------------------------------------------------------------------------
+
+export const eventcreateMetrics = {
+  /**
+   * FR-036 #1 — `eventcreate_webhook_receipts_total`.
+   * Counter labelled by tenant + signature_outcome + processing_outcome.
+   * Signature-rejection-burst alert (R10) fires on rate of
+   * `signature_outcome != 'verified'` per tenant. Processing-outcome
+   * dashboards track match-cascade health.
+   */
+  webhookReceiptsTotal(
+    tenantId: string,
+    signatureOutcome:
+      | 'verified'
+      | 'rejected_bad_sig'
+      | 'rejected_timestamp_skew'
+      | 'rejected_missing_header'
+      | 'rejected_malformed_timestamp'
+      // Pre-auth rejection (Content-Type / body-size / etc.) — distinct
+      // from HMAC signature failure so dashboards can discriminate
+      // misconfigured Zapier zaps from actual signature drift.
+      | 'rejected_pre_auth',
+    processingOutcome:
+      | 'matched_member_contact'
+      | 'matched_member_domain'
+      | 'matched_member_fuzzy'
+      | 'non_member'
+      | 'unmatched'
+      | 'duplicate'
+      | 'malformed'
+      | 'rolled_back'
+      | 'rate_limited'
+      | 'ingest_disabled'
+      | 'unauthorized'
+      | 'unsupported_media_type'
+      | 'tenant_not_found'
+      | 'short_circuited_test'
+      | 'n_a',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_receipts_total',
+        'F6 webhook delivery counter by signature + processing outcome (FR-036 #1)',
+      ).add(1, {
+        tenant: tenantId,
+        signature_outcome: signatureOutcome,
+        processing_outcome: processingOutcome,
+      });
+    });
+  },
+
+  /**
+   * FR-036 #2 — `eventcreate_webhook_ingest_latency_ms` histogram.
+   * SC-003 target: p95 < 300ms at design envelope. Captured by the
+   * use-case at line ~306 (`startedAtMs = Date.now()`) and emitted by
+   * the route after Result resolution (success or rolled_back).
+   */
+  ingestLatencyMs(tenantId: string, latencyMs: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_webhook_ingest_latency_ms',
+        'F6 webhook ingest end-to-end latency, SC-003 target p95 < 300ms (FR-036 #2)',
+        'ms',
+      ).record(latencyMs, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Body-size guard counter — surfaces DoS attempts that the body-size
+   * cap blocked. Operationally useful for alerting on unusual traffic
+   * patterns.
+   */
+  bodyOversizedTotal(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_body_oversized_total',
+        'F6 webhook body exceeded the 64 KiB size cap (DoS guard)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F6-specific Upstash fail-open counter. Emitted from
+   * `events-webhook-deps.ts` when the auth rate-limiter falls back to
+   * in-memory bucket. Mirrors `auth_redis_fallback_total` but with a
+   * tenant label so dashboards can filter the F6 surface.
+   */
+  rateLimitFallback(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_rate_limit_fallback_total',
+        'F6 rate-limit fell back to in-memory bucket (Upstash unreachable)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Strict-tx FR-037 dual-write fallback double-failure counter.
+   * Primary tx rolled back AND `emitRolledBackStandalone` fallback also
+   * failed → only stderr forensic trail remains. Pages on first
+   * occurrence (catastrophic audit-integrity loss).
+   */
+  auditFallbackDoubleFailure(tenantId: string, primaryStage: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_audit_fallback_double_failure_total',
+        'F6 primary tx rolled back AND audit fallback also failed (FR-037 catastrophic)',
+      ).add(1, { tenant: tenantId, primary_stage: primaryStage });
+    });
+  },
+
+  /**
+   * R6-W4 staff-review fix (2026-05-13) — FR-036 #11 (idempotency_sweep).
+   *
+   * `eventcreate_idempotency_sweep_rows_total` counter — emitted by the
+   * daily cron handler that purges expired rows from
+   * `eventcreate_idempotency_receipts` (TTL = 7d). Two labels:
+   *   - outcome=swept → rows deleted in the run
+   *   - outcome=skipped → rows skipped because TTL not yet expired
+   *
+   * Alert (defined in `docs/observability.md § 24`): `rate(swept) == 0
+   * for ≥2 consecutive days while table row count is growing` →
+   * stalled-sweep page. The counter is the SLI input; without it the
+   * alert is unimplementable.
+   *
+   * The cron handler that wires this counter ships in Phase 10 (T116).
+   * Counter declared now so it is reachable + dashboardable before the
+   * handler lands. Zero-emission counter is correctly absent from
+   * Prometheus output until first call — no observability noise pre-flag.
+   */
+  idempotencySweepRowsTotal(
+    tenantId: string,
+    outcome: 'swept' | 'skipped',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_idempotency_sweep_rows_total',
+        'F6 idempotency-receipt sweep counter — outcome=swept|skipped (FR-036 #11)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * Phase 10 T130 — `eventcreate_pii_pseudonymisation_sweep_rows_total`.
+   * Counter incremented by the daily retention-sweep cron handler
+   * (T114) per tenant + outcome. The sweep replaces email/name/company
+   * fields with deterministic salted SHA-256 hashes on rows where
+   * `match_type IN ('non_member','unmatched') AND
+   * pii_pseudonymised_at IS NULL AND registered_at < (now - 2y)`.
+   *
+   * Powers:
+   *   - SC-011 retention compliance dashboard
+   *   - FR-032 retention-sweep audit trail
+   *
+   * Labels:
+   *   - tenant: tenant slug
+   *   - outcome: 'pseudonymised' | 'skipped_not_eligible' | 'error'
+   *
+   * Emitted alongside the per-row `pii_pseudonymised` audit + the
+   * aggregate `pii_pseudonymisation_sweep_run` macro audit so dashboard
+   * + audit log + metric all reconcile.
+   *
+   * Counter declared in Phase 10 Wave 4 (observability gap-fill) so it
+   * is reachable + dashboardable BEFORE the cron handler ships in
+   * Wave 2 (T113+T114). Zero-emission counter is correctly absent
+   * from Prometheus output until first call — no noise pre-handler.
+   */
+  pseudonymisationSweepRowsTotal(
+    tenantId: string,
+    outcome: 'pseudonymised' | 'skipped_not_eligible' | 'error',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_pii_pseudonymisation_sweep_rows_total',
+        'F6 PII pseudonymisation retention sweep counter — outcome=pseudonymised|skipped_not_eligible|error (FR-032 / SC-011)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * Phase 10 T126 — `eventcreate_match_rate_gauge`.
+   * Rolling 30-day per-tenant match rate (fraction of webhook
+   * deliveries that resolve to a known F3 member). Refreshed hourly
+   * by `recompute-match-rate` cron handler at
+   * `/api/internal/observability/recompute-match-rate`.
+   *
+   * Formula: `(member_contact + member_domain + member_fuzzy) /
+   *           total_resolved` over the last 30 days per tenant.
+   *
+   * Range: [0.0, 1.0]. SC-002 target: ≥ 0.70 after 30 days post-
+   * flag-flip + sustained F3 member onboarding.
+   *
+   * Powers:
+   *   - SC-002 success-criterion dashboard
+   *   - `f6_match_rate_degradation` alert (drop below 0.50 for 24h)
+   *   - Runbook `f6-match-rate-degradation-triage.md`
+   */
+  matchRateGauge(tenantId: string, value: number): void {
+    // R8.W / Staff R3 R049 — reverted R043 `safeMetric` wrap. This is
+    // an asymmetric call site: the SOLE caller is the
+    // `/api/internal/observability/recompute-match-rate` cron handler,
+    // which catches the per-tenant throw and pushes it into
+    // `errors[]`. cron-job.org dashboards alert on `errors.length > 0`.
+    // `safeMetric` swallows the throw + console.warns → coordinator
+    // sees green → SLO-F6-005 (match-rate freshness) silently degrades.
+    // The other ~80 `safeMetric` call sites are non-coordinator
+    // contexts where convention-parity makes sense; this one is the
+    // exception. Direct `observeGauge` so a real OTel emit failure
+    // surfaces to cron-job.org as an alertable error.
+    observeGauge(
+      'eventcreate_match_rate_gauge',
+      'F6 rolling 30-day per-tenant match rate (fraction in [0.0, 1.0]) — SC-002',
+      { tenant: tenantId },
+      Math.max(0, Math.min(1, value)),
+    );
+  },
+
+  /**
+   * FR-036 #8 — `eventcreate_webhook_secret_rotated_total`.
+   * Counter incremented every time a tenant admin successfully rotates
+   * the webhook secret (FR-008). Per-tenant labelled. Powers the
+   * "secret-rotation operational procedure" runbook + dashboards
+   * tracking key-rotation hygiene.
+   *
+   * Emitted by `runRotateWebhookSecret` composition adapter after
+   * the use-case returns `Result.ok` (post-tx commit so the metric
+   * never overcounts on rollback).
+   */
+  webhookSecretRotated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_secret_rotated_total',
+        'F6 admin-initiated webhook secret rotations, per tenant (FR-036 #8)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Round 3 H3 (2026-05-13) — generate counterpart of
+   * `webhookSecretRotated`. Powers the same dashboard-truth invariant:
+   * the gauge fires when the secret row commits to the DB, regardless
+   * of whether the audit trail emit succeeded — operators must SEE the
+   * audit-orphan row that an `audit_emit_failed` result leaves behind,
+   * not infer it from a `pino.fatal` line that may rotate within
+   * minutes in busy production logs.
+   *
+   * Emitted by `runGenerateWebhookSecret` composition adapter when
+   * `result.ok` OR `result.error.kind === 'audit_emit_failed'` (the
+   * row IS in the DB in both cases). Round 2 SF-H2 established this
+   * pattern for rotate; Round 3 H3 brings generate to parity.
+   */
+  webhookSecretGenerated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_secret_generated_total',
+        'F6 admin-initiated webhook secret generations, per tenant (Round 3 H3 — dashboard-truth on audit-emit failure)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * FR-036 #9 — `eventcreate_ingest_disabled_tenant` gauge.
+   * Async gauge: 1 when the tenant has `enabled=false` on the
+   * `tenant_webhook_configs` row (kill-switch ACTIVATED — webhook
+   * receiver returns 503), 0 when `enabled=true`. Powers the
+   * "ingest-disabled tenant detected" alert per `docs/observability.md`
+   * § 24.
+   *
+   * Emitted by `runDisableIngest` composition adapter immediately
+   * after a successful state change. Idempotent: re-setting the same
+   * value at every disable/enable toggle is the intended pattern.
+   */
+  ingestDisabledTenant(tenantId: string, enabled: boolean): void {
+    observeGauge(
+      'eventcreate_ingest_disabled_tenant',
+      'F6 ingest-disabled gauge per tenant — 1=disabled (503), 0=enabled (FR-036 #9)',
+      { tenant: tenantId },
+      enabled ? 0 : 1,
+    );
+  },
+
+  /**
+   * Phase 5 review-fix W-07 (2026-05-13) — test-webhook invocation
+   * counter. Increment every time the admin presses "Test webhook"
+   * regardless of outcome (per-tenant labelled, with `outcome` label
+   * for `success`/`failure`). Powers the "test-webhook usage" panel
+   * + correlates with `webhook_test_invoked` audit events so the
+   * dashboard ratio (`audit count / metric count`) surfaces audit-
+   * emit drift.
+   *
+   * Emitted by the `runRunTestWebhook` composition adapter on BOTH
+   * the success path AND the use-case failure paths (config_missing,
+   * config_load_failed, network_error, etc.).
+   */
+  webhookTestInvoked(tenantId: string, outcome: 'success' | 'failure'): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_webhook_test_invoked_total',
+        'F6 admin-initiated test-webhook invocations, per tenant + outcome (Phase 5 review-fix W-07)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * Phase 6 staff-review-4 WARN-1 — quota OTel counters declared in
+   * `docs/observability.md § 24.1.4` as Phase 6 deliverables. Audit-log
+   * DB rows (`audit_log.event_type='quota_*'`) carry the same forensic
+   * data, but the OTel surface powers the chamber-admin dashboards +
+   * Grafana alerts for over-quota bursts and credit-back anomalies.
+   *
+   * Emission policy: counters fire from `emitMatchingQuotaMetric` in
+   * `pino-audit-port.ts` immediately after `insertAuditRow` returns
+   * a row id, scoped to the audit-event-type switch case.
+   *
+   * **R6 PERF-R6-02 corrected H3 caveat**: counter increments happen
+   * AFTER the row insert but BEFORE the surrounding tx commits. If the
+   * tx subsequently rolls back (FR-037 dual-write path), the audit row
+   * for that iteration is NOT persisted but the counter increment is
+   * NOT reversible. Counter drift on the unhappy path is bounded to
+   * `≤(N − 1)` phantom increments per archive failure where N is the
+   * number of registrations processed before the failing row. The
+   * `audit_log` table remains authoritative; these counters are
+   * informational. SREs investigating discrepancies between counter
+   * and row counts should treat the row count as truth.
+   *
+   * The fourth counter `eventcreate_quota_over_quota_warnings_total`
+   * is implied by the audit taxonomy + R10 over-quota alert and is
+   * declared here for completeness — `docs/observability.md § 24.1.4`
+   * lists it alongside the decrement counters.
+   */
+  quotaPartnershipDecremented(tenantId: string, planTier: string | null): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_partnership_decremented_total',
+        'F6 partnership-per-event quota decrement counter (Phase 6 WARN-1 — observability.md § 24.1.4)',
+      ).add(1, { tenant: tenantId, plan_tier: planTier ?? 'unknown' });
+    });
+  },
+
+  quotaCulturalDecremented(tenantId: string, planTier: string | null): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_cultural_decremented_total',
+        'F6 cultural-per-year quota decrement counter (Phase 6 WARN-1 — observability.md § 24.1.4)',
+      ).add(1, { tenant: tenantId, plan_tier: planTier ?? 'unknown' });
+    });
+  },
+
+  quotaCreditBack(
+    tenantId: string,
+    cause: 'refund' | 'archive' | 'relink',
+    scope: 'partnership' | 'cultural',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_credit_back_total',
+        'F6 quota credit-back counter labelled by cause (refund|archive|relink) × scope (partnership|cultural) (Phase 6 WARN-1 — observability.md § 24.1.4)',
+      ).add(1, { tenant: tenantId, cause, scope });
+    });
+  },
+
+  quotaOverQuotaWarning(
+    tenantId: string,
+    scope: 'partnership' | 'cultural',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_quota_over_quota_warnings_total',
+        'F6 over-quota arrival warning counter (Phase 6 WARN-1 — partner of `quota_over_quota_warning` audit event)',
+      ).add(1, { tenant: tenantId, scope });
+    });
+  },
+
+  /**
+   * R6 PERF-R6-05 closure — duration histogram for archive admin
+   * action. Powers SLO-F6-007 (admin archive p95 < 5s @ N=50 / < 12s @
+   * N=200). Emitted from `runArchiveEvent` composition adapter after
+   * Result resolution (success OR err). Useful for monitoring how
+   * archive latency scales with `registrationsAffected`.
+   */
+  archiveDurationMs(tenantId: string, latencyMs: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_archive_duration_ms',
+        'F6 admin archive operation duration (SLO-F6-007; PERF-R6-05 closure)',
+        'ms',
+      ).record(latencyMs, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R6 PERF-R6-05 closure — duration histogram for toggle-event-category
+   * admin action. Same SLO budget as archive. Emitted from
+   * `runToggleEventCategory` composition adapter after Result resolution.
+   */
+  toggleDurationMs(tenantId: string, latencyMs: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_toggle_duration_ms',
+        'F6 admin toggle-event-category operation duration (SLO-F6-007; PERF-R6-05 closure)',
+        'ms',
+      ).record(latencyMs, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * T095 Phase 7 — CSV import completion counter labelled by outcome.
+   * Mirrors webhook receipt counter shape; `outcome` discriminator
+   * captures the four `runImportCsv` result kinds.
+   */
+  csvImportCompleted(
+    tenantId: string,
+    // F6.1 (Feature 013 · T023) — extended discriminator includes the
+    // FR-019b safety-net outcome `event_mismatch_warning`, plus the
+    // pre-route-layer `event_not_selected` / `event_not_found` /
+    // `event_not_owned_by_tenant` (the route counts those before
+    // dispatch to the use-case for full outcome observability).
+    outcome:
+      | 'completed'
+      | 'invalid_header'
+      | 'timeout'
+      | 'unexpected_error'
+      | 'event_mismatch_warning'
+      | 'event_not_selected'
+      | 'event_not_found'
+      | 'event_not_owned_by_tenant',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_completed_total',
+        'F6 CSV import completion counter by outcome (research.md § F6 OTel inventory)',
+      ).add(1, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
+   * T095 Phase 7 — CSV import duration histogram (SC-006: 1k rows < 60s).
+   * Recorded at the route handler boundary so it includes parse +
+   * tx wall-clock for the full import.
+   */
+  csvImportDurationSeconds(tenantId: string, durationSeconds: number): void {
+    safeMetric(() => {
+      histogram(
+        'eventcreate_csv_import_duration_seconds',
+        'F6 CSV import end-to-end duration; SC-006 target 1k rows < 60s',
+        's',
+      ).record(durationSeconds, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * I1 (Round 1 — code-reviewer): dedicated histogram for the admin-
+   * manual createEvent path so its ~100ms samples don't pollute the
+   * CSV-import SLO histogram (SC-006 1k rows < 60s). Separate metric
+   * keeps p95 alerts on each path independent.
+   */
+  createEventDurationSeconds(tenantId: string, durationSeconds: number): void {
+    safeMetric(() => {
+      histogram(
+        'f6_create_event_duration_seconds',
+        'F6.1 admin-manual createEvent route end-to-end duration (T026)',
+        's',
+      ).record(durationSeconds, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * I2 (Round 1 — code-reviewer): rollback-trigger signal per spec
+   * § Rollback Plan + SC-008. Emitted ONCE per CSV import at parse-
+   * time after `parseStreamWithFormat` resolves the adapter mode.
+   * SRE alerts on:
+   *   `rate(eventcreate_csv_adapter_mode_detected_total{format="generic_csv"})`
+   * unexpectedly spiking — signal that EventCreate capitalization
+   * drifted and the adapter is silently falling through.
+   *
+   * Conversely an unexpected `eventcreate_csv` rate drop signals the
+   * feature flag should flip OFF (or EventCreate's export schema
+   * broke the header-presence check).
+   */
+  csvImportAdapterModeDetected(
+    tenantId: string,
+    format: 'eventcreate_csv' | 'generic_csv',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_adapter_mode_detected_total',
+        'F6.1 CSV adapter format detection counter by mode (FR-001 / Spec § Rollback Plan)',
+      ).add(1, { tenant: tenantId, format });
+    });
+  },
+
+  /**
+   * T051 (F6.1 · Feature 013 — Phase 6) — per-tenant error-CSV download
+   * counter. Emitted by `generateErrorCsvSignedUrl` ONLY on the success
+   * path (after the audit emit succeeds + before the signed URL is
+   * returned). Tracks Q4 "how often do admins download error CSVs?"
+   * for product-team review. Tagged with `tenant` so SREs can spot
+   * unexpected spikes (e.g., a single tenant downloading repeatedly
+   * suggests an admin-facing import-error pattern worth investigating).
+   */
+  csvErrorCsvDownloaded(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_downloaded_total',
+        'F6.1 error-CSV signed-URL download counter (Q4 admin access frequency)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * T095 Phase 7 — CSV-import Upstash fail-open counter. Emitted when
+   * the rate-limit check falls back to the process-local in-memory
+   * bucket (same fail-open semantics as `rateLimitFallback`).
+   */
+  csvImportRateLimitFallback(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_rate_limit_fallback_total',
+        'F6 CSV-import Upstash fail-open counter',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `createEvent` admin-manual rate-limit fail-open counter. Mirrors
+   * `csvImportRateLimitFallback` — fires when Upstash is unreachable
+   * and the 30/hr per-(tenant, actor) cap could not be enforced. SRE
+   * alerts on `rate > 0` because actors may have created arbitrarily
+   * many events during the outage window (post-incident review
+   * reconciles via audit log).
+   */
+  createEventRateLimitFallback(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_create_event_rate_limit_fallback_total',
+        'F6.1 createEvent Upstash fail-open counter',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * F6.1 safety-net fingerprint-query fail-open counter. The
+   * `findByFingerprintAcrossEvents` call is fail-open by design
+   * (FR-019b prioritises user-perceived success over preventing a
+   * re-upload across events). SRE alerts on `rate > 0` because every
+   * fail-open event means an admin may upload to the WRONG event
+   * without seeing the mismatch warning.
+   *
+   * `reason` discriminates between the Result.err path (`'result_err'`)
+   * and the thrown exception path (`'threw'`) so dashboards can break
+   * down by failure mode.
+   */
+  csvImportSafetyNetFallback(
+    tenantId: string,
+    reason: 'result_err' | 'threw',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_safety_net_fallback_total',
+        'F6.1 safety-net fingerprint-query fail-open counter (FR-019b)',
+      ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * Phase 7 review C-1/C-2 fix — `csv_import_row_failed` /
+   * `csv_import_completed` audit-emit failure counter. Fires when the
+   * audit emitter swallows an error (forensic-trail loss). Operators
+   * should alert on `rate > 0` because each event represents a row-
+   * level (or per-import) audit gap that no other surface can
+   * reconstruct.
+   */
+  csvImportAuditEmitFailed(
+    tenantId: string,
+    eventType:
+      | 'csv_import_completed'
+      | 'csv_import_row_failed'
+      | 'csv_import_event_mismatch_overridden'
+      | 'csv_import_row_state_changed'
+      | 'csv_import_row_cancelled_no_prior'
+      | 'csv_import_cross_tenant_probe'
+      | 'event_created',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_audit_emit_failed_total',
+        'F6 CSV-import audit-emit failure counter (forensic-trail gap)',
+      ).add(1, { tenant: tenantId, event_type: eventType });
+    });
+  },
+
+  /**
+   * R1 CR-8 (silent-failure-hunter) — fired when `maybeApplyStateChange`
+   * encounters an error in the receipt-duplicate state-change probe
+   * (RLS denial, serialisation failure, repo throw). Admin sees the
+   * row as `rowsAlreadyImported` (no visible failure); SRE alerts on
+   * `rate > 0` because state-change loss is a silent data-correctness
+   * regression on re-upload.
+   */
+  csvImportStateChangeFallback(
+    tenantId: string,
+    // R4-S8 (2026-05-18 /speckit-review Round 4 — won't-implement):
+    // The Round 4 type-design review suggested deriving this `reason`
+    // union from `FailureStage` (declared in
+    // `@/modules/events/application/ports/audit-port`) to prevent
+    // drift if FailureStage grows a new member. We do NOT derive
+    // because importing `FailureStage` here would create a
+    // `src/lib/` → `src/modules/` dependency that VIOLATES
+    // **Constitution Principle III (Clean Architecture)** — the lib
+    // layer must not depend on the modules layer. The explicit
+    // 9-literal union is architecturally correct; drift between
+    // FailureStage + this union is acceptable risk traded for layer
+    // boundaries.
+    reason:
+      // Pre-R2 reasons (kept for backward-compat with existing dashboards
+      // during F6.2 dashboard migration; pre-R2 probe surface still emits
+      // these from lookup_err / lookup_missing / update_err code-paths
+      // BEFORE the outer-catch is reached).
+      | 'lookup_err'
+      | 'lookup_missing'
+      | 'update_err'
+      | 'threw'
+      // R2-1 + S-7 (2026-05-18) — outer-catch re-throws every TxStageError
+      // stage so the savepoint rolls back atomically. Label is now the
+      // `FailureStage` literal so SRE can break down rollback causes.
+      // `audit_emit` is NOT in this union (per R3-D4): audit-emit
+      // failures route to the dedicated `csvImportAuditEmitFailed`
+      // counter instead, keeping the two SRE series disjoint.
+      // Cardinality stays bounded at 4 pre-R2 + 4 FailureStage + 1
+      // unknown = 9 label values.
+      | 'event_upsert'
+      | 'registration_insert'
+      | 'idempotency_receipt'
+      | 'quota_decrement'
+      | 'unknown',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_state_change_fallback_total',
+        'F6.1 state-change probe savepoint-rollback counter — labeled by FailureStage (post-R2-1). See docs/runbooks/f6-state-change-rollback.md.',
+      ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * R2-7 (2026-05-18 /speckit-review Round 2) — fired when `findById` on
+   * the events repo returns an err during the state-change quota gate.
+   * Previously folded into the "non-eligible event" branch (silently),
+   * masking transient DB-read errors as legitimate quota neutrality.
+   * SRE alerts on `rate > 0` because a DB-read err in this path means
+   * the savepoint commits a payment_status flip with zero quota effect,
+   * which only matters if the event was quota-eligible — operator must
+   * verify via the runbook.
+   */
+  csvImportEventLookupFailed(
+    tenantId: string,
+    scope: 'state_change_quota_gate',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_event_lookup_failed_total',
+        'F6.1 event lookup failure counter (state-change quota gate)',
+      ).add(1, { tenant: tenantId, scope });
+    });
+  },
+
+  /**
+   * F6.1 bug-fix 2026-05-18 — fired when the receipt-duplicate
+   * state-change probe finds no persisted registration AND the
+   * self-heal path deletes the orphan receipt + re-runs the row through
+   * `processAttendeeInTx` so the registration lands fresh. Orphan
+   * receipts arise from registrations deleted out-of-band (manual
+   * cleanup, PII erasure, dev teardown, pseudonymise sweep race).
+   * Sustained rate > 0 is operationally interesting but NOT an
+   * incident — admin's row is recovered, no data loss.
+   */
+  csvImportOrphanReceiptRecovered(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_orphan_receipt_recovered_total',
+        'F6.1 orphan-receipt self-heal counter (receipt deleted + row re-inserted)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R1 I-1 (silent-failure-hunter) — fired when the TTL-sweep cron
+   * deletes a blob successfully but fails to clear the DB column.
+   * Result: orphan blob_url pointer in DB (idempotent next-run retry
+   * cleans up; SRE alerts on sustained `rate > 0` indicating a
+   * persistent RLS / connection-pool issue).
+   */
+  csvErrorCsvSweepClearFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_sweep_clear_failed_total',
+        'F6.1 error-CSV sweep clearErrorCsvBlob failure counter',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R1 I-3 (silent-failure-hunter) — fired when `errorCsvStore.put`
+   * fails post-import-commit. `errorCsvAvailable` stays false; admin
+   * sees a greyed-out download button. SRE alerts on `rate > 0`
+   * indicating Blob outage or quota exhaustion.
+   *
+   * R2-I-4 (R2 — silent-failure-hunter): `reason` discriminator added
+   * so dashboards can break down by failure mode — Result.err
+   * (storage_error / blob_not_found) is operationally distinct from a
+   * thrown `await put(...)` network timeout.
+   */
+  csvErrorCsvUploadFailed(
+    tenantId: string,
+    reason: 'result_err' | 'threw',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_upload_failed_total',
+        'F6.1 error-CSV blob put failure counter (download unavailable for this import)',
+      ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * R1 I-2 (silent-failure-hunter) — fired when the unexpected
+   * top-level catch in `importCsv` swallows a parser exception. SRE
+   * alerts on `rate > 0` indicating parser regressions or unhandled
+   * malformed CSV shapes.
+   */
+  csvImportParserThrew(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_import_parser_threw_total',
+        'F6.1 importCsv top-level catch (unexpected parser exception)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R1 I-6 (silent-failure-hunter) — sweep cron returned success with
+   * zero rows swept because the bulk-scan step failed. SRE alerts on
+   * sustained rate >0 because cron-job.org cannot see the gap (200 OK
+   * masks the scan failure).
+   */
+  csvSweepScanFailed(): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_sweep_scan_failed_total',
+        'F6.1 sweep-error-csv-blobs bulk-scan failure (silent 200-OK trap)',
+      ).add(1, {});
+    });
+  },
+
+  /**
+   * F6 → F8 bridge query failure counter. Emitted from
+   * `drizzleEventAttendeesQuery` when the tenant-scoped tx throws.
+   * The adapter fails open (returns `[]`) per the F8 stub contract so
+   * the at-risk scorer doesn't crash the renewal batch — this counter
+   * is the only signal SRE sees. Alert on sustained rate > 0.
+   */
+  bridgeEventAttendeesQueryFailed(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_bridge_event_attendees_query_failed_total',
+        'F6 → F8 bridge query failed; adapter fell open to [] (silent fail-open trap)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * Cron coordinator failure counters. Pass via `gateCronBearerOrRespond({
+   * metricsCounter: () => eventcreateMetrics.cronAuditEmitFailed(route),
+   * rateLimitFallbackCounter: () => eventcreateMetrics.cronRedisFallback(route) })`
+   * on each F6 cron route. Alert rules can fire on sustained loss
+   * without parsing log strings (Constitution Principle I sub-clause 4).
+   */
+  cronAuditEmitFailed(route: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_cron_audit_emit_failed_total',
+        'F6 cron coordinator 401-path audit emit failed (cron_bearer_auth_rejected lost)',
+      ).add(1, { route });
+    });
+  },
+  cronRedisFallback(route: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_cron_redis_fallback_total',
+        'F6 cron coordinator rate-limit check fell back (Upstash unreachable)',
+      ).add(1, { route });
+    });
+  },
+
+  /**
+   * R3.4.2 / IMP-1 — match-resolution invariant violation counter.
+   * Emitted by `drizzleRegistrationsRepository.toAggregate` when
+   * `asMatchResolutionView` throws `MatchResolutionInvariantError`
+   * (read-time invariant). The migration 0136 CHECK constraint
+   * prevents the write-time path; a hit on this counter signals a
+   * regression (CHECK relaxed, RLS misconfig surfacing rows that
+   * violate, in-memory mutation).
+   *
+   * Alert spec: rate > 0 sustained ≥1 min → P1 page — DB CHECK
+   * regression suspected. See `docs/observability.md` § F6 alerts.
+   */
+  matchResolutionInvariantViolation(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_match_resolution_invariant_violation_total',
+        'event_registrations row violates match-resolution invariant at READ time (migration 0136 CHECK regression?)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R5.1 / Round 4 C-1 — grace-state invariant violation counter.
+   * Emitted by `drizzleTenantWebhookConfigRepository.toAggregate` +
+   * `events-webhook-deps.loadTenantWebhookConfig` when `asGraceState`
+   * throws `GraceStateInvariantError` (half-set pair at read time).
+   * Migration 0129 CHECK constraint prevents the write-time path; a
+   * hit on this counter signals a regression (CHECK relaxed, RLS
+   * surfacing rows that violate, manual UPDATE bypassing the app
+   * layer).
+   *
+   * Alert spec: rate > 0 sustained ≥1 min → P1 page — DB CHECK
+   * regression suspected. Mirrors the matchResolutionInvariantViolation
+   * pattern (both are read-time DB invariant tripwires).
+   */
+  graceStateInvariantViolation(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_grace_state_invariant_violation_total',
+        'tenant_webhook_configs row violates grace-pair invariant at READ time (migration 0129 CHECK regression?)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * R6.W / Round 5 staff-review R011 (T-11) closure — error-CSV
+   * download rate-limit hit counter. Wired on
+   * `/api/admin/events/import/{recordId}/error-csv` 429 path.
+   *
+   * Alert spec: rate > 5/min sustained ≥10 min → P3 page — possible
+   * compromised admin credential bulk-downloading attendee PII via the
+   * error-CSV surface. Cross-reference with admin auth session activity.
+   */
+  csvErrorCsvDownloadRateLimitExceeded(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'eventcreate_csv_error_csv_download_rate_limit_exceeded_total',
+        'F6.1 error-CSV download rate limit exceeded (20/hr per actor) — possible insider exfiltration attempt',
+      ).add(1, { tenant: tenantId });
     });
   },
 } as const;

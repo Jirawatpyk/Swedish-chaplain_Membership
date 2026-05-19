@@ -25,6 +25,7 @@
  * to exercise yet.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
@@ -93,7 +94,7 @@ async function seedTenantForIssuance(
       tenantId: tenant.ctx.slug,
       currencyCode: 'THB',
       vatRate: '0.0700',
-      registrationFeeSatang: 0n,
+      registrationFeeSatang: asSatang(0n),
       legalNameTh: 'ทดสอบ',
       legalNameEn: 'Test',
       taxId: '0000000000000',
@@ -149,7 +150,7 @@ async function insertDraft(
       descriptionTh: `ค่าสมาชิก ปี ${planYear}`,
       descriptionEn: `Membership ${planYear}`,
       unitPriceSatang: 1_000_000n,
-      totalSatang: 1_000_000n,
+      totalSatang: asSatang(1_000_000n),
       position: 1,
     });
   });
@@ -165,7 +166,7 @@ function makeIssueDeps(
     tenantId: tenant.ctx.slug,
     currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
-    registrationFeeSatang: 0n,
+    registrationFeeSatang: asSatang(0n),
     invoiceNumberPrefix: 'T',
     creditNoteNumberPrefix: 'TC',
     receiptNumberingMode: 'combined',
@@ -188,6 +189,8 @@ function makeIssueDeps(
       getForIssue: vi.fn(async () => settingsView),
       upsert: vi.fn(),
       withTx: vi.fn(async (_t, fn) => fn({})),
+      getForUpdateInTx: vi.fn(async () => null),
+      readSequencesInTx: vi.fn(async () => []),
     },
     memberIdentity: {
       getForIssue: vi.fn(async (_tx, _t, memberId) => ({
@@ -464,7 +467,6 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
   it('(g) Audit emit throws → rollback, no invoice issued, no seq consumed', async () => {
     const freshTenant = await createTestTenant('test-swecham');
     const freshSeed = await seedTenantForIssuance(freshTenant, user);
-    let propagatedAsThrow = false;
     try {
       const draftId = await insertDraft(
         freshTenant,
@@ -497,7 +499,6 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
       } catch (e) {
         // If the driver propagated the throw, the message must come
         // from our failing audit, not from an unrelated source.
-        propagatedAsThrow = true;
         expect(String(e)).toMatch(/audit_log/);
       }
 
@@ -523,9 +524,6 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
         expect(seqRows).toHaveLength(1);
         expect(seqRows[0]!.nextSequenceNumber).toBe(1);
       }
-      // Telemetry: record which path the driver took so regressions in
-      // error-propagation semantics are visible in test output.
-      void propagatedAsThrow;
     } finally {
       await freshTenant.cleanup().catch(() => {});
     }
@@ -595,20 +593,13 @@ describe('F4 Seq-number atomicity — T016 (live Neon)', () => {
     }
   }, 60_000);
 
-  // -------------------------------------------------------------------------
-  // (c) Post-commit Blob sweeper — DEFERRED to F4 backlog (post-MVP).
-  // The sweeper recovers orphan rows when DB commits but the matching
-  // Blob upload fails post-tx. No code path exists today.
-  // Converting `it.todo` → `it.skip` removes the ambient `1 todo` flag
-  // from CI summaries while keeping the future scenario discoverable.
-  // Re-enable when F4 sweeper ships.
-  // -------------------------------------------------------------------------
-  it.skip(
-    '(c) DB commit succeeds but Blob reconciliation sweep recovers orphans — sweeper unimplemented (F4 backlog)',
-    () => {
-      // No-op until the sweeper ships — see F4 retrospective § post-MVP polish.
-    },
-  );
+  // (c) Post-commit Blob sweeper covered at
+  //     `tests/integration/invoicing/receipt-pdf-reconcile-cron.test.ts`
+  //     (FEATURE_F5_ASYNC_RECEIPT_PDF path; re-enqueue + dedupe +
+  //     permanent-failure audit + stuck-pending sweep + atomicity).
+  //     Sync-issue paths (issue-invoice + issue-credit-note) keep
+  //     Blob upload INSIDE the tx — failed upload rolls back at (b)
+  //     above. F5R5 M-3 trim of the prior F5R3v4 history block.
 
   // -------------------------------------------------------------------------
   // (perf) 50-writer load variant — gated by RUN_PERF=1.

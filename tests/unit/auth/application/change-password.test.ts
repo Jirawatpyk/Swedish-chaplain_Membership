@@ -34,7 +34,7 @@ vi.mock('@/modules/auth/application/password-policy', () => ({
 import { changePassword } from '@/modules/auth/application/change-password';
 import type { ChangePasswordDeps } from '@/modules/auth/application/change-password';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import { asUserId, asEmailAddress, asPasswordHash, asSessionId } from '@/modules/auth/domain/branded';
+import { asUserId, asEmailAddress, asPasswordHash, asSessionToken } from '@/modules/auth/domain/branded';
 import type { Session } from '@/modules/auth/domain/session';
 import { checkPasswordPolicy, weakPasswordMetricBucket } from '@/modules/auth/application/password-policy';
 import { authMetrics } from '@/lib/metrics';
@@ -45,8 +45,8 @@ import { authMetrics } from '@/lib/metrics';
 
 const NOW = new Date('2026-04-17T12:00:00Z');
 const USER_ID = asUserId('user-chpw-001');
-const OLD_SESSION_ID = asSessionId('old-sess-001');
-const NEW_SESSION_ID = asSessionId('new-sess-002');
+const OLD_SESSION_ID = asSessionToken('old-sess-001');
+const NEW_SESSION_ID = asSessionToken('new-sess-002');
 const PASS_HASH = asPasswordHash('$argon2id$v=19$stored-hash');
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash');
 
@@ -107,7 +107,14 @@ function makeDeps(overrides: Partial<ChangePasswordDeps> = {}): ChangePasswordDe
       hash: vi.fn().mockResolvedValue(NEW_HASH),
     } as unknown as ChangePasswordDeps['hasher'],
     limiter: {
-      check: vi.fn().mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
+      // B2 — peek default success; check default success (only invoked
+      // on wrong-current branch).
+      peek: vi
+        .fn()
+        .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
+      check: vi
+        .fn()
+        .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
     } as unknown as ChangePasswordDeps['limiter'],
     checkPolicy: checkPasswordPolicy,
     now: () => NOW,
@@ -127,11 +134,14 @@ describe('changePassword use case', () => {
     vi.mocked(weakPasswordMetricBucket).mockReturnValue(null);
   });
 
-  // ── Rate limiting ──────────────────────────────────────────────────────────
-  it('returns rate-limited when the per-user limiter is exhausted', async () => {
+  // ── Rate limiting (B2 — peek-then-consume) ──────────────────────────────
+  it('returns rate-limited when the per-user limiter peek is exhausted', async () => {
     const deps = makeDeps({
       limiter: {
-        check: vi.fn().mockResolvedValue({ success: false, reset: Date.now() + 10_000 }),
+        peek: vi
+          .fn()
+          .mockResolvedValue({ success: false, reset: Date.now() + 10_000 }),
+        check: vi.fn(),
       } as unknown as ChangePasswordDeps['limiter'],
     });
     const result = await changePassword(BASE_INPUT, deps);
@@ -142,12 +152,18 @@ describe('changePassword use case', () => {
         expect(result.error.retryAfterSeconds).toBeGreaterThanOrEqual(1);
       }
     }
+    // peek-only — check() (the consuming op) must NOT fire when peek
+    // already rejected.
+    expect(deps.limiter.check).not.toHaveBeenCalled();
   });
 
   it('uses minimum of 1 second for retryAfterSeconds when reset is in the past', async () => {
     const deps = makeDeps({
       limiter: {
-        check: vi.fn().mockResolvedValue({ success: false, reset: Date.now() - 500 }),
+        peek: vi
+          .fn()
+          .mockResolvedValue({ success: false, reset: Date.now() - 500 }),
+        check: vi.fn(),
       } as unknown as ChangePasswordDeps['limiter'],
     });
     const result = await changePassword(BASE_INPUT, deps);
@@ -155,6 +171,30 @@ describe('changePassword use case', () => {
     if (!result.ok && result.error.code === 'rate-limited') {
       expect(result.error.retryAfterSeconds).toBe(1);
     }
+  });
+
+  // B2 — success path must NOT consume the rate-limit bucket.
+  it('does NOT call limiter.check() on the happy path (success leaves bucket untouched)', async () => {
+    const deps = makeDeps();
+    const result = await changePassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(true);
+    expect(deps.limiter.peek).toHaveBeenCalledTimes(1);
+    expect(deps.limiter.check).not.toHaveBeenCalled();
+  });
+
+  // B2 — wrong-current consumes the rate-limit bucket.
+  it('calls limiter.check() exactly once on the wrong-current branch', async () => {
+    const deps = makeDeps({
+      hasher: {
+        verify: vi.fn().mockResolvedValue(false),
+        hash: vi.fn().mockResolvedValue(NEW_HASH),
+      } as unknown as ChangePasswordDeps['hasher'],
+    });
+    const result = await changePassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('wrong-current-password');
+    expect(deps.limiter.peek).toHaveBeenCalledTimes(1);
+    expect(deps.limiter.check).toHaveBeenCalledTimes(1);
   });
 
   // ── User not found / no password hash ─────────────────────────────────────
@@ -306,6 +346,84 @@ describe('changePassword use case', () => {
       (c) => (c[0] as { eventType: string }).eventType,
     );
     expect(auditCalls).not.toContain('concurrent_sessions_revoked');
+  });
+
+  // ── N1 (Round 3): MalformedHashError branch ─────────────────────────────
+  // When the stored hash is corrupted, change-password MUST:
+  //   1. NOT consume the rate-limit bucket (peek already passed; this
+  //      is not a wrong-current event)
+  //   2. NOT increment any failed-count (change-password has no
+  //      failed-count, but limiter.check is the equivalent)
+  //   3. Emit `password_malformed_hash_detected` audit (operator signal)
+  //   4. Return `wrong-current-password` (UX consistent with sign-in's
+  //      invalid-credentials — user can use /forgot-password to fix)
+  // Pre-F3 the throw bubbled to the route's B3 catch → opaque 500 +
+  // zero audit trail.
+  it('MalformedHashError: skips lockout + emits dedicated audit + returns wrong-current', async () => {
+    const { MalformedHashError } = await import(
+      '@/modules/auth/infrastructure/password/argon2-hasher'
+    );
+    const auditSpy = vi.fn().mockResolvedValue(undefined);
+    const checkSpy = vi.fn().mockResolvedValue({
+      success: true,
+      reset: Date.now() + 900_000,
+    });
+    const peekSpy = vi.fn().mockResolvedValue({
+      success: true,
+      reset: Date.now() + 900_000,
+    });
+    const deps = makeDeps({
+      hasher: {
+        verify: vi.fn().mockRejectedValue(
+          new MalformedHashError(new Error('argon2: invalid encoded hash')),
+        ),
+        hash: vi.fn(),
+      } as unknown as ChangePasswordDeps['hasher'],
+      audit: { append: auditSpy } as unknown as ChangePasswordDeps['audit'],
+      limiter: {
+        peek: peekSpy,
+        check: checkSpy,
+      } as unknown as ChangePasswordDeps['limiter'],
+    });
+
+    const result = await changePassword(BASE_INPUT, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('wrong-current-password');
+
+    // peek ran (gate), check did NOT (bucket only debits on real
+    // wrong-current, not on DB-corruption malformed-hash)
+    expect(peekSpy).toHaveBeenCalledTimes(1);
+    expect(checkSpy).not.toHaveBeenCalled();
+
+    // Dedicated audit event emitted
+    expect(auditSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'password_malformed_hash_detected',
+        actorUserId: USER_ID,
+        targetUserId: USER_ID,
+        // S2 (Round 4) — pin parity with the O6 sign-in test:
+        // operators that alert on `summary LIKE '%malformed%'`
+        // expect the substring to appear here too.
+        summary: expect.stringContaining('malformed'),
+      }),
+    );
+  });
+
+  it('MalformedHashError: re-throws non-malformed verify errors', async () => {
+    const deps = makeDeps({
+      hasher: {
+        verify: vi
+          .fn()
+          .mockRejectedValue(new Error('argon2: native module crashed')),
+        hash: vi.fn(),
+      } as unknown as ChangePasswordDeps['hasher'],
+    });
+
+    await expect(changePassword(BASE_INPUT, deps)).rejects.toThrow(
+      'argon2: native module crashed',
+    );
   });
 
   // ── Correct wiring of calls ────────────────────────────────────────────────

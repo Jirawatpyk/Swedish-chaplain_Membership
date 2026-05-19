@@ -17,13 +17,14 @@
  * context, which F2 US5 AS2 acknowledged from the start ("invoice
  * VAT is frozen in F4 at issuance time").
  */
+import type { Satang } from '@/lib/money';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import type { VatRate } from '../../domain/value-objects/vat-rate';
 
 export interface TenantTaxPolicy {
   readonly currencyCode: string; // ISO 4217
   readonly vatRate: VatRate;
-  readonly registrationFeeSatang: bigint;
+  readonly registrationFeeSatang: Satang;
 }
 
 export interface GetTenantTaxPolicyDeps {

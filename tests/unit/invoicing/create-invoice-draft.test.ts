@@ -3,6 +3,7 @@
  * and US1 AS2 (pro-rate) against spec acceptance scenarios.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { createInvoiceDraft } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
 import type { CreateInvoiceDraftDeps } from '@/modules/invoicing/application/use-cases/create-invoice-draft';
 import type { Invoice } from '@/modules/invoicing/domain/invoice';
@@ -17,7 +18,7 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
     tenantId: 'test-swecham',
     currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
-    registrationFeeSatang: 500000n, // 5,000 THB
+    registrationFeeSatang: asSatang(500000n), // 5,000 THB
     invoiceNumberPrefix: 'SC',
     creditNoteNumberPrefix: 'CN',
     receiptNumberingMode: 'combined',
@@ -214,7 +215,7 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
   describe('US1 AS1 — registration-fee line for new members', () => {
     it('new member (registrationFeePaid=false) → gets 2 lines', async () => {
       const deps = makeDeps(
-        makeSettings({ registrationFeeSatang: 500000n }), // 5,000 THB
+        makeSettings({ registrationFeeSatang: asSatang(500000n) }), // 5,000 THB
         makeMember({ registrationFeePaid: false }),
         1_600_000n,
       );
@@ -230,7 +231,7 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
 
     it('returning member (registrationFeePaid=true) → only 1 line (membership)', async () => {
       const deps = makeDeps(
-        makeSettings({ registrationFeeSatang: 500000n }),
+        makeSettings({ registrationFeeSatang: asSatang(500000n) }),
         makeMember({ registrationFeePaid: true }),
         1_600_000n,
       );
@@ -243,7 +244,7 @@ describe('createInvoiceDraft — US1 AS1 + AS2 spec verification', () => {
 
     it('tenant without registration fee configured (0 satang) → no reg line even for new member', async () => {
       const deps = makeDeps(
-        makeSettings({ registrationFeeSatang: 0n }),
+        makeSettings({ registrationFeeSatang: asSatang(0n) }),
         makeMember({ registrationFeePaid: false }),
         1_600_000n,
       );

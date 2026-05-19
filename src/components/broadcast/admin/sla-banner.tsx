@@ -59,8 +59,15 @@ export async function SlaBanner({
         <span aria-hidden="true">·</span>
         <span>{t('p95Rolling30d', { hours: fmt(stats.p95TimeToDecisionHours) })}</span>
       </div>
+      {/* D-banner-1 UX hardening — removed `aria-live="polite"` on
+          this inner pill. When severity=red the outer wrapper already
+          has `role="alert"` and auto-announces the entire region; an
+          inner polite region would either duplicate the announcement
+          or fight the alert priority. For green/amber the value is
+          server-derived per page-load (cached 5 min via
+          `unstable_cache`) and never updates client-side, so a live
+          region would never fire — pure noise to assistive tech. */}
       <span
-        aria-live="polite"
         className={cn(
           'ml-auto rounded-full px-2 py-0.5 text-xs font-semibold',
           stats.bannerSeverity === 'green' && 'bg-emerald-200/60 dark:bg-emerald-900/40',

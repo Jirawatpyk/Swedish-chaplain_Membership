@@ -1,0 +1,293 @@
+/**
+ * F6 Infrastructure composition root.
+ *
+ * Wires the Drizzle adapter factories + the pino audit emitter into the
+ * port-shaped dependencies that Application use-cases consume. Mirrors
+ * F5's `src/modules/payments/infrastructure/di.ts` precedent.
+ *
+ * Application layer MUST NOT import from here (Constitution Principle
+ * III). Composition flows: barrel → infrastructure/di → adapter
+ * implementations → port interfaces (in application/ports/).
+ *
+ * Route handlers + tests import the `make*Deps` factories from the
+ * `@/modules/events` barrel (which re-exports from this file).
+ *
+ * Two factories are exposed:
+ *   - `makeIngestWebhookAttendeeDeps()` — full ingest pipeline with
+ *     tx-bound Drizzle adapters + dual-write fallback emitters.
+ *   - `makeStandaloneAuditDeps()` — minimal surface for callers (route
+ *     signature-reject path, ops scripts) that only need
+ *     `emitStandalone`. Avoids waste-instantiating the full Drizzle
+ *     adapter stack on the hot rejection path AND prevents future
+ *     contributors from mistakenly invoking `runInTenantTx` /
+ *     `emitRolledBackStandalone` from a context where they shouldn't.
+ *
+ * Naming glossary (Deps field → Port method delegation):
+ *   - `runInTenantTx`              → (composes runInTenant + makePinoAuditPort(tx))
+ *   - `emitRolledBackStandalone`   → `emitRolledBack`  (the `Standalone`
+ *                                      suffix marks the dummy-executor
+ *                                      wrap — port method writes via
+ *                                      root `db.transaction`)
+ *   - `emitStandalone`             → `emitStandalone`  (identity name —
+ *                                      port method is already
+ *                                      standalone-tx; deps wrapper is
+ *                                      a thin pass-through with the
+ *                                      same loud-dummy guard)
+ */
+import { asTenantContext } from '@/modules/tenants';
+import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import type { AuditEventId } from '@/modules/auth';
+import type {
+  IngestWebhookAttendeeDeps,
+  TxScopedPorts,
+} from '../application/use-cases/ingest-webhook-attendee';
+import type {
+  ImportCsvDeps,
+  ImportCsvTxScopedPorts,
+} from '../application/use-cases/import-csv';
+import type {
+  F6AuditEntry,
+  F6AuditEventType,
+  AuditEmitError,
+} from '../application/ports/audit-port';
+import type { Result } from '@/lib/result';
+import { makeDrizzleEventsRepository } from './drizzle-events-repository';
+import { makeDrizzleRegistrationsRepository } from './drizzle-registrations-repository';
+import { makeDrizzleIdempotencyStore } from './drizzle-idempotency-store';
+import { makeDrizzleAttendeeMatcher } from './drizzle-attendee-matcher';
+import { makePinoAuditPort } from './pino-audit-port';
+import { makeDrizzleQuotaAccountingAdapter } from './drizzle-quota-accounting-adapter';
+import { makeDrizzleAdvisoryLockAcquirer } from './drizzle-advisory-lock-acquirer';
+import { streamingCsvImporter } from './streaming-csv-importer';
+import { makeDrizzleCsvImportRecordsRepository } from './drizzle-csv-import-records-repo';
+import { vercelBlobErrorCsvStore } from './vercel-blob-error-csv-store';
+
+/**
+ * Minimal deps for callers that only need standalone-tx audit
+ * emission (e.g., route signature-reject path before the ingest
+ * use-case runs).
+ */
+export interface StandaloneAuditDeps {
+  readonly emitStandalone: <T extends F6AuditEventType>(
+    entry: F6AuditEntry<T>,
+  ) => Promise<Result<AuditEventId, AuditEmitError>>;
+}
+
+export function makeStandaloneAuditDeps(): StandaloneAuditDeps {
+  return {
+    emitStandalone: async (entry) => {
+      const port = makeLoudDummyExecutorPort('emitStandalone');
+      return port.emitStandalone(entry);
+    },
+  };
+}
+
+/**
+ * Full deps for the F6 webhook ingest path. Wires:
+ *   - `runInTenantTx` → `@/lib/db.runInTenant` with all Drizzle adapter
+ *     instances bound to the inner tx + audit emitter bound to the
+ *     same tx so `audit.emit` commits atomically.
+ *   - `emitRolledBackStandalone` → a fresh `makePinoAuditPort(...)`
+ *     instance whose `emitRolledBack` method uses root `db.transaction`
+ *     internally for the FR-037 dual-write fallback.
+ *   - `emitStandalone` → same dummy-executor pattern for arbitrary
+ *     out-of-tx event emission.
+ *
+ * Tests override individual fields to inject failures.
+ */
+export function makeIngestWebhookAttendeeDeps(): IngestWebhookAttendeeDeps {
+  return {
+    runInTenantTx: async <T>(
+      tenantId: string,
+      fn: (ports: TxScopedPorts) => Promise<T>,
+    ): Promise<T> => {
+      const ctx = asTenantContext(tenantId);
+      return runInTenant(ctx, async (tx) => {
+        const registrationsRepo = makeDrizzleRegistrationsRepository(tx);
+        const ports: TxScopedPorts = {
+          eventsRepo: makeDrizzleEventsRepository(tx),
+          registrationsRepo,
+          idempotencyStore: makeDrizzleIdempotencyStore(tx),
+          attendeeMatcher: makeDrizzleAttendeeMatcher(tx),
+          audit: makePinoAuditPort(tx),
+          // Phase 6 T086 — F2 plan + F3 member + F6 consumed-count bridge.
+          // The adapter shares the tx-bound registrationsRepo so its
+          // consumed-count query joins through the same connection that
+          // holds the advisory lock.
+          quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+            tx,
+            ctx,
+            registrationsRepo,
+          ),
+          // Phase 6 T085 — Postgres tenant-scoped advisory lock acquirer.
+          advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(tx),
+        };
+        return fn(ports);
+      });
+    },
+
+    emitRolledBackStandalone: async (entry) => {
+      const port = makeLoudDummyExecutorPort('emitRolledBackStandalone');
+      return port.emitRolledBack(entry);
+    },
+
+    emitStandalone: async (entry) => {
+      const port = makeLoudDummyExecutorPort('emitStandalone');
+      return port.emitStandalone(entry);
+    },
+  };
+}
+
+/**
+ * Phase 7 — Full deps for the CSV bulk-import path. Wires:
+ *   - `csvImporter` → singleton `streamingCsvImporter` (hand-rolled
+ *     stateless parser; safe to share across requests).
+ *   - `runInTenantTx` → same factory as the webhook ingest pipeline,
+ *     extended with `idempotencyStore` (FR-029 row-level idempotency
+ *     via `source='eventcreate_csv'`).
+ *   - `emitStandalone` → loud-dummy executor pattern (per-import
+ *     `csv_import_completed` + per-row `csv_import_row_failed` use this).
+ *
+ * Reuses every adapter from the webhook composition root — FR-027
+ * webhook ↔ CSV equivalence is enforced by construction (both paths
+ * call `processAttendeeInTx` with the same tx-scoped port bag).
+ */
+export function makeImportCsvDeps(): ImportCsvDeps {
+  /**
+   * Build a fresh `ImportCsvTxScopedPorts` bundle bound to the
+   * supplied tx/savepoint handle. Used recursively: the outer batch tx
+   * gets `runRowInSavepoint` that opens nested Drizzle tx (SAVEPOINT),
+   * and the savepoint-scoped ports also expose `runRowInSavepoint`
+   * (nested SAVEPOINTs are valid Postgres but unused by the use-case).
+   */
+  function buildBatchPorts(
+    tx: TenantTx,
+    ctx: ReturnType<typeof asTenantContext>,
+    outerTx: TenantTx,
+  ): ImportCsvTxScopedPorts {
+    const registrationsRepo = makeDrizzleRegistrationsRepository(tx);
+    return {
+      eventsRepo: makeDrizzleEventsRepository(tx),
+      registrationsRepo,
+      idempotencyStore: makeDrizzleIdempotencyStore(tx),
+      attendeeMatcher: makeDrizzleAttendeeMatcher(tx),
+      audit: makePinoAuditPort(tx),
+      quotaAccountingPort: makeDrizzleQuotaAccountingAdapter(
+        tx,
+        ctx,
+        registrationsRepo,
+      ),
+      advisoryLockAcquirer: makeDrizzleAdvisoryLockAcquirer(tx),
+      runRowInSavepoint: async <R>(
+        rowFn: (spPorts: ImportCsvTxScopedPorts) => Promise<R>,
+      ) => {
+        // Drizzle's `tx.transaction(...)` creates a SAVEPOINT when
+        // called inside an existing transaction. SET LOCAL
+        // `app.current_tenant` propagates through savepoints per
+        // Postgres semantics, so RLS continues to enforce tenant
+        // isolation inside the savepoint scope.
+        return outerTx.transaction(async (spTx) => {
+          const spPorts = buildBatchPorts(spTx, ctx, outerTx);
+          return rowFn(spPorts);
+        });
+      },
+    };
+  }
+
+  return {
+    csvImporter: streamingCsvImporter,
+    runInTenantTx: async <T>(
+      tenantId: string,
+      fn: (ports: ImportCsvTxScopedPorts) => Promise<T>,
+    ): Promise<T> => {
+      const ctx = asTenantContext(tenantId);
+      return runInTenant(ctx, async (outerTx) => {
+        // Batch outer-tx ports — `runRowInSavepoint` opens nested
+        // Drizzle tx (SAVEPOINT) per row, scoped to this outer tx.
+        const batchPorts = buildBatchPorts(outerTx, ctx, outerTx);
+        return fn(batchPorts);
+      });
+    },
+    emitStandalone: async (entry) => {
+      const port = makeLoudDummyExecutorPort('emitStandalone');
+      return port.emitStandalone(entry);
+    },
+    // F6.1 (Feature 013 · T024) — fresh tenant-scoped tx for
+    // `csv_import_records` DML. Independent of the batch tx so a failed
+    // batch doesn't roll back the placeholder import-record.
+    withImportRecordsTx: async <T>(
+      tenantId: string,
+      fn: (repo: ReturnType<typeof makeDrizzleCsvImportRecordsRepository>) => Promise<T>,
+    ): Promise<T> => {
+      const ctx = asTenantContext(tenantId);
+      return runInTenant(ctx, async (tx) => {
+        const repo = makeDrizzleCsvImportRecordsRepository(tx);
+        return fn(repo);
+      });
+    },
+    // F6.1 (Feature 013 · T021) — Vercel Blob error-CSV store. The MVP
+    // adapter implements only `put`; `generateSignedUrl` + `delete`
+    // are deferred to US5.
+    errorCsvStore: vercelBlobErrorCsvStore,
+  };
+}
+
+/**
+ * Build a pino-audit-port wired with a Proxy `executor` that LOUDLY
+ * fails on ANY interaction (`get` / `has` / `set` / `apply`). Used by
+ * the standalone composition-root paths (`emitRolledBackStandalone` +
+ * `emitStandalone`) where the tx argument is intentionally unused
+ * because the port's standalone methods use root `db.transaction`
+ * internally.
+ *
+ * The Proxy is strictly tighter than a single `{ execute }` stub: any
+ * future patch to `pino-audit-port` that probes the executor for a
+ * new method (`'select' in executor`, `executor.foo = …`,
+ * `executor(args)`, …) gets the same fatal-log-plus-throw treatment
+ * — no silent `undefined`, no silent write-to-empty-object, no
+ * generic `TypeError`.
+ */
+function makeLoudDummyExecutorPort(caller: string) {
+  const loudFail = (op: string, prop: string | symbol): never => {
+    const safeProp = typeof prop === 'symbol' ? prop.toString() : String(prop);
+    logger.fatal(
+      {
+        event: 'composition_root_bug',
+        caller,
+        operation: op,
+        accessedProperty: safeProp,
+      },
+      `[F6] composition root invariant violated — dummy executor "${op}" on "${safeProp}"; only standalone-tx methods should reach this path`,
+    );
+    throw new Error(
+      `standalone ${caller}: dummy executor "${op}" on "${safeProp}" invoked unexpectedly — composition root bug`,
+    );
+  };
+  // Target MUST be a function for the `apply` + `construct` traps to
+  // actually fire (per ECMA-262 §10.5.13 [[Call]]: `IsCallable(target)`
+  // is checked BEFORE consulting the trap). With a `{}` target,
+  // `proxy(args)` would throw `TypeError: not a function` before
+  // reaching the trap — defeating the F-4 closure goal.
+  const loudExecutorTarget = function loudExecutorTarget(): never {
+    return loudFail('apply', '<call>');
+  } as unknown as object;
+  const loudDummy = new Proxy(loudExecutorTarget, {
+    get: (_t, prop) => {
+      // Skip Symbol probing (Promise inspector, util.inspect, etc.) —
+      // reserve loud failure for genuine string-keyed accesses.
+      if (typeof prop === 'symbol') return undefined;
+      return loudFail('get', prop);
+    },
+    has: (_t, prop) => loudFail('has', prop),
+    set: (_t, prop) => loudFail('set', prop),
+    apply: () => loudFail('apply', '<call>'),
+    construct: () => loudFail('construct', '<new>'),
+    deleteProperty: (_t, prop) => loudFail('deleteProperty', prop),
+    defineProperty: (_t, prop) => loudFail('defineProperty', prop),
+    ownKeys: () => loudFail('ownKeys', '<keys>'),
+    getOwnPropertyDescriptor: (_t, prop) =>
+      loudFail('getOwnPropertyDescriptor', prop),
+  });
+  return makePinoAuditPort(loudDummy as unknown as TenantTx);
+}

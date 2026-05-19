@@ -52,7 +52,7 @@ export async function markProcessedIfPresent(
 }
 
 interface UnknownIntentInput {
-  // R4 S-1: nullable to match `F5AuditEvent.tenantId: string | null`.
+  // nullable to match `F5AuditEvent.tenantId: string | null`.
   // Today's callers always pass a resolved tenantId, but the audit
   // contract permits null (pre-resolution probe path); keeping the
   // helper input aligned avoids a future type-trap.

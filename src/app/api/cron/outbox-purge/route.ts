@@ -26,17 +26,21 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { and, inArray, lt } from 'drizzle-orm';
 import { db } from '@/lib/db';
-/* eslint-disable no-restricted-imports --
- * Cron purge is operational infrastructure — same escape hatch as
- * /api/cron/outbox-dispatch + /api/cron/lockout-cleanup. The auth
- * module does not expose the notifications_outbox table through its
- * public barrel because it is a dispatcher-internal detail, not an
- * Application-layer port. */
+ 
 import { notificationsOutbox } from '@/modules/auth/infrastructure/db/schema';
-/* eslint-enable no-restricted-imports */
+ 
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
+
+// /code-review (2026-05-19 post-ship) — explicit Node runtime +
+// force-dynamic to match the project-wide cron-route convention
+// (precedent: PR #22 review for `dispatch-scheduled`). The route
+// uses `verifyCronBearer` (`node:crypto.timingSafeEqual`) +
+// Drizzle's `postgres-js` socket. Defends against future Vercel
+// default drift.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const RETENTION_DAYS = 90;
 

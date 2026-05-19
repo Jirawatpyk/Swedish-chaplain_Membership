@@ -17,6 +17,7 @@
  * — verified to remain green before this file landed.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { recordPayment } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { RecordPaymentDeps } from '@/modules/invoicing/application/use-cases/record-payment';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
@@ -111,7 +112,7 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
     tenantId: 'test-swecham',
     currencyCode: 'THB',
     vatRate: VatRate.ofUnsafe('0.0700'),
-    registrationFeeSatang: 500000n,
+    registrationFeeSatang: asSatang(500000n),
     invoiceNumberPrefix: 'SC',
     creditNoteNumberPrefix: 'CN',
     receiptNumberingMode: 'combined',
@@ -156,6 +157,8 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
       getForIssue: vi.fn(async () => settings),
       upsert: vi.fn(),
       withTx: vi.fn(async (_t, fn) => fn({})),
+      getForUpdateInTx: vi.fn(async () => null),
+      readSequencesInTx: vi.fn(async () => []),
     },
     sequenceAllocator: {
       allocateNext: vi.fn(async () => 1),

@@ -23,7 +23,7 @@ export interface OrderSummaryProps {
    * Reserved for future multi-currency tenants. The component currently
    * formats as THB only via `formatSatangThb` — when non-THB support
    * lands, branch on this value to select the appropriate formatter
-   * (audit 2026-04-25 finding #18).
+   *.
    */
   readonly currency?: string;
 }

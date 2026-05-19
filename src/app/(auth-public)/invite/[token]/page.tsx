@@ -15,11 +15,11 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 // invitation — pre-validation MUST NOT). The two reads below are
 // scoped to display decisions only and are the documented escape
 // hatch for page-level pre-validation.
-/* eslint-disable no-restricted-imports */
+ 
 import { tokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
-/* eslint-enable no-restricted-imports */
-import { isInvitationValid, asTokenId } from '@/modules/auth';
+ 
+import { isInvitationValid, asInvitationTokenId } from '@/modules/auth';
 
 /**
  * Invitation redemption page (T136) at URL `/invite/[token]`.
@@ -45,7 +45,9 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
   let email: string | null = null;
   let tokenDead = false;
   try {
-    const invitation = await tokenRepo.findInvitationById(asTokenId(token));
+    const invitation = await tokenRepo.findInvitationById(
+      asInvitationTokenId(token),
+    );
     if (!invitation || !isInvitationValid(invitation, new Date())) {
       tokenDead = true;
     } else {
@@ -61,7 +63,7 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-muted/20">
+    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
       <header className="flex items-center justify-between p-4">
         <div className="text-sm font-semibold tracking-tight">{process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}</div>
         <ThemeToggle />
@@ -70,9 +72,7 @@ export default async function InviteRedeemPage({ params }: InviteRedeemPageProps
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>
-              Thailand-Swedish Chamber of Commerce
-            </CardDescription>
+            <CardDescription>{t('cardDescription')}</CardDescription>
           </CardHeader>
           <CardContent>
             {tokenDead || !email ? (

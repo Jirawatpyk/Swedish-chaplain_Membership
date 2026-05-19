@@ -75,6 +75,12 @@ function makeIssuedInvoice(): Invoice {
       generatedByUserId: 'u',
     } as unknown as Invoice['pdf'],
     receiptPdf: null,
+    // R9-T10 — explicit fixture default. The use-case branches on
+    // `receiptPdfStatus !== null && !== 'rendered'` (member 425 gate);
+    // null short-circuits to "no async work pending". Spell it out so
+    // a future Invoice domain change to a non-null default surfaces
+    // in this fixture instead of silently breaking 9 assertions.
+    receiptPdfStatus: null,
     lines: [],
     createdAt: '2026-04-20T00:00:00Z',
     updatedAt: '2026-04-20T00:00:00Z',
@@ -109,7 +115,10 @@ function makeDeps(invoice: Invoice | null) {
         deleteDraft: vi.fn(),
         applyPayment: vi.fn(),
         applyDraftUpdate: vi.fn(),
-        lockForUpdate: vi.fn(async () => 'issued' as const),
+        // R9-T9 — read-only use-case never calls `lockForUpdate`; stub
+        // with bare `vi.fn()` to avoid the misleading "returns 'issued'"
+        // appearance and match the receipt-sibling fixture shape.
+        lockForUpdate: vi.fn(),
         applyCreditNoteRollup: vi.fn(),
         applyInvoicePdfRegeneration: vi.fn(),
       applyVoid: vi.fn(),
@@ -270,6 +279,178 @@ describe('getInvoicePdfSignedUrl — T166 receipt_pdf_pending gate', () => {
     });
     expect(result.ok).toBe(true);
     expect(blob.callsKeys.length).toBe(1);
+  });
+});
+
+// R8-M1-code — invoice_pdf_downloaded audit emit on successful download.
+// Closes the audit-coverage asymmetry where receipts logged downloads
+// but invoices didn't. 10y retention (tax-doc touch parity).
+describe('getInvoicePdfSignedUrl — invoice_pdf_downloaded audit (R8-M1)', () => {
+  it('admin success → emits invoice_pdf_downloaded with template_version + null actor_member_id', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, audit } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(auditCall?.eventType).toBe('invoice_pdf_downloaded');
+    const payload = auditCall?.payload as Record<string, unknown>;
+    expect(payload.invoice_id).toBe('i');
+    expect(payload.member_id).toBe('m-owner');
+    expect(payload.actor_member_id).toBeNull();
+    expect(payload.invoice_pdf_template_version).toBe(1);
+    expect(payload.actor_role).toBe('admin');
+    expect(payload.route).toBe('get-invoice-pdf-signed-url');
+  });
+
+  it('member success → emits invoice_pdf_downloaded with actor_member_id populated', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, audit } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    const payload = auditCall?.payload as Record<string, unknown>;
+    expect(payload.actor_member_id).toBe('m-owner');
+    expect(payload.actor_role).toBe('member');
+  });
+
+  it('drafts (no pdf, forbidden) → NO invoice_pdf_downloaded emitted', async () => {
+    const draft = { ...makeIssuedInvoice(), status: 'draft', pdf: null } as Invoice;
+    const { deps, audit } = makeDeps(draft);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  // R9-T3 — pin the audit-BEFORE-blob ordering contract. If audit.emit
+  // throws (Neon transient, retention column constraint, enum drift —
+  // the exact class of bug that surfaced as the 2026-05-15 migration
+  // 0147 gap), the use-case MUST reject WITHOUT issuing a signed URL.
+  // The forensic §87 trail is durable + load-bearing: we'd rather
+  // surface a 500 than serve a download whose access cannot be
+  // reconstructed from audit_log.
+  it('audit emit throws → blob.signDownloadUrl NOT called (forensic safety)', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, blob } = makeDeps(invoice);
+    const throwingAudit = vi.fn(async () => {
+      throw new Error('Neon transient: 22P02 invalid enum');
+    });
+    const depsWithThrow = {
+      ...deps,
+      audit: { emit: throwingAudit } as Parameters<typeof getInvoicePdfSignedUrl>[0]['audit'],
+    };
+    await expect(
+      getInvoicePdfSignedUrl(depsWithThrow, {
+        tenantId: 't',
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        invoiceId: 'i',
+      }),
+    ).rejects.toThrow(/Neon transient/);
+    expect(throwingAudit).toHaveBeenCalledTimes(1);
+    expect(blob.callsKeys).toHaveLength(0);
+  });
+});
+
+// R10-T1 — blob_missing branch coverage. R9 added a try/catch around
+// signDownloadUrl that maps BlobNotFoundError to a typed Result. These
+// 4 tests pin every branch of the regex `/not found|404|BlobNotFoundError/i`
+// + the rethrow path for non-404 errors + the non-Error toString fallback.
+// Required by Constitution Principle II "100% branch on security-critical
+// use-cases" — the PDF-download use-case is a file ACL gate (PII surface).
+describe('getInvoicePdfSignedUrl — blob_missing handling (R10-T1)', () => {
+  function makeBlobThrowingDeps(invoice: Invoice, err: unknown) {
+    const { deps } = makeDeps(invoice);
+    const throwingBlob = {
+      signDownloadUrl: async () => {
+        throw err;
+      },
+    } as unknown as Parameters<typeof getInvoicePdfSignedUrl>[0]['blob'];
+    return { ...deps, blob: throwingBlob };
+  }
+
+  it('BlobNotFoundError → returns blob_missing with key', async () => {
+    const invoice = makeIssuedInvoice();
+    const err = new Error('BlobNotFoundError: blob not found');
+    const deps = makeBlobThrowingDeps(invoice, err);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('blob_missing');
+      if (result.error.code === 'blob_missing') {
+        expect(result.error.key).toBe(STORED_BLOB_KEY);
+      }
+    }
+  });
+
+  it('Error message containing "404" → returns blob_missing', async () => {
+    const invoice = makeIssuedInvoice();
+    const err = new Error('Upstream 404 Not Found');
+    const deps = makeBlobThrowingDeps(invoice, err);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('blob_missing');
+  });
+
+  it('Generic Error (network) → rethrows (transient, not a miss)', async () => {
+    const invoice = makeIssuedInvoice();
+    const err = new Error('Connection refused');
+    const deps = makeBlobThrowingDeps(invoice, err);
+    await expect(
+      getInvoicePdfSignedUrl(deps, {
+        tenantId: 't',
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        invoiceId: 'i',
+      }),
+    ).rejects.toThrow(/Connection refused/);
+  });
+
+  it('Non-Error throw (string) → still resolves via String(e) regex', async () => {
+    const invoice = makeIssuedInvoice();
+    // Some upstream SDKs reject with bare strings — `String(e)` must
+    // handle this without itself throwing, and the regex must apply
+    // to the stringified form.
+    const deps = makeBlobThrowingDeps(invoice, 'string-style not found error');
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('blob_missing');
   });
 });
 

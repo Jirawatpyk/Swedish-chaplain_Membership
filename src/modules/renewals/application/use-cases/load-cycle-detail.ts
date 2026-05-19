@@ -25,6 +25,7 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { asSatang, type Satang } from '@/lib/money';
 import { logger } from '@/lib/logger';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import {
@@ -58,7 +59,7 @@ export interface LoadCycleDetailOutput {
     readonly invoiceId: string;
     readonly invoiceNumber: string | null;
     readonly status: string;
-    readonly totalSatang: bigint;
+    readonly totalSatang: Satang;
   } | null;
 }
 
@@ -140,7 +141,8 @@ export async function loadCycleDetail(
         invoiceId: cycle.linkedInvoiceId,
         invoiceNumber: inv.documentNumber as string | null,
         status: inv.status,
-        totalSatang: inv.total?.satang ?? 0n,
+        // F5R3 H-5 (2026-05-16) — brand at Money VO escape.
+        totalSatang: asSatang(inv.total?.satang ?? 0n),
       };
     } else {
       // F4 reported error — log loudly so operators see RLS / outage /
@@ -165,7 +167,8 @@ export async function loadCycleDetail(
         invoiceId: cycle.linkedInvoiceId,
         invoiceNumber: null,
         status: 'unknown',
-        totalSatang: 0n,
+        // F5R3 H-5 (2026-05-16) — brand the fallback zero.
+        totalSatang: asSatang(0n),
       };
     }
   }

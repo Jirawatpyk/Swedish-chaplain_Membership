@@ -1,5 +1,5 @@
 /**
- * T062 — Drizzle processor_events repo (F5).
+ * Drizzle processor_events repo (F5).
  *
  * Implements `ProcessorEventsRepo` (Application port). Backs the
  * webhook idempotency log (natural PK = Stripe event id).

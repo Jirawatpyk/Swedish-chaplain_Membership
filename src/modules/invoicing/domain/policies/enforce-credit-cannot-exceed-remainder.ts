@@ -10,18 +10,26 @@
  *
  * Pure TypeScript — no framework/ORM imports.
  */
+import { asSatangUnchecked, type UntrustedSatang } from '@/lib/money';
 import type { Money } from '@/modules/invoicing/domain/value-objects/money';
 
+/**
+ * F5R3v4 M-5 (2026-05-16) — err-payload fields are `UntrustedSatang`
+ * because they preserve potentially-corrupt diagnostic values via
+ * `asSatangUnchecked`. The type-level distinction prevents callers
+ * from silently passing these values into trusted arithmetic
+ * (`addSatang` / `subSatang` reject `UntrustedSatang` at compile).
+ */
 export type CreditRemainderError = {
   readonly kind: 'credit_exceeds_remainder';
-  /** Invoice total (satang, incl. VAT). */
-  readonly invoiceTotalSatang: bigint;
-  /** Sum of prior credit-note totals (satang). */
-  readonly alreadyCreditedSatang: bigint;
-  /** Proposed new credit-note total (satang). */
-  readonly proposedSatang: bigint;
-  /** Remaining creditable amount (satang). */
-  readonly remainingSatang: bigint;
+  /** Invoice total (satang, incl. VAT) — possibly corrupted. */
+  readonly invoiceTotalSatang: UntrustedSatang;
+  /** Sum of prior credit-note totals (satang) — possibly corrupted. */
+  readonly alreadyCreditedSatang: UntrustedSatang;
+  /** Proposed new credit-note total (satang) — possibly corrupted. */
+  readonly proposedSatang: UntrustedSatang;
+  /** Remaining creditable amount (satang), clamped to 0 on negative. */
+  readonly remainingSatang: UntrustedSatang;
 };
 
 export function enforceCreditCannotExceedRemainder(input: {
@@ -35,10 +43,17 @@ export function enforceCreditCannotExceedRemainder(input: {
       ok: false,
       error: {
         kind: 'credit_exceeds_remainder',
-        invoiceTotalSatang: input.invoiceTotal.satang,
-        alreadyCreditedSatang: input.alreadyCredited.satang,
-        proposedSatang: input.proposed.satang,
-        remainingSatang: remaining < 0n ? 0n : remaining,
+        // F5R3v2 B-1 (2026-05-16) — `asSatangUnchecked` for error-
+        // payload escape: surfacing money imbalance MUST NOT throw on
+        // the corrupted values it exists to record. The non-negative
+        // clamp on `remainingSatang` (lines below) was already
+        // defensive against the legitimate "fully credited" zero
+        // case; here we additionally allow corrupted negatives to flow
+        // through for diagnostic forensics.
+        invoiceTotalSatang: asSatangUnchecked(input.invoiceTotal.satang),
+        alreadyCreditedSatang: asSatangUnchecked(input.alreadyCredited.satang),
+        proposedSatang: asSatangUnchecked(input.proposed.satang),
+        remainingSatang: asSatangUnchecked(remaining < 0n ? 0n : remaining),
       },
     };
   }

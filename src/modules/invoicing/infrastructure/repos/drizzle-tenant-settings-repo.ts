@@ -1,24 +1,72 @@
 /**
- * T051 — Drizzle tenant_invoice_settings repo (F4).
+ * Drizzle tenant_invoice_settings repo (F4).
  *
  * Read path — `getForIssue` loads a snapshot for invoice issuance.
+ * `getForUpdateInTx` reads with SELECT FOR UPDATE for the settings
+ * mutation flow.
  *
- * Write path — R7-B2 adds `upsert` backing the US4 settings UI
- * (PATCH /api/tenant-invoice-settings). A single INSERT … ON CONFLICT
- * DO UPDATE patches only the columns explicitly present in the patch,
- * so partial edits don't overwrite unrelated fields with stale values.
+ * Write path — `upsert` backs the US4 settings UI
+ * (PATCH /api/tenant-invoice-settings). Branches on row existence:
+ * first-time bootstrap → plain INSERT (requires complete required
+ * fields); subsequent partial patch → plain UPDATE of only the
+ * caller-provided columns so unrelated fields stay stable.
  */
 import { eq, sql } from 'drizzle-orm';
+import { asSatang } from '@/lib/money';
 import type {
   TenantSettingsRepo,
   TenantInvoiceSettingsView,
   TenantInvoiceSettingsPatch,
+  TenantDocumentSequenceRow,
 } from '../../application/ports/tenant-settings-repo';
 import { VatRate } from '../../domain/value-objects/vat-rate';
 import { asProRatePolicyUnsafe } from '../../domain/value-objects/pro-rate-policy';
 import { asTenantContext } from '@/modules/tenants';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { tenantInvoiceSettings } from '../db';
+import { tenantDocumentSequences } from '../db/schema-tenant-document-sequences';
+
+/**
+ * Postgres lock-timeout-exceeded SQLSTATE. When `SET LOCAL
+ * lock_timeout` is in effect and a row/lock acquisition exceeds the
+ * window, PG raises this error code which propagates through Drizzle
+ * as a thrown exception with `.code === '55P03'`.
+ */
+const POSTGRES_LOCK_NOT_AVAILABLE = '55P03';
+
+/** Best-effort check for the Postgres lock-not-available SQLSTATE. */
+function isLockNotAvailable(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const maybeCode = (err as { code?: unknown }).code;
+  return maybeCode === POSTGRES_LOCK_NOT_AVAILABLE;
+}
+
+function rowToView(row: typeof tenantInvoiceSettings.$inferSelect): TenantInvoiceSettingsView {
+  return {
+    tenantId: row.tenantId,
+    currencyCode: row.currencyCode,
+    vatRate: VatRate.ofUnsafe(row.vatRate),
+    // F5R3 H-5 (2026-05-16) — brand at DB→Domain boundary.
+    registrationFeeSatang: asSatang(BigInt(row.registrationFeeSatang as unknown as string)),
+    invoiceNumberPrefix: row.invoiceNumberPrefix,
+    creditNoteNumberPrefix: row.creditNoteNumberPrefix,
+    receiptNumberingMode: row.receiptNumberingMode === 'separate' ? 'separate' : 'combined',
+    receiptNumberPrefix: row.receiptNumberPrefix ?? null,
+    fiscalYearStartMonth: row.fiscalYearStartMonth,
+    defaultNetDays: row.defaultNetDays,
+    proRatePolicy: asProRatePolicyUnsafe(row.proRatePolicy),
+    autoEmailEnabled: row.autoEmailEnabled,
+    identity: Object.freeze({
+      legal_name_th: row.legalNameTh,
+      legal_name_en: row.legalNameEn,
+      tax_id: row.taxId,
+      address_th: row.registeredAddressTh,
+      address_en: row.registeredAddressEn,
+      logo_blob_key: row.logoBlobKey,
+    }),
+  };
+}
 
 export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
   async getForIssue(tenantId: string): Promise<TenantInvoiceSettingsView | null> {
@@ -28,28 +76,116 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     );
     const row = rows[0];
     if (!row) return null;
+    return rowToView(row);
+  },
 
-    return {
-      tenantId: row.tenantId,
-      currencyCode: row.currencyCode,
-      vatRate: VatRate.ofUnsafe(row.vatRate),
-      registrationFeeSatang: BigInt(row.registrationFeeSatang as unknown as string),
-      invoiceNumberPrefix: row.invoiceNumberPrefix,
-      creditNoteNumberPrefix: row.creditNoteNumberPrefix,
-      receiptNumberingMode: row.receiptNumberingMode === 'separate' ? 'separate' : 'combined',
-      fiscalYearStartMonth: row.fiscalYearStartMonth,
-      defaultNetDays: row.defaultNetDays,
-      proRatePolicy: asProRatePolicyUnsafe(row.proRatePolicy),
-      autoEmailEnabled: row.autoEmailEnabled,
-      identity: Object.freeze({
-        legal_name_th: row.legalNameTh,
-        legal_name_en: row.legalNameEn,
-        tax_id: row.taxId,
-        address_th: row.registeredAddressTh,
-        address_en: row.registeredAddressEn,
-        logo_blob_key: row.logoBlobKey,
-      }),
-    };
+  async getForUpdateInTx(
+    txUnknown: unknown,
+    tenantId: string,
+  ): Promise<TenantInvoiceSettingsView | null> {
+    // `SELECT … FOR UPDATE` on the tenant settings row serialises
+    // concurrent admin saves against the subsequent upsert (two
+    // admins flipping a prefix simultaneously would otherwise write
+    // inconsistent §87 forensic audits — P1 reads INV, P2 reads INV,
+    // P1 writes AAA, P2 writes BBB → P2's "old=INV → new=BBB" audit
+    // misses the intermediate state). Caller MUST already be inside
+    // `runInTenant` (RLS context set) + pass the same `tx` handle
+    // they'll feed to `upsert(..., tx)`.
+    //
+    // `SET LOCAL lock_timeout = 5000` bounds the FOR UPDATE wait so
+    // a stuck holder (slow PDF preview, paused tab) doesn't block
+    // the second admin until Vercel function-timeout drops the
+    // connection uncleanly. The `SET LOCAL` is intentionally an
+    // override — this is a security-critical section + 5s is the
+    // engineered budget; whatever value an upstream caller set, ours
+    // wins so the timeout is predictable.
+    const tx = txUnknown as TenantTx;
+    await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
+    try {
+      const rows = await tx
+        .select()
+        .from(tenantInvoiceSettings)
+        .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+        .for('update')
+        .limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      return rowToView(row);
+    } catch (err) {
+      // Surface stuck-lock to operators — without this, LockNotAvailable
+      // would propagate up as a generic 500 toast and we'd lose the
+      // "concurrent save contention" diagnostic.
+      if (isLockNotAvailable(err)) {
+        logger.warn(
+          { tenantId, op: 'getForUpdateInTx', timeoutMs: 5000 },
+          '[tenant-invoice-settings] lock_timeout exceeded on FOR UPDATE — rolling back tx',
+        );
+      }
+      throw err;
+    }
+  },
+
+  async readSequencesInTx(
+    txUnknown: unknown,
+    tenantId: string,
+  ): Promise<readonly TenantDocumentSequenceRow[]> {
+    // Surface every `tenant_document_sequences` row for the §87
+    // forensic-trail audit emit. Returns [] for a tenant that has
+    // never issued any document.
+    //
+    // `.for('share')` coordinates with `SequentialNumberAllocator`
+    // (FOR UPDATE on the same rows inside its own tx). Without
+    // SHARE, a settings prefix-flip happening mid-issuance could
+    // snapshot a stale `next_sequence_number` and write an audit row
+    // whose `last_sequence_number` does not match the final on-disk
+    // value once the allocator commits. SHARE+UPDATE block each
+    // other but SHARE+SHARE do not — two prefix flips can still race
+    // against each other (acceptable; the outer settings-row FOR
+    // UPDATE (getForUpdateInTx) already serialises them).
+    //
+    // Explicit `ORDER BY (documentType, fiscalYear)` makes the audit
+    // payload's `last_sequences` array deterministic across runs.
+    // Heap order would cause RD forensic-diff tooling to see spurious
+    // changes when comparing two logically-equivalent audit rows.
+    const tx = txUnknown as TenantTx;
+    // Bound the FOR SHARE wait to 5s so a stuck allocator (abnormally
+    // slow PDF render holding FOR UPDATE) does not hang this
+    // connection indefinitely on Vercel Serverless — function-timeout
+    // would otherwise drop the connection without a clean rollback.
+    // 5s comfortably exceeds normal allocator contention (≤2-3s
+    // end-to-end) and raises a
+    // `LockNotAvailable` exception that the surrounding `withTx`
+    // rolls back atomically.
+    await tx.execute(sql`SET LOCAL lock_timeout = '5000'`);
+    try {
+      const rows = await tx
+        .select({
+          documentType: tenantDocumentSequences.documentType,
+          fiscalYear: tenantDocumentSequences.fiscalYear,
+          nextSequenceNumber: tenantDocumentSequences.nextSequenceNumber,
+        })
+        .from(tenantDocumentSequences)
+        .where(eq(tenantDocumentSequences.tenantId, tenantId))
+        .orderBy(tenantDocumentSequences.documentType, tenantDocumentSequences.fiscalYear)
+        .for('share');
+      return rows.map((r) => ({
+        documentType: r.documentType as 'invoice' | 'receipt' | 'credit_note',
+        fiscalYear: r.fiscalYear,
+        nextSequenceNumber: r.nextSequenceNumber,
+      }));
+    } catch (err) {
+      // Surface "stuck allocator" so operators can diagnose §87
+      // prefix-flip contention against concurrent issuance. Without
+      // this log a LockNotAvailable propagates up as a generic 500
+      // toast and the operational fingerprint is lost.
+      if (isLockNotAvailable(err)) {
+        logger.warn(
+          { tenantId, op: 'readSequencesInTx', timeoutMs: 5000 },
+          '[tenant-document-sequences] lock_timeout exceeded on FOR SHARE — allocator still holds FOR UPDATE; rolling back prefix-flip tx',
+        );
+      }
+      throw err;
+    }
   },
 
   async withTx<T>(tenantId: string, fn: (tx: unknown) => Promise<T>): Promise<T> {
@@ -66,13 +202,21 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     tx?: unknown,
   ): Promise<void> {
     const ctx = asTenantContext(tenantId);
-    // Build the patch row — only caller-provided fields are included in
-    // the UPDATE SET. Required fields for INSERT are supplied only if
-    // the caller provided them; on first-time insert, missing required
-    // fields surface as a DB NOT NULL violation (caller validates
-    // upstream).
+    // R10-BUG-1 fix — when a row already exists for this tenant, do a
+    // plain UPDATE (not INSERT … ON CONFLICT DO UPDATE). Postgres
+    // evaluates the proposed INSERT-side row BEFORE the ON CONFLICT
+    // branch fires, so a partial-patch upsert (caller provides only a
+    // few columns) generated SQL `INSERT (…, vat_rate, …) VALUES (…,
+    // DEFAULT, …) ON CONFLICT DO UPDATE …` failed NOT NULL on
+    // vat_rate (NOT NULL with no DEFAULT) before reaching the ON
+    // CONFLICT clause. The pattern only succeeded on first-time
+    // bootstrap where the caller supplies every required field;
+    // subsequent partial updates (a prefix flip, an autoEmailEnabled
+    // toggle) hit the bug. Fix: SELECT-then-branch — if the row
+    // exists, UPDATE only the patched columns; if not, INSERT
+    // (requires complete required fields, as before).
+    const updateSet: Record<string, unknown> = { updatedAt: sql`now()` };
     const insertValues: Record<string, unknown> = { tenantId };
-    const updateValues: Record<string, unknown> = { updatedAt: sql`now()` };
     const copyFields: Array<[keyof TenantInvoiceSettingsPatch, string]> = [
       ['currencyCode', 'currencyCode'],
       ['vatRate', 'vatRate'],
@@ -85,6 +229,7 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
       ['invoiceNumberPrefix', 'invoiceNumberPrefix'],
       ['creditNoteNumberPrefix', 'creditNoteNumberPrefix'],
       ['receiptNumberingMode', 'receiptNumberingMode'],
+      ['receiptNumberPrefix', 'receiptNumberPrefix'],
       ['fiscalYearStartMonth', 'fiscalYearStartMonth'],
       ['defaultNetDays', 'defaultNetDays'],
       ['proRatePolicy', 'proRatePolicy'],
@@ -94,26 +239,42 @@ export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
     for (const [src, dst] of copyFields) {
       if (patch[src] !== undefined) {
         insertValues[dst] = patch[src];
-        updateValues[dst] = patch[src];
+        updateSet[dst] = patch[src];
       }
     }
 
-    // If caller passed a `tx`, reuse it (opened via `withTx` which
-    // already set `app.current_tenant` via `runInTenant`). Only open a
-    // fresh scope when no tx was provided.
-    const doInsert = (txHandle: TenantTx) =>
-      txHandle
+    const doWrite = async (txHandle: TenantTx) => {
+      // Probe for existing row. Caller MAY have already done a
+      // `getForUpdateInTx` upstream (within the same tx) — repeating
+      // the read is idempotent + cheap, and keeps the repo API
+      // independent of caller ordering.
+      const existing = await txHandle
+        .select({ tenantId: tenantInvoiceSettings.tenantId })
+        .from(tenantInvoiceSettings)
+        .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+        .limit(1);
+
+      if (existing.length > 0) {
+        // Row exists — plain UPDATE of patched columns only.
+        await txHandle
+          .update(tenantInvoiceSettings)
+          .set(updateSet)
+          .where(eq(tenantInvoiceSettings.tenantId, tenantId));
+        return;
+      }
+
+      // First-time bootstrap — INSERT requires full required fields;
+      // missing NOT NULL columns surface as a DB constraint violation
+      // (caller validates upstream).
+      await txHandle
         .insert(tenantInvoiceSettings)
-        .values(insertValues as typeof tenantInvoiceSettings.$inferInsert)
-        .onConflictDoUpdate({
-          target: tenantInvoiceSettings.tenantId,
-          set: updateValues,
-        });
+        .values(insertValues as typeof tenantInvoiceSettings.$inferInsert);
+    };
 
     if (tx !== undefined) {
-      await doInsert(tx as TenantTx);
+      await doWrite(tx as TenantTx);
       return;
     }
-    await runInTenant(ctx, doInsert);
+    await runInTenant(ctx, doWrite);
   },
 };

@@ -37,6 +37,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import {
+  addSatang,
+  asSatang,
+  asSatangUnchecked,
+  type UntrustedSatang,
+} from '@/lib/money';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
@@ -67,6 +73,7 @@ import { logger } from '@/lib/logger';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const issueCreditNoteSchema = z.object({
   tenantId: z.string().min(1),
@@ -94,11 +101,16 @@ export type IssueCreditNoteError =
   | { code: 'no_snapshot_on_invoice' }
   | { code: 'settings_missing' }
   | {
+      // F5R3v4 M-5 (2026-05-16) — fields are `UntrustedSatang`
+      // because they preserve corrupt diagnostic values (the err
+      // exists exactly to record over-credit + corruption cases).
+      // Type-distinct from `Satang` so arithmetic helpers reject
+      // silent folding at compile time.
       code: 'credit_exceeds_remainder';
-      invoiceTotalSatang: bigint;
-      alreadyCreditedSatang: bigint;
-      proposedSatang: bigint;
-      remainingSatang: bigint;
+      invoiceTotalSatang: UntrustedSatang;
+      alreadyCreditedSatang: UntrustedSatang;
+      proposedSatang: UntrustedSatang;
+      remainingSatang: UntrustedSatang;
     }
   | { code: 'pdf_render_failed'; reason: string }
   | { code: 'blob_upload_failed'; reason: string }
@@ -250,12 +262,19 @@ export async function issueCreditNote(
           },
           'issueCreditNote: vat calculation failed after remainder guard (unreachable — investigate)',
         );
+        // F5R3v2 B-1 — forensic err payload via `asSatangUnchecked`
+        // (see @/lib/money). Clamp negative remaining to 0n for the
+        // SC-013 invariant; raw corrupted values flow into the audit.
+        const remaining =
+          loaded.total.satang >= loaded.creditedTotal.satang
+            ? loaded.total.satang - loaded.creditedTotal.satang
+            : 0n;
         return err({
           code: 'credit_exceeds_remainder',
-          invoiceTotalSatang: loaded.total.satang,
-          alreadyCreditedSatang: loaded.creditedTotal.satang,
-          proposedSatang: proposed.satang,
-          remainingSatang: loaded.total.satang - loaded.creditedTotal.satang,
+          invoiceTotalSatang: asSatangUnchecked(loaded.total.satang),
+          alreadyCreditedSatang: asSatangUnchecked(loaded.creditedTotal.satang),
+          proposedSatang: asSatangUnchecked(proposed.satang),
+          remainingSatang: asSatangUnchecked(remaining),
         });
       }
       const { creditAmount, vat, total } = vatCalc.value;
@@ -306,6 +325,11 @@ export async function issueCreditNote(
       // G+H. Render CN PDF + upload to Blob (T126 shared helper).
       pendingRenderKind = 'credit_note';
       const blobKey = `invoicing/${input.tenantId}/${fy}/credit-note_${creditNoteId}_v${deps.currentTemplateVersion}.pdf`;
+      const tenantLogo = await loadTenantLogo(
+        deps.blob,
+        loaded.tenantIdentitySnapshot.logo_blob_key,
+        deps.currentTemplateVersion,
+      );
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
@@ -316,6 +340,7 @@ export async function issueCreditNote(
             issueDate,
             dueDate: null,
             tenant: loaded.tenantIdentitySnapshot,
+            tenantLogo,
             member: loaded.memberIdentitySnapshot,
             lines: [syntheticLine],
             // Money fields carry the credit-note's own amounts — the
@@ -348,9 +373,10 @@ export async function issueCreditNote(
           issueDate,
           issuedByUserId: input.actorUserId,
           reason: input.reason,
-          creditAmountSatang: creditAmount.satang,
-          vatSatang: vat.satang,
-          totalSatang: total.satang,
+          // F5R3 H-5 (2026-05-16) — brand at Money VO escape to port input.
+          creditAmountSatang: asSatang(creditAmount.satang),
+          vatSatang: asSatang(vat.satang),
+          totalSatang: asSatang(total.satang),
           tenantIdentitySnapshot: loaded.tenantIdentitySnapshot,
           memberIdentitySnapshot: loaded.memberIdentitySnapshot,
           pdf: {
@@ -376,8 +402,13 @@ export async function issueCreditNote(
       }
 
       // J. Rollup: bump credited_total_satang + flip invoice status.
-      const newCreditedTotal = loaded.creditedTotal.satang + total.satang;
-      const fullyCredited = newCreditedTotal === loaded.total.satang;
+      // F5R3 H-5 (2026-05-16) — branded arithmetic via addSatang
+      // preserves the Satang brand into the port input.
+      const newCreditedTotal = addSatang(
+        asSatang(loaded.creditedTotal.satang),
+        asSatang(total.satang),
+      );
+      const fullyCredited = newCreditedTotal === asSatang(loaded.total.satang);
       try {
         await deps.invoiceRepo.applyCreditNoteRollup(tx, {
           tenantId: input.tenantId,
@@ -435,6 +466,16 @@ export async function issueCreditNote(
         // (adds the credit-annotation overlay) so DB pdf_sha256
         // diverges from the original; without allowOverwrite the
         // adapter silently treats already-exists as success.
+        //
+        // Round-3 fix R3-H3 — re-load tenantLogo with the invoice's
+        // PINNED template version (could be v1). For v1 the helper
+        // returns null → logo suppressed → bytes stay byte-equivalent
+        // to the original (modulo the CREDITED overlay).
+        const annotationTenantLogo = await loadTenantLogo(
+          deps.blob,
+          loaded.tenantIdentitySnapshot.logo_blob_key,
+          loaded.pdf.templateVersion,
+        );
         pendingRenderKind = 'annotation';
         const rerendered = await renderAndUploadPdf(
           { pdfRender: deps.pdfRender, blob: deps.blob },
@@ -446,6 +487,7 @@ export async function issueCreditNote(
               issueDate: loaded.issueDate,
               dueDate: loaded.dueDate,
               tenant: loaded.tenantIdentitySnapshot,
+              tenantLogo: annotationTenantLogo,
               member: loaded.memberIdentitySnapshot,
               lines: loaded.lines,
               subtotal: loaded.subtotal,

@@ -36,6 +36,12 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       }
     }
   };
+  // P6 round-10 ui-design-specialist — bumped from h-7 (28px) to h-9
+  // (36px) to match the F4-era button standard documented in
+  // docs/ux-standards.md § 5. CopyButton sits inline next to copy-
+  // anchor text (member_id, email, tax_id) and was the only sub-36px
+  // affordance in the F3 detail header. The icon stays 14px (size-3.5)
+  // so the visual weight remains modest; the touch target grows.
   return (
     <Button
       type="button"
@@ -43,7 +49,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       size="sm"
       onClick={onCopy}
       aria-label={label}
-      className="h-7 px-2"
+      className="h-9 px-2"
     >
       <CopyIcon className="size-3.5" aria-hidden />
     </Button>

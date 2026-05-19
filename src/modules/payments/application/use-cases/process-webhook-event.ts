@@ -1,5 +1,5 @@
 /**
- * T056 — processWebhookEvent use-case (F5 / stripe-webhook.md § 3 steps 6–10).
+ * processWebhookEvent use-case (F5 / stripe-webhook.md § 3 steps 6–10).
  *
  * Route handler (Group C/F) owns steps 1–5 (raw body read, signature
  * verify, livemode check, api_version check) AND step 7 (tenant
@@ -28,7 +28,6 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import {
-  noopLogger,
   type AuditPort,
   type ClockPort,
   type InvoicingBridgePort,
@@ -42,9 +41,12 @@ import {
 } from '../ports';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
-import { confirmPayment, type ConfirmPaymentOutcome } from './confirm-payment';
-import { failPayment, type FailPaymentOutcome } from './fail-payment';
-import { handleCancelEvent, type HandleCancelEventOutcome } from './handle-cancel-event';
+// F5R3 MED-6 (2026-05-16) — outcome type imports dropped along with
+// the `extractInvoiceId` helper. The inlined `'invoiceId' in
+// result.value` narrowing only needs the use-case function imports.
+import { confirmPayment } from './confirm-payment';
+import { failPayment } from './fail-payment';
+import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -100,6 +102,16 @@ export type ProcessWebhookEventOutcome =
   | {
       readonly kind: 'auto_refunded_stale_invoice';
       readonly invoiceId: string;
+    }
+  // F5R2-TY-A — distinct outcome for the E9 give-up path. Pre-fix
+  // this kind fell through to the generic `processed` catch-all →
+  // ops dashboards saw it as successful dispatch, masking the
+  // "Stripe retry storm broken — operator must reconcile" signal
+  // that the audit row carries.
+  | {
+      readonly kind: 'auto_refund_given_up';
+      readonly dispatched: string;
+      readonly invoiceId: string;
     };
 
 /**
@@ -111,6 +123,32 @@ export type ProcessWebhookEventOutcome =
  *   - `unknown_event_type_threw` → default-branch withTx threw while
  *                                acknowledging an unrecognised event type
  */
+/**
+ * F5R1-IMP2 — set of sub-use-case error codes that the dispatcher
+ * classifies as `permanent`. Driven by code (not kind) because each
+ * sub-use-case Result.err encodes the recoverable/non-recoverable
+ * distinction in its code:
+ *   - `tenant_settings_missing` — admin must configure F5 in settings
+ *   - `bridge_error` — F4 invoice in unexpected state (admin fix)
+ *   - `invoice_not_found` — invoice deleted while payment was in flight
+ *   - `invoice_shape_invalid` — F4 schema drift (post-deploy fix)
+ *   - `invariant_*` — code bug that won't self-heal
+ *   - `payment_method_unsupported` — caller passed a method we don't accept
+ * Stripe will stop retrying on these (200 from webhook).
+ *
+ * Everything else (e.g. `processor_unavailable` for Stripe outage, db
+ * transient, generic dispatch_threw) stays `transient` — 500 from
+ * webhook → Stripe retries → eventual recovery when the outage clears.
+ */
+export const PERMANENT_SUB_USE_CASE_DETAILS: ReadonlySet<string> = new Set([
+  'tenant_settings_missing',
+  'bridge_error',
+  'invoice_not_found',
+  'invoice_shape_invalid',
+  'payment_method_unsupported',
+  'invariant_auto_refunded_missing_invoice_id',
+]);
+
 export type ProcessWebhookEventError = {
   readonly code: 'dispatch_failed';
   readonly kind:
@@ -119,7 +157,66 @@ export type ProcessWebhookEventError = {
     | 'unknown_event_type_threw';
   readonly eventType: string;
   readonly detail: string;
+  /**
+   * F5R1-IMP2 — retry semantics discriminator.
+   *
+   * `'transient'` → route returns 500; Stripe retries (up to 72h).
+   *   Use for: DB outage (Neon down), Stripe API outage (gateway
+   *   `retryable`), tenant-resolution-failed (rare race during
+   *   onboarding), generic dispatch throw.
+   *
+   * `'permanent'` → route returns 200 + emits a forensic
+   *   `webhook_dispatch_permanent_failure` audit row; Stripe stops
+   *   retrying. Use for: F4 bridge errors that cannot self-heal
+   *   (`tenant_settings_missing`, `invoice_shape_invalid`, F4
+   *   schema-drift errors), `unknown_event_type_threw` on an event
+   *   type we explicitly do not handle.
+   *
+   * Without this discriminator, every error returned 500 → Stripe
+   * retried for 72h on permanent classes → retry-storm and audit-log
+   * pollution. The retry queue draining cost is the same as
+   * webhook-signature-rejected drained: 4xx (or 2xx with forensic
+   * trail) tells Stripe to stop.
+   */
+  readonly permanence: 'transient' | 'permanent';
 };
+
+/**
+ * F5R1-IMP2 — classify a sub-use-case error code as permanent or
+ * transient for retry semantics. See `PERMANENT_SUB_USE_CASE_DETAILS`
+ * above for the permanent list.
+ */
+function categorisePermanence(detail: string): 'transient' | 'permanent' {
+  return PERMANENT_SUB_USE_CASE_DETAILS.has(detail) ? 'permanent' : 'transient';
+}
+
+/**
+ * F5R2-S7 — factory for `dispatch_failed` errors with
+ * `kind: 'sub_use_case_error'`. The 3 sub-use-case error sites
+ * (`payment_intent.succeeded` confirmPayment branch,
+ * `payment_intent.payment_failed` failPayment branch,
+ * `payment_intent.canceled` handleCancelEvent branch) had identical
+ * 5-line err({...}) blocks differing only in the `detail` value.
+ * Centralising:
+ *   - Removes the "forget categorisePermanence" bug class on a
+ *     future 4th sub-use-case branch.
+ *   - Single anchor point for `'sub_use_case_error'` literal —
+ *     dispatcher-error grep is more discoverable.
+ *   - `permanence` is derived from `detail` in one place; cannot
+ *     drift across call sites.
+ */
+function subUseCaseErr(
+  eventType: string,
+  detail: string,
+): ProcessWebhookEventError {
+  return {
+    code: 'dispatch_failed',
+    kind: 'sub_use_case_error',
+    eventType,
+    detail,
+    permanence: categorisePermanence(detail),
+  };
+}
 
 export interface ProcessWebhookEventDeps {
   readonly paymentsRepo: PaymentsRepo;
@@ -131,9 +228,12 @@ export interface ProcessWebhookEventDeps {
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /**
-   * Optional structured logger — defaults to `noopLogger` (silent) when
-   * absent so existing tests do not need to provide one. Composition
-   * root wires `paymentsLogger` (audit 2026-04-25 finding #5).
+   * Optional structured logger. Currently the dispatcher emits via the
+   * module-level `paymentsLogger` (see `route.ts`) and OTel spans; this
+   * deps slot is reserved for future structured callsites inside the
+   * dispatcher itself and for test doubles (`noopLogger` /
+   * `vi.fn()`-backed). Absent → no-op (field is `undefined`, no default
+   * substitution).
    */
   readonly logger?: LoggerPort;
   /**
@@ -181,19 +281,13 @@ function formatDispatchErrorDetail(e: unknown): string {
  * (e.g. `unknown_intent`) yield `undefined` so the dispatcher can
  * fall back to the broader revalidation path at the route layer.
  */
-function extractInvoiceId(
-  value:
-    | ConfirmPaymentOutcome
-    | FailPaymentOutcome
-    | HandleCancelEventOutcome,
-): string | undefined {
-  // Duck-type narrowing; FailPayment + HandleCancel outcome shapes
-  // never carry invoiceId in unit-test fixtures, so the false branch
-  // is exercised only via integration paths.
-  /* v8 ignore start */
-  return 'invoiceId' in value ? value.invoiceId : undefined;
-  /* v8 ignore stop */
-}
+// F5R3 MED-6 (2026-05-16) — `extractInvoiceId` helper removed.
+// The duck-type `'invoiceId' in value` narrowing was opaque and
+// triggered v8-ignore overhead because not every outcome variant
+// carries the field. Call sites now inline the same predicate
+// (`'invoiceId' in result.value ? result.value.invoiceId : undefined`)
+// — the reader sees the actual narrowing predicate at the use site
+// instead of jumping to a helper.
 
 export async function processWebhookEvent(
   deps: ProcessWebhookEventDeps,
@@ -231,7 +325,8 @@ export async function processWebhookEvent(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'webhook_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene; see confirm-payment.ts.
+          message: e instanceof Error ? e.constructor.name : 'webhook_threw',
         });
         throw e;
         /* v8 ignore stop */
@@ -294,6 +389,19 @@ async function processWebhookEventBody(
     // markProcessed at the tail will set processed_at. The dispatch
     // sub-use-cases are idempotent (lockForUpdate + canTransition
     // guards), so re-running them on the same payment row is safe.
+    //
+    // F5R1-E8 — emit a recovery-replay metric so SRE can detect
+    // chronic mid-flight crash patterns (Vercel function timeout
+    // mid-dispatch, OOM, OTel exporter back-pressure). The recovery
+    // is correct + safe, but pino logs alone do not surface to alert
+    // rules; this counter does.
+    //
+    // For `charge.refunded` events, the recovery replay will re-emit
+    // the audit row (out_of_band_refund_detected or refund_succeeded
+    // depending on branch) — forensic queries that aggregate these
+    // MUST group by `payload->>'processor_refund_id'` to dedupe
+    // (contract parity with the confirm-payment Phase B docstring).
+    paymentsMetrics.webhookDispatchRecoveryReplay(tenantId, event.type);
   }
 
   // Step 9 — dispatch. Structured allow-list ONLY (PCI guardian).
@@ -307,12 +415,18 @@ async function processWebhookEventBody(
   const { dataObject } = event;
 
   let outcome: ProcessWebhookEventOutcome;
-  // Tracks whether markProcessed was folded into the dispatch tx
-  // atomically (refunded / dispute / default branches). Sub-use-case
-  // branches (succeeded / failed / canceled) run a separate-tx mark
-  // at the tail. See Architect D-03 LOW closeout block below.
-  let markedProcessedAtomically = false;
-
+  // F5R1-S5 — flag + tail canary deleted. Every sub-use-case + every
+  // inline branch is contracted to fold markProcessed into its own
+  // withTx (confirm-payment.ts happy-path tail, fail-payment.ts
+  // terminal-and-happy paths, handle-cancel-event.ts happy /
+  // already-canceled / terminal paths, process-charge-refunded.ts
+  // withTx tail, refunded / dispute / default branches below). The
+  // previous defensive flag + canary tail block was documented
+  // "unreachable through input manipulation alone" and v8-ignored —
+  // it only fired on a code-bug regression that the sweep-stale-
+  // pending cron would have caught independently. ~80 lines removed.
+  // (R3 comment-rot fix: symbolic refs replace line numbers that
+  // rotted as R1+R2 grew the underlying files.)
   switch (event.type) {
     case 'payment_intent.succeeded': {
       const result = await confirmPayment(
@@ -345,51 +459,55 @@ async function processWebhookEventBody(
         },
       );
       if (!result.ok) {
-        return err<ProcessWebhookEventError>({
-          code: 'dispatch_failed',
-          kind: 'sub_use_case_error',
-          eventType: event.type,
-          detail: result.error.code,
-        });
+        return err(subUseCaseErr(event.type, result.error.code));
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` from the
       // sub-use-case outcome up to the route handler so it can fire a
       // surgical `revalidatePath('/portal/invoices/<id>')`. Outcome
       // kinds that DON'T carry invoiceId (e.g. `unknown_intent`)
       // produce undefined here — route falls back to broader pattern.
-      const confirmInvoiceId = extractInvoiceId(result.value);
+      const confirmInvoiceId = 'invoiceId' in result.value ? result.value.invoiceId : undefined;
       if (result.value.kind === 'auto_refunded_stale_invoice') {
         // R5 I4 (2026-04-25): `auto_refunded_stale_invoice` is only
         // ever emitted by confirmPayment AFTER it loaded the payment
         // row, so the outcome MUST carry invoiceId. If it doesn't,
         // that's a `confirmPayment` contract violation.
         //
-        // R5 review-round-3 I-NEW-1 (2026-04-25): convert from
-        // `throw new Error('invariant: ...')` to `return err()`.
-        // Throwing here bubbles to the route's outer try/catch → 500
-        // → Stripe retries the event every 1h × 72h chasing a code
-        // bug that won't fix itself. Return a structured
-        // `dispatch_failed` instead so the route 500-once + alerts
-        // ops via the existing `dispatchFailureKind` log channel,
-        // and Stripe gives up after the standard 3-retry-then-die
-        // window for non-2xx responses tagged
-        // `invariant_*`. Constitution Principle III: Application
-        // layer MUST return Result<T,E>, never throw.
+        // Returns a structured `dispatch_failed` permanent — route
+        // 200-acks Stripe (no retry storm) + alerts ops via the
+        // existing `dispatchFailureKind` log channel + the
+        // `webhookDispatchFailed` metric. Constitution Principle III:
+        // Application layer MUST return Result<T,E>, never throw.
         /* v8 ignore start — confirmPayment contract guarantees invoiceId
          * on auto_refunded_stale_invoice; defence-in-depth for post-
-         * compile contract drift (R5 review-round-3 I-NEW-1). */
+         * compile contract drift. */
         if (confirmInvoiceId === undefined) {
-          return err<ProcessWebhookEventError>({
-            code: 'dispatch_failed',
-            kind: 'sub_use_case_error',
-            eventType: event.type,
-            detail: 'invariant_auto_refunded_missing_invoice_id',
-          });
+          // F5R2-S7 — `invariant_auto_refunded_missing_invoice_id` is in
+          // PERMANENT_SUB_USE_CASE_DETAILS so `subUseCaseErr` derives
+          // permanence='permanent' automatically (same value as the
+          // pre-fix literal).
+          return err(
+            subUseCaseErr(event.type, 'invariant_auto_refunded_missing_invoice_id'),
+          );
         }
         /* v8 ignore stop */
         outcome = {
           kind: 'auto_refunded_stale_invoice',
           invoiceId: confirmInvoiceId,
+        };
+      } else if (result.value.kind === 'auto_refund_given_up') {
+        // F5R2-TY-A — distinct outcome for the E9 give-up path.
+        // Pre-fix this kind fell through to the generic `processed`
+        // catch-all → ops dashboards saw it as a successful
+        // dispatch, losing the "Stripe stopped retrying — operator
+        // must reconcile via Stripe Dashboard" signal that the
+        // forensic audit row carries. The route handler can now
+        // pivot on `outcome.kind === 'auto_refund_given_up'` if
+        // needed (e.g., for SRE alerting on chronic occurrences).
+        outcome = {
+          kind: 'auto_refund_given_up',
+          dispatched: envelope.type,
+          invoiceId: result.value.invoiceId,
         };
       } else {
         outcome = {
@@ -405,18 +523,6 @@ async function processWebhookEventBody(
       // typed against the outcome union so adding a new kind in
       // ConfirmPaymentOutcome forces a build error here if the dev
       // forgets to whitelist it (vs runtime canary log only).
-      const knownAtomicConfirmKinds = new Set<ConfirmPaymentOutcome['kind']>([
-        'processed',
-        'auto_refunded_stale_invoice',
-        'already_succeeded',
-        'unknown_intent',
-        // invoice_not_found short-circuit folds markProcessed into the
-        // same withTx as the row lock.
-        'invoice_not_found',
-      ]);
-      markedProcessedAtomically = knownAtomicConfirmKinds.has(
-        result.value.kind,
-      );
       break;
     }
 
@@ -439,29 +545,16 @@ async function processWebhookEventBody(
         },
       );
       if (!result.ok) {
-        return err<ProcessWebhookEventError>({
-          code: 'dispatch_failed',
-          kind: 'sub_use_case_error',
-          eventType: event.type,
-          detail: result.error.code,
-        });
+        return err(subUseCaseErr(event.type, result.error.code));
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
       // surgical revalidation in the route handler.
-      const failInvoiceId = extractInvoiceId(result.value);
+      const failInvoiceId = 'invoiceId' in result.value ? result.value.invoiceId : undefined;
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
         ...(failInvoiceId !== undefined && { invoiceId: failInvoiceId }),
       };
-      // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
-      // typed against FailPaymentOutcome.
-      const knownAtomicFailKinds = new Set<FailPaymentOutcome['kind']>([
-        'processed',
-        'unknown_intent',
-        'already_terminal',
-      ]);
-      markedProcessedAtomically = knownAtomicFailKinds.has(result.value.kind);
       break;
     }
 
@@ -483,34 +576,21 @@ async function processWebhookEventBody(
       );
       /* v8 ignore start -- R4 I-3 (2026-04-26): handleCancelEvent now ack's every error case as ok({kind:'already_canceled'}) to break Stripe's 24h retry loop on permanent mismatches. The err arm here is dead code preserved structurally so the dispatcher matches the other branches' shape; if a future handleCancelEvent revision reintroduces err returns, this guard prevents a silent fall-through to ok(outcome) with `outcome` undefined. */
       if (!result.ok) {
-        return err<ProcessWebhookEventError>({
-          code: 'dispatch_failed',
-          kind: 'sub_use_case_error',
-          eventType: event.type,
-          detail: result.error.code,
-        });
+        return err(subUseCaseErr(event.type, result.error.code));
       }
       /* v8 ignore stop */
       // R5 canonical fix (2026-04-25): forward `invoiceId`.
-      const cancelInvoiceId = extractInvoiceId(result.value);
+      const cancelInvoiceId = 'invoiceId' in result.value ? result.value.invoiceId : undefined;
       outcome = {
         kind: 'processed',
         dispatched: envelope.type,
         ...(cancelInvoiceId !== undefined && { invoiceId: cancelInvoiceId }),
       };
-      // Whitelist (audit 2026-04-26 round-2 self-review #R2-A2).
-      // typed against HandleCancelEventOutcome.
-      const knownAtomicCancelKinds = new Set<HandleCancelEventOutcome['kind']>([
-        'processed',
-        'unknown_intent',
-        'already_canceled',
-      ]);
-      markedProcessedAtomically = knownAtomicCancelKinds.has(result.value.kind);
       break;
     }
 
     case 'charge.refunded': {
-      // T130 (2026-04-27): extracted to `process-charge-refunded.ts` for
+      // extracted to `process-charge-refunded.ts` for
       // symmetry with confirm/fail/cancel branches. Behaviour-preserving:
       // dispatcher maps the use-case's `dispatch_failed` Result into this
       // branch's `dispatch_threw` error variant (matches the previous
@@ -523,6 +603,9 @@ async function processWebhookEventBody(
           audit: deps.audit,
           // review-20260428-102639.md W5 closure — clock is now required.
           clock: deps.clock,
+          // F5R3 SB-1 (2026-05-16) — propagate the dispatcher's logger
+          // so the parent_status_recovery race-warn lands in pino.
+          ...(deps.logger ? { logger: deps.logger } : {}),
         },
         {
           tenantId,
@@ -531,6 +614,13 @@ async function processWebhookEventBody(
           chargeId: dataObject.id,
           refundIds: dataObject.refundIds ?? [],
           amountSatang: dataObject.amountSatang ?? 0n,
+          // F5R3v3 H-4 (2026-05-16) — propagate the verifier's
+          // amount-projection-failed flag so the use-case can skip
+          // the mismatch comparison (existing > 0 vs default 0)
+          // that would otherwise trip on a single fuzzed event.
+          ...(dataObject.amountProjectionFailed
+            ? { amountProjectionFailed: true }
+            : {}),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin
            * one livemode value at a time. Cross-livemode coverage
            * lives in the contract tests for /api/webhooks/stripe. */
@@ -547,6 +637,17 @@ async function processWebhookEventBody(
           // internal ids. Use the class name only — caller logs it into
           // pino + audit downstream where leak risk is real.
           detail: formatDispatchErrorDetail(refundResult.error.cause),
+          // F5R2 — `formatDispatchErrorDetail` returns the error class
+          // name (e.g. `PostgresError`, `TypeError`), NOT a sub-use-
+          // case code. `categorisePermanence` operates on
+          // PERMANENT_SUB_USE_CASE_DETAILS code strings, so passing
+          // a class name through it would always return 'transient'
+          // anyway. Hardcoded transient is correct for the
+          // dispatch_threw branch — a thrown-error class doesn't carry
+          // the permanent/transient semantics; rely on the route's
+          // retry budget + observability counters to surface chronic
+          // permanent throws (e.g. StripeAuthenticationError storms).
+          permanence: 'transient',
         });
       }
       outcome = {
@@ -556,7 +657,6 @@ async function processWebhookEventBody(
           invoiceId: refundResult.value.invoiceId,
         }),
       };
-      markedProcessedAtomically = true;
       break;
     }
 
@@ -573,7 +673,16 @@ async function processWebhookEventBody(
             payload: {
               dispute_id: dataObject.disputeId ?? null,
               charge_id: dataObject.id,
-              amount_satang: (dataObject.amountSatang ?? 0n).toString(),
+              // F5R3v3 H-4 (2026-05-16) — when the verifier flagged
+              // amount projection as failed, write a 'projection_failed'
+              // sentinel rather than the misleading '0' default. This
+              // audit row is retained 10 years (RD §87 / GDPR Art.
+              // 6(1)(c)) — a known-wrong value is worse than a
+              // sentinel that reads "we couldn't parse this" at
+              // forensic review time.
+              amount_satang: dataObject.amountProjectionFailed
+                ? 'projection_failed'
+                : (dataObject.amountSatang ?? 0n).toString(),
             },
             retentionYears: retentionFor('dispute_created'),
           });
@@ -589,10 +698,14 @@ async function processWebhookEventBody(
           // fragments / internal ids. Use the class name only — caller
           // logs it into pino + audit downstream where leak risk is real.
           detail: formatDispatchErrorDetail(e),
+          // Default to transient: a dispatch-tx throw is most likely
+          // a Neon transient or OTel back-pressure. The route layer
+          // can override after inspecting `detail` if a permanent
+          // pattern emerges.
+          permanence: 'transient',
         });
       }
       outcome = { kind: 'processed', dispatched: envelope.type };
-      markedProcessedAtomically = true;
       break;
     }
 
@@ -600,7 +713,7 @@ async function processWebhookEventBody(
       // Unknown event type — forward-compat per § 4.6. Mark the
       // processor_event row as `acknowledged_only` + processed_at
       // atomically so the row cannot get stuck in a split-commit.
-      // R3 I-8: wrap in try/catch to mirror charge.refunded /
+      // wrap in try/catch to mirror charge.refunded /
       // charge.dispute.created branches above. A bare throw here
       // would bubble past the route's structured error path.
       try {
@@ -617,61 +730,16 @@ async function processWebhookEventBody(
           kind: 'unknown_event_type_threw',
           eventType: event.type,
           detail: formatDispatchErrorDetail(e),
+          // Transient — the default-branch throw is most likely a DB
+          // transient on the markProcessed tx (we don't dispatch any
+          // business logic for unknown event types). Stripe should
+          // retry; the next attempt will succeed cleanly.
+          permanence: 'transient',
         });
       }
       outcome = { kind: 'acknowledged_only' };
-      markedProcessedAtomically = true;
     }
   }
-
-  // Audit 2026-04-26 round-2 #5b: split-tx tail ELIMINATED. Every
-  // sub-use-case branch (succeeded / failed / canceled, including their
-  // unknown_intent + already_* + auto_refunded_stale_invoice early-
-  // return paths) now folds markProcessed into its own withTx + the
-  // refunded / dispute / default branches mark inline. The flag is
-  // kept for now as a documentation marker + safety guard: if a future
-  // branch forgets to mark, we still log + try the tail commit rather
-  // than silently leave a stuck row. Production should NEVER reach the
-  // `if (!markedProcessedAtomically)` body — the warn line is the
-  // canary that flags any regression.
-  //
-  // Coverage: the canary is unreachable through input manipulation alone
-  // because every current outcome.kind is in the corresponding whitelist.
-  // The branch only fires if a future dev adds a new outcome.kind to a
-  // sub-use-case AND forgets to whitelist it — i.e. a code-change
-  // regression, not a runtime input. v8-ignore here is honest: testing
-  // it would require coercing the type system to inject a fake outcome,
-  // and that test would only re-prove the type system's exhaustiveness
-  // (already enforced by the typed `Set<X['kind']>` declarations above).
-  /* v8 ignore start */
-  if (!markedProcessedAtomically) {
-    const log: LoggerPort = deps.logger ?? noopLogger;
-    log.error(
-      'processWebhookEvent.markedProcessedAtomically_invariant_violated',
-      {
-        eventId: event.id,
-        eventType: event.type,
-        tenantId,
-        // If this fires, a new dispatch branch was added without
-        // setting `markedProcessedAtomically = true` AND without
-        // folding markProcessed into the sub-use-case's withTx. Fix
-        // the new branch — do NOT silently rely on this tail.
-      },
-    );
-    try {
-      await deps.paymentsRepo.withTx(async (tx) => {
-        await deps.processorEventsRepo.markProcessed(tx, event.id);
-      });
-    } catch (e) {
-      log.warn('processWebhookEvent.markProcessed_tail_failure', {
-        eventId: event.id,
-        eventType: event.type,
-        tenantId,
-        error: e instanceof Error ? e.message : String(e),
-      });
-    }
-  }
-  /* v8 ignore stop */
 
   return ok(outcome);
 }

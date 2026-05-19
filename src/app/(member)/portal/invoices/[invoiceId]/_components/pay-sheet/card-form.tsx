@@ -387,7 +387,7 @@ export function CardForm({
           // Surface unresolved brand colors during development so a
           // broken tenant theme is caught before QA instead of
           // silently falling back to Stripe's default palette
-          // (audit 2026-04-25 finding #16).
+          //.
            
           console.warn(
             `[pay-sheet/card-form] Unable to resolve CSS color for Stripe theme var "${key}" (raw="${raw}"). Stripe default will be used.`,

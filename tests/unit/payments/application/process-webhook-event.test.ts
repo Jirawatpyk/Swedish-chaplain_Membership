@@ -9,11 +9,13 @@
  *   - structured allow-list guard (no raw data.object in sub-use-case args)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
 import {
   processWebhookEvent,
   type ProcessWebhookEventDeps,
 } from '@/modules/payments';
+import { PERMANENT_SUB_USE_CASE_DETAILS } from '@/modules/payments/application/use-cases/process-webhook-event';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
 import type { VerifiedStripeEvent } from '../../../../src/modules/payments/application/ports';
@@ -41,7 +43,7 @@ const PENDING_PAYMENT: Payment = {
   memberId: 'mem_01J_MEM',
   method: 'card',
   status: 'pending',
-  amountSatang: 5_350_000n,
+  amountSatang: asSatang(5_350_000n),
   currency: 'THB',
   processorPaymentIntentId: 'pi_test_001',
   processorChargeId: null,
@@ -89,6 +91,14 @@ function makeDeps(): ProcessWebhookEventDeps {
     updateStatus: vi.fn(),
     findByProcessorRefundId: vi.fn(async () => null),
     sumSucceededForPayment: vi.fn(),
+    // F5R3 SB-1 (2026-05-16) — webhook recovery now reads succeeded
+    // sum to compute parent payment's next status when flipping a
+    // pending refund row.
+    getRefundContextForUpdate: vi.fn(async () => ({
+      pendingCount: 0,
+      succeededSumSatang: asSatang(100_000n),
+      nextSeq: 1,
+    })),
   };
   const processorEventsRepo = {
     insertIfNew: vi.fn(async (_tx: unknown, input: { id: string }) => ({
@@ -135,7 +145,7 @@ function makeDeps(): ProcessWebhookEventDeps {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'issued' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -252,7 +262,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_test_001',
         type: 'charge',
         refundIds: ['re_unknown_1', 're_unknown_2'],
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
@@ -271,7 +281,7 @@ describe('processWebhookEvent (T056)', () => {
       tenantId: TENANT_ID,
       paymentId: asPaymentId('pmt_1'),
       invoiceId: 'inv_1',
-      amountSatang: 100_000n,
+      amountSatang: asSatang(100_000n),
       status: 'pending' as const,
       processorRefundId: 're_known_1',
     });
@@ -281,7 +291,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_test_001',
         type: 'charge',
         refundIds: ['re_known_1'],
-        amountSatang: 100_000n,
+        amountSatang: asSatang(100_000n),
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
@@ -311,7 +321,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_test_001',
         type: 'charge',
         // refundIds omitted → fallback to []
-        amountSatang: 0n,
+        amountSatang: asSatang(0n),
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
@@ -326,7 +336,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_disputed',
         type: 'dispute',
         disputeId: 'dp_test_1',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
@@ -352,13 +362,13 @@ describe('processWebhookEvent (T056)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'paid' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
     );
     (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
-      ok({ id: 're_auto', status: 'succeeded', amountSatang: 5_350_000n }),
+      ok({ id: 're_auto', status: 'succeeded', amountSatang: asSatang(5_350_000n) }),
     );
     const result = await processWebhookEvent(deps, makeInput());
     expect(result.ok).toBe(true);
@@ -447,7 +457,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_test_001',
         type: 'charge',
         refundIds: ['re_test_1'],
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
@@ -468,7 +478,7 @@ describe('processWebhookEvent (T056)', () => {
         id: 'ch_disputed',
         type: 'dispute',
         disputeId: 'dp_test_1',
-        amountSatang: 5_350_000n,
+        amountSatang: asSatang(5_350_000n),
       },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
@@ -544,11 +554,32 @@ describe('processWebhookEvent (T056)', () => {
     rejectSecondTx(deps, 'connection terminated unexpectedly: pi_secret_abc123');
     const event = makeEvent({
       type: 'charge.refunded',
-      dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: 0n },
+      dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: asSatang(0n) },
     });
     const result = await processWebhookEvent(deps, makeInput(event));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.detail).toBe('unknown');
+  });
+
+  /**
+   * F5R2-M1 — pin the membership of `PERMANENT_SUB_USE_CASE_DETAILS`.
+   * The set is the single discriminator between "Stripe retries 72h"
+   * (transient) and "Stripe stops retrying" (permanent). Without a
+   * membership test, a future PR that removes (say) `'bridge_error'`
+   * thinking it should retry would silently regress the F5R1-IMP2 fix
+   * with no test failure. Snapshot the canonical 6 codes here.
+   */
+  it('R2-M1: PERMANENT_SUB_USE_CASE_DETAILS membership snapshot', () => {
+    expect(PERMANENT_SUB_USE_CASE_DETAILS).toEqual(
+      new Set([
+        'tenant_settings_missing',
+        'bridge_error',
+        'invoice_not_found',
+        'invoice_shape_invalid',
+        'payment_method_unsupported',
+        'invariant_auto_refunded_missing_invoice_id',
+      ]),
+    );
   });
 });

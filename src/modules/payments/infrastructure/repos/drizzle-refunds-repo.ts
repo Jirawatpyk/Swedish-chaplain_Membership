@@ -19,6 +19,7 @@
  * III). The use-case calls these methods only through the port.
  */
 import { and, eq, sql } from 'drizzle-orm';
+import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
   RefundRow as DomainRefundRow,
@@ -38,12 +39,17 @@ function assertRefundStatus(s: string, rowId: string): RefundStatus {
   throw new Error(`drizzle-refunds-repo: unknown refund status '${s}' on row ${rowId}`);
 }
 
-function toBigintSatang(raw: unknown, rowId: string): bigint {
-  if (typeof raw === 'bigint') return raw;
-  if (typeof raw === 'string' || typeof raw === 'number') return BigInt(raw);
-  throw new Error(
-    `drizzle-refunds-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
-  );
+// F5R3 H-5 (2026-05-16) — return `Satang` brand at DB→Domain boundary.
+function toBigintSatang(raw: unknown, rowId: string): Satang {
+  let value: bigint;
+  if (typeof raw === 'bigint') value = raw;
+  else if (typeof raw === 'string' || typeof raw === 'number') value = BigInt(raw);
+  else {
+    throw new Error(
+      `drizzle-refunds-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
+    );
+  }
+  return asSatang(value);
 }
 
 function toDomain(row: RefundRow): DomainRefundRow {
@@ -186,7 +192,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         readonly id: string;
         readonly paymentId: PaymentId;
         readonly invoiceId: string;
-        readonly amountSatang: bigint;
+        readonly amountSatang: Satang;
         readonly initiatedAt: Date;
         readonly correlationId: string;
         readonly initiatorUserId: string;
@@ -238,7 +244,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       paymentId: PaymentId,
     ): Promise<{
       readonly pendingCount: number;
-      readonly succeededSumSatang: bigint;
+      readonly succeededSumSatang: Satang;
       readonly nextSeq: number;
     }> {
       const tx = txUnknown as TenantTx;
@@ -270,7 +276,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       const row = rows[0];
       return {
         pendingCount: Number(row?.pending_count ?? 0),
-        succeededSumSatang: BigInt(row?.succeeded_sum_satang ?? 0),
+        succeededSumSatang: asSatang(BigInt(row?.succeeded_sum_satang ?? 0)),
         nextSeq: Number(row?.total_count ?? 0) + 1,
       };
     },

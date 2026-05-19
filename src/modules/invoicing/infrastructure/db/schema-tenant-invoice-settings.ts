@@ -57,6 +57,10 @@ export const tenantInvoiceSettings = pgTable(
       .notNull()
       .default('yearly'),
     receiptNumberingMode: text('receipt_numbering_mode').notNull().default('combined'),
+    // Receipt-number prefix used only when receipt_numbering_mode = 'separate'.
+    // Nullable — when null the record-payment use case falls back to 'RE'.
+    // Added by migration 0142.
+    receiptNumberPrefix: text('receipt_number_prefix'),
     creditNoteNumberPrefix: text('credit_note_number_prefix').notNull(),
 
     fiscalYearStartMonth: smallint('fiscal_year_start_month').notNull().default(1),

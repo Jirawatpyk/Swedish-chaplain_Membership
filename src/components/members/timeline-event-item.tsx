@@ -66,7 +66,10 @@ export function formatLocalisedTimestamp(iso: string, locale: string): string {
 function formatPayload(
   eventType: string,
   payload: Record<string, unknown> | null,
-  tPayload: (key: 'primary' | 'primaryContactPromoted') => string,
+  tPayload: (
+    key: 'primary' | 'primaryContactPromoted' | 'archiveReason',
+    values?: Record<string, string | number>,
+  ) => string,
 ): string | null {
   if (!payload) return null;
 
@@ -133,7 +136,18 @@ function formatPayload(
     case 'member_primary_contact_changed': {
       return tPayload('primaryContactPromoted');
     }
-    case 'member_archived':
+    case 'member_archived': {
+      // I4 round-10 ui-design-specialist — the archive use-case writes
+      // a free-text `reason` field to the audit payload (see
+      // archive-member-button.tsx); ignoring it on the timeline buried
+      // the only context admins write at archive time. Surface it as
+      // "Reason: {text}" when present; fall back to the bare event
+      // label when the admin skipped the optional field.
+      const reason = get('reason');
+      return reason
+        ? tPayload('archiveReason', { reason })
+        : null;
+    }
     case 'member_undeleted':
       return null; // Event type label is self-explanatory
     default:

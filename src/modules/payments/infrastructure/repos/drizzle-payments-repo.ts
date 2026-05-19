@@ -1,5 +1,5 @@
 /**
- * T061 — Drizzle payments repo (F5).
+ * Drizzle payments repo (F5).
  *
  * Implements `PaymentsRepo` (Application port). Mirrors F4's
  * `drizzle-invoice-repo.ts` shape: every tenant-scoped query runs
@@ -17,6 +17,7 @@
  * (promptpay → null; card+pending+all-NULL → null; otherwise full VO).
  */
 import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { asSatang, type Satang } from '@/lib/money';
 import type { PaymentsRepo, RefundActivityDto } from '../../application/ports/payments-repo';
 import {
   asPaymentId,
@@ -65,12 +66,21 @@ function assertRefundStatus(s: string, rowId: string): RefundStatus {
 // Drizzle's `bigint('mode': 'bigint')` should return native bigint, but
 // pg drivers historically returned strings; the previous double-cast
 // silently truncated values >2^53 if the driver returned `number`.
-function toBigintSatang(raw: unknown, rowId: string): bigint {
-  if (typeof raw === 'bigint') return raw;
-  if (typeof raw === 'string' || typeof raw === 'number') return BigInt(raw);
-  throw new Error(
-    `drizzle-payments-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
-  );
+//
+// F5R3 H-5 (2026-05-16) — return type tightened to branded `Satang`.
+// `asSatang` validates non-negative at the DB→Domain boundary; if
+// the DB ever returns a negative money value (impossible per
+// invariants) the trap is here, not propagated upstream.
+function toBigintSatang(raw: unknown, rowId: string): Satang {
+  let value: bigint;
+  if (typeof raw === 'bigint') value = raw;
+  else if (typeof raw === 'string' || typeof raw === 'number') value = BigInt(raw);
+  else {
+    throw new Error(
+      `drizzle-payments-repo: unexpected amount_satang type '${typeof raw}' on row ${rowId}`,
+    );
+  }
+  return asSatang(value);
 }
 
 function rowToRefundActivity(row: RefundRow): RefundActivityDto {
@@ -242,7 +252,7 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       return toDomain(inserted as PaymentRow);
     },
 
-    async updateStatus(txUnknown, input): Promise<Payment> {
+    async updateStatus(txUnknown, input): Promise<Payment | null> {
       const tx = txUnknown as TenantTx;
       // Audit 2026-04-25 finding #4: typed partial-row instead of
       // `Record<string, unknown>` so column-name keys are type-checked
@@ -276,17 +286,32 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
         }
       }
 
+      // F5R2-CRIT-1 defence-in-depth: when the caller passes
+      // `expectedCurrentStatus`, append a `status = expected` predicate
+      // to the WHERE so a concurrent webhook flip (e.g., pending →
+      // succeeded between the caller's lockForUpdate and this update)
+      // makes the UPDATE match zero rows. The adapter returns `null`
+      // and the caller decides the recovery path (idempotent ack /
+      // forensic audit / retry). When omitted, throw-on-zero is kept
+      // for backward compatibility with sites that re-check under
+      // their own lock.
+      const whereClauses = [
+        eq(payments.tenantId, input.tenantId),
+        eq(payments.id, input.paymentId),
+      ];
+      if (input.expectedCurrentStatus !== undefined) {
+        whereClauses.push(eq(payments.status, input.expectedCurrentStatus));
+      }
       const [updated] = await tx
         .update(payments)
         .set({ ...patch, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(payments.tenantId, input.tenantId),
-            eq(payments.id, input.paymentId),
-          ),
-        )
+        .where(and(...whereClauses))
         .returning();
       if (!updated) {
+        if (input.expectedCurrentStatus !== undefined) {
+          // Race detected — caller will resolve.
+          return null;
+        }
         throw new Error(
           `drizzle-payments-repo: updateStatus matched zero rows for ${input.paymentId}`,
         );

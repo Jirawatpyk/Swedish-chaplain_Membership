@@ -52,10 +52,15 @@ test.describe('PaySheet declined card — @payment @f5', () => {
     await expect(submitButton).toBeEnabled();
     await submitButton.click();
 
-    // Decline message — keys live under `portal.payment.decline.*`.
-    // We assert role=alert (live region) so screen readers announce
-    // it without a focus-shift (FR-028 a11y).
-    const declineAlert = sheet.getByRole('alert');
+    // Decline message — keys live under `portal.payment.retry.*`.
+    // F5R6+ fix — `PaymentFailurePanel` overrides `role="status"`
+    // (NOT "alert") on purpose: the parent `<pay-sheet-aria-announcer>`
+    // already mounts a persistent polite live region, so keeping
+    // role="alert" on the panel would cause a double-announce on
+    // every card decline. Test uses role="status" to match the
+    // intentional UI choice (F5R2-CRIT-3 fix in payment-failure-
+    // panel.tsx).
+    const declineAlert = sheet.getByRole('status').first();
     await expect(declineAlert).toBeVisible({ timeout: 5_000 });
     // Match against EN/TH/SV variants of the decline copy. SV uses
     // "Ditt kort avvisades" + "Betalningen misslyckades" — neither

@@ -27,6 +27,7 @@
  * absorbed at the producer.
  */
 import { describe, expect, it } from 'vitest';
+import { asSatang } from '@/lib/money';
 import type {
   F4InvoicePaidEvent,
   F4InvoicePaidPaymentMethod,
@@ -132,8 +133,8 @@ describe('F8 cross-module enum parity — Phase 10 / CHK040 close', () => {
       invoiceId: '00000000-0000-0000-0000-000000000000',
       memberId: '11111111-1111-1111-1111-111111111111',
       paidAt: '2026-05-10T08:00:00Z',
-      amountSatang: 5_000_000n,
-      vatSatang: 350_000n,
+      amountSatang: asSatang(5_000_000n),
+      vatSatang: asSatang(350_000n),
       currency: 'THB',
       paymentMethod: 'stripe_card',
       triggeredBy: 'webhook',

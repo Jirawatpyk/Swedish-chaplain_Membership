@@ -20,6 +20,8 @@ const NOW = new Date('2026-05-07T00:00:00Z');
 const INVOICE_UUID = '00000000-0000-0000-0000-0000000bbbb1';
 
 vi.mock('@/lib/db', () => ({
+  // 2026-05-17 polish — stub `db` to fix collection error.
+  db: {},
   runInTenant: async <T>(_ctx: unknown, fn: (tx: unknown) => Promise<T>) =>
     fn({} as unknown),
 }));

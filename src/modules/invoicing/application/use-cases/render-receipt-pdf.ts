@@ -39,6 +39,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 
 import type { AuditPort } from '../ports/audit-port';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
@@ -47,6 +48,7 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { PdfRenderPort } from '../ports/pdf-render-port';
 import type { TenantSettingsRepo } from '../ports/tenant-settings-repo';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
+import { loadTenantLogo } from '../lib/load-tenant-logo';
 import { TxAbort } from '../lib/tx-abort';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
@@ -201,6 +203,14 @@ export async function renderReceiptPdf(
       }
 
       const receiptBlobKey = `invoicing/${input.tenantId}/${loaded.fiscalYear}/${loaded.invoiceId}_receipt_v${input.templateVersion}.pdf`;
+      // Round-3 fix R3-H3 — pass the input.templateVersion so v1
+      // receipt renders stay logo-free (byte-identical with whatever
+      // the v1 template would have produced).
+      const tenantLogo = await loadTenantLogo(
+        deps.blob,
+        loaded.tenantIdentitySnapshot.logo_blob_key,
+        input.templateVersion,
+      );
       const rendered = await renderAndUploadPdf(
         { pdfRender: deps.pdfRender, blob: deps.blob },
         {
@@ -211,6 +221,7 @@ export async function renderReceiptPdf(
             issueDate: loaded.issueDate,
             dueDate: loaded.dueDate,
             tenant: loaded.tenantIdentitySnapshot,
+            tenantLogo,
             member: loaded.memberIdentitySnapshot,
             lines: loaded.lines,
             subtotal: loaded.subtotal,
@@ -298,6 +309,19 @@ export async function renderReceiptPdf(
           },
           'renderReceiptPdf: failed to mark row as failed (suppressed)',
         );
+        // OTel counter — fires when the failure-mark write itself
+        // fails. Under sustained DB issues this can stack up beyond
+        // the 3-retry budget without surfacing as
+        // `pdf_render_permanently_failed`. Alert on any non-zero rate.
+        // Round-3 fix R3-SF5 — guard the counter call; if the OTel
+        // exporter throws (cardinality bug, async dispatcher error)
+        // we MUST NOT mask the original render failure with a
+        // telemetry-side error. Best-effort only.
+        try {
+          invoicingMetrics.receiptFailureMarkSuppressed();
+        } catch {
+          /* OTel emit is best-effort; do not mask render error */
+        }
       }
       const code: RenderReceiptPdfError['code'] =
         e.error.kind === 'pdf_render_failed'

@@ -3,6 +3,7 @@
  * Target: 100% branch coverage (Constitution Principle II).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
 import { confirmPayment, type ConfirmPaymentDeps } from '@/modules/payments';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
@@ -31,7 +32,7 @@ const PENDING_PAYMENT: Payment = {
   memberId: 'mem_01J_MEM',
   method: 'card',
   status: 'pending',
-  amountSatang: 5_350_000n,
+  amountSatang: asSatang(5_350_000n),
   currency: 'THB',
   processorPaymentIntentId: PAYMENT_INTENT_ID,
   processorChargeId: null,
@@ -74,7 +75,7 @@ function makeDeps(): ConfirmPaymentDeps {
     ),
     cancelPaymentIntent: vi.fn(),
     createRefund: vi.fn(async () =>
-      ok({ id: 're_test_auto', status: 'succeeded', amountSatang: 5_350_000n }),
+      ok({ id: 're_test_auto', status: 'succeeded', amountSatang: asSatang(5_350_000n) }),
     ),
   };
   const invoicingBridge = {
@@ -82,7 +83,7 @@ function makeDeps(): ConfirmPaymentDeps {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'issued' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -194,7 +195,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'paid' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -221,7 +222,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'void' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -236,7 +237,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'credited' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -262,7 +263,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'paid' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),
@@ -274,6 +275,73 @@ describe('confirmPayment (T057)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('processor_unavailable');
+  });
+
+  /**
+   * F5R1-MED-TESTS — pin the F5R1-E9 closure: the give-up branch when
+   * (a) the invoice is stale (auto-refund attempted), (b) Stripe's
+   * createRefund still fails, AND (c) the event itself is already
+   * older than 48h. Without this branch the dispatcher would keep
+   * returning 500 → Stripe keeps retrying for the full 72h window
+   * → audit-log + SRE alerts get polluted.
+   *
+   * The branch must:
+   *   1. Return ok({ kind: 'auto_refund_given_up', ... }) NOT err.
+   *   2. Emit `out_of_band_refund_detected` with the grep-able
+   *      summary "Auto-refund giving up after Xh" — the SRE alert
+   *      rule uses a `summary LIKE 'Auto-refund giving up%'` filter.
+   *   3. Carry runbook URL in the audit payload so the on-call
+   *      engineer can reach the recovery doc.
+   */
+  it('R1-E9: stale-refund give-up after 48h → auto_refund_given_up + out_of_band audit', async () => {
+    const deps = makeDeps();
+    // Stale invoice (paid by manual reconciliation while Stripe was
+    // retrying) → triggers auto-refund branch.
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'paid' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    // Refund call also fails → enters E9's give-up vs retry branch.
+    (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'timeout' }),
+    );
+    // Override clock to be 49 hours after the event timestamp so the
+    // eventAge check (>48h) trips into the give-up branch.
+    const eventTs = INPUT.eventCreatedAtUnixSeconds;
+    deps.clock.nowMs = () => (eventTs + 49 * 60 * 60) * 1000;
+
+    const result = await confirmPayment(deps, INPUT);
+
+    // 1. NOT err — give-up returns a typed ok outcome to break the
+    //    Stripe retry loop.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refund_given_up');
+
+    // 2. out_of_band_refund_detected audit emitted with the grep-able
+    //    summary the SRE alert rule pivots on.
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const giveUpCall = auditCalls.find(
+      (c) =>
+        c[1]?.eventType === 'out_of_band_refund_detected' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.startsWith('Auto-refund giving up after '),
+    );
+    expect(giveUpCall, 'expected out_of_band_refund_detected give-up audit').toBeDefined();
+    if (!giveUpCall) return;
+
+    // 3. Summary includes the actual hours (Xh format) so the on-call
+    //    sees how long the retry was running before give-up.
+    expect(giveUpCall[1].summary).toMatch(/Auto-refund giving up after \d+h/);
+    // 4. Runbook URL in payload so on-call can jump to the recovery doc.
+    expect(giveUpCall[1].payload).toMatchObject({
+      runbook_url: 'docs/runbooks/out-of-band-refund.md',
+    });
   });
 
   it('terminal state (already succeeded) — already_succeeded no-op (reliability F-01)', async () => {
@@ -386,7 +454,7 @@ describe('confirmPayment (T057)', () => {
       ok({
         id: 'inv_01JABCDE_XYZ',
         status: 'issued' as const,
-        totalSatang: 5_350_000n,
+        totalSatang: asSatang(5_350_000n),
         memberId: 'mem_01J_MEM',
         tenantId: TENANT_ID,
       }),

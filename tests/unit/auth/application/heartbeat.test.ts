@@ -11,10 +11,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { heartbeat } from '@/modules/auth/application/heartbeat';
-import { asSessionId } from '@/modules/auth/domain/branded';
+import { asSessionToken } from '@/modules/auth/domain/branded';
 
 describe('heartbeat use case', () => {
-  const TEST_SESSION_ID = asSessionId('a'.repeat(64));
+  const TEST_SESSION_ID = asSessionToken('a'.repeat(64));
   const NOW = new Date('2026-04-10T12:00:00Z');
 
   function makeStubs(opts: {
@@ -27,19 +27,33 @@ describe('heartbeat use case', () => {
       limit: 60,
       remaining: opts.rateLimitOk ? 59 : 0,
       reset: opts.resetMs ?? Date.now() + 30_000,
+      fellBack: false,
     }));
     return {
       sessions: {
         // Only updateLastSeen is called by the use case — other methods
-        // can be stubs.
+        // (incl. *InTx variants added in A3/A4) are stubs.
         create: vi.fn(),
+        createInTx: vi.fn(),
         findById: vi.fn(),
         updateLastSeen,
         delete: vi.fn(),
         deleteByUserId: vi.fn(),
+        deleteByUserIdInTx: vi.fn(),
         deleteByUserIdExcept: vi.fn(),
       },
-      limiter: { check },
+      limiter: {
+        check,
+        // B2 — peek added to RateLimiter port; heartbeat doesn't use it
+        // but the type-check still requires the method.
+        peek: vi.fn(async () => ({
+          success: true,
+          limit: 60,
+          remaining: 60,
+          reset: Date.now() + 60_000,
+          fellBack: false,
+        })),
+      },
       now: () => NOW,
       _updateLastSeen: updateLastSeen,
       _check: check,
@@ -60,9 +74,12 @@ describe('heartbeat use case', () => {
     // updateLastSeen called exactly once with the test session id + NOW
     expect(stubs._updateLastSeen).toHaveBeenCalledTimes(1);
     expect(stubs._updateLastSeen).toHaveBeenCalledWith(TEST_SESSION_ID, NOW);
-    // Rate-limit key is namespaced on the session id (per-tab budget)
+    // Rate-limit key is namespaced on the SHA-256 of the session id
+    // (F1 Round 2 C1 — was plaintext, switched to hash to prevent the
+    // plaintext bearer leaking into Upstash Redis).
+    const { sha256Hex } = await import('@/lib/crypto');
     expect(stubs._check).toHaveBeenCalledWith(
-      `heartbeat:session:${TEST_SESSION_ID}`,
+      `heartbeat:session:${sha256Hex(TEST_SESSION_ID)}`,
       60,
       60,
     );

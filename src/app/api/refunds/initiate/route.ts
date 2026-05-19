@@ -21,6 +21,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { requireAdminContext } from '@/lib/admin-context';
+import { asSatang } from '@/lib/money';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -177,7 +178,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // through directly. Number/string union accepted at boundary
       // (R002 polish — bigint-symmetric input, no silent precision
       // loss for tenants exceeding the safe-integer window).
-      amountSatang: parsedBody.amountSatang,
+      // F5R3 H-5 (2026-05-16) — brand at the HTTP boundary. Zod
+      // already validated > 0 and integer; asSatang re-validates
+      // non-negative as defence-in-depth.
+      amountSatang: asSatang(parsedBody.amountSatang),
       reason: parsedBody.reason,
       actorUserId,
       correlationId,

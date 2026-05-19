@@ -45,6 +45,7 @@ function stubDeps(): BulkActionDeps {
       updatePreferredLocaleInTx: vi.fn(),
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
+    findPendingInvitationsForMember: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

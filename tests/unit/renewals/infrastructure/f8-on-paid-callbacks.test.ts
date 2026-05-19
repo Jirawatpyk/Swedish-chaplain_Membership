@@ -33,6 +33,7 @@
  * composition-root tests in the sibling file.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { asSatang } from '@/lib/money';
 
 // vi.mock factories are hoisted to module top — references to ordinary
 // `const fn = vi.fn()` declarations would be uninitialised at hoist
@@ -172,8 +173,8 @@ const buildEvent = (): F4InvoicePaidEvent => ({
   invoiceId: '11111111-1111-1111-1111-111111111111',
   memberId: '22222222-2222-2222-2222-222222222222',
   paidAt: '2026-05-08T10:00:00Z',
-  amountSatang: 5_000_000n,
-  vatSatang: 350_000n,
+  amountSatang: asSatang(5_000_000n),
+  vatSatang: asSatang(350_000n),
   currency: 'THB',
   paymentMethod: 'stripe_card',
   triggeredBy: 'webhook',

@@ -81,6 +81,12 @@ function formatIssueDate(isoDate: string, locale: string): string {
   return ce;
 }
 
+// F4/F5 polish retrospective Phase E (2026-05-17) — `force-dynamic`
+// paired with sibling not-found.tsx restores HTTP 404 status on
+// `notFound()` (Principle I cross-tenant probe contract). See
+// portal/invoices/[invoiceId]/page.tsx for full rationale.
+export const dynamic = 'force-dynamic';
+
 export default async function PortalCreditNoteDetailPage({
   params,
 }: {

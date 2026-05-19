@@ -54,4 +54,29 @@ describe('<DetailContainer>', () => {
     expect(wrapper.className).not.toMatch(/overflow-x-(?:auto|scroll|hidden)/);
     expect(wrapper.className).not.toMatch(/overflow-(?:auto|scroll|hidden)/);
   });
+
+  // Round-8 R8 review fix (2026-05-13, closes S-3 gap): the aria-busy
+  // pass-through prop landed in round-7 R2-B for loading.tsx skeleton
+  // signalling but had no behavioural test. A future refactor that
+  // drops the prop destructure or fails to set it on the underlying
+  // <div> would regress AT users' "busy" announcement during shimmer.
+  it('forwards aria-busy="true" prop to the underlying div', () => {
+    const { container } = render(
+      <DetailContainer aria-busy="true">
+        <p>body</p>
+      </DetailContainer>,
+    );
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.getAttribute('aria-busy')).toBe('true');
+  });
+
+  it('omits aria-busy when prop not provided', () => {
+    const { container } = render(
+      <DetailContainer>
+        <p>body</p>
+      </DetailContainer>,
+    );
+    const wrapper = container.firstElementChild as HTMLElement;
+    expect(wrapper.getAttribute('aria-busy')).toBeNull();
+  });
 });

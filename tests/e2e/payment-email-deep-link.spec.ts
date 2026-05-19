@@ -188,7 +188,7 @@ test.describe('@us-f5 @fr-027 pay-online email deep-link — click-through', () 
     const email = process.env.E2E_MEMBER_EMAIL!;
     const password = process.env.E2E_MEMBER_PASSWORD!;
     const emailField = page.getByLabel(/email/i);
-    const passwordField = page.getByLabel(/password/i);
+    const passwordField = page.getByRole('textbox', { name: /^password$/i });
     // Wait for the inputs to be both attached + interactive. On
     // mobile-safari, `.fill()` issued before React hydration completes
     // updates the DOM value but the synthetic onChange never fires —

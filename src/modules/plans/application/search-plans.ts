@@ -245,6 +245,37 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/renewals/tasks?overdue_only=true',
     requires: 'read',
   },
+  // Phase 5 review-fix S-13 (2026-05-13) — F6 EventCreate palette
+  // entries (smart-chamber-features § MVP #4 command palette). Without
+  // these the F6 events list + integration wizard were unreachable
+  // via ⌘K despite being headline F6 surfaces. Both are admin+manager
+  // readable per FR-035 — admin gets full read+write on events list +
+  // exclusive access to the integration wizard; manager sees events
+  // list read-only and gets a 404 on the integration entry (handled
+  // by the route, not the palette filter — the palette label tells
+  // the manager the surface exists; the 404 conveys the access tier).
+  // The integration entry is gated to `admin` here so manager doesn't
+  // see a tease they cannot reach.
+  {
+    id: 'nav.events',
+    label: 'palette.navigate.eventsList',
+    url: '/admin/events',
+    requires: 'read',
+  },
+  {
+    id: 'nav.eventcreateIntegration',
+    label: 'palette.navigate.eventcreateIntegration',
+    url: '/admin/settings/integrations/eventcreate',
+    requires: 'admin',
+  },
+  // F6.1 R1 ux I8 — high-frequency navigation target for admins who
+  // run imports daily. Manager role gets 404 per FR-035 RBAC.
+  {
+    id: 'nav.csvImportHistory',
+    label: 'palette.navigate.csvImportHistory',
+    url: '/admin/events/import/history',
+    requires: 'admin',
+  },
 ];
 
 function filterByRole<T extends { requires: 'admin' | 'read' }>(

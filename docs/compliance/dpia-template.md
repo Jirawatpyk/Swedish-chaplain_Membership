@@ -257,6 +257,156 @@ no second human reviewer is available). Re-evaluation cadence:
 
 ---
 
+## F6 — EventCreate Integration (added round-6 staff-review 2026-05-13)
+
+### Triggers (GDPR Art. 35 / PDPA §39)
+
+F6 hits **three** high-risk triggers, mandating a DPIA before the
+production flag-flip:
+
+1. **New cross-border processor chain** — registration data now flows
+   through EventCreate (US) → Zapier (US) → Chamber-OS (Singapore region).
+   Two new processor relationships beyond the F1+F4 baseline; both US
+   processors carry adequacy-assessment + SCC obligations under GDPR
+   Chapter V and PDPA §28.
+2. **Automated decision-making with PII matching** — the 4-rule
+   attendee-match cascade (FR-012) automatically links attendees to
+   member records using email / domain / fuzzy company-name signals.
+   Fuzzy matches set `match_type = 'unmatched'` for admin relink;
+   purely-automated decisions are limited to quota counting and
+   admin-visible match-status labels — no automated decision has a
+   legal or similarly significant effect on the data subject.
+3. **Systematic processing of non-member personal data** — attendees
+   who are NOT chamber members still have email + name + company
+   stored for 2-year retention (per FR-032 minimisation). This is
+   "large-scale" under GDPR Art. 35(3)(b) at sustained Zapier load
+   (envelope ~50,000 registrations/yr/tenant).
+
+### Data flow
+
+```
+EventCreate (US)                  Zapier (US)                   Chamber-OS (SG)
+[attendee submits  ]   webhook    [signed HMAC POST  ]   ingest [strict-tx event   ]
+[ registration     ] ─────────►  [ X-Chamber-Sig    ] ─────────► [ + registration + ]
+[ on event page    ]   ≤15min    [ X-Chamber-Ts     ]   tx     [ idempotency rcpt ]
+                                                                 [ + audit row     ]
+                                                                       │
+                                                                       ▼
+                                                                 [ 5y audit │
+                                                                 [ retention│
+                                                                 [ 2y non-  │
+                                                                 [ member   │
+                                                                 [ PII      │
+                                                                 [ pseudo-  │
+                                                                 [ nymise   │
+                                                                 [ sweep    ]
+```
+
+### Lawful basis per processing operation
+
+| Operation | Lawful basis | Reference |
+|---|---|---|
+| Webhook ingest (event + registration write) | Legitimate interest (chamber's interest in accurate event records) | PDPA §24(5) / GDPR Art. 6(1)(f) |
+| Member matching | Legitimate interest (member benefit accounting) | Same |
+| Audit log entries (5y) | Legal obligation + legitimate interest | PDPA §24(4) / GDPR Art. 6(1)(c) |
+| Quota decrements on matched member | Contract (member's chamber-membership agreement) | PDPA §24(3) / GDPR Art. 6(1)(b) |
+| Non-member 2y retention | Legitimate interest, balanced; pseudonymised thereafter | PDPA §24(5) / GDPR Art. 6(1)(f) + Art. 5(1)(e) |
+
+### Recipients of personal data
+
+| Recipient | Role | Country | Safeguard |
+|---|---|---|---|
+| Chamber admin staff (admin role) | Read + relink + erase actions on attendee records | Bangkok (TH) — viewed via SG-hosted admin portal | RBAC + audit log |
+| Chamber manager staff (manager role) | Read-only on attendee records | TH | RBAC + audit log |
+| EventCreate (data exporter) | Source platform | US | DPA with EventCreate (TBD — see "Outstanding items") |
+| Zapier (data conduit) | Transit between EventCreate and Chamber-OS | US | DPA with Zapier (TBD — see "Outstanding items") |
+| Vercel | Compute (sin1) | SG | SCC (F1 deviation already covers) |
+| Neon | Database (ap-southeast-1) | SG | SCC (F1 deviation already covers) |
+| Upstash | Rate-limit cache | SG | SCC (F1 deviation already covers) |
+
+### Risk assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Cross-tenant data leak via misrouted webhook | Low | High | HMAC verify per tenant secret + URL/payload tenantSlug cross-check (R6-S8 staff-review item; tracked) + RLS+FORCE on all F6 tables + integration test T042 (Constitution Principle I Review-Gate blocker) |
+| Attendee enumeration via admin event-detail 404 | Medium | Medium | R6-B7 fix emits `cross_tenant_probe` audit on every 404; alert on rate ≥10/5min/actor (documented in observability.md § 24) |
+| Member impersonation via fuzzy company-name match | Low | Medium | Tied fuzzy → `unmatched` (FR-012) requires admin manual relink; quota decrement gated on definitive match types only (Phase 6 T085) |
+| PII over-retention | Low (sweep cron at 04:00 daily) | High | Phase 10 T113 PII-pseudonymisation cron + FR-032 2-year non-member retention enforced at DB level via partial index `event_regs_pseudonymise_eligibility_idx` |
+| Audit log integrity loss | Very low | High | FR-037 strict-tx + dual-write fallback + pino.fatal stderr backstop (verified by `tests/integration/events/db-unavailable-during-tx.test.ts`) |
+| Logged-PII leak via stack trace | Low | Medium | Round-6 W2 fix routes both `webhook_rolled_back` audit payload + `safeEmitStandalone` pino log lines through `redactStack` (verified showing `[redacted-path]` markers in chaos test output) |
+
+### Outstanding items before flag-flip
+
+- [ ] Chamber legal counsel: execute DPA with EventCreate (data exporter); record contract reference in `processing-records.md § F6.processors`. (Round-6 PDPA agent M-3.)
+- [ ] Chamber legal counsel: execute DPA with Zapier (data conduit). Same recording requirement.
+- [ ] DPO contact populated in privacy notice template (per-locale). Currently `[DPO email]` placeholder.
+- [ ] F6 privacy notice published on event-registration page of every chamber event (EventCreate side). Operational task — chamber to confirm Zapier-side configuration.
+
+### Conclusion
+
+DPIA mandatory + completable. With the listed mitigations and the
+outstanding DPA / DPO items closed, F6 EventCreate Integration meets
+the threshold for both PDPA and GDPR. The DPIA must be re-reviewed if:
+- A 4th cross-border processor is added.
+- Retention windows change from 5y audit / 2y non-member PII.
+- The automated-decision footprint expands (e.g., auto-rejecting
+  registrations or auto-blocking members based on attendance patterns).
+
+---
+
+## F6.1 — CSV Import Primary Path + EventCreate Format Adapter (added staff-review 2026-05-16)
+
+### Triggers (GDPR Art. 35 / PDPA §39)
+
+- **New PII storage tier**: Vercel Blob private bucket storing error-rows CSVs with attendee email + name + company + payment status VERBATIM (30-day TTL).
+- **New PII column on existing table**: `event_registrations.attendee_pdpa_consent_acknowledged BOOLEAN NULL` (FR-009 classification at import time — raw consent text NOT stored, PDPA Art. 5(1)(c) data minimisation).
+- **New attendee fingerprint**: SHA-256 first-16-hex of sorted-lowercased-NUL-joined Attending email list, persisted on `csv_import_records.attendee_fingerprint` to support the FR-019b event-mismatch safety net.
+- **New audit event types** (3): `csv_import_error_csv_downloaded`, `csv_import_cross_tenant_probe`, `csv_import_event_mismatch_overridden`.
+- **Repositioned processing path**: CSV upload is now the primary daily-driver (replacing the F6 Zapier-webhook assumption broken by EventCreate's Enterprise-only API).
+
+### Description of processing
+
+Chamber admin uploads EventCreate "Guestlist" CSV export (~30 columns, 50-100 attendees per event) at `/admin/events/import`. System parses, matches against existing members, populates `event_registrations`, credits/decrements quotas, and emits per-row + per-import audit events. Failed rows are aggregated into a private-blob error CSV with 30-day TTL + 15-min signed-URL access (audit-logged on every download).
+
+### Lawful basis per processing operation
+
+| Operation | Lawful basis (PDPA §24) | Lawful basis (GDPR Art. 6) | Retention |
+|---|---|---|---|
+| Attendee row insert (matched member) | Legitimate interest (chamber operational need) | Art. 6(1)(b) contract performance for paid attendees / Art. 6(1)(f) legitimate interest for free attendees | 5y (audit), per-row indefinite (member roster) |
+| Attendee row insert (non-member) | Legitimate interest | Art. 6(1)(f) | 2y from event date (PDPA minimisation) |
+| `attendee_pdpa_consent_acknowledged` classification | Legitimate interest (chamber needs to know consent state for F7 broadcast filter) | Art. 6(1)(f) | Indefinite (boolean only, no raw text) |
+| `attendee_fingerprint` storage | Legitimate interest (FR-019b safety net prevents admin error of importing to wrong event) | Art. 6(1)(f) | 30 days (sweep query window) |
+| Error-CSV blob storage | Legitimate interest (operational recovery tool — admin fixes typos + re-uploads) | Art. 6(1)(f) | 30d hard TTL via daily sweep cron |
+| `csv_import_records` row | Legitimate interest (operational visibility + forensic trail) | Art. 6(1)(f) | 5y matching F6 audit policy |
+
+### Risk assessment
+
+| Risk | Likelihood × Severity | Mitigation | Residual |
+|---|---|---|---|
+| Vercel Blob `access:'public'` exposes error-CSV publicly for up to 30 days (non-Enterprise tier limitation) | M × M | Random-suffix capability-token URL; 15-min server-side signed-URL TTL enforced at route handler; access audit on every download; admins warned in runbook § 3.0 not to upload strictly-confidential lists | M (accepted — see § Stakeholder consultation) |
+| Cross-tenant probe via `/admin/events/import/[recordId]/error-csv` | L × H | `findById` tenant-scoped + RLS+FORCE on `csv_import_records`; `findByIdAcrossTenants` returns only `{tenantId}`; cross-tenant outcome → identical 404 ProblemDetails + HIGH-severity `csv_import_cross_tenant_probe` audit emit | L |
+| CSV formula injection (error CSV served VERBATIM per FR-021) | L × M | Admin-only tool; runbook § 3a documents the risk + safe-open instructions; spec deliberately preserves verbatim row content for admin repair workflow | L |
+| Forensic trail loss on cross-tenant probe audit emit failure | L × H | `eventcreate_csv_import_audit_emit_failed_total{event_type='csv_import_cross_tenant_probe'}` counter wired in route handler (staff-review H-2 2026-05-16); P1 page alert on `rate > 0` | L |
+| Attendee email leak in pino logs | L × H | `hashAttendeeEmail()` SHA-256 hex prefix in all log paths; raw email never in audit payloads; `attendee_email`/`attendeeEmail` in `logger.ts` REDACT_PATHS depth-2 | L |
+| Right-to-erasure non-cascading to error-CSV blobs | M × M | `docs/runbooks/f6-manual-erasure.md` § F6.1 (staff-review H-5 2026-05-16) covers blob deletion alongside row deletion | L |
+
+### Outstanding items before flag-flip (staff-review B-5 2026-05-16)
+
+- [ ] DPO sign-off on this DPIA section.
+- [x] Update `docs/compliance/processing-records.md § F6.processing-activities` with the 4 new data items (csv_import_records table, Vercel Blob error-CSV storage, attendee_fingerprint, attendee_pdpa_consent_acknowledged). **Engineering: done in commit `0d55bd8b` (staff-review-fix R1) — DPO sign-off pending.**
+- [x] Update `docs/compliance/eventcreate-privacy-notice-template.md` (EN/TH/SV) to mention CSV-direct upload path + 30-day Blob retention. **Engineering: done in commit `0d55bd8b` (R1); also amended R3 for Art. 13(2)(d)/(f) statements per staff-review M-NEW-2/3 — DPO sign-off pending.**
+- [x] Update `docs/runbooks/f6-manual-erasure.md` with cascading erasure to error-CSV Blobs. **Engineering: done in commit `0d55bd8b` (R1); also fixed Vercel CLI → `scripts/erase-error-blob.ts` invocation per staff-review H-NEW-1 in R3 fix commit — DPO sign-off pending.**
+- [ ] Risk-accept the Vercel Blob `access:'public'` design trade-off (residual M) — DPO sign-off documented here.
+
+### Conclusion
+
+DPIA scope amended for F6.1; mitigations in code are correct (verified by staff-review 2026-05-16). Compliance documentation gaps are the binding pre-flag-flip work. Re-review trigger if/when:
+- Tenant onboards with strict-confidentiality attendee data (hospital, gov't).
+- Multi-tenant deployment changes the cross-tenant exposure surface.
+- Error-CSV TTL is extended beyond 30 days.
+
+---
+
 ## Future feature DPIAs
 
 Feature owners MUST add a DPIA section here BEFORE `/speckit.review`

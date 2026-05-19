@@ -60,7 +60,7 @@ test.describe('staff sign-in (happy path)', () => {
     await expect(page.getByLabel(/email/i)).toBeFocused();
 
     await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
-    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
 
     // Wait for the sign-in API response AND the click to register
     // together; throw a descriptive error if the API rejects.
@@ -101,7 +101,7 @@ test.describe('staff sign-in (happy path)', () => {
     const nonexistentEmail = `wrongpw-probe-${Date.now()}@swecham.test`;
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), nonexistentEmail);
-    await fillField(page.getByLabel(/password/i), 'deliberately-wrong-password');
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), 'deliberately-wrong-password');
     await page.getByRole('button', { name: /sign in/i }).click();
 
     // Still on the sign-in page (no redirect)
@@ -120,7 +120,7 @@ test.describe('staff sign-in (happy path)', () => {
     // Sign in first
     await page.goto('/admin/sign-in');
     await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
-    await fillField(page.getByLabel(/password/i), ADMIN_PASSWORD!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
     await page.waitForURL('**/admin', { timeout: 15_000 });
 

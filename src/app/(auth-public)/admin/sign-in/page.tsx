@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SignInForm } from '@/components/auth/sign-in-form';
+import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
@@ -28,14 +29,24 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 interface StaffSignInPageProps {
-  searchParams: Promise<{ returnTo?: string | string[] }>;
+  searchParams: Promise<{
+    returnTo?: string | string[];
+    reason?: string | string[];
+  }>;
 }
 
 export default async function StaffSignInPage({ searchParams }: StaffSignInPageProps) {
-  const { returnTo: rawReturnTo } = await searchParams;
+  const { returnTo: rawReturnTo, reason: rawReason } = await searchParams;
   // searchParams can be string | string[] | undefined — coerce first.
   const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
   const validatedReturnTo = safeReturnTo(returnToCandidate, 'staff');
+  // H3 (Round 2): show a banner when ?reason=security-update is present.
+  // Operators link to this URL on deploy day after migration 0159 bulk
+  // session invalidation so users get UX context instead of an opaque
+  // "you got logged out". Allowlist of accepted reasons prevents
+  // arbitrary banner injection via query param.
+  const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
+  const showSecurityBanner = reasonCandidate === 'security-update';
 
   const current = await getCurrentSession();
   if (current && (current.user.role === 'admin' || current.user.role === 'manager')) {
@@ -47,7 +58,7 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
-    <main className="flex min-h-screen flex-col bg-muted/20">
+    <main id="main-content" className="flex min-h-screen flex-col bg-muted/20">
       <header className="flex items-center justify-between p-4">
         <div className="text-sm font-semibold tracking-tight">{tenantName} · {tPortal('staff')}</div>
         <ThemeToggle />
@@ -56,11 +67,12 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
         <Card className="w-full max-w-md">
           <CardHeader className="space-y-2">
             <CardTitle className="text-2xl">{t('title')}</CardTitle>
-            <CardDescription>
-              Thailand-Swedish Chamber of Commerce — staff portal
-            </CardDescription>
+            <CardDescription>{t('cardDescription')}</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {showSecurityBanner ? (
+              <SecurityUpdateBanner message={t('securityUpdateBanner')} />
+            ) : null}
             <SignInForm portal="staff" returnTo={validatedReturnTo} />
           </CardContent>
         </Card>

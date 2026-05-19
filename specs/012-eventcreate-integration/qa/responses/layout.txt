@@ -1,0 +1,5 @@
+
+> swecham-membership@0.1.0 check:layout C:\Users\Jirawat.p\Documents\Swedish chaplain_membership
+> tsx scripts/check-layout-container-usage.ts
+
+check:layout — OK (98 page/loading files; pairs consistent).

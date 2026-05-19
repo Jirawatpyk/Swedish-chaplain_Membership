@@ -2,6 +2,7 @@
  * T032 — Invoice repository port (F4).
  */
 
+import type { Satang } from '@/lib/money';
 import type { Invoice, InvoiceId, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
 import type { InvoiceLine } from '@/modules/invoicing/domain/invoice-line';
 import type { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
@@ -95,10 +96,10 @@ export interface InvoiceRepo {
       readonly documentNumber: string;
       readonly issueDate: string;
       readonly dueDate: string;
-      readonly subtotalSatang: bigint;
+      readonly subtotalSatang: Satang;
       readonly vatRate: string;
-      readonly vatSatang: bigint;
-      readonly totalSatang: bigint;
+      readonly vatSatang: Satang;
+      readonly totalSatang: Satang;
       readonly proRatePolicySnapshot: string;
       readonly netDaysSnapshot: number;
       readonly tenantIdentitySnapshot: unknown;
@@ -153,6 +154,14 @@ export interface InvoiceRepo {
             readonly blobKey: string;
             readonly sha256: Sha256Hex;
             readonly templateVersion: number;
+            /**
+             * Receipt document number raw — persisted on BOTH sync and
+             * async paths so the UI ("Receipt No." field/column) +
+             * audit trail can read the number back without re-parsing
+             * the PDF bytes. `null` for combined-mode (receipt reuses
+             * the invoice document number).
+             */
+            readonly receiptDocumentNumberRaw: string | null;
           }
         | {
             readonly kind: 'pending';
@@ -262,7 +271,7 @@ export interface InvoiceRepo {
     input: {
       readonly tenantId: string;
       readonly invoiceId: InvoiceId;
-      readonly newCreditedTotalSatang: bigint;
+      readonly newCreditedTotalSatang: Satang;
       readonly newStatus: 'partially_credited' | 'credited';
     },
   ): Promise<Invoice>;

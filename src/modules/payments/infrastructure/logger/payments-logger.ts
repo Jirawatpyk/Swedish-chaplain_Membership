@@ -1,5 +1,5 @@
 /**
- * F5 LoggerPort adapter (audit 2026-04-25 finding #5).
+ * F5 LoggerPort adapter.
  *
  * Wraps the project's pino instance from `@/lib/logger` so Application
  * use-cases can emit structured logs via the `LoggerPort` interface

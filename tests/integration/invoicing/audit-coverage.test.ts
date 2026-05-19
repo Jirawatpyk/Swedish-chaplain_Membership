@@ -26,6 +26,7 @@
  * registered at DB level and emitted when code writes the row).
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -86,6 +87,14 @@ const MVP_AUDIT_TYPES_EMITTED: ReadonlyArray<F4AuditEventType> = [
   // T166 async receipt PDF (2026-04-28).
   'receipt_rendered',
   'pdf_render_permanently_failed',
+  // Receipt-PDF download surface (2026-05-15).
+  'receipt_pdf_downloaded',
+  // §87 prefix-change forensic trail (2026-05-15).
+  'tenant_receipt_prefix_changed',
+  // R8-M1-code — invoice-PDF download surface (closes asymmetry with receipt).
+  'invoice_pdf_downloaded',
+  // Phase 3 — CSV export of paid invoices (added 2026-05-16).
+  'invoices_csv_exported',
 ] as const;
 
 const CORPORATE_MATRIX: BenefitMatrix = {
@@ -136,7 +145,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         tenantId: tenant.ctx.slug,
         currencyCode: 'THB',
         vatRate: '0.0700',
-        registrationFeeSatang: 0n,
+        registrationFeeSatang: asSatang(0n),
         legalNameTh: 'ทดสอบ',
         legalNameEn: 'Test',
         taxId: '0000000000000',
@@ -207,7 +216,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     }
   }, 30_000);
 
-  it('F4AuditEventType TS union documents all 16 registered types', async () => {
+  it('F4AuditEventType TS union documents all 23 registered types', async () => {
     // This asserts the compile-time union matches what the DB enum
     // ships. Read the DB enum at runtime + check every value is
     // assignable to F4AuditEventType via `as` cast (which would
@@ -221,10 +230,11 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     `);
     const dbEnum = new Set(rows.map((r) => r.enumlabel));
 
-    // The full 17 F4 types — taken from F4AuditEventType union.
-    // `invoice_pdf_regenerated` added 2026-04-20 (SC-003 / CP-5.2
-    // Best Practice closure: emitted by R3-E4 auto-rerender path when
-    // Blob outage forces re-render of an issued invoice).
+    // The full 24 F4 types — taken from F4AuditEventType union.
+    // Growth: 16 → 17 (`invoice_pdf_regenerated` 2026-04-20) → 22
+    // (T166 async worker + receipt downloads + tenant_receipt_prefix_changed
+    // 2026-04-25/05-10) → 23 (R8 `invoice_pdf_downloaded` 2026-05-15) →
+    // 24 (Phase 3 `invoices_csv_exported` 2026-05-16).
     const allF4Types: ReadonlyArray<F4AuditEventType> = [
       'invoice_draft_created',
       'invoice_draft_updated',
@@ -246,8 +256,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       'auto_email_delivery_failed',
       'receipt_rendered',
       'pdf_render_permanently_failed',
+      'receipt_pdf_downloaded',
+      'tenant_receipt_prefix_changed',
+      'invoice_pdf_downloaded',
+      'invoices_csv_exported',
     ] as const;
-    expect(allF4Types).toHaveLength(20);
+    expect(allF4Types).toHaveLength(24);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -287,7 +301,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         descriptionTh: 'ค่าสมาชิก ปี 2026',
         descriptionEn: 'Membership 2026',
         unitPriceSatang: 1_000_000n,
-        totalSatang: 1_000_000n,
+        totalSatang: asSatang(1_000_000n),
         position: 1,
       });
     });
@@ -338,7 +352,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         descriptionTh: 'ค่าสมาชิก ปี 2026',
         descriptionEn: 'Membership 2026',
         unitPriceSatang: 1_000_000n,
-        totalSatang: 1_000_000n,
+        totalSatang: asSatang(1_000_000n),
         position: 1,
       });
     });
@@ -352,7 +366,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       tenantId: tenant.ctx.slug,
       currencyCode: 'THB',
       vatRate: VatRate.ofUnsafe('0.0700'),
-      registrationFeeSatang: 0n,
+      registrationFeeSatang: asSatang(0n),
       invoiceNumberPrefix: 'AC',
       creditNoteNumberPrefix: 'ACN',
       receiptNumberingMode: 'combined',
@@ -375,6 +389,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         getForIssue: vi.fn(async () => settingsView),
         upsert: vi.fn(),
         withTx: vi.fn(async (_t, fn) => fn({})),
+      getForUpdateInTx: vi.fn(async () => null),
+      readSequencesInTx: vi.fn(async () => []),
       },
       memberIdentity: {
         getForIssue: vi.fn(async (_tx, _t, mid) => ({
@@ -455,7 +471,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         descriptionTh: 'ค่าสมาชิก ปี 2026',
         descriptionEn: 'Membership 2026',
         unitPriceSatang: 1_000_000n,
-        totalSatang: 1_000_000n,
+        totalSatang: asSatang(1_000_000n),
         position: 1,
       });
     });
@@ -598,6 +614,44 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
           'T166-11 reconciliation cron — fires after 3 retry attempts; integration coverage lands with the cron handler',
         since: '2026-04-28',
       },
+      // Receipt-PDF download audit (2026-05-15).
+      receipt_pdf_downloaded: {
+        status: 'covered',
+        where:
+          'tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts (audit-emit assertions on combined + separate happy paths) + this file (MVP_AUDIT_TYPES_EMITTED enum probe + audit_log insert probe)',
+        since: '2026-05-15',
+      },
+      // §87 prefix-change forensic trail (2026-05-15).
+      tenant_receipt_prefix_changed: {
+        status: 'covered',
+        where:
+          // R9-T5 — point at the actual integration test file so the
+          // rot-check can resolve a real path. The use-case source
+          // (`update-tenant-invoice-settings.ts`) implements the emit
+          // but is not a test artefact.
+          'tests/integration/invoicing/receipt-prefix-change-audit.test.ts (emit on prefix flip with both legacy and new values in payload) + this file (enum probe + insert probe)',
+        since: '2026-05-15',
+      },
+      // R8-M1-code — invoice-PDF download surface (closes asymmetry).
+      invoice_pdf_downloaded: {
+        status: 'covered',
+        where:
+          // R9-T8 — clarified wording: "no-emit on drafts" pins the
+          // negative case (assertion that the event is NOT fired when
+          // status='draft'), which complements the positive emit
+          // assertions on admin + member success paths. "Negative
+          // path" alone read as if drafts emit a different event.
+          'tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts (positive emit on admin + member success; no-emit on drafts; audit-throw-aborts-blob safety) + this file (MVP_AUDIT_TYPES_EMITTED enum probe)',
+        since: '2026-05-15',
+      },
+      // Phase 3 of the F4 receipt-surface plan — CSV export for Thai
+      // VAT monthly filing. 5y retention (derivative report).
+      invoices_csv_exported: {
+        status: 'covered',
+        where:
+          'tests/unit/invoicing/export-paid-invoices-csv.test.ts (audit emit on success with from/to/row_count payload) + this file (enum probe)',
+        since: '2026-05-16',
+      },
     };
 
     // Every declared F4 type must appear in the coverage map — catches
@@ -624,6 +678,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // T166 async receipt PDF (added 2026-04-28).
       'receipt_rendered',
       'pdf_render_permanently_failed',
+      // Receipt-PDF download surface (added 2026-05-15).
+      'receipt_pdf_downloaded',
+      // §87 prefix-change forensic trail (added 2026-05-15).
+      'tenant_receipt_prefix_changed',
+      // R8-M1-code — invoice-PDF download surface (closes asymmetry).
+      'invoice_pdf_downloaded',
+      // Phase 3 — CSV export of paid invoices (added 2026-05-16).
+      'invoices_csv_exported',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -659,6 +721,25 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         'tests/unit/invoicing/derive-overdue.test.ts',
       'tests/unit/invoicing/resend-pdf.test.ts':
         'tests/unit/invoicing/resend-pdf.test.ts',
+      // R9-T6 — wire up the PDF-download use-case unit tests so the
+      // inventory's 'where' strings for `receipt_pdf_downloaded` (R5)
+      // + `invoice_pdf_downloaded` (R8) resolve to real files.
+      // Previously the inventory referenced these files but the
+      // KNOWN_TEST_FILES guard had no needle for them → the rot-check
+      // accidentally passed because the substring match found nothing.
+      'tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts':
+        'tests/unit/invoicing/get-invoice-pdf-signed-url.test.ts',
+      'tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts':
+        'tests/unit/invoicing/get-receipt-pdf-signed-url.test.ts',
+      // R9-T5 — receipt-prefix-change behavioral test (emits
+      // `tenant_receipt_prefix_changed` on settings.receipt_prefix flip).
+      'tests/integration/invoicing/receipt-prefix-change-audit.test.ts':
+        'tests/integration/invoicing/receipt-prefix-change-audit.test.ts',
+      // F5R3 (2026-05-16) — F4 Phase 3 CSV export inventory needle.
+      // The `invoices_csv_exported` 'where' entry references this file
+      // but the rot-check needs it registered to resolve.
+      'tests/unit/invoicing/export-paid-invoices-csv.test.ts':
+        'tests/unit/invoicing/export-paid-invoices-csv.test.ts',
     };
 
     for (const t of declared) {
@@ -697,11 +778,13 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     const deferredCount = Object.values(coverage).filter(
       (c) => c.status === 'deferred',
     ).length;
-    expect(coveredCount + deferredCount).toBe(20);
-    // Behavioral coverage target: 17/20. Remaining 3 are post-MVP
+    // F5R3 (2026-05-16) — bumped from 23 → 24 to include the F4 Phase 3
+    // `invoices_csv_exported` event added in `0149_audit_invoices_csv_exported`.
+    expect(coveredCount + deferredCount).toBe(24);
+    // Behavioral coverage target: 21/24. Remaining 3 are post-MVP
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
     // receipt-PDF worker — integration coverage lands with T166-06).
-    expect(coveredCount).toBeGreaterThanOrEqual(17);
+    expect(coveredCount).toBeGreaterThanOrEqual(21);
   });
 });

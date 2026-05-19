@@ -1,5 +1,5 @@
 /**
- * T064 — Stripe gateway adapter (F5 Infrastructure).
+ * Stripe gateway adapter (F5 Infrastructure).
  *
  * Implements `ProcessorGatewayPort`. Wraps the shared `Stripe` client
  * singleton from `./stripe-client.ts` (already carries bounded retries
@@ -22,6 +22,8 @@ import type Stripe from 'stripe';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
+import { asSatang, satangToProcessorAmount, type Satang } from '@/lib/money';
+import { paymentsMetrics } from '@/lib/metrics';
 import type {
   ProcessorGatewayPort,
   ProcessorGatewayError,
@@ -31,7 +33,7 @@ import type {
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
 
-// R3 H3: hoisted to module scope so we don't allocate two `Set`s on every
+// hoisted to module scope so we don't allocate two `Set`s on every
 // `mapStripeError` call (this runs in the SDK error hot path during
 // retries).
 const NETWORK_ERROR_NAMES: ReadonlySet<string> = new Set([
@@ -167,7 +169,7 @@ export function mapStripeError(
   switch (type) {
     case 'StripeConnectionError':
     case 'StripeAPIError':
-    // R3 I-7: SDK v10+ surfaces rate limits as a distinct
+    // SDK v10+ surfaces rate limits as a distinct
     // `StripeRateLimitError` type. The SDK already retries 3x under
     // the hood (see stripe-client.ts), so if it bubbles up here, the
     // burst is real — but classifying as `permanent` would force the
@@ -262,6 +264,21 @@ export const stripeGateway: ProcessorGatewayPort = {
       });
     }
 
+    // F5R1-IMP6 — guard against bigint→number precision loss at the
+    // Stripe SDK boundary. Number.MAX_SAFE_INTEGER ≈ 9e15 satang
+    // (≈฿90T) — well above any realistic THB invoice. The guard is
+    // belt-and-suspenders for F11 multi-currency (e.g. IDR sub-unit
+    // pricing can push enterprise invoices past MAX_SAFE_INTEGER).
+    // Failing-closed here means the use-case sees a typed
+    // `permanent` error and audit-logs it instead of silently truncating.
+    if (input.amountSatang > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return err({
+        kind: 'permanent',
+        code: 'amount_exceeds_safe_integer',
+        reason: `amountSatang ${input.amountSatang} exceeds Number.MAX_SAFE_INTEGER — cannot serialise to Stripe API without precision loss`,
+      });
+    }
+
     const client = getStripeClient();
     try {
       // When the only enabled method is PromptPay, request
@@ -270,7 +287,11 @@ export const stripeGateway: ProcessorGatewayPort = {
       // the createPaymentIntent response. Card flows use
       // client-side confirmation via Stripe Elements.
       const createParams: Stripe.PaymentIntentCreateParams = {
-        amount: Number(input.amountSatang),
+        // F5R3 H-5 (2026-05-16) — single auditable boundary cast via
+        // `satangToProcessorAmount`. The MAX_SAFE_INTEGER guard above
+        // still applies (returns typed permanent error before reaching
+        // this point); the helper revalidates as belt-and-suspenders.
+        amount: satangToProcessorAmount(input.amountSatang),
         currency: input.currency,
         payment_method_types: [...input.paymentMethodTypes],
         metadata: { ...input.metadata },
@@ -439,8 +460,35 @@ export const stripeGateway: ProcessorGatewayPort = {
             });
           }
           // Other terminal states (requires_capture, etc.) — fall through.
-        } catch {
-          // retrieve failed — fall through to mapStripeError.
+        } catch (retrieveErr) {
+          // F5R1-E6 — retrieve disambiguation failed. Pre-fix this was
+          // a bare `catch {}` with no log, falling through to
+          // mapStripeError(original error). On a Stripe partial outage
+          // where the original `payment_intent_unexpected_state` came
+          // from a SUCCEEDED PI but the retrieve ALSO fails, the caller
+          // mapped the original error as a permanent cancel rejection
+          // and the DB then wrote `canceled` over a succeeded payment
+          // (financial-integrity divergence). Log + classify retrieve
+          // failure as retryable so the caller does NOT mark canceled
+          // over a possibly-succeeded PI.
+          logger.warn(
+            {
+              stripeAccount,
+              paymentIntentId,
+              originalErrCode: err_.code,
+              retrieveErr:
+                retrieveErr instanceof Error
+                  ? retrieveErr.constructor.name
+                  : 'unknown',
+            },
+            'stripe-gateway: cancelPaymentIntent disambiguation retrieve failed — caller must retry',
+          );
+          return err({
+            kind: 'retryable',
+            code: 'unexpected_state_disambiguation_failed',
+            reason:
+              'PI state ambiguous (cancel failed with unexpected_state + retrieve also failed); retry after Stripe recovers',
+          });
         }
       }
       return err(mapStripeError(e, { stripeAccount, paymentIntentId }));
@@ -455,7 +503,16 @@ export const stripeGateway: ProcessorGatewayPort = {
         metadata: { ...input.metadata },
       };
       if (input.amountSatang !== undefined) {
-        params.amount = Number(input.amountSatang);
+        // F5R1-IMP6 — same SafeInteger guard as createPaymentIntent.
+        if (input.amountSatang > BigInt(Number.MAX_SAFE_INTEGER)) {
+          return err({
+            kind: 'permanent',
+            code: 'amount_exceeds_safe_integer',
+            reason: `refund amountSatang ${input.amountSatang} exceeds Number.MAX_SAFE_INTEGER — cannot serialise to Stripe API without precision loss`,
+          });
+        }
+        // F5R3 H-5 (2026-05-16) — single auditable boundary cast.
+        params.amount = satangToProcessorAmount(input.amountSatang);
       }
       if (input.reason !== undefined) {
         params.reason = input.reason as Stripe.RefundCreateParams.Reason;
@@ -477,10 +534,85 @@ export const stripeGateway: ProcessorGatewayPort = {
         'stripe-gateway: createRefund ok',
       );
 
+      // F5R3v3 H-2 + H-3 + H-5 (2026-05-16) — defensive amount
+      // projection at the Stripe→Domain boundary. Pre-fix (Batch 1)
+      // we silently fell back to `input.amountSatang ?? asSatang(0n)`
+      // on response-shape drift — but that means a full-refund call
+      // (`input.amountSatang === undefined`) + malformed Stripe
+      // response = `amountSatang: 0n` returned upward. The refund row
+      // would persist with `amount_satang = 0` against a Stripe
+      // refund that actually moved customer money → breaks the
+      // `succeededSumSatang` invariant; next refund attempt sees full
+      // remaining capacity → over-refund. Now:
+      //   1. If response shape is valid: brand + return ok normally.
+      //   2. If shape invalid + input.amountSatang IS provided:
+      //      use the input (we know what we sent + Stripe accepted)
+      //      + emit metric + structured ERROR log for SRE alerting.
+      //   3. If shape invalid + input.amountSatang is undefined
+      //      (full refund): return a TYPED permanent err so the
+      //      caller (issueRefund) marks the refund failed and the
+      //      12h out-of-band sweep cron reconciles via Stripe.
+      //      Never persist a known-wrong amount.
+      const isValidStripeAmount =
+        Number.isFinite(refund.amount) && refund.amount >= 0;
+      let refundAmount: Satang;
+      if (isValidStripeAmount) {
+        try {
+          refundAmount = asSatang(BigInt(refund.amount));
+        } catch (brandErr) {
+          // Defensive — should be unreachable given isValidStripeAmount
+          // gate above (Number.isFinite + >= 0 implies BigInt-safe).
+          paymentsMetrics.gatewayBoundaryAmountBrandFailed('refund_create');
+          logger.error(
+            {
+              stripeAccount: input.stripeAccount,
+              paymentIntentId: input.paymentIntentId,
+              refundId: refund.id,
+              rawAmount: refund.amount,
+              inputAmountSatang: input.amountSatang?.toString() ?? null,
+              reason: 'asSatang_threw',
+              errKind:
+                brandErr instanceof Error
+                  ? brandErr.constructor.name
+                  : 'unknown',
+            },
+            'stripe-gateway.refund_amount_brand_failed',
+          );
+          if (input.amountSatang === undefined) {
+            return err({
+              kind: 'permanent',
+              code: 'processor_response_amount_invalid',
+              reason: `Stripe refund ${refund.id} response amount brand_failed; no input fallback available`,
+            });
+          }
+          refundAmount = input.amountSatang;
+        }
+      } else {
+        paymentsMetrics.gatewayBoundaryAmountBrandFailed('refund_create');
+        logger.error(
+          {
+            stripeAccount: input.stripeAccount,
+            paymentIntentId: input.paymentIntentId,
+            refundId: refund.id,
+            rawAmount: refund.amount,
+            inputAmountSatang: input.amountSatang?.toString() ?? null,
+            reason: 'guard_failed_non_finite_or_negative',
+          },
+          'stripe-gateway.refund_amount_brand_failed',
+        );
+        if (input.amountSatang === undefined) {
+          return err({
+            kind: 'permanent',
+            code: 'processor_response_amount_invalid',
+            reason: `Stripe refund ${refund.id} returned non-finite-or-negative amount (${refund.amount}); no input fallback available`,
+          });
+        }
+        refundAmount = input.amountSatang;
+      }
       return ok({
         id: refund.id,
         status: refund.status ?? 'pending',
-        amountSatang: BigInt(refund.amount),
+        amountSatang: refundAmount,
       });
     } catch (e) {
       return err(

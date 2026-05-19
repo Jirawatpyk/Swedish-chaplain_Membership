@@ -19,28 +19,40 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { refinePasswordPair } from '@/lib/zod-i18n';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Label } from '@/components/ui/label';
 import {
   PasswordStrength,
   estimatePasswordStrength,
 } from './password-strength';
 
-const schema = z
-  .object({
-    displayName: z.string().min(1).max(120),
-    password: z.string().min(12).max(256),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    path: ['confirmPassword'],
-    message: 'Passwords must match',
-  });
+// H2 + O1 (Round 2/3) — schema built inside component via shared
+// `refinePasswordPair` helper (invite uses `password` not
+// `newPassword` so the field name override is passed explicitly).
+// I1 (Round 4) — cast dropped now that the helper preserves inferred
+// shape.
+type FormValues = {
+  displayName: string;
+  password: string;
+  confirmPassword: string;
+};
 
-type FormValues = z.infer<typeof schema>;
+function buildSchema(tooShort: string, passwordMismatch: string) {
+  return refinePasswordPair(
+    z.object({
+      displayName: z.string().min(1).max(120),
+      password: z.string().min(12, tooShort).max(256),
+      confirmPassword: z.string(),
+    }),
+    passwordMismatch,
+    'password',
+  );
+}
 
 export interface InviteRedeemFormProps {
   readonly token: string;
@@ -63,7 +75,12 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
     setFocus,
     formState: { errors },
   } = useForm<FormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(
+      buildSchema(
+        tReset('errors.tooShort'),
+        tReset('errors.passwordMismatch'),
+      ),
+    ),
     defaultValues: { displayName: '', password: '', confirmPassword: '' },
     mode: 'onSubmit',
   });
@@ -130,12 +147,19 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
   };
 
   if (linkInvalid) {
+    // M3 (Round 3) — recovery CTA added. Pre-fix this was alert-only;
+    // user had no next-step affordance. No self-service link target
+    // (invitations are admin-issued only) so we render as a guidance
+    // line rather than a clickable button.
     return (
       <div
         className="space-y-4 rounded-md border border-destructive/40 bg-destructive/5 p-4"
         role="alert"
       >
         <p className="text-sm text-destructive">{t('errors.tokenExpired')}</p>
+        <p className="text-sm text-muted-foreground">
+          {t('errors.contactAdminCta')}
+        </p>
       </div>
     );
   }
@@ -154,39 +178,64 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
           type="text"
           autoComplete="name"
           aria-invalid={errors.displayName ? 'true' : undefined}
+          aria-describedby={
+            errors.displayName ? 'display-name-error' : undefined
+          }
           {...register('displayName')}
         />
         {errors.displayName ? (
-          <p className="text-sm text-destructive">{errors.displayName.message}</p>
+          <p
+            id="display-name-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {errors.displayName.message}
+          </p>
         ) : null}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="password">{t('passwordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           autoComplete="new-password"
           aria-invalid={errors.password ? 'true' : undefined}
+          aria-describedby={
+            errors.password ? 'password-error' : 'password-strength'
+          }
           {...register('password')}
         />
-        <PasswordStrength level={strength} />
+        <div id="password-strength">
+          <PasswordStrength level={strength} />
+        </div>
         {errors.password ? (
-          <p className="text-sm text-destructive">{errors.password.message}</p>
+          <p
+            id="password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {errors.password.message}
+          </p>
         ) : null}
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="confirm-password">{tReset('confirmPasswordLabel')}</Label>
-        <Input
+        <PasswordInput
           id="confirm-password"
-          type="password"
           autoComplete="new-password"
           aria-invalid={errors.confirmPassword ? 'true' : undefined}
+          aria-describedby={
+            errors.confirmPassword ? 'confirm-password-error' : undefined
+          }
           {...register('confirmPassword')}
         />
         {errors.confirmPassword ? (
-          <p className="text-sm text-destructive">
+          <p
+            id="confirm-password-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
             {errors.confirmPassword.message}
           </p>
         ) : null}
@@ -195,7 +244,10 @@ export function InviteRedeemForm({ token, email }: InviteRedeemFormProps) {
       <Button type="submit" className="w-full" size="lg" disabled={submitting}>
         {submitting ? (
           <>
-            <Loader2Icon className="size-4 animate-spin" aria-hidden />
+            <Loader2Icon
+              className="size-4 motion-safe:animate-spin"
+              aria-hidden
+            />
             {t('submit')}
           </>
         ) : (

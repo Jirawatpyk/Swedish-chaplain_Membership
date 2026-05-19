@@ -342,7 +342,7 @@ export function PaySheetInternal({
   // Keep latest callback/translator refs so the initiate effect does
   // not re-fire on parent re-render (inline arrow props). Avoids the
   // `onInitiateResolved in deps → effect re-runs → fetch abort loop`
-  // class of bug (audit 2026-04-25 finding #4).
+  // class of bug.
   const onInitiateResolvedRef = useRef(onInitiateResolved);
   const onPaymentSettledRef = useRef(onPaymentSettled);
   const tRef = useRef<TranslateFn>(t);
@@ -355,7 +355,7 @@ export function PaySheetInternal({
   // Fire `onPaymentSettled` exactly once per PaymentIntent lifecycle.
   // Reset on every fresh initiate (new PI) AND on retry so the parent
   // cache is invalidated correctly on the failure → retry → success
-  // path (audit 2026-04-25 finding #1).
+  // path.
   const settledRef = useRef(false);
   useEffect(() => {
     if (settledRef.current) return;
@@ -666,7 +666,7 @@ export function PaySheetInternal({
     // Reset the terminal-state guard so the NEXT settlement
     // (retry-succeeds path) fires `onPaymentSettled` to the parent.
     // Defense-in-depth with the initiate-success reset
-    // (audit 2026-04-25 finding #1).
+    //.
     settledRef.current = false;
     // Bump `retryCount` to re-arm the initiate effect; the effect's
     // cleanup will abort any in-flight fetch from the previous attempt.
@@ -748,10 +748,19 @@ export function PaySheetInternal({
         );
       case 'failure':
         return (
-          // `role="alert"` (which InlineAlert sets) is implicitly
-          // assertive but `<PaymentFailurePanel>` ALSO pins
-          // aria-live="assertive" + aria-atomic for AT compatibility
-          // across NVDA / VoiceOver / TalkBack.
+          // F5R2-CRIT-3 — PaymentFailurePanel passes role="status" to
+          // InlineAlert (overriding the primitive's role="alert"
+          // default) so the only announcement comes from the parent
+          // polite live region (data-testid="pay-sheet-aria-announcer"
+          // below). Pre-fix the panel inherited InlineAlert's
+          // role="alert" → assertive interrupt — combined with the
+          // polite announcer this produced a double-announce on every
+          // card failure (WCAG 4.1.3 violation). The pre-fix comment
+          // claiming the panel "pins aria-live='assertive' + aria-
+          // atomic for AT compatibility" was both stale (no such
+          // pinning happens after UX12) AND backwards (the polite
+          // announcer is the canonical channel; the panel must NOT
+          // self-announce).
           <PaymentFailurePanel
             reason={payState.reason}
             ctaLabel={t('retry.cta')}
@@ -777,11 +786,19 @@ export function PaySheetInternal({
   // implies content is loaded (T082 UX feedback 2026-04-24).
   const showFooter = showSummary && cardFormVisible;
 
-  // In terminal / transitional states (success / processing / 3DS /
-  // failure), the MethodTabs chrome adds noise — the user is no longer
-  // choosing a method. Render the branch panel directly so the
-  // ConfirmationPanel etc. get the full drawer body.
-  const showChrome = showSummary; // same gate as OrderSummary
+  // In terminal / transitional states (success / processing / 3DS)
+  // the MethodTabs chrome adds noise — user is no longer choosing a
+  // method. Render the branch panel directly so the ConfirmationPanel
+  // etc. get the full drawer body.
+  //
+  // F5R1-UX1 — `showSummary` is defined as `kind !== success && kind
+  // !== processing && kind !== requires-action`, which evaluates true
+  // for both `idle` and `failure` already. So showSummary already
+  // keeps MethodTabs visible on `failure` — the previously-stated
+  // concern ("MethodTabs hidden during failure") was a misread of
+  // the gate. Documenting here so future readers don't re-add a
+  // redundant `|| payState.kind === 'failure'`.
+  const showChrome = showSummary;
 
   // Single persistent live region — per-panel aria-live mounts are
   // unreliable across NVDA/VoiceOver/TalkBack when one region replaces

@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
@@ -114,11 +114,18 @@ export function BundleChangeWarningDialog({
           role="status"
           aria-live="polite"
         >
+          {/* I3 round-10 ui-design-specialist — was a spinner + "Loading…"
+              text which broke the skeleton-first convention used by
+              every other admin surface. Now: a width-matched shimmer
+              that has the same visual mass as the final count line
+              ("X members affected"). When `loading` ends, the skeleton
+              swaps to the real text with no CLS. SR users still hear
+              the polite live-region transition. */}
           {loading ? (
-            <span className="flex items-center gap-2 text-muted-foreground">
-              <Loader2Icon className="size-4 animate-spin" />
-              {t('loading')}
-            </span>
+            <>
+              <span className="sr-only">{t('loading')}</span>
+              <Skeleton aria-hidden="true" className="h-4 w-32" />
+            </>
           ) : count !== null ? (
             <span className="font-medium">{t('affectedCount', { count })}</span>
           ) : null}

@@ -48,6 +48,23 @@ export default defineConfig({
     // bugs (assertion failures + syntax errors land in <100ms
     // regardless) and absorbs the cold-import variance.
     testTimeout: 30_000,
+    // Staff-review R3v2 (2026-05-16): hookTimeout was initially bumped
+    // from the vitest default 10s to 30s in commit `21888223` to
+    // support beforeAll-based route-module pre-warm hooks. **R3v2
+    // staff-review identified 30s as INSUFFICIENT** for the slowest
+    // contract files under `pnpm test:coverage` v8 instrumentation:
+    //
+    //   File                              | first-test normal | 2× cov | 3× cov
+    //   csv-import-api.test.ts            |    29.3 s         | 58.6 s |  87.9 s
+    //   csv-import-eventcreate-format.ts  |    23.3 s         | 46.6 s |  69.9 s
+    //
+    // At 29.3 s normal-mode, csv-import-api had a 700 ms safety margin
+    // before the 30 s ceiling — any CPU contention under coverage
+    // overruns it. Bumping to 60_000 covers up to ~2× cold-start (the
+    // realistic worst case in CI parallelism). Fail-fast signal
+    // preserved — genuine setup failures (mock-shape errors, missing
+    // modules) land in <500 ms regardless of ceiling.
+    hookTimeout: 60_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json-summary', 'lcov'],
@@ -68,6 +85,14 @@ export default defineConfig({
         // Pure TypeScript type files — no executable statements.
         'src/modules/plans/domain/benefit-matrix.ts',
         'src/modules/plans/domain/fee-config.ts',
+        // F4 cross-feature payload — pure types/interfaces (no runtime
+        // statements). v8 instrumentation reports 0/130 lines under
+        // unit-only mode because the file is import-only at module
+        // load + tsc strips type declarations at compile time. Coverage
+        // is asserted at the TYPE level by tests/unit/invoicing/domain/
+        // f4-invoice-paid-event.test.ts (compile-roundtrip + payload
+        // shape contracts).
+        'src/modules/invoicing/domain/f4-invoice-paid-event.ts',
         // Next.js server-runtime utilities — require a running Next.js context.
         'src/lib/auth-session.ts',
         'src/lib/feature-flags.ts',
@@ -177,6 +202,137 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // F4: Invoicing Domain layer — file-level 100% thresholds for
+        // the 11 fully-covered files. Added 2026-05-17 (polish
+        // retrospective Phase C). Blanket `domain/**/*.ts: 100%` was
+        // attempted but 5 pre-existing files (calculate-credit-note-vat,
+        // document-number, member-identity-snapshot, money — all <100%
+        // by 1-25 branches/lines in scoped run + f4-invoice-paid-event
+        // which is types-only and shows 0/130 lines under v8 instrumentation)
+        // can't hit 100% in unit-only mode. The 11 entries below pin the
+        // files that ALREADY achieve 100% so regressions are caught;
+        // the 4 sub-100% files are deferred to a follow-up commit
+        // ("F4 Domain coverage polish — close remaining 4 gaps") and
+        // the types-only file is excluded above (search "types-only"
+        // in exclude:).
+        // Mirrors the F8 deferred-with-rationale precedent at lines
+        // ~361-373 below — explicit acknowledgement beats silent
+        // gaps under a blanket threshold.
+        'src/modules/invoicing/domain/credit-note.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/invoice.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/invoice-line.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/policies/calculate-pro-rate-factor.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/policies/calculate-vat.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/policies/enforce-credit-cannot-exceed-remainder.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/fiscal-year.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/pro-rate-policy.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/sha256-hex.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/tenant-identity-snapshot.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/invoicing/domain/value-objects/vat-rate.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F4: Invoicing Application — security-critical use cases require
+        // 100% branch coverage per Constitution Principle II. The 5 paths
+        // below directly gate PII/financial-doc read (PDF signed-URL
+        // siblings + CN sibling), tax-document mutation (issue/payment),
+        // and async render-state transitions (R10-T2 added these blocks
+        // after R9-blob_missing branches landed without coverage and the
+        // global 80% threshold swallowed the drift).
+        //
+        // **Deferred (integration-only)** per 2026-05-17 polish
+        // retrospective Phase D:
+        //
+        // - `mark-paid-from-processor.ts` — F4/F5 bridge entry called
+        //   by the Stripe webhook (`processWebhookEvent`). Covered by
+        //   tests/integration/payments/f4-markpaid-integration.test.ts
+        //   (T128 — 5 invariants: status flip, single render, single
+        //   outbox enqueue, paymentDate threading, byte-identical
+        //   render with manual-mark equivalent). The use case
+        //   orchestrates `recordPayment` + repo writes + audit emit
+        //   under `runInTenant` — unit-mocking the chain would
+        //   re-stub every IT contract above for marginal extra
+        //   confidence. Same R6-CRIT-1 rationale as F8 deferred
+        //   use-cases below. Threshold lives at the global 50%/80%
+        //   minimum (no file-level entry); the IT suite is the
+        //   binding correctness contract.
+        'src/modules/invoicing/application/use-cases/get-invoice-pdf-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/get-receipt-pdf-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/get-credit-note-pdf-signed-url.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/issue-invoice.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        'src/modules/invoicing/application/use-cases/record-payment.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
         // F5: Payments Application — security-critical use cases require
         // 100% branch coverage per Constitution Principle II. The three
         // paths below are the PCI-adjacent entry points whose branches
@@ -192,6 +348,81 @@ export default defineConfig({
           functions: 100,
         },
         'src/modules/payments/application/use-cases/confirm-payment.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        // F5 PCI-critical additional use-cases — 2026-05-17 polish
+        // retrospective F5 push (per user "ผมบอกให้ทำ F5 ด้วย").
+        // Adds file-level thresholds for use-cases that ALREADY achieve
+        // 100% line + functions in unit-only scoped run (verified via
+        // `pnpm vitest run --coverage tests/unit/payments`). Branches
+        // threshold set to the achieved level to lock in regression
+        // protection without speculative tightening that would block
+        // CI under unit-only mode. Higher branch % is achieved in
+        // full `pnpm test:coverage` mode via integration test backfill
+        // (see vitest.config.ts:140-141 comment).
+        'src/modules/payments/application/use-cases/cancel-payment.ts': {
+          // Member-initiated cancel of pending payment. State transition
+          // gates (payment_not_cancelable) + processor permanence
+          // discriminator are security-critical.
+          lines: 100,
+          branches: 95,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/fail-payment.ts': {
+          // Webhook → payment_intent.payment_failed handler. Failure
+          // mode classification feeds into Retry-After header decisions.
+          lines: 95,
+          branches: 95,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/sweep-stale-pending-refunds.ts': {
+          // Cron sweeper — detects stale `requested`-status refunds
+          // and reconciles with Stripe. Money-movement reconciliation
+          // surface.
+          lines: 100,
+          branches: 94,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/load-invoice-payment-activity.ts': {
+          // Read-only projection consumed by admin invoice detail
+          // timeline. Was at 43% L / 50% F pre-2026-05-17 polish
+          // (computeRemainingRefundable pure function had ZERO tests
+          // despite money-arithmetic responsibility). Phase B follow-up
+          // added 12 cases covering: no payment, all-failed, partial
+          // refund, exact-equal refund, over-refund (defensive),
+          // failed/pending refund ignored, sibling-payment refund
+          // ignored, partially_refunded status, multiple succeeded
+          // payments (most-recent wins), null completedAt (epoch sort),
+          // immutability (no caller mutation).
+          lines: 100,
+          branches: 90,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/issue-refund.ts': {
+          // Money-movement use-case (admin-initiated refund). 16 unit
+          // tests cover error branches, Stripe+F4 failure paths, and
+          // happy paths. Remaining ~18% line gap is DB-transaction
+          // rollback paths covered by tests/integration/payments/
+          // issue-refund-*.test.ts on live Neon Singapore. Per F8
+          // deferred-with-rationale precedent (vitest.config.ts:361-373),
+          // file-level threshold locks the achieved unit-test level
+          // — branches stay at 95% to catch regression without
+          // forcing speculative integration→unit conversion.
+          lines: 80,
+          branches: 95,
+          functions: 100,
+        },
+        'src/modules/payments/application/use-cases/process-charge-refunded.ts': {
+          // Out-of-band refund detection — Stripe webhook
+          // `charge.refunded` arriving without a matching F5-initiated
+          // refund row triggers out_of_band_refund_detected audit.
+          // Pushed to 100% L/B/F on 2026-05-17 (F5 polish round 4) by
+          // adding 6 cases covering: refund_amount_mismatch_detected,
+          // amountProjectionFailed bypass, parent recovery to refunded,
+          // parent recovery race (updateStatus null → logger.warn),
+          // parent null (concurrent delete), parent already at target.
           lines: 100,
           branches: 100,
           functions: 100,
@@ -326,6 +557,103 @@ export default defineConfig({
         // + `enforce-rbac-on-f8-mutation.ts` — neither ships as a
         // standalone file; coverage lives in
         // `rbac-defence-in-depth.test.ts` (3 IT cases × DB-layer audit).
+
+        // ---------------------------------------------------------------
+        // F6 + F6.1 Events module — per-file coverage thresholds
+        //
+        // **R3 honesty pass (2026-05-16) — staff-review H-4-REGRESSION**:
+        // The R1 fix initially set blanket `events/domain/**` at 100%
+        // line and `import-csv.ts` at 95% branch — both UNREACHABLE in
+        // unit-only coverage mode. Many domain files (`levenshtein.ts`,
+        // `normalise-company-name.ts`, `personal-email-deny-list.ts`,
+        // `value-objects/source.ts`, etc.) are only exercised by
+        // integration tests against live Neon Singapore. `import-csv.ts`
+        // mixes unit + IT-only paths (advisory lock, RLS probe, batch
+        // tx callbacks). Listing them in this block would fail
+        // `pnpm test:coverage` immediately — same R6-B2/CRIT-2/CRIT-3
+        // precedent applies (see F8 comment block above).
+        //
+        // The block below lists ONLY files with DIRECT unit-test
+        // coverage in `tests/unit/events/`. IT-only files are tested
+        // by `pnpm test:integration` against live Neon — the binding
+        // correctness contract for those branches.
+        // ---------------------------------------------------------------
+        'src/modules/events/domain/secret-last-four.ts': {
+          // Direct: tests/unit/events/secret-last-four.test.ts (4 tests).
+          // Pure helper — branded last-4 secret display.
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/events/domain/csv-import-record-id.ts': {
+          // Direct: tests/unit/events/csv-import-record-id.test.ts
+          // (13 tests, R3 addition — asCsvImportRecordId throw paths +
+          // tryCsvImportRecordId unknown-type branches). Also covered
+          // transitively by generate-error-csv-signed-url.test.ts +
+          // sweep-expired-error-csv-blobs.test.ts (branded type +
+          // asCsvImportRecordId producer).
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // F6.1 generate-error-csv-signed-url use-case — high branch
+        // coverage on cross-tenant probe handling (Constitution I clause
+        // 4 Review-Gate blocker) + signed-URL audit gating + db_error
+        // → probe fall-through (CR-7). Coverage from
+        // tests/unit/events/generate-error-csv-signed-url.test.ts (11
+        // cases) + integration cross-tenant isolation tests.
+        //
+        // **R3 honesty pass (2026-05-16)**: actual unit-only coverage
+        // measures 98.49% lines / 90% branches. Threshold relaxed from
+        // 100/100 to 95/85 to leave a small headroom for the IT-only
+        // branches (logger optional-chain + onDownloadSuccess optional
+        // callback when called from non-route composition contexts).
+        // Still well above global 80% branch floor.
+        'src/modules/events/application/use-cases/generate-error-csv-signed-url.ts': {
+          lines: 95,
+          branches: 85,
+          functions: 100,
+        },
+        // F6.1 sweep cron use-case — 80% branch is sufficient (non-
+        // security path); coverage from sweep-expired-error-csv-blobs
+        // unit tests (10 tests covering all 7 documented failure modes).
+        'src/modules/events/application/use-cases/sweep-expired-error-csv-blobs.ts': {
+          lines: 90,
+          branches: 80,
+          functions: 90,
+        },
+        //
+        // **Deferred (IT-only — would fail unit-mode coverage)**:
+        //
+        // - `src/modules/events/application/use-cases/import-csv.ts`:
+        //   2051 LOC mixing unit + IT-only branches (advisory lock,
+        //   RLS probe DB errors, batch tx commit/rollback, withImport
+        //   RecordsTx callbacks). Strict-audit invariant chain + state-
+        //   change branch ARE covered by unit tests (state-change-
+        //   strict-audit, mismatch-override-strict-audit, batch-tx-
+        //   abort), but the DB-layer-touching branches require live
+        //   Neon. Integration tests in tests/integration/events/ are
+        //   the binding correctness contract.
+        //
+        // - `src/modules/events/domain/eventcreate-csv-format.ts`:
+        //   exports `classifyPdpaConsent` (covered by classify-pdpa-
+        //   consent.test.ts, 20 tests) AND
+        //   `computeAttendeeFingerprintFromEmails` (covered by
+        //   attendee-fingerprint.test.ts via import-csv `_internals`,
+        //   9 tests + fast-check). Both functions are well-tested but
+        //   the `_internals` indirection breaks per-file coverage
+        //   attribution in vitest. List once `_internals` re-export is
+        //   resolved.
+        //
+        // - `src/modules/events/domain/{branded-types,event,event-
+        //   registration,levenshtein,match-rate,normalise-company-
+        //   name,personal-email-deny-list,eventcreate-payload,tenant-
+        //   webhook-config}.ts` + `value-objects/*`: all transitively
+        //   exercised through use-case unit tests OR through live-Neon
+        //   integration tests. Per-file unit coverage is partial; IT
+        //   coverage is the binding contract.
       },
     },
   },

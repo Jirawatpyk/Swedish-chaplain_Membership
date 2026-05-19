@@ -300,4 +300,82 @@ describe('InvoicingBridge (F5 → F4) — live Neon', () => {
     // (the gap); inverted in Group E2b.
     expect(row?.status).toBe('issued');
   });
+
+  /**
+   * F5R1-T3 — F5 → F4 callback FAILURE direction.
+   *
+   * The D-03 atomicity test above proves the symmetric direction
+   * (F5 outer tx fails → F4 invoice flip rolls back). T3 is the
+   * complement: F4 returns ERR (e.g., the invoice doesn't exist
+   * under the actor's tenant — RLS-cloaked or genuinely missing)
+   * → the F5 caller MUST see a typed `Result.err` with the F4
+   * error summarised by `summariseF4Error` into the stable
+   * `{ code, detail }` shape, AND no F4-side row mutation lands.
+   *
+   * Pre-T3 the regression risk was: a future change to the bridge
+   * adapter's error mapping (e.g., catching + swallowing the F4
+   * error to "be helpful") would silently turn a failed callback
+   * into a no-op success, leaving the F5 payment row succeeded but
+   * the F4 invoice still issued — a SC-013 invariant break (no
+   * succeeded-payment-without-paid-invoice).
+   */
+  it('F5R1-T3: F4 returns err → bridge surfaces typed { code, detail } + no DB mutation', async () => {
+    // Use a random invoice id that doesn't exist in the tenant's
+    // invoices table. F4's `markPaidFromProcessor` resolves the
+    // invoice via the repo and returns an error variant when it
+    // misses (`invoice_not_found` or similar — the exact code lives
+    // inside F4 and is intentionally treated as opaque here; T3
+    // pins the BRIDGE-LAYER contract, not the F4-internal error
+    // taxonomy).
+    const missingInvoiceId = randomUUID();
+
+    // Capture the pre-call state of `invoices` rows for the tenant
+    // so we can assert the failure path doesn't accidentally INSERT
+    // a row (defence-in-depth: a bug that swallows the F4 error
+    // could also create a stub row).
+    const preRows = await db
+      .select({ id: invoices.invoiceId })
+      .from(invoices)
+      .where(eq(invoices.tenantId, tenant.ctx.slug));
+    const preRowIds = new Set(preRows.map((r) => r.id));
+
+    const result = await invoicingBridge.markPaidFromProcessor({
+      tenantId: tenant.ctx.slug,
+      invoiceId: missingInvoiceId,
+      requestId: 'req-t3-callback-failure',
+      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+      method: 'stripe_card',
+      paymentIntentId: 'pi_test_t3_callback_failure',
+      chargeId: 'ch_test_t3_callback_failure',
+      settlementDate: '2026-05-16',
+    });
+
+    // 1. Bridge must surface a typed err — never an ok with the
+    //    invoice still issued.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+
+    // 2. Stable `{ code, detail }` shape (per `summariseF4Error`
+    //    contract in `invoicing-bridge.ts`). Both fields must be
+    //    non-empty strings; PII-leak protection (the helper drops
+    //    everything except scalar string fields on the discriminator).
+    expect(typeof result.error.code).toBe('string');
+    expect(result.error.code.length).toBeGreaterThan(0);
+    expect(typeof result.error.detail).toBe('string');
+    expect(result.error.detail.length).toBeGreaterThan(0);
+    // Must NOT contain a JSON.stringify dump of the F4 error (the
+    // pre-#16-fix behaviour leaked PII into F5 audit summaries).
+    expect(result.error.detail).not.toMatch(/^\{.*\}$/);
+
+    // 3. The missing invoice id must NOT have been inserted as a
+    //    side-effect of the failed callback.
+    const postRows = await db
+      .select({ id: invoices.invoiceId })
+      .from(invoices)
+      .where(eq(invoices.tenantId, tenant.ctx.slug));
+    expect(postRows.map((r) => r.id)).toEqual(
+      expect.arrayContaining([...preRowIds]),
+    );
+    expect(postRows.find((r) => r.id === missingInvoiceId)).toBeUndefined();
+  });
 });

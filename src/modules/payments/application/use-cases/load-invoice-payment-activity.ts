@@ -22,6 +22,7 @@
  * crashing the whole route.
  */
 import { ok, err, type Result } from '@/lib/result';
+import { asSatang, type Satang } from '@/lib/money';
 import type {
   PaymentsRepo,
   RefundActivityDto,
@@ -85,7 +86,7 @@ export async function loadInvoicePaymentActivity(
  */
 export function computeRemainingRefundable(
   activity: LoadInvoicePaymentActivityOutput,
-): { readonly paymentId: string; readonly remainingSatang: bigint } | null {
+): { readonly paymentId: string; readonly remainingSatang: Satang } | null {
   const succeededPayment = [...activity.payments]
     .filter(
       (p) => p.status === 'succeeded' || p.status === 'partially_refunded',
@@ -103,5 +104,8 @@ export function computeRemainingRefundable(
     .reduce((acc, r) => acc + r.amountSatang, 0n);
   const remaining = succeededPayment.amountSatang - sumSucceededRefunds;
   if (remaining <= 0n) return null;
-  return { paymentId: succeededPayment.id, remainingSatang: remaining };
+  // F5R3v2 H-5 (2026-05-16) — brand the result so consumers (F8
+  // bridge, admin page, cmdk) receive a typed Satang. asSatang
+  // validates non-negative; the gate above guarantees > 0.
+  return { paymentId: succeededPayment.id, remainingSatang: asSatang(remaining) };
 }

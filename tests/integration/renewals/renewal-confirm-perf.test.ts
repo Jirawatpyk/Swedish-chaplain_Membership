@@ -19,6 +19,7 @@
  *   RUN_PERF=1 PERF_MEMBER_COUNT=1000 PERF_SLO_STRICT=1 pnpm test:integration ...
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { asSatang } from '@/lib/money';
 import { eq, inArray, type InferInsertModel } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
@@ -209,7 +210,7 @@ describe.skipIf(!RUN_PERF)(
             status: 'issued' as const,
             invoiceId,
             invoiceNumber: `IV/${invoiceId.slice(0, 8)}`,
-            totalSatang: 5_000_000n,
+            totalSatang: asSatang(5_000_000n),
           };
         });
 

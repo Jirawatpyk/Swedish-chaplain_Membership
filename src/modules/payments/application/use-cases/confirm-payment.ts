@@ -1,5 +1,5 @@
 /**
- * T057 — confirmPayment use-case (F5 / stripe-webhook.md § 4.1).
+ * confirmPayment use-case (F5 / stripe-webhook.md § 4.1).
  *
  * Handles `payment_intent.succeeded` webhook dispatch. Security-critical:
  * 100% branch coverage (Principle II).
@@ -76,18 +76,53 @@ export type ConfirmPaymentOutcome =
   | { readonly kind: 'processed'; readonly invoiceId: string }
   | { readonly kind: 'already_succeeded'; readonly invoiceId: string }
   | { readonly kind: 'unknown_intent' }
+  /**
+   * F5R1-E9 — Stripe-side auto-refund call failed AND the Stripe
+   * webhook event has aged past the give-up threshold. Phase A
+   * already committed the payment row + emitted Phase A audit; we
+   * acknowledge the webhook to break Stripe's 72h retry storm,
+   * emitting an `out_of_band_refund_detected` forensic audit with
+   * `cause = auto_refund_giving_up` so the runbook picks up manual
+   * reconciliation. Customer's payment remains `succeeded` with no
+   * refund — operator must reconcile via Stripe Dashboard.
+   */
+  | {
+      readonly kind: 'auto_refund_given_up';
+      readonly paymentId: string;
+      readonly invoiceId: string;
+    }
   | {
       readonly kind: 'auto_refunded_stale_invoice';
       readonly invoiceId: string;
     }
-  | { readonly kind: 'invoice_not_found'; readonly invoiceId: string };
+  | { readonly kind: 'invoice_not_found'; readonly invoiceId: string }
+  /**
+   * F5R3v3 H-1 (2026-05-16) — F4 bridge surfaced a malformed invoice
+   * (currently: negative `totalSatang`). The webhook is acknowledged
+   * to prevent Stripe retry storm; the customer's payment row stays
+   * `succeeded` with the invoice still corrupt. Forensic audit fires
+   * with the offending invoiceId so admin runbook can reconcile out
+   * of band. Mirrors the `invoice_not_found` semantics — Stripe has
+   * already charged the customer; our DB state is the broken side.
+   */
+  | { readonly kind: 'invoice_data_corrupt'; readonly invoiceId: string };
 
 // review-20260428-102639.md S7 closure — `invoice_not_found` removed
 // from this union: code path emits `ok({kind:'invoice_not_found'})`,
 // not `err`. The dead variant misled exhaustive-switch tests.
+//
+// F5R3 H-7 (2026-05-16) — `illegal_transition` and
+// `invariant_violation_duplicate_succeeded` ALSO removed for the same
+// reason. R4 H-3 / R4 I-3 made both into ack paths returning
+// `ok({kind:'already_succeeded'})` with the original literal preserved
+// only on the `_shared.emitTerminalStateAck` audit payload's
+// `mismatch_kind` field (string-literal union, unrelated to this Result
+// error union). No `err({code:'illegal_transition'})` or
+// `err({code:'invariant_violation_duplicate_succeeded'})` site exists
+// anywhere in the codebase — keeping these variants here let future
+// maintainers writing exhaustive-switch consumers add unreachable
+// branches that look load-bearing.
 export type ConfirmPaymentError =
-  | { readonly code: 'illegal_transition'; readonly from: string }
-  | { readonly code: 'invariant_violation_duplicate_succeeded' }
   | { readonly code: 'processor_unavailable'; readonly reason: string }
   | { readonly code: 'bridge_error'; readonly detail: string };
 
@@ -101,7 +136,7 @@ export interface ConfirmPaymentDeps {
   /**
    * Optional — when supplied alongside `input.processorEventId`,
    * `markProcessed` runs inside this use-case's withTx so the dispatch
-   * + markProcessed commit atomically (audit 2026-04-25 finding #4).
+   * + markProcessed commit atomically.
    */
   readonly processorEventsRepo?: ProcessorEventsRepo;
   /**
@@ -163,7 +198,11 @@ export async function confirmPayment(
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: e instanceof Error ? e.message : 'confirm_threw',
+          // F5R3 LOW (2026-05-16) — H-4 hygiene: span.message uses
+          // class name only (never raw .message). OTel span status
+          // exports to tracing dashboards that aggregate across the
+          // org; `.message` can carry SQL params / Stripe endpoint URLs.
+          message: e instanceof Error ? e.constructor.name : 'confirm_threw',
         });
         throw e;
         /* v8 ignore stop */
@@ -192,8 +231,46 @@ export async function confirmPayment(
  */
 interface StalePending {
   readonly payment: Payment;
-  readonly cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status';
+  readonly cause: StaleRefundCause;
   readonly invoiceStatus: string | undefined;
+}
+
+/**
+ * F5R3 SIMPLIFY-H5 (2026-05-16) — auto-refund cause derivation.
+ *
+ * Extracted from a 35-line inline IIFE (with v8-ignore overhead +
+ * exhaustiveness trap) inside `confirmPaymentBody`. Pure function +
+ * default-arm fallback gives the SAME safety with a fraction of the
+ * noise: the helper covers every known F4 InvoiceStatus + the
+ * undefined / 'draft' / unknown-future-status cases land in a single
+ * `'invoice_unknown_status'` bucket. Future F4 additions that should
+ * map to a NEW cause require updating this switch, but the silent
+ * fallback prevents a runtime crash in the meantime.
+ */
+export type StaleRefundCause =
+  | 'invoice_already_paid'
+  | 'invoice_voided'
+  | 'invoice_credited'
+  | 'invoice_unknown_status';
+
+export function causeForInvoiceStatus(
+  invoiceStatus: string | undefined,
+): StaleRefundCause {
+  switch (invoiceStatus) {
+    case 'paid':
+      return 'invoice_already_paid';
+    case 'void':
+      return 'invoice_voided';
+    case 'credited':
+    case 'partially_credited':
+      return 'invoice_credited';
+    // 'draft' / undefined / any future InvoiceStatus addition →
+    // unknown-status bucket. The use-case emits a forensic audit
+    // either way; an unrecognised status doesn't change downstream
+    // behaviour beyond the audit label.
+    default:
+      return 'invoice_unknown_status';
+  }
 }
 
 async function confirmPaymentBody(
@@ -267,8 +344,80 @@ async function confirmPaymentBody(
           invoiceId: payment.invoiceId,
         });
       }
-      // forbidden won't happen webhook-side (no actor); not_payable →
-      // handled by stale-invoice branch below (we re-derive via status).
+      // F5R1-E3 — explicit `forbidden` early-return.
+      // Pre-fix the comment said "forbidden won't happen webhook-side"
+      // and control fell through to the stale-refund branch where
+      // `invoiceStatus` resolved to `undefined` → auto-refund fired
+      // on a payment whose invoice we should not even know about.
+      // If F4 ever surfaces `forbidden` to a webhook-side caller (e.g.
+      // future F11 SaaS multi-tenant Connect events resolving an actor
+      // role into bridge calls), the fall-through would trigger an
+      // unrequested customer refund. Belt-and-suspenders: ack the
+      // webhook + log forensic, never auto-refund on a forbidden read.
+      if (invoiceResult.error.code === 'forbidden') {
+        // F5R3 CR-4 (2026-05-16) — atomic markProcessed inside the
+        // withTx (mirrors the not_found sibling at line ~262). The
+        // pre-fix branch returned ok(invoice_not_found) WITHOUT
+        // marking the processor_events row, leaving Stripe to retry
+        // forever (recovery-replay path re-enters bridge → still
+        // forbidden → still no markProcessed → 72h retry storm
+        // class). Switch the audit emit to tx-bound (was null) so it
+        // commits atomically with markProcessed. F4 forbidden is a
+        // PERMANENT bridge state — Stripe retry has zero chance of
+        // success.
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'payment_invoice_not_found',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Webhook arrived for invoice ${payment.invoiceId} that F4 refused (forbidden) — unexpected on webhook side; PI ${input.paymentIntentId}`,
+          payload: {
+            payment_intent_id: input.paymentIntentId,
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+          },
+          retentionYears: retentionFor('payment_invoice_not_found'),
+        });
+        await markProcessed();
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'invoice_not_found',
+          invoiceId: payment.invoiceId,
+        });
+      }
+      // F5R3v3 H-1 (2026-05-16) — bridge surfaced corrupted F4 invoice
+      // money (negative totalSatang). Stripe already CHARGED the
+      // customer; ack the webhook + audit forensic + markProcessed so
+      // we don't retry forever. Customer's payment row stays succeeded
+      // with the invoice corrupt — admin runbook reconciles out of
+      // band (refund manually via Stripe Dashboard OR fix the invoice
+      // row). Pre-fix (Batch 1) the bridge silently capped totalSatang
+      // at 0n → control fell through to the stale-refund branch and
+      // attempted an auto-refund using a fake-zero baseline; that
+      // would either underrefund the customer or trip an arithmetic
+      // edge in `computeRefundableAmount`.
+      if (invoiceResult.error.code === 'corrupted_total') {
+        await deps.audit.emit(tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'payment_invoice_not_found',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Webhook arrived for invoice ${payment.invoiceId} that F4 bridge flagged as data-corrupt (negative totalSatang); PI ${input.paymentIntentId} — admin must reconcile out of band`,
+          payload: {
+            payment_intent_id: input.paymentIntentId,
+            payment_id: payment.id,
+            invoice_id: payment.invoiceId,
+            bridge_outcome: 'corrupted_total',
+          },
+          retentionYears: retentionFor('payment_invoice_not_found'),
+        });
+        await markProcessed();
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'invoice_data_corrupt',
+          invoiceId: payment.invoiceId,
+        });
+      }
+      // not_payable → handled by stale-invoice branch below (we
+      // re-derive via status).
     }
 
     // Step 3 — stale invoice auto-refund.
@@ -302,46 +451,18 @@ async function confirmPaymentBody(
       // Exhaustive switch with `never` arm so a future addition to
       // InvoiceStatus (F4) fails the build here instead of silently
       // routing through the `invoice_credited` catch-all bucket
-      // (audit 2026-04-25 finding #6). The InvoiceStatus enum uses
+      //. The InvoiceStatus enum uses
       // `'void'` (not `'voided'`); the `invoice_credited` bucket
       // covers both `'credited'` and `'partially_credited'` since
       // both terminate the payable window.
-      const cause: 'invoice_already_paid' | 'invoice_voided' | 'invoice_credited' | 'invoice_unknown_status' = (() => {
-        // `invoiceStatus === undefined` only when the bridge returned
-        // a forbidden/not_found path that already short-circuited
-        // step 2 — defensive only (paired with the v8-ignored
-        // `: undefined` ternary arm above).
-        /* v8 ignore next -- defensive: paired with the unreachable `: undefined` arm at line ~164 */
-        if (invoiceStatus === undefined) return 'invoice_unknown_status';
-        // `'issued'` is excluded by the `inPayableStatus` gate above
-        // → TS narrows `invoiceStatus` to the remaining InvoiceStatus
-        // values (`'draft' | 'paid' | 'void' | 'credited' | 'partially_credited'`).
-        switch (invoiceStatus) {
-          case 'paid':
-            return 'invoice_already_paid';
-          case 'void':
-            return 'invoice_voided';
-          case 'credited':
-          case 'partially_credited':
-            return 'invoice_credited';
-          /* v8 ignore start -- defensive: drafts never carry an active PaymentIntent (F4 invariant) */
-          case 'draft':
-            // `'draft'` should never reach here — drafts never carry an
-            // active PaymentIntent — but defensive in case the bridge
-            // shape evolves.
-            return 'invoice_unknown_status';
-          default: {
-            // Compile-time exhaustiveness trap. If F4 adds a new
-            // InvoiceStatus value, this arm fails to compile and forces
-            // the new branch to be added explicitly above (audit
-            // 2026-04-25 finding #6).
-            const _exhaustive: never = invoiceStatus;
-            void _exhaustive;
-            return 'invoice_unknown_status';
-          }
-          /* v8 ignore stop */
-        }
-      })();
+      // F5R3 SIMPLIFY-H5 (2026-05-16) — extracted from a 35-line IIFE
+      // to the module-scope `causeForInvoiceStatus` helper below. The
+      // IIFE + v8-ignore + exhaustiveness-trap pattern was load-bearing
+      // for narrowing safety but obscured the actual cause mapping at
+      // the use-site. The helper centralises the mapping; future F4
+      // InvoiceStatus additions still hit the exhaustiveness trap at
+      // the helper site (single source of truth).
+      const cause = causeForInvoiceStatus(invoiceStatus);
 
       // R2 H-3 (2026-04-27): defer Stripe createRefund to OUTSIDE the
       // withTx. Capture the decision in `stalePending` and return a
@@ -469,10 +590,21 @@ async function confirmPaymentBody(
     const completedAt = new Date(input.eventCreatedAtUnixSeconds * 1000);
 
     // Step 7 — persist.
+    // F5R3 CR-1 (2026-05-16) — defence-in-depth `expectedCurrentStatus`
+    // mirroring R2-CRIT-1 in cancel-payment. Single-tx + FOR UPDATE
+    // pattern keeps the row locked across the Stripe retrieve call so
+    // a concurrent webhook cannot flip pending→succeeded mid-tx — the
+    // WHERE clause is currently a build-time invariant matching the
+    // canTransition gate (line ~480). The guard exists so a future
+    // refactor splitting confirmPayment into Phase A/B (matching
+    // cancel-payment's pattern) cannot silently regress the
+    // financial-integrity invariant. canTransition narrowed
+    // payment.status to 'pending' (only legal `from` for 'succeeded').
     await deps.paymentsRepo.updateStatus(tx, {
       paymentId: payment.id,
       tenantId: input.tenantId,
       nextStatus: 'succeeded',
+      expectedCurrentStatus: payment.status,
       processorChargeId: intent.latestChargeId,
       card: intent.card,
       completedAt,
@@ -511,7 +643,7 @@ async function confirmPaymentBody(
     // UTC slice was off-by-one for payments confirmed 17:00–24:00 UTC
     // (= 00:00–07:00 next-day Bangkok), which would group those rows
     // into the wrong daily settlement bucket on tax-receipt reports
-    // (audit 2026-04-25 finding #8). InvoicingBridgePort.markPaidFrom
+    //. InvoicingBridgePort.markPaidFrom
     // Processor.settlementDate is contractually `YYYY-MM-DD Asia/Bangkok`.
     const settlementDate = bangkokLocalDate(completedAt.toISOString());
     // Staff-review R2 R010 (2026-04-28): emit the trace's terminal
@@ -615,6 +747,89 @@ async function confirmPaymentBody(
       stripeAccount: settings.processorAccountId,
     });
     if (!refund.ok) {
+      // F5R1-E9 — bound the Stripe-retry storm. The default 500
+      // (processor_unavailable) tells Stripe to retry; Stripe retries
+      // for up to 72h. If the event itself is already aged past 48h,
+      // we are in an extended outage / permanent failure window —
+      // continuing to retry pollutes audit-log + SRE alerts.
+      // Emit a give-up audit + 200-ack so Stripe drains the queue.
+      // Customer's payment row stays succeeded (Phase A took the
+      // lock and decided stale); operator must reconcile via Stripe
+      // Dashboard per docs/runbooks/out-of-band-refund.md.
+      const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+      const eventAgeSeconds = nowSeconds - input.eventCreatedAtUnixSeconds;
+      const STALE_REFUND_GIVE_UP_SECONDS = 48 * 60 * 60;
+      if (eventAgeSeconds > STALE_REFUND_GIVE_UP_SECONDS) {
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          requestId: input.requestId,
+          eventType: 'out_of_band_refund_detected',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Auto-refund giving up after ${Math.floor(eventAgeSeconds / 3600)}h — Stripe refund call still failing on event ${input.processorEventId ?? 'unknown'} for payment ${payment.id}; admin must reconcile via Stripe Dashboard`,
+          payload: {
+            // Use the Stripe event id as the refund-side identifier
+            // (no refund was actually created — Stripe call failed —
+            // so there is no processor_refund_id; use the event id
+            // for forensic correlation).
+            processor_refund_id: input.processorEventId ?? `event-${payment.id}`,
+            processor_charge_id: payment.processorPaymentIntentId,
+            amount_satang: payment.amountSatang.toString(),
+            runbook_url: 'docs/runbooks/out-of-band-refund.md',
+          },
+          retentionYears: retentionFor('out_of_band_refund_detected'),
+        });
+        // Audit row carries the forensic trail; processor_env not
+        // available at this Application-layer boundary (would require
+        // threading livemode through ConfirmPaymentInput). The grep-
+        // able summary "Auto-refund giving up after Xh" suffices for
+        // SRE alert rules pivoting on `eventType =
+        // out_of_band_refund_detected AND summary LIKE 'Auto-refund
+        // giving up%'`.
+        // Phase B markProcessedIfPresent — best-effort, drains the
+        // processor_events row so Stripe stops retrying.
+        //
+        // F5R2-SF-3 — bump a dedicated metric on Phase B failure so
+        // SRE can alert on the stuck-row class (audit row commits
+        // but processor_events.processed_at left NULL → Stripe sees
+        // 200 (stops retrying) but DB says "never processed" → sweep
+        // cron does NOT catch it). Pre-fix only the optional-
+        // chained logger.warn fired; if deps.logger is undefined
+        // (test path), the failure was completely silent.
+        try {
+          await deps.paymentsRepo.withTx(async (tx) => {
+            await markProcessedIfPresent(deps, input, tx);
+          });
+        } catch (phaseBErr) {
+          paymentsMetrics.confirmPaymentGiveUpPhaseBMarkProcessedFailed();
+          deps.logger?.warn(
+            // F5R2-M3 — standardised to underscore-prefix matching the
+            // sibling `confirm_payment.stale_refund_phase_b_mark_failed`
+            // (line 808). SRE grep `confirm_payment.*phase_b` now
+            // matches both paths.
+            'confirm_payment.give_up_phase_b_mark_processed_failed',
+            {
+              paymentId: payment.id,
+              errKind:
+                phaseBErr instanceof Error
+                  ? phaseBErr.constructor.name
+                  : 'unknown',
+            },
+          );
+        }
+        // F5R3 CR-5 (2026-05-16) — bump the success-path counter for
+        // SRE alerting. R2-TY-A added the `auto_refund_given_up`
+        // outcome variant explicitly so dashboards could pivot on
+        // it, but the metric was missing — chronic stale-invoice
+        // give-ups were invisible to alert rules (audit row only,
+        // no OTel signal). >0 in 24h = page ops (Stripe-side outage
+        // class, not a routine path).
+        paymentsMetrics.autoRefundGivenUpCount(input.tenantId);
+        return ok<ConfirmPaymentOutcome>({
+          kind: 'auto_refund_given_up',
+          paymentId: payment.id,
+          invoiceId: payment.invoiceId,
+        });
+      }
       return err<ConfirmPaymentError>({
         code: 'processor_unavailable',
         reason: refund.error.kind,
@@ -671,18 +886,31 @@ async function confirmPaymentBody(
     // audit emits a SECOND time → double-emission. We ALSO defensively
     // log the error so ops have a forensic trail; the sweep cron is
     // the recovery path.
+    // F5R1-E15 — metric INSIDE the try block so a Phase B failure
+    // does NOT bump it (and the Stripe retry that recovers Phase B
+    // WILL bump it cleanly on the next attempt). Pre-fix the metric
+    // was outside, so chronic mid-flight crashes over-counted the
+    // auto-refund rate and triggered false-alert fatigue. Trade-off
+    // accepted: under-count by 1 on Phase B failure (recovered next
+    // retry) vs. over-count on every retry (false alarm).
     try {
       await deps.paymentsRepo.withTx(async (tx) => {
         await markProcessedIfPresent(deps, input, tx);
       });
+      paymentsMetrics.autoRefundedStaleCount(input.tenantId);
       /* v8 ignore start — best-effort Phase B catch; rare DB-outage
        * race window. Recovery is automatic via Stripe retry idempotency
-       * key. Forensic log emitted before the retry per H2-2026-04-28. */
+       * key. */
     } catch (phaseBErr) {
-      // Best-effort log — this is a known race window (R3 H3-2).
-      // Recovery is automatic via Stripe retry idempotency. Per
-      // review-20260428-102639.md H2, structured-log this so ops
-      // has a forensic trail before the retry rather than silence.
+      // Best-effort log — known race window. Recovery is automatic
+      // via Stripe retry idempotency. Structured-log so ops has a
+      // forensic trail before the retry rather than silence.
+      // F5R3 CR-6 (2026-05-16) — bump dedicated counter parallel to
+      // the give-up sibling at line ~737. Pre-fix only the optional
+      // logger.warn fired (undefined logger in tests = silent), and
+      // pino logs roll off in 30 days — chronic Phase B failures
+      // were invisible to alert rules.
+      paymentsMetrics.confirmPaymentStaleRefundPhaseBMarkFailed();
       deps.logger?.warn('confirm_payment.stale_refund_phase_b_mark_failed', {
         tenantId: input.tenantId,
         paymentId: payment.id,
@@ -693,7 +921,6 @@ async function confirmPaymentBody(
     }
     /* v8 ignore stop */
 
-    paymentsMetrics.autoRefundedStaleCount(input.tenantId);
     return ok<ConfirmPaymentOutcome>({
       kind: 'auto_refunded_stale_invoice',
       invoiceId: payment.invoiceId,

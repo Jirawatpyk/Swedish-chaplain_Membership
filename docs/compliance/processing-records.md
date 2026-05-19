@@ -393,3 +393,187 @@ Same as F7.
 |---|---|---|
 | 2026-05-09 | Initial F8 entry created (Phase 9 / T257) | F8 Phase 9 implementation pass |
 
+---
+
+## F6 — EventCreate Integration
+
+**Status**: Phase 3 IMPLEMENTED — ingest path live behind
+`FEATURE_F6_EVENTCREATE` kill-switch. Branch `012-eventcreate-integration`.
+This entry codifies the processing record (Issue H-PDPA-3 from
+full-scope review 2026-05-12) — introduces **Zapier (US)** as a NEW
+cross-border processor not present in F1–F8.
+
+### Controller
+
+The **chamber** (SweCham for the first tenant) is the controller of
+attendee personal data. The chamber:
+
+- Owns the EventCreate account where attendees register
+- Configures the Zapier Zap that POSTs to F6's webhook
+- Surfaces the privacy notice to attendees at the EventCreate
+  registration form (chamber responsibility per PDPA §23 + GDPR Art. 13;
+  Chamber-OS is not the collector)
+- Holds the lawful basis for ingestion (legitimate interest, PDPA §24(5)
+  + GDPR Art. 6(1)(f) — chamber's record of who attended its events)
+
+### Processor
+
+**Chamber-OS** (platform) is the processor of attendee data on behalf
+of the chamber. Sub-processor chain:
+
+| Sub-processor | Role | Region | DPA / SCC Status |
+|---|---|---|---|
+| **Vercel Inc.** | Hosting + Fluid Compute + Vercel Observability (OTel ingestion for F6 spans + metrics) | Singapore (`sin1`) | Existing DPA covers F1–F8 hosting + observability; F6 ingest path same scope |
+| **Neon, Inc.** | Postgres database | Singapore (`ap-southeast-1`) | Existing DPA covers F1–F8 PII columns; F6 `event_registrations` is the new column set |
+| **Upstash, Inc.** | Redis rate-limiter | Singapore | Existing DPA — F6 only stores `f6-webhook:<tenant_slug>` rate-limit counters (no PII) |
+| **Zapier, Inc.** ⚠ NEW | Middleware between EventCreate + Chamber-OS webhook | United States | **PENDING DPA — chamber action required pre-flag-flip** |
+
+> **Note on error-tracking processors**: Chamber-OS does NOT currently integrate Sentry or any third-party APM. F6 error events (`f6_audit_emit_db_error`, `f6_audit_fallback_double_failure`) flow through pino structured logs ingested by Vercel Observability only. If Sentry (or equivalent) is added in a later phase, this table MUST be updated and the chamber DPA reviewed before flag-flip.
+
+**Zapier DPA status — open action**:
+- Zapier offers a standard DPA template at zapier.com/help/account/data-management/zapier-eu-gdpr-data-processing-agreement
+- Chamber legal counsel MUST execute this DPA before flipping
+  `FEATURE_F6_EVENTCREATE=true` in production
+- Zapier's DPA includes SCCs (Standard Contractual Clauses) for
+  EU→US transfer (Module 3: processor to sub-processor)
+- For PDPA §28 (Thailand→US transfer), Zapier's DPA covers the
+  "appropriate safeguards" requirement
+
+### Categories of data subjects
+
+| Subject | Examples |
+|---|---|
+| **Members' employees** | Diamond Partnership member's CEO attending a SweCham networking event |
+| **Members' representatives** | Gold Partnership member's marketing manager |
+| **Non-member attendees** | Walk-up attendees who registered without prior chamber relationship |
+
+### Categories of personal data
+
+| Field | Type | Source | Retention |
+|---|---|---|---|
+| `attendee_email` | Email address | EventCreate registration | Member-linked: 5y; Non-member: 2y → pseudonymise |
+| `attendee_email_lower` | STORED generated column (lower-case email) | Derived from `attendee_email` | Same as parent column |
+| `attendee_name` | Full name string | EventCreate registration | Same as `attendee_email` |
+| `attendee_company` | Company name string (nullable) | EventCreate registration | Same as `attendee_email` |
+| `matched_member_id` | FK to F3 `members` (UUID) | F6 4-rule match cascade | Link cleared on F3 member-erase; row otherwise retained per FR-032 |
+| `matched_contact_id` | FK to F3 `contacts` (UUID) | F6 4-rule match cascade | Same as `matched_member_id` |
+
+### Processing purpose
+
+- **Membership benefit accounting** (FR-015 to FR-018): partnership-per-event
+  + cultural-annual quota decrement on attendance
+- **Member directory accuracy** (FR-014): admin relink unmatched attendees
+  to existing members to maintain accurate member-engagement records
+- **Audit trail of who attended** (FR-009): forensic record for chamber
+  governance + dispute resolution
+
+### Lawful basis
+
+| Subject | Basis | Notes |
+|---|---|---|
+| Member-linked attendee (Thai resident) | PDPA §24(5) legitimate interest of chamber | Strong — attendee is a chamber stakeholder |
+| Member-linked attendee (EU resident) | GDPR Art. 6(1)(f) legitimate interest of chamber | Same — passes balancing test |
+| Non-member attendee (Thai resident) | PDPA §24(5) — narrower; chamber's interest is record-keeping for events | Acceptable but retention reduced to 2y vs 5y for members |
+| Non-member attendee (EU resident) | GDPR Art. 6(1)(f) — narrower interest | Acceptable for record-keeping; pseudonymisation at 2y reduces retention impact |
+
+### Cross-border transfers
+
+| Path | Mechanism |
+|---|---|
+| Attendee → EventCreate (US) | Pre-existing — chamber's EventCreate use-case predates F6 |
+| EventCreate (US) → Zapier (US) | Pre-existing — US↔US transfer |
+| Zapier (US) → Vercel (SG) → Neon (SG) | **PDPA §28** "appropriate safeguards" — Zapier DPA + Vercel + Neon existing DPAs |
+| Vercel (SG) ↔ Neon (SG) ↔ Upstash (SG) | Intra-region (Singapore) — no cross-border |
+
+### Technical + organisational measures (TOMs)
+
+| Measure | Implementation |
+|---|---|
+| **HMAC-SHA256 webhook auth** | Per-tenant secret, 5-min skew, 24h grace (FR-002 + FR-008) |
+| **Body-size DoS guard** | 64 KiB pre-check + post-read cap (Issue C-FULL-1) |
+| **Rate-limit per tenant** | 60 req/min via Upstash sliding window (FR-005); fail-open documented |
+| **Idempotency 2 layers** | X-Request-ID receipt + composite unique index (FR-004 + FR-011) |
+| **Strict-tx ACID** | FR-037 ingest atomicity + audit dual-write fallback |
+| **Pino redact list** | `attendee_email`, `webhook_secret_active`, X-Chamber-Signature variants |
+| **At-rest encryption** | Neon AES-256-GCM (existing TOM) |
+| **RLS+FORCE on all 4 F6 tables** | Constitution Principle I clause 2 |
+| **Audit log 5y retention** | PDPA §39 + GDPR Art. 30 |
+| **Deterministic pseudonymisation** | SHA-256(salt || tenant_id || external_id) at 2y for non-member rows (FR-032; Phase 10 T113) |
+
+### Data subject rights — F6 procedures
+
+| Right | Procedure |
+|---|---|
+| **Right to access (Art. 15 / §30)** | Email DSR to DPO; SQL query in `docs/runbooks/f6-manual-erasure.md` § 2 returns all attendee rows for a given email |
+| **Right to rectification (Art. 16 / §32)** | Admin relink (FR-014, Phase 9 T104) corrects mis-matched member |
+| **Right to erasure (Art. 17 / §33)** | **Interim manual procedure**: `docs/runbooks/f6-manual-erasure.md` (Issue H-PDPA-2). **Future automated tool**: Phase 10 T110 admin UI |
+| **Right to restrict processing (Art. 18 / §33)** | Chamber can disable tenant-wide ingest via admin wizard (`tenant_webhook_configs.enabled=false`, FR-033) |
+| **Right to data portability (Art. 20)** | DSR export via DPO-driven manual SQL query; automation TBD |
+| **Right to object (Art. 21)** | Attendee may request opt-out via DPO email; chamber disables the Zap for that attendee at EventCreate side |
+| **Right not to be subject to automated decision-making (Art. 22)** | F6 match cascade is NOT an automated decision affecting the subject — admin relink is always possible; quota decrement is internal accounting, not a decision about the attendee |
+
+### DPO contact
+
+Same as F7.
+
+### DPIA (Data Protection Impact Assessment)
+
+- **Required**: GDPR Art. 35 — F6 processes non-member PII under
+  legitimate interest with a NEW cross-border processor (Zapier) +
+  automated matching (4-rule cascade)
+- **Status**: PENDING — chamber DPO action required before flag-flip
+- **Template**: `docs/compliance/dpia-template.md`
+
+### Update history
+
+| Date | Change | Author |
+|---|---|---|
+| 2026-05-12 | Initial F6 entry created (Issue H-PDPA-3 from full-scope review) | F6 fixit pass |
+| 2026-05-16 | F6.1 amendment: add CSV import primary path + Vercel Blob error-CSV tier (staff-review B-5/H-7) | staff-review pass |
+
+---
+
+## F6.1 — CSV Import Primary Path + EventCreate Format Adapter (amendment to F6)
+
+**Status**: Staff-review T061 staged 2026-05-16. Engineering complete; awaiting DPO sign-off + flag-flip.
+**Scope**: Amends the F6 record above with the 4 new data items + 1 new processor activity introduced by `013-csv-import-eventcreate-format`.
+
+### New processing activities
+
+| Activity | Lawful basis | Retention | Recipients | TOMs |
+|---|---|---|---|---|
+| CSV upload + parse + per-row insert into `event_registrations` | PDPA §24 legitimate interest / GDPR Art. 6(1)(b) for paid attendees / Art. 6(1)(f) for free attendees | 2y (non-member rows) / indefinite (member roster); audit 5y | Vercel (hosting), Neon (DB) | Admin-only RBAC, RLS+FORCE on csv_import_records, per-(tenant,event) advisory lock, 5/hr rate-limit |
+| Attendee-fingerprint storage (FR-019a) | PDPA §24 legitimate interest / GDPR Art. 6(1)(f) | 30 days (sweep window) | Vercel, Neon | SHA-256 first-16-hex truncation — not reversible to plaintext email |
+| PDPA consent classification (FR-009) | PDPA §24 legitimate interest / GDPR Art. 6(1)(f) | Indefinite (boolean only, no raw text per Art. 5(1)(c) minimisation) | Vercel, Neon | Classification at import time; raw text NEVER persisted |
+| Error-CSV blob storage | PDPA §24 legitimate interest / GDPR Art. 6(1)(f) | 30 days hard TTL via daily sweep cron | Vercel Blob (sin1) | `addRandomSuffix:true` capability-token URL; access audit on every download via `csv_import_error_csv_downloaded` event |
+
+### New data items stored
+
+| Storage | Data category | Subject category | New as of F6.1? |
+|---|---|---|---|
+| `csv_import_records` (NEW table, migration 0139) | Operational metadata + counts + outcome + blob URL + fingerprint | Admin (actor only) — no attendee PII; PII lives in linked event_registrations | YES |
+| `event_registrations.attendee_pdpa_consent_acknowledged BOOLEAN NULL` (migration 0140) | Classification | Attendee | YES (column) |
+| `csv_import_records.attendee_fingerprint TEXT` (16-hex) | Pseudonymised identifier | Attendee (aggregate) | YES |
+| Vercel Blob `tenants/{slug}/csv-import-errors/{recordId}.csv-{randomSuffix}` | Failed CSV rows VERBATIM | Attendee | YES (storage tier) |
+
+### Vercel Blob processor amendment
+
+Existing F6 record already lists Vercel as hosting + OTel processor. F6.1 expands the **Vercel Inc. processor** scope to include Vercel Blob storage of error-CSV bytes (30-day TTL). No new DPA required — covered under the existing F1–F8 Vercel DPA (F4 invoice PDF already uses Vercel Blob).
+
+**Public-blob design caveat**: Vercel Blob non-Enterprise tier uses `access:'public'` (no true private bucket). The error CSV URL acts as a capability token (random suffix) and is enforced server-side at the route handler. See `docs/runbooks/eventcreate-csv-import.md § 3.0` + DPIA F6.1 risk row 1. DPO sign-off documents this accepted residual risk.
+
+### New audit event types
+
+| Event type | Severity | Purpose | Retention |
+|---|---|---|---|
+| `csv_import_error_csv_downloaded` | info | PII access record — every signed-URL access by admin (Art. 30 GDPR) | 5y |
+| `csv_import_cross_tenant_probe` | critical | Tenant-isolation breach attempt (Constitution Principle I clause 4) | 5y |
+| `csv_import_event_mismatch_overridden` | warn | Forensic record when admin overrides FR-019b safety-net warning | 5y |
+
+### Data subject rights amendments
+
+| Right | F6.1 procedure |
+|---|---|
+| Erasure (Art. 17 / §30) | Cascades to error-CSV Blobs per `docs/runbooks/f6-manual-erasure.md § F6.1` (staff-review H-5). Operator queries `csv_import_records WHERE error_csv_expires_at > NOW()` for the affected event + run-time-range, `del()` the matching Blob URLs, emits `csv_import_error_csv_manually_erased` audit. Also clears DB columns. |
+| Access (Art. 15 / §30) | Existing F6 procedure covers attendee row export. F6.1 csv_import_records contains only operational metadata + counts (no attendee PII outside the linked event_registrations); not exported separately. |
+

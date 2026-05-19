@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { InfoIcon } from 'lucide-react';
 import {
   MembersTable,
   type MembersTableRow,
@@ -92,6 +93,12 @@ export function DirectoryWithBulk({
 
   return (
     <>
+      {/* C3 round-10 ui-design-specialist — manager banner. Without it
+          the table looked identical to admin's first paint (same chevron
+          hover hint + same status badge styling) so managers repeatedly
+          tried to double-click cells and got nothing. Banner makes the
+          read-only constraint explicit + points to the resolution path. */}
+      {!isAdmin && <ManagerReadOnlyBanner />}
       <MembersTable
         rows={rows}
         nextCursor={null}
@@ -104,9 +111,41 @@ export function DirectoryWithBulk({
         <BulkActionBar
           selectedIds={selectedIds}
           selectedCompanyNames={selectedCompanyNames}
+          totalMatching={total}
           onClear={handleClear}
         />
       )}
     </>
+  );
+}
+
+/**
+ * Subtle banner above the manager directory table. Uses an Info icon
+ * + muted-background so the banner doesn't dominate but is unmissable
+ * on first visit. `role="status"` so SR users hear it when the page
+ * loads (without interrupting other regions).
+ */
+function ManagerReadOnlyBanner() {
+  const t = useTranslations('admin.members.directory');
+  // Round-12 review fix — `role="note"` (was `role="status"`). The
+  // banner is statically rendered on every manager-role visit, not
+  // updated dynamically; `status` is a live-region role intended for
+  // updates after page load and some SR engines don't reliably
+  // announce statically-rendered status rows on initial paint.
+  // `note` is the canonical "supplemental information" landmark and
+  // matches the actual semantic — admin handoff guidance, not a
+  // status update.
+  return (
+    <div
+      role="note"
+      aria-label={t('managerReadOnlyBanner')}
+      className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-4 py-3 text-sm"
+    >
+      <InfoIcon
+        aria-hidden="true"
+        className="size-4 shrink-0 text-muted-foreground"
+      />
+      <p className="text-muted-foreground">{t('managerReadOnlyBanner')}</p>
+    </div>
   );
 }

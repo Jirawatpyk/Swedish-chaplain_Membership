@@ -1,0 +1,8 @@
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m3 failed[39m[22m[2m | [22m[1m[32m36 passed[39m[22m[90m (39)[39m
+[2m      Tests [22m [1m[31m7 failed[39m[22m[2m | [22m[1m[32m170 passed[39m[22m[90m (177)[39m
+[2m   Start at [22m 21:55:21
+[2m   Duration [22m 468.53s[2m (transform 16.02s, setup 207ms, collect 82.11s, tests 383.39s, environment 0ms, prepare 456ms)[22m
+
+ ELIFECYCLE  Command failed with exit code 1.

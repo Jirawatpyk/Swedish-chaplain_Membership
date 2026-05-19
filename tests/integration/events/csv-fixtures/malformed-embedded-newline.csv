@@ -1,0 +1,4 @@
+event_external_id,event_name,event_start,attendee_email,attendee_name,attendee_company
+event_mn_1,Networking,2026-06-21T18:00:00+07:00,test@example.com,Test Person,"Acme
+Multi-line Co"
+event_mn_2,Mixer,2026-07-15T18:00:00+07:00,other@example.com,Other Person,Other Co

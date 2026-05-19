@@ -68,6 +68,7 @@ export const parseRefundId = _refundIdHelpers.parse;
 // ---------------------------------------------------------------------------
 
 import type { PaymentId } from './payment';
+import type { Satang } from '@/lib/money';
 
 export interface Refund {
   readonly id: RefundId;
@@ -75,7 +76,9 @@ export interface Refund {
   readonly paymentId: PaymentId;
   readonly invoiceId: string;
 
-  readonly amountSatang: bigint; // > 0
+  // F5R3 H-5 (2026-05-16) — branded Satang prevents unit confusion
+  // (baht vs satang) at compile time across F4+F5+F8.
+  readonly amountSatang: Satang; // > 0
   readonly reason: string;       // 1..500 chars; sanitised (no CR/LF)
   readonly status: RefundStatus;
 

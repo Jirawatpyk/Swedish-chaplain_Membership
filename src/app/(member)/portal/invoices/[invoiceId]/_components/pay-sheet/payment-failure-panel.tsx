@@ -2,14 +2,27 @@
 
 /**
  * Shared failure-panel primitive used by both the card-payment and
- * PromptPay branches of the PaySheet drawer. Centralises the WCAG /
- * AT contract (`role="alert"` + `aria-live="assertive"` +
- * `aria-atomic`) so both rails announce identically and any future
- * a11y change lands in one place.
+ * PromptPay branches of the PaySheet drawer.
  *
- * The CTA copy varies between rails (Card uses `retry.cta`,
- * PromptPay uses `promptpay.refresh`) so the label is passed in,
- * not hard-coded.
+ * F5R1-UX12 + F5R2-CRIT-3 — visual styling stays `tone="destructive"`
+ * for affordance. Live-region semantics are managed by the parent
+ * `<pay-sheet-internal>` which mounts a persistent polite announcer
+ * `<div aria-live="polite" role="status" class="sr-only">` (locate by
+ * `data-testid="pay-sheet-aria-announcer"`) whose announcement string
+ * is derived from `payState.kind` — when state transitions to
+ * `failure`, the announcer fires.
+ *
+ * F5R2-CRIT-3 was a half-landed UX12: UX12 removed `role="alert"` +
+ * `aria-live="assertive"` from THIS file's wrapper, but the
+ * `<InlineAlert>` primitive defaults `role="alert"` (assertive) on
+ * its rendered DOM. The result on `card-form → failure` was the same
+ * double-announce UX12 had aimed to fix — assertive panel insertion
+ * + polite announcer fire. The fix is to pass `role="status"` to
+ * InlineAlert below, overriding its primitive default. AT now hears
+ * exactly one announcement, via the parent's polite channel.
+ *
+ * The CTA copy varies between rails (Card uses `retry.cta`, PromptPay
+ * uses `promptpay.refresh`) so the label is passed in.
  */
 import { useTranslations } from 'next-intl';
 
@@ -43,11 +56,16 @@ export function PaymentFailurePanel({
   return (
     <InlineAlert
       tone="destructive"
+      // F5R2-CRIT-3 / WCAG 4.1.3 — InlineAlert defaults to role="alert"
+      // (assertive). The parent <pay-sheet-internal> already mounts a
+      // persistent polite live region (data-testid="pay-sheet-aria-
+      // announcer") that announces the failure transition. Keeping
+      // role="alert" here would cause a double-announce on every card
+      // failure (assertive panel + polite announcer). Override to
+      // role="status" so AT relies on the parent announcer alone.
+      role="status"
       data-testid={testId}
       className="space-y-4"
-      role="alert"
-      aria-live="assertive"
-      aria-atomic="true"
     >
       <InlineAlertTitle>{t('title')}</InlineAlertTitle>
       <InlineAlertDescription>{t('body', { reason })}</InlineAlertDescription>

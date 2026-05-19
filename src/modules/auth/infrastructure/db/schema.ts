@@ -25,7 +25,7 @@ import {
  *   - email_delivery_events     — Resend webhook tracking (NOT audit)
  *
  * `audit_log` enforces append-only via DB grants in
- * drizzle/migrations/0001_audit_log_grants.sql (T024). The Drizzle layer
+ * drizzle/migrations/0001_audit_log_append_only.sql (T024). The Drizzle layer
  * additionally only exposes an `append()` method on the audit repo (T067) —
  * defense in depth.
  *
@@ -128,6 +128,7 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'payment_succeeded',
   'payment_failed',
   'payment_canceled',
+  'payment_cancel_attempt_failed',
   'payment_method_switched',
   'payment_auto_refunded_stale_invoice',
   'payment_auto_refunded_concurrent_manual_mark',
@@ -237,6 +238,43 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     SUG-6 apply-post-paid-failed (F4 committed; F8 apply threw)
   'tier_upgrade_catalogue_row_dropped',
   'tier_upgrade_apply_post_invoice_paid_failed',
+  // --- F4 receipt-PDF download surface (migration 0143, 2026-05-15) —
+  //     emitted by `getReceiptPdfSignedUrl` after successful ownership
+  //     check + signed-URL issuance. 10y retention (tax-doc touch). ---
+  'receipt_pdf_downloaded',
+  // --- F4 §87 prefix-change forensic trail (migration 0145, 2026-05-15) —
+  //     emitted by `updateTenantInvoiceSettings` when an admin flips
+  //     any document-number prefix mid-fiscal-year. 10y retention. ---
+  'tenant_receipt_prefix_changed',
+  // --- F4 invoice-PDF download surface (migration 0147, R8-M1-code) —
+  //     emitted by `getInvoicePdfSignedUrl` after successful ownership
+  //     check + signed-URL issuance. Closes the audit-coverage
+  //     asymmetry: receipts already logged downloads; invoices didn't.
+  //     10y retention (tax-doc touch, parity with peers). ---
+  'invoice_pdf_downloaded',
+  // --- F4 receipt-surface plan Phase 3 (migration 0149, 2026-05-16) —
+  //     emitted by `exportPaidInvoicesCsv` after a successful CSV
+  //     stream. Operational/audit class → 5y retention (derivative
+  //     report, not §86/§87 document). Payload: from, to, row_count,
+  //     actor_user_id, route. ---
+  'invoices_csv_exported',
+  // --- F5R2 (migration 0151, 2026-05-16) — two operational events
+  //     added together: refund_amount_mismatch_detected (SF-6 — splits
+  //     genuine OOB refunds from local↔Stripe amount divergence) and
+  //     webhook_dispatch_permanent_failure (C2 — forensic 5y record
+  //     for the route's permanent-failure 200-ack path). Both 5y. ---
+  'refund_amount_mismatch_detected',
+  'webhook_dispatch_permanent_failure',
+  // --- B5 (migration 0158, post-ship 2026-05-17) — three new F1
+  //     operational events closing silent-failure gaps:
+  //       password_change_failed       — wrong-current-password trail
+  //       password_reset_email_failed  — Resend exhaustion trail
+  //       password_malformed_hash_detected — argon2 corruption trail
+  //     Five-year default retention via audit_log.retention_years.
+  //     See review-20260517-post-ship-hardening.md § B5.
+  'password_change_failed',
+  'password_reset_email_failed',
+  'password_malformed_hash_detected',
 ]);
 
 export const emailChangeTokenTypeEnum = pgEnum('email_change_token_type', [

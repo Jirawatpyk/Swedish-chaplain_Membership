@@ -47,7 +47,50 @@ export type F4AuditEventType =
    * exhausts its retry budget (3 attempts). Pages on-call per
    * `docs/runbooks/receipt-pdf-permanently-failed.md`.
    */
-  | 'pdf_render_permanently_failed';
+  | 'pdf_render_permanently_failed'
+  /**
+   * Emitted by `getReceiptPdfSignedUrl` after a successful ownership
+   * check + signed-URL issuance. Tax-document touch (the bytes belong
+   * to a Thai-RD-compliant tax receipt) so retention bucket is 10y
+   * mirroring `receipt_rendered` + `receipt_pdf_resent`. Payload
+   * carries `receipt_document_number_raw` (null for combined-mode
+   * where receipt PDF = invoice PDF) + `actor_role`.
+   */
+  | 'receipt_pdf_downloaded'
+  /**
+   * Emitted by `updateTenantInvoiceSettings` when an admin flips any
+   * §87 document-number prefix (invoice / credit-note / receipt) on
+   * an already-active tenant. Thai RD §87 verifies continuity by full
+   * document number (prefix + year + seq); a prefix flip mid-year
+   * looks like a sequence gap from the outside even though the seq
+   * counter is intact. Forensic trail captures: old/new prefix per
+   * type, last seq used under each old prefix, fiscal year. 10y
+   * retention — surface in forensic SELECT on a future RD audit.
+   */
+  | 'tenant_receipt_prefix_changed'
+  /**
+   * R8-M1-code — emitted by `getInvoicePdfSignedUrl` after a successful
+   * ownership check + signed-URL issuance. Closes the audit-coverage
+   * asymmetry where receipts logged downloads but invoices did not.
+   * Tax-document touch (invoice PDF is the §86/4 tax document) so
+   * retention is 10y, parity with `invoice_pdf_resent` + receipt
+   * peers. Payload: `invoice_id`, `member_id`, `actor_member_id`
+   * (null for non-member actors), `invoice_pdf_template_version`,
+   * `actor_role`, `route`. The member_id makes the event surface in
+   * the F3 timeline filter; actor_member_id enables a JOIN to the
+   * members table without re-resolving the actor.
+   */
+  | 'invoice_pdf_downloaded'
+  /**
+   * Phase 3 of the F4 receipt-surface plan — emitted by
+   * `exportPaidInvoicesCsv` after a successful CSV stream generation
+   * (Thai VAT monthly-filing workflow). Operational/audit class →
+   * 5y retention (Constitution VIII). NOT a tax-document touch
+   * itself: the CSV is a derivative report; the underlying
+   * invoice/receipt rows already carry their own 10y events.
+   * Payload: `from`, `to`, `row_count`, `actor_user_id`, `route`.
+   */
+  | 'invoices_csv_exported';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -87,6 +130,17 @@ export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
   receipt_rendered: 10,
   // T166: ops/reliability event; 5y.
   pdf_render_permanently_failed: 5,
+  // Tax-document touch (receipt PDF bytes accessed); 10y per Thai RD §87/3.
+  receipt_pdf_downloaded: 10,
+  // §87 forensic trail — surface on RD audit; 10y to match other
+  // tax-document audit events.
+  tenant_receipt_prefix_changed: 10,
+  // R8-M1-code — tax-document touch (invoice PDF bytes accessed); 10y
+  // per Thai RD §86/4 + §87/3, parity with peers.
+  invoice_pdf_downloaded: 10,
+  // Phase 3 — derivative export, not a §86/§87 tax document; 5y
+  // operational retention per Constitution VIII.
+  invoices_csv_exported: 5,
 };
 
 /** Single-source helper — call at every F4 emit site. */
@@ -158,10 +212,19 @@ export type F4AuditEvent =
  *   - **Read-path probe** (e.g., cross-tenant-probe emitted by
  *     `getInvoice` / `getInvoicePdfSignedUrl` / `listInvoices`): pass
  *     `null`. The use case has no open transaction (read-only) so
- *     the audit row writes on an auto-commit connection. Probe audit
- *     failure is logged by the adapter but does NOT fail the read
- *     (probe logging is best-effort — losing a probe row is less bad
- *     than a legitimate read returning 500).
+ *     the audit row writes on an auto-commit connection via the
+ *     OWNER role (BYPASSRLS) — tenantId is supplied explicitly in
+ *     the INSERT so cross-tenant isolation is preserved by data not
+ *     by role.
+ *
+ * Round-3 contract correction: the previous docstring claimed probe
+ * failures are "best-effort logged but don't fail the read". The
+ * adapter does NOT wrap the INSERT in a try/catch — probe failures
+ * DO propagate to the caller. Route layers wrap the use-case call
+ * (per H-7 fix Round-2) so a probe-emit throw surfaces as a
+ * structured 500. If a future use-case needs swallow-on-emit
+ * semantics it must add its own try/catch around `audit.emit(null,
+ * ...)`; the adapter contract is "INSERT or throw".
  *
  * Adapters MUST handle both cases. See `f4AuditAdapter` for the
  * canonical implementation.
