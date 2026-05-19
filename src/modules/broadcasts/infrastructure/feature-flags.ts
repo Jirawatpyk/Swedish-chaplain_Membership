@@ -61,3 +61,43 @@ export function f71aUs1DisabledReason(): F71aUs1DisabledReason | null {
   if (!env.features.f71aUs1Pagination) return 'f71a_us1_off';
   return null;
 }
+
+// ----- F7.1a US2 (Image embedding + allowlist + ClamAV scan) -----------------
+//
+// Same 3-layer kill-switch shape as US1, scoped to the US2 surfaces:
+//   - DOMPurify <img> allowlist + Tiptap image extension
+//   - /api/admin/broadcasts/settings/allowlist routes
+//   - /api/broadcasts/inline-image-upload route
+//
+// When OFF (any layer):
+//   - Admin route returns 503 `feature_disabled`
+//   - Member route returns 503 `feature_disabled`
+//   - Admin settings page renders notFound() (404 — no flag-toggle UI
+//     leak) per T075
+//   - Member compose hides the "Upload image" toolbar button + falls
+//     back to F7 MVP no-`<img>` sanitiser allowlist
+
+/**
+ * `true` when F7 master + F71A master + F71A US2 sub-flag are all
+ * enabled. False otherwise. Use this gate at every F7.1a US2 entry
+ * point.
+ */
+export function isF71aUs2Enabled(): boolean {
+  return (
+    env.features.f7Broadcasts &&
+    env.features.f71aBroadcastAdvanced &&
+    env.features.f71aUs2Images
+  );
+}
+
+export type F71aUs2DisabledReason =
+  | 'f7_master_off'
+  | 'f71a_master_off'
+  | 'f71a_us2_off';
+
+export function f71aUs2DisabledReason(): F71aUs2DisabledReason | null {
+  if (!env.features.f7Broadcasts) return 'f7_master_off';
+  if (!env.features.f71aBroadcastAdvanced) return 'f71a_master_off';
+  if (!env.features.f71aUs2Images) return 'f71a_us2_off';
+  return null;
+}
