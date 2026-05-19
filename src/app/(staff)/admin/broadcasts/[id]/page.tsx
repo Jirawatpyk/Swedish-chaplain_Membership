@@ -104,6 +104,14 @@ export default async function AdminBroadcastDetailPage({
     ? await loadBatchBreakdownRows(tenant.slug, broadcast.broadcastId)
     : [];
   const batchLoadFailed = batchManifests === null;
+  // Phase 3F.11.10 (Round 3 type-design LOW) — narrow once via const so
+  // the JSX below doesn't need the `as ReadonlyArray<BatchBreakdownRow>`
+  // cast. Under `!batchLoadFailed`, batchManifests is either the
+  // ReadonlyArray returned by loadBatchBreakdownRows (flag ON +
+  // load success) or `[]` from the ternary above (flag OFF).
+  const batches: ReadonlyArray<BatchBreakdownRow> = batchLoadFailed
+    ? []
+    : (batchManifests ?? []);
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -223,7 +231,7 @@ export default async function AdminBroadcastDetailPage({
           broadcastId={broadcast.broadcastId as unknown as string}
           broadcastStatus={broadcast.status}
           manualRetryRemaining={manualRetryRemaining}
-          batches={batchManifests as ReadonlyArray<BatchBreakdownRow>}
+          batches={batches}
           defaultOpen={
             broadcast.status === 'partially_sent' ||
             broadcast.status === 'partial_delivery_accepted'

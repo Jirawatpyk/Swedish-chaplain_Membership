@@ -13,12 +13,36 @@
  * batch leak); (d) persist-after-send failure → ok return with
  * `broadcast_resend_resource_missing` audit (forensic backfill trail).
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { dispatchBroadcastBatch } from '@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch';
 import type { BatchManifest } from '@/modules/broadcasts/application/ports/batch-manifests-port';
 import type { TenantSlug } from '@/modules/tenants';
+
+// Phase 3F.11.10 (Round 3 test-analyzer Gap 1) — mock the pino logger
+// so audit-throw cases can verify `logger.error` was called with the
+// canonical log-key tag. Without these assertions, a future regression
+// that drops the `logger.error(...)` call inside a C4 audit-throw
+// catch (silent log loss) would ship green — the use case would still
+// return `ok` but ops would lose the forensic signal.
+const loggerErrorSpy = vi.fn();
+vi.mock('@/lib/logger', () => ({
+  logger: {
+    error: (...args: unknown[]) => loggerErrorSpy(...args),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
+beforeEach(() => {
+  loggerErrorSpy.mockClear();
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
 
 const tenant = asTenantContext('test-tenant');
 const broadcastId = asBroadcastId('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
@@ -245,7 +269,7 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
   // → use case still returns ok (Resend already delivered). Without
   // the try/catch wrap, an audit-port DB-down condition would synthesise
   // `failed` outcomes in batch-dispatcher even though emails went out.
-  it('broadcast_send_started audit throws → use case still returns ok (Resend already sent)', async () => {
+  it('broadcast_send_started audit throws → use case still returns ok + logger.error called with canonical key', async () => {
     const { deps } = makeStubDeps({
       auditThrowsForEvents: new Set(['broadcast_send_started']),
     });
@@ -260,9 +284,21 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     // Use case returns ok despite audit throw — caller (batch-dispatcher)
     // must not synthesise `failed` outcome for a successful Resend send.
     expect(result.ok).toBe(true);
+
+    // Phase 3F.11.10 (Round 3 Gap 1) — assert ops feed receives the
+    // forensic signal. A regression that drops the logger.error call
+    // would ship green without this assertion.
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.any(Error),
+        tenantId: 'test-tenant',
+        batchManifestId: 'batch-id-1',
+      }),
+      'broadcasts.dispatch.send_started_audit_emit_failed',
+    );
   });
 
-  it('broadcast_resend_resource_missing audit throws on persistFails path → use case still returns ok', async () => {
+  it('broadcast_resend_resource_missing audit throws on persistFails path → use case still returns ok + logger.error called', async () => {
     const { deps } = makeStubDeps({
       persistFails: true,
       auditThrowsForEvents: new Set(['broadcast_resend_resource_missing']),
@@ -279,6 +315,18 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     // ok so the worker pool records a sent_to_resend outcome (matches
     // production reality).
     expect(result.ok).toBe(true);
+
+    // Phase 3F.11.10 (Round 3 Gap 1) — same assertion for the
+    // resource-missing audit-throw path. Distinct log-key tag so ops
+    // can distinguish the two failure modes in pino feed.
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.any(Error),
+        tenantId: 'test-tenant',
+        batchManifestId: 'batch-id-1',
+      }),
+      'broadcasts.dispatch.resend_resource_missing_audit_emit_failed',
+    );
   });
 
   // Phase 3F.11.4 (Round 2 test gap closures) — 3 error branches that

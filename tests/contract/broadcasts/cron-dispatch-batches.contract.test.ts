@@ -81,14 +81,20 @@ vi.mock('@/modules/broadcasts/infrastructure/noop-advisory-lock', () => ({
 vi.mock('@/modules/broadcasts/infrastructure/broadcasts-deps', () => ({
   systemClock: { now: () => new Date('2026-06-15T05:00:00Z') },
 }));
+// Phase 3F.11.10 (Round 3 MED-2) — capture dispatchAllPendingBatches
+// invocations so kill-switch + auth-rejection paths can assert it was
+// NOT called. Without this hoisted reference, a regression that moved
+// the kill-switch check BELOW use-case dispatch would ship green.
+const dispatchAllPendingBatchesMock = vi.fn().mockResolvedValue({
+  totalBatches: 0,
+  succeeded: 0,
+  failed: 0,
+  results: [],
+  elapsedMs: 0,
+});
 vi.mock('@/modules/broadcasts/application/services/batch-dispatcher', () => ({
-  dispatchAllPendingBatches: vi.fn().mockResolvedValue({
-    totalBatches: 0,
-    succeeded: 0,
-    failed: 0,
-    results: [],
-    elapsedMs: 0,
-  }),
+  dispatchAllPendingBatches: (...args: unknown[]) =>
+    dispatchAllPendingBatchesMock(...args),
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {
@@ -109,6 +115,7 @@ beforeEach(() => {
   isF71aUs1EnabledMock.mockReturnValue(true);
   f71aUs1DisabledReasonMock.mockReturnValue(null);
   runInTenantMock.mockReset();
+  dispatchAllPendingBatchesMock.mockClear();
 });
 
 afterEach(() => {
@@ -126,6 +133,10 @@ describe('cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)', 
     expect(body.error?.code).toBe('unauthorized');
     // No DB query attempted on rejected auth.
     expect(runInTenantMock).not.toHaveBeenCalled();
+    // Phase 3F.11.10 (Round 3 MED-2) — also verify the orchestrator
+    // service was NEVER reached. Without this a regression that moves
+    // the auth check below dispatch-fan-out would ship green.
+    expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
   });
 
   it('wrong Bearer token → 401 unauthorized', async () => {
@@ -135,6 +146,7 @@ describe('cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)', 
     const res = await POST(makeRequest({ auth: 'Bearer wrong-secret' }));
     expect(res.status).toBe(401);
     expect(runInTenantMock).not.toHaveBeenCalled();
+    expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
   });
 
   it('kill-switch off → 200 + {skipped:true, reason:feature_disabled:*}', async () => {
@@ -155,6 +167,10 @@ describe('cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)', 
     expect(body.skipped).toBe(true);
     expect(body.reason).toBe('feature_disabled:f71a_master');
     expect(runInTenantMock).not.toHaveBeenCalled();
+    // Phase 3F.11.10 (Round 3 MED-2) — orchestrator NOT invoked when
+    // kill-switch fires. Defends against a regression that moves the
+    // feature flag check below the eligible scan + dispatch.
+    expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
   });
 
   it('valid bearer + zero eligible rows → 200 + processed:0', async () => {
