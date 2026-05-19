@@ -152,9 +152,20 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               }).then((r) => ({ inv, result: r })),
             ),
           );
+          // R2 Batch 3d (R2-I9) — aggregate per-invoice typed errors
+          // so a wide F5 outage emits ONE structured log (not 10) and
+          // operators can correlate failed invoiceIds against F5
+          // dashboards. Outer try/catch only fires on thrown
+          // exceptions; Result.err values would otherwise be silent.
+          const failedInvoiceIds: string[] = [];
+          let firstActivityErr: unknown = null;
           const items: PaletteRefundableInvoiceEntity[] = [];
           for (const { inv, result } of activities) {
-            if (!result.ok) continue;
+            if (!result.ok) {
+              failedInvoiceIds.push(String(inv.invoiceId));
+              if (firstActivityErr === null) firstActivityErr = result.error;
+              continue;
+            }
             const remaining = computeRemainingRefundable(result.value);
             if (!remaining) continue;
 
@@ -174,6 +185,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             });
           }
           refundableInvoices = items;
+          if (failedInvoiceIds.length > 0) {
+            logger.warn(
+              {
+                requestId: ctx.requestId,
+                failedInvoiceIds,
+                failedCount: failedInvoiceIds.length,
+                firstErr: firstActivityErr,
+              },
+              'palette.refundable_invoice_activity_unavailable',
+            );
+          }
+        } else {
+          // R2 Batch 3d (R2-I10) — surface listInvoicesPaged Result.err
+          // (F5 disabled, kill-switch flipped, RBAC drift, etc.). Was
+          // silently dropping refundableInvoices to []. Outer try/catch
+          // only handles thrown exceptions; a typed Result.err would
+          // otherwise be invisible to ops.
+          logger.warn(
+            { requestId: ctx.requestId, err: paid.error },
+            'palette.refundable_invoices_list_unavailable',
+          );
         }
       } catch (e) {
         logger.warn(

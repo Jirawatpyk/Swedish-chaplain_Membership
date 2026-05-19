@@ -348,10 +348,17 @@ export async function acceptTierUpgrade(
     // (suggestion accepted, scheduled-plan-change row in place) but
     // emits a critical log so on-call can backfill the F2 audit row.
     // Pattern mirrors the post-tx member-notification email below.
+    // R2 Batch 3d (R2-I17) — replace empty-string requestId default
+    // with a sentinel that preserves cross-request correlation. Empty
+    // strings pass `audit_log.request_id NOT NULL` but defeat the
+    // column's purpose. The sentinel `system:accept-tier-upgrade:<id>`
+    // gives SRE a deterministic key + matches the F4 onPaid pattern
+    // (`f8-onPaid:<invoiceId>`).
     const f2AuditCtx = {
       tenant: deps.tenant,
       actorUserId: input.actorUserId,
-      requestId: input.requestId ?? '',
+      requestId:
+        input.requestId ?? `system:accept-tier-upgrade:${suggestion.suggestionId}`,
       sourceIp: null,
     };
     try {
@@ -370,8 +377,15 @@ export async function acceptTierUpgrade(
         },
       );
       if (!scheduledAuditResult.ok) {
+        // R2 Batch 3d (R2-I11) — `errorId` field aligns with the
+        // Batch 2d `F2.PLAN_CHANGE.*` convention used at the F8
+        // onPaid finaliser. Sentry / Grafana alert rules built
+        // against `errorId: 'F2.PLAN_CHANGE.*'` now catch BOTH the
+        // schedule-side (this site) and the apply-side
+        // (apply-tier-upgrade-on-paid-callback.ts).
         logger.error(
           {
+            errorId: 'F2.PLAN_CHANGE.SCHEDULED_AUDIT_EMIT_FAILED',
             event: 'accept_tier_upgrade.f2_audit_emit_failed',
             audit_event: 'plan_change_scheduled',
             err: scheduledAuditResult.error,
@@ -400,8 +414,10 @@ export async function acceptTierUpgrade(
           },
         );
         if (!supersededAuditResult.ok) {
+          // R2 Batch 3d (R2-I11) — errorId for alert-routing parity.
           logger.error(
             {
+              errorId: 'F2.PLAN_CHANGE.SUPERSEDED_AUDIT_EMIT_FAILED',
               event: 'accept_tier_upgrade.f2_audit_emit_failed',
               audit_event: 'plan_change_superseded',
               err: supersededAuditResult.error,
@@ -419,8 +435,11 @@ export async function acceptTierUpgrade(
       // still want F8's main flow to continue. Bumping a dedicated
       // counter via the F8 emitter is appropriate but the F8 emitter
       // is typed to F8 events; just log critically.
+      // R2 Batch 3d (R2-I11) — errorId for alert-routing parity with
+      // Batch 2d `F2.PLAN_CHANGE.*` convention.
       logger.error(
         {
+          errorId: 'F2.PLAN_CHANGE.AUDIT_EMIT_THREW',
           event: 'accept_tier_upgrade.f2_audit_emit_threw',
           err: auditErr instanceof Error ? auditErr.message : String(auditErr),
           suggestionId: suggestion.suggestionId,
