@@ -229,3 +229,57 @@ See `specs/004-page-layout-standard/retrospective.md` § Post-Ship Addendum for 
 ### Final F2 E2E status (chromium)
 
 All F2 tests pass: plans-list, plans-create-wizard, plans-edit, plans-deactivate, plans-keyboard-only, plans-i18n-coverage, plans-a11y, plans-reduced-motion, fee-config, command-palette. 1 skipped (`plans-edit prior-year lock banner` — needs a 2025 seed; Domain logic is unit-tested).
+
+---
+
+## Post-ship R6 audit closure (2026-05-19)
+
+`/speckit-review` retrospective sweep on the shipped F2 surface (branch `014-email-broadcast-advance`, concurrent with F7.1a session) — 7-agent parallel review flagged **21 findings** (7 Critical + 14 Important) recorded in `specs/002-membership-plans/reviews/review-20260519-144559.md`. All 21 closed across 4 atomic commits + 1 cross-feature bonus.
+
+### Resolved decisions
+
+- **D1 (C1)** — wire F3 real `MemberAttachmentChecker` via NEW F3 barrel export `countActiveMembersOnPlan` + F2 adapter `drizzleMemberAttachmentChecker`. Constitution Principle III honoured (no deep cross-module imports). Stub deleted; soft-delete-with-members gains 2 new Scenarios with real F3 rows
+- **D2 (I2)** — F2 use-case emits `plan_change_scheduled` + `plan_change_superseded`. F8 cross-module: composition root injects `f2AuditEmitter: F2AuditPort` (sub-barrel `@/modules/plans/server` exports `planAuditAdapter` to avoid client-bundle pino leak); F8 `accept-tier-upgrade` emits both events post-tx. `plan_change_{cancelled,applied}` remain declared with `TODO(renewal-applier):` markers — no Domain caller exists today (NOT F9; F9 = Admin Dashboard per docs/phases-plan.md)
+- **D3 (C5)** — DELETE all US5 fee-config dead code (migration 0029 retired the table). 7 src files + 10 test files + seed comment cleaned. F1 `audit_event_type` pgEnum retains `fee_config_updated` as legacy backward-compat for historical audit rows
+- **D4 (I9)** — Money fully branded (`unique symbol` phantom, A-grade pattern from `IanaTimezone`); LocaleText gets `asLocaleText` smart constructor + `LocaleTextLiteral` back-compat alias. Full LocaleText brand + `no-restricted-syntax` ESLint rule deferred to a future round (70+ call sites); BenefitMatrix branding deliberately skipped (every field already domain-typed enum/union — no safety gain)
+
+### Commit chain
+
+```
+b5ce6f66  Batch 1d — C2/C3/I9 (shared lib + branded types)
+ba33958e  Batch 1c — C1/C6/I2 (cross-module F2↔F3↔F8)
+4d062da6  Bonus — F6.1 CSV RFC 4180 § 2.6 normalisation
+fdba4206  Batch 1b — C5/I1/I3/I4/I5/I10/I12/I13 (F2-internal quick wins + dead-code delete)
+88de9331  Batch 1a — C4/C7/I7/I8/I11/I14 (atomic fixes + new i18n keys)
+```
+
+### Notable build-error recovery (Batch 1a → 1b)
+
+Batch 1a's C4 fix initially added `import { logger } from '@/lib/logger'` to `get-plan.ts` (Application layer). Because the F2 barrel re-exports `getPlan` and client components (`plans-table.tsx` via `locale-text-display.tsx`) import from `@/modules/plans`, the runtime `logger` import chained `pino` → `worker_threads` into the client bundle. Same trap documented at `src/modules/plans/index.ts:323-334` for the F7 bridge. Batch 1b relocated the audit-failure logging to `plan-audit-adapter.ts` (Infrastructure, server-only, NOT in barrel) — same observability intent, client-safe.
+
+### Outcome metrics
+
+- **21/21 F2 R6 findings closed (100%)** + 1 bonus F6.1 CSV normalise fix
+- **5 atomic commits** on the audit branch
+- **~75 unique files** touched (src + tests + i18n + docs + 1 cross-feature bonus)
+- `pnpm typecheck` / `check:i18n` (2987 keys × 3) / `check:layout` (98 pairs) all PASS
+- F7.1a concurrent session work was strictly excluded from every audit commit; no merge conflicts
+
+### Cross-module touch summary (per user's "ทุก F ที่ F2 ไปแตะ" directive)
+
+| F | Touched by audit | Outcome |
+|---|------------------|---------|
+| F1 | `auth_log` pgEnum legacy comment for `fee_config_updated` | Backward-compat preserved; F2 Domain no longer declares the event |
+| F3 | NEW barrel export `countActiveMembersOnPlan` + use-case file | Cross-module wiring for F2 soft-delete FR-010 guard |
+| F4 | None needed (`getTenantTaxPolicy` was already wired pre-audit) | — |
+| F6 | F6.1 streaming-csv-importer CRLF→LF normalise | Bonus fix from same verification sweep |
+| F7 | None (escape-hatch import documented at `index.ts:323-334`) | Pre-existing pattern; F7 unaffected by F2 R6 changes |
+| F8 | RenewalsDeps + accept-tier-upgrade.ts emit `plan_change_*` post-tx via F2 emitter | Cross-module composition root; Constitution III honoured |
+
+### Out of scope (deferred to future rounds)
+
+- Full LocaleText brand (70+ call site refactor) + ESLint `no-restricted-syntax` rule
+- BenefitMatrix branding (every field already domain-typed; over-engineering per CLAUDE.md)
+- F3 + F4 + F6 idempotency-route 503 surface (shared lib now supports it; their routes ignore the new Result type — pre-existing fail-open behavior preserved until their own post-ship audits)
+- F13 Admin Dashboard `plan_cross_tenant_probe` emitter (deferred per F2 spec; negative-coverage test `tests/unit/plans/cross-tenant-probe-emitter-coverage.test.ts` guards against accidental F2 emit until F13 ships)
+- `plan_change_{cancelled,applied}` audit emitters (no Domain caller exists in F2/F8 today; renewal-applier use-case wires them when it ships)
