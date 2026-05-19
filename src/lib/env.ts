@@ -508,12 +508,12 @@ const schema = z.object({
   // persist the file. 5 min default matches the deferred-F7.1b attachment
   // contract for cross-feature parity (see T151).
   CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600000).default(300000),
-  // SECRET — 32-byte hex shared secret between Chamber-OS and the ClamAV
-  // reverse proxy. Empty string in dev tolerated (runtime adapter rejects
-  // scans). When the master flag flips ON the adapter MUST require this
-  // to be ≥32 chars — enforced in Phase 2 T025, not here, to keep env
-  // schema shape stable across the dark→live transition.
-  CLAMAV_SHARED_SECRET: z.string().default(''),
+  // Note: CLAMAV_SHARED_SECRET removed 2026-05-19 per /speckit.superb.critique
+  // Important #1 — env var was documented as auth but never reached the
+  // daemon (clamscan@2.4 doesn't support auth headers, Dockerfile has no
+  // proxy). Fly.io 6PN private network is the security boundary in
+  // production; dev mode runs in Docker localhost. No replacement env
+  // var needed.
 });
 
 // --- Parse with grouped error reporting --------------------------------------
@@ -800,7 +800,6 @@ export const env = {
     host: raw.CLAMAV_HOST,
     port: raw.CLAMAV_PORT,
     timeoutMs: raw.CLAMAV_TIMEOUT_MS,
-    sharedSecret: raw.CLAMAV_SHARED_SECRET,
   },
 } as const;
 

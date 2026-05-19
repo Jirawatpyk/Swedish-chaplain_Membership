@@ -51,6 +51,12 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
     async findByTenantId(_tenantId: TenantSlug): Promise<readonly AllowlistEntry[]> {
       notImplemented('findByTenantId');
     },
+    async seedDefaults(
+      _tenantId: TenantSlug,
+      _hostnames: readonly Hostname[],
+    ): Promise<void> {
+      notImplemented('seedDefaults');
+    },
     async add(
       _tenantId: TenantSlug,
       _hostname: Hostname,

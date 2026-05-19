@@ -85,10 +85,24 @@ export const broadcastBatchManifests = pgTable('broadcast_batch_manifests', {
 
 ### 2.3 TenantImageSourceAllowlist (NEW — US2)
 
+**Default seeding deviation (Phase 2 2026-05-19)**: this spec originally
+called for migration 0164 to seed `is_default=TRUE` defaults
+(`<chamber asset domain>`, `<email provider CDN>`) per tenant via
+`FOR t_id IN SELECT id FROM tenants LOOP`. Phase 2 implementation
+discovered the project has **no central `tenants` table** (verified
+empirically — `tenant_id` is a TEXT slug stored on each tenant-scoped
+row). The seed loop was removed from migration 0164; defaults are now
+seeded lazily by `ImageAllowlistPort.seedDefaults(tenantId, hostnames)`
+called by Phase 4 T072 `manage-image-allowlist.ts` use case on first
+admin access. Migration 0164 is idempotent (`IF NOT EXISTS`) so re-
+running over the partial-apply state is safe. Notation `uuid` below
+also reads as TEXT in the actual schema.ts per the Phase 2 plan Risk
+R1 (tenant_id TEXT not uuid).
+
 ```typescript
 export const tenantImageSourceAllowlist = pgTable('tenant_image_source_allowlist', {
   id: uuid('id').primaryKey().defaultRandom(),
-  tenantId: uuid('tenant_id').notNull(), // RLS-enforced
+  tenantId: uuid('tenant_id').notNull(), // RLS-enforced (TEXT in actual schema.ts per Phase 2 Risk R1)
   hostname: text('hostname').notNull(), // exact match, no wildcards (FR-010)
   isDefault: boolean('is_default').notNull().default(false), // defaults cannot be removed (research.md § 4)
   createdByUserId: uuid('created_by_user_id'), // null for system-seeded defaults

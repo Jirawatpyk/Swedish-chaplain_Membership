@@ -20,8 +20,8 @@ master kill-switch (`FEATURE_F71A_BROADCAST_ADVANCED=false`) keeps US2
 dark, so the `CLAMAV_HOST` env var stays empty.
 
 **Phase 6 ship-day (T139)**: operator follows the **Deploy** section
-below, then sets `CLAMAV_HOST` + `CLAMAV_SHARED_SECRET` in Vercel env
-(T140) and flips US2 ON (T145).
+below, then sets `CLAMAV_HOST` in Vercel env (T140) and flips US2 ON
+(T145).
 
 Until ship-day the dev workflow uses a Docker container locally — see
 [**Local dev**](#local-dev) below.
@@ -32,7 +32,6 @@ Until ship-day the dev workflow uses a Docker container locally — see
   `iwr https://fly.io/install.ps1 -useb | iex` on PowerShell)
 - `fly auth login` (account with deploy rights on the `chamber-os`
   organisation; see operator handbook)
-- `openssl` for generating the shared secret
 
 ## Deploy (one-time, Phase 6 T139)
 
@@ -44,29 +43,33 @@ cd infra/clamav
 #    on every machine restart; see fly.toml [[mounts]]):
 fly volumes create clamav_data --region sin --size 1 --yes
 
-# 2. Create the app — --copy-config reads ./fly.toml verbatim and
-#    --no-deploy stops short of pushing an image so we can wire
-#    secrets first:
-fly launch --copy-config --name clamav-swecham --region sin --no-deploy
+# 2. Create the app — --copy-config reads ./fly.toml verbatim:
+fly launch --copy-config --name clamav-swecham --region sin
 
-# 3. Wire the shared secret. NEVER commit this value; rotate per the
-#    procedure below. Length MUST be ≥32 hex chars.
-SECRET=$(openssl rand -hex 32)
-fly secrets set CLAMAV_SHARED_SECRET="$SECRET" --app clamav-swecham
-# Hand the SECRET value to the Vercel env step (T140) — it must
-# match CLAMAV_SHARED_SECRET on the Chamber-OS deployment.
-
-# 4. Deploy:
-fly deploy --app clamav-swecham
-
-# 5. Verify:
+# 3. Verify:
 fly status --app clamav-swecham   # expect: "running"
 fly logs --app clamav-swecham     # expect: "clamd[1]: Listening daemon"
 
-# 6. Smoke-test from the Chamber-OS app:
+# 4. Smoke-test from the Chamber-OS app:
 pnpm tsx scripts/verify-clamav-connectivity.ts
 # Expect: EICAR → infected; clean buffer → clean; p95 < 500 ms.
 ```
+
+## Security boundary
+
+The ClamAV daemon listens on TCP/3310 with **NO application-layer
+authentication**. Security relies entirely on Fly.io's 6PN private
+network — `clamav-swecham.internal` is reachable ONLY from the
+chamber-os Vercel functions on the same private network. There is no
+public IP and no DNS leak.
+
+An earlier `CLAMAV_SHARED_SECRET` env var was removed 2026-05-19
+because the `clamscan@2.4` Node binding does not support auth headers
+and this Dockerfile has no reverse proxy that could check them — the
+secret was documented but never reached the daemon. If a stronger
+security posture is needed in F7.1b (e.g., zero-trust without network
+segmentation), introduce a sidecar (Caddy/Nginx) that validates an
+`X-Auth-Secret` header AND swap `clamscan` for an HTTP wrapper.
 
 ## Local dev
 
@@ -80,7 +83,6 @@ docker logs clamav-dev | grep "Listening daemon"
 # In .env.local:
 CLAMAV_HOST="localhost"
 CLAMAV_PORT="3310"
-CLAMAV_SHARED_SECRET=""   # ignored in dev — adapter skips auth
 ```
 
 ## Monitor
@@ -100,30 +102,12 @@ Two Vercel alerts (Phase 6 T123) page on degradation:
 - `clamav_daemon_unreachable > 2 min` → see
   [`docs/runbooks/clamav-daemon-down.md`](../../docs/runbooks/clamav-daemon-down.md)
 
-## Rotate the shared secret
+## No secret rotation needed
 
-The shared secret lives in two places (Fly secret + Vercel env var)
-and must rotate in both atomically. Order matters — set Vercel first
-so the new app reads the new value before clamd starts rejecting old
-auth headers.
-
-```bash
-NEW=$(openssl rand -hex 32)
-
-# 1. Vercel env (run from Chamber-OS repo root):
-vercel env rm CLAMAV_SHARED_SECRET production --yes
-echo "$NEW" | vercel env add CLAMAV_SHARED_SECRET production
-vercel deploy --prod    # picks up new env at boot
-
-# 2. Fly secret:
-fly secrets set CLAMAV_SHARED_SECRET="$NEW" --app clamav-swecham
-# Fly auto-redeploys the machine; brief (~30 s) scan window where
-# in-flight requests return `error` verdict — acceptable for routine
-# rotation.
-
-# 3. Smoke-test:
-pnpm tsx scripts/verify-clamav-connectivity.ts
-```
+There is no shared secret in this deployment (see Security boundary
+above). To rotate the network boundary itself (rare): redeploy the
+Fly.io app from this directory, or migrate to a different private
+network topology.
 
 ## References
 

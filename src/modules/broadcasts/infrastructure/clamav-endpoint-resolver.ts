@@ -21,13 +21,15 @@
 
 import { env } from '@/lib/env';
 
+export type ClamavMode = 'production' | 'development' | 'staging';
+
 export type ClamavEndpointResolution =
   | {
       readonly ok: true;
       readonly host: string;
       readonly port: number;
       readonly timeoutMs: number;
-      readonly mode: 'production' | 'development' | 'staging';
+      readonly mode: ClamavMode;
     }
   | {
       readonly ok: false;
@@ -36,13 +38,38 @@ export type ClamavEndpointResolution =
     };
 
 /**
+ * Pure host → mode classifier. Exported separately so unit tests can
+ * exercise every branch without env mocking (the env-aware
+ * `resolveClamavEndpoint` is the thin wrapper consumers call).
+ *
+ *   `*.internal`             → production (Fly.io 6PN private DNS)
+ *   `localhost` / `127.0.0.1` → development (Docker on dev workstation)
+ *   anything else            → staging (explicit IP / custom DNS)
+ */
+export function classifyClamavMode(host: string): ClamavMode {
+  if (host.endsWith('.internal')) return 'production';
+  if (host === 'localhost' || host === '127.0.0.1') return 'development';
+  return 'staging';
+}
+
+/**
+ * Pure validity check — same exported separately for unit testability.
+ * Returns true if the host string is a plausibly-reachable bare
+ * hostname (no scheme/path/whitespace). Does NOT validate DNS
+ * reachability — that's the runtime adapter's concern.
+ */
+export function isValidClamavHost(host: string): boolean {
+  return !(host.includes('://') || host.includes(' ') || host.includes('/'));
+}
+
+/**
  * Resolve the ClamAV endpoint from env. Returns a tagged-union so the
  * caller can fail-closed on misconfiguration without throwing.
  *
- * Production heuristic: hostname ending in `.internal` (Fly.io 6PN
- * convention) → `mode: 'production'`.
- * Dev heuristic: hostname `localhost` or `127.0.0.1` → `mode: 'development'`.
- * Otherwise → `mode: 'staging'` (e.g., explicit IP or custom DNS).
+ * Composition of `classifyClamavMode` + `isValidClamavHost` (above)
+ * over the `env.clamav` block (Phase 1 T003). Phase 1's
+ * connectivity-probe (`scripts/verify-clamav-connectivity.ts`) calls
+ * the env directly rather than via this resolver — same end result.
  */
 export function resolveClamavEndpoint(): ClamavEndpointResolution {
   const { host, port, timeoutMs } = env.clamav;
@@ -55,10 +82,7 @@ export function resolveClamavEndpoint(): ClamavEndpointResolution {
     };
   }
 
-  // Minimal sanity check — Postgres-style host validation isn't
-  // appropriate here (we accept any reachable DNS name including
-  // Fly.io's `*.internal`). Just reject obviously malformed values.
-  if (host.includes('://') || host.includes(' ') || host.includes('/')) {
+  if (!isValidClamavHost(host)) {
     return {
       ok: false,
       reason: 'invalid_host',
@@ -66,17 +90,11 @@ export function resolveClamavEndpoint(): ClamavEndpointResolution {
     };
   }
 
-  const mode: 'production' | 'development' | 'staging' = host.endsWith('.internal')
-    ? 'production'
-    : host === 'localhost' || host === '127.0.0.1'
-      ? 'development'
-      : 'staging';
-
   return {
     ok: true,
     host,
     port,
     timeoutMs,
-    mode,
+    mode: classifyClamavMode(host),
   };
 }

@@ -67,6 +67,35 @@ export interface ImageAllowlistPort {
   findByTenantId(tenantId: TenantSlug): Promise<readonly AllowlistEntry[]>;
 
   /**
+   * Idempotently seed default `is_default=TRUE` entries for a tenant
+   * — the platform-mandated allowlist anchors that admins cannot
+   * remove (FR-010). Phase 4 T072 `manage-image-allowlist.ts` use
+   * case calls this on first admin visit to the allowlist editor OR
+   * on first member compose-with-image, BEFORE any `findByTenantId`
+   * read that the sanitiser depends on.
+   *
+   * Migration 0164 originally seeded these in-SQL via `FOR t_id IN
+   * SELECT id FROM tenants LOOP`, but the project has no central
+   * `tenants` table (verified 2026-05-19) so seeding moved to
+   * runtime. This method exists at the port surface to document
+   * that lazy-seeding contract — Phase 4 implementation idempotent
+   * via the `(tenant_id, hostname)` unique index from migration 0164.
+   *
+   * Typical seed values for a new tenant onboarding (will be Phase
+   * 4 T072 responsibility, NOT this port):
+   *   - tenant's own asset domain (e.g. `swecham.zyncdata.app`)
+   *   - email provider CDN (`resend.com`)
+   *
+   * Idempotent: re-calling with the same hostnames is a no-op
+   * (ON CONFLICT DO NOTHING at the storage layer). No audit event
+   * — seed is a platform action, not an admin decision.
+   */
+  seedDefaults(
+    tenantId: TenantSlug,
+    hostnames: readonly Hostname[],
+  ): Promise<void>;
+
+  /**
    * Add an admin-authored hostname. Returns `duplicate` if the
    * `(tenant_id, hostname)` pair already exists (unique index defined
    * in migration 0164). Emits `broadcast_image_allowlist_updated`

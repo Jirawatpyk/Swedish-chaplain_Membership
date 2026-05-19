@@ -10,9 +10,12 @@
  *   - `host`         empty → adapter returns `verdict: 'error', reason: 'unconfigured'`
  *   - `port`         default 3310
  *   - `timeoutMs`    default 300000 (5 min per FR-013)
- *   - `sharedSecret` ≥32 chars REQUIRED when `FEATURE_F71A_BROADCAST_ADVANCED=true`
- *                   (runtime guard here — kept out of zod schema per
- *                   Phase 1 T003 deviation rationale)
+ *
+ * Security boundary in production = Fly.io 6PN private network. The
+ * earlier CLAMAV_SHARED_SECRET env var was removed 2026-05-19 per
+ * /speckit.superb.critique Imp-1 — it was documented as auth but
+ * never reached the daemon (clamscan@2.4 has no auth-header support;
+ * no reverse proxy in front of clamd).
  *
  * Verdict mapping (FR-013):
  *   - clamscan `isInfected=true`  → `verdict: 'infected'`
@@ -34,7 +37,6 @@ import { Readable } from 'node:stream';
 import NodeClam from 'clamscan';
 
 import { env } from '@/lib/env';
-import { logger } from '@/lib/logger';
 import type {
   VirusScannerPort,
   VirusScanVerdict,
@@ -85,7 +87,7 @@ export function makeClamavVirusScanner(): VirusScannerPort {
   return {
     async scan(content) {
       const start = performance.now();
-      const { host, port, timeoutMs, sharedSecret } = env.clamav;
+      const { host, port, timeoutMs } = env.clamav;
 
       // Fail-closed: empty host = adapter not configured. Phase 1
       // verify-clamav-connectivity.ts exits with code 2 for this
@@ -95,23 +97,6 @@ export function makeClamavVirusScanner(): VirusScannerPort {
         return {
           verdict: 'error',
           reason: 'unconfigured',
-          durationMs: performance.now() - start,
-        };
-      }
-
-      // Phase 1 T003 deferred this length guard to the adapter so
-      // env.ts shape stays stable across the dark → live transition.
-      // When master flag flips ON, sharedSecret < 32 chars is a
-      // configuration bug — fail-closed at scan boundary.
-      if (env.features.f71aBroadcastAdvanced && sharedSecret.length < 32) {
-        logger.error(
-          { sharedSecretLen: sharedSecret.length },
-          'CLAMAV_SHARED_SECRET must be ≥32 chars when F7.1a master flag is ON',
-        );
-        return {
-          verdict: 'error',
-          reason: 'unconfigured',
-          detail: 'shared_secret_too_short',
           durationMs: performance.now() - start,
         };
       }
@@ -154,7 +139,16 @@ export function makeClamavVirusScanner(): VirusScannerPort {
   };
 }
 
-function classifyError(err: unknown, durationMs: number): VirusScanVerdict {
+/**
+ * @internal Exported for unit tests
+ *   (tests/unit/broadcasts/infrastructure/clamav-virus-scanner.test.ts).
+ *   NOT part of the broadcasts barrel — do not import from outside
+ *   this file or its colocated test. Heuristic string-match against
+ *   NodeClam / `clamscan` error messages — brittle by nature; the
+ *   unit test exercises every branch to catch silent regressions on
+ *   future clamscan upgrades.
+ */
+export function classifyError(err: unknown, durationMs: number): VirusScanVerdict {
   const message = err instanceof Error ? err.message.toLowerCase() : '';
   if (message.includes('timeout') || message.includes('etimedout')) {
     return { verdict: 'timeout', durationMs };
