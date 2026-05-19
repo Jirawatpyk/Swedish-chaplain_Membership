@@ -493,9 +493,11 @@ export function makeSplitBroadcastIntoBatchesDeps(
 
 /**
  * T047 — composition root for `retryFailedBatches` use case (admin
- * route T050). The `advisoryLock` slot is currently wired to the
- * `noOpAdvisoryLock` stub — see that file's header for the SC-007
- * mitigation rationale + Phase 3 Cluster 3D hardening plan.
+ * route T050). Phase 3E.1 (2026-05-19) wired the production
+ * `pgAdvisoryLockAdapter` — T047's body runs in `broadcasts.withTx`
+ * so the lock holds across snapshot + increment + fan-out + audit
+ * (true SC-007 semantics). The inline comment on the `advisoryLock`
+ * line below is the authoritative reference.
  */
 export function makeRetryFailedBatchesDeps(
   tenantId: string,

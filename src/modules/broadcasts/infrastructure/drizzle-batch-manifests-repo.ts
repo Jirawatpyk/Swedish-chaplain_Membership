@@ -26,6 +26,7 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
+import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../domain/broadcast';
 import { asBroadcastId } from '../domain/broadcast';
@@ -288,6 +289,13 @@ export function makeDrizzleBatchManifestsRepo(
         if (update.retryCount !== undefined) {
           patch.retryCount = update.retryCount;
         }
+        if (update.idempotencyKey !== undefined) {
+          // Phase 3F.1 (F-04 fix) — rotate the idempotency key when
+          // the auto-retry path re-queues a failed batch. Without
+          // this, Resend's deduper short-circuits the retry → 5-
+          // attempt budget = 5 no-ops.
+          patch.idempotencyKey = update.idempotencyKey;
+        }
 
         try {
           const [updated] = await tx
@@ -413,18 +421,38 @@ export function makeDrizzleBatchManifestsRepo(
           batchIndex: row.batch_index,
           recipientCount: row.recipient_count,
         };
-      } catch {
-        return null;
+      } catch (e) {
+        // Phase 3F.1 (F-1 silent-fail fix) — previous bare `catch { return
+        // null }` mapped EVERY DB error (Neon outage, schema-owner
+        // credential issue, query syntax regression) to "unknown
+        // broadcast id", which the webhook route then audited as a
+        // forensic security signal. That mis-classification created a
+        // dangerous blind spot during DB-outage incidents. We now log
+        // the actual error and rethrow — the webhook route's outer
+        // catch maps to `tenant_resolve_failed` 500 + Svix retries
+        // (correct behavior when the DB is genuinely unreachable).
+        logger.error(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            providerBroadcastId,
+          },
+          'broadcasts.batch.find_by_provider_id_failed',
+        );
+        throw e;
       }
     },
 
     async markCancelled(
       _tenantId: TenantSlug,
       batchManifestIds: readonly string[],
+      txMaybe?: unknown,
     ): Promise<number> {
       if (batchManifestIds.length === 0) return 0;
 
-      return runInTenant(ctx, async (tx) => {
+      // Phase 3F.1 (F-21 fix) — when caller passes its own tx (from
+      // cancel-broadcast's withTx scope), share atomicity so the
+      // batch halt + broadcast-row transition commit/rollback together.
+      return withTxOr(txMaybe, async (tx) => {
         const updated = await tx
           .update(broadcastBatchManifests)
           .set({

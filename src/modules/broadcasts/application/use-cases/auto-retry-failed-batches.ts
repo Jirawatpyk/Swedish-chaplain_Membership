@@ -95,12 +95,22 @@ export async function autoRetryFailedBatch(
   }
 
   const newRetryCount = batch.retryCount + 1;
+  // Phase 3F.1 (F-04 fix) — rotate idempotency key on auto-retry.
+  // Without rotation, Resend's deduper short-circuits the retry: the
+  // re-queued batch uses the SAME key the original (failed) dispatch
+  // used, so `sendBroadcast(resendBroadcastId, idempotencyKey)` is a
+  // no-op + recipients never receive the email. The 5-attempt budget
+  // becomes 5 silent no-ops. Format mirrors the split-time key but
+  // adds an `autoretry-{retryCount}` suffix so each retry generation
+  // is a unique key.
+  const rotatedIdempotencyKey = `${batch.idempotencyKey}-autoretry-${newRetryCount}`;
   const result = await deps.batchManifests.updateStatus(
     tenantSlug,
     batch.id,
     {
       status: 'pending',
       retryCount: newRetryCount,
+      idempotencyKey: rotatedIdempotencyKey,
     },
   );
 

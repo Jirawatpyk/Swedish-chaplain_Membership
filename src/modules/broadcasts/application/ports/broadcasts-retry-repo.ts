@@ -21,18 +21,16 @@
  */
 import type { Result } from '@/lib/result';
 import type { BroadcastId } from '../../domain/broadcast';
+import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 
-export type BroadcastRetryStatus =
-  | 'draft'
-  | 'pending_review'
-  | 'approved'
-  | 'sending'
-  | 'partially_sent'
-  | 'partial_delivery_accepted'
-  | 'sent'
-  | 'failed_to_dispatch'
-  | 'cancelled'
-  | 'rejected';
+/**
+ * Phase 3F.1 (2026-05-19) — replaced local `BroadcastRetryStatus`
+ * union (which had a stale `'pending_review'` value never present
+ * in the canonical `BROADCAST_STATUSES` Domain tuple) with the
+ * authoritative `BroadcastStatus` import. Single source of truth;
+ * future status additions automatically flow through.
+ */
+export type BroadcastRetryStatus = BroadcastStatus;
 
 export interface BroadcastRetrySnapshot {
   readonly tenantId: string;

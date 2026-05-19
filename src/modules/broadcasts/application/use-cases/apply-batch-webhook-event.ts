@@ -37,6 +37,7 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type {
   BatchCounterField,
   BatchManifestsPort,
@@ -115,23 +116,44 @@ export async function applyBatchWebhookEvent(
   // F71A surface. Same event type so the F9 audit-viewer doesn't
   // need a new filter; payload distinguishes broadcast-level vs
   // batch-level via presence/absence of `batchManifestId`.
-  await deps.audit.emit(null, {
-    tenantId: input.tenantId,
-    eventType: 'broadcast_delivery_recorded',
-    actorUserId: 'system:resend-webhook',
-    summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId} recorded ${input.eventType} event`,
-    payload: {
-      broadcastId: input.broadcastId,
-      batchManifestId: input.batchManifestId,
-      batchIndex: input.batchIndex,
-      eventType: input.eventType,
-      counterField,
-      recipientEmailHashed: input.recipientEmailHashed,
-      resendEventId: input.resendEventId,
-      recordedAt: deps.clock.now().toISOString(),
-    },
-    requestId: input.requestId ?? null,
-  });
+  // Phase 3F.1 (F-6 silent-fail fix) — wrap audit emit in try/catch
+  // so an audit-port outage AFTER the counter increment doesn't
+  // propagate to the webhook route's 500 path. A 500 → Svix retries
+  // the webhook → the idempotent `incrementCounter` would increment
+  // AGAIN → double-counted delivered/bounced/etc. The counter
+  // increment is the truth-of-record; the audit is observability.
+  // Log on failure (operator alerts on the rate) + return ok so the
+  // webhook returns 200 + Svix moves on.
+  try {
+    await deps.audit.emit(null, {
+      tenantId: input.tenantId,
+      eventType: 'broadcast_delivery_recorded',
+      actorUserId: 'system:resend-webhook',
+      summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId} recorded ${input.eventType} event`,
+      payload: {
+        broadcastId: input.broadcastId,
+        batchManifestId: input.batchManifestId,
+        batchIndex: input.batchIndex,
+        eventType: input.eventType,
+        counterField,
+        recipientEmailHashed: input.recipientEmailHashed,
+        resendEventId: input.resendEventId,
+        recordedAt: deps.clock.now().toISOString(),
+      },
+      requestId: input.requestId ?? null,
+    });
+  } catch (auditErr) {
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        tenantId: input.tenantId,
+        batchManifestId: input.batchManifestId,
+        broadcastId: input.broadcastId,
+        eventType: input.eventType,
+      },
+      'broadcasts.batch.apply_webhook_audit_failed',
+    );
+  }
 
   return ok(undefined);
 }

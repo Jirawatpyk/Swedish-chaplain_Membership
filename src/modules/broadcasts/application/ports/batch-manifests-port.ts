@@ -101,6 +101,17 @@ export interface BatchStatusUpdate {
   readonly failedAt?: Date;
   readonly failureReason?: string;
   readonly retryCount?: number;
+  /**
+   * Phase 3F.1 (F-04 fix) — idempotency-key rotation on auto-retry.
+   * Auto-retry flips `failed → pending` and bumps `retry_count`; if
+   * the idempotency key stays the same, Resend's deduper would
+   * silently drop the resent broadcast → recipients never receive
+   * the email → 5-attempt auto-retry budget becomes 5 no-ops.
+   *
+   * Format: `broadcast-{uuid}-batch-{i}-attempt-{a}-autoretry-{n}`
+   * where `n` = the post-bump `retry_count` value.
+   */
+  readonly idempotencyKey?: string;
 }
 
 /**
@@ -196,10 +207,16 @@ export interface BatchManifestsPort {
    * manifest ids returned by `findPendingByBroadcast()`. Each row
    * transitions `pending → cancelled` atomically. Returns count of
    * rows marked.
+   *
+   * Phase 3F.1 (F-21 fix) — accepts optional `tx` so cancel-broadcast
+   * can participate in the same atomic scope as its broadcast-row
+   * UPDATE (eliminates the "batches halted but broadcast still sending"
+   * inconsistency on subsequent throw).
    */
   markCancelled(
     tenantId: TenantSlug,
     batchManifestIds: readonly string[],
+    tx?: unknown,
   ): Promise<number>;
 
   /**

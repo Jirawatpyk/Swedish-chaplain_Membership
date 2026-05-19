@@ -10,9 +10,10 @@
  * UX (per docs/ux-standards.md):
  *   - SC-007 double-click guard: Submit button disables on first click
  *     + spinner replaces label while pending. Combined with the use
- *     case's advisory-lock (currently noOp stub — see
- *     `infrastructure/noop-advisory-lock.ts`), this gives the user-
- *     facing protection while the DB layer hardens in Phase 3D.
+ *     case's `pg_try_advisory_xact_lock` (held inside `broadcasts.withTx`
+ *     so it survives the snapshot+increment+fan-out+audit sequence —
+ *     Phase 3E.1 hardening), the disabled-on-pending button is
+ *     defence-in-depth against double-click, not the primary guard.
  *   - ESC closes (AlertDialog primitive)
  *   - Reduced-motion safe (no custom animations beyond AlertDialog defaults)
  *

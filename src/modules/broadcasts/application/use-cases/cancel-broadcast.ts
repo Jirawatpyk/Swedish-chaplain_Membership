@@ -133,7 +133,24 @@ export async function cancelBroadcast(
         });
       }
 
-      const policyResult = authorizeCancel(existing.status);
+      // Phase 3F.1 (F-Finding-4 fix) — pre-check pending batches BEFORE
+      // policy authorization. The widened `authorizeCancel(status,
+      // hasBatches)` accepts `sending` IFF the broadcast was split
+      // into batches (F7.1a US1 path). When NO batches exist (F7 MVP
+      // single-audience path), the original `sending → cutoff` rule
+      // still applies — we can't recall a Resend-accepted broadcast.
+      let pendingBatchIds: readonly string[] = [];
+      let hasBatches = false;
+      if (deps.batchManifests !== undefined) {
+        const pendingBatches = await deps.batchManifests.findPendingByBroadcast(
+          deps.tenant.slug as never,
+          input.broadcastId,
+        );
+        pendingBatchIds = pendingBatches.map((b) => b.id);
+        hasBatches = pendingBatchIds.length > 0;
+      }
+
+      const policyResult = authorizeCancel(existing.status, hasBatches);
       if (!policyResult.ok) {
         // R7 staff-review MED-R2 — `null` tx is intentional here: the
         // policy reject branch performs NO state mutation (no UPDATE,
@@ -180,33 +197,30 @@ export async function cancelBroadcast(
       }
 
       let cancelled: Broadcast;
-      // F7.1a US1 FR-004 (Phase 3E.3) — halt pending batch_manifests
-      // BEFORE the broadcast-row transition. If batches are split + in
-      // `pending` state, the dispatch-batches cron (T055) could
-      // otherwise race ahead and dispatch them between our snapshot
-      // and the broadcast-status flip. Marking batches cancelled first
-      // closes that window: the dispatcher's eligible scan filters on
-      // `status='pending'` so any flipped-to-cancelled rows skip.
-      // markCancelled only flips `pending → cancelled` (ignores
-      // in-flight / terminal rows per adapter contract), so the worst
-      // case is `M batches halted; N already dispatched` — the spec
-      // FR-004 microcopy + admin UI surfaces this distinction.
-      if (deps.batchManifests !== undefined && existing.status === 'sending') {
-        // findPendingByBroadcast opens its own runInTenant (no tx
-        // shared with cancel's withTx) — the markCancelled UPDATE
-        // filters on `WHERE status = 'pending'` so any race between
-        // our snapshot read + the dispatcher's flip to 'sending' is
-        // bounded: at worst the dispatcher wins → marker no-ops →
-        // the broadcast-row transition below still fires + the
-        // already-dispatched batches are surfaced via FR-004 microcopy.
-        const pendingBatches = await deps.batchManifests.findPendingByBroadcast(
+      // F7.1a US1 FR-004 (Phase 3F.1 hardening — F-21 atomicity fix).
+      // When the broadcast has pending batches (already discovered
+      // above for the policy check), halt them BEFORE the broadcast-
+      // row transition AND WITHIN the same withTx scope (pass `tx` to
+      // markCancelled). If the subsequent applyTransition throws, the
+      // outer tx rollback now also reverts the batch halts → no half-
+      // committed "M batches cancelled + broadcast still sending"
+      // inconsistency. Log halt count for ops observability.
+      let haltedCount = 0;
+      if (hasBatches) {
+        haltedCount = await deps.batchManifests!.markCancelled(
           deps.tenant.slug as never,
-          input.broadcastId,
+          pendingBatchIds,
+          tx,
         );
-        if (pendingBatches.length > 0) {
-          await deps.batchManifests.markCancelled(
-            deps.tenant.slug as never,
-            pendingBatches.map((b) => b.id),
+        if (haltedCount < pendingBatchIds.length) {
+          logger.warn(
+            {
+              tenantId: deps.tenant.slug,
+              broadcastId: input.broadcastId as string,
+              requested: pendingBatchIds.length,
+              halted: haltedCount,
+            },
+            'broadcasts.cancel.batch_halt_partial',
           );
         }
       }

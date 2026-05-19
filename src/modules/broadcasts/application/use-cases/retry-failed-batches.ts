@@ -105,6 +105,27 @@ export async function retryFailedBatches(
       tx,
     );
     if (snapshot === null) {
+      // Phase 3F.1 (F-01 fix) — emit cross-tenant probe audit BEFORE
+      // returning BROADCAST_NOT_FOUND. Constitution v1.4.0 Principle I
+      // sub-clause 4 — every cross-tenant probe MUST leave a forensic
+      // trail. Pattern mirrors `enforce-tenant-context.ts:60-78`.
+      try {
+        await deps.audit.emit(tx, {
+          tenantId: tenantSlug,
+          eventType: 'broadcast_cross_tenant_probe',
+          actorUserId: input.actorUserId,
+          summary: `Admin ${input.actorUserId} probed unknown broadcast ${input.broadcastId} (retry path)`,
+          payload: {
+            broadcastId: input.broadcastId,
+            probedBroadcastId: input.broadcastId,
+            expectedTenantId: tenantSlug,
+            useCase: 'retry-failed-batches',
+          },
+          requestId: input.requestId ?? null,
+        });
+      } catch {
+        // best-effort — never 5xx because audit failed
+      }
       return err({
         kind: 'BROADCAST_NOT_FOUND',
         broadcastId: input.broadcastId,
