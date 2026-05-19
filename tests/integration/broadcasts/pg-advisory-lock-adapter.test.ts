@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { pgAdvisoryLockAdapter } from '@/modules/broadcasts/infrastructure/pg-advisory-lock-adapter';
+import { asTxToken } from '@/modules/broadcasts/application/ports/advisory-lock-port';
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL);
 const TEST_TENANT = 'swecham';
@@ -38,7 +39,7 @@ describe.runIf(RUN_INTEGRATION)(
     it('returns {acquired:true} inside a fresh tx', async () => {
       const lockKey = `test-lock-${randomUUID()}`;
       const result = await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
-        return await pgAdvisoryLockAdapter.acquire(tx, lockKey);
+        return await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
       });
       expect(result.acquired).toBe(true);
     });
@@ -47,12 +48,12 @@ describe.runIf(RUN_INTEGRATION)(
       const lockKey = `test-lock-commit-${randomUUID()}`;
       // First tx: acquire + COMMIT
       const first = await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
-        return await pgAdvisoryLockAdapter.acquire(tx, lockKey);
+        return await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
       });
       expect(first.acquired).toBe(true);
       // Second tx: should ALSO acquire since first tx already committed
       const second = await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
-        return await pgAdvisoryLockAdapter.acquire(tx, lockKey);
+        return await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
       });
       expect(second.acquired).toBe(true);
     });
@@ -62,14 +63,14 @@ describe.runIf(RUN_INTEGRATION)(
       // First tx: acquire + force ROLLBACK by throwing
       await expect(
         runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
-          const r = await pgAdvisoryLockAdapter.acquire(tx, lockKey);
+          const r = await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
           expect(r.acquired).toBe(true);
           throw new Error('force rollback');
         }),
       ).rejects.toThrow('force rollback');
       // Second tx: should ALSO acquire since rollback released the lock
       const second = await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
-        return await pgAdvisoryLockAdapter.acquire(tx, lockKey);
+        return await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
       });
       expect(second.acquired).toBe(true);
     });
@@ -85,8 +86,8 @@ describe.runIf(RUN_INTEGRATION)(
       const results = await runInTenant(
         asTenantContext(TEST_TENANT),
         async (tx) => {
-          const first = await pgAdvisoryLockAdapter.acquire(tx, lockKey);
-          const second = await pgAdvisoryLockAdapter.acquire(tx, lockKey);
+          const first = await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
+          const second = await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
           return { first: first.acquired, second: second.acquired };
         },
       );

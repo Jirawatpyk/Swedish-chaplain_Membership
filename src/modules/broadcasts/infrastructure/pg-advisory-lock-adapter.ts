@@ -29,17 +29,25 @@ import { sql } from 'drizzle-orm';
 import type {
   AcquireResult,
   AdvisoryLockPort,
+  TxToken,
 } from '../application/ports/advisory-lock-port';
 import type { TenantTx } from '@/lib/db';
 
 export const pgAdvisoryLockAdapter: AdvisoryLockPort = {
-  async acquire(txUnknown: unknown, lockKey: string): Promise<AcquireResult> {
-    if (txUnknown === undefined || txUnknown === null) {
+  async acquire(
+    txToken: TxToken | null,
+    lockKey: string,
+  ): Promise<AcquireResult> {
+    if (txToken === null) {
       throw new Error(
         'pgAdvisoryLockAdapter.acquire requires a tx argument — caller MUST wrap in withTx scope so the lock is held across the dependent mutations',
       );
     }
-    const tx = txUnknown as TenantTx;
+    // Phase 3F.11.6 (Type Bottom #2 partial) — single cast at the
+    // infrastructure boundary unbrands TxToken → TenantTx. The Drizzle
+    // tx shape is a runtime-equivalent type; the brand was a compile-
+    // time barrier only.
+    const tx = txToken as unknown as TenantTx;
     const result = (await tx.execute(
       sql`SELECT pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) AS acquired`,
     )) as unknown as Array<{ acquired: boolean }>;

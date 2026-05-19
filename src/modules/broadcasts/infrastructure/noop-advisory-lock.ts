@@ -22,10 +22,15 @@
  * Phase 3E 2026-05-19 signature aligned to `acquire(tx, lockKey)`; the
  * stub ignores tx because no tx-scoped lock is acquired.
  */
-import type { AdvisoryLockPort } from '../application/ports/advisory-lock-port';
+import type {
+  AdvisoryLockPort,
+  TxToken,
+} from '../application/ports/advisory-lock-port';
 
 export const noOpAdvisoryLock: AdvisoryLockPort = {
-  async acquire(_tx: unknown, _lockKey: string) {
+  // Phase 3F.11.6 — signature widened to `TxToken | null` per port
+  // contract. Stub ignores both args (no tx-scoped lock acquired).
+  async acquire(_tx: TxToken | null, _lockKey: string) {
     return { acquired: true };
   },
 };

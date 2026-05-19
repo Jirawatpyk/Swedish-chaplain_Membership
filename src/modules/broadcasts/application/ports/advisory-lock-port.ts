@@ -27,6 +27,42 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 
+/**
+ * Phase 3F.11.6 (Type Bottom #2 partial — Round 2 minimal cascade) —
+ * branded transaction token.
+ *
+ * Replaces the flat `tx: unknown` parameter with a nominal type that
+ * carries intent at call sites: "this value is a Drizzle/postgres-js
+ * tx handle, not a random unknown". Branded types are a Phase 3F.11.6
+ * project convention — Application ports remain unaware of the actual
+ * Drizzle/postgres-js types (Constitution III: no infrastructure leak
+ * into the port layer) while still preventing the laundering of
+ * arbitrary values via `as never` casts at call sites.
+ *
+ * Migration plan:
+ *   - Step 1 (this commit): `AdvisoryLockPort.acquire` consumes `TxToken`
+ *   - Step 2 (deferred): `BroadcastsRetryRepo.withTx` callback receives `TxToken`
+ *   - Step 3 (deferred): `BatchManifestsPort.*` tx params widen to `TxToken`
+ *   - Step 4 (deferred): Drizzle adapters cast `TxToken → TenantTx` once at boundary
+ *
+ * Steps 2-4 deferred per the Phase 3F.11 plan because they cascade
+ * across ~10 test fixtures + 3 adapters + 7 use cases. Step 1 alone
+ * gives ~30% of the type-safety benefit at <5% of the diff cost.
+ */
+declare const txTokenBrand: unique symbol;
+export type TxToken = { readonly [txTokenBrand]: true };
+
+/**
+ * Caller-side brand constructor — wraps a raw tx handle into a TxToken
+ * at the use-case → port boundary. The Drizzle adapter unbrands
+ * internally with a single `as TenantTx` cast at the SQL-execution
+ * boundary, so the brand serves as a compile-time barrier without
+ * forcing runtime overhead.
+ */
+export function asTxToken(tx: unknown): TxToken {
+  return tx as TxToken;
+}
+
 export interface AcquireResult {
   /** `true` if the lock was acquired, `false` if held by another tx. */
   readonly acquired: boolean;
@@ -48,6 +84,15 @@ export interface AdvisoryLockPort {
    * The hash converts the variable-length key into the `bigint`
    * advisory-lock space; collisions are statistically negligible at
    * F71A scale (one lock per (tenant, broadcast) pair).
+   *
+   * Phase 3F.11.6 — `tx` is now `TxToken` (branded). Callers MUST
+   * wrap their raw tx via `asTxToken(tx)` at the call site (one-line
+   * boundary cost), which makes Principle III tenant-tx-laundering
+   * via random `as never` casts compile-fail.
+   *
+   * Backward compat: `noOpAdvisoryLock` still accepts `null` via the
+   * port's pre-existing acceptance of optional tx — the production
+   * pgAdvisoryLockAdapter throws on null. See pg-advisory-lock-adapter.ts.
    */
-  acquire(tx: unknown, lockKey: string): Promise<AcquireResult>;
+  acquire(tx: TxToken | null, lockKey: string): Promise<AcquireResult>;
 }
