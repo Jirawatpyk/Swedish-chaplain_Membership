@@ -21,6 +21,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import { asTxToken, type TxToken } from '../application/ports/advisory-lock-port';
 import { err, ok, type Result } from '@/lib/result';
 import { errorChainMessage } from '@/lib/db-errors';
 import { asTenantContext } from '@/modules/tenants';
@@ -58,8 +59,15 @@ export function makeDrizzleBroadcastsRetryRepo(
   }
 
   return {
-    async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
-      return runInTenant(ctx, async (tx) => fn(tx));
+    async withTx<T>(fn: (tx: TxToken) => Promise<T>): Promise<T> {
+      // Phase 3F.11.11 (Round 3 TxToken Step 2) — brand the raw
+      // Drizzle tx into a TxToken at the infrastructure boundary so
+      // callers (use cases) receive a nominally-typed handle. The
+      // adapter retains the structural cast (`tx as unknown as
+      // TenantTx`-equivalent via the brand erasure) when individual
+      // port methods need to call `tx.execute(...)` — that cast lives
+      // in `unbrandTx` (a future Phase 3F.11+ helper if Step 4 lands).
+      return runInTenant(ctx, async (tx) => fn(asTxToken(tx)));
     },
 
     async findById(

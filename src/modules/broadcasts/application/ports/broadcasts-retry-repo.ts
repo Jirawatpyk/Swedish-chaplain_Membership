@@ -22,6 +22,7 @@
 import type { Result } from '@/lib/result';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { TxToken } from './advisory-lock-port';
 
 /**
  * Phase 3F.1 (2026-05-19) — replaced local `BroadcastRetryStatus`
@@ -62,9 +63,16 @@ export interface BroadcastsRetryRepo {
    * one tx. Lock auto-releases at commit; rollback on uncaught error
    * also releases.
    *
-   * Drizzle impl: `runInTenant(ctx, async tx => fn(tx))`.
+   * Drizzle impl: `runInTenant(ctx, async tx => fn(asTxToken(tx)))`.
+   *
+   * Phase 3F.11.11 (Round 3 TxToken Step 2) — callback receives a
+   * branded `TxToken` instead of `unknown`. This eliminates the
+   * `asTxToken(tx)` brand-laundering line at use-case call sites
+   * (e.g. retry-failed-batches.ts:advisoryLock.acquire was wrapping
+   * `tx` via `asTxToken(tx)` since 3F.11.6 Step 1; tx now arrives
+   * pre-branded). Adapter casts at the boundary only.
    */
-  withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T>;
+  withTx<T>(fn: (tx: TxToken) => Promise<T>): Promise<T>;
 
   /**
    * Read the broadcast row's retry-relevant snapshot. Returns `null`

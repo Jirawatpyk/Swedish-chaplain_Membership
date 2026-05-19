@@ -15,6 +15,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import postgres from 'postgres';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { pgAdvisoryLockAdapter } from '@/modules/broadcasts/infrastructure/pg-advisory-lock-adapter';
@@ -95,13 +96,56 @@ describe.runIf(RUN_INTEGRATION)(
       expect(results.second).toBe(true);
     });
 
-    // NOTE: A concurrent-acquire-blocks-second-tx test was attempted
-    // but is fragile under postgres-js's pool model — holding a tx
-    // open via an await-signal pattern often serialises through the
-    // pool and the second tx doesn't progress within the test
-    // window. The non-blocking try-lock semantic is exhaustively
-    // tested by Postgres itself; the application contract is just
-    // the 4 cases above (null-tx rejection, basic acquire, commit
-    // release, rollback release, re-entrant).
+    // Phase 3F.11.11 (Round 3 SC-007 re-attempt) — concurrent-tx
+    // semantic with a STANDALONE postgres-js pool to bypass the
+    // shared pool serialisation that caused the earlier attempt to
+    // time out. The first tx still uses `runInTenant` (production
+    // code path); the second uses its own dedicated connection so
+    // it's not queued behind the first tx in the shared pool.
+    it('concurrent acquire from DIFFERENT tx on same key → second tx sees {acquired:false}', async () => {
+      const lockKey = `test-lock-concurrent-${randomUUID()}`;
+      const databaseUrl = process.env.DATABASE_URL;
+      if (databaseUrl === undefined) throw new Error('DATABASE_URL required');
+      // Standalone pool — single connection, separate from runInTenant's pool.
+      const standaloneSql = postgres(databaseUrl, { max: 1 });
+
+      let releaseFirst!: () => void;
+      const firstReleased = new Promise<void>((res) => {
+        releaseFirst = res;
+      });
+      const firstAcquired: { value?: boolean } = {};
+      const secondAcquired: { value?: boolean } = {};
+
+      // First tx — uses production path, acquires the lock + holds open
+      const firstTxPromise = runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+        const r = await pgAdvisoryLockAdapter.acquire(asTxToken(tx), lockKey);
+        firstAcquired.value = r.acquired;
+        // Hold the tx open until released by the test
+        await firstReleased;
+      });
+
+      // Give first tx time to acquire the lock before second tx tries
+      await new Promise((r) => setTimeout(r, 200));
+
+      try {
+        // Second tx — standalone pool, dedicated connection. The
+        // pg_try_advisory_xact_lock is non-blocking so the call returns
+        // immediately with `false` if the lock is held elsewhere.
+        await standaloneSql.begin(async (sql) => {
+          const rows = (await sql`
+            SELECT pg_try_advisory_xact_lock(hashtextextended(${lockKey}, 0)) AS acquired
+          `) as unknown as Array<{ acquired: boolean }>;
+          secondAcquired.value = rows[0]?.acquired === true;
+        });
+
+        expect(firstAcquired.value).toBe(true);
+        expect(secondAcquired.value).toBe(false);
+      } finally {
+        // Release first tx + clean up the standalone pool
+        releaseFirst();
+        await firstTxPromise;
+        await standaloneSql.end();
+      }
+    }, 15_000);
   },
 );

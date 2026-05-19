@@ -28,7 +28,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
-import { type AdvisoryLockPort, asTxToken } from '../ports/advisory-lock-port';
+import { type AdvisoryLockPort } from '../ports/advisory-lock-port';
 import { logAuditEmitFailure } from '../audit-emit-failure-logger';
 import type { AuditPort } from '../ports/audit-port';
 import type { BatchManifestsPort } from '../ports/batch-manifests-port';
@@ -167,13 +167,11 @@ export async function retryFailedBatches(
     //    this withTx callback returns + the outer tx commits.
     //    Concurrent `retryFailedBatches` on the same broadcastId will
     //    see `{acquired: false}` here while our tx holds the lock.
-    // Phase 3F.11.6 (Type Bottom #2 partial) — brand the raw tx
-    // (typed as `unknown` by `BroadcastsRetryRepo.withTx`'s callback —
-    // Step 2 of the migration plan will widen withTx itself) into a
-    // `TxToken` at the use-case → port boundary. This is the single
-    // line where the brand laundering happens; the port + adapter
-    // benefit from compile-time type safety everywhere else.
-    const lock = await deps.advisoryLock.acquire(asTxToken(tx), lockKey);
+    // Phase 3F.11.11 (TxToken Step 2 ✅ DONE) — `tx` is now `TxToken`-
+    // typed via the widened `BroadcastsRetryRepo.withTx` callback
+    // signature, so the `asTxToken(tx)` brand-laundering line that
+    // Phase 3F.11.6 introduced is no longer needed here.
+    const lock = await deps.advisoryLock.acquire(tx, lockKey);
     if (!lock.acquired) {
       return err({
         kind: 'ALREADY_RETRYING_IN_PROGRESS',
