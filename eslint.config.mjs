@@ -703,6 +703,78 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // R4-S4 (Option C scope-down) — ban inline `BenefitMatrix` literal
+    // construction in production code. Every production-code value of
+    // type `BenefitMatrix` MUST flow through `asBenefitMatrix(input,
+    // planCategory)` so the partnership↔category integrity invariant
+    // is enforced at construction time (the smart constructor throws
+    // `InvalidBenefitMatrixError` on mismatch).
+    //
+    // Runtime enforcement at the API zod boundary + `rowToPlan` smart-
+    // constructor call covers the data-in paths today; this rule
+    // forecloses regression in case a new production site forgets to
+    // route through the smart constructor.
+    //
+    // Test code is intentionally exempt: ~92 test fixtures across
+    // F4/F6/F7/F8/auth/e2e construct inline literals to seed the
+    // `membership_plans` table directly (via Drizzle, bypassing
+    // `planRepo.insert`). Re-attempting a full sweep across all
+    // ~92 sites is documented at
+    // `src/modules/plans/domain/benefit-matrix.ts:90-122`.
+    //
+    // The rule targets two patterns:
+    //   (a) variable declaration:
+    //       `const x: BenefitMatrix = { ... }`
+    //   (b) return statement with type-asserted literal:
+    //       `function f(): BenefitMatrix { return { ... } as BenefitMatrix; }`
+    //
+    // Allowed forms:
+    //   - `const x: BenefitMatrix = asBenefitMatrix(input, 'corporate')`
+    //   - `const x = await planRepo.findById(...)` (no inline literal)
+    //   - `as BenefitMatrix` cast at the hydration boundary in
+    //     `plan-repo.ts:cloneBenefitMatrix` (documented exception)
+    files: [
+      "src/modules/**/*.ts",
+      "src/modules/**/*.tsx",
+      "src/components/**/*.ts",
+      "src/components/**/*.tsx",
+      "src/app/**/*.ts",
+      "src/app/**/*.tsx",
+    ],
+    ignores: [
+      // The smart constructor itself + its tests construct literals
+      // via the loose `BenefitMatrixInput` shape; that's the canonical
+      // entry point.
+      "src/modules/plans/domain/benefit-matrix.ts",
+      // `rowToPlan` hydration boundary needs the documented
+      // `as BenefitMatrix` cast on `cloneBenefitMatrix`.
+      "src/modules/plans/infrastructure/db/plan-repo.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // Pattern (a) — `const x: BenefitMatrix = { ... }`
+          selector:
+            "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R4-S4 — do not construct `BenefitMatrix` via inline object literal in production code. " +
+            "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans` so the partnership↔category " +
+            "integrity invariant is enforced at construction time.",
+        },
+        {
+          // Pattern (b) — `... as BenefitMatrix` cast on ObjectExpression
+          selector:
+            "TSAsExpression[typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R4-S4 — do not cast `{...} as BenefitMatrix` in production code. " +
+            "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans` so the partnership↔category " +
+            "integrity invariant is enforced at construction time.",
+        },
+      ],
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

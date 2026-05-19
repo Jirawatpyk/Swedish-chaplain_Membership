@@ -104,20 +104,28 @@ type BenefitMatrixBase = {
  * via `matrix.partnership !== null` gives the consumer the variant
  * shape it needs.
  *
- * R4-S4 backlog note: a `unique symbol` brand was attempted in
- * Batch 5e but reverted because the sweep cascaded to 92 test files
- * (each holding inline `BenefitMatrix` literals for plan-seed
- * fixtures across F4 invoicing / F6 events / F7 broadcasts / F8
- * renewals + e2e + auth tests). The brand-vs-runtime-validation
- * trade-off doesn't justify the ~92-file sweep at this scope. Runtime
- * enforcement via `asBenefitMatrix` at `plan-repo.ts:rowToPlan` +
- * the API-boundary zod schema remains the canonical entry point;
- * test fixtures construct literals directly because their data path
- * goes to `db.insert(membershipPlans).values(...)` (which Drizzle
- * accepts as raw JSONB without the TS brand). Re-attempt R4-S4 only
- * if a future shared `TEST_MATRIX_FACTORY` helper consolidates the
- * 92 sites — or if the existing `DEFAULT_TEST_BENEFIT_MATRIX` is
- * adopted in their place via a sweep batch dedicated to that.
+ * R4-S4 enforcement (Option C scope-down):
+ *   - Runtime: `asBenefitMatrix` smart constructor at `rowToPlan` +
+ *     the API-boundary zod schema validates the partnership↔category
+ *     invariant on every data-in path.
+ *   - Compile-time: ESLint `no-restricted-syntax` rule at
+ *     `eslint.config.mjs` (R4-S4 block) bans
+ *     `const x: BenefitMatrix = {...}` and `{...} as BenefitMatrix`
+ *     in `src/modules/**`, `src/components/**`, `src/app/**`. Forces
+ *     every production-code construction site to route through
+ *     `asBenefitMatrix(input, planCategory)`.
+ *
+ * Tests INTENTIONALLY exempt (~92 inline literals across
+ * F4/F6/F7/F8/auth/e2e seed fixtures). They write directly to
+ * `membership_plans` via Drizzle, bypassing the smart constructor
+ * — the brand-via-symbol approach was attempted in Batch 5e but
+ * reverted (~92-file sweep didn't justify the value at that scope).
+ *
+ * A future cleanup batch could adopt the shared
+ * `DEFAULT_TEST_BENEFIT_MATRIX` helper (`tests/integration/helpers/
+ * test-benefit-matrix.ts`) in place of the per-file inline literals,
+ * then upgrade Option C → full symbol brand once the surface is
+ * consolidated. Not in scope for R4.
  */
 export type CorporateBenefitMatrix = BenefitMatrixBase & {
   readonly partnership: null;

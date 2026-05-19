@@ -39,6 +39,7 @@ import { BenefitMatrixEditor } from './benefit-matrix-editor';
 import { usePlanOptions } from './use-plan-options';
 import {
   planSchema,
+  asBenefitMatrix,
   type BenefitMatrix,
   type PlanCategory,
   type PlanSchemaInput,
@@ -47,19 +48,26 @@ import {
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
 
-const EMPTY_MATRIX: BenefitMatrix = {
-  eblast_per_year: 0,
-  website_page_type: null,
-  homepage_logo_category: null,
-  directory_listing_size: null,
-  event_discount_scope: 'none',
-  events_cobranded_access: false,
-  cultural_tickets_per_year: 0,
-  m2m_benefits_access: false,
-  business_referrals: false,
-  tailor_made_services: false,
-  partnership: null,
-};
+// R4-S4 — route through `asBenefitMatrix` so the empty wizard initial
+// state satisfies the partnership↔category integrity invariant. Default
+// category is 'corporate' because the wizard starts on the corporate
+// flow; category-switching is handled downstream in the benefits step.
+const EMPTY_MATRIX: BenefitMatrix = asBenefitMatrix(
+  {
+    eblast_per_year: 0,
+    website_page_type: null,
+    homepage_logo_category: null,
+    directory_listing_size: null,
+    event_discount_scope: 'none',
+    events_cobranded_access: false,
+    cultural_tickets_per_year: 0,
+    m2m_benefits_access: false,
+    business_referrals: false,
+    tailor_made_services: false,
+    partnership: null,
+  },
+  'corporate',
+);
 
 function emptyDraft(currentYear: number): PlanSchemaInput {
   return {
