@@ -39,6 +39,7 @@
 import type { Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import type { IdempotencyKey } from '../../domain/value-objects/idempotency-key';
 import type { TxToken } from './advisory-lock-port';
 
 export type BatchStatus =
@@ -65,7 +66,12 @@ export interface BatchManifest {
    * route per-batch `email.*` events back to the correct manifest.
    */
   readonly providerBroadcastId: string | null;
-  readonly idempotencyKey: string;
+  // Phase 3F.11.15 (Type Bottom #6) — branded type. The DB stores
+  // plain strings; adapters brand via `asIdempotencyKey(row.idempotency_key)`
+  // when constructing a `BatchManifest`. Use cases must use the
+  // Domain factory functions (makeIdempotencyKey, rotateForAutoRetry,
+  // rotateForManualRetry) to construct or rotate keys.
+  readonly idempotencyKey: IdempotencyKey;
   readonly retryCount: number;
   readonly deliveredCount: number;
   readonly bouncedCount: number;
@@ -92,7 +98,7 @@ export interface NewBatchManifestInput {
    * so Resend's deduper doesn't short-circuit retried dispatches
    * (Phase 3F.1 F-04 fix).
    */
-  readonly idempotencyKey: string;
+  readonly idempotencyKey: IdempotencyKey;
 }
 
 export type BatchInsertError =
@@ -123,8 +129,12 @@ export interface BatchStatusUpdate {
    *
    * Format: `broadcast-{uuid}-batch-{i}-attempt-{a}-autoretry-{n}`
    * where `n` = the post-bump `retry_count` value.
+   *
+   * Phase 3F.11.15 (Type Bottom #6) — branded type. Use
+   * `rotateForAutoRetry` or `rotateForManualRetry` from
+   * `domain/value-objects/idempotency-key.ts` to produce the value.
    */
-  readonly idempotencyKey?: string;
+  readonly idempotencyKey?: IdempotencyKey;
 }
 
 /**

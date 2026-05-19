@@ -39,6 +39,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import { rotateForAutoRetry } from '../../domain/value-objects/idempotency-key';
 import type { AuditPort } from '../ports/audit-port';
 import type {
   BatchManifest,
@@ -102,10 +103,16 @@ export async function autoRetryFailedBatch(
   // re-queued batch uses the SAME key the original (failed) dispatch
   // used, so `sendBroadcast(resendBroadcastId, idempotencyKey)` is a
   // no-op + recipients never receive the email. The 5-attempt budget
-  // becomes 5 silent no-ops. Format mirrors the split-time key but
-  // adds an `autoretry-{retryCount}` suffix so each retry generation
-  // is a unique key.
-  const rotatedIdempotencyKey = `${batch.idempotencyKey}-autoretry-${newRetryCount}`;
+  // becomes 5 silent no-ops.
+  // Phase 3F.11.15 (Type Bottom #6) — rotation via Domain factory
+  // `rotateForAutoRetry` instead of inline string concatenation. The
+  // factory carries the `-autoretry-N` namespace invariant and the
+  // `IdempotencyKey` brand barrier (no raw strings reach the Resend
+  // gateway boundary).
+  const rotatedIdempotencyKey = rotateForAutoRetry(
+    batch.idempotencyKey,
+    newRetryCount,
+  );
   const result = await deps.batchManifests.updateStatus(
     tenantSlug,
     batch.id,

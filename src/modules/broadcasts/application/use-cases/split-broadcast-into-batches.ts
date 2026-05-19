@@ -25,6 +25,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import { makeIdempotencyKey } from '../../domain/value-objects/idempotency-key';
 import {
   computeBatchRanges,
   RESEND_PER_AUDIENCE_CAP,
@@ -84,20 +85,12 @@ export interface SplitBroadcastIntoBatchesOutput {
   readonly batchCount: number;
 }
 
-/**
- * Build the deterministic idempotency key for batch `i` on attempt `a`
- * per plan.md § VIII (Reliability) + the `BatchManifestsPort.NewBatchManifestInput`
- * port docs. Format: `broadcast-{uuid}-batch-{i}-attempt-{a}`.
- * On auto-retry path (T056) key is rotated via `-autoretry-{n}` suffix
- * to defeat Resend's deduper (Phase 3F.1 F-04 fix).
- */
-function makeIdempotencyKey(
-  broadcastId: BroadcastId,
-  batchIndex: number,
-  attempt: number,
-): string {
-  return `broadcast-${broadcastId}-batch-${batchIndex}-attempt-${attempt}`;
-}
+// Phase 3F.11.15 (Type Bottom #6) — local `makeIdempotencyKey` helper
+// removed; canonical version with `IdempotencyKey` brand now lives in
+// `domain/value-objects/idempotency-key.ts`. Brand prevents
+// laundering of arbitrary strings into the Resend gateway's idempotency
+// surface — the ONLY way to obtain an `IdempotencyKey` is through the
+// 4 factory functions in that file.
 
 export async function splitBroadcastIntoBatches(
   deps: SplitBroadcastIntoBatchesDeps,

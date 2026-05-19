@@ -28,6 +28,7 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import { rotateForManualRetry } from '../../domain/value-objects/idempotency-key';
 import { type AdvisoryLockPort } from '../ports/advisory-lock-port';
 import { logAuditEmitFailure } from '../audit-emit-failure-logger';
 import type { AuditPort } from '../ports/audit-port';
@@ -246,12 +247,13 @@ export async function retryFailedBatches(
       // Phase 3F.11.1 (C2 — Round 2 fix): rotate idempotency key per
       // manual retry attempt. Without rotation, Resend's deduper
       // short-circuits the resend → 3-attempt manual budget burns to
-      // zero with silent no-ops (symmetric to F-04 auto-retry fix from
-      // Phase 3F.1 at auto-retry-failed-batches.ts:108). Namespace
-      // `-manualretry-N` is disjoint from auto-retry's `-autoretry-N`
-      // so an admin retry never collides with a sweep retry on the
-      // same batch.
-      const rotatedKey = `${batch.idempotencyKey}-manualretry-${retryAttempt}`;
+      // zero with silent no-ops.
+      // Phase 3F.11.15 (Type Bottom #6) — rotation via Domain factory
+      // `rotateForManualRetry` instead of inline string concatenation.
+      // Namespace `-manualretry-N` disjoint from auto-retry's
+      // `-autoretry-N` is encoded in the factory itself (single source
+      // of truth for the two retry-path namespace conventions).
+      const rotatedKey = rotateForManualRetry(batch.idempotencyKey, retryAttempt);
       await deps.batchManifests.updateStatus(
         tenantSlug,
         batch.id,

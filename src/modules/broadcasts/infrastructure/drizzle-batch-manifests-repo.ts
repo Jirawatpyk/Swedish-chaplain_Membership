@@ -30,6 +30,7 @@ import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../domain/broadcast';
 import { asBroadcastId } from '../domain/broadcast';
+import { asIdempotencyKey } from '../domain/value-objects/idempotency-key';
 import type {
   BatchCounterField,
   BatchCounterIncrementError,
@@ -70,7 +71,11 @@ function rowToManifest(row: BroadcastBatchManifestRow): BatchManifest {
     status: row.status as BatchStatus,
     providerAudienceId: row.providerAudienceId,
     providerBroadcastId: row.providerBroadcastId,
-    idempotencyKey: row.idempotencyKey,
+    // Phase 3F.11.15 — brand at the infra→domain boundary. The DB
+    // stores plain text; this `asIdempotencyKey` cast is the documented
+    // re-hydration escape from the brand barrier in the inbound
+    // direction (see domain/value-objects/idempotency-key.ts).
+    idempotencyKey: asIdempotencyKey(row.idempotencyKey),
     retryCount: row.retryCount,
     deliveredCount: row.deliveredCount,
     bouncedCount: row.bouncedCount,

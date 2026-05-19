@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asIdempotencyKey } from '@/modules/broadcasts/domain/value-objects/idempotency-key';
 import { dispatchBroadcastBatch } from '@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch';
 import type { BatchManifest } from '@/modules/broadcasts/application/ports/batch-manifests-port';
 import type { TenantSlug } from '@/modules/tenants';
@@ -59,7 +60,7 @@ function makeManifest(overrides: Partial<BatchManifest> = {}): BatchManifest {
     status: 'pending',
     providerAudienceId: null,
     providerBroadcastId: null,
-    idempotencyKey: 'broadcast-aaa-batch-0-attempt-0',
+    idempotencyKey: asIdempotencyKey('broadcast-aaa-batch-0-attempt-0'),
     retryCount: 0,
     deliveredCount: 0,
     bouncedCount: 0,

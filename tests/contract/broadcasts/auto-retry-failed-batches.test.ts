@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { asIdempotencyKey } from '@/modules/broadcasts/domain/value-objects/idempotency-key';
 import {
   autoRetryFailedBatch,
   sweepAutoRetryFailedBatches,
@@ -30,7 +31,7 @@ function makeBatch(overrides: Partial<BatchManifest> = {}): BatchManifest {
     status: 'failed',
     providerAudienceId: 'aud-1',
     providerBroadcastId: 'resend-bid-1',
-    idempotencyKey: 'broadcast-aaa-batch-0-attempt-0',
+    idempotencyKey: asIdempotencyKey('broadcast-aaa-batch-0-attempt-0'),
     retryCount: 0,
     deliveredCount: 0,
     bouncedCount: 0,
