@@ -1198,6 +1198,20 @@
 			"when": 1797408000000,
 			"tag": "0170_f71a_batch_provider_broadcast_id",
 			"breakpoints": true
+		},
+		{
+			"idx": 171,
+			"version": "7",
+			"when": 1797494400000,
+			"tag": "0171_f71a_estimated_recipient_cap_50k",
+			"breakpoints": true
+		},
+		{
+			"idx": 172,
+			"version": "7",
+			"when": 1797580800000,
+			"tag": "0172_f71a_chamber_app_grants",
+			"breakpoints": true
 		}
 	]
 }

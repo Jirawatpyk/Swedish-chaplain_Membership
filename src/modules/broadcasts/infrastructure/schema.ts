@@ -267,10 +267,14 @@ export const broadcasts = pgTable(
        OR (segment_type = 'custom' AND array_length(custom_recipient_emails, 1) BETWEEN 1 AND 100)`,
     ),
 
-    // FR-016a: estimated_recipient_count ≤ 5000
+    // FR-007 (F71A US1 amendment 2026-05-19): estimated_recipient_count
+    // ≤ 50,000. F7 MVP 5k cap raised to 50k via migration 0171.
+    // Application-layer T061 flag gate enforces tenant-effective cap:
+    // when F71A US1 OFF, submit-broadcast use-case rejects >5k via
+    // broadcast_audience_too_large; when ON, 50k applies.
     check(
       'broadcasts_estimated_recipient_cap',
-      sql`${table.estimatedRecipientCount} BETWEEN 0 AND 5000`,
+      sql`${table.estimatedRecipientCount} BETWEEN 0 AND 50000`,
     ),
 
     // FR-007: quota_year_consumed only set on `sent`
