@@ -1975,6 +1975,40 @@
           },
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
+        },
+        "pageTitle": "Inställningar för utskick",
+        "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
+        "breadcrumbAdmin": "Administration",
+        "breadcrumbBroadcasts": "E-utskick",
+        "breadcrumbSettings": "Inställningar",
+        "allowlist": {
+          "heading": "Tillåtna bildkällor",
+          "description": "Endast bilder som ligger på dessa värdnamn får visas i utskickets innehåll. Standardposter kan inte tas bort.",
+          "hostnameLabel": "Värdnamn",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "Små bokstäver, minst en punkt, inga wildcards.",
+          "addButton": "Lägg till värdnamn",
+          "removeButton": "Ta bort",
+          "removeAria": "Ta bort {hostname}",
+          "tableCaption": "Poster i bildkällsregistret",
+          "colHostname": "Värdnamn",
+          "colSource": "Källa",
+          "colActions": "Åtgärder",
+          "defaultBadge": "Standard (låst)",
+          "customBadge": "Tillagd",
+          "addedToast": "Värdnamn tillagt.",
+          "removedToast": "Värdnamn borttaget.",
+          "errors": {
+            "invalid_hostname": "Ogiltigt värdnamnsformat.",
+            "cannot_remove_default": "Standardposter kan inte tas bort.",
+            "duplicate": "Värdnamnet finns redan i registret.",
+            "not_found": "Värdnamnet hittades inte.",
+            "storage_error": "Kunde inte spara ändringar. Försök igen.",
+            "feature_disabled": "Bildinbäddning är inte aktiverad.",
+            "invalid_body": "Ogiltig begäran.",
+            "internal_error": "Ett oväntat fel inträffade. Försök igen.",
+            "unknown": "Okänt fel."
+          }
         }
       },
       "atRisk": {
@@ -3496,6 +3530,27 @@
           "body": "Detta tar bort ditt utkast permanent. Åtgärden kan inte ångras.",
           "confirm": "Ta bort",
           "cancel": "Fortsätt redigera"
+        },
+        "imageUpload": {
+          "pickerLabel": "Välj en bild att ladda upp",
+          "uploadButton": "Ladda upp bild",
+          "uploadingLabel": "Laddar upp…",
+          "progressAria": "Förlopp för bilduppladdning",
+          "uploadedToast": "Bilden har laddats upp.",
+          "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "errors": {
+            "broadcast_image_too_large": "Bilden är större än 5 MB.",
+            "broadcast_image_unsafe": "Bilden markerades av virusskannern och avvisades.",
+            "broadcast_image_invalid_mime": "Endast bilder i formaten PNG, JPG, WebP och GIF tillåts.",
+            "feature_disabled": "Bildinbäddning är inte tillgänglig just nu.",
+            "invalid_body": "Uppladdningsbegäran var felaktig.",
+            "internal_error": "Ett oväntat fel inträffade under uppladdningen.",
+            "unknown": "Uppladdningen misslyckades. Försök igen."
+          }
+        },
+        "clamavBanner": {
+          "title": "Virusskannern är tillfälligt otillgänglig",
+          "description": "Bilduppladdningar pausas medan vi återansluter till skannern. Utkast utan bilder kan fortfarande sparas och skickas in."
         }
       },
       "quota": {

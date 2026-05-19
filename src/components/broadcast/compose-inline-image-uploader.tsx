@@ -28,7 +28,7 @@ export function ComposeInlineImageUploader({
   draftId,
   onUploaded,
 }: Props): React.ReactElement {
-  const t = useTranslations('member.broadcasts.compose.imageUpload');
+  const t = useTranslations('portal.broadcasts.compose.imageUpload');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -1975,6 +1975,40 @@
           },
           "lastSaved": "บันทึกล่าสุด {date}",
           "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}"
+        },
+        "pageTitle": "ตั้งค่าการส่งอีเมล",
+        "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
+        "breadcrumbAdmin": "ผู้ดูแล",
+        "breadcrumbBroadcasts": "E-Blast",
+        "breadcrumbSettings": "ตั้งค่า",
+        "allowlist": {
+          "heading": "รายชื่อโดเมนที่อนุญาตให้ฝังรูปภาพ",
+          "description": "รูปภาพในเนื้อหาอีเมลต้องมาจากโดเมนเหล่านี้เท่านั้น รายการเริ่มต้นไม่สามารถลบได้",
+          "hostnameLabel": "ชื่อโดเมน",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "ตัวอักษรพิมพ์เล็กและตัวเลขเท่านั้น มีจุดอย่างน้อยหนึ่งจุด และไม่ใช้สัญลักษณ์ wildcard",
+          "addButton": "เพิ่มโดเมน",
+          "removeButton": "ลบ",
+          "removeAria": "ลบ {hostname}",
+          "tableCaption": "รายการโดเมนสำหรับรูปภาพ",
+          "colHostname": "ชื่อโดเมน",
+          "colSource": "แหล่งที่มา",
+          "colActions": "การจัดการ",
+          "defaultBadge": "ค่าเริ่มต้น (ล็อกอยู่)",
+          "customBadge": "ที่ผู้ดูแลเพิ่มเอง",
+          "addedToast": "เพิ่มโดเมนเรียบร้อย",
+          "removedToast": "ลบโดเมนเรียบร้อย",
+          "errors": {
+            "invalid_hostname": "รูปแบบชื่อโดเมนไม่ถูกต้อง",
+            "cannot_remove_default": "ไม่สามารถลบรายการเริ่มต้นได้",
+            "duplicate": "โดเมนนี้อยู่ในรายการแล้ว",
+            "not_found": "ไม่พบโดเมนที่ต้องการ",
+            "storage_error": "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง",
+            "feature_disabled": "ฟีเจอร์ฝังรูปภาพยังไม่เปิดใช้งาน",
+            "invalid_body": "คำขอไม่ถูกต้อง",
+            "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองอีกครั้ง",
+            "unknown": "เกิดข้อผิดพลาดที่ไม่รู้จัก"
+          }
         }
       },
       "atRisk": {
@@ -3496,6 +3530,27 @@
           "body": "ฉบับร่างจะถูกลบถาวรและไม่สามารถกู้คืนได้",
           "confirm": "ลบ",
           "cancel": "แก้ไขต่อ"
+        },
+        "imageUpload": {
+          "pickerLabel": "เลือกรูปภาพที่ต้องการอัปโหลด",
+          "uploadButton": "อัปโหลดรูปภาพ",
+          "uploadingLabel": "กำลังอัปโหลด…",
+          "progressAria": "ความคืบหน้าการอัปโหลดรูปภาพ",
+          "uploadedToast": "อัปโหลดรูปภาพเรียบร้อย",
+          "helpText": "รองรับไฟล์ PNG, JPG, WebP หรือ GIF ขนาดไม่เกิน 5 MB ระบบจะสแกนไวรัสก่อนอัปโหลด",
+          "errors": {
+            "broadcast_image_too_large": "ขนาดไฟล์รูปภาพเกิน 5 MB",
+            "broadcast_image_unsafe": "ระบบสแกนไวรัสตรวจพบไฟล์ไม่ปลอดภัย ปฏิเสธการอัปโหลด",
+            "broadcast_image_invalid_mime": "รองรับเฉพาะไฟล์ PNG, JPG, WebP หรือ GIF เท่านั้น",
+            "feature_disabled": "ฟีเจอร์ฝังรูปภาพยังไม่พร้อมใช้งาน",
+            "invalid_body": "คำขออัปโหลดไม่ถูกต้อง",
+            "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิดระหว่างอัปโหลด",
+            "unknown": "อัปโหลดไม่สำเร็จ กรุณาลองอีกครั้ง"
+          }
+        },
+        "clamavBanner": {
+          "title": "เครื่องสแกนไวรัสไม่พร้อมใช้งานชั่วคราว",
+          "description": "ระงับการอัปโหลดรูปภาพไว้ระหว่างที่กำลังเชื่อมต่อใหม่ ฉบับร่างที่ไม่มีรูปภาพยังสามารถบันทึกและส่งได้ตามปกติ"
         }
       },
       "quota": {

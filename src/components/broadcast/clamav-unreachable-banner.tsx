@@ -24,7 +24,7 @@ import { useTranslations } from 'next-intl';
 import { AlertCircle } from 'lucide-react';
 
 export function ClamavUnreachableBanner(): React.ReactElement | null {
-  const t = useTranslations('member.broadcasts.compose.clamavBanner');
+  const t = useTranslations('portal.broadcasts.compose.clamavBanner');
   const [unreachable, setUnreachable] = useState(false);
 
   useEffect(() => {
