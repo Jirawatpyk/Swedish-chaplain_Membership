@@ -20,7 +20,7 @@ import type { TenantContext } from '@/modules/tenants';
 import type { PlansDeps } from './application/ports';
 import { planRepo } from './infrastructure/db/plan-repo';
 import { planAuditAdapter } from './infrastructure/audit/plan-audit-adapter';
-import { stubMemberAttachmentChecker } from './infrastructure/members/stub-member-attachment-checker';
+import { drizzleMemberAttachmentChecker } from './infrastructure/members/drizzle-member-attachment-checker';
 import { getTenantTaxPolicy, makeGetTenantTaxPolicyDeps } from '@/modules/invoicing';
 
 /**
@@ -67,6 +67,6 @@ export function buildPlansDeps(tenant: TenantContext): PlansDeps {
     },
     audit: planAuditAdapter,
     clock: systemClock,
-    members: stubMemberAttachmentChecker,
+    members: drizzleMemberAttachmentChecker,
   };
 }

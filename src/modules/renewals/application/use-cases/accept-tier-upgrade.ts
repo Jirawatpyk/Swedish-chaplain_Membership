@@ -200,6 +200,7 @@ export async function acceptTierUpgrade(
     const txResult = await runInTenant(deps.tenant, async (tx) => {
       // ----- (a) F2 schedule plan change — mechanism for FR-039 step 1.
       let scheduledChangeId: string;
+      let supersededScheduledChangeId: string | null = null;
       try {
         const scheduled =
           await deps.scheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
@@ -214,6 +215,12 @@ export async function acceptTierUpgrade(
             },
           );
         scheduledChangeId = scheduled.inserted.scheduledChangeId;
+        // Post-ship R6 I2 — capture the superseded prior-pending row id
+        // (if any) so the post-tx emit branch fires the F2-domain
+        // `plan_change_superseded` audit. `null` when this was a fresh
+        // schedule with no prior pending row on the same (member, cycle).
+        supersededScheduledChangeId =
+          scheduled.superseded?.scheduledChangeId ?? null;
       } catch (e) {
         return err({
           kind: 'plan_change_failed' as const,
@@ -324,10 +331,103 @@ export async function acceptTierUpgrade(
         targetApplyAtCycleId: activeCycle.cycleId,
         verificationTaskId,
         scheduledChangeId,
+        supersededScheduledChangeId,
       });
     });
 
     if (!txResult.ok) return txResult;
+
+    // ----- (a.5) Post-tx F2-domain audit emit (post-ship R6 I2 / D2,
+    // 2026-05-19). F8's tier_upgrade_accepted (emitted in-tx above) is
+    // the F8-domain audit trail; F2's plan_change_scheduled is the
+    // F2-domain audit trail for the same atomic state change. Each
+    // module owns its own audit taxonomy per Constitution Principle III.
+    //
+    // Runs OUTSIDE the renewal tx — F2's planAuditAdapter opens its
+    // own runInTenant tx. A failure here leaves the F8 state intact
+    // (suggestion accepted, scheduled-plan-change row in place) but
+    // emits a critical log so on-call can backfill the F2 audit row.
+    // Pattern mirrors the post-tx member-notification email below.
+    const f2AuditCtx = {
+      tenant: deps.tenant,
+      actorUserId: input.actorUserId,
+      requestId: input.requestId ?? '',
+      sourceIp: null,
+    };
+    try {
+      const scheduledAuditResult = await deps.f2AuditEmitter.record(
+        f2AuditCtx,
+        {
+          event_type: 'plan_change_scheduled',
+          payload: {
+            member_id: suggestion.memberId,
+            scheduled_change_id: txResult.value.scheduledChangeId,
+            effective_at_cycle_id: activeCycle.cycleId,
+            from_plan_id: suggestion.fromPlanId,
+            to_plan_id: suggestion.toPlanId,
+            reason: `tier_upgrade_accepted:${suggestion.suggestionId}`,
+          },
+        },
+      );
+      if (!scheduledAuditResult.ok) {
+        logger.error(
+          {
+            event: 'accept_tier_upgrade.f2_audit_emit_failed',
+            audit_event: 'plan_change_scheduled',
+            err: scheduledAuditResult.error,
+            suggestionId: suggestion.suggestionId,
+            scheduledChangeId: txResult.value.scheduledChangeId,
+          },
+          '[accept-tier-upgrade] F2 plan_change_scheduled audit emit failed — F8 state committed; operator backfill needed',
+        );
+      }
+
+      // Emit plan_change_superseded only when the in-tx repo call
+      // actually bumped a prior pending row.
+      if (txResult.value.supersededScheduledChangeId !== null) {
+        const supersededAuditResult = await deps.f2AuditEmitter.record(
+          f2AuditCtx,
+          {
+            event_type: 'plan_change_superseded',
+            payload: {
+              member_id: suggestion.memberId,
+              scheduled_change_id:
+                txResult.value.supersededScheduledChangeId,
+              effective_at_cycle_id: activeCycle.cycleId,
+              superseded_by_scheduled_change_id:
+                txResult.value.scheduledChangeId,
+            },
+          },
+        );
+        if (!supersededAuditResult.ok) {
+          logger.error(
+            {
+              event: 'accept_tier_upgrade.f2_audit_emit_failed',
+              audit_event: 'plan_change_superseded',
+              err: supersededAuditResult.error,
+              suggestionId: suggestion.suggestionId,
+              supersededScheduledChangeId:
+                txResult.value.supersededScheduledChangeId,
+            },
+            '[accept-tier-upgrade] F2 plan_change_superseded audit emit failed — F8 state committed; operator backfill needed',
+          );
+        }
+      }
+    } catch (auditErr) {
+      // Defence-in-depth: the F2 emitter itself shouldn't throw (it
+      // wraps in try/catch + returns Result.err), but if it does we
+      // still want F8's main flow to continue. Bumping a dedicated
+      // counter via the F8 emitter is appropriate but the F8 emitter
+      // is typed to F8 events; just log critically.
+      logger.error(
+        {
+          event: 'accept_tier_upgrade.f2_audit_emit_threw',
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          suggestionId: suggestion.suggestionId,
+        },
+        '[accept-tier-upgrade] F2 audit emitter threw — F8 state committed; operator backfill needed',
+      );
+    }
 
     // ----- (e) Post-tx member notification email — FR-039 step 2.
     // Email send + audit emit run AFTER the runInTenant tx commits so

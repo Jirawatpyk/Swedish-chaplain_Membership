@@ -15,7 +15,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { auditPayloadSchema } from '@/modules/plans/domain/audit-event';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audit-adapter';
-import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
+import { drizzleMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/drizzle-member-attachment-checker';
 import { updatePlan } from '@/modules/plans/application/update-plan';
 import { asPlanSlug, asPlanYear } from '@/modules/plans/domain/plan';
 import { db } from '@/lib/db';
@@ -97,7 +97,7 @@ describe('Integration: plan_updated audit-diff round-trip (T114)', () => {
         planRepo,
         audit: planAuditAdapter,
         clock: currentYearClock,
-        members: stubMemberAttachmentChecker,
+        members: drizzleMemberAttachmentChecker,
       },
     );
     expect(result.ok).toBe(true);

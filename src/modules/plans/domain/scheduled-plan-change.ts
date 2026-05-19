@@ -70,6 +70,7 @@ export interface ScheduleNextRenewalPlanChangeInput {
 
 export type ScheduleNextRenewalPlanChangeError =
   | { readonly code: 'invalid_input'; readonly field: string }
+  | { readonly code: 'audit_failed'; readonly message: string }
   | { readonly code: 'server_error'; readonly message: string };
 
 /** Resolved plan for a renewal cycle — output of `getEffectivePlanForRenewal`. */

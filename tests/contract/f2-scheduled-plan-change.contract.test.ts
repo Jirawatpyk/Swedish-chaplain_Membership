@@ -43,15 +43,24 @@
  * the `at most one pending` invariant at the DB layer.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { ok } from '@/lib/result';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
   scheduleNextRenewalPlanChange,
   getEffectivePlanForRenewal,
+  type AuditPort,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
   type ScheduledPlanChangeStatus,
   type CurrentPlanResolverPort,
 } from '@/modules/plans';
+
+// Post-ship R6 I2 — stub AuditPort (always succeeds). The contract
+// test asserts repo behaviour; audit-emit branch coverage lives in
+// the unit suite (`tests/unit/plans/application/...`).
+const stubAudit: AuditPort = {
+  record: vi.fn(async () => ok(undefined as void)),
+};
 
 // ── In-memory repo helpers ────────────────────────────────────────────────────
 
@@ -149,7 +158,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
   it('Contract 1: happy path — inserts pending row with caller-supplied fields preserved', async () => {
     const repo = makeMemoryRepo();
     const r = await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -176,7 +192,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     const repo = makeMemoryRepo();
     // First schedule
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -187,7 +210,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     );
     // Re-schedule with a different toPlanId on the SAME (member, cycle)
     const r2 = await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -215,7 +245,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
   it('Contract 3: tenant scope — repo always receives the caller TenantContext (compile-enforced)', async () => {
     const repo = makeMemoryRepo();
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -235,7 +272,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     const repo = makeMemoryRepo();
     // First schedule — superseded should be null (no prior pending row).
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -257,7 +301,14 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
 
     // Second schedule on same (member, cycle) — superseded surfaces the prior pending row.
     await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,
@@ -405,7 +456,14 @@ describe('Contract — Terminal coexistence (Contract 6)', () => {
     const repo = makeMemoryRepo(seed);
 
     const r = await scheduleNextRenewalPlanChange(
-      { tenant, repo },
+      {
+        tenant,
+        repo,
+        audit: stubAudit,
+        actorUserId: ADMIN_USER_ID,
+        requestId: 'req-test',
+        sourceIp: null,
+      },
       {
         memberId: MEMBER_ID,
         effectiveAtCycleId: CYCLE_ID,

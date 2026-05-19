@@ -20,7 +20,7 @@ import { planAuditAdapter } from '@/modules/plans/infrastructure/audit/plan-audi
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import { createPlan } from '@/modules/plans/application/create-plan';
 import { clonePlansToYear } from '@/modules/plans/application/clone-plans-to-year';
-import { stubMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/stub-member-attachment-checker';
+import { drizzleMemberAttachmentChecker } from '@/modules/plans/infrastructure/members/drizzle-member-attachment-checker';
 import { db } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -92,7 +92,7 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
         planRepo,
         audit: planAuditAdapter,
         clock: systemClock,
-        members: stubMemberAttachmentChecker,
+        members: drizzleMemberAttachmentChecker,
       },
     );
     expect(result.ok).toBe(true);
@@ -138,7 +138,7 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
           planRepo,
           audit: planAuditAdapter,
           clock: systemClock,
-          members: stubMemberAttachmentChecker,
+          members: drizzleMemberAttachmentChecker,
         },
       );
     }
@@ -158,7 +158,7 @@ describe('Integration: audit-diff round-trip for create + clone (T096)', () => {
         planRepo,
         audit: planAuditAdapter,
         clock: systemClock,
-        members: stubMemberAttachmentChecker,
+        members: drizzleMemberAttachmentChecker,
       },
     );
     expect(result.ok).toBe(true);

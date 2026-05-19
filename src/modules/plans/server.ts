@@ -25,3 +25,14 @@
  * paths into `./infrastructure/db/...`.
  */
 export { drizzleScheduledPlanChangeRepo } from './infrastructure/db/drizzle-scheduled-plan-change-repo';
+
+// Post-ship R6 I2 / D2 (2026-05-19) — F8 cross-module audit emit.
+// F8's `accept-tier-upgrade` use-case calls
+// `supersedeAndInsertPendingAtomically` directly (not via the F2 use-
+// case). To keep the F2-domain `plan_change_scheduled` audit trail
+// alive when that path runs, F8 imports F2's audit adapter via this
+// sub-barrel and emits post-tx. Constitution Principle III honoured:
+// composition roots wire the port; F8 Application sees only
+// `AuditPort` (type imported via `@/modules/plans` public barrel),
+// not the concrete adapter file.
+export { planAuditAdapter } from './infrastructure/audit/plan-audit-adapter';

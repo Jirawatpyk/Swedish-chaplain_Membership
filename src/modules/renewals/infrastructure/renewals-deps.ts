@@ -32,7 +32,15 @@ import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 // package pulled `fs`); the sub-barrel pattern keeps the Drizzle
 // adapter visible to server composition roots without leaking it
 // into client builds.
-import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/server';
+import {
+  drizzleScheduledPlanChangeRepo,
+  planAuditAdapter as f2PlanAuditAdapter,
+} from '@/modules/plans/server';
+// Post-ship R6 I2 / D2 (2026-05-19) — F2 AuditPort type for the
+// cross-module emit. Imported from the public barrel (Domain/
+// Application surface only) — concrete adapter comes from the
+// server sub-barrel above.
+import type { AuditPort as F2AuditPort } from '@/modules/plans';
 
 import { eventAttendeesStub } from './event-attendees-stub';
 // Phase 10 T122 — F6 → F8 bridge: when FEATURE_F6_EVENTCREATE is on,
@@ -332,6 +340,18 @@ export interface RenewalsDeps {
    * counter.
    */
   readonly suggestionIdGenerator: () => SuggestionId;
+  /**
+   * Post-ship R6 I2 / D2 (2026-05-19) — F2-module audit emitter for the
+   * `plan_change_scheduled` + `plan_change_superseded` events that
+   * accompany the cross-module `supersedeAndInsertPendingAtomically`
+   * call. F8 owns its own `tier_upgrade_*` taxonomy (`auditEmitter`
+   * above); the F2-domain audit trail uses this separate emitter so
+   * each module remains the source-of-truth for its event union
+   * (Constitution Principle III). Default factory wires F2's
+   * `planAuditAdapter` from `@/modules/plans/server`; tests substitute
+   * an in-memory stub.
+   */
+  readonly f2AuditEmitter: F2AuditPort;
 }
 
 /**
@@ -380,6 +400,9 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     // (was singleton `drizzlePlanCatalog` with implicit-via-arg binding).
     planCatalog: makeDrizzlePlanCatalog(tenant),
     suggestionIdGenerator: () => asSuggestionId(randomUUID()),
+    // Post-ship R6 I2 / D2 — F2 audit emitter for cross-module
+    // `plan_change_{scheduled,superseded}` audit events.
+    f2AuditEmitter: f2PlanAuditAdapter,
   };
 }
 
