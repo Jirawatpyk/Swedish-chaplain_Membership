@@ -148,6 +148,28 @@
 
 **Checkpoint**: User Story 1 fully functional independently — verified by T037 + T040 passing end-to-end on dev environment.
 
+### Phase 3 Cluster 3D.5 — SC-007 advisory-lock hardening (closed 2026-05-19 as accepted-tradeoff for MVP)
+
+Phase 3 Cluster 3D.5 evaluated 4 candidate hardenings for the AdvisoryLockPort production impl (replacing the noOpAdvisoryLock stub from 3C.1). All four were rejected for MVP launch — see `src/modules/broadcasts/infrastructure/noop-advisory-lock.ts` header for full rationale. Briefly:
+
+| Option | Outcome |
+|---|---|
+| A. Session-scope `pg_try_advisory_lock` | Rejected — Neon HTTP driver treats each query as fresh session, lock releases immediately |
+| B. Self-managed mini-tx `pg_try_advisory_xact_lock` | Rejected — lock releases at inner tx commit (right after acquire returns) |
+| C. Held-tx pattern with external resolve closure | Rejected — fragile leak risk + breaks T033/T035 contract tests |
+| D. Full `withTx<T>(fn)` refactor on BroadcastsRetryRepo | **Deferred to Phase 3E** — proper Clean Architecture solution; requires ~2-3 sessions to refactor + update 9 unit + 5 application + 12 drizzle-broadcasts test fixtures |
+
+**MVP risk mitigation (three-layer defence)**:
+1. UI-level guard (T053 RetryConfirmationDialog) — `useTransition` disables Submit button on first click + spinner; admin cannot double-click within one dialog instance
+2. DB CHECK constraint (`manual_retry_count BETWEEN 0 AND 3` from migration 0163) — even if two concurrent requests bypass the UI guard, the WHERE clause `manual_retry_count < 3` matches 0 rows on the 4th attempt, surfacing MANUAL_RETRY_BUDGET_EXHAUSTED instead of corruption
+3. Operational alerting — cron-job.org dashboard tracks `broadcast_retry_initiated` audit-event rate; two retries within 1 second on the same broadcastId raises an on-call alert (ship-day operator checklist item)
+
+For the SweCham MVP (1-2 active admins; no realistic double-tab concurrency in operational use), this defence is practical-safe. Phase 3E hardening cycle (post-ship) will land Option D as a proper-fix.
+
+### Phase 3 Cluster D — CLOSED 2026-05-19
+
+All 5 sub-checkpoints landed (3D.1 i18n / 3D.2 dialogs / 3D.3 detail-page wiring / 3D.4 flag gate / 3D.5 accepted-tradeoff documented). 13 F71A tasks closed in Phase 3 (T041-T058-T061). User Story 1 ships dark behind `FEATURE_F71A_US1_PAGINATION=false`. Pre-ship operator gates remain (cron-job.org coordinator setup for dispatch-batches endpoint, AdvisoryLock production hardening per Phase 3E, end-to-end smoke test with real Resend Broadcasts API on staging tenant).
+
 ---
 
 ## Phase 4: User Story 2 — Image embedding with allowlist (Priority: P1)
