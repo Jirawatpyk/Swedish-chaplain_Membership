@@ -56,6 +56,10 @@ export type F7RouteErrorCode =
   | 'broadcast_rejection_reason_too_long'
   | 'broadcast_cancel_reason_too_long'
   | 'broadcast_member_not_found'
+  // F7.1a US1 — admin retry + partial-delivery flows
+  | 'broadcast_manual_retry_budget_exhausted'
+  | 'broadcast_already_retrying_in_progress'
+  | 'broadcast_partial_delivery_reason_too_long'
   // Generic HTTP-shape codes
   | 'invalid_body'
   | 'forbidden'
@@ -175,6 +179,23 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   broadcast_member_not_found: {
     message: 'Member not found in this tenant.',
     messageThai: 'ไม่พบสมาชิกในผู้เช่ารายนี้',
+  },
+  // F7.1a US1 — admin retry + partial-delivery error messages
+  broadcast_manual_retry_budget_exhausted: {
+    message:
+      'All 3 manual retry attempts have been used. Consider accepting partial delivery.',
+    messageThai:
+      'ใช้สิทธิ์ลองส่งซ้ำครบ 3 ครั้งแล้ว ลองยอมรับการส่งบางส่วนแทน',
+  },
+  broadcast_already_retrying_in_progress: {
+    message:
+      'Another admin is currently retrying this broadcast. Please wait a moment and refresh.',
+    messageThai:
+      'มีผู้ดูแลคนอื่นกำลังลองส่งซ้ำ E-Blast นี้อยู่ กรุณารอสักครู่แล้วรีเฟรช',
+  },
+  broadcast_partial_delivery_reason_too_long: {
+    message: 'Reason must be 500 characters or fewer.',
+    messageThai: 'เหตุผลต้องมีไม่เกิน 500 ตัวอักษร',
   },
   invalid_body: {
     message: 'Request body is invalid.',
@@ -304,6 +325,10 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   broadcast_rejection_reason_too_long: 400,
   broadcast_cancel_reason_too_long: 400,
   broadcast_member_not_found: 404,
+  // F7.1a US1
+  broadcast_manual_retry_budget_exhausted: 409,
+  broadcast_already_retrying_in_progress: 409,
+  broadcast_partial_delivery_reason_too_long: 400,
   invalid_body: 400,
   forbidden: 403,
   feature_disabled: 503,

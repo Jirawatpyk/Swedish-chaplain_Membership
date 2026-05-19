@@ -41,6 +41,10 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   broadcast_rejection_reason_too_long: 400,
   broadcast_cancel_reason_too_long: 400,
   broadcast_member_not_found: 404,
+  // F7.1a US1 — admin retry + partial-delivery
+  broadcast_manual_retry_budget_exhausted: 409,
+  broadcast_already_retrying_in_progress: 409,
+  broadcast_partial_delivery_reason_too_long: 400,
   // Generic HTTP-shape codes
   invalid_body: 400,
   forbidden: 403,

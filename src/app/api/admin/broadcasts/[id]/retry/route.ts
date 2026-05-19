@@ -1,0 +1,130 @@
+/**
+ * T050 (F7.1a US1) — POST `/api/admin/broadcasts/[id]/retry`.
+ *
+ * Wraps `retryFailedBatches` use case (Phase 3 Cluster 3B.2). Re-queues
+ * every `batch_manifest` row in `failed` state on a broadcast in
+ * `partially_sent`. Bounded by `MANUAL_RETRY_BUDGET = 3` on
+ * `broadcasts.manual_retry_count`.
+ *
+ * Auth: admin role (RBAC `broadcast`+`write`).
+ *
+ * Contract spec: specs/014-email-broadcast-advance/contracts/batch-dispatch.md § 1.3.
+ *
+ * SC-007 concurrent-retry guard (admin double-click protection): the
+ * use case acquires advisory lock `broadcasts-retry:{tenant}:{bid}`
+ * BEFORE incrementing the budget. Adapter wiring for the lock is
+ * currently `noOpAdvisoryLock` (see header of
+ * `src/modules/broadcasts/infrastructure/noop-advisory-lock.ts` for
+ * the Phase 3 Cluster 3D hardening plan + interim UI-level
+ * mitigation: the admin retry confirmation modal T053 disables the
+ * Submit button on first click).
+ *
+ * Empty request body — the broadcast id is in the URL, the actor id
+ * comes from the admin session.
+ */
+import { randomUUID } from 'node:crypto';
+import { NextResponse, type NextRequest } from 'next/server';
+import {
+  retryFailedBatches,
+  makeRetryFailedBatchesDeps,
+  parseBroadcastId,
+  type RetryFailedBatchesError,
+} from '@/modules/broadcasts';
+import {
+  errorResponse,
+  httpStatusForBroadcastError,
+  baseHeaders,
+} from '@/lib/broadcasts-route-helpers';
+import { requireAdminContext } from '@/lib/admin-context';
+import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { logger } from '@/lib/logger';
+
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  const correlationId = randomUUID();
+  const ctx = await requireAdminContext(request, {
+    resource: 'broadcast',
+    action: 'write',
+  });
+  if ('response' in ctx) return ctx.response;
+
+  const { id } = await context.params;
+  const parsedId = parseBroadcastId(id);
+  if (!parsedId.ok) {
+    return errorResponse(404, 'broadcast_not_found', correlationId);
+  }
+
+  const tenantCtx = resolveTenantFromRequest(request);
+  const deps = makeRetryFailedBatchesDeps(tenantCtx.slug);
+
+  try {
+    const result = await retryFailedBatches(deps, {
+      tenantId: tenantCtx,
+      broadcastId: parsedId.value,
+      actorUserId: ctx.current.user.id,
+      requestId: ctx.requestId,
+    });
+
+    if (!result.ok) {
+      return mapRetryError(result.error, correlationId);
+    }
+
+    return NextResponse.json(
+      {
+        broadcastId: parsedId.value as unknown as string,
+        retryAttempt: result.value.retryAttempt,
+        retriedBatchCount: result.value.retriedBatchCount,
+      },
+      { status: 200, headers: baseHeaders(correlationId) },
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        correlationId,
+        tenantId: tenantCtx.slug,
+        broadcastId: parsedId.value as unknown as string,
+      },
+      'admin.broadcasts.retry.unexpected_error',
+    );
+    return errorResponse(500, 'internal_error', correlationId);
+  }
+}
+
+function mapRetryError(
+  error: RetryFailedBatchesError,
+  correlationId: string,
+): NextResponse {
+  if (error.kind === 'retry_failed_batches.server_error') {
+    return errorResponse(500, 'internal_error', correlationId);
+  }
+
+  const code = (() => {
+    switch (error.kind) {
+      case 'BROADCAST_NOT_FOUND':
+        return 'broadcast_not_found' as const;
+      case 'INVALID_STATE_TRANSITION':
+        return 'broadcast_invalid_state_transition' as const;
+      case 'MANUAL_RETRY_BUDGET_EXHAUSTED':
+        return 'broadcast_manual_retry_budget_exhausted' as const;
+      case 'ALREADY_RETRYING_IN_PROGRESS':
+        return 'broadcast_already_retrying_in_progress' as const;
+    }
+  })();
+
+  const { status } = httpStatusForBroadcastError(code);
+  const details: Record<string, unknown> = {};
+  if (error.kind === 'INVALID_STATE_TRANSITION') {
+    details['observedStatus'] = error.currentStatus;
+    details['expected'] = error.expected;
+  } else if (error.kind === 'MANUAL_RETRY_BUDGET_EXHAUSTED') {
+    details['budget'] = error.budget;
+  } else if (error.kind === 'BROADCAST_NOT_FOUND') {
+    details['broadcastId'] = error.broadcastId;
+  }
+  return errorResponse(status, code, correlationId, {
+    ...(Object.keys(details).length > 0 && { details }),
+  });
+}

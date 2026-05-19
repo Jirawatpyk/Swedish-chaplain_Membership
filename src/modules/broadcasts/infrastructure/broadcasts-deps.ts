@@ -42,6 +42,13 @@ import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expi
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
+// F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k)
+import type { SplitBroadcastIntoBatchesDeps } from '../application/use-cases/split-broadcast-into-batches';
+import type { RetryFailedBatchesDeps } from '../application/use-cases/retry-failed-batches';
+import type { AcceptPartialDeliveryDeps } from '../application/use-cases/accept-partial-delivery';
+import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
+import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
+import { noOpAdvisoryLock } from './noop-advisory-lock';
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
@@ -452,5 +459,60 @@ export async function resolveTenantByResendBroadcastId(
   return {
     tenantId: lookup.tenantId,
     broadcastId: lookup.broadcast.broadcastId,
+  };
+}
+
+// =====================================================================
+// F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) — use-case factories
+// =====================================================================
+
+/**
+ * T044 — composition root for `splitBroadcastIntoBatches` use case.
+ * Called by the cron dispatcher (Phase 3 T055) after recipient
+ * resolution completes; runs inside `runInTenant(ctx)` provided by the
+ * factory-bound `batchManifests` adapter.
+ */
+export function makeSplitBroadcastIntoBatchesDeps(
+  tenantId: string,
+): SplitBroadcastIntoBatchesDeps {
+  return {
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T047 — composition root for `retryFailedBatches` use case (admin
+ * route T050). The `advisoryLock` slot is currently wired to the
+ * `noOpAdvisoryLock` stub — see that file's header for the SC-007
+ * mitigation rationale + Phase 3 Cluster 3D hardening plan.
+ */
+export function makeRetryFailedBatchesDeps(
+  tenantId: string,
+): RetryFailedBatchesDeps {
+  return {
+    broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
+    advisoryLock: noOpAdvisoryLock,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+  };
+}
+
+/**
+ * T048 — composition root for `acceptPartialDelivery` use case (admin
+ * route T051). No advisory lock needed — the underlying
+ * `acceptPartial` SQL uses `WHERE status='partially_sent'` so
+ * concurrent clicks serialise via DB row lock; the loser surfaces
+ * INVALID_STATE_TRANSITION.
+ */
+export function makeAcceptPartialDeliveryDeps(
+  tenantId: string,
+): AcceptPartialDeliveryDeps {
+  return {
+    broadcasts: makeDrizzleBroadcastsRetryRepo(tenantId),
+    audit: f7AuditAdapter,
+    clock: systemClock,
   };
 }

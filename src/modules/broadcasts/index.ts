@@ -244,6 +244,36 @@ export {
   makeCancelInFlightBroadcastsForMemberDeps,
 } from './infrastructure/broadcasts-deps';
 
+// --- F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) -------------------
+export {
+  splitBroadcastIntoBatches,
+  type SplitBroadcastIntoBatchesDeps,
+  type SplitBroadcastIntoBatchesError,
+  type SplitBroadcastIntoBatchesInput,
+  type SplitBroadcastIntoBatchesOutput,
+} from './application/use-cases/split-broadcast-into-batches';
+export {
+  retryFailedBatches,
+  MANUAL_RETRY_BUDGET,
+  type RetryFailedBatchesDeps,
+  type RetryFailedBatchesError,
+  type RetryFailedBatchesInput,
+  type RetryFailedBatchesOutput,
+} from './application/use-cases/retry-failed-batches';
+export {
+  acceptPartialDelivery,
+  MAX_REASON_LENGTH,
+  type AcceptPartialDeliveryDeps,
+  type AcceptPartialDeliveryError,
+  type AcceptPartialDeliveryInput,
+  type AcceptPartialDeliveryOutput,
+} from './application/use-cases/accept-partial-delivery';
+export {
+  makeSplitBroadcastIntoBatchesDeps,
+  makeRetryFailedBatchesDeps,
+  makeAcceptPartialDeliveryDeps,
+} from './infrastructure/broadcasts-deps';
+
 // --- Application use-cases (Phase 5 US3) ---------------------------------
 export {
   acknowledgeBroadcastsTerms,
