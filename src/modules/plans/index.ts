@@ -325,6 +325,8 @@ export type {
 export {
   SCHEDULED_PLAN_CHANGE_STATUSES,
   isTerminalStatus,
+  assertValidScheduledPlanChange,
+  InvalidScheduledPlanChangeError,
 } from './domain/scheduled-plan-change';
 export type {
   ScheduledPlanChange,

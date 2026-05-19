@@ -200,7 +200,7 @@ describe('cancelScheduledPlanChange — happy path', () => {
   });
 });
 
-describe('cancelScheduledPlanChange — invalid_input', () => {
+describe('cancelScheduledPlanChange — invalid_input (R2 Batch 3a zod-validated)', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it.each([
@@ -220,10 +220,49 @@ describe('cancelScheduledPlanChange — invalid_input', () => {
     expect(result.error.code).toBe('invalid_input');
     if (result.error.code !== 'invalid_input') throw new Error('unreachable');
     expect(result.error.field).toBe(field);
-    // Repo + audit MUST NOT be called when input fails light validation
+    // Repo + audit MUST NOT be called when zod validation fails
     expect(deps.repo.findPendingForCycle).not.toHaveBeenCalled();
     expect(deps.repo.transitionStatus).not.toHaveBeenCalled();
     expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  // R2 Batch 3a (R2-C2) — uuid validation locks the boundary down
+  // before findPendingForCycle / transitionStatus run. Previously
+  // these would slip past truthy-only validation and only fail when
+  // the audit-payload schema rejected post-transition.
+  it.each([
+    ['memberId', { memberId: 'not-a-uuid' }],
+    ['memberId', { memberId: '11111111-1111-1111-1111' }],
+    ['effectiveAtCycleId', { effectiveAtCycleId: 'plain-string' }],
+  ])('rejects non-uuid %s with invalid_input', async (field, overrides) => {
+    const deps = makeDeps();
+    const result = await cancelScheduledPlanChange(deps, {
+      ...baseInput,
+      ...(overrides as Partial<CancelScheduledPlanChangeInput>),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('invalid_input');
+    if (result.error.code !== 'invalid_input') throw new Error('unreachable');
+    expect(result.error.field).toBe(field);
+    expect(deps.repo.findPendingForCycle).not.toHaveBeenCalled();
+  });
+
+  it('first-issue translation when multiple fields fail', async () => {
+    const deps = makeDeps();
+    const result = await cancelScheduledPlanChange(deps, {
+      ...baseInput,
+      scheduledChangeId: '',
+      memberId: 'not-a-uuid',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('invalid_input');
+    // zod surfaces the FIRST failing field (schema order:
+    // scheduledChangeId → memberId → effectiveAtCycleId → cancelledByUserId)
+    if (result.error.code !== 'invalid_input') throw new Error('unreachable');
+    expect(result.error.field).toBe('scheduledChangeId');
   });
 });
 

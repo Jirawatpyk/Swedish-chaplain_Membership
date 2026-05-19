@@ -24,6 +24,7 @@
  *
  * Pure Application code — no framework imports (Constitution Principle III).
  */
+import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, ScheduledPlanChangeRepo } from './ports';
@@ -35,6 +36,21 @@ import {
   type ScheduledPlanChange,
   type ScheduledPlanChangeStatus,
 } from '../domain/scheduled-plan-change';
+
+/**
+ * R2 Batch 3a (R2-C2) — zod schema at the Application boundary.
+ * Without uuid validation here, the audit-payload schema (which
+ * requires `z.string().uuid()` on `member_id` + `effective_at_cycle_id`)
+ * would reject AFTER the DB transition lands → divergent committed
+ * state. The boundary schema fails-closed BEFORE any DB or audit work.
+ */
+const cancelScheduledPlanChangeInputSchema = z.object({
+  scheduledChangeId: z.string().min(1),
+  memberId: z.string().uuid(),
+  effectiveAtCycleId: z.string().uuid(),
+  cancelledByUserId: z.string().min(1),
+  reason: z.string().max(500).nullable().optional(),
+});
 
 export interface CancelScheduledPlanChangeDeps {
   readonly tenant: TenantContext;
@@ -55,16 +71,17 @@ export async function cancelScheduledPlanChange(
   deps: CancelScheduledPlanChangeDeps,
   input: CancelScheduledPlanChangeInput,
 ): Promise<Result<ScheduledPlanChange, CancelScheduledPlanChangeError>> {
-  // Light Domain validation — full zod input schema lives at the API
-  // boundary when a caller (admin UI / F8 listener) is wired.
-  if (!input.scheduledChangeId)
-    return err({ code: 'invalid_input', field: 'scheduledChangeId' });
-  if (!input.memberId)
-    return err({ code: 'invalid_input', field: 'memberId' });
-  if (!input.effectiveAtCycleId)
-    return err({ code: 'invalid_input', field: 'effectiveAtCycleId' });
-  if (!input.cancelledByUserId)
-    return err({ code: 'invalid_input', field: 'cancelledByUserId' });
+  // R2 Batch 3a — zod input validation at the Application boundary.
+  // First-issue translation keeps the existing error union shape.
+  const parsed = cancelScheduledPlanChangeInputSchema.safeParse(input);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]!;
+    const field = issue.path[0];
+    return err({
+      code: 'invalid_input',
+      field: typeof field === 'string' ? field : 'unknown',
+    });
+  }
 
   // Precondition check — terminal-state immutability is a Domain
   // invariant. We look up the pending row for (member, cycle) via the

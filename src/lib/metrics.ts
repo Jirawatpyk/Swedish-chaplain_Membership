@@ -1834,6 +1834,27 @@ export const renewalsMetrics = {
   },
 
   /**
+   * R2 Batch 3a (R2-C1) — F2 finaliser invocations counter. Bumped at
+   * the F8 onPaid callback site BEFORE running
+   * `finaliseF2ScheduledPlanChangeForCycle`. The finaliser runs in its
+   * own `runInTenant` tx that is SEPARATE from F4's `withTx`, so a
+   * non-zero value here that doesn't correlate 1:1 with F4
+   * `invoice_paid` audit rows is the signal for F4-commit-failure-
+   * after-F2-commit (the bounded temporal divergence window). Used by
+   * SRE to detect when the eventual-consistency assumption is being
+   * violated repeatedly; if so, escalate to the architectural fix
+   * (RecordPaymentDeps.onAfterCommitCallbacks).
+   */
+  f2FinaliseBeforeF4Commit(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_f2_finalise_before_f4_commit_total',
+        'F2 scheduled-plan-change finaliser invoked from F8 onPaid callback before F4 commits — bounded temporal divergence signal',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * F8 Phase 7 review-fix I-ERR-2 — tier-upgrade member-notify failure
    * counter. Fires when `RenewalGateway.sendTierUpgradeApprovalEmail`
    * returns err after retry-budget exhaustion OR when the post-tx

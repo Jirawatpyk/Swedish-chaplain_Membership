@@ -26,16 +26,17 @@ import type {
   ScheduledPlanChangeRepo,
   SupersedeAndInsertResult,
 } from '../../application/ports';
-import type {
-  ScheduleNextRenewalPlanChangeInput,
-  ScheduledPlanChange,
-  ScheduledPlanChangeStatus,
+import {
+  assertValidScheduledPlanChange,
+  type ScheduleNextRenewalPlanChangeInput,
+  type ScheduledPlanChange,
+  type ScheduledPlanChangeStatus,
 } from '../../domain/scheduled-plan-change';
 
 // --- Row → Domain translation -----------------------------------------------
 
 function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
-  return {
+  const domain: ScheduledPlanChange = {
     tenantId: row.tenantId,
     scheduledChangeId: row.scheduledChangeId,
     memberId: row.memberId,
@@ -51,6 +52,11 @@ function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
     supersededAt: row.supersededAt ? row.supersededAt.toISOString() : null,
     cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
   };
+  // R2 Batch 3a (R2-C4) — defence-in-depth status↔timestamp invariant.
+  // Throws `InvalidScheduledPlanChangeError` on DB CHECK drift; the
+  // canonical DB CHECK (migration 0095) should already enforce this.
+  assertValidScheduledPlanChange(domain);
+  return domain;
 }
 
 // --- Adapter ----------------------------------------------------------------

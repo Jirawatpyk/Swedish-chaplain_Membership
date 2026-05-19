@@ -301,15 +301,29 @@ export function makeApplyTierUpgradeOnPaidCallback(
       await runInTenantFn(deps.tenant, (tx) => apply(tx, true));
     }
 
-    // Post-ship R6 Batch 2d — POST-TX phase. The F4 + F8 in-tx state
-    // is committed at this point (either via the inner `apply()`
-    // closure landing inside F4's tx, or via the runInTenant fallback
-    // when F4 dropped the tx handle). Flip F2's `scheduled_plan_
-    // changes` row to `applied` + emit `plan_change_applied`. Runs
-    // ONLY when the in-tx apply resolved a cycle for the invoice —
-    // non-renewal invoices skip the entire callback (cycle === null
-    // short-circuit above).
+    // R2 Batch 3a (R2-C1 correction) — F2 finaliser runs in its OWN
+    // `runInTenant` tx, which is SEPARATE from F4's `withTx` even on
+    // the happy path. The earlier "F4+F8 in-tx state is committed at
+    // this point" comment was inaccurate for the InTx branch: F4's
+    // commit happens AFTER this callback returns. The consequence is
+    // a bounded TEMPORAL divergence — if F4's commit subsequently
+    // fails (rare; commit-stage error), F2 has already advanced one
+    // step ahead. The next webhook retry (Stripe at-least-once) heals
+    // because (a) F4 mark-paid is idempotent on already-paid invoices
+    // and (b) F2 finaliser is idempotent on already-applied rows
+    // (findPendingForCycle returns null for terminal-state).
+    //
+    // Operational signal: `renewalsMetrics.f2FinaliseBeforeF4Commit`
+    // is incremented at this site BEFORE the finaliser runs so
+    // on-call can detect the rare F4-commit-failure-after-F2-commit
+    // scenario by correlating this counter against
+    // `tierUpgradeApplyPostPaidFailed` (which fires on the fallback
+    // INVALID_TX path) and against F4's `invoice_mark_paid_failed`
+    // counter. If repeated firing surfaces in prod, the architectural
+    // fix is `RecordPaymentDeps.onAfterCommitCallbacks` — tracked as
+    // Round-4+ feature.
     if (resolvedCycleId !== null) {
+      renewalsMetrics.f2FinaliseBeforeF4Commit(evt.tenantId);
       await finaliseF2ScheduledPlanChangeForCycle(
         deps,
         evt,

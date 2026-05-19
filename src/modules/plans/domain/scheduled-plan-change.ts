@@ -36,6 +36,21 @@ export function isTerminalStatus(s: ScheduledPlanChangeStatus): boolean {
   return s !== 'pending';
 }
 
+/**
+ * Error thrown by `assertValidScheduledPlanChange` (R2 Batch 3a / R2-C4)
+ * when a row violates the status↔timestamp invariant. Defence-in-depth
+ * runtime validator — the DB CHECK already enforces this; the assert
+ * catches drift in hand-crafted test fixtures + in-memory contract
+ * test repos + future hydration paths that bypass the canonical
+ * `rowToDomain`.
+ */
+export class InvalidScheduledPlanChangeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidScheduledPlanChangeError';
+  }
+}
+
 /** Aggregate row shape — mirrors data-model.md § 2.9 columns 1:1. */
 export interface ScheduledPlanChange {
   readonly tenantId: string;
@@ -72,6 +87,52 @@ export type ScheduleNextRenewalPlanChangeError =
   | { readonly code: 'invalid_input'; readonly field: string }
   | { readonly code: 'audit_failed'; readonly message: string }
   | { readonly code: 'server_error'; readonly message: string };
+
+/**
+ * R2 Batch 3a (R2-C4) — runtime defence-in-depth validator for the
+ * status↔timestamp invariant. The interface above encodes the
+ * invariant in comments only ("non-null iff status === '…'");
+ * nothing prevents constructing `{ status: 'applied', appliedAt: null,
+ * supersededAt: '...', cancelledAt: '...' }`. This assert function
+ * documents the 4 invariants in CODE, throws
+ * `InvalidScheduledPlanChangeError` on violation, and narrows the
+ * caller's type via TypeScript assertion-function semantics.
+ *
+ * Called from the Drizzle adapter's `rowToDomain` to validate every
+ * row read; the DB CHECK constraint should already enforce this, but
+ * the assert catches (a) drift in test-fixture construction, (b)
+ * future hydration paths that bypass `rowToDomain`, and (c) any DB
+ * CHECK drift during schema migrations.
+ */
+export function assertValidScheduledPlanChange(
+  row: ScheduledPlanChange,
+): asserts row is ScheduledPlanChange {
+  const expectedNonNullByStatus = {
+    pending: { applied: false, superseded: false, cancelled: false },
+    applied: { applied: true, superseded: false, cancelled: false },
+    superseded: { applied: false, superseded: true, cancelled: false },
+    cancelled: { applied: false, superseded: false, cancelled: true },
+  } as const;
+
+  const expected = expectedNonNullByStatus[row.status];
+  const actual = {
+    applied: row.appliedAt !== null,
+    superseded: row.supersededAt !== null,
+    cancelled: row.cancelledAt !== null,
+  };
+
+  if (
+    actual.applied !== expected.applied ||
+    actual.superseded !== expected.superseded ||
+    actual.cancelled !== expected.cancelled
+  ) {
+    throw new InvalidScheduledPlanChangeError(
+      `ScheduledPlanChange ${row.scheduledChangeId} violates status↔timestamp invariant: ` +
+        `status=${row.status} expected (applied=${expected.applied},superseded=${expected.superseded},cancelled=${expected.cancelled}) ` +
+        `but got (applied=${actual.applied},superseded=${actual.superseded},cancelled=${actual.cancelled})`,
+    );
+  }
+}
 
 // --- F2 R6 Batch 2c (D7) — `cancelScheduledPlanChange` types -----------------
 
