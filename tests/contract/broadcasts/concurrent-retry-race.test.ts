@@ -27,23 +27,25 @@ import { describe, expect, it } from 'vitest';
 
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { retryFailedBatches } from '@/modules/broadcasts/application/use-cases/retry-failed-batches';
 
+/**
+ * Phase 3 Cluster B GREEN (2026-05-19) — T047 use case landed at
+ *   src/modules/broadcasts/application/use-cases/retry-failed-batches.ts
+ *
+ * Earlier RED variant imported via `new Function('m','return import(m)')`
+ * to bypass Vite's static alias resolution. Static import now.
+ */
 async function importRetryUseCase(): Promise<{
   retryFailedBatches: (
     deps: unknown,
     input: unknown,
-  ) => Promise<{ ok: boolean; value?: unknown; error?: unknown }>;
+  ) => ReturnType<typeof retryFailedBatches>;
 }> {
-  const path =
-    '@/modules/broadcasts/application/use-cases/retry-failed-batches';
-  try {
-    const mod = await new Function('m', 'return import(m)')(path);
-    return mod as never;
-  } catch (err) {
-    throw new Error(
-      `[RED — T047] retry-failed-batches use case not yet implemented: ${String(err)}`,
-    );
-  }
+  return {
+    retryFailedBatches: (deps, input) =>
+      retryFailedBatches(deps as never, input as never),
+  };
 }
 
 const tenant = asTenantContext('test-tenant');

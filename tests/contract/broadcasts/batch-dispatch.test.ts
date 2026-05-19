@@ -28,35 +28,35 @@ import { describe, expect, it } from 'vitest';
 
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { splitBroadcastIntoBatches } from '@/modules/broadcasts/application/use-cases/split-broadcast-into-batches';
 
 /**
- * @internal Dynamic import wrapper — `new Function('m','return import(m)')`
- * bypasses the bundler/typechecker's static module resolution so this
- * test compiles even before Phase 3B lands the use case file. Once the
- * file exists, the runtime import succeeds and the helper returns the
- * real module namespace.
+ * Phase 3 Cluster B GREEN (2026-05-19) — T044 use case landed at
+ *   src/modules/broadcasts/application/use-cases/split-broadcast-into-batches.ts
  *
- * Failure marker `[RED — T044]` makes the missing-file state legible
- * in test output (vs. an opaque `Cannot find module` from the dynamic
- * loader). Same pattern as F5's RED commits (project memory
- * `project_f5_red_import_pattern`).
+ * The earlier RED variant of this test imported the use case via a
+ * `new Function('m','return import(m)')` wrapper to bypass Vite's static
+ * alias resolution while the file didn't exist (project memory
+ * `project_f5_red_import_pattern`). Now that the impl is in tree, we
+ * switch to a normal `@/`-aliased static import so the test exercises
+ * the real module + benefits from typechecking against the public
+ * signature.
  */
 async function importSplitUseCase(): Promise<{
   splitBroadcastIntoBatches: (
     deps: unknown,
     input: unknown,
-  ) => Promise<{ ok: boolean; value?: unknown; error?: unknown }>;
+  ) => ReturnType<typeof splitBroadcastIntoBatches>;
 }> {
-  const path =
-    '@/modules/broadcasts/application/use-cases/split-broadcast-into-batches';
-  try {
-    const mod = await new Function('m', 'return import(m)')(path);
-    return mod as never;
-  } catch (err) {
-    throw new Error(
-      `[RED — T044] split-broadcast-into-batches use case not yet implemented: ${String(err)}`,
-    );
-  }
+  // Adapter cast — the stub deps in this test intentionally implement
+  // a SUBSET of `SplitBroadcastIntoBatchesDeps` (no broadcastsRepo,
+  // partial port shapes). The contract test verifies behaviour, not
+  // full DI surface. `as never` lets us bypass the static type check
+  // at the call site without weakening the production signature.
+  return {
+    splitBroadcastIntoBatches: (deps, input) =>
+      splitBroadcastIntoBatches(deps as never, input as never),
+  };
 }
 
 const tenant = asTenantContext('test-tenant');
