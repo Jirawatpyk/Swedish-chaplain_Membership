@@ -46,7 +46,16 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
   // variant to signal attention needed. `partial_delivery_accepted`
   // is terminal-after-admin-accept; muted secondary matches `cancelled`
   // visual weight (operational end-state, not error).
-  partially_sent: { variant: 'destructive', className: 'motion-safe:animate-pulse' },
+  // Phase 3F.7 (UX F-5 fix) — motion-reduce users get a static ring
+  // instead of the missed pulse animation. Without this, reduced-
+  // motion preference would suppress the "attention needed" visual
+  // affordance entirely → admin might miss the partially-sent
+  // actionable state.
+  partially_sent: {
+    variant: 'destructive',
+    className:
+      'motion-safe:animate-pulse motion-reduce:ring-1 motion-reduce:ring-destructive/60 motion-reduce:ring-offset-1',
+  },
   partial_delivery_accepted: { variant: 'secondary', className: 'text-muted-foreground' },
 };
 

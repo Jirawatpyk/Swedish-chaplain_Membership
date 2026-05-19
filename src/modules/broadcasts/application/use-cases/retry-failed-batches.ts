@@ -209,6 +209,11 @@ export async function retryFailedBatches(
         retryAttempt,
         lockKey,
         initiatedAt: now.toISOString(),
+        // Phase 3F.7 (F-12 distinguisher) — auto-retry (T056) emits
+        // the same eventType with `automated: true`. Explicit `false`
+        // here ensures aggregate analytics correctly partition the
+        // manual vs auto paths without ambiguity from missing field.
+        automated: false,
       },
       requestId: input.requestId ?? null,
     });

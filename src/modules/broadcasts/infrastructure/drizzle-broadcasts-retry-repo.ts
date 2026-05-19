@@ -157,12 +157,21 @@ export function makeDrizzleBroadcastsRetryRepo(
     ): Promise<Result<{ acceptedAt: Date }, AcceptPartialError>> {
       try {
         return await runInTenant(ctx, async (tx) => {
+          // Phase 3F.7 (F-24 fix) — set quota fields on accept-partial.
+          // Spec FR-008c: partial delivery IS real send activity →
+          // quota MUST be consumed (matches F7 MVP `sent` path). The
+          // one-active-broadcast-state invariant requires both fields
+          // non-null in `partial_delivery_accepted` terminal state.
+          // COALESCE preserves prior values if somehow already set
+          // (idempotent re-call protection).
           const [updated] = await tx
             .update(broadcasts)
             .set({
               status: 'partial_delivery_accepted',
               partialDeliveryAcceptedAt: input.acceptedAt,
               partialDeliveryAcceptedByUserId: input.acceptedByUserId,
+              quotaYearConsumed: sql`COALESCE(${broadcasts.quotaYearConsumed}, EXTRACT(YEAR FROM ${input.acceptedAt}::timestamptz AT TIME ZONE 'Asia/Bangkok')::int)`,
+              quotaConsumedAt: sql`COALESCE(${broadcasts.quotaConsumedAt}, ${input.acceptedAt}::timestamptz)`,
               updatedAt: new Date(),
             })
             .where(

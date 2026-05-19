@@ -256,6 +256,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }));
 
       // 5d. Build BroadcastContent for the dispatcher service.
+      // Phase 3F.7 (F-22 fix) — resolve proper tenant display name
+      // instead of using raw slug ("swecham" → "Swedish Chamber of
+      // Commerce"). Members see this in the Resend "from" header.
+      const { resolveTenantDisplayName } = await import(
+        '@/lib/broadcasts-route-helpers'
+      );
+      let tenantDisplayName: string;
+      try {
+        tenantDisplayName = await resolveTenantDisplayName(tenant.slug);
+      } catch (e) {
+        logger.warn(
+          { err: e instanceof Error ? e.message : String(e), tenantId: tenant.slug },
+          'cron.broadcasts.dispatch_batches.tenant_display_name_lookup_failed',
+        );
+        tenantDisplayName = tenant.slug; // degraded fallback
+      }
+
       const broadcastContent: BroadcastContent = {
         broadcastId,
         subject: broadcast.subject,
@@ -263,7 +280,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         fromName: broadcast.fromName,
         fromEmail: env.broadcasts.fromEmail,
         replyToEmail: broadcast.replyToEmail,
-        tenantDisplayName: tenant.slug, // F12 white-label scope — degraded default
+        tenantDisplayName,
         locale: tenantDefaultLocaleFor(tenant.slug),
       };
 

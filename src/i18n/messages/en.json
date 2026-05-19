@@ -1761,7 +1761,7 @@
         "description": "This broadcast will be marked as completed in its current state. Failed batches will not be retried, and the broadcast status cannot be changed afterward.",
         "summary": "{sent} of {total} batches delivered successfully.",
         "reasonLabel": "Reason (optional)",
-        "reasonPlaceholder": "Why are you accepting partial delivery? (e.g. Resend rate-limit not clearing, member already notified separately…)",
+        "reasonPlaceholder": "Optional — e.g., Resend rate-limit not clearing, member already notified separately…",
         "reasonHelp": "Optional context for the audit trail. Maximum 500 characters.",
         "reasonCounter": "{count} / 500",
         "confirm": "Accept partial",

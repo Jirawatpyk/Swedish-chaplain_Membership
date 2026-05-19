@@ -121,8 +121,9 @@ test.describe('@a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T
     await expect(textarea).toBeVisible();
 
     // Live counter updates as user types
+    // "Resend rate-limit blocking remaining batches" = 44 chars
     await textarea.fill('Resend rate-limit blocking remaining batches');
-    await expect(dialog.getByText(/45 \/ 500/)).toBeVisible();
+    await expect(dialog.getByText(/44 \/ 500/)).toBeVisible();
 
     // Confirm button enabled by default (reason is optional)
     const confirm = dialog.getByRole('button', { name: /accept partial/i });

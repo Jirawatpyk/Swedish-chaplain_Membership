@@ -182,7 +182,14 @@ export function BatchBreakdown({
     broadcastStatus === 'partially_sent' &&
     manualRetryRemaining > 0 &&
     failedBatchCount > 0;
-  const canAcceptPartial = broadcastStatus === 'partially_sent';
+  // Phase 3F.7 (UX F-13 fix) — only surface Accept-partial when at
+  // least one batch actually succeeded. If every batch failed
+  // (edge case: 100% Resend rate-limit), there's no "partial" to
+  // accept — broadcast should retry or fail-to-dispatch path applies.
+  // The server route guards this too; UI guard prevents misleading
+  // affordance.
+  const canAcceptPartial =
+    broadcastStatus === 'partially_sent' && counts.succeeded > 0;
 
   if (batches.length === 0) {
     return (
@@ -265,11 +272,16 @@ export function BatchBreakdown({
               </caption>
               <TableHeader>
                 <TableRow>
+                  {/* Phase 3F.7 (UX F-12 fix) — explicit min-width
+                      on columns where Tailwind's default `auto` width
+                      would collapse to unreadable narrow columns at
+                      tablet breakpoints. Surface is admin-only at
+                      `lg+` per F8 Escalation Queue convention. */}
                   <TableHead className="w-[60px]">{t('columns.batchIndex')}</TableHead>
-                  <TableHead>{t('columns.recipientRange')}</TableHead>
+                  <TableHead className="min-w-[120px]">{t('columns.recipientRange')}</TableHead>
                   <TableHead className="text-right">{t('columns.recipientCount')}</TableHead>
-                  <TableHead>{t('columns.status')}</TableHead>
-                  <TableHead>{t('columns.dispatchedAt')}</TableHead>
+                  <TableHead className="min-w-[120px]">{t('columns.status')}</TableHead>
+                  <TableHead className="min-w-[140px]">{t('columns.dispatchedAt')}</TableHead>
                   <TableHead className="text-right">{t('columns.delivered')}</TableHead>
                   <TableHead className="text-right">{t('columns.bounced')}</TableHead>
                   <TableHead className="text-right">{t('columns.complained')}</TableHead>

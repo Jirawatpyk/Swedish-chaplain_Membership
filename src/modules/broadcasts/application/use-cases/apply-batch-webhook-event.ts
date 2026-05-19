@@ -101,6 +101,31 @@ export async function applyBatchWebhookEvent(
 
   if (!result.ok) {
     if (result.error.kind === 'not_found') {
+      // Phase 3F.7 (F-23 fix) — emit a forensic audit on the not-found
+      // race path. BYPASSRLS lookup just resolved the tenantId, then
+      // the increment found 0 rows → either the batch was force-deleted
+      // between the two queries (admin ops action) OR the lookup
+      // returned a stale tenant (impossible under current schema but
+      // future-proof). Either way, forensic trail matters.
+      try {
+        await deps.audit.emit(null, {
+          tenantId: input.tenantId,
+          eventType: 'broadcast_cross_tenant_probe',
+          actorUserId: 'system:resend-webhook',
+          summary: `Webhook event for missing batch ${input.batchManifestId} (race window)`,
+          payload: {
+            broadcastId: input.broadcastId,
+            batchManifestId: input.batchManifestId,
+            batchIndex: input.batchIndex,
+            eventType: input.eventType,
+            resendEventId: input.resendEventId,
+            useCase: 'apply-batch-webhook-event',
+          },
+          requestId: input.requestId ?? null,
+        });
+      } catch {
+        // best-effort
+      }
       return err({
         kind: 'BATCH_NOT_FOUND',
         batchManifestId: input.batchManifestId,
