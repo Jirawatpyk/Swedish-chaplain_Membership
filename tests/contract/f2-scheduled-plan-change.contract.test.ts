@@ -85,8 +85,8 @@ function narrowRow(row: MutableSchedRow): ScheduledPlanChange {
   // Cast through unknown because the truly-mutable type strips readonly,
   // which differs structurally from the domain `MutableScheduledPlanChange`.
   // The runtime assert is the source of truth.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _shape: import('@/modules/plans').MutableScheduledPlanChange = row;
+  void _shape;
   return row as unknown as ScheduledPlanChange;
 }
 

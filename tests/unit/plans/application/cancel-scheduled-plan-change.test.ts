@@ -206,7 +206,13 @@ describe('cancelScheduledPlanChange — happy path', () => {
 
     expect(result.ok).toBe(true);
     const [, event] = vi.mocked(deps.audit.record).mock.calls[0]!;
-    expect((event as any).payload.reason).toBe(
+    // The audit-emit factory at recordAuditEvent.ts:* constructs
+    // events with a `payload: {…}` shape. Narrow via discriminated
+    // event_type to read `.reason` without `as any`.
+    expect(event.event_type).toBe('plan_change_cancelled');
+    if (event.event_type !== 'plan_change_cancelled')
+      throw new Error('unreachable');
+    expect(event.payload.reason).toBe(
       'Member requested rollback before renewal closes.',
     );
   });

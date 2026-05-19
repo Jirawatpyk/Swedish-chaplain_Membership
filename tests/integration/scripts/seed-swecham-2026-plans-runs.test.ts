@@ -23,7 +23,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { eq, and } from 'drizzle-orm';
-import { runInTenant, db } from '@/lib/db';
+import { runInTenant } from '@/lib/db';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { asPlanYear } from '@/modules/plans/domain/plan';

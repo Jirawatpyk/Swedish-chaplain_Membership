@@ -426,7 +426,6 @@ export type F2AuditEvent =
 // zod-inferred type (below). If either diverges, this assertion fails
 // compile and the maintainer must update BOTH.
 type _ZodInfer = z.infer<typeof auditPayloadSchema>;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _AssertHandWrittenMatchesZodInfer = F2AuditEvent extends _ZodInfer
   ? _ZodInfer extends F2AuditEvent
     ? true

@@ -20,7 +20,7 @@
  * adapters so the handler runs without DB.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
 const requireAdminContextMock = vi.fn();

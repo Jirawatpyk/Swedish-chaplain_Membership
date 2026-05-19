@@ -179,7 +179,10 @@ type _PayloadKeysCoverEveryEventType =
       ? true
       : never
     : never;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _exhaustivePayloadCoverage: _PayloadKeysCoverEveryEventType = true;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _UnusedZodImport = z.ZodTypeAny; // keep `z` import meaningful
+void _exhaustivePayloadCoverage;
+// Keep the `z` import meaningful even though only `z.infer` is used in
+// the implicit chain through `auditPayloadSchema.safeParse`.
+type _ZodImport = z.ZodTypeAny;
+const _zod: _ZodImport | undefined = undefined;
+void _zod;

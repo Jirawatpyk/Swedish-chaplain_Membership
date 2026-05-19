@@ -26,11 +26,8 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
 
-import { runInTenant } from '@/lib/db';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
-import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
 import { createTwoTestTenants } from '../helpers/test-tenant';
 import { seedMemberAndRenewalCycle } from '../helpers/seed-renewal-cycle';
 
