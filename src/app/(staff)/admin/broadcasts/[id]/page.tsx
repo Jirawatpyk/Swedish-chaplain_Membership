@@ -9,7 +9,17 @@ import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
-import { makeGetBroadcastDeps, parseBroadcastId } from '@/modules/broadcasts';
+import {
+  BatchBreakdown,
+  type BatchBreakdownRow,
+  type BatchStatusForUi,
+} from '@/components/broadcast/admin/batch-breakdown';
+import {
+  makeGetBroadcastDeps,
+  MANUAL_RETRY_BUDGET,
+  parseBroadcastId,
+} from '@/modules/broadcasts';
+import { makeDrizzleBatchManifestsRepo } from '@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo';
 import { runInTenant } from '@/lib/db';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -75,6 +85,19 @@ export default async function AdminBroadcastDetailPage({
   // sees an explicit warning panel + Approve is blocked, not an empty
   // body indistinguishable from a whitespace-only draft.
   const sanitisedBody = renderTimeSanitise(broadcast.bodyHtml);
+
+  // F7.1a Phase 3 T049 — load per-batch manifests (if any). Empty
+  // result means this broadcast was small enough to dispatch as a
+  // single audience (F7 MVP path) and the BatchBreakdown component
+  // surfaces the "not split" fallback.
+  const batchManifests = await loadBatchBreakdownRows(
+    tenant.slug,
+    broadcast.broadcastId,
+  );
+  const manualRetryRemaining = Math.max(
+    0,
+    MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
+  );
 
   return (
     <DetailContainer>
@@ -161,6 +184,23 @@ export default async function AdminBroadcastDetailPage({
 
       <AuditTimeline tenantId={tenant.slug} broadcastId={broadcast.broadcastId as string} />
 
+      {/* F7.1a Phase 3 T049 — per-batch breakdown surface. Only renders
+          when the broadcast was split into multiple Resend audiences
+          (batches.length > 0) OR the broadcast is in a F7.1a-relevant
+          status (partially_sent / sending — admin needs visibility
+          into in-flight batches). Component shows "not split" fallback
+          for F7 MVP single-audience broadcasts. */}
+      <BatchBreakdown
+        broadcastId={broadcast.broadcastId as unknown as string}
+        broadcastStatus={broadcast.status}
+        manualRetryRemaining={manualRetryRemaining}
+        batches={batchManifests}
+        defaultOpen={
+          broadcast.status === 'partially_sent' ||
+          broadcast.status === 'partial_delivery_accepted'
+        }
+      />
+
       {broadcast.status === 'submitted' && !isReadOnlyManager && !sanitisedBody.error ? (
         <div className="flex justify-end">
           <ReviewActions broadcastId={broadcast.broadcastId as string} />
@@ -190,6 +230,51 @@ function renderTimeSanitise(html: string): {
       'admin.broadcasts.detail.render_sanitise_failed',
     );
     return { html: '', error: true };
+  }
+}
+
+/**
+ * F7.1a Phase 3 T049 — load batch_manifests + map to the
+ * BatchBreakdown UI row shape. Empty array means this broadcast was
+ * not split into batches (F7 MVP single-audience path).
+ *
+ * Returns plain JSON-serialisable rows so the Server Component → Client
+ * Component prop pipe doesn't carry branded types (BroadcastId etc.)
+ * across the boundary.
+ */
+async function loadBatchBreakdownRows(
+  tenantSlug: string,
+  broadcastId: import('@/modules/broadcasts').BroadcastId,
+): Promise<ReadonlyArray<BatchBreakdownRow>> {
+  try {
+    const repo = makeDrizzleBatchManifestsRepo(tenantSlug);
+    const manifests = await repo.findByBroadcast(
+      tenantSlug as never,
+      broadcastId,
+    );
+    return manifests.map((m) => ({
+      batchManifestId: m.id,
+      batchIndex: m.batchIndex,
+      recipientRangeStart: m.recipientRangeStart,
+      recipientRangeEnd: m.recipientRangeEnd,
+      recipientCount: m.recipientCount,
+      status: m.status as BatchStatusForUi,
+      dispatchedAt: m.dispatchedAt !== null ? m.dispatchedAt.toISOString() : null,
+      retryCount: m.retryCount,
+      deliveredCount: m.deliveredCount,
+      bouncedCount: m.bouncedCount,
+      complainedCount: m.complainedCount,
+      unsubscribedCount: m.unsubscribedCount,
+    }));
+  } catch (e) {
+    logger.error(
+      { err: e instanceof Error ? e.message : String(e), tenantSlug },
+      'admin.broadcasts.detail.batch_load_failed',
+    );
+    // Fail-open: empty array means the BatchBreakdown surface shows
+    // the "not split" fallback (no false positive). Phase 3D ops
+    // dashboard catches the elevated log rate.
+    return [];
   }
 }
 
