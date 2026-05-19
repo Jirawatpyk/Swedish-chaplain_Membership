@@ -78,6 +78,12 @@ function makeStubDeps(opts: {
   manifest?: BatchManifest;
   gatewayThrowsAt?: 'createAudience' | 'addContactsToAudience' | 'createBroadcast' | 'sendBroadcast';
   persistFails?: boolean;
+  /**
+   * Phase 3F.11.1 (C4 — Round 2 fix) — if set, audit emits matching
+   * the given event types throw. Used to verify the use case still
+   * returns `ok` on success-path audit failure (Resend already sent).
+   */
+  auditThrowsForEvents?: ReadonlySet<string>;
 }): StubDeps {
   const manifest = opts.manifest ?? makeManifest();
   const emits: Array<{ eventType: string; payload?: unknown }> = [];
@@ -128,6 +134,9 @@ function makeStubDeps(opts: {
       },
       audit: {
         async emit(_tx: unknown, e: { eventType: string; payload?: unknown }) {
+          if (opts.auditThrowsForEvents?.has(e.eventType)) {
+            throw new Error(`audit-emit-boom-${e.eventType}`);
+          }
           emits.push(e);
         },
       },
@@ -221,5 +230,45 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect(
       emits.some((e) => e.eventType === 'broadcast_resend_resource_missing'),
     ).toBe(true);
+  });
+
+  // Phase 3F.11.1 (C4 — Round 2 fix): success-path audit emit throws
+  // → use case still returns ok (Resend already delivered). Without
+  // the try/catch wrap, an audit-port DB-down condition would synthesise
+  // `failed` outcomes in batch-dispatcher even though emails went out.
+  it('broadcast_send_started audit throws → use case still returns ok (Resend already sent)', async () => {
+    const { deps } = makeStubDeps({
+      auditThrowsForEvents: new Set(['broadcast_send_started']),
+    });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    // Use case returns ok despite audit throw — caller (batch-dispatcher)
+    // must not synthesise `failed` outcome for a successful Resend send.
+    expect(result.ok).toBe(true);
+  });
+
+  it('broadcast_resend_resource_missing audit throws on persistFails path → use case still returns ok', async () => {
+    const { deps } = makeStubDeps({
+      persistFails: true,
+      auditThrowsForEvents: new Set(['broadcast_resend_resource_missing']),
+    });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    // Forensic audit failed BUT the send was real — use case returns
+    // ok so the worker pool records a sent_to_resend outcome (matches
+    // production reality).
+    expect(result.ok).toBe(true);
   });
 });

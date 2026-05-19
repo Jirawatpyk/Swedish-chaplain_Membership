@@ -121,16 +121,17 @@ export function RetryConfirmationDialog({
   }
 
   return (
-    // Phase 3F.9 (UX F-6) — Base UI `finalFocus` returns focus to the
-    // trigger button on close. When the trigger is unmounted (canRetry
-    // recompute after a successful retry), Base UI falls back to body
-    // (no crash, slightly degraded UX → operator can Tab to re-orient).
-    <AlertDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      {...(triggerRef ? { finalFocus: triggerRef } : {})}
-    >
-      <AlertDialogContent className="max-w-lg">
+    // Phase 3F.11.1 (C1 — Round 2 fix) — Base UI `finalFocus` is a prop
+    // of `Dialog.Popup` (= `<AlertDialogContent>`), NOT `Dialog.Root`.
+    // The previous 3F.9 wiring spread the prop on `<AlertDialog>` Root,
+    // which silently dropped it → focus did NOT return to trigger.
+    // Moved to AlertDialogContent here. Trigger unmount fallback to body
+    // is still the Base UI default behavior. WCAG SC 2.4.3 + 2.4.11.
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent
+        className="max-w-lg"
+        {...(triggerRef ? { finalFocus: triggerRef } : {})}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>

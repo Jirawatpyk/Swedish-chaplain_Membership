@@ -228,12 +228,22 @@ export async function retryFailedBatches(
     const failedBatches = allBatches.filter((b) => b.status === 'failed');
 
     for (const batch of failedBatches) {
+      // Phase 3F.11.1 (C2 — Round 2 fix): rotate idempotency key per
+      // manual retry attempt. Without rotation, Resend's deduper
+      // short-circuits the resend → 3-attempt manual budget burns to
+      // zero with silent no-ops (symmetric to F-04 auto-retry fix from
+      // Phase 3F.1 at auto-retry-failed-batches.ts:108). Namespace
+      // `-manualretry-N` is disjoint from auto-retry's `-autoretry-N`
+      // so an admin retry never collides with a sweep retry on the
+      // same batch.
+      const rotatedKey = `${batch.idempotencyKey}-manualretry-${retryAttempt}`;
       await deps.batchManifests.updateStatus(
         tenantSlug,
         batch.id,
         {
           status: 'pending',
           retryCount: (batch.retryCount ?? 0) + 1,
+          idempotencyKey: rotatedKey,
         },
         tx,
       );

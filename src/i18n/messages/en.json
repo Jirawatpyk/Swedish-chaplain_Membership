@@ -1578,6 +1578,8 @@
         "subtitle": "Inspect content + approve, reject, or cancel.",
         "bodyRenderFailedTitle": "Body could not be rendered safely",
         "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
+        "batchLoadFailedTitle": "Per-batch breakdown temporarily unavailable",
+        "batchLoadFailedHint": "We couldn't load the batch list. Refresh the page in a moment. Operators have been alerted via the structured log.",
         "fields": {
           "subject": "Subject",
           "body": "Message",

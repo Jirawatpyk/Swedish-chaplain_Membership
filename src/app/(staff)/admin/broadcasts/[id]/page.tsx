@@ -203,20 +203,19 @@ export default async function AdminBroadcastDetailPage({
           hidden when US1 flag is off. */}
       {f71aUs1On && batchLoadFailed ? (
         // Phase 3F.8 (F-14 fix) — explicit error panel instead of
-        // silent "not split" placeholder. Caller sees the failure
-        // + a refresh hint; ops sees the underlying error in the
+        // silent "not split" placeholder. Caller sees the failure +
+        // a refresh hint; ops sees the underlying error in the
         // `admin.broadcasts.detail.batch_load_failed` log line.
+        // Phase 3F.11.1 (C3 — Round 2 fix): strings localised via
+        // `admin.broadcasts.review.batchLoadFailedTitle/Hint`. Previous
+        // hard-coded EN copy violated Constitution Principle V (i18n)
+        // for TH/SV admins.
         <section
           role="alert"
           className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
         >
-          <p className="font-semibold">
-            Per-batch breakdown temporarily unavailable
-          </p>
-          <p className="mt-1 text-destructive/80">
-            We couldn&apos;t load the batch list. Refresh the page in a moment.
-            Operators have been alerted via the structured log.
-          </p>
+          <p className="font-semibold">{t('batchLoadFailedTitle')}</p>
+          <p className="mt-1 text-destructive/80">{t('batchLoadFailedHint')}</p>
         </section>
       ) : null}
       {f71aUs1On && !batchLoadFailed ? (

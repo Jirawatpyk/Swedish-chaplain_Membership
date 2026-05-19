@@ -139,13 +139,14 @@ export function AcceptPartialDialog({
   }
 
   return (
-    // Phase 3F.9 (UX F-6) — see RetryConfirmationDialog header doc.
-    <AlertDialog
-      open={open}
-      onOpenChange={handleOpenChange}
-      {...(triggerRef ? { finalFocus: triggerRef } : {})}
-    >
-      <AlertDialogContent className="max-w-lg">
+    // Phase 3F.11.1 (C1 — Round 2 fix) — see RetryConfirmationDialog
+    // header doc. finalFocus moved from <AlertDialog> Root (silent drop)
+    // to <AlertDialogContent> Popup (where Base UI consumes it).
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+      <AlertDialogContent
+        className="max-w-lg"
+        {...(triggerRef ? { finalFocus: triggerRef } : {})}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('description')}</AlertDialogDescription>

@@ -322,43 +322,84 @@ export async function dispatchBroadcastBatch(
     // Resend dashboard. The send already happened externally; the
     // webhook will NOT be able to route events back to this batch
     // until ops manually patches the row.
+    // Phase 3F.11.1 (C4 — Round 2 fix): wrap audit emit in try/catch.
+    // Without the wrap, a DB-down audit-port throw on the success
+    // path propagates to the worker pool and synthesises `failed`
+    // outcomes even though Resend already delivered — the F-7 failure
+    // path wrap (lines 273-298) had this protection but the success
+    // path did not. Mirror that pattern exactly.
+    try {
+      await deps.audit.emit(null, {
+        tenantId: tenantSlug,
+        eventType: 'broadcast_resend_resource_missing',
+        actorUserId: 'system',
+        summary: `Batch ${manifest.batchIndex} dispatched to Resend but provider id persist failed`,
+        payload: {
+          broadcastId: input.broadcastContent.broadcastId,
+          batchManifestId: manifest.id,
+          batchIndex: manifest.batchIndex,
+          providerAudienceId,
+          resendBroadcastId,
+          persistError: persistAudience.error.kind,
+        },
+        requestId: input.requestId ?? null,
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: auditErr,
+          tenantId: tenantSlug,
+          broadcastId: input.broadcastContent.broadcastId,
+          batchManifestId: manifest.id,
+          batchIndex: manifest.batchIndex,
+          providerAudienceId,
+          resendBroadcastId,
+        },
+        'broadcasts.dispatch.resend_resource_missing_audit_emit_failed',
+      );
+    }
+  }
+
+  // 7. Success audit — emits `broadcast_send_started` per-batch with
+  //    batchIndex in payload (matches F7 MVP webhook update path that
+  //    expects this event type to flag dispatch ACK).
+  // Phase 3F.11.1 (C4 — Round 2 fix): same wrap rationale as above.
+  // Resend already accepted the send; the use case MUST return ok even
+  // if this final audit emit throws. Without the wrap, batch-dispatcher's
+  // worker catches the throw and synthesises `failed` → ops dashboards
+  // misreport the dispatch state.
+  try {
     await deps.audit.emit(null, {
       tenantId: tenantSlug,
-      eventType: 'broadcast_resend_resource_missing',
+      eventType: 'broadcast_send_started',
       actorUserId: 'system',
-      summary: `Batch ${manifest.batchIndex} dispatched to Resend but provider id persist failed`,
+      summary: `Batch ${manifest.batchIndex} of broadcast ${input.broadcastContent.broadcastId} dispatched to Resend (${manifest.recipientCount} recipients)`,
       payload: {
         broadcastId: input.broadcastContent.broadcastId,
         batchManifestId: manifest.id,
         batchIndex: manifest.batchIndex,
         providerAudienceId,
         resendBroadcastId,
-        persistError: persistAudience.error.kind,
+        recipientCount: manifest.recipientCount,
+        idempotencyKey,
+        dispatchedAt: dispatchedAt.toISOString(),
       },
       requestId: input.requestId ?? null,
     });
+  } catch (auditErr) {
+    logger.error(
+      {
+        err: auditErr,
+        tenantId: tenantSlug,
+        broadcastId: input.broadcastContent.broadcastId,
+        batchManifestId: manifest.id,
+        batchIndex: manifest.batchIndex,
+        providerAudienceId,
+        resendBroadcastId,
+      },
+      'broadcasts.dispatch.send_started_audit_emit_failed',
+    );
   }
-
-  // 7. Success audit — emits `broadcast_send_started` per-batch with
-  //    batchIndex in payload (matches F7 MVP webhook update path that
-  //    expects this event type to flag dispatch ACK).
-  await deps.audit.emit(null, {
-    tenantId: tenantSlug,
-    eventType: 'broadcast_send_started',
-    actorUserId: 'system',
-    summary: `Batch ${manifest.batchIndex} of broadcast ${input.broadcastContent.broadcastId} dispatched to Resend (${manifest.recipientCount} recipients)`,
-    payload: {
-      broadcastId: input.broadcastContent.broadcastId,
-      batchManifestId: manifest.id,
-      batchIndex: manifest.batchIndex,
-      providerAudienceId,
-      resendBroadcastId,
-      recipientCount: manifest.recipientCount,
-      idempotencyKey,
-      dispatchedAt: dispatchedAt.toISOString(),
-    },
-    requestId: input.requestId ?? null,
-  });
 
   return ok({
     providerAudienceId,

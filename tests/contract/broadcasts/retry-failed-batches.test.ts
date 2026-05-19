@@ -59,14 +59,17 @@ type BroadcastFixture = {
 function makeStubDeps(broadcast: BroadcastFixture): {
   emits: Array<{ eventType: string }>;
   manualRetryCountAfter: () => number;
+  statusUpdates: Array<{ batchId: string; update: { status: string; retryCount?: number; idempotencyKey?: string } }>;
   deps: unknown;
 } {
   const emits: Array<{ eventType: string }> = [];
+  const statusUpdates: Array<{ batchId: string; update: { status: string; retryCount?: number; idempotencyKey?: string } }> = [];
   let manualRetryCount = broadcast.manualRetryCount;
 
   return {
     emits,
     manualRetryCountAfter: () => manualRetryCount,
+    statusUpdates,
     deps: {
       audit: {
         async emit(_tx: unknown, e: { eventType: string }) {
@@ -74,8 +77,6 @@ function makeStubDeps(broadcast: BroadcastFixture): {
         },
       },
       broadcasts: {
-        // Phase 3E withTx wrapper — tests run with a sentinel tx token
-        // ('mock-tx') passed to every port method that accepts it.
         async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
           return fn('mock-tx');
         },
@@ -105,14 +106,20 @@ function makeStubDeps(broadcast: BroadcastFixture): {
             id,
             batchIndex: i,
             status: 'failed' as const,
+            // Phase 3F.11.1 (C2) — manifests carry an idempotencyKey
+            // that the use case MUST rotate on retry. The stub now
+            // provides the field so the test can assert rotation.
+            idempotencyKey: `broadcast-22222222-batch-${i}-attempt-0`,
+            retryCount: 0,
           }));
         },
         async updateStatus(
           _t: unknown,
-          _id: unknown,
-          _u: unknown,
+          id: unknown,
+          update: { status: string; retryCount?: number; idempotencyKey?: string },
           _tx?: unknown,
         ) {
+          statusUpdates.push({ batchId: id as string, update });
           return { ok: true, value: {} };
         },
       },
@@ -228,5 +235,46 @@ describe('retryFailedBatches contract (T033)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected error');
     expect((result.error as { kind: string }).kind).toBe('INVALID_STATE_TRANSITION');
+  });
+
+  // Phase 3F.11.1 (C2 — Round 2 fix) — manual-retry idempotency-key
+  // rotation. Symmetric to the Phase 3F.1 F-04 auto-retry fix; without
+  // rotation Resend's deduper short-circuits the resend → manual budget
+  // burns to zero with silent no-ops.
+  it('manual retry rotates idempotencyKey with -manualretry-N suffix on every failed batch', async () => {
+    const { retryFailedBatches } = await importRetryUseCase();
+    const { deps, statusUpdates } = makeStubDeps({
+      status: 'partially_sent',
+      manualRetryCount: 0,
+      failedBatchIds: ['batch-2', 'batch-5'],
+    });
+
+    const result = await retryFailedBatches(deps, {
+      tenantId: tenant,
+      broadcastId,
+      actorUserId,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error('expected success');
+
+    // 2 batches re-queued → 2 updateStatus calls
+    expect(statusUpdates).toHaveLength(2);
+
+    // Each carries a rotated idempotencyKey with -manualretry-1 suffix
+    // (retryAttempt=1 because manualRetryCount started at 0).
+    expect(statusUpdates[0]?.update.idempotencyKey).toBe(
+      'broadcast-22222222-batch-0-attempt-0-manualretry-1',
+    );
+    expect(statusUpdates[1]?.update.idempotencyKey).toBe(
+      'broadcast-22222222-batch-1-attempt-0-manualretry-1',
+    );
+
+    // Disjoint namespace from auto-retry (-autoretry-N) verified by the
+    // literal `-manualretry-` substring presence.
+    for (const u of statusUpdates) {
+      expect(u.update.idempotencyKey).toMatch(/-manualretry-1$/);
+      expect(u.update.idempotencyKey).not.toMatch(/-autoretry-/);
+    }
   });
 });
