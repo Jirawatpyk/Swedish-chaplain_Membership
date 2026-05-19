@@ -19,6 +19,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { logAuditEmitFailure } from '../audit-emit-failure-logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
@@ -138,16 +139,15 @@ export async function cancelBroadcast(
               requestId: input.requestId,
             });
           } catch (auditErr) {
-            logger.error(
-              {
-                err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-                tenantId: deps.tenant.slug,
-                probedBroadcastId: input.broadcastId as string,
-                actorUserId,
-                useCase: 'cancel-broadcast',
-              },
-              'broadcasts.cross_tenant_probe.audit_emit_failed',
-            );
+            // Phase 3F.11.9 (Round 3 comment-MED) — delegate to
+            // canonical helper. See `application/audit-emit-failure-logger.ts`.
+            logAuditEmitFailure(logger, {
+              err: auditErr,
+              tenantId: deps.tenant.slug,
+              probedBroadcastId: input.broadcastId as string,
+              actorUserId,
+              useCase: 'cancel-broadcast',
+            });
           }
         }
         return err({

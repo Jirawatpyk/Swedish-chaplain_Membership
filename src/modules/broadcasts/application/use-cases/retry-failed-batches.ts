@@ -29,6 +29,7 @@ import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import { type AdvisoryLockPort, asTxToken } from '../ports/advisory-lock-port';
+import { logAuditEmitFailure } from '../audit-emit-failure-logger';
 import type { AuditPort } from '../ports/audit-port';
 import type { BatchManifestsPort } from '../ports/batch-manifests-port';
 import type { BroadcastsRetryRepo } from '../ports/broadcasts-retry-repo';
@@ -129,21 +130,16 @@ export async function retryFailedBatches(
           requestId: input.requestId ?? null,
         });
       } catch (auditErr) {
-        // Phase 3F.11.2 (H1 — Round 2 fix) — best-effort but emit a
-        // structured log so audit-port outage still leaves a forensic
-        // trail in `pino` ops feed. Constitution v1.4.0 Principle I
-        // sub-clause 4 mandates the forensic record even when the
-        // audit_log table itself is unreachable.
-        logger.error(
-          {
-            err: auditErr,
-            tenantId: tenantSlug,
-            probedBroadcastId: input.broadcastId,
-            actorUserId: input.actorUserId,
-            useCase: 'retry-failed-batches',
-          },
-          'broadcasts.cross_tenant_probe.audit_emit_failed',
-        );
+        // Phase 3F.11.9 (Round 3 comment-MED) — delegate to canonical
+        // helper. See `application/audit-emit-failure-logger.ts` for
+        // the Principle I sub-clause 4 rationale.
+        logAuditEmitFailure(logger, {
+          err: auditErr,
+          tenantId: tenantSlug,
+          probedBroadcastId: input.broadcastId,
+          actorUserId: input.actorUserId,
+          useCase: 'retry-failed-batches',
+        });
       }
       return err({
         kind: 'BROADCAST_NOT_FOUND',

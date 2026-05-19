@@ -40,14 +40,21 @@
  * arbitrary values via `as never` casts at call sites.
  *
  * Migration plan:
- *   - Step 1 (this commit): `AdvisoryLockPort.acquire` consumes `TxToken`
- *   - Step 2 (deferred): `BroadcastsRetryRepo.withTx` callback receives `TxToken`
- *   - Step 3 (deferred): `BatchManifestsPort.*` tx params widen to `TxToken`
- *   - Step 4 (deferred): Drizzle adapters cast `TxToken → TenantTx` once at boundary
+ *   - Step 1 (Phase 3F.11.6 b06ed10f — ✅ DONE): `AdvisoryLockPort.acquire`
+ *     consumes `TxToken`. Single laundering line at
+ *     `retry-failed-batches.ts:asTxToken(tx)` boundary.
+ *   - Step 2 (Phase 3F.11.11 — see commit message at ship time):
+ *     `BroadcastsRetryRepo.withTx` callback receives `TxToken` directly.
+ *     Eliminates the `asTxToken(tx)` laundering line.
+ *   - Step 3 (DEFERRED to F7.1a.1 backlog): `BatchManifestsPort.*` tx params
+ *     (`findById`, `updateStatus`, etc. — 5 methods) widen to `TxToken`.
+ *   - Step 4 (DEFERRED to F7.1a.1 backlog): Drizzle adapters cast
+ *     `TxToken → TenantTx` at every boundary (centralise in a
+ *     `unbrandTx(token): TenantTx` helper in `@/lib/db` once Step 3 lands).
  *
- * Steps 2-4 deferred per the Phase 3F.11 plan because they cascade
- * across ~10 test fixtures + 3 adapters + 7 use cases. Step 1 alone
- * gives ~30% of the type-safety benefit at <5% of the diff cost.
+ * Steps 3-4 deferred because they cascade across ~10 test fixtures +
+ * 5 adapter methods + 7 use cases. Steps 1-2 together deliver ~60% of
+ * the type-safety benefit at <10% of the diff cost.
  */
 declare const txTokenBrand: unique symbol;
 export type TxToken = { readonly [txTokenBrand]: true };

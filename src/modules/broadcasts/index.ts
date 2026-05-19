@@ -102,6 +102,16 @@ export {
   type BroadcastTransitionError,
 } from './domain/policies/broadcast-status-transitions';
 
+// --- Application error types — public contract --------------------------
+// Typed errors that callers (route handlers, cron jobs) need for
+// `instanceof` narrowing. Phase 3F.11.9 (HIGH-1 — Round 3): the
+// split-large-broadcasts cron narrows on `BroadcastConcurrentMutationError`
+// to distinguish benign race-lost from real DB outage. Port
+// INTERFACES (BroadcastsRepo, GatewayPort, etc.) remain unexported
+// per Constitution III boundary; the ERROR CLASS is a value-level
+// API surface analogous to `BroadcastTransitionError` above.
+export { BroadcastConcurrentMutationError } from './application/ports/broadcasts-repo';
+
 // --- Application audit-event types (T028) --------------------------------
 // Exported for F1+F2+F3 audit-log consumers + observability dashboards.
 // Port interfaces (BroadcastsRepo, GatewayPort, etc.) are NOT re-exported.

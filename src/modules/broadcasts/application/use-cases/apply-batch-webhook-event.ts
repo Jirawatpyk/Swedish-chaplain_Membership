@@ -39,6 +39,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { logAuditEmitFailure } from '../audit-emit-failure-logger';
 import type {
   BatchCounterField,
   BatchManifestsPort,
@@ -130,10 +131,12 @@ export async function applyBatchWebhookEvent(
           requestId: input.requestId ?? null,
         });
       } catch (auditErr) {
-        // Phase 3F.11.2 (H1 — Round 2 fix) — log on audit-port failure.
-        // Constitution v1.4.0 Principle I sub-clause 4 — even on audit
-        // outage the forensic trail must reach pino ops feed.
-        logger.error(
+        // Phase 3F.11.9 (Round 3 comment-MED) — delegate to canonical
+        // helper. Pass the operational-forensic log key (not the
+        // security-forensic default) since M3 split this race-window
+        // emit out of `broadcast_cross_tenant_probe`.
+        logAuditEmitFailure(
+          logger,
           {
             err: auditErr,
             tenantId: input.tenantId,
@@ -142,6 +145,8 @@ export async function applyBatchWebhookEvent(
             batchIndex: input.batchIndex,
             eventType: input.eventType,
             resendEventId: input.resendEventId,
+            // actorUserId is the webhook-system actor (not a user)
+            actorUserId: 'system:resend-webhook',
             useCase: 'apply-batch-webhook-event',
           },
           'broadcasts.webhook_batch_missing.audit_emit_failed',

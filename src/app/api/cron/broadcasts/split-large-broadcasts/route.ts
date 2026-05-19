@@ -50,6 +50,7 @@ import { asTenantContext } from '@/modules/tenants';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import { BroadcastConcurrentMutationError } from '@/modules/broadcasts';
 import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
@@ -146,6 +147,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     split: 0,
     skipped: 0,
     errors: 0,
+    // Phase 3F.11.9 (Round 3 HIGH-2 — dashboard distinguisher):
+    // `orphanRecovered` separates the orphan-recovery fallthrough path
+    // (broadcast already had committed batch_manifests from a prior
+    // tick that failed transition) from genuine first-time splits.
+    // Without this counter, ops dashboards aggregating `summary.split`
+    // can't detect a recurring transition bug — they'd see "split: N"
+    // and assume normal cron operation while orphan-recovery warns
+    // pile up at a rate exceeding the SLO budget.
+    orphanRecovered: 0,
+    // Phase 3F.11.9 (Round 3 HIGH-1 — race narrowing): tracks the
+    // benign race where two cron ticks simultaneously try to
+    // transition the same broadcast and one loses on the
+    // `expectedFromStatus='approved'` row-version race-guard.
+    // Mutually exclusive with `errors` (the catch narrows on
+    // BroadcastConcurrentMutationError → race_lost; everything else
+    // → real error).
+    raceLost: 0,
   };
 
   for (const row of eligible) {
@@ -288,6 +306,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
         });
       } catch (e) {
+        // Phase 3F.11.9 (Round 3 HIGH-1): narrow the catch on
+        // `BroadcastConcurrentMutationError` to distinguish benign
+        // race-lost (another tick won the expectedFromStatus='approved'
+        // guard) from real DB outage. Without this, ops dashboards
+        // page on benign races at the same rate as real failures.
+        if (e instanceof BroadcastConcurrentMutationError) {
+          summary.raceLost++;
+          logger.warn(
+            {
+              tenantId: tenant.slug,
+              broadcastId: row.broadcast_id,
+              batchCount: splitResult.ok ? splitResult.value.batchCount : null,
+              orphanRecovery: !splitResult.ok,
+            },
+            'cron.broadcasts.split_large.transition_race_lost',
+          );
+          continue; // another tick won → broadcast already 'sending'
+        }
         summary.errors++;
         logger.error(
           {
@@ -302,6 +338,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         continue;
       }
 
+      // Phase 3F.11.9 (Round 3 HIGH-2 — dashboard distinguisher):
+      // track orphan-recovery separately from genuine first-time
+      // splits, so ops can detect recurring transition bugs from
+      // recovery warn-rate without confusion via `summary.split`.
+      if (!splitResult.ok) {
+        summary.orphanRecovered++;
+      }
       summary.split++;
       logger.info(
         {
