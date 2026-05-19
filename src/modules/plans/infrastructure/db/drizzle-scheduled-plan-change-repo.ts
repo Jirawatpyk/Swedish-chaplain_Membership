@@ -144,6 +144,23 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
     });
   },
 
+  // R2 Batch 3g (R2-I16) — primary-key lookup. RLS scopes to caller's
+  // tenant; explicit tenant_id filter intentionally omitted per the
+  // two-layer defence pattern (research.md § 7.1).
+  async findById(
+    tenant: TenantContext,
+    scheduledChangeId: string,
+  ): Promise<ScheduledPlanChange | null> {
+    return runInTenant(tenant, async (tx) => {
+      const rows = await tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(eq(scheduledPlanChanges.scheduledChangeId, scheduledChangeId))
+        .limit(1);
+      return rows[0] ? rowToDomain(rows[0]) : null;
+    });
+  },
+
   async transitionStatus(
     tenant: TenantContext,
     scheduledChangeId: string,

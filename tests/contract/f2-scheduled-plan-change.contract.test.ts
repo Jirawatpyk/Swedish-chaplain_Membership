@@ -122,6 +122,16 @@ function makeMemoryRepo(seed: ScheduledPlanChange[] = []): ScheduledPlanChangeRe
         ) ?? null
       );
     }),
+    // R2 Batch 3g (R2-I16) — primary-key lookup.
+    findById: vi.fn(async (ctx, scheduledChangeId) => {
+      return (
+        rows.find(
+          (r) =>
+            r.tenantId === ctx.slug &&
+            r.scheduledChangeId === scheduledChangeId,
+        ) ?? null
+      );
+    }),
     transitionStatus: vi.fn(async (ctx, scheduledChangeId, nextStatus) => {
       const row = rows.find(
         (r) =>

@@ -80,6 +80,8 @@ function makeDeps(overrides: DepsOverrides = {}): ScheduleNextRenewalPlanChangeD
       return r ?? { inserted: makeRow(), superseded: null };
     }),
     findPendingForCycle: vi.fn(),
+    // R2 Batch 3g (R2-I16) — port-shape compliance.
+    findById: vi.fn(async () => null),
     transitionStatus: vi.fn(),
     listForMember: vi.fn(),
   };

@@ -13,7 +13,7 @@
  *      row (defence-in-depth — should not happen in production but
  *      the use-case refuses to transition rather than silently
  *      overwrite terminal state).
- *   6. `server_error` when `findPendingForCycle` throws.
+ *   6. `server_error` when `findById` throws.
  *   7. `server_error` when `transitionStatus` throws.
  *   8. `audit_failed` when the audit port returns `persist_failed`.
  *   9. Audit payload — verifies `reason` is null when not supplied,
@@ -80,17 +80,20 @@ function makePending(
 
 function makeDeps(
   overrides: {
-    findPendingForCycleResult?: ScheduledPlanChange | null | Error;
+    // R2 Batch 3g (R2-I16) — use-case now looks up via `findById`,
+    // not `findPendingForCycle`. Renamed.
+    findByIdResult?: ScheduledPlanChange | null | Error;
     transitionStatusResult?: ScheduledPlanChange | Error;
     auditResult?: 'ok' | 'persist_failed' | 'invalid_payload';
   } = {},
 ): CancelScheduledPlanChangeDeps {
   const repo: ScheduledPlanChangeRepo = {
-    findPendingForCycle: vi.fn(async () => {
-      const r = overrides.findPendingForCycleResult;
+    findById: vi.fn(async () => {
+      const r = overrides.findByIdResult;
       if (r instanceof Error) throw r;
       return (r === undefined ? makePending() : r) ?? null;
     }),
+    findPendingForCycle: vi.fn(),
     transitionStatus: vi.fn(async (_t, _id, nextStatus) => {
       const r = overrides.transitionStatusResult;
       if (r instanceof Error) throw r;
@@ -153,12 +156,8 @@ describe('cancelScheduledPlanChange — happy path', () => {
     expect(result.value.scheduledChangeId).toBe(SCHEDULED_ID);
     expect(result.value.cancelledAt).toBe('2026-05-19T00:00:00Z');
 
-    // Repo: findPending called with tenant + member + cycle
-    expect(deps.repo.findPendingForCycle).toHaveBeenCalledWith(
-      tenant,
-      MEMBER_ID,
-      CYCLE_ID,
-    );
+    // R2 Batch 3g — repo: findById called with tenant + scheduledChangeId
+    expect(deps.repo.findById).toHaveBeenCalledWith(tenant, SCHEDULED_ID);
     // Repo: transitionStatus called with cancelled
     expect(deps.repo.transitionStatus).toHaveBeenCalledWith(
       tenant,
@@ -221,15 +220,15 @@ describe('cancelScheduledPlanChange — invalid_input (R2 Batch 3a zod-validated
     if (result.error.code !== 'invalid_input') throw new Error('unreachable');
     expect(result.error.field).toBe(field);
     // Repo + audit MUST NOT be called when zod validation fails
-    expect(deps.repo.findPendingForCycle).not.toHaveBeenCalled();
+    expect(deps.repo.findById).not.toHaveBeenCalled();
     expect(deps.repo.transitionStatus).not.toHaveBeenCalled();
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
   // R2 Batch 3a (R2-C2) — uuid validation locks the boundary down
-  // before findPendingForCycle / transitionStatus run. Previously
-  // these would slip past truthy-only validation and only fail when
-  // the audit-payload schema rejected post-transition.
+  // before findById / transitionStatus run. Previously these would
+  // slip past truthy-only validation and only fail when the
+  // audit-payload schema rejected post-transition.
   it.each([
     ['memberId', { memberId: 'not-a-uuid' }],
     ['memberId', { memberId: '11111111-1111-1111-1111' }],
@@ -246,7 +245,7 @@ describe('cancelScheduledPlanChange — invalid_input (R2 Batch 3a zod-validated
     expect(result.error.code).toBe('invalid_input');
     if (result.error.code !== 'invalid_input') throw new Error('unreachable');
     expect(result.error.field).toBe(field);
-    expect(deps.repo.findPendingForCycle).not.toHaveBeenCalled();
+    expect(deps.repo.findById).not.toHaveBeenCalled();
   });
 
   it('first-issue translation when multiple fields fail', async () => {
@@ -270,7 +269,7 @@ describe('cancelScheduledPlanChange — not_found', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('returns not_found when no pending row exists for the cycle', async () => {
-    const deps = makeDeps({ findPendingForCycleResult: null });
+    const deps = makeDeps({ findByIdResult: null });
     const result = await cancelScheduledPlanChange(deps, baseInput);
 
     expect(result.ok).toBe(false);
@@ -280,12 +279,14 @@ describe('cancelScheduledPlanChange — not_found', () => {
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
 
-  it('returns not_found when pending row has a DIFFERENT scheduledChangeId (race)', async () => {
-    // Caller targets `SCHEDULED_ID` but the current pending row is
-    // `other-sched-id` (concurrent supersede landed first).
+  it('R2 Batch 3g: returns not_found when found row belongs to a DIFFERENT member (defence-against-stale-UI cross-check)', async () => {
+    // The scheduledChangeId is found in the tenant, but its memberId
+    // does NOT match what the caller specified. Treat as not_found —
+    // the row the user clicked on is no longer the one that exists
+    // under their stale UI view.
     const deps = makeDeps({
-      findPendingForCycleResult: makePending({
-        scheduledChangeId: 'other-sched-id',
+      findByIdResult: makePending({
+        memberId: '99999999-9999-9999-9999-999999999999',
       }),
     });
     const result = await cancelScheduledPlanChange(deps, baseInput);
@@ -296,17 +297,33 @@ describe('cancelScheduledPlanChange — not_found', () => {
     expect(deps.repo.transitionStatus).not.toHaveBeenCalled();
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
+
+  it('R2 Batch 3g: returns not_found when found row belongs to a DIFFERENT cycle', async () => {
+    const deps = makeDeps({
+      findByIdResult: makePending({
+        effectiveAtCycleId: '99999999-9999-9999-9999-999999999999',
+      }),
+    });
+    const result = await cancelScheduledPlanChange(deps, baseInput);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('not_found');
+    expect(deps.repo.transitionStatus).not.toHaveBeenCalled();
+  });
 });
 
 describe('cancelScheduledPlanChange — already_terminal (defence-in-depth)', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('refuses to transition if the repo returns a terminal row', async () => {
-    // Repo contract says findPendingForCycle only returns pending rows.
-    // Defence-in-depth: if it ever returns a terminal row anyway, we
-    // refuse the transition.
+    // R2 Batch 3g — `findById` can return terminal rows (unlike the
+    // previous `findPendingForCycle` which filtered by status). The
+    // use-case explicitly checks `isTerminalStatus` to surface
+    // `already_terminal` as a distinct error code instead of silently
+    // masking as `not_found`.
     const deps = makeDeps({
-      findPendingForCycleResult: makePending({
+      findByIdResult: makePending({
         status: 'applied',
         appliedAt: '2026-05-01T00:00:00Z',
       }),
@@ -326,9 +343,9 @@ describe('cancelScheduledPlanChange — already_terminal (defence-in-depth)', ()
 describe('cancelScheduledPlanChange — server_error paths', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('wraps findPendingForCycle errors as server_error', async () => {
+  it('wraps findById errors as server_error', async () => {
     const deps = makeDeps({
-      findPendingForCycleResult: new Error('connection reset by peer'),
+      findByIdResult: new Error('connection reset by peer'),
     });
     const result = await cancelScheduledPlanChange(deps, baseInput);
 
@@ -336,7 +353,7 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
-    expect(result.error.message).toContain('findPendingForCycle');
+    expect(result.error.message).toContain('findById');
     expect(result.error.message).toContain('connection reset by peer');
   });
 

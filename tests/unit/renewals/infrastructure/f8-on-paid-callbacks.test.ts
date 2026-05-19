@@ -162,6 +162,7 @@ vi.mock('@/modules/plans/server', async (importOriginal) => {
     drizzleScheduledPlanChangeRepo: {
       supersedeAndInsertPendingAtomically: vi.fn(),
       findPendingForCycle: f2FindPendingForCycleMock,
+      findById: vi.fn(async () => null),
       transitionStatus: f2TransitionStatusMock,
       listForMember: vi.fn(),
     },

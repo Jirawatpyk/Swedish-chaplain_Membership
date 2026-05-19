@@ -102,6 +102,9 @@ function makeDeps(opts: {
       if (r instanceof Error) throw r;
       return r === undefined ? makePending() : r;
     }),
+    // R2 Batch 3g (R2-I16) — F2 finaliser does not use findById, but
+    // the port type requires the method.
+    findById: vi.fn(async () => null),
     transitionStatus: vi.fn(async (_t, scheduledChangeId, nextStatus) => {
       const r = opts.transitionStatus;
       if (r instanceof Error) throw r;

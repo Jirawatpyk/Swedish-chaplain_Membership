@@ -99,6 +99,28 @@ export function asMinorUnits(value: number): number {
   return value;
 }
 
+/**
+ * R2 Batch 3g (R2-I14) — accessor that wraps `Plan.annual_fee_minor_units`
+ * (unbranded `number` field — Round-1 trade-off) with a `Money` brand
+ * + the tenant's currency from `tenant_invoice_settings`. Recommended
+ * path for NEW Domain code that needs the cross-currency-safe brand
+ * (e.g., totalling fees across plans without risking
+ * SEK+THB-without-conversion at compile time). Existing call sites
+ * that read `.annual_fee_minor_units` directly continue to work; the
+ * accessor is opt-in.
+ *
+ * @param annualFeeMinorUnits — the raw integer from `Plan.annual_fee_minor_units`
+ * @param currencyCode — resolved per-tenant via F4 `getTenantTaxPolicy`
+ * @returns branded `Money` value safe for arithmetic via `addMoney` /
+ *   `subtractMoney` / `multiplyMoney` / `addVat`
+ */
+export function planAnnualFee(
+  annualFeeMinorUnits: number,
+  currencyCode: string,
+): Money {
+  return asMoney(annualFeeMinorUnits, currencyCode);
+}
+
 /** Construct a validated `Money` record (the only blessed path —
  *  see brand note on the `Money` type). */
 export function asMoney(amountMinorUnits: number, currencyCode: string): Money {

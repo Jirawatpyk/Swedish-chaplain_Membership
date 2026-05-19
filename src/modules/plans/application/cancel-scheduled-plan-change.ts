@@ -83,54 +83,57 @@ export async function cancelScheduledPlanChange(
     });
   }
 
-  // Precondition check — terminal-state immutability is a Domain
-  // invariant. We look up the pending row for (member, cycle) via the
-  // existing repo method (rather than `findById`) because the repo
-  // contract today exposes `findPendingForCycle` + the partial-unique
-  // guarantees at most one pending per cycle. If the caller-supplied
-  // `scheduledChangeId` does NOT match the pending row, treat as
-  // `not_found` — a stale UI submission targeting a row that was
-  // already superseded by another concurrent admin action.
-  let pending: ScheduledPlanChange | null;
+  // R2 Batch 3g (R2-I16) — primary-key lookup via `findById`. Cleaner
+  // than the prior `findPendingForCycle + cross-check` pattern because:
+  //   - Repo limitation no longer leaks into Application layer
+  //     (Constitution III — port contract shouldn't reflect "the
+  //     repo lacks a primary-key lookup")
+  //   - Terminal-status rows are visible to the use-case → distinct
+  //     `already_terminal` error code, not silently masked as
+  //     `not_found`
+  //
+  // The (memberId, effectiveAtCycleId) cross-check still runs as
+  // defence-against-stale-UI: if an admin UI passes a `scheduledChangeId`
+  // that EXISTS but doesn't match the (memberId, cycleId) the UI
+  // believes it's working with, treat as `not_found` (the row is no
+  // longer the one the user clicked on, e.g., row was superseded
+  // since the page loaded).
+  let row: ScheduledPlanChange | null;
   try {
-    pending = await deps.repo.findPendingForCycle(
-      deps.tenant,
-      input.memberId,
-      input.effectiveAtCycleId,
-    );
+    row = await deps.repo.findById(deps.tenant, input.scheduledChangeId);
   } catch (e) {
     return err({
       code: 'server_error',
-      message: `cancelScheduledPlanChange.findPendingForCycle: ${(e as Error)?.message ?? 'unknown'}`,
+      message: `cancelScheduledPlanChange.findById: ${(e as Error)?.message ?? 'unknown'}`,
     });
   }
 
-  if (pending === null) {
+  if (row === null) {
     return err({
       code: 'not_found',
       scheduledChangeId: input.scheduledChangeId,
     });
   }
 
-  if (pending.scheduledChangeId !== input.scheduledChangeId) {
-    // The pending row exists but for a DIFFERENT scheduledChangeId —
-    // caller is racing against a concurrent supersede. Report as
-    // `not_found` (the row they asked about is no longer pending).
+  // Defence-against-stale-UI cross-check.
+  if (
+    row.memberId !== input.memberId ||
+    row.effectiveAtCycleId !== input.effectiveAtCycleId
+  ) {
     return err({
       code: 'not_found',
       scheduledChangeId: input.scheduledChangeId,
     });
   }
 
-  // Defence-in-depth: `findPendingForCycle` should only return pending
-  // rows, but verify before transitioning. If somehow we get a
-  // terminal row back, refuse — this is a contract violation of the
-  // repo + caller deserves a typed error not a silent overwrite.
-  if (isTerminalStatus(pending.status)) {
+  // Terminal-state immutability — distinct error code so callers can
+  // distinguish "row no longer exists for you" from "row already
+  // applied/superseded/cancelled".
+  if (isTerminalStatus(row.status)) {
     return err({
       code: 'already_terminal',
-      scheduledChangeId: pending.scheduledChangeId,
-      status: pending.status as Exclude<ScheduledPlanChangeStatus, 'pending'>,
+      scheduledChangeId: row.scheduledChangeId,
+      status: row.status as Exclude<ScheduledPlanChangeStatus, 'pending'>,
     });
   }
 

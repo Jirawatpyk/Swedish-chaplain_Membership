@@ -314,6 +314,25 @@ export interface ScheduledPlanChangeRepo {
   ): Promise<ScheduledPlanChange | null>;
 
   /**
+   * R2 Batch 3g (R2-I16) — primary-key lookup by `scheduledChangeId`
+   * within the tenant scope. Returns `null` when the row does not
+   * exist OR is RLS-hidden from the caller's tenant context.
+   *
+   * Used by `cancelScheduledPlanChange` to look up a specific row;
+   * the use-case STILL cross-checks `(memberId, effectiveAtCycleId)`
+   * against the returned row as defence-against-stale-UI (if an
+   * admin UI passes a stale scheduledChangeId from a row that was
+   * since superseded, the cross-check catches it).
+   *
+   * RLS enforces tenant isolation; explicit `tenant_id` filter is
+   * unnecessary (research.md § 7.1).
+   */
+  findById(
+    tenant: TenantContext,
+    scheduledChangeId: string,
+  ): Promise<ScheduledPlanChange | null>;
+
+  /**
    * Move a row out of `pending` (apply / cancel paths). Throws if the
    * source row is already terminal — terminal-state immutability is a
    * Domain invariant. Supersede transitions land via

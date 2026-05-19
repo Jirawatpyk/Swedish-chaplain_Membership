@@ -82,6 +82,7 @@ export type { Money, CurrencyCode } from './domain/money';
 export {
   asMinorUnits,
   asMoney,
+  planAnnualFee,
   addMoney,
   subtractMoney,
   multiplyMoney,

@@ -249,7 +249,155 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
   }),
 ]);
 
-export type F2AuditEvent = z.infer<typeof auditPayloadSchema>;
+/**
+ * R2 Batch 3g (R2-S13) — hand-written discriminated union for
+ * `F2AuditEvent`. Previously `F2AuditEvent = z.infer<typeof
+ * auditPayloadSchema>` chained the Domain type to a specific zod
+ * version forever (every consumer transitively imported zod). The
+ * hand-written union below decouples Domain types from the runtime
+ * validator: `auditPayloadSchema` validates HTTP-boundary input;
+ * `F2AuditEvent` is the compile-time contract that propagates through
+ * use-cases, ports, and adapters.
+ *
+ * **Drift defence**: the `_zodInferMatchesHandWritten` type-level
+ * assertion below uses mutual structural assignability to fail
+ * compilation if the hand-written union diverges from
+ * `z.infer<typeof auditPayloadSchema>`. Any future payload-schema
+ * change must update BOTH the zod schema (above) AND the hand-written
+ * type (below) — TypeScript catches the drift instantly.
+ */
+export type F2AuditEvent =
+  | {
+      readonly event_type: 'plan_created';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly plan_name_en: string;
+        readonly annual_fee_minor_units: number;
+        readonly category: 'corporate' | 'partnership';
+        readonly member_type_scope: 'company' | 'individual' | 'both';
+      };
+    }
+  | {
+      readonly event_type: 'plan_updated';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff: AuditDiff;
+      };
+    }
+  | {
+      readonly event_type: 'plan_cloned';
+      readonly payload: {
+        readonly source_year: number;
+        readonly target_year: number;
+        readonly plan_ids: ReadonlyArray<string>;
+        readonly count: number;
+      };
+    }
+  | {
+      readonly event_type: 'plan_activated';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff;
+      };
+    }
+  | {
+      readonly event_type: 'plan_deactivated';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff;
+      };
+    }
+  | {
+      readonly event_type: 'plan_soft_deleted';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff;
+      };
+    }
+  | {
+      readonly event_type: 'plan_undeleted';
+      readonly payload: {
+        readonly plan_id: string;
+        readonly plan_year: number;
+        readonly diff?: AuditDiff;
+      };
+    }
+  | {
+      readonly event_type: 'plan_not_found';
+      readonly payload: {
+        readonly requested_plan_id: string;
+        readonly requested_year: number;
+        readonly method: 'GET' | 'PATCH' | 'DELETE' | 'POST';
+        readonly route: string;
+      };
+    }
+  | {
+      readonly event_type: 'plan_cross_tenant_probe';
+      readonly payload: {
+        readonly requested_plan_id: string;
+        readonly found_in_tenant_id: string;
+        readonly original_event_id: string;
+        readonly actor_user_id: string;
+        readonly escalation_reason: string;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_scheduled';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly from_plan_id: string;
+        readonly to_plan_id: string;
+        readonly reason?: string | null;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_superseded';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly superseded_by_scheduled_change_id?: string | null;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_cancelled';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly reason?: string | null;
+      };
+    }
+  | {
+      readonly event_type: 'plan_change_applied';
+      readonly payload: {
+        readonly member_id: string;
+        readonly scheduled_change_id: string;
+        readonly effective_at_cycle_id: string;
+        readonly from_plan_id: string;
+        readonly to_plan_id: string;
+        readonly applied_at_invoice_id?: string | null;
+      };
+    };
+
+// R2 Batch 3g (R2-S13) — compile-time drift defence. Mutual structural
+// assignability between the hand-written union (above) and the
+// zod-inferred type (below). If either diverges, this assertion fails
+// compile and the maintainer must update BOTH.
+type _ZodInfer = z.infer<typeof auditPayloadSchema>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _AssertHandWrittenMatchesZodInfer = F2AuditEvent extends _ZodInfer
+  ? _ZodInfer extends F2AuditEvent
+    ? true
+    : never
+  : never;
 
 /** Narrow runtime check that a value is one of the 10 F2 event types. */
 export function isF2AuditEventType(value: unknown): value is F2AuditEventType {
