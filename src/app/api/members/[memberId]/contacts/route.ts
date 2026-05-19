@@ -93,7 +93,23 @@ export async function POST(
       { status: 409 },
     );
   }
-  await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  // Post-ship R6 Batch 2b — surface Upstash outage as 503 instead of
+  // silently continuing. Mirrors `_idempotency-guard.ts:106-125` from
+  // Batch 1d. Adding a contact is a write that we want exactly-once
+  // semantics on under retry.
+  const reserved = await reserveIdempotencyRecord(tenant, keyCheck.key, bodyHash);
+  if (!reserved.ok) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'idempotency_reservation_failed',
+          message:
+            'Idempotency reservation temporarily unavailable. Retry shortly.',
+        },
+      },
+      { status: 503, headers: { 'Retry-After': '5' } },
+    );
+  }
 
   const deps = buildMembersDeps(tenant);
   const result = await addContact(

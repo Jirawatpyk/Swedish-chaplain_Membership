@@ -39,7 +39,7 @@ vi.mock('@/lib/idempotency', () => ({
     return { ok: true, key };
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
-  reserveIdempotencyRecord: vi.fn(async () => undefined),
+  reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
@@ -101,6 +101,34 @@ describe('contract: POST /api/members (T040)', () => {
     const body = await res.json();
     expect(body.member_id).toBe('mem-1');
     expect(body.primary_contact_id).toBe('con-1');
+  });
+
+  // Post-ship R6 Batch 2b — surface Upstash outage as 503 instead of
+  // silently continuing. Mirrors the F2 plans guard `_idempotency-guard.ts`.
+  it('503 idempotency_reservation_failed when Upstash reserve returns err()', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    // Override the default ok-mock for this single test
+    const idem = await import('@/lib/idempotency');
+    const reserveSpy = vi
+      .mocked(idem.reserveIdempotencyRecord)
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { kind: 'redis_unavailable', message: 'EAI_AGAIN' },
+      });
+    const { POST } = await import('@/app/api/members/route');
+    const res = await POST(makeRequest(validBody));
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    const body = await res.json();
+    expect(body.error.code).toBe('idempotency_reservation_failed');
+    // createMember MUST NOT be invoked when reservation fails
+    expect(createMemberMock).not.toHaveBeenCalled();
+    // NOTE: mockResolvedValueOnce already consumed — do NOT call
+    // mockReset() here (it wipes the default ok-mock implementation
+    // for subsequent tests). vi.clearAllMocks() in afterEach only
+    // clears call history, preserving the implementation.
+    void reserveSpy;
   });
 
   it('400 missing Idempotency-Key', async () => {

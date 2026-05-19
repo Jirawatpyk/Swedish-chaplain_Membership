@@ -42,7 +42,7 @@ vi.mock('@/lib/idempotency', () => ({
     return { ok: true, key };
   },
   classifyIdempotencyRequest: vi.fn(async () => ({ kind: 'first' })),
-  reserveIdempotencyRecord: vi.fn(async () => undefined),
+  reserveIdempotencyRecord: vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } })),
   rememberIdempotentResponse: vi.fn(async () => undefined),
   hashRequestBody: vi.fn(() => 'hash'),
 }));
