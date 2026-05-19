@@ -1551,7 +1551,9 @@
           "sent": "Sent",
           "rejected": "Rejected",
           "cancelled": "Cancelled",
-          "failed_to_dispatch": "Failed"
+          "failed_to_dispatch": "Failed",
+          "partially_sent": "Partially sent",
+          "partial_delivery_accepted": "Partial delivery accepted"
         },
         "actorRole": {
           "member_self_service": "Member",
@@ -1705,6 +1707,76 @@
         "viewBroadcast": "View broadcast",
         "viewHaltedMembers": "View halted members",
         "ackHelp": "Clearing the halt is a deliberate admin action. Investigate the broadcast content + bounces before clearing."
+      },
+      "batches": {
+        "title": "Per-batch dispatch breakdown",
+        "description": "This broadcast was split into {count} batches because the recipient list exceeded Resend's 10,000-per-audience cap. Each batch is dispatched independently.",
+        "expandLabel": "Show per-batch breakdown",
+        "collapseLabel": "Hide per-batch breakdown",
+        "summary": "{succeeded} sent · {failed} failed · {pending} pending of {total} batches",
+        "columns": {
+          "batchIndex": "Batch",
+          "recipientRange": "Range",
+          "recipientCount": "Recipients",
+          "status": "Status",
+          "dispatchedAt": "Dispatched",
+          "delivered": "Delivered",
+          "bounced": "Bounced",
+          "complained": "Complained",
+          "unsubscribed": "Unsubscribed",
+          "retryCount": "Retries"
+        },
+        "batchLabel": "Batch {index} of {total}",
+        "rangeLabel": "{start}–{end}",
+        "retryCountLabel": "{count} / 5",
+        "manualRetryRemaining": "Manual retries remaining: {remaining} / 3",
+        "manualRetryExhausted": "All 3 manual retries have been used",
+        "batchStatus": {
+          "pending": "Pending",
+          "sending": "Sending",
+          "sent": "Sent",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        },
+        "empty": "This broadcast has not been split into batches yet.",
+        "notSplit": "This broadcast was small enough to dispatch as a single audience and was not split."
+      },
+      "retryDialog": {
+        "trigger": "Retry failed batches",
+        "triggerAria": "Retry {count} failed batches",
+        "triggerDisabledAria": "Retry unavailable — budget exhausted",
+        "title": "Retry failed batches?",
+        "description": "{count} failed batches will be re-queued for another dispatch attempt. This counts as one of your 3 manual retry attempts.",
+        "budgetLine": "You have {remaining} of 3 manual retries remaining.",
+        "warning": "Re-dispatching consumes Resend API quota and may trigger duplicate emails if the original recipients have already received the message.",
+        "confirm": "Retry now",
+        "cancel": "Cancel",
+        "submitting": "Retrying…"
+      },
+      "acceptPartialDialog": {
+        "trigger": "Accept partial delivery",
+        "triggerAria": "Accept partial delivery and finalize broadcast",
+        "title": "Accept partial delivery?",
+        "description": "This broadcast will be marked as completed in its current state. Failed batches will not be retried, and the broadcast status cannot be changed afterward.",
+        "summary": "{sent} of {total} batches delivered successfully.",
+        "reasonLabel": "Reason (optional)",
+        "reasonPlaceholder": "Why are you accepting partial delivery? (e.g. Resend rate-limit not clearing, member already notified separately…)",
+        "reasonHelp": "Optional context for the audit trail. Maximum 500 characters.",
+        "reasonCounter": "{count} / 500",
+        "confirm": "Accept partial",
+        "cancel": "Cancel",
+        "submitting": "Accepting…"
+      },
+      "toast": {
+        "retrySuccess": "Retry attempt {attempt} initiated for {count} failed batches.",
+        "retryBudgetExhausted": "All 3 manual retries used. Accept partial delivery to finalize this broadcast.",
+        "retryAlreadyInProgress": "Another admin is currently retrying this broadcast. Please wait a moment and refresh.",
+        "retryInvalidState": "This broadcast is not in a state that allows retry.",
+        "retryServerError": "Retry failed. Please try again or contact support.",
+        "acceptPartialSuccess": "Partial delivery accepted. This broadcast is now finalized.",
+        "acceptPartialInvalidState": "This broadcast is not in a state that allows accepting partial delivery.",
+        "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
+        "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
       }
     },
     "renewals": {
@@ -3473,7 +3545,9 @@
           "sent": "Sent",
           "rejected": "Rejected",
           "cancelled": "Cancelled",
-          "failed_to_dispatch": "Failed"
+          "failed_to_dispatch": "Failed",
+          "partially_sent": "Partially sent",
+          "partial_delivery_accepted": "Partial delivery accepted"
         },
         "pagination": {
           "previous": "Previous",

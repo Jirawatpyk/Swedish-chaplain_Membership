@@ -138,9 +138,9 @@
 
 #### i18n
 
-- [ ] T058 [P] [US1] Add ~60 i18n keys to `src/i18n/messages/en.json` for admin batch breakdown UI + retry confirmation + accept-partial modal + 4 US1 audit-event display strings
-- [ ] T059 [P] [US1] Add ~60 i18n keys to `src/i18n/messages/th.json` (TH translation — chamber-business register; verify with `pnpm check:i18n`)
-- [ ] T060 [P] [US1] Add ~60 i18n keys to `src/i18n/messages/sv.json` (SV translation — formal but warm register; verify with `pnpm check:i18n`)
+- [X] T058 [P] [US1] Add ~60 i18n keys to `src/i18n/messages/en.json` for admin batch breakdown UI + retry confirmation + accept-partial modal + 4 US1 audit-event display strings — closed 2026-05-19 commit `<3D.1>`. 70 keys added covering: 2 status labels (partially_sent / partial_delivery_accepted) merged into existing status blocks (admin.broadcasts.queue.status + portal.broadcasts.history.status); 4 new top-level admin.broadcasts sections: `batches` (per-batch breakdown UI — 22 keys incl. columns + batchStatus map + retry budget hints + summary + empty/notSplit fallbacks), `retryDialog` (T053 confirmation — 10 keys), `acceptPartialDialog` (T054 modal — 12 keys incl. reasonCounter + 500-char help), `toast` (success/error feedback — 9 keys mapping retry + acceptPartial flows). Formal tone consistent with F7 MVP catalogue.
+- [X] T059 [P] [US1] Add ~60 i18n keys to `src/i18n/messages/th.json` (TH translation — chamber-business register; verify with `pnpm check:i18n`) — closed 2026-05-19 commit `<3D.1>`. 70-key TH translation mirroring EN. Chamber-business register: "E-Blast" preserved as compound; "ลองส่งซ้ำ" / "ยอมรับการส่งบางส่วน" for retry/accept actions; "กลุ่ม" for batch; "ผู้ดูแล" for admin; formal register (no ครับ/ค่ะ in copy per F7 MVP convention). pnpm check:i18n PASS.
+- [X] T060 [P] [US1] Add ~60 i18n keys to `src/i18n/messages/sv.json` (SV translation — formal but warm register; verify with `pnpm check:i18n`) — closed 2026-05-19 commit `<3D.1>`. 70-key SV translation mirroring EN. "Utskick" / "Batch" / "audience" terminology; "Försök igen med misslyckade batcher" for retry; "Godkänn partiell leverans" for accept-partial; "Du har {remaining} av 3 manuella försök kvar" formal-but-direct register matching F7 MVP catalogue. pnpm check:i18n PASS — 2987 keys × 3 locales.
 
 #### Feature flag wiring
 
