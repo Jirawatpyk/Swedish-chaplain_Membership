@@ -245,6 +245,67 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Phase 3F.11.16 (Round 1 F-15 observability sweep — pulled forward
+  // from F7.1a.1 backlog per user directive). F71A US1 dispatch-broadcast-
+  // batch.ts:312 has a known forensic-only failure mode: Resend acknowledged
+  // the broadcast but our `updateStatus(providerBroadcastId=...)` persist
+  // failed. The batch row is stuck in `sending` with NULL provider_broadcast_id;
+  // the webhook can never route events to it. Phase 3F.11.1 C4 wrap +
+  // logger.error covers the forensic audit emit failure; this sweep covers
+  // the residual "row still NULL > 10 min later" gap so ops can see the
+  // accumulation rate and decide whether to dashboard-build a Resend
+  // dashboard backfill workflow (F7.1a.1 feature work).
+  //
+  // No auto-backfill — that requires Resend "list broadcasts by metadata"
+  // dashboard query which is a separate feature; this sweep is OBSERVABILITY
+  // ONLY. Warns at sustained rate > 5/tick = real ops attention needed.
+  let orphanedProviderIdCount = 0;
+  try {
+    const orphanRows = await runInTenant(tenant, async (tx) => {
+      const result = (await tx.execute(sql`
+        SELECT id, broadcast_id::text AS broadcast_id, batch_index
+        FROM broadcast_batch_manifests
+        WHERE tenant_id = ${tenant.slug}
+          AND status = 'sending'
+          AND provider_broadcast_id IS NULL
+          AND updated_at < now() - interval '10 minutes'
+        ORDER BY updated_at ASC
+        LIMIT 50
+      `)) as unknown as Array<{
+        id: string;
+        broadcast_id: string;
+        batch_index: number;
+      }>;
+      return result;
+    });
+    orphanedProviderIdCount = orphanRows.length;
+    if (orphanedProviderIdCount > 0) {
+      // Log each row at warn level (capped at 50 per tick to bound
+      // pino volume). Ops dashboards plot orphanedProviderIdCount over
+      // time; sustained > 5/tick is the alert threshold (manual ops
+      // backfill via Resend dashboard required).
+      for (const row of orphanRows) {
+        logger.warn(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            batchManifestId: row.id,
+            batchIndex: row.batch_index,
+          },
+          'cron.broadcasts.reconcile.batch_manifest_provider_id_orphan',
+        );
+      }
+    }
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenant.slug,
+      },
+      'cron.broadcasts.reconcile.orphan_sweep_failed',
+    );
+  }
+
   logger.info(
     {
       tenantId: tenant.slug,
@@ -252,6 +313,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       batch_auto_retry_eligible: batchSweep.eligibleCount,
       batch_auto_retry_retried: batchSweep.retriedCount,
       batch_auto_retry_errors: batchSweep.errorCount,
+      // Phase 3F.11.16 — F-15 observability sweep result.
+      orphaned_provider_id_count: orphanedProviderIdCount,
     },
     'cron.broadcasts.reconcile.tick_complete',
   );
