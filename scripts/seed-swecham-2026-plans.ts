@@ -537,53 +537,76 @@ export async function stageB_Plans(
     } as PlanDraftInput);
   }
 
-  // Wrap the 9 insert+audit pairs in a single `runInTenant` scope.
-  // Drizzle's tx callback semantics turn nested calls to
-  // `db.transaction(...)` inside planRepo.insert + audit adapter into
-  // SAVEPOINTs, so a failure on draft N rolls back drafts 1..N-1
-  // cleanly + leaves no partial-audit-state behind. Without this,
-  // each draft would run in its own implicit tx; a crash on draft 7
-  // would leave 6 plans + 6 audit rows orphaned and the idempotency
-  // guard `if (existingCount > 0) return skipped:true` would then
-  // prevent the next run from completing the catalogue.
-  await runInTenant(ctx, async () => {
-    for (const draft of drafts) {
-      const inserted = await planRepo.insert(ctx, draft);
-      // Capture audit Result. F2 invariant (`recordAuditEvent`)
-      // requires audit success to be paired with domain mutation;
-      // seed scripts MUST honour the same rule or risk
-      // partially-audited seed data that breaks downstream invariants.
-      const auditResult = await planAuditAdapter.record(
-        {
-          tenant: ctx,
-          actorUserId: ownerUserId,
-          // Single correlation id (see runUUID
-          // declaration above). The `seed-stageB-` prefix distinguishes
-          // from ad-hoc `seed-<random>` emits in other scripts.
-          requestId: `seed-stageB-${runUUID}`,
-          sourceIp: null,
+  // Per-draft tx semantics (honest documentation).
+  //
+  // `planRepo.insert(ctx, draft)` and `planAuditAdapter.record(...)`
+  // each open their OWN `runInTenant` → `db.transaction(...)` (see
+  // src/lib/db.ts:243), which is a top-level singleton call. Nested
+  // calls do NOT produce Postgres SAVEPOINTs (that would require
+  // threading `tx.transaction(...)` from an outer tx handle, which
+  // neither adapter accepts today). So each draft commits via 2
+  // independent transactions on potentially-different pool connections.
+  //
+  // Failure on draft N:
+  //   - drafts 1..(N-1) + their audit rows: already committed
+  //   - draft N's insert: may or may not have committed before audit threw
+  //   - drafts (N+1)..9: not attempted
+  //   - Idempotency guard `if (existingCount > 0) return skipped:true`
+  //     above will then BLOCK the next run from completing the
+  //     catalogue.
+  //
+  // Operator-cleanup procedure on failure (run as SUPERUSER):
+  //   DELETE FROM audit_log
+  //     WHERE event_type = 'plan_created'
+  //       AND tenant_id = 'swecham'
+  //       AND payload->>'plan_year' = '2026';
+  //   DELETE FROM membership_plans
+  //     WHERE plan_year = 2026 AND tenant_id = 'swecham';
+  //
+  // True single-tx atomicity for this seed would require either:
+  //   (a) extending planRepo.insert + planAuditAdapter.record to
+  //       accept an optional `tx` parameter (invasive — shared
+  //       adapters used by many callers); or
+  //   (b) inlining raw SQL inserts + audit emits under one explicit
+  //       `runInTenant(ctx, async (tx) => { ... })` scope using the
+  //       `tx` handle directly (bypasses repo abstractions).
+  // Neither is justified for a one-off catalogue seed — the
+  // idempotency guard + manual cleanup procedure is the pragmatic
+  // contract.
+  for (const draft of drafts) {
+    const inserted = await planRepo.insert(ctx, draft);
+    // Capture audit Result. F2 invariant (`recordAuditEvent`) requires
+    // audit success to be paired with domain mutation; throw on
+    // failure so the operator sees the per-draft failure point + can
+    // run the cleanup procedure above before retrying.
+    const auditResult = await planAuditAdapter.record(
+      {
+        tenant: ctx,
+        actorUserId: ownerUserId,
+        // Single correlation id across all 9 emits (see runUUID
+        // above). The `seed-stageB-` prefix distinguishes from
+        // ad-hoc `seed-<random>` emits in other scripts.
+        requestId: `seed-stageB-${runUUID}`,
+        sourceIp: null,
+      },
+      {
+        event_type: 'plan_created',
+        payload: {
+          plan_id: inserted.plan_id,
+          plan_year: inserted.plan_year,
+          plan_name_en: inserted.plan_name.en,
+          annual_fee_minor_units: inserted.annual_fee_minor_units,
+          category: inserted.plan_category,
+          member_type_scope: inserted.member_type_scope,
         },
-        {
-          event_type: 'plan_created',
-          payload: {
-            plan_id: inserted.plan_id,
-            plan_year: inserted.plan_year,
-            plan_name_en: inserted.plan_name.en,
-            annual_fee_minor_units: inserted.annual_fee_minor_units,
-            category: inserted.plan_category,
-            member_type_scope: inserted.member_type_scope,
-          },
-        },
+      },
+    );
+    if (!auditResult.ok) {
+      throw new Error(
+        `[seed] plan_created audit failed for ${inserted.plan_id} (drafts 1..${drafts.indexOf(draft)} + their audit rows already committed; run cleanup procedure before retry): ${JSON.stringify(auditResult.error)}`,
       );
-      if (!auditResult.ok) {
-        // Throw inside the runInTenant scope so the outer tx rolls back
-        // every prior insert + audit (R3-S3 partial-state protection).
-        throw new Error(
-          `[seed] plan_created audit failed for ${inserted.plan_id}: ${JSON.stringify(auditResult.error)}`,
-        );
-      }
     }
-  });
+  }
 
   return { inserted: drafts.length, skipped: false };
 }

@@ -61,10 +61,10 @@ function rowToDomain(row: ScheduledPlanChangeRow): ScheduledPlanChange {
   };
   // Defence-in-depth status↔timestamp invariant. Throws
   // `InvalidScheduledPlanChangeError` on DB CHECK drift; the canonical
-  // DB CHECK (migration 0095) should already enforce this. The asserts
-  // predicate narrows `candidate` from `MutableScheduledPlanChange` to
-  // `ScheduledPlanChange`, so the return type carries the type-level
-  // invariant.
+  // DB CHECK is in migration 0086 (`scheduled_plan_changes` table
+  // creation). The asserts predicate narrows `candidate` from
+  // `MutableScheduledPlanChange` to `ScheduledPlanChange`, so the
+  // return type carries the type-level invariant.
   assertValidScheduledPlanChange(candidate);
   return candidate;
 }
