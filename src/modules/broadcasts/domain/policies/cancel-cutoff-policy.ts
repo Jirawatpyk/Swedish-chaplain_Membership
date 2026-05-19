@@ -24,7 +24,7 @@ export type CancelCutoffError = {
 /**
  * Pure boolean predicate: is the broadcast cancellable from this state?
  *
- * Phase 3F.1 (F-Finding-4 + F-21 fix 2026-05-19) — extended for F7.1a
+ * Phase 3F.1 (Finding 4 + F-21 fix 2026-05-19) — extended for F7.1a
  * US1 FR-004: when a broadcast is in `sending` state AND has split
  * batch_manifests, the cancel surface MUST halt the not-yet-dispatched
  * batches within ≤60s. Previously the `sending` status was always

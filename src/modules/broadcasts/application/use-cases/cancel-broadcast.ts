@@ -168,18 +168,15 @@ export async function cancelBroadcast(
         });
       }
 
-      // Phase 3F.1 (F-Finding-4 fix) — pre-check pending batches BEFORE
+      // Phase 3F.1 (Finding 4 fix) — pre-check pending batches BEFORE
       // policy authorization. The widened `authorizeCancel(status,
       // hasBatches)` accepts `sending` IFF the broadcast was split
       // into batches (F7.1a US1 path). When NO batches exist (F7 MVP
       // single-audience path), the original `sending → cutoff` rule
       // still applies — we can't recall a Resend-accepted broadcast.
-      // Phase 3F.11.3 (M1 — Round 2 fix) — skip findPendingByBroadcast
-      // for statuses that never carry batches (F7 MVP draft/submitted/
-      // cancelled/sent paths). Only `approved` + `sending` have
-      // potential batch state per the F7.1a US1 split-large-broadcasts
-      // cron lifecycle. Saves an extra DB roundtrip on every cancel of
-      // non-multi-audience broadcasts.
+      // Phase 3F.11.3 (M1 — Round 2 fix) — skip pending-batch lookup
+      // unless status carries batches (saves a DB roundtrip on the
+      // common cancel-of-non-multi-audience path).
       let pendingBatchIds: readonly string[] = [];
       let hasBatches = false;
       const statusMightHaveBatches =

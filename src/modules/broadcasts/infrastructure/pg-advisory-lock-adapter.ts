@@ -38,9 +38,17 @@ export const pgAdvisoryLockAdapter: AdvisoryLockPort = {
     txToken: TxToken | null,
     lockKey: string,
   ): Promise<AcquireResult> {
-    if (txToken === null) {
+    // Phase 3F.11.8 (Round 3 MEDIUM-1) — also reject `undefined`. The
+    // brand constructor `asTxToken(unknown)` accepts undefined silently;
+    // a refactor that drops the tx parameter from a `withTx` callback
+    // (e.g., `withTx(async () => ...)` instead of `withTx(async (tx) => ...)`)
+    // would silently produce `asTxToken(undefined)` → the original
+    // `=== null` check missed it and the adapter threw later as
+    // `tx.execute is not a function` instead of the diagnostic error
+    // below. Strict equality on both null AND undefined plugs that gap.
+    if (txToken === null || txToken === undefined) {
       throw new Error(
-        'pgAdvisoryLockAdapter.acquire requires a tx argument — caller MUST wrap in withTx scope so the lock is held across the dependent mutations',
+        'pgAdvisoryLockAdapter.acquire requires a tx argument (got null/undefined) — caller MUST wrap in withTx scope so the lock is held across the dependent mutations',
       );
     }
     // Phase 3F.11.6 (Type Bottom #2 partial) — single cast at the

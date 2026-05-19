@@ -77,7 +77,7 @@ drift across `F-04` vs `F-4` vs `Finding 4` vs `UX F-6` etc.
 7 closed by Phase 3F.3 (0a0a2c50), 3 closed by Phase 3F.4 (9e8e8f93),
 remaining ~10 noted in Phase 3F.11.3 M2:
 - Comment #6 (dispatch-batches/route.ts stale line ref) → Phase 3F.11.3 M2
-- Comment #X (Phase 3F.1 vs 3F.4 mis-attribution in apply-batch-webhook-event:145) → Phase 3F.11.3 M2
+- Comment #7 (Phase 3F.1 vs 3F.4 mis-attribution in apply-batch-webhook-event:145) → Phase 3F.11.3 M2 (was `Comment #X` placeholder in Phase 3F.11.3 — resolved in 3F.11.8 to its surfaced Round 1 ID)
 
 ### enterprise-ux-designer (13 findings, UX F-N)
 

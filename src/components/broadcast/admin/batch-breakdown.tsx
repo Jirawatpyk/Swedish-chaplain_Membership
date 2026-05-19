@@ -238,7 +238,15 @@ export function BatchBreakdown({
             >
               {t('title')}
             </h3>
-            <p className="text-sm text-muted-foreground">
+            {/* Phase 3F.11.8 (Round 3 LOW polish) — aria-hidden so the
+                sr-only live region above (line 213-222) is the sole
+                SR source for this summary text. Without aria-hidden,
+                NVDA + Chrome announce the summary twice on first
+                render (once via the live region, once via the
+                <summary> accessible name). The visible <p> is kept
+                for sighted users — duplicate text is invisible
+                to AT. */}
+            <p className="text-sm text-muted-foreground" aria-hidden="true">
               {t('summary', {
                 succeeded: counts.succeeded,
                 failed: counts.failed,

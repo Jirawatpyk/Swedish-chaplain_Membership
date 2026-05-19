@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 53 audit event types as a const tuple + discriminated union for
+ * 54 audit event types as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -21,13 +21,15 @@
  *     `email.delivered` webhook events — was incorrectly aliased to
  *     `broadcast_send_started`)
  *   - Cross-tenant probes: 2 events
+ *   - Phase 3F.11.3 M3 operational-forensic webhook race: 1 event
+ *     (`broadcast_webhook_batch_missing` — split from cross-tenant probe)
  *   - Unsubscribe + suppression (US5): 4 events
  *   - Webhook (US4): 1 event
  *   - Plan-expiry edge (US6): 1 event
  *   - Clarifications session 5 (Q14 + Q15): 3 events
  *   - Phase 8 verify-fix R3: 2 events
  *   - F7.1a Phase 2 T031 (US1+US2+US7): 10 events
- *   = 53 total
+ *   = 54 total
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
