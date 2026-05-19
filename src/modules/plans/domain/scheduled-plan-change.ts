@@ -1,13 +1,14 @@
 /**
- * T011-T012 (F8 Phase 2 Wave B) — Scheduled-plan-change Domain types.
+ * Scheduled-plan-change Domain types (F2 cross-module table).
  *
  * Pure TypeScript — no framework imports (Constitution Principle III).
- * Domain layer for the F2 cross-module table `scheduled_plan_changes`
- * (data-model.md § 2.9). The table itself ships in Wave C migration
- * 0086; the Drizzle adapter implementing `ScheduledPlanChangeRepo`
- * lands when US5 wires the F4 renewal-invoice-creation hook.
+ * Domain layer for the `scheduled_plan_changes` table defined at
+ * `specs/011-renewal-reminders/data-model.md § 2.9`. Migration 0086
+ * created the table; the Drizzle adapter implementing
+ * `ScheduledPlanChangeRepo` lives at
+ * `src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts`.
  *
- * Lifecycle (data-model.md § 2.9 state machine):
+ * Lifecycle (`specs/011-renewal-reminders/data-model.md § 2.9` state machine):
  *
  *     pending ──apply──→ applied   (terminal, F4 invoice paid)
  *     pending ──supersede──→ superseded (terminal, admin re-schedules)
@@ -51,7 +52,7 @@ export class InvalidScheduledPlanChangeError extends Error {
   }
 }
 
-/** Aggregate row shape — mirrors data-model.md § 2.9 columns 1:1. */
+/** Aggregate row shape — mirrors `specs/011-renewal-reminders/data-model.md § 2.9` columns 1:1. */
 export interface ScheduledPlanChange {
   readonly tenantId: string;
   readonly scheduledChangeId: string;

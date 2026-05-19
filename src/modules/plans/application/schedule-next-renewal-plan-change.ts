@@ -1,20 +1,27 @@
 /**
- * T011 (F8 Phase 2 Wave B) — `scheduleNextRenewalPlanChange` use-case.
+ * `scheduleNextRenewalPlanChange` use-case (F2).
  *
  * Captures admin intent to switch a member's plan AT the next renewal
  * boundary. Atomic supersede+insert: any prior pending row for the
  * SAME (member, cycle) is flipped to `superseded` first, then a fresh
  * `pending` row lands. Terminal rows on the same (member, cycle) are
- * left untouched (data-model.md § 2.9 partial unique allows them to
- * coexist alongside one fresh pending row).
+ * left untouched (specs/011-renewal-reminders/data-model.md § 2.9
+ * partial unique allows them to coexist alongside one fresh pending
+ * row).
  *
- * F2 boundary contract — research.md R13:
- *   - F8 calls this from its accept-tier-upgrade flow (Phase 5+ T187).
- *   - F4's renewal-invoice-creation hook resolves `getEffectivePlanForRenewal`.
- *   - F4's invoice-paid hook calls `transitionStatus(..., 'applied')` (Phase 5+).
- *   - F2 manual `changeMemberPlan` emits `member_plan_manually_changed`
- *     (T013); F8 listens and calls `transitionStatus(..., 'superseded')`
- *     for the matching pending row (Phase 5+ T184).
+ * F2 boundary callers (live, not deferred):
+ *   - F8 `acceptTierUpgrade` invokes
+ *     `scheduledPlanChangeRepo.supersedeAndInsertPendingAtomically`
+ *     directly (in-tx) and emits the F2 audit chain post-tx via the
+ *     `planAuditAdapter`. See
+ *     `src/modules/renewals/application/use-cases/accept-tier-upgrade.ts:358-414`.
+ *   - F4 invoice-paid hook flips `pending → applied` post-tx via
+ *     `_internal.finaliseF2ScheduledPlanChangeForCycle` in
+ *     `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-paid-callback.ts:41-164`
+ *     (R2 Batch 2d closed the prior "Phase 5+ deferred" claim — F2
+ *     state apply now lives there).
+ *   - F4 invoice-creation hook reads the effective plan via
+ *     `getEffectivePlanForRenewal` (no write).
  *
  * Pure Application code — no framework imports (Constitution Principle III).
  */

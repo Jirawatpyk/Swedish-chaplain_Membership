@@ -59,13 +59,11 @@ export const F2_AUDIT_EVENT_TYPES = [
   // F2 R6 Batch 2d (D7) — `plan_change_applied` emitter is now wired
   // at the F8 invoice-paid callback (renewal-applier path) in
   // `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-
-  // paid-callback.ts` — POST-tx, after F4+F8 in-tx state commits. The
-  // F2 `scheduled_plan_changes` row is flipped from `pending` →
-  // `applied` (the Phase 5+ deferred state-machine apply that
-  // `apply-pending-tier-upgrade.ts` lines 13-25 explicitly called
-  // out), then the audit row lands. Non-rollback on F2-emit failure:
-  // F4+F8 state is committed by then; operator backfills from the
-  // structured log.
+  // paid-callback.ts:_internal.finaliseF2ScheduledPlanChangeForCycle`
+  // (post-tx). Flips `scheduled_plan_changes.status` from `pending` →
+  // `applied` then emits the audit row. Non-rollback on F2-emit
+  // failure: F4+F8 state is committed by then; operator backfills
+  // from the structured log keyed on errorId `F2.PLAN_CHANGE.*`.
   'plan_change_applied',
 ] as const;
 

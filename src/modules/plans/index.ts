@@ -284,12 +284,13 @@ export {
   type PlanLookupError,
 } from './application/get-plan-for-member';
 
-// --- F8 cross-module use-cases (Wave B — Complexity Tracking #4) -----------
-// `scheduled_plan_changes` table ships in Wave C migration 0086
-// (data-model.md § 2.9). The Drizzle adapter implementing
-// `ScheduledPlanChangeRepo` lands when US5 wires the F4 renewal-
-// invoice-creation hook (Phase 5+); Wave B contract tests use an
-// in-memory mock.
+// --- F8 cross-module use-cases (Complexity Tracking #4) --------------------
+// `scheduled_plan_changes` table at
+// `specs/011-renewal-reminders/data-model.md § 2.9` (migration 0086);
+// Drizzle adapter at
+// `src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts`;
+// contract tests at `tests/contract/f2-scheduled-plan-change.contract.test.ts`
+// (in-memory mock for shape pinning).
 export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
 export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
 // F2 R6 Batch 2c (D7) — `cancelScheduledPlanChange` closes the

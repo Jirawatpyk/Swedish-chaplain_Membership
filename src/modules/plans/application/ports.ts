@@ -256,7 +256,8 @@ export type PlansDeps = {
 
 // ---------------------------------------------------------------------------
 // ScheduledPlanChangeRepo + CurrentPlanResolverPort
-// (F8 Phase 2 Wave B — research.md R13 + data-model.md § 2.9)
+// (cross-module F2↔F8 ports; table defined at
+// `specs/011-renewal-reminders/data-model.md § 2.9`)
 // ---------------------------------------------------------------------------
 
 import type {
@@ -278,8 +279,10 @@ export interface SupersedeAndInsertResult {
 
 /**
  * Repository over the `scheduled_plan_changes` table. The Drizzle
- * adapter ships with US5 (Phase 5+); Wave B contract tests use an
- * in-memory mock (`tests/contract/f2-scheduled-plan-change.contract.test.ts`).
+ * adapter lives at
+ * `src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts`;
+ * contract tests at `tests/contract/f2-scheduled-plan-change.contract.test.ts`
+ * cover the port shape with an in-memory mock.
  *
  * Tenant isolation is enforced compile-time — every method takes
  * `TenantContext` explicitly (Constitution Principle I clause 1).
@@ -288,9 +291,9 @@ export interface ScheduledPlanChangeRepo {
   /**
    * Atomically supersede any prior pending row for (member, cycle) and
    * insert a fresh pending row in ONE database transaction. The Drizzle
-   * adapter (Phase 5+) wraps both writes in `withTx` so a failure on
-   * either statement rolls both back — the (tenant, member, cycle)
-   * never observes a "no pending row" intermediate state.
+   * adapter wraps both writes in `runInTenant` so a failure on either
+   * statement rolls both back — the (tenant, member, cycle) never
+   * observes a "no pending row" intermediate state.
    *
    * Resolves Wave B verify-run finding F1 (Constitution Principle VIII —
    * Reliability / atomic state mutations). The earlier two-call pattern

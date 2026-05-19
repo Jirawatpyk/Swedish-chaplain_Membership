@@ -5,7 +5,7 @@
  * `scheduleNextRenewalPlanChange` (Batch 1c / Wave B) and the
  * `accept-tier-upgrade` post-tx audit-emit pattern.
  *
- * Lifecycle (data-model.md § 2.9):
+ * Lifecycle (specs/011-renewal-reminders/data-model.md § 2.9):
  *
  *     pending ──cancel──→ cancelled (terminal — this use-case)
  *

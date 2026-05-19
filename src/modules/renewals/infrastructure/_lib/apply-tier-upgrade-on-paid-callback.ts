@@ -164,8 +164,8 @@ async function finaliseF2ScheduledPlanChangeForCycle(
 }
 
 // Re-export for unit testing of the F2 finalisation helper in
-// isolation (Batch 2d test surface — see
-// `tests/unit/renewals/apply-tier-upgrade-on-paid-callback.test.ts`).
+// isolation (test at
+// `tests/unit/renewals/infrastructure/f8-onPaid-f2-finalise.test.ts`).
 export const _internal = {
   finaliseF2ScheduledPlanChangeForCycle,
 };
