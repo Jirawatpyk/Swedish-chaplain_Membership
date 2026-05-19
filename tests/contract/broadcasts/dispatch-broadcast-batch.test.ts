@@ -1,0 +1,225 @@
+/**
+ * Phase 3F.5 (2026-05-19) — Contract test for `dispatchBroadcastBatch`
+ * use case (T045). Closes coverage gap pr-test-analyzer Finding 1:
+ * the use case touches money (Resend API) + email side effects with
+ * zero direct test coverage prior to this commit.
+ *
+ * Covers (a) happy path → manifest 'pending' → 'sending' + gateway
+ * sequence executed in order + providerAudienceId persisted + audit
+ * `broadcast_send_started` emitted; (b) gateway throws → manifest
+ * transitions to 'failed' with failureReason + audit emitted;
+ * (c) recipient slice length mismatch → server_error WITHOUT any
+ * gateway call (defence-in-depth against wrong-recipients-to-wrong-
+ * batch leak); (d) persist-after-send failure → ok return with
+ * `broadcast_resend_resource_missing` audit (forensic backfill trail).
+ */
+import { describe, expect, it } from 'vitest';
+import { asTenantContext } from '@/modules/tenants';
+import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { dispatchBroadcastBatch } from '@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch';
+import type { BatchManifest } from '@/modules/broadcasts/application/ports/batch-manifests-port';
+import type { TenantSlug } from '@/modules/tenants';
+
+const tenant = asTenantContext('test-tenant');
+const broadcastId = asBroadcastId('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
+function makeManifest(overrides: Partial<BatchManifest> = {}): BatchManifest {
+  return {
+    id: 'batch-id-1',
+    tenantId: 'test-tenant' as TenantSlug,
+    broadcastId,
+    batchIndex: 0,
+    recipientCount: 3,
+    recipientRangeStart: 0,
+    recipientRangeEnd: 2,
+    status: 'pending',
+    providerAudienceId: null,
+    providerBroadcastId: null,
+    idempotencyKey: 'broadcast-aaa-batch-0-attempt-0',
+    retryCount: 0,
+    deliveredCount: 0,
+    bouncedCount: 0,
+    complainedCount: 0,
+    unsubscribedCount: 0,
+    dispatchedAt: null,
+    failedAt: null,
+    failureReason: null,
+    createdAt: new Date('2026-06-15T05:00:00Z'),
+    updatedAt: new Date('2026-06-15T05:00:00Z'),
+    ...overrides,
+  };
+}
+
+const broadcastContent = {
+  broadcastId,
+  subject: 'Test subject',
+  bodyHtml: '<p>body</p>',
+  fromName: 'Test From',
+  fromEmail: 'from@example.com',
+  replyToEmail: 'reply@example.com',
+  tenantDisplayName: 'Test Tenant',
+  locale: 'en' as const,
+};
+
+const allRecipients = [
+  { emailLower: 'a@example.com' },
+  { emailLower: 'b@example.com' },
+  { emailLower: 'c@example.com' },
+];
+
+interface StubDeps {
+  readonly emits: Array<{ eventType: string; payload?: unknown }>;
+  readonly statusUpdates: Array<{ status: string; providerBroadcastId?: string }>;
+  readonly gatewayCalls: string[];
+  readonly deps: unknown;
+}
+
+function makeStubDeps(opts: {
+  manifest?: BatchManifest;
+  gatewayThrowsAt?: 'createAudience' | 'addContactsToAudience' | 'createBroadcast' | 'sendBroadcast';
+  persistFails?: boolean;
+}): StubDeps {
+  const manifest = opts.manifest ?? makeManifest();
+  const emits: Array<{ eventType: string; payload?: unknown }> = [];
+  const statusUpdates: Array<{ status: string; providerBroadcastId?: string }> = [];
+  const gatewayCalls: string[] = [];
+
+  return {
+    emits,
+    statusUpdates,
+    gatewayCalls,
+    deps: {
+      batchManifests: {
+        async findByBroadcast() {
+          return [manifest];
+        },
+        async updateStatus(_t: unknown, _id: unknown, update: { status: string; providerBroadcastId?: string }) {
+          statusUpdates.push(update);
+          if (opts.persistFails && update.providerBroadcastId !== undefined) {
+            return { ok: false, error: { kind: 'storage_error' as const, detail: 'simulated' } };
+          }
+          return { ok: true, value: manifest };
+        },
+      },
+      gateway: {
+        async createAudience() {
+          gatewayCalls.push('createAudience');
+          if (opts.gatewayThrowsAt === 'createAudience') throw new Error('createAudience-boom');
+          return { audienceId: 'aud-123' };
+        },
+        async addContactsToAudience() {
+          gatewayCalls.push('addContactsToAudience');
+          if (opts.gatewayThrowsAt === 'addContactsToAudience') throw new Error('addContacts-boom');
+        },
+        async createBroadcast() {
+          gatewayCalls.push('createBroadcast');
+          if (opts.gatewayThrowsAt === 'createBroadcast') throw new Error('createBroadcast-boom');
+          return { broadcastId: 'resend-bid-1' };
+        },
+        async sendBroadcast() {
+          gatewayCalls.push('sendBroadcast');
+          if (opts.gatewayThrowsAt === 'sendBroadcast') throw new Error('sendBroadcast-boom');
+        },
+      },
+      advisoryLock: {
+        async acquire() {
+          return { acquired: true };
+        },
+      },
+      audit: {
+        async emit(_tx: unknown, e: { eventType: string; payload?: unknown }) {
+          emits.push(e);
+        },
+      },
+      clock: { now: () => new Date('2026-06-15T05:00:00Z') },
+    },
+  };
+}
+
+describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
+  it('happy path → gateway sequence executed + manifest persisted + send_started audit', async () => {
+    const { deps, emits, statusUpdates, gatewayCalls } = makeStubDeps({});
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(gatewayCalls).toEqual([
+      'createAudience',
+      'addContactsToAudience',
+      'createBroadcast',
+      'sendBroadcast',
+    ]);
+    // 1st updateStatus = pending→sending; 2nd = persist providerBroadcastId.
+    expect(statusUpdates).toHaveLength(2);
+    expect(statusUpdates[0]?.status).toBe('sending');
+    expect(statusUpdates[1]?.providerBroadcastId).toBe('resend-bid-1');
+    expect(emits.some((e) => e.eventType === 'broadcast_send_started')).toBe(true);
+  });
+
+  it('gateway throws at createBroadcast → manifest failed + failed_to_dispatch audit', async () => {
+    const { deps, emits, statusUpdates } = makeStubDeps({
+      gatewayThrowsAt: 'createBroadcast',
+    });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe('GATEWAY_ERROR');
+    expect((result.error as { stage: string }).stage).toBe('createBroadcast');
+
+    // status flipped pending→sending, then sending→failed
+    expect(statusUpdates.map((s) => s.status)).toEqual(['sending', 'failed']);
+    expect(emits.some((e) => e.eventType === 'broadcast_failed_to_dispatch')).toBe(true);
+  });
+
+  it('recipient slice length mismatch → server_error WITHOUT gateway call', async () => {
+    // manifest declares recipientCount=10 but allRecipients only has 3
+    const manifest = makeManifest({ recipientCount: 10, recipientRangeEnd: 9 });
+    const { deps, gatewayCalls } = makeStubDeps({ manifest });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients, // only 3 recipients — slice length 3 ≠ manifest.recipientCount 10
+      broadcastContent,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected error');
+    expect((result.error as { kind: string }).kind).toBe(
+      'dispatch_broadcast_batch.server_error',
+    );
+    // Critical: NO gateway calls — the recipient-slice guard fires before any Resend interaction
+    expect(gatewayCalls).toEqual([]);
+  });
+
+  it('persist providerBroadcastId fails after gateway sent → forensic audit emitted, but ok returned', async () => {
+    const { deps, emits } = makeStubDeps({ persistFails: true });
+
+    const result = await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    // Send already happened externally — use case returns ok with the
+    // provider audience id. But forensic audit is emitted so on-call
+    // can backfill the manifest from Resend dashboard.
+    expect(result.ok).toBe(true);
+    expect(
+      emits.some((e) => e.eventType === 'broadcast_resend_resource_missing'),
+    ).toBe(true);
+  });
+});
