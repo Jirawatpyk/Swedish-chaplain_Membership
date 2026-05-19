@@ -119,9 +119,10 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_retry_completed',
   'broadcast_partial_delivery_accepted',
 
-  // --- F7.1a US2 (Image embedding + allowlist + scan) — 3 events ----
+  // --- F7.1a US2 (Image embedding + allowlist + scan) — 4 events ----
   'broadcast_body_image_source_unsafe',
   'broadcast_image_too_large',
+  'broadcast_image_unsafe',
   'broadcast_image_allowlist_updated',
 
   // --- F7.1a US7 (Template library CRUD) — 3 events -----------------
@@ -131,14 +132,15 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: count matches the declared 54 (= 43 F7 MVP + 10
+ * Static assertion: count matches the declared 55 (= 43 F7 MVP + 11
  * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
- * `broadcast_webhook_batch_missing`). Catches drift if a spec
- * amendment adds an event without updating this file. The check lives
- * at type level; if the count is wrong, TypeScript errors here with
- * "Type '55' is not assignable to type '54'" (or similar).
+ * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
+ * `broadcast_image_unsafe`). Catches drift if a spec amendment adds
+ * an event without updating this file. The check lives at type level;
+ * if the count is wrong, TypeScript errors here with "Type '56' is
+ * not assignable to type '55'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 54
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 55
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
