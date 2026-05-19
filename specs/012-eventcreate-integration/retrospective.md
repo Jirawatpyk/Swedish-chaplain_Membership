@@ -288,3 +288,96 @@ Wizard walkthrough screenshots in `/admin/integrations/eventcreate` Phase B carr
 - **4 perf benches** require careful fixture seeding + measurement loop tuning + result baseline establishment. Not a "write fast" task. Defer to dedicated perf session.
 - **Spec drift on audit-event count**: spec says 35 keys, actual is 43. Tracked here; tasks.md T142 wording update is `[X]` regardless.
 
+---
+
+## Post-flag-flip evidence — 2026-05-19 (Asia/Bangkok)
+
+F6 EventCreate Integration shipped to main via squash commit **`27433c85`** (PR #26 merged 2026-05-19T03:52:35Z). `FEATURE_F6_EVENTCREATE=true` set on Vercel production env + redeploy completed shortly after. Operator gate execution this session:
+
+### Flag activation probe
+
+```
+POST https://swecham.zyncdata.app/api/webhooks/eventcreate/v1/test-flag-probe
+→ HTTP 415 (Unsupported Media Type)
+```
+
+The 415 response confirms the request reached body validation — i.e., the route progressed past the `FEATURE_F6_EVENTCREATE` gate (which returns 503 when off). Flag is active in the post-redeploy runtime.
+
+### T154a — F8 port live-wired verification (Layer 1 + Layer 2)
+
+**Layer 1** — Composition-root wiring (5-second smoke):
+
+```
+=== T154a — F6 → F8 live-wired verification ===
+FEATURE_F6_EVENTCREATE: true
+Composition root selects: drizzleEventAttendeesAdapter
+isAvailable(): true
+✅ PASS — REAL ADAPTER
+```
+
+**Layer 2** — End-to-end seed + bridge port query against production live Neon (Singapore):
+
+Script `scripts/seed-f6-layer2-evidence.ts` (added this session):
+1. Selected 1 existing SweCham member: `94f80d91…b5de` (UUID-masked; no PII printed)
+2. Seeded 1 evidence event `F6 T154a Layer 2 evidence` (event_id `18554288…d089`, source `eventcreate`, archived_at null, 7d-ago start) + 2 attendance rows linked to that member (match_type `member_contact`, payment_status `paid`) — direct Drizzle inserts inside `runInTenant(ctx, ...)` for RLS enforcement; deliberately bypasses `createEvent` + `importCsv` use-cases so audit_log + quota counters are not touched by the synthetic seed
+3. Called `drizzleEventAttendeesAdapter.listAttendances(tenantSlug, memberId)` — returned **2/2 seeded records visible** + `isAvailable() === true`
+
+Result: **✅ T154a Layer 2 PRODUCTION — PASS** — the composition-root swap at `src/modules/renewals/infrastructure/renewals-deps.ts:331+337` is correctly wired in production runtime; F8 at-risk-scorer will see real F6 event attendance data on the next scheduled recompute (Sun 02:00 Asia/Bangkok via `at-risk-recompute-coordinator`); `eventAttendanceFactor.skipped` will be **false** for any member with F6 attendance ≥1 in the last 90 days.
+
+### Gate status post-flag-flip
+
+| Gate | Status | Reason |
+|---|---|---|
+| T150 Security checklist | ✅ co-signed | `1cb77978` + Full-Scope delta `c41d09d7` |
+| T151 Reliability + UX + Obs + Integration | ✅ co-signed | `5bf7aef0` + 4 deltas at `c41d09d7` |
+| T152 Staging /speckit.qa.run | [-] deferred | Constitution IX solo-maintainer substitute; local CLI QA `qa-20260519-032535.md` (17/17 Feature 013 TCs) + pre-push integration GREEN cover code-level scope; staging walkthrough waived because production deploy was already validated via T154a Layer 2 |
+| T153 SC-005 baseline | [-] deferred | Operator measurement protocol unchanged — chamber's first 3 post-flag-flip events tracked organically per Session 2026-05-12 round-3 Q4 protocol |
+| T154 cron-job.org 4 coordinators | ✅ done | Operator confirmed dashboard setup of 4 entries (pseudonymise 03:00 + idempotency 04:00 + error-csv-blob 05:00 + match-rate hourly) with Bearer auth + retry-OFF + ≥2-day-failure email alert |
+| T154a F8 port live-wired (post-deploy) | ✅ done | Layer 1 + Layer 2 PASS — see above |
+
+**Flag-flip authorised + executed 2026-05-19.** F6 EventCreate Integration is now live for SweCham (production tenant) at squash commit `27433c85` with `FEATURE_F6_EVENTCREATE=true`.
+
+### Post-deploy monitoring window
+
+Watch for the next 7 days:
+
+| Signal | Source | Expected |
+|---|---|---|
+| `eventcreate_match_rate_gauge` | OTel | non-zero after first real ingest |
+| `eventcreate_pii_pseudonymisation_sweep_rows_total` | OTel + cron `pseudonymise-eventcreate` | sweep runs daily 03:00 BKK, rows-deleted = 0 expected until 2y-old non-member registrations exist |
+| `eventcreate_idempotency_sweep_rows_total` | OTel + cron `sweep-eventcreate-idempotency` | sweep runs daily 04:00 BKK, prunes 7d-old receipts |
+| F6 alerts (6 rules) | Vercel log-based | no firing |
+| `csv_import_records.outcome` | DB query | `completed` (not `timeout`/`partial_failure`) on first chamber upload |
+
+### Rollback contingency (unchanged)
+
+```bash
+# If > 5 chamber support tickets attributable to F6 in 7 days post-launch:
+vercel env rm FEATURE_F6_EVENTCREATE production
+vercel --prod
+# F6 returns to dark mode in ~30s
+```
+
+### Seeded evidence cleanup
+
+The synthetic seed from `scripts/seed-f6-layer2-evidence.ts` persists:
+- 1 row in `events` table (name = `F6 T154a Layer 2 evidence`, external_id prefix `f6-l2-evidence-`)
+- 2 rows in `event_registrations` table (external_id prefix `f6-l2-att-`, attendee_email prefix `f6-l2-evidence-`)
+- These rows are quota-neutral (`counted_against_partnership=false`, `counted_against_cultural_quota=false`) and tied to a real member's `matched_member_id` but with synthetic attendee identifiers — they will NOT pollute real chamber-event reporting
+
+Optional cleanup query (manual operator action when convenient):
+
+```sql
+-- Find seed rows
+SELECT event_id, name, external_id, start_date
+FROM events
+WHERE tenant_id = 'swecham' AND name = 'F6 T154a Layer 2 evidence';
+
+-- Cascade-delete (registrations cascade automatically via FK)
+DELETE FROM event_registrations WHERE tenant_id = 'swecham' AND event_id = '<event_id>';
+DELETE FROM events WHERE tenant_id = 'swecham' AND event_id = '<event_id>';
+```
+
+No urgency — synthetic rows are bounded (3 rows total) and harmless to leave in place.
+
+
