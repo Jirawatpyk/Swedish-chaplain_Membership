@@ -39,6 +39,7 @@
 import type { Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
+import type { TxToken } from './advisory-lock-port';
 
 export type BatchStatus =
   | 'pending'
@@ -173,7 +174,7 @@ export interface BatchManifestsPort {
      * stubs ignoring `tx` satisfy this via TS structural trailing-
      * optional rule.
      */
-    tx?: unknown,
+    tx?: TxToken,
   ): Promise<readonly BatchManifest[]>;
 
   /**
@@ -210,7 +211,7 @@ export interface BatchManifestsPort {
     tenantId: TenantSlug,
     batchManifestId: string,
     update: BatchStatusUpdate,
-    tx?: unknown,
+    tx?: TxToken,
   ): Promise<Result<BatchManifest, BatchUpdateError>>;
 
   /**
@@ -228,7 +229,7 @@ export interface BatchManifestsPort {
   markCancelled(
     tenantId: TenantSlug,
     batchManifestIds: readonly string[],
-    tx?: unknown,
+    tx?: TxToken,
   ): Promise<number>;
 
   /**

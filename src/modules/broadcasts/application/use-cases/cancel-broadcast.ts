@@ -23,6 +23,7 @@ import { logAuditEmitFailure } from '../audit-emit-failure-logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
+import { asTxToken } from '../ports/advisory-lock-port';
 import type { AuditPort } from '../ports/audit-port';
 import { BroadcastConcurrentMutationError, type BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
@@ -247,10 +248,15 @@ export async function cancelBroadcast(
       // inconsistency. Log halt count for ops observability.
       let haltedCount = 0;
       if (hasBatches) {
+        // Phase 3F.11.13 (Step 3) — brand the raw `tx` (typed as
+        // `unknown` by F7 MVP `BroadcastsRepo.withTx`'s callback —
+        // not widened in Step 2 since F7 MVP shares this repo). The
+        // markCancelled port now requires TxToken, so we brand at
+        // the call site (last surviving asTxToken boundary).
         haltedCount = await deps.batchManifests!.markCancelled(
           deps.tenant.slug as never,
           pendingBatchIds,
-          tx,
+          asTxToken(tx),
         );
         if (haltedCount < pendingBatchIds.length) {
           logger.warn(
