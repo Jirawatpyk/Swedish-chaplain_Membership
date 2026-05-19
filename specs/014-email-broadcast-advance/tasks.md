@@ -237,7 +237,7 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 - [X] T075 [US2] Create `src/app/(staff)/admin/broadcasts/settings/page.tsx` — admin settings page with "Image source allowlist" section (table of hostnames with add/remove; defaults shown as locked rows with disabled Remove button) — **closed 2026-05-20** (commit `ca676680`). Uses FormContainer + PageHeader. Companion loading.tsx so `pnpm check:layout` GREEN (100 pairs consistent).
 - [X] T076 [US2] Create `src/app/api/admin/broadcasts/settings/allowlist/route.ts` POST handler per contracts § 1.3: admin role check; tenant ctx; calls `manageImageAllowlist` use-case — **closed 2026-05-20** (commit `0a8960ff`). Uses `requireAdminContext({resource:'broadcast',action:'update'})` + `runInTenant()` per F7 admin route convention.
 - [X] T077 [US2] Create `src/app/api/broadcasts/inline-image-upload/route.ts` POST handler (multipart) per contracts § 1.1: member role + tenant ctx + draft ownership check; calls `uploadInlineImage` use-case — **closed 2026-05-20** (commit `0a8960ff`). Path corrected from `/api/member/broadcasts/...` to `/api/broadcasts/...` per existing convention (member routes are unprefixed; see /api/broadcasts/draft, /api/broadcasts/submit). Defense-in-depth content-length cap at 5.5 MB (10% headroom) before formData parse. Node runtime, maxDuration=60.
-- [ ] T078 [US2] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — wire `tiptap-image-extension-config.ts`; add "Upload image" toolbar button; surface progress + size-cap errors inline — **DEFERRED to follow-up commit on this branch**. Rationale: requires touching F7 MVP `compose-form.tsx` + `tiptap-editor.tsx` + relaxing the DOMPurify `<img>`-strip invariant asserted by `tests/unit/broadcasts/application/sanitize-html.test.ts:142`. Best landed in its own focused commit with the test update so the diff stays coherent and reviewable. All other Phase 4 components (T079-T081 + T077) work standalone — admins can manage the allowlist, the upload endpoint accepts direct API calls; only the editor toolbar integration is missing.
+- [X] T078 [US2] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — wire `tiptap-image-extension-config.ts`; add "Upload image" toolbar button; surface progress + size-cap errors inline — **closed 2026-05-20** (commits `da926ba7` server sanitiser + F7 MVP test update; `fc322477` client compose Tiptap integration). DOMPurify server sanitiser reinstates `<img src,alt>` with http(s)-only src enforcement via per-attribute hook; F7 MVP test at `sanitize-html.test.ts:142` updated from "strips <img> entirely" → "preserves http(s) img + strips non-http(s) src". Tiptap editor accepts `imagesEnabled` + `draftId` props; conditionally registers `broadcastImageExtension`; renders `<ClamavUnreachableBanner />` above editor + `<ComposeInlineImageUploader />` below (with `draftRequiredHint` when draftId=null). Compose page resolves `isF71aUs2Enabled()` server-side and threads through. 70/70 GREEN across sanitiser + US2 surface; 812/812 GREEN across the broadcasts unit+contract suite (zero regression). +1 i18n key (`draftRequiredHint`) × EN+TH+SV (3034 → 3035 keys).
 - [X] T079 [P] [US2] Create `src/components/broadcasts/admin-image-allowlist-editor.tsx`: semantic `<table>` with add-hostname form (zod-validated regex), per-row remove button (disabled for `is_default=true`); aria-live="polite" — **closed 2026-05-20** (commit `9e3ce989`). Path corrected to `src/components/broadcast/` (singular) per project convention.
 - [X] T080 [P] [US2] Create `src/components/broadcasts/compose-inline-image-uploader.tsx`: file picker triggers `uploadInlineImage` use-case via fetch; renders `<progress aria-label="...">`; on success replaces `<img>` placeholder; on error shows locale-aware banner — **closed 2026-05-20** (commit `9e3ce989`). Component built; integration into compose editor pending T078. i18n namespace uses `portal.broadcasts.compose.imageUpload.*` (project convention; corrected in commit `9d4ada6d`).
 - [X] T081 [P] [US2] Create `src/components/broadcasts/clamav-unreachable-banner.tsx` (per critique P10): inline banner on compose page when ClamAV daemon unreachable (`scan_status='error'` repeatedly); auto-retries scan when daemon returns — **closed 2026-05-20** (commit `9e3ce989`). Treats 404 (health endpoint not yet shipped) as "no signal" so the banner stays hidden during early rollout; endpoint lands with Phase 6 observability gap-fill (T122).
@@ -327,11 +327,13 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 **Purpose**: Observability, runbooks, ship-day operator checklist items, manual QA gates.
 
 **Phase 6 scope status (Staff Review 2026-05-19; AMENDED 2026-05-20
-after Phase 4 partial-ship)**: F7.1a originally planned 3 USs (US1 +
-US2 + US7). **US1 (Phase 3) SHIPPED**; **US2 (Phase 4) ~95% SHIPPED
-on this branch — T078 follow-up only** (compose Tiptap integration +
-DOMPurify <img>-strip invariant flip); **US7 (Phase 5) remains
-deferred to a follow-up branch** (F7.1a-Phase-2). Consequently:
+after Phase 4 full-ship — supersedes the earlier ~95%/T078-pending
+note)**: F7.1a originally planned 3 USs (US1 + US2 + US7). **US1
+(Phase 3) SHIPPED**; **US2 (Phase 4) SHIPPED on this branch — all
+24 tasks T062-T085 closed** including T078 compose Tiptap
+integration (commits `da926ba7` + `fc322477`); **US7 (Phase 5)
+remains deferred to a follow-up branch** (F7.1a-Phase-2).
+Consequently:
 
 - Phase 6 tasks that depend on US2 artefacts:
   - T124-T125 (ClamAV runbooks) — UNBLOCKED, in scope this branch
@@ -339,9 +341,8 @@ deferred to a follow-up branch** (F7.1a-Phase-2). Consequently:
     UNBLOCKED, in scope this branch (T065 already covers READ/UPDATE/
     DELETE/AUDIT)
   - T139 (ClamAV Fly.io deploy) — UNBLOCKED, in scope ship-day
-  - T145 (US2 flag flip) — UNBLOCKED, ship-day operator gate; gated
-    on T078 follow-up landing first so the editor toolbar offers the
-    Upload button
+  - T145 (US2 flag flip) — UNBLOCKED, ship-day operator gate (T078
+    compose integration now shipped 2026-05-20)
 - Phase 6 tasks that depend on US7 artefacts (template probes T129,
   template seed generator T134, US7 flag flip T144) remain blocked
   until Phase 5 ships in the F7.1a-Phase-2 branch.
@@ -364,9 +365,10 @@ Within the US1+US2 ship of this branch (AMENDED 2026-05-20):
   templates), T129 (template cross-tenant probe), T134 (template seed
   generator), T144 (US7 flag flip), T154 (template snapshot perf
   bench), the US7-scoped portions of T135/T136.
-- **T078 (compose Tiptap integration) follow-up commit on this
-  branch** is the only remaining Phase 4 implementation work before
-  T145 US2 flag flip is operationally meaningful.
+- **All Phase 4 implementation tasks (T062-T085) closed 2026-05-20**.
+  T145 US2 flag flip is now operationally meaningful — pending only
+  ship-day operator gates (T139 ClamAV Fly.io deploy + T140 Vercel
+  env vars + manual SR QA on the 4 new surfaces).
 
 ### Observability (per plan.md Principle VII)
 
