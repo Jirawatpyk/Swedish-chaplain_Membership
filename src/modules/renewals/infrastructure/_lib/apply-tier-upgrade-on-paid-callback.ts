@@ -122,8 +122,14 @@ async function finaliseF2ScheduledPlanChangeForCycle(
       },
     );
     if (!auditResult.ok) {
+      // R3 Batch 4b (R3-I3) — errorId for alert-routing parity with
+      // the threw-branch (F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW)
+      // + the find/transition errorIds above. Sentry/Grafana alert
+      // rules built against `errorId: 'F2.PLAN_CHANGE.*'` now catch
+      // the persist_failed path too.
       logger.error(
         {
+          errorId: 'F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_FAILED',
           event: 'f8_onPaid.f2_audit_emit_failed',
           audit_event: 'plan_change_applied',
           err: auditResult.error,

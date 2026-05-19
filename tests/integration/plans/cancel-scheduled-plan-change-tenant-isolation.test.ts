@@ -48,9 +48,10 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
 
     // Seed: tenant B has a pending scheduled_plan_change anchored on a
     // valid member + renewal_cycle (migration 0125 FK chain).
-    const { memberId, cycleId } = await seedMemberAndRenewalCycle({
+    const { memberId, cycleId, ownerCleanup } = await seedMemberAndRenewalCycle({
       tenant: pair.b.ctx,
     });
+    cleanups.push(ownerCleanup);
     const adminB = randomUUID();
     const adminA = randomUUID();
 

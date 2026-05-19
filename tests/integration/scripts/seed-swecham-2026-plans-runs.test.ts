@@ -29,7 +29,7 @@ import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import { stageB_Plans } from '@/../scripts/seed-swecham-2026-plans';
 import { createTestTenant } from '../helpers/test-tenant';
-import { createActiveTestUser } from '../helpers/test-users';
+import { createActiveTestUser, deleteTestUser } from '../helpers/test-users';
 
 describe('Integration — seed-swecham-2026-plans end-to-end (R3-C1)', () => {
   const cleanups: (() => Promise<void>)[] = [];
@@ -43,8 +43,10 @@ describe('Integration — seed-swecham-2026-plans end-to-end (R3-C1)', () => {
     cleanups.push(tenant.cleanup);
 
     const owner = await createActiveTestUser();
-    // Owner user is leaked across runs (audit-log retention); the
-    // existing test-users.ts header documents this MVP compromise.
+    // R3 Batch 4b (R3-I1) — bound the cross-run users-table leak.
+    // `audit_log` rows still survive (append-only trigger) but the
+    // user row + sessions + tokens cascade-delete.
+    cleanups.push(() => deleteTestUser(owner));
 
     // Drive the seed function. The pre-R3-C1 code crashed here on the
     // FIRST insert because rowToPlan(inserted[0]) → asLocaleText on

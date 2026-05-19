@@ -152,18 +152,32 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               }).then((r) => ({ inv, result: r })),
             ),
           );
-          // R2 Batch 3d (R2-I9) — aggregate per-invoice typed errors
-          // so a wide F5 outage emits ONE structured log (not 10) and
-          // operators can correlate failed invoiceIds against F5
-          // dashboards. Outer try/catch only fires on thrown
-          // exceptions; Result.err values would otherwise be silent.
+          // R3 Batch 4b (R3-I4) — aggregate per-invoice typed errors
+          // into a `Map<errorKind, count>` (capped at 5 distinct
+          // shapes) so a wide F5 outage spanning multiple error kinds
+          // gets attributed correctly to F5 dashboards. Previously
+          // only the first error survived; if 10 invoices failed
+          // across 3 distinct error shapes, operators saw only one.
           const failedInvoiceIds: string[] = [];
-          let firstActivityErr: unknown = null;
+          const errorKindCounts = new Map<string, number>();
+          const ERROR_KIND_CAP = 5;
           const items: PaletteRefundableInvoiceEntity[] = [];
           for (const { inv, result } of activities) {
             if (!result.ok) {
               failedInvoiceIds.push(String(inv.invoiceId));
-              if (firstActivityErr === null) firstActivityErr = result.error;
+              const errorKind =
+                (result.error as { code?: string; kind?: string }).code ??
+                (result.error as { code?: string; kind?: string }).kind ??
+                'unknown';
+              if (
+                errorKindCounts.has(errorKind) ||
+                errorKindCounts.size < ERROR_KIND_CAP
+              ) {
+                errorKindCounts.set(
+                  errorKind,
+                  (errorKindCounts.get(errorKind) ?? 0) + 1,
+                );
+              }
               continue;
             }
             const remaining = computeRemainingRefundable(result.value);
@@ -188,10 +202,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           if (failedInvoiceIds.length > 0) {
             logger.warn(
               {
+                errorId: 'F2.PALETTE.REFUNDABLE_ACTIVITY_UNAVAILABLE',
                 requestId: ctx.requestId,
                 failedInvoiceIds,
                 failedCount: failedInvoiceIds.length,
-                firstErr: firstActivityErr,
+                // R3 Batch 4b (R3-I4) — Map serialised to object for
+                // structured logs. Keys are error codes/kinds; values
+                // are occurrence counts.
+                errorKindCounts: Object.fromEntries(errorKindCounts),
+                errorKindsTruncatedAt:
+                  errorKindCounts.size >= ERROR_KIND_CAP
+                    ? ERROR_KIND_CAP
+                    : null,
               },
               'palette.refundable_invoice_activity_unavailable',
             );

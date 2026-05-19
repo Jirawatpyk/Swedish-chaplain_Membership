@@ -221,10 +221,36 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(body.error.details.status).toBe('applied');
   });
 
-  it('500 audit_failed', async () => {
+  it('500 audit_failed (auditErrorType=persist_failed)', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
-      err({ code: 'audit_failed', message: 'persist_failed' }),
+      err({
+        code: 'audit_failed',
+        auditErrorType: 'persist_failed' as const,
+        message: 'DB connection refused',
+      }),
+    );
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe('audit_failed');
+  });
+
+  // R3 Batch 4b (R3-I5) — invalid_payload discriminator maps to a
+  // distinct errorId in the log.
+  it('500 audit_failed (auditErrorType=invalid_payload)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
+      err({
+        code: 'audit_failed',
+        auditErrorType: 'invalid_payload' as const,
+        message: 'payload.member_id: invalid',
+      }),
     );
     const { POST } = await import(
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'

@@ -144,6 +144,31 @@ export async function cancelScheduledPlanChange(
       'cancelled',
     );
   } catch (e) {
+    // R3 Batch 4b (R3-I2) — TOCTOU race classification. Between
+    // findById (pending) and transitionStatus UPDATE, a concurrent
+    // admin can apply/cancel/supersede the row. The repo's
+    // conditional UPDATE only matches `status='pending'`, throws
+    // "row not found or already terminal" when 0 rows updated. Re-
+    // read via findById; if row is terminal, return `already_terminal`
+    // (409) — operationally distinct from `server_error` (500).
+    try {
+      const recheck = await deps.repo.findById(
+        deps.tenant,
+        input.scheduledChangeId,
+      );
+      if (recheck !== null && isTerminalStatus(recheck.status)) {
+        return err({
+          code: 'already_terminal',
+          scheduledChangeId: recheck.scheduledChangeId,
+          status: recheck.status as Exclude<
+            ScheduledPlanChangeStatus,
+            'pending'
+          >,
+        });
+      }
+    } catch {
+      // re-read itself failed — fall through to server_error
+    }
     return err({
       code: 'server_error',
       message: `cancelScheduledPlanChange.transitionStatus: ${(e as Error)?.message ?? 'unknown'}`,
@@ -174,8 +199,12 @@ export async function cancelScheduledPlanChange(
     },
   });
   if (!auditResult.ok) {
+    // R3 Batch 4b (R3-I5) — preserve discriminator so the route can
+    // attach `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_*'` with the
+    // specific failure mode visible to alert routing.
     return err({
       code: 'audit_failed',
+      auditErrorType: auditResult.error.type,
       message:
         auditResult.error.type === 'invalid_payload'
           ? auditResult.error.issues.join('; ')

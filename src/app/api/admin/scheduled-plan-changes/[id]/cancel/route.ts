@@ -183,8 +183,19 @@ export async function POST(
         { status: 409 },
       );
     case 'audit_failed':
+      // R3 Batch 4b (R3-I5) — attach errorId mapped from the
+      // preserved auditErrorType discriminator. Alert routing can
+      // distinguish zod-rejection (deploy-skew) from DB-rejection
+      // (column drift / pgEnum drift / RLS).
       logger.error(
-        { requestId: ctx.requestId, err: result.error },
+        {
+          errorId:
+            result.error.auditErrorType === 'invalid_payload'
+              ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
+              : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
+          requestId: ctx.requestId,
+          err: result.error,
+        },
         'cancel-scheduled-plan-change: audit write failed',
       );
       return NextResponse.json(

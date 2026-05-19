@@ -363,9 +363,9 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     expect(result.error.message).toContain('connection reset by peer');
   });
 
-  it('wraps transitionStatus errors as server_error', async () => {
+  it('wraps transitionStatus errors as server_error when re-read shows row still pending', async () => {
     const deps = makeDeps({
-      transitionStatusResult: new Error('row already terminal in DB'),
+      transitionStatusResult: new Error('connection reset'),
     });
     const result = await cancelScheduledPlanChange(deps, baseInput);
 
@@ -377,12 +377,57 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     // Audit MUST NOT fire if transition failed — no event to record
     expect(deps.audit.record).not.toHaveBeenCalled();
   });
+
+  // R3 Batch 4b (R3-I2) — TOCTOU race classification. Between
+  // findById (pending) and transitionStatus, a concurrent admin can
+  // apply/cancel/supersede the row. The use-case re-reads via
+  // findById on the throw; if row is terminal, return `already_terminal`
+  // (409) instead of `server_error` (500).
+  it('R3-I2: classifies transitionStatus throw as already_terminal when re-read shows terminal row', async () => {
+    const deps = makeDeps();
+    // First findById (initial lookup) returns pending; second findById
+    // (re-read after transition throw) returns applied terminal row.
+    vi.mocked(deps.repo.findById)
+      .mockResolvedValueOnce(makePending())
+      .mockResolvedValueOnce(
+        makePending({ status: 'applied', appliedAt: '2026-05-19T00:00:00Z' }),
+      );
+    vi.mocked(deps.repo.transitionStatus).mockRejectedValueOnce(
+      new Error('transitionStatus: row sched-001 not found or already terminal'),
+    );
+
+    const result = await cancelScheduledPlanChange(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('already_terminal');
+    if (result.error.code !== 'already_terminal') throw new Error('unreachable');
+    expect(result.error.status).toBe('applied');
+    // Audit MUST NOT fire if transition failed
+    expect(deps.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('R3-I2: falls back to server_error when re-read itself throws', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.repo.findById)
+      .mockResolvedValueOnce(makePending())
+      .mockRejectedValueOnce(new Error('re-read also failed'));
+    vi.mocked(deps.repo.transitionStatus).mockRejectedValueOnce(
+      new Error('original transitionStatus failure'),
+    );
+
+    const result = await cancelScheduledPlanChange(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable');
+    expect(result.error.code).toBe('server_error');
+    if (result.error.code !== 'server_error') throw new Error('unreachable');
+    expect(result.error.message).toContain('original transitionStatus');
+  });
 });
 
 describe('cancelScheduledPlanChange — audit_failed paths', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('returns audit_failed when audit.record returns persist_failed', async () => {
+  it('returns audit_failed with auditErrorType=persist_failed when audit.record returns persist_failed', async () => {
     const deps = makeDeps({ auditResult: 'persist_failed' });
     const result = await cancelScheduledPlanChange(deps, baseInput);
 
@@ -390,6 +435,8 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('audit_failed');
     if (result.error.code !== 'audit_failed') throw new Error('unreachable');
+    // R3 Batch 4b (R3-I5) — discriminator preserved for alert routing.
+    expect(result.error.auditErrorType).toBe('persist_failed');
     expect(result.error.message).toBe('DB connection refused');
     // Row IS already cancelled at this point — audit failure is NOT
     // a rollback trigger, but the typed error surfaces to the caller
@@ -401,7 +448,7 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     );
   });
 
-  it('returns audit_failed with joined issues when audit returns invalid_payload', async () => {
+  it('returns audit_failed with auditErrorType=invalid_payload when audit returns invalid_payload', async () => {
     const deps = makeDeps({ auditResult: 'invalid_payload' });
     const result = await cancelScheduledPlanChange(deps, baseInput);
 
@@ -409,6 +456,8 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('audit_failed');
     if (result.error.code !== 'audit_failed') throw new Error('unreachable');
+    // R3 Batch 4b (R3-I5) — discriminator preserved.
+    expect(result.error.auditErrorType).toBe('invalid_payload');
     expect(result.error.message).toContain('payload.member_id');
   });
 });

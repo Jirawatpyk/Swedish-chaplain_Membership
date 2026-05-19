@@ -24,7 +24,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from './test-benefit-matrix';
-import { createActiveTestUser } from './test-users';
+import { createActiveTestUser, deleteTestUser } from './test-users';
 import type { TenantContext } from '@/modules/tenants';
 
 export interface SeedRenewalCycleSpec {
@@ -44,11 +44,25 @@ export interface SeedRenewalCycleSpec {
 export interface SeededRenewalCycle {
   readonly memberId: string;
   readonly cycleId: string;
+  /**
+   * R3 Batch 4b (R3-I1) — cleanup function for the seeded test user
+   * that owns the prerequisite `membership_plan` row. The user is NOT
+   * cleaned up by `test-tenant.cleanup` (cross-tenant `users` table —
+   * see test-users.ts header). Callers MUST push this into their
+   * `afterAll` cleanup chain (alongside `tenant.cleanup`) to bound
+   * the cross-run Argon2 + audit-log leak.
+   */
+  readonly ownerCleanup: () => Promise<void>;
 }
 
 /**
  * Seed a `members` row + `renewal_cycles` row in one tx so a subsequent
  * `scheduled_plan_changes` INSERT satisfies migration 0125's FK chain.
+ *
+ * R3 Batch 4b (R3-I1) — returns the seeded owner user so the caller
+ * can clean it up. The user is created via `createActiveTestUser` to
+ * satisfy `membership_plans.createdBy` FK; without explicit caller
+ * cleanup, the row leaks across runs (Argon2 hashes + audit_log inserts).
  */
 export async function seedMemberAndRenewalCycle(
   spec: SeedRenewalCycleSpec,
@@ -125,5 +139,9 @@ export async function seedMemberAndRenewalCycle(
     });
   });
 
-  return { memberId, cycleId };
+  return {
+    memberId,
+    cycleId,
+    ownerCleanup: () => deleteTestUser(owner),
+  };
 }

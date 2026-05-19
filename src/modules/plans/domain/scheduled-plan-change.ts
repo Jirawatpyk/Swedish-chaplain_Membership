@@ -173,7 +173,17 @@ export type CancelScheduledPlanChangeError =
       readonly scheduledChangeId: string;
       readonly status: Exclude<ScheduledPlanChangeStatus, 'pending'>;
     }
-  | { readonly code: 'audit_failed'; readonly message: string }
+  | {
+      // R3 Batch 4b (R3-I5) — preserve audit-error discriminator
+      // (`invalid_payload` vs `persist_failed`) so the route can map
+      // to distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'`
+      // vs `…_PERSIST_FAILED`. Without this, SRE cannot tell whether
+      // the audit row was rejected by zod (deploy-skew) or by the DB
+      // (column drift / pgEnum drift / RLS) without raw stdout.
+      readonly code: 'audit_failed';
+      readonly auditErrorType: 'invalid_payload' | 'persist_failed';
+      readonly message: string;
+    }
   | { readonly code: 'server_error'; readonly message: string };
 
 /** Resolved plan for a renewal cycle — output of `getEffectivePlanForRenewal`. */
