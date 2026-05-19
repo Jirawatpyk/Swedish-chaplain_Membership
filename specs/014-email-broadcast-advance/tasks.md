@@ -207,50 +207,50 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 ### Tests for User Story 2 (TDD RED-first) ⚠️
 
-- [ ] T062 [P] [US2] Contract test `tests/contract/broadcasts/image-source-allowlist.test.ts` per contracts/image-upload.md § 1.2: submit body with allowlisted+non-allowlisted srcs → returns `{ unsafeImageSources: string[] }`; audit emits `broadcast_body_image_source_unsafe`
-- [ ] T063 [P] [US2] Contract test `tests/contract/broadcasts/upload-inline-image.test.ts` per contracts § 1.1: 4 MB PNG succeeds, 6 MB JPG rejected `broadcast_image_too_large`, ClamAV flagged → `broadcast_image_unsafe`, duplicate content-hash dedup
-- [ ] T064 [P] [US2] Contract test `tests/contract/broadcasts/manage-image-allowlist.test.ts` per contracts § 1.3: add hostname succeeds, remove default rejected (`CANNOT_REMOVE_DEFAULT_ALLOWLIST_ENTRY`), wildcard `*.example.com` rejected by zod regex, cross-tenant probe
-- [ ] T065 [P] [US2] Integration test `tests/integration/broadcasts/image-allowlist-cross-tenant-probe.test.ts` (Principle I): tenant B cannot see/modify tenant A's allowlist
-- [ ] T066 [P] [US2] Integration test `tests/integration/broadcasts/image-virus-scan-flow.test.ts` against live ClamAV (Docker in dev): EICAR test signature → verdict `infected` + audit event; clean PNG → verdict `clean`; scan latency p95 ≤500ms for files ≤2MB (SC-005)
-- [ ] T067 [P] [US2] Unit test `tests/unit/broadcasts/image-source-allowlist.test.ts`: pure function tests for hostname matching, RFC-1035 validation, scheme rejection (data:, javascript:)
-- [ ] T068 [P] [US2] E2E test `tests/e2e/broadcasts/image-upload-allowlist.spec.ts` (Playwright + axe-core): admin allowlist editor adds hostname → member compose inline-image upload → image renders in dispatched email; assert WCAG 2.1 AA
+- [X] T062 [P] [US2] Contract test `tests/contract/broadcasts/image-source-allowlist.test.ts` per contracts/image-upload.md § 1.2: submit body with allowlisted+non-allowlisted srcs → returns `{ unsafeImageSources: string[] }`; audit emits `broadcast_body_image_source_unsafe` — **closed 2026-05-20 (6/6 GREEN, RED-first authored)**
+- [X] T063 [P] [US2] Contract test `tests/contract/broadcasts/upload-inline-image.test.ts` per contracts § 1.1: 4 MB PNG succeeds, 6 MB JPG rejected `broadcast_image_too_large`, ClamAV flagged → `broadcast_image_unsafe`, duplicate content-hash dedup — **closed 2026-05-20 (7/7 GREEN)**
+- [X] T064 [P] [US2] Contract test `tests/contract/broadcasts/manage-image-allowlist.test.ts` per contracts § 1.3: add hostname succeeds, remove default rejected (`CANNOT_REMOVE_DEFAULT_ALLOWLIST_ENTRY`), wildcard `*.example.com` rejected by zod regex, cross-tenant probe — **closed 2026-05-20 (5/5 GREEN)**
+- [X] T065 [P] [US2] Integration test `tests/integration/broadcasts/image-allowlist-cross-tenant-probe.test.ts` (Principle I): tenant B cannot see/modify tenant A's allowlist — **authored RED 2026-05-20; live-Neon run pending Wave J verification gate**
+- [X] T066 [P] [US2] Integration test `tests/integration/broadcasts/image-virus-scan-flow.test.ts` against live ClamAV (Docker in dev): EICAR test signature → verdict `infected` + audit event; clean PNG → verdict `clean`; scan latency p95 ≤500ms for files ≤2MB (SC-005) — **authored 2026-05-20 with describe.skipIf(!CLAMAV_HOST); live verification pre-ship per T139**
+- [X] T067 [P] [US2] Unit test `tests/unit/broadcasts/image-source-allowlist.test.ts`: pure function tests for hostname matching, RFC-1035 validation, scheme rejection (data:, javascript:) — **closed 2026-05-20 (17/17 GREEN)**
+- [X] T068 [P] [US2] E2E test `tests/e2e/broadcasts/image-upload-allowlist.spec.ts` (Playwright + axe-core): admin allowlist editor adds hostname → member compose inline-image upload → image renders in dispatched email; assert WCAG 2.1 AA — **authored 2026-05-20 env-gated on E2E_{ADMIN,MEMBER}_{EMAIL,PASSWORD}; full run pending T078 follow-up + ship-day staging walkthrough**
 
 ### Implementation for User Story 2
 
 #### Domain layer
 
-- [ ] T069 [P] [US2] Create `src/modules/broadcasts/domain/value-objects/image-source-allowlist.ts`: pure function `validateHostname(host: string, allowlist: Hostname[]): Result<void, AllowlistError>` (exact hostname match; RFC 1035 format CHECK; no wildcards); + `extractImgSources(bodyHtml: string): Array<{ src: string, alt?: string }>` parse function
+- [X] T069 [P] [US2] Create `src/modules/broadcasts/domain/value-objects/image-source-allowlist.ts`: pure function `validateHostname(host: string, allowlist: Hostname[]): Result<void, AllowlistError>` (exact hostname match; RFC 1035 format CHECK; no wildcards); + `extractImgSources(bodyHtml: string): Array<{ src: string, alt?: string }>` parse function — **closed 2026-05-20** (commit `ab6f1e17`). Adds `asHostname` brand validator + 8/3/6 test-case coverage. Re-exports `Hostname` brand from Phase-2 port per the circular-ordering note in image-allowlist-port.ts.
 
 #### Application layer
 
-- [ ] T070 [US2] Create `src/modules/broadcasts/application/use-cases/validate-image-source-allowlist.ts` per contracts § 1.2: invoked inside existing `sanitiseBroadcastBody` (F7 MVP) AFTER Tiptap parse + BEFORE persistence; returns first-error with ALL unsafe srcs accumulated; emits `broadcast_body_image_source_unsafe` audit
-- [ ] T071 [US2] Create `src/modules/broadcasts/application/use-cases/upload-inline-image.ts` per contracts § 1.1: validate size ≤5MB (FR-012) → `VirusScannerPort.scan()` (FR-013) → content-hash dedup → upload to Vercel Blob in tenant-scoped path → return `{blobUrl, allowlistedHostname, contentHash}`; sanitises filename at boundary per critique E6
-- [ ] T072 [US2] Create `src/modules/broadcasts/application/use-cases/manage-image-allowlist.ts` per contracts § 1.3: add/remove via `ImageAllowlistPort`; emits `broadcast_image_allowlist_updated` audit with before/after value
+- [X] T070 [US2] Create `src/modules/broadcasts/application/use-cases/validate-image-source-allowlist.ts` per contracts § 1.2: invoked inside existing `sanitiseBroadcastBody` (F7 MVP) AFTER Tiptap parse + BEFORE persistence; returns first-error with ALL unsafe srcs accumulated; emits `broadcast_body_image_source_unsafe` audit — **closed 2026-05-20** (commit `da34eac4`). Pre-flight P0 added `broadcast_image_unsafe` audit-event type (54→55). DOMPurify sanitiser update + F7 MVP `sanitize-html.test.ts:142` invariant change DEFERRED to T078 follow-up (bundled with member compose Tiptap integration).
+- [X] T071 [US2] Create `src/modules/broadcasts/application/use-cases/upload-inline-image.ts` per contracts § 1.1: validate size ≤5MB (FR-012) → `VirusScannerPort.scan()` (FR-013) → content-hash dedup → upload to Vercel Blob in tenant-scoped path → return `{blobUrl, allowlistedHostname, contentHash}`; sanitises filename at boundary per critique E6 — **closed 2026-05-20** (commit `da34eac4`). Pipeline-order invariant enforced (bytes never persisted before verdict=clean). Adds `ImageStoragePort` Application port.
+- [X] T072 [US2] Create `src/modules/broadcasts/application/use-cases/manage-image-allowlist.ts` per contracts § 1.3: add/remove via `ImageAllowlistPort`; emits `broadcast_image_allowlist_updated` audit with before/after value — **closed 2026-05-20** (commit `da34eac4`). Idempotent: duplicate add → no audit no-op.
 
 #### Infrastructure layer
 
-- [ ] T073 [P] [US2] Create `src/modules/broadcasts/infrastructure/tiptap-image-extension-config.ts`: configures `@tiptap/extension-image@^3.22` with `inline: false`, `allowBase64: false`; wires into F7 MVP Tiptap editor config
-- [ ] T074 [P] [US2] Create `src/modules/broadcasts/infrastructure/vercel-blob-image-storage.ts`: adapts existing F4 Vercel Blob client; tenant-scoped path `images/{tenantId}/{contentHash}.{ext}`; content-hash dedup at upload boundary
+- [X] T073 [P] [US2] Create `src/modules/broadcasts/infrastructure/tiptap-image-extension-config.ts`: configures `@tiptap/extension-image@^3.22` with `inline: false`, `allowBase64: false`; wires into F7 MVP Tiptap editor config — **closed 2026-05-20** (commit `156eef0b`). Wiring into compose-form.tsx editor instance DEFERRED to T078 follow-up.
+- [X] T074 [P] [US2] Create `src/modules/broadcasts/infrastructure/vercel-blob-image-storage.ts`: adapts existing F4 Vercel Blob client; tenant-scoped path `images/{tenantId}/{contentHash}.{ext}`; content-hash dedup at upload boundary — **closed 2026-05-20** (commit `156eef0b`). Path is `broadcasts/images/{tenant}/{hash}.{ext}` (broadcasts/ prefix to keep namespace disjoint from F4 invoice logo paths). Also completes Phase-2 skeleton `drizzle-image-allowlist-repo.ts` real impl in same commit.
 
 #### Presentation layer
 
-- [ ] T075 [US2] Create `src/app/(staff)/admin/broadcasts/settings/page.tsx` — admin settings page with "Image source allowlist" section (table of hostnames with add/remove; defaults shown as locked rows with disabled Remove button)
-- [ ] T076 [US2] Create `src/app/api/admin/broadcasts/settings/allowlist/route.ts` POST handler per contracts § 1.3: admin role check; tenant ctx; calls `manageImageAllowlist` use-case
-- [ ] T077 [US2] Create `src/app/api/member/broadcasts/inline-image-upload/route.ts` POST handler (multipart) per contracts § 1.1: member role + tenant ctx + draft ownership check; calls `uploadInlineImage` use-case
-- [ ] T078 [US2] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — wire `tiptap-image-extension-config.ts`; add "Upload image" toolbar button; surface progress + size-cap errors inline
-- [ ] T079 [P] [US2] Create `src/components/broadcasts/admin-image-allowlist-editor.tsx`: semantic `<table>` with add-hostname form (zod-validated regex), per-row remove button (disabled for `is_default=true`); aria-live="polite"
-- [ ] T080 [P] [US2] Create `src/components/broadcasts/compose-inline-image-uploader.tsx`: file picker triggers `uploadInlineImage` use-case via fetch; renders `<progress aria-label="...">`; on success replaces `<img>` placeholder; on error shows locale-aware banner
-- [ ] T081 [P] [US2] Create `src/components/broadcasts/clamav-unreachable-banner.tsx` (per critique P10): inline banner on compose page when ClamAV daemon unreachable (`scan_status='error'` repeatedly); auto-retries scan when daemon returns
+- [X] T075 [US2] Create `src/app/(staff)/admin/broadcasts/settings/page.tsx` — admin settings page with "Image source allowlist" section (table of hostnames with add/remove; defaults shown as locked rows with disabled Remove button) — **closed 2026-05-20** (commit `ca676680`). Uses FormContainer + PageHeader. Companion loading.tsx so `pnpm check:layout` GREEN (100 pairs consistent).
+- [X] T076 [US2] Create `src/app/api/admin/broadcasts/settings/allowlist/route.ts` POST handler per contracts § 1.3: admin role check; tenant ctx; calls `manageImageAllowlist` use-case — **closed 2026-05-20** (commit `0a8960ff`). Uses `requireAdminContext({resource:'broadcast',action:'update'})` + `runInTenant()` per F7 admin route convention.
+- [X] T077 [US2] Create `src/app/api/broadcasts/inline-image-upload/route.ts` POST handler (multipart) per contracts § 1.1: member role + tenant ctx + draft ownership check; calls `uploadInlineImage` use-case — **closed 2026-05-20** (commit `0a8960ff`). Path corrected from `/api/member/broadcasts/...` to `/api/broadcasts/...` per existing convention (member routes are unprefixed; see /api/broadcasts/draft, /api/broadcasts/submit). Defense-in-depth content-length cap at 5.5 MB (10% headroom) before formData parse. Node runtime, maxDuration=60.
+- [ ] T078 [US2] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — wire `tiptap-image-extension-config.ts`; add "Upload image" toolbar button; surface progress + size-cap errors inline — **DEFERRED to follow-up commit on this branch**. Rationale: requires touching F7 MVP `compose-form.tsx` + `tiptap-editor.tsx` + relaxing the DOMPurify `<img>`-strip invariant asserted by `tests/unit/broadcasts/application/sanitize-html.test.ts:142`. Best landed in its own focused commit with the test update so the diff stays coherent and reviewable. All other Phase 4 components (T079-T081 + T077) work standalone — admins can manage the allowlist, the upload endpoint accepts direct API calls; only the editor toolbar integration is missing.
+- [X] T079 [P] [US2] Create `src/components/broadcasts/admin-image-allowlist-editor.tsx`: semantic `<table>` with add-hostname form (zod-validated regex), per-row remove button (disabled for `is_default=true`); aria-live="polite" — **closed 2026-05-20** (commit `9e3ce989`). Path corrected to `src/components/broadcast/` (singular) per project convention.
+- [X] T080 [P] [US2] Create `src/components/broadcasts/compose-inline-image-uploader.tsx`: file picker triggers `uploadInlineImage` use-case via fetch; renders `<progress aria-label="...">`; on success replaces `<img>` placeholder; on error shows locale-aware banner — **closed 2026-05-20** (commit `9e3ce989`). Component built; integration into compose editor pending T078. i18n namespace uses `portal.broadcasts.compose.imageUpload.*` (project convention; corrected in commit `9d4ada6d`).
+- [X] T081 [P] [US2] Create `src/components/broadcasts/clamav-unreachable-banner.tsx` (per critique P10): inline banner on compose page when ClamAV daemon unreachable (`scan_status='error'` repeatedly); auto-retries scan when daemon returns — **closed 2026-05-20** (commit `9e3ce989`). Treats 404 (health endpoint not yet shipped) as "no signal" so the banner stays hidden during early rollout; endpoint lands with Phase 6 observability gap-fill (T122).
 
 #### i18n
 
-- [ ] T082 [P] [US2] Add ~50 i18n keys to `src/i18n/messages/en.json` for allowlist editor + image upload + ClamAV unreachable banner + 3 US2 audit-event display strings
-- [ ] T083 [P] [US2] Add ~50 i18n keys to `src/i18n/messages/th.json`
-- [ ] T084 [P] [US2] Add ~50 i18n keys to `src/i18n/messages/sv.json`
+- [X] T082 [P] [US2] Add ~50 i18n keys to `src/i18n/messages/en.json` for allowlist editor + image upload + ClamAV unreachable banner + 3 US2 audit-event display strings — **closed 2026-05-20** (commit `9d4ada6d`). ~45 keys under `admin.broadcasts.settings.allowlist.*` + `portal.broadcasts.compose.imageUpload.*` + `.clamavBanner.*`.
+- [X] T083 [P] [US2] Add ~50 i18n keys to `src/i18n/messages/th.json` — **closed 2026-05-20** (commit `9d4ada6d`). Formal chamber-business register; subject to chamber compliance liaison review per FR-020.
+- [X] T084 [P] [US2] Add ~50 i18n keys to `src/i18n/messages/sv.json` — **closed 2026-05-20** (commit `9d4ada6d`). Formal but warm tone consistent with F7 MVP baseline. `pnpm check:i18n` GREEN at 3034 keys × 3 locales (up from 2989).
 
 #### Feature flag wiring
 
-- [ ] T085 [US2] Gate all US2 routes + Tiptap image extension + ClamAV scanner invocations behind `FEATURE_F71A_US2_IMAGES=true` AND master flag; when OFF: Tiptap extension config falls back to F7 MVP no-`<img>` allowlist; admin route 404; member compose hides Upload Image button
+- [X] T085 [US2] Gate all US2 routes + Tiptap image extension + ClamAV scanner invocations behind `FEATURE_F71A_US2_IMAGES=true` AND master flag; when OFF: Tiptap extension config falls back to F7 MVP no-`<img>` allowlist; admin route 404; member compose hides Upload Image button — **closed 2026-05-20** (commit `0a8960ff`). Adds `isF71aUs2Enabled()` + `f71aUs2DisabledReason()` helpers in `feature-flags.ts` mirroring US1 3-layer kill-switch pattern (f7Broadcasts AND f71aBroadcastAdvanced AND f71aUs2Images). Both API routes return 503 `feature_disabled` when OFF; admin page returns notFound() when OFF (404 — no flag-toggle UI leak). The "Tiptap fallback when OFF" branch is owned by T078 follow-up.
 
 **Checkpoint**: User Story 2 fully functional — verified by T066 + T068 passing against live Docker ClamAV.
 
@@ -326,31 +326,47 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 **Purpose**: Observability, runbooks, ship-day operator checklist items, manual QA gates.
 
-**Phase 6 scope status (Staff Review 2026-05-19)**: F7.1a originally
-planned 3 USs (US1 + US2 + US7). Only **US1 (Phase 3)** is implemented
-on this branch. **Phase 4 (US2) + Phase 5 (US7) are deferred to a
-follow-up branch** (F7.1a-Phase-2). Consequently:
+**Phase 6 scope status (Staff Review 2026-05-19; AMENDED 2026-05-20
+after Phase 4 partial-ship)**: F7.1a originally planned 3 USs (US1 +
+US2 + US7). **US1 (Phase 3) SHIPPED**; **US2 (Phase 4) ~95% SHIPPED
+on this branch — T078 follow-up only** (compose Tiptap integration +
+DOMPurify <img>-strip invariant flip); **US7 (Phase 5) remains
+deferred to a follow-up branch** (F7.1a-Phase-2). Consequently:
 
-- Phase 6 tasks that depend on US2 artefacts (ClamAV runbooks T124-T125,
-  image-allowlist probes T128, ClamAV deploy T139, US2 flag flip T145)
-  are blocked until Phase 4 ships.
+- Phase 6 tasks that depend on US2 artefacts:
+  - T124-T125 (ClamAV runbooks) — UNBLOCKED, in scope this branch
+  - T128 (image-allowlist cross-tenant probe expansion to 4 cases) —
+    UNBLOCKED, in scope this branch (T065 already covers READ/UPDATE/
+    DELETE/AUDIT)
+  - T139 (ClamAV Fly.io deploy) — UNBLOCKED, in scope ship-day
+  - T145 (US2 flag flip) — UNBLOCKED, ship-day operator gate; gated
+    on T078 follow-up landing first so the editor toolbar offers the
+    Upload button
 - Phase 6 tasks that depend on US7 artefacts (template probes T129,
-  template seed generator T134, US7 flag flip T144) are blocked until
-  Phase 5 ships.
+  template seed generator T134, US7 flag flip T144) remain blocked
+  until Phase 5 ships in the F7.1a-Phase-2 branch.
 - Phase 6 tasks scoped to US1 only (cross-tenant probe expansion T127
   for `pagination-cross-tenant-probe.test.ts`, CI gates T130-T133,
   US1 flag flip T146, US1-relevant runbooks T126) remain in scope for
   this branch's release.
 
-Within the US1-only ship of this branch:
-- **Genuine US1-pre-ship work**: T126 partial-send runbook, T130-T133
-  CI gates, T135 SR QA (5 surfaces narrows to 2: batch breakdown +
-  retry dialog), T140-T143/T146 operator gates, T147-T149 docs/release
+Within the US1+US2 ship of this branch (AMENDED 2026-05-20):
+- **Genuine US1+US2-pre-ship work**: T126 partial-send runbook,
+  T130-T133 CI gates, T135 SR QA (4 surfaces: batch breakdown + retry
+  dialog + admin allowlist editor + member compose imageUploader once
+  T078 lands), T140-T143/T146 operator gates, T147-T149 docs/release
   tag, T150/T155-T162 spec/plan doc closures, T163 already [X], T164
-  F7 MVP regression suite.
-- **DEFERRED to F7.1a-Phase-2**: T122-T125, T127-T129, T134-T135 (US2
-  + US7 surfaces), T136 (3-US walkthrough → US1 walkthrough only),
-  T139, T144-T145, T151-T154 (US2 + US7 scope).
+  F7 MVP regression suite, plus the now-unblocked T124/T125 ClamAV
+  runbooks + T128 image-allowlist probe expansion + T139 ClamAV deploy
+  + T145 US2 flag flip + T151-T152 ClamAV timeout + pipeline-order
+  invariants + T153 DPIA addendum.
+- **STILL DEFERRED to F7.1a-Phase-2**: T086-T121 (Phase 5 US7
+  templates), T129 (template cross-tenant probe), T134 (template seed
+  generator), T144 (US7 flag flip), T154 (template snapshot perf
+  bench), the US7-scoped portions of T135/T136.
+- **T078 (compose Tiptap integration) follow-up commit on this
+  branch** is the only remaining Phase 4 implementation work before
+  T145 US2 flag flip is operationally meaningful.
 
 ### Observability (per plan.md Principle VII)
 
