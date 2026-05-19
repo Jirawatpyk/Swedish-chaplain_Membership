@@ -6,8 +6,9 @@
  *
  *   1. A single place to add pre-write structural validation (shape
  *      check against `auditPayloadSchema` — the adapter validates
- *      too, but doing it here surfaces the error inside the use case
- *      transaction so we can abort cleanly).
+ *      too, but doing it here returns a typed Result before any
+ *      persistence is attempted, so callers can short-circuit cleanly
+ *      without depending on the repo error message).
  *   2. A single place to enforce the "audit failure is a use-case
  *      failure" rule — if the audit write fails, the use case MUST
  *      return an error (never silently swallow), because the F2

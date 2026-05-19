@@ -156,7 +156,6 @@ function makePlanRepo(overrides?: {
     softDelete: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),
-    countActiveForTenant: vi.fn(),
   };
 }
 

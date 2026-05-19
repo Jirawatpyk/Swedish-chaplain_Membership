@@ -99,7 +99,6 @@ function makeDeps(overrides: DepsOverrides = {}): SoftDeletePlanDeps {
     setActive: vi.fn(),
     undelete: vi.fn(),
     cloneYear: vi.fn(),
-    countActiveForTenant: vi.fn(),
   };
 
   const feeConfigRepo = {
@@ -176,7 +175,6 @@ describe('softDeletePlan use case', () => {
       setActive: vi.fn(),
       undelete: vi.fn(),
       cloneYear: vi.fn(),
-      countActiveForTenant: vi.fn(),
     };
     const deps = {
       ...makeDeps(),
@@ -315,7 +313,6 @@ describe('softDeletePlan use case', () => {
       setActive: vi.fn(),
       undelete: vi.fn(),
       cloneYear: vi.fn(),
-      countActiveForTenant: vi.fn(),
     };
     const members = { countActivePlanMembers: vi.fn(async () => 0) };
     const deps = { ...makeDeps(), planRepo, members } as unknown as SoftDeletePlanDeps;

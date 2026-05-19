@@ -21,12 +21,14 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { MoreHorizontal, SearchIcon } from 'lucide-react';
+import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/shell/empty-state';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { Input } from '@/components/ui/input';
 import {
@@ -120,6 +122,7 @@ export function PlansTable({
   const tToast = useTranslations('admin.plans.toast');
   const tErrors = useTranslations('admin.plans.errors');
   const tButtons = useTranslations('admin.plans.create.buttons');
+  const tOptions = useTranslations('admin.plans.create.options');
   const [isPending, startTransition] = useTransition();
 
   const [category, setCategory] = useState<'corporate' | 'partnership' | null>(
@@ -348,11 +351,35 @@ export function PlansTable({
         <TableBody>
           {sorted.length === 0 ? (
             <TableRow>
-              <TableCell
-                colSpan={isAdmin ? 7 : 6}
-                className="text-center text-muted-foreground"
-              >
-                {t('empty.title')}
+              <TableCell colSpan={isAdmin ? 7 : 6} className="py-12">
+                <EmptyState
+                  icon={PlusIcon}
+                  title={t('empty.title')}
+                  description={t('empty.description')}
+                  action={
+                    isAdmin ? (
+                      <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Link
+                          href="/admin/plans/new"
+                          className={buttonVariants()}
+                        >
+                          <PlusIcon className="h-3.5 w-3.5" />
+                          {t('empty.newCta')}
+                        </Link>
+                        <Link
+                          href="/admin/plans/clone"
+                          className={buttonVariants({ variant: 'outline' })}
+                        >
+                          <CopyIcon className="h-3.5 w-3.5" />
+                          {t('empty.cloneCta', {
+                            sourceYear: year - 1,
+                            targetYear: year,
+                          })}
+                        </Link>
+                      </div>
+                    ) : undefined
+                  }
+                />
               </TableCell>
             </TableRow>
           ) : (
@@ -390,7 +417,9 @@ export function PlansTable({
                       currencyCode={currencyCode}
                     />
                   </TableCell>
-                  <TableCell className="capitalize">{plan.member_type_scope}</TableCell>
+                  <TableCell>
+                    {tOptions(`memberTypeScope.${plan.member_type_scope}`)}
+                  </TableCell>
                   <TableCell>{plan.plan_year}</TableCell>
                   <TableCell>
                     {isDeleted ? (

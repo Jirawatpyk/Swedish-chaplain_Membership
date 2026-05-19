@@ -3,10 +3,11 @@
  *
  * F2 stores every money field as a **non-negative integer** in the
  * currency's smallest unit (e.g. satang for THB, öre for SEK, cents for
- * EUR/USD). Currency is resolved once per tenant from
- * `TenantFeeConfig.currency_code` (critique P3) so `Money` is an
- * ephemeral helper used at the Application boundary — it is NOT
- * persisted with a currency-per-row.
+ * EUR/USD). Currency is resolved once per tenant via F4
+ * `getTenantTaxPolicy` (reading the `tenant_invoice_settings` table —
+ * R8 consolidation, post-migration 0029) so `Money` is an ephemeral
+ * helper used at the Application boundary — it is NOT persisted with
+ * a currency-per-row.
  *
  * Invariants enforced by `asMoney` / `asMinorUnits`:
  *   - `amount_minor_units` is a non-negative integer (no floats, no NaN)

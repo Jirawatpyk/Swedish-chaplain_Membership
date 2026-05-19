@@ -58,6 +58,12 @@ export interface PlanRepo {
    * plan does not exist OR belongs to a different tenant (RLS
    * transparently filters it out). Application layer maps `undefined`
    * → `not_found` error to preserve the "404 never 403" rule.
+   *
+   * NOTE: returns the row even when soft-deleted (`deleted_at IS NOT NULL`).
+   * Callers that need only live plans must filter on `deleted_at`
+   * themselves — e.g. `undeletePlan` deliberately reads soft-deleted
+   * rows; `getPlan` for staff detail reads them too. Application
+   * use-cases narrow as needed.
    */
   findOne(
     tenant: TenantContext,
@@ -126,13 +132,6 @@ export interface PlanRepo {
     activateCloned: boolean,
     createdBy: string,
   ): Promise<Result<CloneYearSummary, CloneYearError>>;
-
-  /**
-   * Count non-deleted plans for the tenant — used by the fee-config
-   * currency-immutability guard (critique R1, T145). Excludes
-   * soft-deleted rows.
-   */
-  countActiveForTenant(tenant: TenantContext): Promise<number>;
 }
 
 /**

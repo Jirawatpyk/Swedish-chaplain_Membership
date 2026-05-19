@@ -12,7 +12,6 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
@@ -82,26 +81,15 @@ export async function getPlan(
     // load-bearing: F13's correlation scanner consumes `plan_not_found`
     // rows to escalate cross-tenant probes to `plan_cross_tenant_probe`.
     // A sustained `persist_failed` (audit_log RLS drift, immutable
-    // trigger regression, DB flap) silently disables the F13 pipeline
-    // unless we log it — emit a structured error so on-call dashboards
-    // can alert before the security event is lost.
-    if (!auditResult.ok) {
-      logger.error(
-        {
-          event: 'plan_not_found_audit_failed',
-          tenant: deps.tenant.slug,
-          plan_id: input.planId,
-          plan_year: input.year as number,
-          actor_user_id: deps.actorUserId,
-          request_id: deps.requestId,
-          err:
-            auditResult.error.type === 'invalid_payload'
-              ? { type: 'invalid_payload', issues: auditResult.error.issues }
-              : { type: 'persist_failed', message: auditResult.error.message },
-        },
-        'get-plan: audit record persist_failed — F13 cross-tenant-probe correlation pipeline at risk',
-      );
-    }
+    // trigger regression, DB flap) silently disables the F13 pipeline.
+    // The audit adapter logs the failure at the Infrastructure boundary
+    // (`plan-audit-adapter.ts` catch block emits a structured pino
+    // error) so on-call dashboards alert before the security event is
+    // lost. Importing pino here would chain `worker_threads` into the
+    // client bundle via the F2 barrel re-export — post-ship R6 C4 fix
+    // 2026-05-19 relocated the log emission downward to keep the
+    // Application barrel client-safe.
+    void auditResult;
     return err({ type: 'not_found' });
   }
 

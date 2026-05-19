@@ -25,6 +25,7 @@
  */
 
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import {
@@ -67,10 +68,6 @@ function summariseEvent(event: F2AuditEvent): string {
       return `plan_not_found ${event.payload.requested_plan_id}@${event.payload.requested_year} ${event.payload.method} ${event.payload.route}`;
     case 'plan_cross_tenant_probe':
       return `plan_cross_tenant_probe ${event.payload.requested_plan_id} actor=${event.payload.actor_user_id} reason=${event.payload.escalation_reason}`;
-    case 'fee_config_updated': {
-      const fields = Object.keys(event.payload.diff).join(',');
-      return `fee_config_updated fields=[${fields}]`;
-    }
     // F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle events.
     case 'plan_change_scheduled':
       return `plan_change_scheduled member=${event.payload.member_id} cycle=${event.payload.effective_at_cycle_id} ${event.payload.from_plan_id}→${event.payload.to_plan_id}`;
@@ -114,9 +111,27 @@ export const planAuditAdapter: AuditPort = {
       });
       return ok(undefined);
     } catch (e) {
+      // Log at the Infrastructure boundary so audit-write failures are
+      // visible on observability dashboards without pulling pino into
+      // the F2 Application barrel (Application files are re-exported
+      // through `@/modules/plans` and reachable from Client Components
+      // — pino's `worker_threads` import would break the client bundle.
+      // See post-ship R6 C4 fix relocation 2026-05-19).
+      const message = e instanceof Error ? e.message : String(e);
+      logger.error(
+        {
+          event: 'plan_audit_persist_failed',
+          event_type: event.event_type,
+          tenant: ctx.tenant.slug,
+          actor_user_id: ctx.actorUserId,
+          request_id: ctx.requestId,
+          err: message,
+        },
+        'plan-audit-adapter: persist failed — F13 cross-tenant-probe correlation pipeline at risk if event_type=plan_not_found',
+      );
       return err({
         type: 'persist_failed',
-        message: e instanceof Error ? e.message : String(e),
+        message,
       });
     }
   },

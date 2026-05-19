@@ -65,6 +65,8 @@ export default async function PlanDetailPage({
   const { year, planId } = await params;
   const t = await getTranslations('admin.plans');
   const tM = await getTranslations('admin.plans.create.matrix');
+  const tOptions = await getTranslations('admin.plans.create.options');
+  const tCommon = await getTranslations('common');
 
   const yearNumber = Number(year);
   if (!Number.isInteger(yearNumber) || yearNumber < 2000 || yearNumber > 2100) {
@@ -167,7 +169,9 @@ export default async function PlanDetailPage({
               <dt className="text-xs font-medium uppercase text-muted-foreground">
                 {t('create.labels.memberTypeScope')}
               </dt>
-              <dd className="text-lg font-semibold capitalize">{plan.member_type_scope}</dd>
+              <dd className="text-lg font-semibold">
+                {tOptions(`memberTypeScope.${plan.member_type_scope}`)}
+              </dd>
             </div>
             {plan.includes_corporate_plan_id ? (
               <div>
@@ -241,7 +245,9 @@ export default async function PlanDetailPage({
               <KV label={tM('discountScope')} value={plan.benefit_matrix.event_discount_scope} />
               <KV
                 label={tM('coBrandedAccess')}
-                value={plan.benefit_matrix.events_cobranded_access ? 'Yes' : 'No'}
+                value={tCommon(
+                  plan.benefit_matrix.events_cobranded_access ? 'yes' : 'no',
+                )}
                 raw
               />
               <KV

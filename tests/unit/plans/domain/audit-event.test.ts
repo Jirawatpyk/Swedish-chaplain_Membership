@@ -11,10 +11,12 @@ describe('F2 audit events', () => {
   // scheduled-plan-change lifecycle events to F2's audit catalogue
   // (plan_change_scheduled / superseded / cancelled / applied) per the
   // F8↔F2 cross-module integration in plan.md Complexity Tracking #4.
-  // The test previously asserted `length === 10` (original F2 set) and
-  // was missed in the F8 cross-module-update sweep.
-  it('defines 14 event types (10 F2 + 4 F8-cross-module scheduled-plan-change)', () => {
-    expect(F2_AUDIT_EVENT_TYPES.length).toBe(14);
+  // 2026-05-19 post-ship R6 C5: `fee_config_updated` retired (R7/R8
+  // consolidation — migration 0029 dropped `tenant_fee_config`; F4
+  // `tenant_invoice_settings` is authoritative). Net count: 9 F2 + 4
+  // F8-cross-module = 13.
+  it('defines 13 event types (9 F2 + 4 F8-cross-module scheduled-plan-change)', () => {
+    expect(F2_AUDIT_EVENT_TYPES.length).toBe(13);
   });
 
   it('every event type has a severity assigned', () => {
@@ -108,15 +110,11 @@ describe('F2 audit events', () => {
       expect(result.success).toBe(true);
     });
 
-    it('accepts a valid fee_config_updated payload', () => {
-      const result = auditPayloadSchema.safeParse({
-        event_type: 'fee_config_updated',
-        payload: {
-          diff: { vat_rate: { before: 0.07, after: 0.075 } },
-        },
-      });
-      expect(result.success).toBe(true);
-    });
+    // NOTE: `fee_config_updated` event type was retired in R7/R8
+    // consolidation (post-ship R6 C5 sweep, 2026-05-19). Migration 0029
+    // dropped `tenant_fee_config`; F4 `tenant_invoice_settings` is now
+    // authoritative; F2 Domain no longer declares this event. The
+    // pgEnum value persists in F1 schema for legacy compat only.
   });
 
   describe('auditPayloadSchema — rejections', () => {

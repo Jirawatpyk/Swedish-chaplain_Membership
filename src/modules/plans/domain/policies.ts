@@ -63,17 +63,7 @@ export function canCloneYear(role: Role): boolean {
   return role === 'admin';
 }
 
-/**
- * Can `role` read the tenant fee config (currency / VAT / registration
- * fee)? Admin + manager yes.
- */
-export function canReadFeeConfig(role: Role): boolean {
-  return role === 'admin' || role === 'manager';
-}
-
-/**
- * Can `role` mutate the tenant fee config? Admin only.
- */
-export function canMutateFeeConfig(role: Role): boolean {
-  return role === 'admin';
-}
+// NOTE: `canReadFeeConfig` / `canMutateFeeConfig` were retired in
+// R7/R8 consolidation when migration 0029 dropped `tenant_fee_config`
+// (F4 `tenant_invoice_settings` is now authoritative). Removed
+// 2026-05-19 (post-ship R6 C5).

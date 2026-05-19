@@ -350,8 +350,25 @@ export const planRepo: PlanRepo = {
   },
 
   // -- cloneYear (US2) -------------------------------------------------------
+  //
+  // Concurrency guard (post-ship R6 I3, 2026-05-19): per-(tenant,
+  // targetYear) advisory lock at the start of the transaction. Two
+  // concurrent clones into the same (tenant, year) would otherwise race
+  // past the `count > 0` check below — the second caller's bulk INSERT
+  // would then trip the membership_plans_pkey unique constraint and
+  // roll back, but the lock guarantees the second caller blocks until
+  // the first commits and re-reads the populated count → returns
+  // `target_year_populated` cleanly. Namespace `plans:clone:` is
+  // disjoint from F4 `invoicing:` / F5 `payments:` / F7 `broadcasts:`
+  // / F8 `renewals:`. Released automatically when the tx commits or
+  // rolls back (`pg_advisory_xact_lock`).
   async cloneYear(tenant, sourceYear, targetYear, activateCloned, createdBy) {
     return runInTenant(tenant, async (tx): Promise<Result<CloneYearSummary, CloneYearError>> => {
+      const lockKey = `plans:clone:${tenant.slug}:${targetYear as number}`;
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+      );
+
       // 1. Refuse if target year already populated
       const targetRows = await tx
         .select({ count: count() })
@@ -415,15 +432,9 @@ export const planRepo: PlanRepo = {
     });
   },
 
-  // -- countActiveForTenant (T145 fee-config currency immutability guard) ----
-  async countActiveForTenant(tenant) {
-    return runInTenant(tenant, async (tx) => {
-      const rows = await tx
-        .select({ count: count() })
-        .from(membershipPlans)
-        .where(sql`${membershipPlans.deletedAt} IS NULL`);
-      return Number(rows[0]?.count ?? 0);
-    });
-  },
+  // NOTE: `countActiveForTenant` was retired in R7/R8 consolidation —
+  // it backed the fee-config currency immutability guard (T145), which
+  // is no longer needed since `tenant_fee_config` was dropped by
+  // migration 0029. Removed 2026-05-19 (post-ship R6 C5).
 };
 

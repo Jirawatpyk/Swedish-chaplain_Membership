@@ -269,20 +269,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         { status: 409 },
       );
-    case 'audit_failed':
+    case 'audit_failed': {
+      // create-plan inserts the row BEFORE emitting audit, so a failure
+      // here means the plan IS in the database but the audit trail is
+      // missing. Surface plan_id in the structured log so on-call can
+      // backfill the audit row from the request payload — the previous
+      // message claimed "NOT persisted" which was a lie and triggered
+      // client retries → duplicate_plan 409.
+      const planRef =
+        rawBody && typeof rawBody === 'object'
+          ? {
+              plan_id: (rawBody as { plan_id?: unknown }).plan_id ?? null,
+              plan_year: (rawBody as { plan_year?: unknown }).plan_year ?? null,
+            }
+          : { plan_id: null, plan_year: null };
       logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'create-plan: audit write failed',
+        { requestId: ctx.requestId, ...planRef, err: result.error },
+        'create-plan: row persisted but audit write failed — operator backfill needed',
       );
       return NextResponse.json(
         {
           error: {
             code: 'audit_failed',
-            message: 'Audit trail write failed — plan was NOT persisted.',
+            message:
+              'Plan was created but audit trail write failed. Contact ops.',
           },
         },
         { status: 500 },
       );
+    }
     case 'server_error':
     default:
       logger.error(

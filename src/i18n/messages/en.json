@@ -203,6 +203,10 @@
     "back": "Back",
     "retry": "Try again"
   },
+  "common": {
+    "yes": "Yes",
+    "no": "No"
+  },
   "admin": {
     "home": {
       "welcomeWithName": "Welcome, {name}",
@@ -554,6 +558,7 @@
         "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
         "feeConfigMissing": "Tenant fee configuration not yet initialised. Run the seed script.",
         "loadFailed": "Failed to load plans.",
+        "backToList": "Back to plans",
         "duplicateKey": "A plan with this ID already exists for {year}.",
         "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
         "idempotencyConflict": "This request was already handled with different data. Refresh and try again.",

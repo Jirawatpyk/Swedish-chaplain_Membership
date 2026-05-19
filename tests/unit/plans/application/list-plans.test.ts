@@ -75,7 +75,6 @@ function makeDeps(overrides: {
       softDelete: vi.fn(),
       undelete: vi.fn(),
       cloneYear: vi.fn(),
-      countActiveForTenant: vi.fn(),
     },
     // R8 consolidation final — ListPlansDeps only carries `taxPolicy`
     // now; the legacy `feeConfigRepo` dep was removed. We drive the

@@ -31,14 +31,34 @@ export const F2_AUDIT_EVENT_TYPES = [
   'plan_undeleted',
   'plan_not_found',
   'plan_cross_tenant_probe',
-  'fee_config_updated',
+  // NOTE: `fee_config_updated` was retired in R7/R8 consolidation
+  // (migration 0029 dropped `tenant_fee_config`; F4 `tenant_invoice_settings`
+  // is now authoritative). The pgEnum value remains in F1 schema as
+  // legacy backward-compat for any historical audit rows. Removed from
+  // this Domain union 2026-05-19 (post-ship R6 C5).
   // F8 Phase 2 Wave C T029c (migration 0095) — scheduled-plan-change
   // lifecycle audit trail. Wave B G1 verify-run remediation carry-over.
   // Emitted by the F2 scheduled-plan-change use-cases (Wave G+ when
   // composition root wires the audit emit hook into the use-cases
   // alongside the Drizzle adapter that ships per Phase 5+).
   'plan_change_scheduled',
+  // `plan_change_superseded` — emitted by F8 `accept-tier-upgrade.ts`
+  // after `supersedeAndInsertPendingAtomically` returns a non-null
+  // `superseded` row (cross-module composition wired at F8 composition
+  // root per post-ship R6 D2 — F8 deps inject F2's `planAuditAdapter`
+  // via the public `@/modules/plans` barrel; Constitution III honoured
+  // because composition roots may legitimately wire ports across
+  // modules without coupling Application layers).
   'plan_change_superseded',
+  // TODO(renewal-applier): wire emitters for the 2 events below when
+  // a Domain caller exists. Payload schemas + severity map + adapter
+  // summarizers + F1 pgEnum values are already in place; only the
+  // Application-layer emit calls are pending. `plan_change_cancelled`
+  // needs a "cancel scheduled change" use-case (not in F2/F8 today).
+  // `plan_change_applied` needs the renewal-applier use-case to invoke
+  // it when a scheduled change actually applies at the next cycle.
+  // Tracked as F8 post-ship maintenance — NOT the F9 Admin Dashboard
+  // feature per docs/phases-plan.md.
   'plan_change_cancelled',
   'plan_change_applied',
 ] as const;
@@ -59,7 +79,6 @@ export const EVENT_SEVERITY: Record<F2AuditEventType, AuditSeverity> = {
   plan_undeleted: 'info',
   plan_not_found: 'info',
   plan_cross_tenant_probe: 'high',
-  fee_config_updated: 'info',
   // F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle.
   plan_change_scheduled: 'info',
   plan_change_superseded: 'info',
@@ -151,10 +170,6 @@ const planCrossTenantProbePayload = z.object({
   escalation_reason: z.string().min(1).max(500),
 });
 
-const feeConfigUpdatedPayload = z.object({
-  diff: auditDiffSchema,
-});
-
 // --- F8 Phase 2 Wave C T029c — scheduled-plan-change lifecycle payloads ---
 
 const planChangeScheduledPayload = z.object({
@@ -211,7 +226,6 @@ export const auditPayloadSchema = z.discriminatedUnion('event_type', [
     event_type: z.literal('plan_cross_tenant_probe'),
     payload: planCrossTenantProbePayload,
   }),
-  z.object({ event_type: z.literal('fee_config_updated'), payload: feeConfigUpdatedPayload }),
   // F8 Phase 2 Wave C T029c.
   z.object({
     event_type: z.literal('plan_change_scheduled'),

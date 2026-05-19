@@ -86,7 +86,9 @@ export {
   SUPPORTED_CURRENCIES,
 } from './domain/money';
 
-export type { TenantFeeConfig } from './domain/fee-config';
+// NOTE: `TenantFeeConfig` was retired in R7/R8 consolidation
+// (migration 0029 dropped `tenant_fee_config`; F4 `tenant_invoice_settings`
+// is now authoritative). Re-export removed 2026-05-19 (post-ship R6 C5).
 
 export type {
   PlanState,
@@ -136,8 +138,6 @@ export {
   canReadPlan,
   canManagerReadPlan,
   canCloneYear,
-  canReadFeeConfig,
-  canMutateFeeConfig,
 } from './domain/policies';
 
 // --- Application: port types (for Presentation + tests) ---------------------

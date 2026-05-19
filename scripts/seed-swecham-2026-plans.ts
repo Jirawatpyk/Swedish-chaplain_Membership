@@ -20,9 +20,9 @@
  *   - BOOTSTRAP_ADMIN_EMAIL (or an admin user) must exist to satisfy
  *     the `created_by` FK to users(id).
  *
- * Audit: appends 9 `plan_created` + 1 `fee_config_updated` events,
- * each with the correct payload shape. They provide an audit-log
- * trail for the seed operation (useful for forensics if the script
+ * Audit: appends 9 `plan_created` events with the correct payload
+ * shape. They provide an audit-log trail for the seed operation
+ * (useful for forensics if the script
  * accidentally runs twice in a short window).
  *
  * Usage:
@@ -36,6 +36,7 @@
 
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { db } from '@/lib/db';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { users } from '@/modules/auth/infrastructure/db/schema';
@@ -103,7 +104,10 @@ const EVENT_BASE = {
 
 // --- Corporate seed rows ----------------------------------------------------
 
-const CORPORATE_SEED: ReadonlyArray<{
+// Exported so SC-005 fixture tests (`tests/integration/plans/
+// seed-swecham-2026-fixture.test.ts`) can assert against the
+// canonical fee table + 6+3 split without re-running the seed.
+export const CORPORATE_SEED: ReadonlyArray<{
   readonly id: string;
   readonly name: { readonly en: string; readonly th: string; readonly sv: string };
   readonly fee: number;
@@ -302,7 +306,8 @@ const PARTNERSHIP_SHARED: Pick<
   tailor_made_services: true,
 };
 
-const PARTNERSHIP_SEED: ReadonlyArray<{
+// Exported for SC-005 fixture tests — see CORPORATE_SEED above.
+export const PARTNERSHIP_SEED: ReadonlyArray<{
   readonly id: string;
   readonly name: { readonly en: string; readonly th: string; readonly sv: string };
   readonly fee: number;
@@ -538,14 +543,23 @@ async function main(): Promise<void> {
   console.log('[seed] DONE');
 }
 
-main()
-  .catch((e) => {
-    console.error('[seed] FAILED:', e instanceof Error ? e.message : e);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    // Close any pooled connections so the script exits cleanly
-    // (Drizzle's `db` doesn't expose an end() — the postgres.js client
-    // used under the hood will be collected on process exit).
-    void sql;
-  });
+// Only invoke main() when this file is executed as a CLI entry point.
+// Test files that import the exported fixture constants
+// (CORPORATE_SEED / PARTNERSHIP_SEED) must NOT trigger the seed.
+const isCliEntry =
+  process.argv[1] !== undefined &&
+  process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isCliEntry) {
+  main()
+    .catch((e) => {
+      console.error('[seed] FAILED:', e instanceof Error ? e.message : e);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      // Close any pooled connections so the script exits cleanly
+      // (Drizzle's `db` doesn't expose an end() — the postgres.js
+      // client used under the hood will be collected on process exit).
+      void sql;
+    });
+}
