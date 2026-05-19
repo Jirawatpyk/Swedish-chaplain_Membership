@@ -40,8 +40,11 @@ import {
 import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
 import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
+// R3 Batch 4a (R3-C2) — scheduledChangeId is a Postgres uuid column.
+// Reject non-UUIDs with 400 invalid_path instead of letting them slip
+// to the Drizzle adapter where SQLSTATE 22P02 would surface as 500.
 const pathSchema = z.object({
-  id: z.string().min(1),
+  id: z.string().uuid(),
 });
 
 const bodySchema = z.object({

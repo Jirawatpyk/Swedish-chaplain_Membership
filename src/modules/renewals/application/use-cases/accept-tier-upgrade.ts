@@ -171,20 +171,35 @@ export async function acceptTierUpgrade(
   }
   const suggestionId = idParse.value;
 
-  const suggestion = await deps.tierUpgradeRepo.findById(
-    input.tenantId,
-    suggestionId,
-  );
-  if (suggestion === null) return err({ kind: 'suggestion_not_found' });
-  if (suggestion.status !== 'open') {
-    return err({ kind: 'suggestion_not_open' });
-  }
+  // R3 Batch 4a (R3-C3) — pre-tx repo lookups MUST be wrapped so a DB
+  // drop / RLS error / drizzle parse error doesn't escape the Result
+  // contract. Without this, the throw bubbles past the use-case to
+  // the route's outer try/catch where it lands as
+  // `accept_unexpected_error` with NO `errorId` in the canonical
+  // `F8.ACCEPT_TIER.*` taxonomy. Constitution Principle VIII.
+  let suggestion;
+  let activeCycle;
+  try {
+    suggestion = await deps.tierUpgradeRepo.findById(
+      input.tenantId,
+      suggestionId,
+    );
+    if (suggestion === null) return err({ kind: 'suggestion_not_found' });
+    if (suggestion.status !== 'open') {
+      return err({ kind: 'suggestion_not_open' });
+    }
 
-  const activeCycle = await deps.cyclesRepo.findActiveForMember(
-    input.tenantId,
-    suggestion.memberId,
-  );
-  if (activeCycle === null) return err({ kind: 'no_active_cycle' });
+    activeCycle = await deps.cyclesRepo.findActiveForMember(
+      input.tenantId,
+      suggestion.memberId,
+    );
+    if (activeCycle === null) return err({ kind: 'no_active_cycle' });
+  } catch (e) {
+    return err({
+      kind: 'server_error',
+      message: `pre-tx-repo-lookup: ${(e as Error)?.message ?? 'unknown'}`,
+    });
+  }
 
   const now = deps.clock.now();
   const acceptedAt = now.toISOString();

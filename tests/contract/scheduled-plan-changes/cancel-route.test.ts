@@ -76,7 +76,10 @@ const adminContext = {
   requestId: 'req-cancel-1',
 };
 
-const SCHEDULED_ID = 'sched-uuid-001';
+// R3 Batch 4a (R3-C2) — use a real UUID; the route path schema now
+// enforces `z.string().uuid()`. The pre-R3 value `'sched-uuid-001'`
+// would now fail the new path validation.
+const SCHEDULED_ID = '33333333-3333-3333-3333-333333333333';
 const MEMBER_ID = '11111111-1111-1111-1111-111111111111';
 const CYCLE_ID = '22222222-2222-2222-2222-222222222222';
 

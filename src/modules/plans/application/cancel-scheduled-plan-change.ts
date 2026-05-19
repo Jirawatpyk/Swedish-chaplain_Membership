@@ -36,7 +36,12 @@ import {
  * state. The boundary schema fails-closed BEFORE any DB or audit work.
  */
 const cancelScheduledPlanChangeInputSchema = z.object({
-  scheduledChangeId: z.string().min(1),
+  // R3 Batch 4a (R3-C2) — `scheduled_plan_changes.scheduled_change_id`
+  // is a Postgres `uuid`. A non-UUID input would otherwise bypass the
+  // boundary check, reach `findById` Drizzle adapter, hit SQLSTATE
+  // 22P02 (invalid_text_representation), and surface as a generic
+  // server_error (500) instead of the correct invalid_input (400).
+  scheduledChangeId: z.string().uuid(),
   memberId: z.string().uuid(),
   effectiveAtCycleId: z.string().uuid(),
   cancelledByUserId: z.string().min(1),

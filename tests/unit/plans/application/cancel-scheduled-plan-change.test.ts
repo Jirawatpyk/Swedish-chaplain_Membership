@@ -43,7 +43,8 @@ vi.mock('@/lib/logger', () => ({
 // ---------------------------------------------------------------------------
 
 const tenant = asTenantContext('swecham');
-const SCHEDULED_ID = 'sched-uuid-001';
+// R3 Batch 4a (R3-C2) — UUID required after schema tightening.
+const SCHEDULED_ID = '33333333-3333-3333-3333-333333333333';
 const MEMBER_ID = '11111111-1111-1111-1111-111111111111';
 const CYCLE_ID = '22222222-2222-2222-2222-222222222222';
 
@@ -232,6 +233,9 @@ describe('cancelScheduledPlanChange — invalid_input (R2 Batch 3a zod-validated
   // slip past truthy-only validation and only fail when the
   // audit-payload schema rejected post-transition.
   it.each([
+    // R3 Batch 4a (R3-C2) — scheduledChangeId now also requires UUID.
+    ['scheduledChangeId', { scheduledChangeId: 'not-a-uuid' }],
+    ['scheduledChangeId', { scheduledChangeId: 'sched-uuid-001' }],
     ['memberId', { memberId: 'not-a-uuid' }],
     ['memberId', { memberId: '11111111-1111-1111-1111' }],
     ['effectiveAtCycleId', { effectiveAtCycleId: 'plain-string' }],

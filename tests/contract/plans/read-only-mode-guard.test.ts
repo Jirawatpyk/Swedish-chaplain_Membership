@@ -105,12 +105,23 @@ function makeReq(
   body: unknown = {},
   method: 'POST' | 'PATCH' | 'DELETE' = 'POST',
 ): NextRequest {
-  const init: RequestInit = {
+  // `RequestInit` from lib.dom has `signal: AbortSignal | null` which
+  // Next's stricter `RequestInit` rejects under exactOptionalPropertyTypes.
+  // Build the literal inline to let TS pick the narrower Next type.
+  if (method === 'DELETE') {
+    return new NextRequest(url, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': 'ro-1',
+      },
+    });
+  }
+  return new NextRequest(url, {
     method,
     headers: { 'content-type': 'application/json', 'idempotency-key': 'ro-1' },
-  };
-  if (method !== 'DELETE') init.body = JSON.stringify(body);
-  return new NextRequest(url, init);
+    body: JSON.stringify(body),
+  });
 }
 
 const params = <T extends Record<string, string>>(p: T) => Promise.resolve(p);
@@ -211,13 +222,148 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
     );
     const res = await POST(
-      makeReq('http://x/api/admin/scheduled-plan-changes/sched-1/cancel', {
-        memberId: '11111111-1111-1111-1111-111111111111',
-        effectiveAtCycleId: '22222222-2222-2222-2222-222222222222',
-        reason: null,
-      }),
-      { params: params({ id: 'sched-1' }) },
+      makeReq(
+        'http://x/api/admin/scheduled-plan-changes/33333333-3333-3333-3333-333333333333/cancel',
+        {
+          memberId: '11111111-1111-1111-1111-111111111111',
+          effectiveAtCycleId: '22222222-2222-2222-2222-222222222222',
+          reason: null,
+        },
+      ),
+      { params: params({ id: '33333333-3333-3333-3333-333333333333' }) },
     );
     await assert503ReadOnly(res, cancelScheduledPlanChangeMock);
+  });
+});
+
+// ============================================================
+// R3 Batch 4a (R3-C4) — auth-before-readonly ordering
+//
+// The _read-only-guard.ts JSDoc explicitly warns: "Auth first (don't
+// leak 503 to unauthenticated callers)." The above 8 happy-path tests
+// only prove "readonly fires before use-case"; they DON'T prove "auth
+// fires before readonly". A refactor swapping the order would
+// silently leak 503 to unauthenticated callers.
+//
+// These 8 tests mock `requireAdminContext` to return a 401 response
+// + assert the route returns 401 (NOT 503) under READ_ONLY_MODE=true.
+// Use-case mocks MUST NOT be called.
+// ============================================================
+
+async function assert401NotReadOnly(
+  res: Response,
+  useCaseMock: ReturnType<typeof vi.fn>,
+): Promise<void> {
+  expect(res.status).toBe(401);
+  expect(res.headers.get('Retry-After')).toBeNull();
+  expect(useCaseMock).not.toHaveBeenCalled();
+}
+
+function unauthenticatedCtx(): { response: Response } {
+  return {
+    response: new Response(
+      JSON.stringify({ error: { code: 'unauthenticated' } }),
+      { status: 401, headers: { 'content-type': 'application/json' } },
+    ),
+  };
+}
+
+describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('POST /api/plans (create): unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { POST } = await import('@/app/api/plans/route');
+    const res = await POST(makeReq('http://x/api/plans', { x: 1 }));
+    await assert401NotReadOnly(res, createPlanMock);
+  });
+
+  it('POST /api/plans/clone: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { POST } = await import('@/app/api/plans/clone/route');
+    const res = await POST(
+      makeReq('http://x/api/plans/clone', {
+        source_year: 2025,
+        target_year: 2026,
+      }),
+    );
+    await assert401NotReadOnly(res, clonePlansToYearMock);
+  });
+
+  it('PATCH /api/plans/[year]/[planId]: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { PATCH } = await import('@/app/api/plans/[year]/[planId]/route');
+    const res = await PATCH(
+      makeReq(
+        'http://x/api/plans/2026/premium',
+        { plan_name: { en: 'X' } },
+        'PATCH',
+      ),
+      { params: params({ year: '2026', planId: 'premium' }) },
+    );
+    await assert401NotReadOnly(res, updatePlanMock);
+  });
+
+  it('DELETE /api/plans/[year]/[planId]: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
+    const res = await DELETE(
+      makeReq('http://x/api/plans/2026/premium', {}, 'DELETE'),
+      { params: params({ year: '2026', planId: 'premium' }) },
+    );
+    await assert401NotReadOnly(res, softDeletePlanMock);
+  });
+
+  it('POST /api/plans/[year]/[planId]/activate: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/activate/route'
+    );
+    const res = await POST(makeReq('http://x/api/plans/2026/premium/activate'), {
+      params: params({ year: '2026', planId: 'premium' }),
+    });
+    await assert401NotReadOnly(res, activatePlanMock);
+  });
+
+  it('POST /api/plans/[year]/[planId]/deactivate: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/deactivate/route'
+    );
+    const res = await POST(
+      makeReq('http://x/api/plans/2026/premium/deactivate'),
+      { params: params({ year: '2026', planId: 'premium' }) },
+    );
+    await assert401NotReadOnly(res, deactivatePlanMock);
+  });
+
+  it('POST /api/plans/[year]/[planId]/undelete: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { POST } = await import(
+      '@/app/api/plans/[year]/[planId]/undelete/route'
+    );
+    const res = await POST(makeReq('http://x/api/plans/2026/premium/undelete'), {
+      params: params({ year: '2026', planId: 'premium' }),
+    });
+    await assert401NotReadOnly(res, undeletePlanMock);
+  });
+
+  it('POST /api/admin/scheduled-plan-changes/[id]/cancel: unauthenticated → 401 not 503', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(
+      makeReq(
+        'http://x/api/admin/scheduled-plan-changes/33333333-3333-3333-3333-333333333333/cancel',
+        {
+          memberId: '11111111-1111-1111-1111-111111111111',
+          effectiveAtCycleId: '22222222-2222-2222-2222-222222222222',
+          reason: null,
+        },
+      ),
+      { params: params({ id: '33333333-3333-3333-3333-333333333333' }) },
+    );
+    await assert401NotReadOnly(res, cancelScheduledPlanChangeMock);
   });
 });

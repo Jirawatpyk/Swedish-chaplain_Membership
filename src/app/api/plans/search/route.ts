@@ -202,14 +202,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // silently dropping refundableInvoices to []. Outer try/catch
           // only handles thrown exceptions; a typed Result.err would
           // otherwise be invisible to ops.
+          // R3 Batch 4a (R3-S15) — errorId for alert-routing parity
+          // with the F2.PLAN_CHANGE.* convention used in F8 callbacks.
           logger.warn(
-            { requestId: ctx.requestId, err: paid.error },
+            {
+              errorId: 'F2.PALETTE.REFUNDABLE_LIST_UNAVAILABLE',
+              requestId: ctx.requestId,
+              err: paid.error,
+            },
             'palette.refundable_invoices_list_unavailable',
           );
         }
       } catch (e) {
         logger.warn(
-          { requestId: ctx.requestId, err: e },
+          {
+            errorId: 'F2.PALETTE.REFUNDABLE_SEARCH_THREW',
+            requestId: ctx.requestId,
+            err: e,
+          },
           'palette.refundable_invoices_search_failed',
         );
       }

@@ -437,7 +437,12 @@ async function stageA_FeeConfig(ctx: TenantContext): Promise<'inserted' | 'exist
   });
 }
 
-async function stageB_Plans(
+// Exported for the R3 Batch 4a smoke test
+// (`tests/integration/scripts/seed-swecham-2026-plans-runs.test.ts`)
+// which calls this directly against a throwaway tenant to catch
+// R3-C1-class crashes pre-merge. Not exported for production callers
+// — they go through `main()`.
+export async function stageB_Plans(
   ctx: TenantContext,
   ownerUserId: string,
 ): Promise<{ inserted: number; skipped: boolean }> {
@@ -456,7 +461,12 @@ async function stageB_Plans(
       plan_id: row.id,
       plan_year: 2026,
       plan_name: row.name,
-      description: { en: '' },
+      // R3 Batch 4a (R3-C1) — non-empty EN required: Batch 3e wired
+      // `asLocaleText` into `plan-repo.ts:rowToPlan` which rejects
+      // empty `en` with `EmptyEnLocaleTextError`. Fallback the
+      // description to the plan name so the integrity invariant
+      // holds + the seed remains idempotent.
+      description: { en: row.name.en, th: row.name.th, sv: row.name.sv },
       sort_order: row.sortOrder,
       plan_category: 'corporate',
       member_type_scope: row.memberType,
@@ -491,7 +501,8 @@ async function stageB_Plans(
       plan_id: row.id,
       plan_year: 2026,
       plan_name: row.name,
-      description: { en: '' },
+      // R3 Batch 4a (R3-C1) — non-empty EN required (see CORPORATE_SEED above).
+      description: { en: row.name.en, th: row.name.th, sv: row.name.sv },
       sort_order: row.sortOrder,
       plan_category: 'partnership',
       member_type_scope: 'company',

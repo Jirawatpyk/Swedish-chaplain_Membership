@@ -80,7 +80,11 @@ export async function seedMemberAndRenewalCycle(
         planId,
         planYear: 2026,
         planName: { en: `Test ${planId}` },
-        description: { en: '' },
+        // R3 Batch 4a (R3-S2) — non-empty EN required. plan-repo's
+        // `rowToPlan` hydrates via `asLocaleText` which rejects empty
+        // `en`. Use a non-trivial value so future tests that read the
+        // helper-seeded row via `planRepo.findOne` don't crash.
+        description: { en: `Test ${planId} description` },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',
