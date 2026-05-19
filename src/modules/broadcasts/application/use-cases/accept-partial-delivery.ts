@@ -22,6 +22,7 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
@@ -105,8 +106,20 @@ export async function acceptPartialDelivery(
         },
         requestId: input.requestId ?? null,
       });
-    } catch {
-      // best-effort — never 5xx because audit failed
+    } catch (auditErr) {
+      // Phase 3F.11.2 (H1 — Round 2 fix) — log on audit-port failure.
+      // Constitution v1.4.0 Principle I sub-clause 4 — even on
+      // audit_log table outage, forensic trail must reach pino ops feed.
+      logger.error(
+        {
+          err: auditErr,
+          tenantId: tenantSlug,
+          probedBroadcastId: input.broadcastId,
+          actorUserId: input.actorUserId,
+          useCase: 'accept-partial-delivery',
+        },
+        'broadcasts.cross_tenant_probe.audit_emit_failed',
+      );
     }
     return err({ kind: 'BROADCAST_NOT_FOUND', broadcastId: input.broadcastId });
   }

@@ -206,6 +206,20 @@ export function BatchBreakdown({
 
   return (
     <section aria-labelledby="batches-breakdown-heading" className="space-y-4">
+      {/* Phase 3F.11.2 (H2 — Round 2 fix / UX F-10 actual closure) —
+          aria-live region moved OUT of <summary> (which has implicit
+          role=button). ARIA 1.2: live regions inside interactive roles
+          aren't reliably processed by SRs. The summary text remains
+          visible to sighted users; SR users hear the announcement when
+          counts change via this sibling sr-only live region. */}
+      <div role="status" aria-live="polite" className="sr-only">
+        {t('summary', {
+          succeeded: counts.succeeded,
+          failed: counts.failed,
+          pending: counts.pending,
+          total: batches.length,
+        })}
+      </div>
       <details className="group rounded-md border" open={defaultOpen}>
         <summary
           className={cn(
@@ -221,10 +235,7 @@ export function BatchBreakdown({
             >
               {t('title')}
             </h3>
-            <p
-              className="text-sm text-muted-foreground"
-              aria-live="polite"
-            >
+            <p className="text-sm text-muted-foreground">
               {t('summary', {
                 succeeded: counts.succeeded,
                 failed: counts.failed,

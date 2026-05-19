@@ -51,10 +51,14 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
   // motion preference would suppress the "attention needed" visual
   // affordance entirely → admin might miss the partially-sent
   // actionable state.
+  // Phase 3F.11.2 (H3 — Round 2 fix) — ring color was
+  // `ring-destructive/60` on `bg-destructive` background ≈ <3:1
+  // contrast, failing WCAG SC 1.4.11 (Non-text Contrast). Switched
+  // to `ring-background` (light ring on red bg) which yields ≥4.5:1.
   partially_sent: {
     variant: 'destructive',
     className:
-      'motion-safe:animate-pulse motion-reduce:ring-1 motion-reduce:ring-destructive/60 motion-reduce:ring-offset-1',
+      'motion-safe:animate-pulse motion-reduce:ring-2 motion-reduce:ring-background motion-reduce:ring-offset-1',
   },
   partial_delivery_accepted: { variant: 'secondary', className: 'text-muted-foreground' },
 };

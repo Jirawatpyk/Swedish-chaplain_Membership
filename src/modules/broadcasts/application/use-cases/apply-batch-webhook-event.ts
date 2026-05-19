@@ -123,8 +123,26 @@ export async function applyBatchWebhookEvent(
           },
           requestId: input.requestId ?? null,
         });
-      } catch {
-        // best-effort
+      } catch (auditErr) {
+        // Phase 3F.11.2 (H1 — Round 2 fix) — log on audit-port failure.
+        // Constitution v1.4.0 Principle I sub-clause 4 — even on audit
+        // outage the forensic trail must reach pino ops feed. The Resend
+        // webhook source is `system:resend-webhook` — operational
+        // forensic rather than security; M3 will split this into a
+        // distinct event type once 0173 migration lands.
+        logger.error(
+          {
+            err: auditErr,
+            tenantId: input.tenantId,
+            broadcastId: input.broadcastId,
+            batchManifestId: input.batchManifestId,
+            batchIndex: input.batchIndex,
+            eventType: input.eventType,
+            resendEventId: input.resendEventId,
+            useCase: 'apply-batch-webhook-event',
+          },
+          'broadcasts.cross_tenant_probe.audit_emit_failed',
+        );
       }
       return err({
         kind: 'BATCH_NOT_FOUND',

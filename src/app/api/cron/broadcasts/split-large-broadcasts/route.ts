@@ -230,23 +230,50 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         resolvedRecipientCount: resolvedCount,
       });
       if (!splitResult.ok) {
-        summary.errors++;
-        logger.error(
+        // Phase 3F.11.2 (H4 — Round 2 fix) — orphan recovery.
+        // The two-tx structure (split = inner tx → transition = outer
+        // tx) means a transient failure at the transition step can
+        // leave the broadcast stuck in `approved` while manifests are
+        // already committed. On the next tick, eligible scan re-finds
+        // the broadcast → `splitBroadcastIntoBatches` returns
+        // `BATCH_ALREADY_DISPATCHED` (unique-index collision on
+        // manifests). Without recovery, this state persists forever
+        // and dispatch-batches cron silently sends emails while the
+        // admin UI shows the broadcast as `approved`.
+        //
+        // Recovery: on BATCH_ALREADY_DISPATCHED, fall through to the
+        // transition block — the manifests exist, we just need to flip
+        // the broadcast status. The applyTransition expectedFromStatus
+        // guard ensures we only transition `approved` rows (race-safe).
+        if (splitResult.error.kind !== 'BATCH_ALREADY_DISPATCHED') {
+          summary.errors++;
+          logger.error(
+            {
+              tenantId: tenant.slug,
+              broadcastId: row.broadcast_id,
+              errorKind: splitResult.error.kind,
+            },
+            'cron.broadcasts.split_large.split_failed',
+          );
+          continue;
+        }
+        // Log the orphan-recovery path so ops dashboards can alert if
+        // it fires repeatedly (could indicate a deeper transition bug).
+        logger.warn(
           {
             tenantId: tenant.slug,
             broadcastId: row.broadcast_id,
-            errorKind: splitResult.error.kind,
           },
-          'cron.broadcasts.split_large.split_failed',
+          'cron.broadcasts.split_large.orphan_recovery_attempted',
         );
-        continue;
       }
 
       // 4e. Transition broadcast `approved → sending`. The dispatch-
       //     batches cron's eligible scan filters on pending batches,
       //     not on broadcast status — but transitioning here matches
       //     F7 MVP convention + lets `dispatch-scheduled` (F7 MVP)
-      //     correctly skip rows we've claimed.
+      //     correctly skip rows we've claimed. Also reached via the
+      //     orphan-recovery fallthrough above (H4 — Round 2 fix).
       try {
         await broadcastsRepo.withTx(async (tx) => {
           await broadcastsRepo.applyTransition(
@@ -267,7 +294,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             err: e instanceof Error ? e.message : String(e),
             tenantId: tenant.slug,
             broadcastId: row.broadcast_id,
-            batchCount: splitResult.value.batchCount,
+            batchCount: splitResult.ok ? splitResult.value.batchCount : null,
+            orphanRecovery: !splitResult.ok,
           },
           'cron.broadcasts.split_large.transition_failed',
         );
@@ -279,8 +307,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         {
           tenantId: tenant.slug,
           broadcastId: row.broadcast_id,
-          batchCount: splitResult.value.batchCount,
+          // H4 orphan-recovery: batchCount unknown in recovery path
+          // (manifests pre-exist from earlier tick). Null is OK for
+          // observability — the recovery log line above carries the signal.
+          batchCount: splitResult.ok ? splitResult.value.batchCount : null,
           resolvedCount,
+          orphanRecovery: !splitResult.ok,
         },
         'cron.broadcasts.split_large.broadcast_split_complete',
       );
