@@ -111,6 +111,33 @@ describe('applyBatchWebhookEvent contract (Phase 3F.5)', () => {
     expect(emits.some((e) => e.eventType === 'broadcast_webhook_batch_missing')).toBe(true);
   });
 
+  // Phase 3F.11.12 (Round 3 Gap 4) — verify the forensic audit emits
+  // for ALL 4 event types, not just `delivered`. If a future regression
+  // adds a per-event-type branch around the audit emit, a non-delivered
+  // event might skip the forensic trail silently. Parametrise.
+  it.each([
+    ['bounced', 'broadcast_webhook_batch_missing'],
+    ['complained', 'broadcast_webhook_batch_missing'],
+    ['unsubscribed', 'broadcast_webhook_batch_missing'],
+  ] as Array<[BatchWebhookEventType, string]>)(
+    'incrementCounter not_found on %s event → forensic audit %s still emitted',
+    async (eventType, expectedAuditType) => {
+      const { deps, emits } = makeStubDeps({ incrementFails: 'not_found' });
+      const result = await applyBatchWebhookEvent(deps as never, {
+        ...baseInput,
+        eventType,
+      });
+      expect(result.ok).toBe(false);
+      expect(emits.some((e) => e.eventType === expectedAuditType)).toBe(true);
+      // Forensic payload retains the event-type discriminator so ops
+      // can correlate which Resend event triggered the missing batch.
+      const auditEvent = emits.find(
+        (e) => e.eventType === expectedAuditType,
+      );
+      expect(auditEvent?.payload?.['resendEventType']).toBe(eventType);
+    },
+  );
+
   it('incrementCounter storage_error → server_error (no double-emit)', async () => {
     const { deps, emits } = makeStubDeps({ incrementFails: 'storage_error' });
     const result = await applyBatchWebhookEvent(deps as never, {
