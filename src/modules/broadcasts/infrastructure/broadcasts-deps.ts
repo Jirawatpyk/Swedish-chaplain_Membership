@@ -51,6 +51,13 @@ import type { ApplyBatchWebhookEventDeps } from '../application/use-cases/apply-
 import { makeDrizzleBatchManifestsRepo } from './drizzle-batch-manifests-repo';
 import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
 import { pgAdvisoryLockAdapter } from './pg-advisory-lock-adapter';
+// F7.1a Phase 4 (US2 — Image embedding + allowlist + ClamAV scan)
+import { makeDrizzleImageAllowlistRepo } from './drizzle-image-allowlist-repo';
+import { vercelBlobImageStorage } from './vercel-blob-image-storage';
+import { clamavVirusScanner } from './clamav-virus-scanner';
+import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-image-allowlist';
+import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
+import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
 
 export const systemClock: ClockPort = {
   now: () => new Date(),
@@ -591,5 +598,58 @@ export async function resolveTenantByBatchProviderBroadcastId(
     batchManifestId: lookup.batchManifestId,
     batchIndex: lookup.batchIndex,
     recipientCount: lookup.recipientCount,
+  };
+}
+
+// ----- F7.1a Phase 4 (US2 — Image embedding) ---------------------------------
+//
+// Composition roots for the 3 US2 use-cases. Each is per-tenant for
+// symmetry with the rest of the F7 deps shape; tenant scoping is
+// enforced via `runInTenant()` at the API route layer + RLS+FORCE on
+// the underlying tables (migration 0166).
+
+/**
+ * T072 — composition root for `manageImageAllowlist` use case
+ * (admin POST /api/admin/broadcasts/settings/allowlist).
+ */
+export function makeManageImageAllowlistDeps(
+  _tenantId: string,
+): ManageImageAllowlistDeps {
+  return {
+    port: makeDrizzleImageAllowlistRepo(),
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T071 — composition root for `uploadInlineImage` use case
+ * (member POST /api/member/broadcasts/inline-image-upload).
+ * Wires ClamAV scanner + Vercel Blob image storage. The allowlist
+ * port is here for symmetry — the use case currently does not
+ * consult it directly, but a future tightening (e.g. require host
+ * pre-registered before upload) could read from it.
+ */
+export function makeUploadInlineImageDeps(
+  _tenantId: string,
+): UploadInlineImageDeps {
+  return {
+    allowlistPort: makeDrizzleImageAllowlistRepo(),
+    scanner: clamavVirusScanner,
+    storage: vercelBlobImageStorage,
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T070 — composition root for `validateImageSourceAllowlist` use case
+ * (called from F7 MVP sanitiser integration path or directly from
+ * submit-broadcast follow-up wiring).
+ */
+export function makeValidateImageSourceAllowlistDeps(
+  _tenantId: string,
+): ValidateImageSourceAllowlistDeps {
+  return {
+    allowlistPort: makeDrizzleImageAllowlistRepo(),
+    audit: f7AuditAdapter,
   };
 }
