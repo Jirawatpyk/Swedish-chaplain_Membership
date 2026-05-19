@@ -29,28 +29,18 @@
 import { describe, expect, it } from 'vitest';
 import * as fc from 'fast-check';
 
-interface BatchBoundary {
-  readonly batchIndex: number;
-  readonly recipientRangeStart: number;
-  readonly recipientRangeEnd: number;
-  readonly recipients: readonly string[];
-}
+import { splitIntoBatches } from '@/modules/broadcasts/domain/value-objects/batch-boundary';
 
+// GREEN since 2026-05-19 Phase 3 Cluster B T041 — Domain VO implemented.
+// The original Phase 3A RED commit used a dynamic-import wrapper to
+// bypass typecheck before the module existed; Vite alias resolution
+// doesn't reach inside `new Function('m','return import(m)')` so the
+// helper would have stayed RED even after impl. Converted to static
+// import on T041 ship.
 async function importSplit(): Promise<{
-  splitIntoBatches: (
-    recipients: readonly string[],
-    perBatchCap?: number,
-  ) => readonly BatchBoundary[];
+  splitIntoBatches: typeof splitIntoBatches;
 }> {
-  const path = '@/modules/broadcasts/domain/value-objects/batch-boundary';
-  try {
-    const mod = await new Function('m', 'return import(m)')(path);
-    return mod as never;
-  } catch (err) {
-    throw new Error(
-      `[RED — T041] batch-boundary Domain VO not yet implemented: ${String(err)}`,
-    );
-  }
+  return { splitIntoBatches };
 }
 
 function emails(count: number): string[] {

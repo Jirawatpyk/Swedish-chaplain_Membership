@@ -70,6 +70,11 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     resendAudienceId: null,
     resendBroadcastId: null,
     retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    startedFromTemplateId: null,
+    templateNameSnapshot: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
   };

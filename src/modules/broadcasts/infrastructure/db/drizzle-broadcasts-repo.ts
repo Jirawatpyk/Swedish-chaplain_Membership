@@ -189,6 +189,15 @@ function rowToBroadcast(row: BroadcastRow): Broadcast {
 
     retentionYears: row.retentionYears as 5 | 10,
 
+    // F7.1a US1 + US7 columns (Phase 2 0162 + 3 B0 Domain type extension).
+    // DB defaults: manual_retry_count=0; the 4 nullable fields default
+    // to NULL on existing F7 MVP rows (ADD COLUMN was non-destructive).
+    manualRetryCount: row.manualRetryCount,
+    partialDeliveryAcceptedAt: row.partialDeliveryAcceptedAt,
+    partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
+    startedFromTemplateId: row.startedFromTemplateId,
+    templateNameSnapshot: row.templateNameSnapshot,
+
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

@@ -41,6 +41,13 @@ const STATUS_STYLES: Record<BroadcastStatus, BroadcastBadgeProps> = {
   rejected: { variant: 'destructive' },
   cancelled: { variant: 'outline', className: 'text-muted-foreground' },
   failed_to_dispatch: { variant: 'destructive' },
+  // F7.1a US1 (Phase 3 B0 — added 2026-05-19). `partially_sent` is
+  // non-terminal with admin retry/accept actions; use `destructive`
+  // variant to signal attention needed. `partial_delivery_accepted`
+  // is terminal-after-admin-accept; muted secondary matches `cancelled`
+  // visual weight (operational end-state, not error).
+  partially_sent: { variant: 'destructive', className: 'motion-safe:animate-pulse' },
+  partial_delivery_accepted: { variant: 'secondary', className: 'text-muted-foreground' },
 };
 
 export function getBroadcastStatusBadgeProps(

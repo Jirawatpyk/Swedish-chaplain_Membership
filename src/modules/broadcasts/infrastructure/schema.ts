@@ -67,6 +67,16 @@ export const broadcastStatusEnum = pgEnum('broadcast_status', [
   'rejected',
   'cancelled',
   'failed_to_dispatch',
+  // F7.1a US1 (FR-008a/b) — added 2026-05-19 via migration 0169.
+  // `partially_sent` is non-terminal (admin can retry up to 3 times,
+  // see broadcasts.manual_retry_count CHECK 0..3); reachable from
+  // `sending` when ≥1 batch reached terminal failed state after
+  // exhausting per-batch retry budget.
+  // `partial_delivery_accepted` is TERMINAL — entered when admin
+  // clicks "Accept partial delivery" on a `partially_sent` broadcast;
+  // sets broadcasts.partial_delivery_accepted_at + _by_user_id.
+  'partially_sent',
+  'partial_delivery_accepted',
 ]);
 
 /**

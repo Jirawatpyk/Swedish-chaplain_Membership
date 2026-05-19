@@ -1184,6 +1184,13 @@
 			"when": 1797235200000,
 			"tag": "0168_f71a_default_template_seed",
 			"breakpoints": true
+		},
+		{
+			"idx": 169,
+			"version": "7",
+			"when": 1797321600000,
+			"tag": "0169_f71a_broadcast_status_partially_sent",
+			"breakpoints": true
 		}
 	]
 }
