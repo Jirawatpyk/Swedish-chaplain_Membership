@@ -27,9 +27,11 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import {
   cancelScheduledPlanChange,
+  assertValidScheduledPlanChange,
   type CancelScheduledPlanChangeDeps,
   type CancelScheduledPlanChangeInput,
   type AuditPort,
+  type MutableScheduledPlanChange,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
 } from '@/modules/plans';
@@ -60,10 +62,16 @@ const baseInput: CancelScheduledPlanChangeInput = {
   reason: null,
 };
 
+// R3 Batch 4e (R3-S6) — `ScheduledPlanChange` is now a discriminated
+// union over `status`. Test fixtures construct the loose
+// `MutableScheduledPlanChange` shape and let `assertValidScheduledPlanChange`
+// narrow it to the discriminated variant. The runtime assertion fails
+// loudly if a fixture violates the status↔timestamp invariant, which
+// keeps test data + production data consistent.
 function makePending(
-  overrides: Partial<ScheduledPlanChange> = {},
+  overrides: Partial<MutableScheduledPlanChange> = {},
 ): ScheduledPlanChange {
-  return {
+  const candidate: MutableScheduledPlanChange = {
     tenantId: tenant.slug,
     scheduledChangeId: SCHEDULED_ID,
     memberId: MEMBER_ID,
@@ -79,6 +87,8 @@ function makePending(
     cancelledAt: null,
     ...overrides,
   };
+  assertValidScheduledPlanChange(candidate);
+  return candidate;
 }
 
 function makeDeps(

@@ -23,10 +23,12 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { asSatang } from '@/lib/money';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
-import type {
-  AuditPort as F2AuditPort,
-  ScheduledPlanChange,
-  ScheduledPlanChangeRepo,
+import {
+  assertValidScheduledPlanChange,
+  type AuditPort as F2AuditPort,
+  type MutableScheduledPlanChange,
+  type ScheduledPlanChange,
+  type ScheduledPlanChangeRepo,
 } from '@/modules/plans';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
 import { _internal } from '@/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-paid-callback';
@@ -70,10 +72,11 @@ const baseEvent: F4InvoicePaidEvent = {
   triggeredBy: 'webhook',
 };
 
+// R3 Batch 4e (R3-S6) — discriminated-union narrow at fixture boundary.
 function makePending(
-  overrides: Partial<ScheduledPlanChange> = {},
+  overrides: Partial<MutableScheduledPlanChange> = {},
 ): ScheduledPlanChange {
-  return {
+  const candidate: MutableScheduledPlanChange = {
     tenantId: TENANT_SLUG,
     scheduledChangeId: SCHEDULED_CHANGE_ID,
     memberId: MEMBER_ID,
@@ -89,6 +92,8 @@ function makePending(
     cancelledAt: null,
     ...overrides,
   };
+  assertValidScheduledPlanChange(candidate);
+  return candidate;
 }
 
 function makeDeps(opts: {

@@ -336,10 +336,25 @@ export {
   SCHEDULED_PLAN_CHANGE_STATUSES,
   isTerminalStatus,
   assertValidScheduledPlanChange,
+  // R3 Batch 4e (R3-S6) — discriminated-union factory + loose
+  // hydration type. `makeScheduledPlanChange` is the canonical way to
+  // construct a `ScheduledPlanChange` in test fixtures; the type
+  // overloads enforce the status↔timestamp invariant at compile time.
+  makeScheduledPlanChange,
   InvalidScheduledPlanChangeError,
 } from './domain/scheduled-plan-change';
 export type {
   ScheduledPlanChange,
+  PendingScheduledPlanChange,
+  AppliedScheduledPlanChange,
+  SupersededScheduledPlanChange,
+  CancelledScheduledPlanChange,
+  // R3 Batch 4e (R3-S6) — loose hydration shape used by the Drizzle
+  // adapter's `rowToDomain` + test-fixture helpers + the
+  // `assertValidScheduledPlanChange` defence-in-depth input. Code
+  // consumers should accept the discriminated `ScheduledPlanChange`
+  // (the carry-the-invariant-in-the-type variant) wherever possible.
+  MutableScheduledPlanChange,
   ScheduledPlanChangeStatus,
   ScheduleNextRenewalPlanChangeInput,
   ScheduleNextRenewalPlanChangeError,

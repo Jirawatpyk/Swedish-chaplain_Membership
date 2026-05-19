@@ -21,8 +21,10 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import {
   scheduleNextRenewalPlanChange,
+  assertValidScheduledPlanChange,
   type ScheduleNextRenewalPlanChangeDeps,
   type AuditPort,
+  type MutableScheduledPlanChange,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
   type ScheduleNextRenewalPlanChangeInput,
@@ -44,10 +46,13 @@ const baseInput: ScheduleNextRenewalPlanChangeInput = {
   scheduledByUserId: 'admin-user-uuid',
 };
 
+// R3 Batch 4e (R3-S6) — `ScheduledPlanChange` is now a discriminated
+// union. Test fixtures construct the loose `MutableScheduledPlanChange`
+// shape and let `assertValidScheduledPlanChange` narrow it.
 function makeRow(
-  overrides: Partial<ScheduledPlanChange> = {},
+  overrides: Partial<MutableScheduledPlanChange> = {},
 ): ScheduledPlanChange {
-  return {
+  const candidate: MutableScheduledPlanChange = {
     tenantId: 'swecham',
     scheduledChangeId: 'inserted-001',
     memberId: MEMBER_ID,
@@ -63,6 +68,8 @@ function makeRow(
     cancelledAt: null,
     ...overrides,
   };
+  assertValidScheduledPlanChange(candidate);
+  return candidate;
 }
 
 type DepsOverrides = {
@@ -217,9 +224,12 @@ describe('scheduleNextRenewalPlanChange — audit_failed', () => {
   });
 
   it('returns audit_failed when plan_change_superseded emit (second call) returns persist_failed', async () => {
+    // R3 Batch 4e (R3-S6) — `superseded` requires `supersededAt` per
+    // the discriminated union invariant. Supply it explicitly.
     const supersededRow = makeRow({
       scheduledChangeId: 'prior-pending-id',
       status: 'superseded',
+      supersededAt: '2026-05-03T12:05:00Z',
     });
     const deps = makeDeps({
       supersedeResult: { inserted: makeRow(), superseded: supersededRow },

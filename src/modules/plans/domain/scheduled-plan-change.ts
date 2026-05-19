@@ -54,8 +54,25 @@ export class InvalidScheduledPlanChangeError extends Error {
   }
 }
 
-/** Aggregate row shape — mirrors `specs/011-renewal-reminders/data-model.md § 2.9` columns 1:1. */
-export interface ScheduledPlanChange {
+/**
+ * Aggregate row shape — mirrors `specs/011-renewal-reminders/data-model.md § 2.9` columns 1:1.
+ *
+ * R3 Batch 4e (R3-S6) — compile-time discriminated union over `status`.
+ * The status↔timestamp invariant is now encoded in the TYPE (not just
+ * in JSDoc comments + the runtime `assertValidScheduledPlanChange`):
+ *
+ *   - status='pending'    ⇒ appliedAt/supersededAt/cancelledAt all null
+ *   - status='applied'    ⇒ appliedAt: string;       supersededAt/cancelledAt: null
+ *   - status='superseded' ⇒ supersededAt: string;    appliedAt/cancelledAt: null
+ *   - status='cancelled'  ⇒ cancelledAt: string;     appliedAt/supersededAt: null
+ *
+ * A code site that destructures `row.appliedAt` without narrowing on
+ * `row.status === 'applied'` will fail at compile time. The runtime
+ * `assertValidScheduledPlanChange` is RETAINED as defence-in-depth
+ * for test-fixture drift + future hydration paths that bypass
+ * `rowToDomain`.
+ */
+type ScheduledPlanChangeBase = {
   readonly tenantId: string;
   readonly scheduledChangeId: string;
   readonly memberId: string;
@@ -64,15 +81,134 @@ export interface ScheduledPlanChange {
   readonly toPlanId: string;
   readonly scheduledByUserId: string;
   readonly reason: string | null;
-  readonly status: ScheduledPlanChangeStatus;
   /** ISO 8601 UTC. */
   readonly scheduledAt: string;
-  /** ISO 8601 UTC; non-null iff status === 'applied'. */
+};
+
+export type PendingScheduledPlanChange = ScheduledPlanChangeBase & {
+  readonly status: 'pending';
+  readonly appliedAt: null;
+  readonly supersededAt: null;
+  readonly cancelledAt: null;
+};
+
+export type AppliedScheduledPlanChange = ScheduledPlanChangeBase & {
+  readonly status: 'applied';
+  /** ISO 8601 UTC — required when status==='applied'. */
+  readonly appliedAt: string;
+  readonly supersededAt: null;
+  readonly cancelledAt: null;
+};
+
+export type SupersededScheduledPlanChange = ScheduledPlanChangeBase & {
+  readonly status: 'superseded';
+  readonly appliedAt: null;
+  /** ISO 8601 UTC — required when status==='superseded'. */
+  readonly supersededAt: string;
+  readonly cancelledAt: null;
+};
+
+export type CancelledScheduledPlanChange = ScheduledPlanChangeBase & {
+  readonly status: 'cancelled';
+  readonly appliedAt: null;
+  readonly supersededAt: null;
+  /** ISO 8601 UTC — required when status==='cancelled'. */
+  readonly cancelledAt: string;
+};
+
+export type ScheduledPlanChange =
+  | PendingScheduledPlanChange
+  | AppliedScheduledPlanChange
+  | SupersededScheduledPlanChange
+  | CancelledScheduledPlanChange;
+
+/**
+ * Loose hydration shape — the structural-typed counterpart of
+ * `ScheduledPlanChange`. The Drizzle adapter's `rowToDomain` builds
+ * this from raw DB columns, then narrows via
+ * `assertValidScheduledPlanChange`. Test fixtures that need to
+ * deliberately construct invalid status↔timestamp combos (e.g., the
+ * `assertValidScheduledPlanChange` defence tests) use this type
+ * directly.
+ *
+ * Code consumers should NEVER accept `MutableScheduledPlanChange` —
+ * the discriminated `ScheduledPlanChange` carries the type-level
+ * status↔timestamp invariant.
+ */
+export interface MutableScheduledPlanChange extends ScheduledPlanChangeBase {
+  readonly status: ScheduledPlanChangeStatus;
   readonly appliedAt: string | null;
-  /** ISO 8601 UTC; non-null iff status === 'superseded'. */
   readonly supersededAt: string | null;
-  /** ISO 8601 UTC; non-null iff status === 'cancelled'. */
   readonly cancelledAt: string | null;
+}
+
+/**
+ * Status-aware factory: build a discriminated `ScheduledPlanChange`
+ * from a base + status. Test fixtures that previously constructed
+ * `ScheduledPlanChange` as a flat shape now call this so the
+ * compile-time discriminant is satisfied without per-variant boilerplate.
+ *
+ * For the `applied`/`superseded`/`cancelled` variants, the matching
+ * timestamp MUST be supplied; the other two are always `null`.
+ */
+export function makeScheduledPlanChange(
+  base: ScheduledPlanChangeBase,
+  status: 'pending',
+): PendingScheduledPlanChange;
+export function makeScheduledPlanChange(
+  base: ScheduledPlanChangeBase,
+  status: 'applied',
+  appliedAt: string,
+): AppliedScheduledPlanChange;
+export function makeScheduledPlanChange(
+  base: ScheduledPlanChangeBase,
+  status: 'superseded',
+  supersededAt: string,
+): SupersededScheduledPlanChange;
+export function makeScheduledPlanChange(
+  base: ScheduledPlanChangeBase,
+  status: 'cancelled',
+  cancelledAt: string,
+): CancelledScheduledPlanChange;
+export function makeScheduledPlanChange(
+  base: ScheduledPlanChangeBase,
+  status: ScheduledPlanChangeStatus,
+  timestamp?: string,
+): ScheduledPlanChange {
+  switch (status) {
+    case 'pending':
+      return {
+        ...base,
+        status: 'pending',
+        appliedAt: null,
+        supersededAt: null,
+        cancelledAt: null,
+      };
+    case 'applied':
+      return {
+        ...base,
+        status: 'applied',
+        appliedAt: timestamp!,
+        supersededAt: null,
+        cancelledAt: null,
+      };
+    case 'superseded':
+      return {
+        ...base,
+        status: 'superseded',
+        appliedAt: null,
+        supersededAt: timestamp!,
+        cancelledAt: null,
+      };
+    case 'cancelled':
+      return {
+        ...base,
+        status: 'cancelled',
+        appliedAt: null,
+        supersededAt: null,
+        cancelledAt: timestamp!,
+      };
+  }
 }
 
 /** Caller-supplied fields when scheduling a NEW pending row. */
@@ -108,7 +244,7 @@ export type ScheduleNextRenewalPlanChangeError =
  * CHECK drift during schema migrations.
  */
 export function assertValidScheduledPlanChange(
-  row: ScheduledPlanChange,
+  row: MutableScheduledPlanChange,
 ): asserts row is ScheduledPlanChange {
   const expectedNonNullByStatus = {
     pending: { applied: false, superseded: false, cancelled: false },
