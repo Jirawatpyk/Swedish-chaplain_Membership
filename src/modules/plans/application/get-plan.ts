@@ -12,6 +12,7 @@
  */
 
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, PlanRepo } from './ports';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
@@ -77,11 +78,30 @@ export async function getPlan(
         },
       },
     );
-    // Audit failure on a read-path 404 is non-fatal — the audit adapter
-    // logs internally on persist_failed. We check the result to prevent
-    // unhandled rejections but don't escalate here; the route handler's
-    // structured logger will surface it if needed.
-    void auditResult;
+    // Audit failure on a read-path 404 is non-fatal but is forensically
+    // load-bearing: F13's correlation scanner consumes `plan_not_found`
+    // rows to escalate cross-tenant probes to `plan_cross_tenant_probe`.
+    // A sustained `persist_failed` (audit_log RLS drift, immutable
+    // trigger regression, DB flap) silently disables the F13 pipeline
+    // unless we log it — emit a structured error so on-call dashboards
+    // can alert before the security event is lost.
+    if (!auditResult.ok) {
+      logger.error(
+        {
+          event: 'plan_not_found_audit_failed',
+          tenant: deps.tenant.slug,
+          plan_id: input.planId,
+          plan_year: input.year as number,
+          actor_user_id: deps.actorUserId,
+          request_id: deps.requestId,
+          err:
+            auditResult.error.type === 'invalid_payload'
+              ? { type: 'invalid_payload', issues: auditResult.error.issues }
+              : { type: 'persist_failed', message: auditResult.error.message },
+        },
+        'get-plan: audit record persist_failed — F13 cross-tenant-probe correlation pipeline at risk',
+      );
+    }
     return err({ type: 'not_found' });
   }
 

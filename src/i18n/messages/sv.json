@@ -325,7 +325,8 @@
         "memberType": "Medlemstyp",
         "year": "År",
         "status": "Status",
-        "actions": "Åtgärder"
+        "actions": "Åtgärder",
+        "actionsFor": "Åtgärder för {planName}"
       },
       "filters": {
         "all": "Alla",
@@ -369,6 +370,7 @@
       "create": {
         "title": "Nytt paket",
         "steps": {
+          "wizardAriaLabel": "Stegen i guiden för att skapa paket",
           "basics": "Grunder",
           "fees": "Avgifter",
           "benefits": "Förmåner",
@@ -485,6 +487,9 @@
           "save": "Spara paket",
           "saving": "Sparar…",
           "cancel": "Avbryt"
+        },
+        "errors": {
+          "stepValidation": "Granska föregående steg — några obligatoriska fält saknas eller är ogiltiga."
         }
       },
       "edit": {
@@ -547,6 +552,8 @@
         "forbidden": "Du har inte behörighet att göra det.",
         "validation": "Korrigera de markerade fälten.",
         "priorYearLocked": "Dessa fält är låsta på historiska paket: {fields}. Klona paketet till innevarande år för att redigera.",
+        "feeConfigMissing": "Konfigurationen för kammarens avgifter är inte initialiserad. Kör seed-skriptet.",
+        "loadFailed": "Det gick inte att läsa in paket.",
         "duplicateKey": "Ett paket med detta ID finns redan för {year}.",
         "memberAttached": "{count} aktiva medlemmar använder detta paket. Flytta dem till ett annat paket före borttagning.",
         "idempotencyConflict": "Denna förfrågan har redan hanterats med andra data. Uppdatera och försök igen.",

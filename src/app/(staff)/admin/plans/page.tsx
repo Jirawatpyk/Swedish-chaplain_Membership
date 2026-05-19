@@ -101,6 +101,7 @@ async function PlansList({
 }) {
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);
+  const t = await getTranslations('admin.plans');
 
   const category = query.category === 'corporate' || query.category === 'partnership'
     ? query.category
@@ -132,8 +133,8 @@ async function PlansList({
     return (
       <p className="text-sm text-destructive" role="alert">
         {result.error.type === 'fee_config_missing'
-          ? 'Tenant fee configuration not yet initialised. Run the seed script.'
-          : 'Failed to load plans.'}
+          ? t('errors.feeConfigMissing')
+          : t('errors.loadFailed')}
       </p>
     );
   }

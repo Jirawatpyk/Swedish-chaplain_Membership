@@ -189,8 +189,18 @@ export async function updatePlan(
     });
   }
 
-  // 4. Compute diff BEFORE the update so we capture before/after cleanly
+  // 4. Compute diff BEFORE the update so we capture before/after cleanly.
+  //    If the diff is empty (client sent fields whose values match the
+  //    stored row), short-circuit the use-case: no DB write, no audit
+  //    emit, return the existing plan. This guarantees the write+audit
+  //    invariant — if `planRepo.update` runs, an audit row is appended.
+  //    A regression in `computeDiff` that returned `{}` for a real
+  //    change previously persisted the row silently with no audit
+  //    trail; that path is now unreachable.
   const diff = computeDiff(existing, patch);
+  if (Object.keys(diff).length === 0) {
+    return ok(existing);
+  }
 
   // 5. Apply patch via repo (defence-in-depth guard re-runs inside tx)
   let updated: Plan | undefined;
@@ -213,35 +223,34 @@ export async function updatePlan(
     return err({ type: 'not_found' });
   }
 
-  // 6. Append plan_updated audit event with the diff
-  //    (skip if diff is empty — no-op writes shouldn't pollute the log)
-  if (Object.keys(diff).length > 0) {
-    const auditResult = await recordAuditEvent(
-      deps.audit,
-      {
-        tenant: deps.tenant,
-        actorUserId: input.actorUserId,
-        requestId: input.requestId,
-        sourceIp: input.sourceIp,
+  // 6. Append plan_updated audit event with the diff. Always emits when
+  //    `planRepo.update` ran — empty-diff short-circuit above ensures
+  //    write+audit stay paired.
+  const auditResult = await recordAuditEvent(
+    deps.audit,
+    {
+      tenant: deps.tenant,
+      actorUserId: input.actorUserId,
+      requestId: input.requestId,
+      sourceIp: input.sourceIp,
+    },
+    {
+      event_type: 'plan_updated',
+      payload: {
+        plan_id: input.planId,
+        plan_year: input.year,
+        diff,
       },
-      {
-        event_type: 'plan_updated',
-        payload: {
-          plan_id: input.planId,
-          plan_year: input.year,
-          diff,
-        },
-      },
-    );
-    if (!auditResult.ok) {
-      return err({
-        type: 'audit_failed',
-        message:
-          auditResult.error.type === 'invalid_payload'
-            ? auditResult.error.issues.join('; ')
-            : auditResult.error.message,
-      });
-    }
+    },
+  );
+  if (!auditResult.ok) {
+    return err({
+      type: 'audit_failed',
+      message:
+        auditResult.error.type === 'invalid_payload'
+          ? auditResult.error.issues.join('; ')
+          : auditResult.error.message,
+    });
   }
 
   return ok(updated);

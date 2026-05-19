@@ -325,7 +325,8 @@
         "memberType": "Member type",
         "year": "Year",
         "status": "Status",
-        "actions": "Actions"
+        "actions": "Actions",
+        "actionsFor": "Actions for {planName}"
       },
       "filters": {
         "all": "All",
@@ -369,6 +370,7 @@
       "create": {
         "title": "New plan",
         "steps": {
+          "wizardAriaLabel": "Plan creation wizard steps",
           "basics": "Basics",
           "fees": "Fees",
           "benefits": "Benefits",
@@ -485,6 +487,9 @@
           "save": "Save plan",
           "saving": "Saving…",
           "cancel": "Cancel"
+        },
+        "errors": {
+          "stepValidation": "Review the previous steps — some required fields are missing or invalid."
         }
       },
       "edit": {
@@ -547,6 +552,8 @@
         "forbidden": "You don’t have permission to do that.",
         "validation": "Please fix the highlighted fields.",
         "priorYearLocked": "These fields are locked on historical plans: {fields}. Clone this plan to the current year to edit them.",
+        "feeConfigMissing": "Tenant fee configuration not yet initialised. Run the seed script.",
+        "loadFailed": "Failed to load plans.",
         "duplicateKey": "A plan with this ID already exists for {year}.",
         "memberAttached": "{count} active members are on this plan. Move them to another plan before deleting.",
         "idempotencyConflict": "This request was already handled with different data. Refresh and try again.",

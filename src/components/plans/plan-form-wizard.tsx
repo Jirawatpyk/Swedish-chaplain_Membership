@@ -147,10 +147,11 @@ export function PlanFormWizard({
   return (
     <div className="space-y-6">
       {/* Step indicator */}
-      <ol className="flex items-center gap-4 text-sm" aria-label="wizard steps">
+      <ol className="flex items-center gap-4 text-sm" aria-label={t('steps.wizardAriaLabel')}>
         {STEPS.map((s, idx) => (
           <li
             key={s}
+            aria-current={idx === stepIndex ? 'step' : undefined}
             className={
               idx === stepIndex
                 ? 'font-semibold text-foreground'
@@ -378,7 +379,7 @@ export function PlanFormWizard({
           </div>
           {!stepValid.review ? (
             <p className="text-destructive text-sm" role="alert">
-              Review the previous steps — some required fields are missing or invalid.
+              {t('errors.stepValidation')}
             </p>
           ) : null}
         </section>

@@ -410,7 +410,7 @@ export function PlansTable({
                               {...props}
                               variant="ghost"
                               size="icon"
-                              aria-label={t('columns.actions')}
+                              aria-label={t('columns.actionsFor', { planName: plan.plan_name.en })}
                               data-row-actions-trigger
                             >
                               <MoreHorizontal className="size-4" aria-hidden="true" />

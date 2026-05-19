@@ -55,7 +55,12 @@ export function NewPlanClient({ currentYear, currencyPrefix }: NewPlanClientProp
         ? t(`errors.${errorCode}` as 'generic')
         : t('errors.generic');
       toast.error(message);
-    } catch {
+    } catch (err) {
+      // Surface client-side throws (network, AbortError, TypeError from
+      // crypto.randomUUID undefined, JSON serialise) to browser DevTools
+      // so they aren't swallowed under a generic "network" toast. Server-
+      // side logging happens only on completed requests via pino.
+      console.error('[plans/new] submit threw', err);
       toast.error(t('errors.network'));
     } finally {
       setSubmitting(false);
