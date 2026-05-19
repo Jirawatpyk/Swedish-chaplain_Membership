@@ -71,6 +71,14 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_cross_member_probe',
   'broadcast_cross_tenant_probe',
 
+  // --- Phase 3F.11.3 M3 (Round 2 closure) — operational-forensic ----
+  // `broadcast_webhook_batch_missing` covers the BENIGN Resend webhook
+  // race (BYPASSRLS resolves tenant, incrementCounter finds 0 rows
+  // because the batch was force-deleted). Separated from the
+  // security-forensic `broadcast_cross_tenant_probe` to keep SIEM
+  // alerts noise-free. Added via migration 0173.
+  'broadcast_webhook_batch_missing',
+
   // --- Unsubscribe + suppression (US5) — 4 events --------------------
   // All US5-deferred — emit sites land with the public unsubscribe
   // page + suppression-applied state machine in a follow-up phase.
@@ -121,13 +129,14 @@ export const F7_AUDIT_EVENT_TYPES = [
 ] as const;
 
 /**
- * Static assertion: count matches the declared 53 (= 43 F7 MVP + 10
- * F7.1a additions per T031 Phase 2). Catches drift if a spec amendment
- * adds an event without updating this file. The check lives at type
- * level; if the count is wrong, TypeScript errors here with "Type '54'
- * is not assignable to type '53'" (or similar).
+ * Static assertion: count matches the declared 54 (= 43 F7 MVP + 10
+ * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
+ * `broadcast_webhook_batch_missing`). Catches drift if a spec
+ * amendment adds an event without updating this file. The check lives
+ * at type level; if the count is wrong, TypeScript errors here with
+ * "Type '55' is not assignable to type '54'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 53
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 54
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -223,6 +232,13 @@ export interface F7AuditPayloadShapes {
   readonly broadcast_cross_member_probe: {
     readonly probedMemberId: string;
     readonly probedBroadcastId: string;
+  };
+  readonly broadcast_webhook_batch_missing: {
+    readonly broadcastId: string;
+    readonly batchManifestId: string;
+    readonly batchIndex: number;
+    readonly resendEventId: string;
+    readonly resendEventType: string;
   };
   readonly broadcast_webhook_signature_rejected: {
     readonly reason:
