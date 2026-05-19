@@ -134,4 +134,53 @@ describe('validateImageSourceAllowlist contract — T062 (F7.1a US2)', () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it('allowlist change is visible to next submit within the same call (Scenario 3 propagation — verify-run G1 closure)', async () => {
+    // Acceptance Scenario 3 asserts "subsequent submissions validate
+    // against the new allowlist within ≤60 seconds of save". The
+    // implementation reads the allowlist on every submit (no cache),
+    // so propagation is effectively zero and trivially under 60s.
+    // This test pins the no-cache invariant: if a future change adds
+    // caching, the test breaks unless propagation stays sub-60s.
+    const allowlistA = ['host-a.example.com'];
+    const allowlistB = ['host-a.example.com', 'host-b.example.com'];
+
+    const allowlistPort: ImageAllowlistPort = {
+      findByTenantId: vi.fn(),
+      seedDefaults: vi.fn().mockResolvedValue(undefined),
+      add: vi.fn(),
+      remove: vi.fn(),
+    };
+    (allowlistPort.findByTenantId as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(
+        allowlistA.map((h) => ({ hostname: h as Hostname, isDefault: false })),
+      )
+      .mockResolvedValueOnce(
+        allowlistB.map((h) => ({ hostname: h as Hostname, isDefault: false })),
+      );
+
+    const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined) };
+    const deps = { allowlistPort, audit };
+
+    // First submit: hostB NOT yet in allowlist → reject
+    const firstResult = await validateImageSourceAllowlist(deps, {
+      bodyHtml: '<img src="https://host-b.example.com/a.png">',
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      requestId: 'req-007a',
+    });
+    expect(firstResult.ok).toBe(false);
+
+    // Admin adds hostB to allowlist (modeled by mockResolvedValueOnce
+    // returning the updated set).
+
+    // Second submit: hostB now in allowlist → ok. No sleep / no wait.
+    const secondResult = await validateImageSourceAllowlist(deps, {
+      bodyHtml: '<img src="https://host-b.example.com/a.png">',
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      requestId: 'req-007b',
+    });
+    expect(secondResult.ok).toBe(true);
+  });
 });

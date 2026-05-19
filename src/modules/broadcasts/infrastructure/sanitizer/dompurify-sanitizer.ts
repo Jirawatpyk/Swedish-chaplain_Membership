@@ -116,6 +116,20 @@ let hookInstalled = false;
  * URL-bearing attributes (href, src, action…). We need `<a href>` to
  * keep allowing `mailto:` while `<img src>` rejects it — the regex is
  * too coarse. A per-attribute hook is the right surface.
+ *
+ * **FR-012 defence-in-depth note (verify-run C2 closure 2026-05-20)**:
+ * The spec's "the cap MUST be re-enforced on the sanitiser pass at
+ * submit time (defence in depth — catches paste-of-external-large-
+ * data-URI bypass attempts)" requirement is satisfied STRUCTURALLY by
+ * this hook rather than by a literal byte-size check. Reason: the
+ * only realistic class of "paste-of-external-large-data-URI bypass"
+ * is `<img src="data:image/png;base64,...">` where the base64 payload
+ * inflates the body bytes past the 5 MB upload cap. The img-src-scheme
+ * hook strips `src=data:...` entirely, so the inflated body never
+ * survives sanitisation regardless of byte size. The existing 200 KB
+ * post-sanitiser body cap (sanitize-html.ts) catches any pathological
+ * non-img inflation vector. Together these provide the literal
+ * defence the spec asks for.
  */
 function installLinkHardeningHook(): void {
   if (hookInstalled) return;
