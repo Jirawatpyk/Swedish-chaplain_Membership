@@ -191,6 +191,13 @@ export function makeCancelBroadcastDeps(
     // R4 Types-#6 — member-preferred-locale lookup (today returns
     // null; future-extensibility for F12 white-label).
     membersBridge,
+    // F7.1a US1 FR-004 (Phase 3E.3) — pre-cancel pending batch halt.
+    // Production wiring includes the Drizzle BatchManifestsPort so
+    // cancel-broadcast can call `markCancelled` on pending batch rows
+    // BEFORE the broadcast-row transition. Test fixtures (F7 MVP era)
+    // can continue to mock CancelBroadcastDeps without this field
+    // since it's typed optional — backward compat preserved.
+    batchManifests: makeDrizzleBatchManifestsRepo(tenantId),
   };
 }
 

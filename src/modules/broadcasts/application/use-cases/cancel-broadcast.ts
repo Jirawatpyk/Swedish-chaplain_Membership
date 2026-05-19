@@ -59,6 +59,19 @@ export interface CancelBroadcastDeps {
   readonly emailTransactional?: EmailTransactionalPort;
   /** R4 Types-#6 — see approve-broadcast.ts. */
   readonly membersBridge?: MembersBridgePort;
+  /**
+   * F7.1a US1 FR-004 (Phase 3E.3 fix 2026-05-19) — halt all not-yet-
+   * dispatched batch_manifests when the broadcast is cancelled in
+   * `sending` state. Optional for backward compat with F7 MVP tests
+   * that mock the deps without batch awareness; production factory
+   * (`makeCancelBroadcastDeps`) wires the real Drizzle port.
+   *
+   * When undefined: batches are not halted (F7 MVP behaviour). When
+   * provided: cancellation calls `markCancelled(slug, pendingIds)`
+   * before the broadcast-row transition so the dispatcher cron can
+   * no longer pick up the now-stale pending rows.
+   */
+  readonly batchManifests?: import('../ports/batch-manifests-port').BatchManifestsPort;
 }
 
 export interface CancelBroadcastInput {
@@ -167,6 +180,37 @@ export async function cancelBroadcast(
       }
 
       let cancelled: Broadcast;
+      // F7.1a US1 FR-004 (Phase 3E.3) — halt pending batch_manifests
+      // BEFORE the broadcast-row transition. If batches are split + in
+      // `pending` state, the dispatch-batches cron (T055) could
+      // otherwise race ahead and dispatch them between our snapshot
+      // and the broadcast-status flip. Marking batches cancelled first
+      // closes that window: the dispatcher's eligible scan filters on
+      // `status='pending'` so any flipped-to-cancelled rows skip.
+      // markCancelled only flips `pending → cancelled` (ignores
+      // in-flight / terminal rows per adapter contract), so the worst
+      // case is `M batches halted; N already dispatched` — the spec
+      // FR-004 microcopy + admin UI surfaces this distinction.
+      if (deps.batchManifests !== undefined && existing.status === 'sending') {
+        // findPendingByBroadcast opens its own runInTenant (no tx
+        // shared with cancel's withTx) — the markCancelled UPDATE
+        // filters on `WHERE status = 'pending'` so any race between
+        // our snapshot read + the dispatcher's flip to 'sending' is
+        // bounded: at worst the dispatcher wins → marker no-ops →
+        // the broadcast-row transition below still fires + the
+        // already-dispatched batches are surfaced via FR-004 microcopy.
+        const pendingBatches = await deps.batchManifests.findPendingByBroadcast(
+          deps.tenant.slug as never,
+          input.broadcastId,
+        );
+        if (pendingBatches.length > 0) {
+          await deps.batchManifests.markCancelled(
+            deps.tenant.slug as never,
+            pendingBatches.map((b) => b.id),
+          );
+        }
+      }
+
       try {
         // Verify-fix R3 (Code-M1, 2026-05-02): pass `expectedFromStatus`
         // (G1 race-guard) so a concurrent dispatch worker that just
