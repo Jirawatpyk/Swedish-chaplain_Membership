@@ -109,14 +109,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let eligible: ReadonlyArray<z.infer<typeof eligibleRowSchema>>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
+      // Phase 3F.4 (F-05 fix) — lock parent `broadcasts` rows with
+      // FOR UPDATE SKIP LOCKED so two simultaneous cron ticks cannot
+      // both pick the same broadcast (cron-job.org 5xx retry storm
+      // scenario). Previous SELECT DISTINCT on broadcast_batch_manifests
+      // had no row-lock semantics → race-window where both ticks
+      // dispatch the same batch. The EXISTS predicate filters parent
+      // rows with ≥1 pending batch_manifest older than the grace
+      // window. Idempotency-key UNIQUE index is the second-line guard
+      // (Resend dedupe is the third), but the lock closes the race
+      // at the source.
       const rows = (await tx.execute(sql`
-        SELECT DISTINCT broadcast_id::text AS broadcast_id
-        FROM broadcast_batch_manifests
-        WHERE tenant_id = ${tenant.slug}
-          AND status = 'pending'
-          AND created_at < now() - (${SWEEP_GRACE_SECONDS}::int * INTERVAL '1 second')
-        ORDER BY broadcast_id ASC
+        SELECT b.broadcast_id::text AS broadcast_id
+        FROM broadcasts b
+        WHERE b.tenant_id = ${tenant.slug}
+          AND EXISTS (
+            SELECT 1 FROM broadcast_batch_manifests bm
+            WHERE bm.tenant_id = b.tenant_id
+              AND bm.broadcast_id = b.broadcast_id
+              AND bm.status = 'pending'
+              AND bm.created_at < now() - (${SWEEP_GRACE_SECONDS}::int * INTERVAL '1 second')
+          )
+        ORDER BY b.broadcast_id ASC
         LIMIT ${MAX_BROADCASTS_PER_TICK}
+        FOR UPDATE SKIP LOCKED
       `)) as unknown as Array<{ broadcast_id: string }>;
       return rows.map((r) => eligibleRowSchema.parse(r));
     });
@@ -251,13 +267,45 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         locale: tenantDefaultLocaleFor(tenant.slug),
       };
 
+      // Phase 3F.4 (F-10 fix) — read per-tenant
+      // `dispatch_concurrency_cap` from `tenant_broadcast_settings`
+      // per FR-002 ("tenant-configurable 1-8 range, default 4").
+      // Falls back to DEFAULT_CONCURRENCY_CAP if no settings row
+      // exists for this tenant (most tenants will rely on the
+      // default; only those with elevated Resend account-tier limits
+      // opt up via the future admin settings UI).
+      let concurrencyCap: number = DEFAULT_CONCURRENCY_CAP;
+      try {
+        const settingsRows = (await runInTenant(tenant, async (tx) =>
+          tx.execute(sql`
+            SELECT dispatch_concurrency_cap
+            FROM tenant_broadcast_settings
+            WHERE tenant_id = ${tenant.slug}
+            LIMIT 1
+          `),
+        )) as unknown as Array<{ dispatch_concurrency_cap: number }>;
+        if (settingsRows.length > 0) {
+          concurrencyCap = settingsRows[0]!.dispatch_concurrency_cap;
+        }
+      } catch (e) {
+        logger.warn(
+          {
+            err: e instanceof Error ? e.message : String(e),
+            tenantId: tenant.slug,
+          },
+          'cron.broadcasts.dispatch_batches.concurrency_cap_read_failed',
+        );
+        // Fall through with DEFAULT_CONCURRENCY_CAP — safer than failing
+        // the whole tick on a settings-row read error.
+      }
+
       // 5e. Dispatch all pending batches via the service (parallel + capped).
       const dispatchResult = await dispatchAllPendingBatches(dispatchDeps, {
         tenantId: tenant,
         broadcastContent,
         allRecipients,
         pendingBatches,
-        concurrencyCap: DEFAULT_CONCURRENCY_CAP,
+        concurrencyCap,
         requestId: null,
       });
 

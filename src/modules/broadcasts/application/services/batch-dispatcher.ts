@@ -87,43 +87,68 @@ export async function dispatchAllPendingBatches(
   const queue = [...input.pendingBatches];
   const results: BatchDispatchOutcome[] = [];
 
-  /** Worker — pulls from the queue until empty, dispatches each batch. */
+  /** Worker — pulls from the queue until empty, dispatches each batch.
+   *
+   * Phase 3F.4 (F-4 silent-fail fix): each `dispatchBroadcastBatch`
+   * call wrapped in try/catch so an uncaught throw (e.g. audit-emit
+   * after rollback) is converted to a `{status:'failed'}` outcome
+   * entry instead of rejecting the worker. Combined with
+   * Promise.allSettled below, one worker's throw can no longer abort
+   * the pool's aggregate (previous Promise.all behavior).
+   */
   async function worker(): Promise<void> {
     for (;;) {
       const batch = queue.shift();
       if (batch === undefined) return;
 
-      const result = await dispatchBroadcastBatch(deps, {
-        tenantId: input.tenantId,
-        batchManifestId: batch.id,
-        allRecipients: input.allRecipients,
-        broadcastContent: input.broadcastContent,
-        requestId: input.requestId ?? null,
-      });
+      try {
+        const result = await dispatchBroadcastBatch(deps, {
+          tenantId: input.tenantId,
+          batchManifestId: batch.id,
+          allRecipients: input.allRecipients,
+          broadcastContent: input.broadcastContent,
+          requestId: input.requestId ?? null,
+        });
 
-      if (result.ok) {
+        if (result.ok) {
+          results.push({
+            batchManifestId: batch.id,
+            batchIndex: batch.batchIndex,
+            outcome: {
+              status: 'sent_to_resend',
+              providerAudienceId: result.value.providerAudienceId,
+            },
+          });
+        } else {
+          results.push({
+            batchManifestId: batch.id,
+            batchIndex: batch.batchIndex,
+            outcome: { status: 'failed', error: result.error },
+          });
+        }
+      } catch (e) {
         results.push({
           batchManifestId: batch.id,
           batchIndex: batch.batchIndex,
           outcome: {
-            status: 'sent_to_resend',
-            providerAudienceId: result.value.providerAudienceId,
+            status: 'failed',
+            error: {
+              kind: 'dispatch_broadcast_batch.server_error',
+              message: e instanceof Error ? e.message : String(e),
+            },
           },
-        });
-      } else {
-        results.push({
-          batchManifestId: batch.id,
-          batchIndex: batch.batchIndex,
-          outcome: { status: 'failed', error: result.error },
         });
       }
     }
   }
 
-  // Spin up `cap` parallel workers, await all to drain the queue.
+  // Spin up `cap` parallel workers. Use Promise.allSettled so one
+  // worker's rejection (defence-in-depth — the try/catch above
+  // shouldn't let any worker reject anymore, but allSettled prevents
+  // a future bug from regressing the aggregate-survival invariant).
   const workerCount = Math.min(cap, input.pendingBatches.length);
   const workers = Array.from({ length: workerCount }, () => worker());
-  await Promise.all(workers);
+  await Promise.allSettled(workers);
 
   const succeeded = results.filter(
     (r) => r.outcome.status === 'sent_to_resend',

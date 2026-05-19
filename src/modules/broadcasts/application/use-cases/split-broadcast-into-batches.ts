@@ -22,6 +22,7 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import {
@@ -164,26 +165,42 @@ export async function splitBroadcastIntoBatches(
   }
 
   const now = deps.clock.now();
-  await deps.audit.emit(null, {
-    tenantId: input.tenantId.slug,
-    eventType: 'broadcast_dispatched_in_batches',
-    actorUserId: 'system',
-    summary: `Split broadcast ${input.broadcastId} into ${inserts.length} batches (${input.resolvedRecipientCount} recipients)`,
-    payload: {
-      broadcastId: input.broadcastId,
-      batchCount: inserts.length,
-      resolvedRecipientCount: input.resolvedRecipientCount,
-      attempt,
-      dispatchedInBatchesAt: now.toISOString(),
-      perBatchRanges: ranges.map((r) => ({
-        batchIndex: r.batchIndex,
-        rangeStart: r.recipientRangeStart,
-        rangeEnd: r.recipientRangeEnd,
-        recipientCount: r.recipientCount,
-      })),
-    },
-    requestId: input.requestId ?? null,
-  });
+  // Phase 3F.4 (F-7 silent-fail fix) — wrap audit emit in try/catch.
+  // The batch_manifest rows ARE the source of truth; an audit-port
+  // throw post-commit shouldn't fail the use case (the rows are
+  // committed, and dispatch-batches cron will pick them up next tick).
+  try {
+    await deps.audit.emit(null, {
+      tenantId: input.tenantId.slug,
+      eventType: 'broadcast_dispatched_in_batches',
+      actorUserId: 'system',
+      summary: `Split broadcast ${input.broadcastId} into ${inserts.length} batches (${input.resolvedRecipientCount} recipients)`,
+      payload: {
+        broadcastId: input.broadcastId,
+        batchCount: inserts.length,
+        resolvedRecipientCount: input.resolvedRecipientCount,
+        attempt,
+        dispatchedInBatchesAt: now.toISOString(),
+        perBatchRanges: ranges.map((r) => ({
+          batchIndex: r.batchIndex,
+          rangeStart: r.recipientRangeStart,
+          rangeEnd: r.recipientRangeEnd,
+          recipientCount: r.recipientCount,
+        })),
+      },
+      requestId: input.requestId ?? null,
+    });
+  } catch (auditErr) {
+    logger.error(
+      {
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        tenantId: input.tenantId.slug,
+        broadcastId: input.broadcastId,
+        batchCount: inserts.length,
+      },
+      'broadcasts.split.dispatched_in_batches_audit_emit_failed',
+    );
+  }
 
   return ok({
     batchManifestIds: insertResult.value.map((b) => b.id),

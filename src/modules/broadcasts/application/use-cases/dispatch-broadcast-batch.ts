@@ -34,6 +34,7 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { AdvisoryLockPort } from '../ports/advisory-lock-port';
@@ -242,27 +243,59 @@ export async function dispatchBroadcastBatch(
     // Mark manifest failed + emit audit. Best-effort — if this UPDATE
     // also fails, the reconcile-stuck-sending sweep (Phase 3 T056)
     // will catch it on the next tick.
+    // Phase 3F.4 (F-3 silent-fail fix): destructure Result + log on
+    // !ok so a DB write failure on the status flip surfaces in ops
+    // logs (not silently dropped). Audit emit wrapped in try/catch
+    // (F-7 sibling fix) so an audit-port throw doesn't cascade into
+    // a Result discard.
     const failedAt = deps.clock.now();
-    await deps.batchManifests.updateStatus(tenantSlug, manifest.id, {
-      status: 'failed',
-      failedAt,
-      failureReason: `${gatewayStage}: ${detail.slice(0, 500)}`,
-    });
-    await deps.audit.emit(null, {
-      tenantId: tenantSlug,
-      eventType: 'broadcast_failed_to_dispatch',
-      actorUserId: 'system',
-      summary: `Batch ${manifest.batchIndex} of broadcast ${input.broadcastContent.broadcastId} failed at ${gatewayStage}`,
-      payload: {
-        broadcastId: input.broadcastContent.broadcastId,
-        batchManifestId: manifest.id,
-        batchIndex: manifest.batchIndex,
-        gatewayStage,
-        detail: detail.slice(0, 500),
-        failedAt: failedAt.toISOString(),
+    const failedUpdate = await deps.batchManifests.updateStatus(
+      tenantSlug,
+      manifest.id,
+      {
+        status: 'failed',
+        failedAt,
+        failureReason: `${gatewayStage}: ${detail.slice(0, 500)}`,
       },
-      requestId: input.requestId ?? null,
-    });
+    );
+    if (!failedUpdate.ok) {
+      logger.error(
+        {
+          tenantId: tenantSlug,
+          batchManifestId: manifest.id,
+          updateError: failedUpdate.error.kind,
+          gatewayStage,
+          originalError: detail.slice(0, 500),
+        },
+        'broadcasts.batch.failed_transition_db_write_failed',
+      );
+    }
+    try {
+      await deps.audit.emit(null, {
+        tenantId: tenantSlug,
+        eventType: 'broadcast_failed_to_dispatch',
+        actorUserId: 'system',
+        summary: `Batch ${manifest.batchIndex} of broadcast ${input.broadcastContent.broadcastId} failed at ${gatewayStage}`,
+        payload: {
+          broadcastId: input.broadcastContent.broadcastId,
+          batchManifestId: manifest.id,
+          batchIndex: manifest.batchIndex,
+          gatewayStage,
+          detail: detail.slice(0, 500),
+          failedAt: failedAt.toISOString(),
+        },
+        requestId: input.requestId ?? null,
+      });
+    } catch (auditErr) {
+      logger.error(
+        {
+          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+          tenantId: tenantSlug,
+          batchManifestId: manifest.id,
+        },
+        'broadcasts.batch.failed_to_dispatch_audit_emit_failed',
+      );
+    }
     return err({
       kind: 'GATEWAY_ERROR',
       stage: gatewayStage,
