@@ -72,13 +72,16 @@ BENCH_ENV=staging pnpm perf:f6:strict
 
 ## T154 — Configure cron-job.org coordinators
 
-3 cron-job.org entries required (see `docs/runbooks/cron-jobs.md`):
+**4 cron-job.org entries** required (F6 main + F6.1 CSV-import sub-feature merged for single-operator setup; see `docs/runbooks/cron-jobs.md`). The 2026-05-19 update folds in Feature 013's `T058` because F6 + F6.1 ship together on `012-eventcreate-integration` / PR #26 and a separate ship-day for the blob TTL sweep adds no operator value:
 
-| Job | URL | Schedule | Auth |
-|---|---|---|---|
-| F6 pseudonymise retention sweep | `POST https://swecham.zyncdata.app/api/internal/retention/pseudonymise-eventcreate` | `0 3 * * *` (daily 03:00 Asia/Bangkok) | `Authorization: Bearer ${CRON_SECRET}` |
-| F6 idempotency TTL sweep | `POST https://swecham.zyncdata.app/api/internal/retention/sweep-eventcreate-idempotency` | `0 4 * * *` (daily 04:00 Asia/Bangkok) | `Authorization: Bearer ${CRON_SECRET}` |
-| F6 recompute match-rate gauge | `POST https://swecham.zyncdata.app/api/internal/observability/recompute-match-rate` | `0 * * * *` (hourly) | `Authorization: Bearer ${CRON_SECRET}` |
+| Job | URL | Schedule | Auth | Verb |
+|---|---|---|---|---|
+| F6 pseudonymise retention sweep | `https://swecham.zyncdata.app/api/internal/retention/pseudonymise-eventcreate` | `0 3 * * *` (daily 03:00 Asia/Bangkok) | `Authorization: Bearer ${CRON_SECRET}` | POST |
+| F6 idempotency TTL sweep | `https://swecham.zyncdata.app/api/internal/retention/sweep-eventcreate-idempotency` | `0 4 * * *` (daily 04:00 Asia/Bangkok) | `Authorization: Bearer ${CRON_SECRET}` | POST |
+| **F6.1 error-CSV blob TTL sweep** (was Feature 013 `T058`) | **`https://swecham.zyncdata.app/api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | `Authorization: Bearer ${CRON_SECRET}` | **POST** |
+| F6 recompute match-rate gauge | `https://swecham.zyncdata.app/api/internal/observability/recompute-match-rate` | `0 * * * *` (hourly) | `Authorization: Bearer ${CRON_SECRET}` | POST |
+
+Email-alert on ≥2 consecutive day failures (F6.1 T058 critique E5) — apply uniformly to all 4 jobs.
 
 **Per entry**:
 - [ ] URL pinned to canonical production deployment (NOT preview URL)
