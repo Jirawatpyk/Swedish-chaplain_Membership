@@ -41,6 +41,19 @@ export interface RetryConfirmationDialogProps {
   readonly retriesRemaining: number; // 0-3
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
+  /**
+   * Phase 3F.9 (UX F-6 fix) — focus return on close.
+   *
+   * AlertDialog's default `onCloseAutoFocus` returns focus to body when
+   * the trigger button has been re-rendered or unmounted between open
+   * and close (which the `canRetry` recompute in BatchBreakdown can do
+   * after a successful retry — the button disappears once status flips
+   * to `sending`). Receiving the trigger ref here lets us focus-back to
+   * a DEFINED next-best surface (the `<details>` summary container)
+   * when the original trigger is gone. WCAG SC 2.4.3 Focus Order +
+   * SC 2.4.11 Focus Not Obscured.
+   */
+  readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export function RetryConfirmationDialog({
@@ -49,6 +62,7 @@ export function RetryConfirmationDialog({
   retriesRemaining,
   open,
   onOpenChange,
+  triggerRef,
 }: RetryConfirmationDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.retryDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
@@ -107,7 +121,15 @@ export function RetryConfirmationDialog({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    // Phase 3F.9 (UX F-6) — Base UI `finalFocus` returns focus to the
+    // trigger button on close. When the trigger is unmounted (canRetry
+    // recompute after a successful retry), Base UI falls back to body
+    // (no crash, slightly degraded UX → operator can Tab to re-orient).
+    <AlertDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      {...(triggerRef ? { finalFocus: triggerRef } : {})}
+    >
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>

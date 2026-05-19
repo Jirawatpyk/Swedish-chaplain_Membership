@@ -30,7 +30,7 @@
  * No business logic — purely presentational. Server-side data is
  * pre-resolved by the admin detail page (T049) + handed in via props.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -160,6 +160,11 @@ export function BatchBreakdown({
   const tDialogs = useTranslations('admin.broadcasts');
   const [retryOpen, setRetryOpen] = useState(false);
   const [acceptPartialOpen, setAcceptPartialOpen] = useState(false);
+  // Phase 3F.9 (UX F-6) — refs threaded through to the dialogs'
+  // onCloseAutoFocus handler so focus returns to the trigger button
+  // instead of <body> after dialog dismissal. WCAG SC 2.4.3.
+  const retryTriggerRef = useRef<HTMLButtonElement>(null);
+  const acceptPartialTriggerRef = useRef<HTMLButtonElement>(null);
 
   const counts = useMemo(() => {
     let succeeded = 0;
@@ -337,6 +342,7 @@ export function BatchBreakdown({
             <div className="flex flex-wrap items-center justify-end gap-2 border-t pt-4">
               {canAcceptPartial ? (
                 <Button
+                  ref={acceptPartialTriggerRef}
                   type="button"
                   variant="outline"
                   onClick={() => setAcceptPartialOpen(true)}
@@ -347,6 +353,7 @@ export function BatchBreakdown({
               ) : null}
               {canRetry ? (
                 <Button
+                  ref={retryTriggerRef}
                   type="button"
                   onClick={() => setRetryOpen(true)}
                   aria-label={tDialogs('retryDialog.triggerAria', {
@@ -377,6 +384,7 @@ export function BatchBreakdown({
         retriesRemaining={manualRetryRemaining}
         open={retryOpen}
         onOpenChange={setRetryOpen}
+        triggerRef={retryTriggerRef}
       />
       <AcceptPartialDialog
         broadcastId={broadcastId}
@@ -384,6 +392,7 @@ export function BatchBreakdown({
         totalBatchCount={batches.length}
         open={acceptPartialOpen}
         onOpenChange={setAcceptPartialOpen}
+        triggerRef={acceptPartialTriggerRef}
       />
     </section>
   );

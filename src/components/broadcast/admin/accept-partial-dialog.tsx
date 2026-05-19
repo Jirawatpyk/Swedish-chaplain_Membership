@@ -47,6 +47,11 @@ export interface AcceptPartialDialogProps {
   readonly totalBatchCount: number;
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
+  /**
+   * Phase 3F.9 (UX F-6) — see RetryConfirmationDialog header doc for
+   * the focus-return rationale. WCAG SC 2.4.3 / SC 2.4.11.
+   */
+  readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
 }
 
 export function AcceptPartialDialog({
@@ -55,6 +60,7 @@ export function AcceptPartialDialog({
   totalBatchCount,
   open,
   onOpenChange,
+  triggerRef,
 }: AcceptPartialDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.acceptPartialDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
@@ -133,7 +139,12 @@ export function AcceptPartialDialog({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+    // Phase 3F.9 (UX F-6) — see RetryConfirmationDialog header doc.
+    <AlertDialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      {...(triggerRef ? { finalFocus: triggerRef } : {})}
+    >
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
