@@ -30,6 +30,7 @@ import { logger } from '@/lib/logger';
 import { listPlans, asPlanYear, createPlan } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from './_serialise-plan';
+import { readOnlyModeResponse } from './_read-only-guard';
 
 const querySchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100).optional(),
@@ -133,6 +134,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   // Parse body first (needed for hash + zod)
   let rawBody: unknown;

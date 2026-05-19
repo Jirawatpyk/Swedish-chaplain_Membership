@@ -38,6 +38,7 @@ import {
   planAuditAdapter,
 } from '@/modules/plans/server';
 import { runIdempotencyGuard } from '@/app/api/plans/_idempotency-guard';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 const pathSchema = z.object({
   id: z.string().min(1),
@@ -59,6 +60,10 @@ export async function POST(
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   // Path validation.
   const rawPath = await params;

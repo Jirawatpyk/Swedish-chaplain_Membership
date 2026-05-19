@@ -23,6 +23,7 @@ import {
 import { logger } from '@/lib/logger';
 import { clonePlansToYear, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 const bodySchema = z.object({
   source_year: z.number().int().min(2000).max(2100),
@@ -37,6 +38,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     action: 'clone',
   });
   if ('response' in ctx) return ctx.response;
+
+  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   // Parse body before validating idempotency header so we can hash it
   let rawBody: unknown;

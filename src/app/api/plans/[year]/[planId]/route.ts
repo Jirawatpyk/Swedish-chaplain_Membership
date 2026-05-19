@@ -41,6 +41,7 @@ import {
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { serialisePlan } from '@/app/api/plans/_serialise-plan';
 import { planPathSchema as pathSchema } from '@/app/api/plans/_schemas';
+import { readOnlyModeResponse } from '@/app/api/plans/_read-only-guard';
 
 export async function GET(
   request: NextRequest,
@@ -133,6 +134,10 @@ export async function PATCH(
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   const raw = await params;
   const parsedPath = pathSchema.safeParse(raw);
@@ -350,6 +355,10 @@ export async function DELETE(
     action: 'write',
   });
   if ('response' in ctx) return ctx.response;
+
+  // R2 Batch 3j (R2-S8) — emergency maintenance freeze short-circuit.
+  const roResp = readOnlyModeResponse();
+  if (roResp) return roResp;
 
   const raw = await params;
   const parsedPath = pathSchema.safeParse(raw);
