@@ -28,7 +28,7 @@ Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` until operator/maintai
 - **New infrastructure (F7.1a)**: **Fly.io persistent micro-VM** in `sin` region running `clamav/clamav:stable` image (`clamd` daemon + `freshclam` in-container). Ships in F7.1a PR as `infra/clamav/fly.toml` + `infra/clamav/Dockerfile` (≤20 LoC each). Cost ~$2/month or free tier. Daemon model preserves FR-013 latency SLO (≤500ms p95 for files ≤2 MB) — incompatible with the originally-sketched "Vercel Function sidecar" approach per audit C2.
 
 **Storage**:
-- Neon Postgres `ap-southeast-1` (Singapore) — extend `broadcasts` table (4 new columns: `manual_retry_count`, `partial_delivery_accepted_at`, `partial_delivery_accepted_by_user_id`, `started_from_template_id` FK); add 3 new tables (`broadcast_batch_manifests`, `tenant_image_source_allowlist`, `broadcast_templates`); extend `tenant_broadcast_settings` (1 new column: `dispatch_concurrency_cap`); seed 5 starter templates × 3 locales = 15 rows per tenant via migration 0134.
+- Neon Postgres `ap-southeast-1` (Singapore) — extend `broadcasts` table (5 new columns: `manual_retry_count`, `partial_delivery_accepted_at`, `partial_delivery_accepted_by_user_id`, `started_from_template_id` FK, `template_name_snapshot`); add 4 new tables (`broadcast_templates`, `broadcast_batch_manifests`, `tenant_image_source_allowlist`, `tenant_broadcast_settings` — last one is CREATE not EXTEND per Phase 2 Risk R2); seed 5 starter templates × 3 locales = 15 rows per tenant via migration 0168 (renumbered from 0134 Phase 2 2026-05-18; 012-eventcreate-integration concurrently occupied 0127-0160 on the shared Neon main branch — F14 migrations land at 0161-0168 to follow 012's contribution).
 - Vercel Blob (private bucket) — inline image storage (US2 FR-012). Co-terminate retention with broadcast row.
 - New audit-event types: **10 new types** (catalogue in research.md § 7). All at 5-year retention.
 
@@ -81,7 +81,7 @@ Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` until operator/maintai
 
 - [x] **IX. Code Quality Standards** — TypeScript strict — unchanged. ESLint clean (extending existing `no-restricted-imports` rule to cover new sub-paths under `src/modules/broadcasts/`). Conventional Commits enforced. **Solo-maintainer substitute** (Principle IX substitute) — F7.1a is built under the same solo-dev posture as F1–F8; substitute stack per CT #3 (was CT #5 in original F7.1): (a) ≥3 `/speckit.review` passes; (b) ≥1 `/speckit.staff-review` round with 3 independent agents; (c) coverage thresholds met + live-Neon integration tests; (d) DB-level defence-in-depth via RLS + FORCE + CHECK constraints; (e) post-remediation independent re-review by a fresh agent run. ✅ PASS (via solo-maintainer substitute documented in Complexity Tracking entry #3).
 
-- [x] **X. Simplicity (YAGNI)** — F7.1a adds **1 new external runtime dependency** (ClamAV daemon on Fly.io VM; `clamscan@^2.4` Node binding on client side) + **1 reactivation of an existing dep** (Tiptap `<img>` extension) + **1 new managed service** (Fly.io micro-VM, ~$2/mo or free tier). One new cron-job.org coordinator is **not needed** (ClamAV signatures self-refresh in-container; F7 MVP cron set unchanged at 5 coordinators). All other new functionality reuses existing primitives: Vercel Blob (F4), advisory locks (F4 + F5 + F7 MVP), `runInTenant()` (F2+), audit-event taxonomy + retention column (F5 + F7 MVP), `next-intl` + check-i18n CI gate (F1+), shadcn primitives (no net-new), Drizzle migrations (numbered 0127+ continuing from F8 PR #24's 0126). **Strategy B scope reduction** (this plan revision) removed 6 user stories worth of speculative engineering — the F7.1b backlog preserves the work for promotion if production data validates demand. **Complexity Tracking entries**: 3 (down from 5; CT #3 F3 schema mutation + CT #4 PII detector deferred with F7.1b). ✅ PASS (with documented deviations).
+- [x] **X. Simplicity (YAGNI)** — F7.1a adds **1 new external runtime dependency** (ClamAV daemon on Fly.io VM; `clamscan@^2.4` Node binding on client side) + **1 reactivation of an existing dep** (Tiptap `<img>` extension) + **1 new managed service** (Fly.io micro-VM, ~$2/mo or free tier). One new cron-job.org coordinator is **not needed** (ClamAV signatures self-refresh in-container; F7 MVP cron set unchanged at 5 coordinators). All other new functionality reuses existing primitives: Vercel Blob (F4), advisory locks (F4 + F5 + F7 MVP), `runInTenant()` (F2+), audit-event taxonomy + retention column (F5 + F7 MVP), `next-intl` + check-i18n CI gate (F1+), shadcn primitives (no net-new), Drizzle migrations (numbered **0161+** continuing from 012-eventcreate-integration's 0160, which itself continued from F8 PR #24's 0126 — F14 was renumbered from 0127-0134 to 0161-0168 on 2026-05-18 to land after 012's concurrent F6 + F1 hardening contribution). **Strategy B scope reduction** (this plan revision) removed 6 user stories worth of speculative engineering — the F7.1b backlog preserves the work for promotion if production data validates demand. **Complexity Tracking entries**: 3 (down from 5; CT #3 F3 schema mutation + CT #4 PII detector deferred with F7.1b). ✅ PASS (with documented deviations).
 
 ---
 
@@ -191,7 +191,7 @@ infra/                                              # NEW top-level dir for F7.1
     └── README.md                                  # Deploy + monitor instructions
 
 scripts/                                            # NEW scripts for F7.1a (per critique E2/X2)
-├── generate-template-seed-migration.ts            # READS starter-templates.md → EMITS 0134_f71a_default_template_seed.sql
+├── generate-template-seed-migration.ts            # READS starter-templates.md → EMITS 0168_f71a_default_template_seed.sql (renumbered from 0134 Phase 2)
 │                                                  # CI runs `pnpm tsx scripts/generate-template-seed-migration.ts --check`
 │                                                  # which regenerates SQL + diffs against committed migration.
 │                                                  # Single source of truth = starter-templates.md.
@@ -199,14 +199,14 @@ scripts/                                            # NEW scripts for F7.1a (per
 └── verify-clamav-connectivity.ts                  # NEW (per quickstart § 6) — self-test ClamAV adapter
 
 drizzle/migrations/
-├── 0127_f71a_broadcast_templates.sql              # NEW — template library table (must precede broadcasts FK)
-├── 0128_f71a_broadcast_extensions.sql             # NEW — broadcasts table extensions (4 new columns incl. started_from_template_id FK)
-├── 0129_f71a_broadcast_batch_manifests.sql        # NEW — batch tracking table
-├── 0130_f71a_tenant_image_source_allowlist.sql    # NEW — per-tenant image allowlist + system-seed defaults
-├── 0131_f71a_tenant_broadcast_settings_ext.sql    # NEW — dispatch_concurrency_cap column
-├── 0132_f71a_rls_policies.sql                     # NEW — RLS + FORCE on 3 new tables
-├── 0133_f71a_audit_event_grants.sql               # NEW — 10 new audit event types
-└── 0134_f71a_default_template_seed.sql            # NEW — seed 5 starter templates × 3 locales per tenant (FR-020)
+├── 0161_f71a_broadcast_templates.sql              # NEW — template library table (must precede broadcasts FK); renumbered from 0127 Phase 2
+├── 0162_f71a_broadcast_extensions.sql             # NEW — broadcasts table extensions (5 new columns incl. started_from_template_id FK + template_name_snapshot); renumbered from 0128
+├── 0163_f71a_broadcast_batch_manifests.sql        # NEW — batch tracking table; renumbered from 0129
+├── 0164_f71a_tenant_image_source_allowlist.sql    # NEW — per-tenant image allowlist + system-seed defaults; renumbered from 0130
+├── 0165_f71a_tenant_broadcast_settings.sql        # NEW — CREATE tenant_broadcast_settings table (NOT "ext" — table did not exist in F7 MVP per Phase 2 Risk R2); renumbered from 0131
+├── 0166_f71a_rls_policies.sql                     # NEW — RLS + FORCE on 4 new tables; renumbered from 0132
+├── 0167_f71a_audit_event_grants.sql               # NEW — 10 new audit event types; renumbered from 0133
+└── 0168_f71a_default_template_seed.sql            # NEW — seed 5 starter templates × 3 locales per tenant (FR-020); renumbered from 0134
 
 tests/
 ├── contract/broadcasts/
@@ -233,7 +233,7 @@ tests/
 │   ├── image-virus-scan-flow.test.ts              # NEW (US2 — live ClamAV in Docker)
 │   ├── template-cross-tenant-probe.test.ts        # NEW (US7)
 │   ├── template-snapshot-decoupling.test.ts       # NEW (US7 SC-007a — template edit doesn't mutate existing drafts)
-│   └── starter-template-seed.test.ts              # NEW (US7 SC-007b — post-migration 0134 integrity check)
+│   └── starter-template-seed.test.ts              # NEW (US7 SC-007b — post-migration 0168 (renumbered from 0134 Phase 2) integrity check)
 ├── unit/broadcasts/
 │   ├── batch-boundary.test.ts                     # NEW (US1)
 │   └── image-source-allowlist.test.ts             # NEW (US2)
@@ -243,7 +243,7 @@ tests/
     └── template-library-flow.spec.ts               # NEW (US7 + axe-core — admin CRUD + member picker + snapshot)
 ```
 
-**Structure Decision**: F7.1a extends the F7 MVP bounded context in place — no new bounded context. The **6 migrations (0127–0132)** layer onto the existing F7 MVP schema (22 migrations 0064–0085) and F8 schema (41 migrations 0086–0126 — F8 PR #24 occupied 0124–0126) without conflict. The original F7.1 plan had 12 migrations (0127–0138); 6 are deferred with F7.1b. ClamAV runs as a Fly.io `sin`-region persistent micro-VM. No new cron-job.org coordinator (engagement-event purge was F7.1b US5, deferred).
+**Structure Decision**: F7.1a extends the F7 MVP bounded context in place — no new bounded context. The **8 migrations (0161–0168)** layer onto the existing F7 MVP schema (22 migrations 0064–0085) + F8 schema (41 migrations 0086–0126) + 012-eventcreate-integration's F6+F1 hardening contribution (0127-0160) without conflict. The original F7.1 plan had 12 migrations (0127–0138); 6 are deferred with F7.1b. **Renumber rationale (Phase 2 2026-05-18)**: F14 was branched from main at a point where the next available number was 0127, but 012-eventcreate-integration concurrently shipped F6 (CSV import) + F1 post-ship hardening occupying 0127-0160 on the shared Neon main branch. F14 renumbered 0127-0134 → 0161-0168 to land cleanly after 012's contribution; ship-time rebase onto post-012-ship main will not encounter migration-number conflicts. ClamAV runs as a Fly.io `sin`-region persistent micro-VM. No new cron-job.org coordinator (engagement-event purge was F7.1b US5, deferred).
 
 ---
 
@@ -271,7 +271,7 @@ All Clarifications applicable to F7.1a's US1+US2 scope are resolved (4 of 4); th
 
 **Status**: ✅ Complete — `data-model.md`, `contracts/{batch-dispatch,image-upload}.md`, `quickstart.md` generated; agent-context updated.
 
-- **data-model.md** — 5 entities (3 NEW: BatchManifest + TenantImageSourceAllowlist + BroadcastTemplate; 2 EXTENDED: Broadcast with 4 new columns + state-machine additions, TenantBroadcastSettings with 1 new column); 8 migration SQL statements; complete RLS+FORCE+CHECK constraint catalogue; 10 new audit event types with retention class (all 5y); 5 starter templates × 3 locales seeded per tenant via migration 0134.
+- **data-model.md** — 5 entities (4 NEW: BroadcastTemplate + BroadcastBatchManifest + TenantImageSourceAllowlist + TenantBroadcastSettings — the last was mis-labelled "EXTEND" in data-model § 2.5 but did not exist in F7 MVP per Phase 2 Risk R2; 1 EXTENDED: Broadcast with 5 new columns + state-machine additions); 8 migration SQL statements (renumbered 0127-0134 → 0161-0168 Phase 2 — see Migrations § 3 below); complete RLS+FORCE+CHECK constraint catalogue; 10 new audit event types with retention class (all 5y); 5 starter templates × 3 locales seeded per tenant via migration 0168.
 - **contracts/** — 2 active contract files (batch-dispatch.md + image-upload.md) + 6 deferred contract files preserved under `contracts/deferred-f71b/` for direct re-use when F7.1b user stories are promoted.
 - **quickstart.md** — local dev setup including ClamAV install (Docker recommended), env vars, migration ordering.
 - **agent-context update** — `update-agent-context.ps1 -AgentType claude` invoked to extend worktree `CLAUDE.md` § Active Technologies.
@@ -343,11 +343,11 @@ Pre-merge CI MUST run:
 pnpm tsx scripts/generate-template-seed-migration.ts --check
 ```
 
-This regenerates `0134_f71a_default_template_seed.sql` from `starter-templates.md` and asserts the result matches the committed migration byte-for-byte. **Drift = build break**. Maintainer cannot edit starter content without re-running the generator (manual step before commit). Single source of truth = `starter-templates.md`; migration is a derived artefact.
+This regenerates `0168_f71a_default_template_seed.sql` (renumbered from 0134 Phase 2) from `starter-templates.md` and asserts the result matches the committed migration byte-for-byte. **Drift = build break**. Maintainer cannot edit starter content without re-running the generator (manual step before commit). Single source of truth = `starter-templates.md`; migration is a derived artefact.
 
-### Migration 0134 atomicity strategy (per critique E4)
+### Migration 0168 atomicity strategy (renumbered from 0134 Phase 2 — per critique E4)
 
-Migration 0134 seeds 15 rows per tenant (5 templates × 3 locales). To prevent one bad row from blocking all 100-tenant seed:
+Migration 0168 seeds 15 rows per tenant (5 templates × 3 locales). To prevent one bad row from blocking all 100-tenant seed:
 
 - **Per-tenant `BEGIN/COMMIT`** (NOT global transaction): each tenant's 15-row seed is atomic; failure rolls back THAT tenant only
 - **Per-row `INSERT … ON CONFLICT DO NOTHING`** within the tenant transaction: per-template idempotency
@@ -383,7 +383,7 @@ These items require operator/maintainer judgement and cannot be fully resolved i
 | ID | Category | Question | Action proposed |
 |----|----------|----------|-----------------|
 | ~~**P2**~~ | ~~Problem Validation~~ | ~~3-US scope realistic for solo-dev 2-3 week timeline?~~ | ✅ **RESOLVED Clarifications Session 2026-05-18 Q1**: decide at `/speckit.tasks` gate via task-count threshold (>200 = defer US7 back to F7.1b; ≤200 = ship all 3). |
-| **P7** | Storage choice | starter-templates.md → migration 0134 sync mechanism: auto-gen script (chosen, see CI gate above) vs JSON intermediate format vs frozen-markdown? | **Decision: Auto-gen script** per `scripts/generate-template-seed-migration.ts`. JSON intermediate (option c) deferred as F7.1b polish — current script keeps markdown as canonical source. |
+| **P7** | Storage choice | starter-templates.md → migration 0168 sync mechanism: auto-gen script (chosen, see CI gate above) vs JSON intermediate format vs frozen-markdown? | **Decision: Auto-gen script** per `scripts/generate-template-seed-migration.ts`. JSON intermediate (option c) deferred as F7.1b polish — current script keeps markdown as canonical source. |
 | ~~**E3**~~ | ~~Architecture~~ | ~~Cross-locale template authoring policy~~ | ✅ **RESOLVED Clarifications Session 2026-05-18 Q3**: permissive — no warning, no block. Admins author any locale freely; picker filter handles member-side display. |
 | ~~**E12**~~ | ~~Dependencies~~ | ~~`@tiptap/extension-image@^3.22` compatibility with F7 MVP Tiptap base version~~ | ✅ **RESOLVED Clarifications Session 2026-05-18 Q2**: verified F7 MVP is on Tiptap 3.22.5 (same MAJOR). Clean extension-add; no upgrade task; no F7 MVP regression risk. |
 
