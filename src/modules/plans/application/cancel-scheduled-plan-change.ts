@@ -79,21 +79,22 @@ export async function cancelScheduledPlanChange(
     });
   }
 
-  // R2 Batch 3g (R2-I16) — primary-key lookup via `findById`. Cleaner
-  // than the prior `findPendingForCycle + cross-check` pattern because:
-  //   - Repo limitation no longer leaks into Application layer
-  //     (Constitution III — port contract shouldn't reflect "the
-  //     repo lacks a primary-key lookup")
-  //   - Terminal-status rows are visible to the use-case → distinct
-  //     `already_terminal` error code, not silently masked as
-  //     `not_found`
+  // Lookup-by-primary-key via `findById`. Two distinct guards run
+  // after the lookup:
   //
-  // The (memberId, effectiveAtCycleId) cross-check still runs as
-  // defence-against-stale-UI: if an admin UI passes a `scheduledChangeId`
-  // that EXISTS but doesn't match the (memberId, cycleId) the UI
-  // believes it's working with, treat as `not_found` (the row is no
-  // longer the one the user clicked on, e.g., row was superseded
-  // since the page loaded).
+  //   1. (memberId, effectiveAtCycleId) cross-check — **INTENTIONALLY
+  //      KEPT** as defence-against-stale-UI. If an admin UI's local
+  //      state still references a `scheduledChangeId` that has since
+  //      been superseded onto a different (member, cycle) tuple, the
+  //      cross-check catches it and returns `not_found` so the user
+  //      gets a fresh-view prompt rather than silently mutating a
+  //      stranger's row.
+  //   2. `isTerminalStatus` precondition — terminal-state immutability
+  //      is a Domain invariant. `findById` returns terminal rows (the
+  //      prior `findPendingForCycle` filtered them out, masking the
+  //      distinction); we map terminal → `already_terminal` (409) so
+  //      callers can distinguish "row gone" from "row already
+  //      applied/cancelled/superseded".
   let row: ScheduledPlanChange | null;
   try {
     row = await deps.repo.findById(deps.tenant, input.scheduledChangeId);

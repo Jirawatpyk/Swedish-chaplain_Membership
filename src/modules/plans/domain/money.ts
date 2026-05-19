@@ -100,23 +100,26 @@ export function asMinorUnits(value: number): number {
 }
 
 /**
- * R2 Batch 3g (R2-I14) — accessor that wraps `Plan.annual_fee_minor_units`
- * (unbranded `number` field — Round-1 trade-off) with a `Money` brand
- * + the tenant's currency from `tenant_invoice_settings`. Recommended
- * path for NEW Domain code that needs the cross-currency-safe brand
- * (e.g., totalling fees across plans without risking
- * SEK+THB-without-conversion at compile time). Existing call sites
- * that read `.annual_fee_minor_units` directly continue to work; the
- * accessor is opt-in.
+ * Wraps `Plan.annual_fee_minor_units` (unbranded `number` field —
+ * Round-1 trade-off) with a `Money` brand + the tenant's currency
+ * from `tenant_invoice_settings`. Recommended path for NEW Domain
+ * code that needs the cross-currency-safe brand (e.g., totalling
+ * fees across plans without risking SEK+THB-without-conversion).
+ *
+ * R3 Batch 4c (R3-I12) — signature requires `CurrencyCode` (the
+ * branded type), not `string`. Callers that already hold the brand
+ * (e.g., `getTenantTaxPolicy().currencyCode`) get a type-safe path;
+ * callers with a raw `string` should call `asMoney(...)` directly
+ * (which still re-validates via `isCurrencyCode`).
  *
  * @param annualFeeMinorUnits — the raw integer from `Plan.annual_fee_minor_units`
  * @param currencyCode — resolved per-tenant via F4 `getTenantTaxPolicy`
- * @returns branded `Money` value safe for arithmetic via `addMoney` /
- *   `subtractMoney` / `multiplyMoney` / `addVat`
+ * @returns branded `Money` value safe for arithmetic
+ * @throws InvalidMoneyError on negative / non-integer / >10B overflow
  */
 export function planAnnualFee(
   annualFeeMinorUnits: number,
-  currencyCode: string,
+  currencyCode: CurrencyCode,
 ): Money {
   return asMoney(annualFeeMinorUnits, currencyCode);
 }

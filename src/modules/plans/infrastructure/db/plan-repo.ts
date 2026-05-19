@@ -137,8 +137,8 @@ export const planRepo: PlanRepo = {
         conditions.push(sql`${membershipPlans.deletedAt} IS NULL`);
       }
       if (filter.q && filter.q.trim().length > 0) {
-        // Free-text search over the EN plan name (primary locale).
-        // F3+ will extend to the active locale via a Postgres JSONB path.
+        // Free-text search across all 3 locale variants of plan_name
+        // (en/th/sv) + the plan_id slug.
         conditions.push(
           or(
             ilike(sql`${membershipPlans.planName}->>'en'`, `%${filter.q}%`),

@@ -298,4 +298,42 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(body.error.code).toBe('idempotency_reservation_failed');
     expect(cancelScheduledPlanChangeMock).not.toHaveBeenCalled();
   });
+
+  // R3 Batch 4c (R3-I11) — RBAC cases. Sibling F2 plan routes ship
+  // 401 + 403 tests; cancel route was missing them.
+  it('401 unauthenticated', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: new Response(
+        JSON.stringify({ error: { code: 'unauthenticated' } }),
+        { status: 401, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+    expect(res.status).toBe(401);
+    expect(cancelScheduledPlanChangeMock).not.toHaveBeenCalled();
+  });
+
+  it('403 manager attempts (write requires admin)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce({
+      response: new Response(
+        JSON.stringify({
+          error: { code: 'forbidden', message: 'admin role required' },
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+    expect(res.status).toBe(403);
+    expect(cancelScheduledPlanChangeMock).not.toHaveBeenCalled();
+  });
 });

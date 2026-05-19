@@ -4,7 +4,9 @@
  * Pure TypeScript — no framework imports (Constitution Principle III).
  * Domain layer for the `scheduled_plan_changes` table defined at
  * `specs/011-renewal-reminders/data-model.md § 2.9`. Migration 0086
- * created the table; the Drizzle adapter implementing
+ * created the table; migrations 0124-0126 added hardening (FK to
+ * `renewal_cycles`, status↔timestamp CHECK constraint, trigger
+ * `search_path` fix). The Drizzle adapter implementing
  * `ScheduledPlanChangeRepo` lives at
  * `src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts`.
  *

@@ -1,6 +1,7 @@
 /**
- * F2 audit events — 10 new snake_case event types extending F1's
- * `audit_event_type` pgEnum.
+ * F2 audit events — 13 snake_case event types extending F1's
+ * `audit_event_type` pgEnum (9 `plan_*` lifecycle + 4 `plan_change_*`
+ * scheduled-plan-change lifecycle).
  *
  * See data-model.md § 2.6 + § 2.6a for the normative payload shapes
  * and critique P9 for the single-source-of-truth zod schema design
@@ -432,7 +433,7 @@ type _AssertHandWrittenMatchesZodInfer = F2AuditEvent extends _ZodInfer
     : never
   : never;
 
-/** Narrow runtime check that a value is one of the 10 F2 event types. */
+/** Narrow runtime check that a value is one of the 13 F2 event types. */
 export function isF2AuditEventType(value: unknown): value is F2AuditEventType {
   return (
     typeof value === 'string' &&
