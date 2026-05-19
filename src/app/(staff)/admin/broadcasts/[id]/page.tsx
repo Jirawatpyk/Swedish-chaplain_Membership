@@ -93,10 +93,17 @@ export default async function AdminBroadcastDetailPage({
   // toggle) and hide the BatchBreakdown surface. F7 MVP single-
   // audience broadcasts dispatched while US1 is off would have NO
   // manifests anyway — the gate is defence-in-depth.
+  //
+  // Phase 3F.8 (F-14 fix) — loadBatchBreakdownRows returns null on
+  // load failure (was empty array). Null is rendered as an inline
+  // error banner below + skips the BatchBreakdown component (avoids
+  // hiding the Retry/Accept-Partial actions for partially_sent state
+  // behind a silent "not split" placeholder).
   const f71aUs1On = isF71aUs1Enabled();
   const batchManifests = f71aUs1On
     ? await loadBatchBreakdownRows(tenant.slug, broadcast.broadcastId)
     : [];
+  const batchLoadFailed = batchManifests === null;
   const manualRetryRemaining = Math.max(
     0,
     MANUAL_RETRY_BUDGET - broadcast.manualRetryCount,
@@ -194,12 +201,30 @@ export default async function AdminBroadcastDetailPage({
           into in-flight batches). Component shows "not split" fallback
           for F7 MVP single-audience broadcasts. T061: entire surface
           hidden when US1 flag is off. */}
-      {f71aUs1On ? (
+      {f71aUs1On && batchLoadFailed ? (
+        // Phase 3F.8 (F-14 fix) — explicit error panel instead of
+        // silent "not split" placeholder. Caller sees the failure
+        // + a refresh hint; ops sees the underlying error in the
+        // `admin.broadcasts.detail.batch_load_failed` log line.
+        <section
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive"
+        >
+          <p className="font-semibold">
+            Per-batch breakdown temporarily unavailable
+          </p>
+          <p className="mt-1 text-destructive/80">
+            We couldn&apos;t load the batch list. Refresh the page in a moment.
+            Operators have been alerted via the structured log.
+          </p>
+        </section>
+      ) : null}
+      {f71aUs1On && !batchLoadFailed ? (
         <BatchBreakdown
           broadcastId={broadcast.broadcastId as unknown as string}
           broadcastStatus={broadcast.status}
           manualRetryRemaining={manualRetryRemaining}
-          batches={batchManifests}
+          batches={batchManifests as ReadonlyArray<BatchBreakdownRow>}
           defaultOpen={
             broadcast.status === 'partially_sent' ||
             broadcast.status === 'partial_delivery_accepted'
@@ -251,7 +276,7 @@ function renderTimeSanitise(html: string): {
 async function loadBatchBreakdownRows(
   tenantSlug: string,
   broadcastId: import('@/modules/broadcasts').BroadcastId,
-): Promise<ReadonlyArray<BatchBreakdownRow>> {
+): Promise<ReadonlyArray<BatchBreakdownRow> | null> {
   try {
     const repo = makeDrizzleBatchManifestsRepo(tenantSlug);
     const manifests = await repo.findByBroadcast(
@@ -277,10 +302,14 @@ async function loadBatchBreakdownRows(
       { err: e instanceof Error ? e.message : String(e), tenantSlug },
       'admin.broadcasts.detail.batch_load_failed',
     );
-    // Fail-open: empty array means the BatchBreakdown surface shows
-    // the "not split" fallback (no false positive). Phase 3D ops
-    // dashboard catches the elevated log rate.
-    return [];
+    // Phase 3F.8 (F-14 fix) — surface load failure to the caller via
+    // a sentinel `null` instead of silent "not split" fallback empty
+    // array. Previously fail-open hid the BatchBreakdown entirely
+    // for `partially_sent` broadcasts → admin lost access to Retry +
+    // Accept-Partial without any visible signal. Caller renders an
+    // inline error panel when null + broadcast is in a state where
+    // batches matter.
+    return null;
   }
 }
 
