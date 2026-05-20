@@ -167,8 +167,31 @@ export interface Broadcast {
   // null if the draft was Blank. `templateNameSnapshot` is the
   // denormalised template name at snapshot time (FR-019 critique P9
   // — survives template deletion for forensic audit).
+  //
+  // R3-F2 (Phase 5 Round 1) — surfaced as a discriminated union
+  // `templateProvenance` below: either BOTH fields populated (snapshot
+  // path) or BOTH null (blank canvas). The raw fields below are
+  // retained for backward compat with existing audit emit + UI
+  // readers; new code SHOULD read `templateProvenance` instead.
   readonly startedFromTemplateId: string | null;
   readonly templateNameSnapshot: string | null;
+
+  /**
+   * R3-F2 — canonical view of the template-snapshot provenance.
+   * `null` when the draft was Blank; non-null carries BOTH ids
+   * together so callers can't accidentally see one-without-the-other
+   * (which the underlying nullable column pair allowed). Populated
+   * by the Drizzle row→domain mapper from the two columns above.
+   *
+   * Optional (`?`) for compatibility with existing test fixtures
+   * built before the DU was introduced. Production code paths
+   * (Drizzle mapper + `startedFromTemplate` helper) always populate
+   * it. New consumers SHOULD read `templateProvenance` over the
+   * raw column-mirror fields above.
+   */
+  readonly templateProvenance?:
+    | { readonly templateId: string; readonly templateNameSnapshot: string }
+    | null;
 
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -534,9 +557,13 @@ export function startedFromTemplate(
   templateId: string,
   templateNameSnapshot: string,
 ): Broadcast {
+  // R3-F2: populate BOTH the raw column-mirror fields AND the
+  // discriminated `templateProvenance` view. The DU is the canonical
+  // read surface; the raw fields stay for backward compat.
   return {
     ...broadcast,
     startedFromTemplateId: templateId,
     templateNameSnapshot,
+    templateProvenance: { templateId, templateNameSnapshot },
   };
 }

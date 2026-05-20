@@ -197,6 +197,19 @@ function rowToBroadcast(row: BroadcastRow): Broadcast {
     partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
     startedFromTemplateId: row.startedFromTemplateId,
     templateNameSnapshot: row.templateNameSnapshot,
+    // R3-F2 — discriminated union populated from the column pair.
+    // Either-both-or-neither invariant enforced at mapper boundary;
+    // if EXACTLY ONE column is non-null (corrupt row), surface as null
+    // to caller — denying broken-state visibility is safer than
+    // emitting a half-populated provenance.
+    templateProvenance:
+      row.startedFromTemplateId !== null &&
+      row.templateNameSnapshot !== null
+        ? {
+            templateId: row.startedFromTemplateId,
+            templateNameSnapshot: row.templateNameSnapshot,
+          }
+        : null,
 
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
