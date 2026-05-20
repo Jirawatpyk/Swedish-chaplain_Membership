@@ -10,29 +10,33 @@
  * column independence (broadcasts.body_html is a separate column from
  * broadcast_templates.body_html — UPDATEs on one do NOT cascade).
  *
- * RED-first per Constitution Principle II. GREEN at Phase 5C+5D when
- * the repo + snapshot use-case land.
- *
  * Runs against live Neon Singapore per CLAUDE.md `pnpm test:integration`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
-import { broadcastTemplates } from '@/modules/broadcasts/infrastructure/schema';
+import {
+  broadcasts,
+  broadcastTemplates,
+} from '@/modules/broadcasts/infrastructure/schema';
+import { snapshotTemplateToDraft } from '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft';
+import { makeSnapshotTemplateToDraftDeps } from '@/modules/broadcasts';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
-
-const dynImport = new Function('m', 'return import(m)') as <T = unknown>(
-  modulePath: string,
-) => Promise<T>;
 
 describe('F7.1a template snapshot decoupling — SC-007a (T094)', () => {
   let tenant: TestTenant;
   let templateId: string;
+  let draftId: string;
+  const memberId = randomUUID();
+  const userId = randomUUID();
 
   beforeAll(async () => {
     tenant = await createTestTenant('test');
+    draftId = randomUUID();
 
-    const [row] = await db
+    // Seed template T1
+    const [tpl] = await db
       .insert(broadcastTemplates)
       .values({
         tenantId: tenant.ctx.slug,
@@ -44,10 +48,31 @@ describe('F7.1a template snapshot decoupling — SC-007a (T094)', () => {
         createdByUserId: null,
       })
       .returning({ id: broadcastTemplates.id });
-    templateId = row!.id;
+    templateId = tpl!.id;
+
+    // Seed an empty draft broadcast row (BYPASSRLS — test setup)
+    await db.insert(broadcasts).values({
+      tenantId: tenant.ctx.slug,
+      broadcastId: draftId,
+      requestedByMemberId: memberId,
+      requestedByMemberPlanIdSnapshot: 'corporate',
+      submittedByUserId: userId,
+      actorRole: 'member_self_service',
+      subject: 'placeholder',
+      bodyHtml: '<p>placeholder</p>',
+      bodySource: 'placeholder',
+      fromName: 'Member',
+      replyToEmail: 'reply@example.com',
+      segmentType: 'all_members',
+      estimatedRecipientCount: 1,
+      status: 'draft' as const,
+    });
   });
 
   afterAll(async () => {
+    await db
+      .delete(broadcasts)
+      .where(eq(broadcasts.tenantId, tenant.ctx.slug));
     await db
       .delete(broadcastTemplates)
       .where(eq(broadcastTemplates.tenantId, tenant.ctx.slug));
@@ -55,74 +80,53 @@ describe('F7.1a template snapshot decoupling — SC-007a (T094)', () => {
   });
 
   it('member draft snapshots template at T1 → admin updates template at T2 → draft unchanged', async () => {
-    // 1. Snapshot template → draft at T1 (use-case lands at Phase 5D T102)
-    const snapshotMod = await dynImport<{
-      readonly snapshotTemplateToDraft: (
-        deps: Record<string, unknown>,
-        input: {
-          readonly tenantId: string;
-          readonly actorUserId: string;
-          readonly memberId: string;
-          readonly draftId: string;
-          readonly templateId: string;
-          readonly requestId: string;
-        },
-      ) => Promise<{
-        ok: true;
-        value: {
-          readonly draftId: string;
-          readonly subject: string;
-          readonly bodyHtml: string;
-        };
-      }>;
-    }>(
-      '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft',
-    );
+    const deps = makeSnapshotTemplateToDraftDeps(tenant.ctx.slug);
 
-    // 2. (We don't actually create a real draft for this RED — the
-    //    snapshot use-case returns the substituted values; the
-    //    decoupling assertion compares them to a later read of the
-    //    template after an UPDATE.)
-    const draftId = '99999999-9999-9999-9999-99999999900a';
-    const depsMod = await dynImport<{
-      readonly makeSnapshotTemplateToDraftDeps: (
-        tenantId: string,
-      ) => Record<string, unknown>;
-    }>('@/modules/broadcasts');
-    const deps = depsMod.makeSnapshotTemplateToDraftDeps(tenant.ctx.slug);
-
+    // 1. T1 snapshot — actor wraps in runInTenant so RLS-confined
+    //    findById sees the tenant's row.
     const snapResult = await runInTenant(tenant.ctx, async () =>
-      snapshotMod.snapshotTemplateToDraft(deps, {
+      snapshotTemplateToDraft(deps, {
         tenantId: tenant.ctx.slug,
-        actorUserId: 'user-test-mem',
-        memberId: 'mem-test',
+        actorUserId: userId,
+        memberId,
         draftId,
         templateId,
         requestId: 'req-snap-decoupling',
       }),
     );
-
     expect(snapResult.ok).toBe(true);
     if (!snapResult.ok) return;
 
+    // Capture T1 substituted snapshot values
     const draftSubjectAtT1 = snapResult.value.subject;
     const draftBodyAtT1 = snapResult.value.bodyHtml;
+    expect(draftSubjectAtT1).toBe('V1 subject');
+    expect(draftBodyAtT1).toBe('<p>V1 body content</p>');
 
-    expect(draftSubjectAtT1).toContain('V1 subject');
-    expect(draftBodyAtT1).toContain('V1 body content');
-
-    // 3. Admin UPDATEs the template at T2 (raw db UPDATE — Drizzle repo
-    //    impl would do the same path)
+    // 2. T2 admin UPDATEs template — BYPASSRLS to simulate admin
+    //    action without spinning up a second runInTenant scope.
     await db
       .update(broadcastTemplates)
       .set({ subject: 'V2 subject', bodyHtml: '<p>V2 body content</p>' })
       .where(eq(broadcastTemplates.id, templateId));
 
-    // 4. Verify the snapshot result (representing the draft) is
-    //    unchanged — substituted values from T1 still hold
-    expect(draftSubjectAtT1).toContain('V1 subject');
-    expect(draftSubjectAtT1).not.toContain('V2 subject');
-    expect(draftBodyAtT1).toContain('V1 body content');
-    expect(draftBodyAtT1).not.toContain('V2 body content');
+    // 3. Read the draft row directly — verify its persisted body +
+    //    subject are still the T1 snapshot values (NOT mutated by the
+    //    template UPDATE).
+    const draftRows = await db
+      .select({
+        subject: broadcasts.subject,
+        bodyHtml: broadcasts.bodyHtml,
+        startedFromTemplateId: broadcasts.startedFromTemplateId,
+        templateNameSnapshot: broadcasts.templateNameSnapshot,
+      })
+      .from(broadcasts)
+      .where(eq(broadcasts.broadcastId, draftId));
+    expect(draftRows).toHaveLength(1);
+    const draft = draftRows[0]!;
+    expect(draft.subject).toBe('V1 subject');
+    expect(draft.bodyHtml).toBe('<p>V1 body content</p>');
+    expect(draft.startedFromTemplateId).toBe(templateId);
+    expect(draft.templateNameSnapshot).toBe('Decoupling Test');
   });
 });

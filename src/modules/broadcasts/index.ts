@@ -551,3 +551,13 @@ export {
   type ListBroadcastTemplatesInput,
   type ListBroadcastTemplatesOutput,
 } from './application/use-cases/list-broadcast-templates';
+
+// US7 Composition root factories (Phase 5E)
+export {
+  makeCreateBroadcastTemplateDeps,
+  makeUpdateBroadcastTemplateDeps,
+  makeDeleteBroadcastTemplateDeps,
+  makeSnapshotTemplateToDraftDeps,
+  makeListBroadcastTemplatesDeps,
+} from './infrastructure/broadcasts-deps';
+export { envTenantDisplayName } from './infrastructure/env-tenant-display-name';

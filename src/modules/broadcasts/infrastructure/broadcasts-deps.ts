@@ -662,3 +662,91 @@ export function makeValidateImageSourceAllowlistDeps(
     audit: f7AuditAdapter,
   };
 }
+
+// ----- F7.1a Phase 5 (US7 — Template library) ------------------------------
+//
+// Composition roots for the 5 US7 use-cases (T099-T103). Each is per-
+// tenant for symmetry with the rest of F7 deps shape; tenant scoping
+// is enforced via `runInTenant()` inside the port (templates repo
+// withTenantTx helper) and RLS+FORCE on broadcast_templates (migration
+// 0166).
+
+import { makeDrizzleBroadcastTemplatesRepo } from './drizzle-broadcast-templates-repo';
+import { envTenantDisplayName } from './env-tenant-display-name';
+import type { CreateBroadcastTemplateDeps } from '../application/use-cases/create-broadcast-template';
+import type { UpdateBroadcastTemplateDeps } from '../application/use-cases/update-broadcast-template';
+import type { DeleteBroadcastTemplateDeps } from '../application/use-cases/delete-broadcast-template';
+import type { SnapshotTemplateToDraftDeps } from '../application/use-cases/snapshot-template-to-draft';
+import type { ListBroadcastTemplatesDeps } from '../application/use-cases/list-broadcast-templates';
+
+/**
+ * T099 — composition root for `createBroadcastTemplate` use case
+ * (admin POST /api/admin/broadcasts/templates).
+ */
+export function makeCreateBroadcastTemplateDeps(
+  tenantId: string,
+): CreateBroadcastTemplateDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+    validateImageSourceAllowlist:
+      makeValidateImageSourceAllowlistDeps(tenantId),
+  };
+}
+
+/**
+ * T100 — composition root for `updateBroadcastTemplate` use case
+ * (admin PATCH /api/admin/broadcasts/templates/:id).
+ */
+export function makeUpdateBroadcastTemplateDeps(
+  tenantId: string,
+): UpdateBroadcastTemplateDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+    validateImageSourceAllowlist:
+      makeValidateImageSourceAllowlistDeps(tenantId),
+  };
+}
+
+/**
+ * T101 — composition root for `deleteBroadcastTemplate` use case
+ * (admin DELETE /api/admin/broadcasts/templates/:id).
+ */
+export function makeDeleteBroadcastTemplateDeps(
+  _tenantId: string,
+): DeleteBroadcastTemplateDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T102 — composition root for `snapshotTemplateToDraft` use case
+ * (member POST /api/member/broadcasts/draft/:id/snapshot-template).
+ * Wires the env-backed TenantDisplayName adapter — swap to a Drizzle-
+ * backed adapter when the multi-tenant SaaS `tenants` table lands.
+ */
+export function makeSnapshotTemplateToDraftDeps(
+  _tenantId: string,
+): SnapshotTemplateToDraftDeps {
+  return {
+    templatesPort: makeDrizzleBroadcastTemplatesRepo(),
+    broadcastsRepo: makeDrizzleBroadcastsRepo(_tenantId),
+    tenantDisplayName: envTenantDisplayName,
+    audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * T103 — composition root for `listBroadcastTemplates` use case
+ * (member + admin GET /api/broadcasts/templates).
+ */
+export function makeListBroadcastTemplatesDeps(
+  _tenantId: string,
+): ListBroadcastTemplatesDeps {
+  return {
+    port: makeDrizzleBroadcastTemplatesRepo(),
+  };
+}
