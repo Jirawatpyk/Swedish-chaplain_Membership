@@ -33,6 +33,7 @@ import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
@@ -1036,11 +1037,13 @@ export async function dispatchScheduledBroadcast(
     // calls were no-ops (idempotency-key dedup). Surface as
     // broadcast_invalid_state_transition for the cron route's bucket
     // counter; do NOT page on-call (no actual failure).
-    if (
-      typeof e === 'object' &&
-      e !== null &&
-      (e as { name?: string }).name === 'BroadcastConcurrentMutationError'
-    ) {
+    // R3.6 L-7 — standardised on `instanceof` (matches snapshot use-
+    // case + 5+ other broadcasts call-sites). The prior `.name ===`
+    // idiom is realm-safer (survives cross-bundle serialization) but
+    // we don't cross realm boundaries in F7 — every error origin is
+    // in-process. `instanceof` gives compile-time type narrowing on
+    // `e.observedStatus` which the string-compare didn't.
+    if (e instanceof BroadcastConcurrentMutationError) {
       logger.warn(
         {
           tenantId: deps.tenant.slug,

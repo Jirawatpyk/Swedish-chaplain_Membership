@@ -65,14 +65,12 @@ export function AdminTemplateLibrary({
   // through the setTimeout(0) defer (react-hooks/set-state-in-effect
   // forbids a synchronous setState inside useEffect, hence the
   // initializer pattern instead of an in-effect first-render branch).
+  // Debounce filter-count announcement by 100ms so the screen
+  // reader's focus-cue from the aria-pressed pill click lands first.
+  // NVDA debounces ~50ms; VoiceOver ~100ms. Lazy initializer
+  // captures first-render synchronously (no announcement on mount).
   const [liveCount, setLiveCount] = useState<number>(() => filtered.length);
   useEffect(() => {
-    // R3.5 M-15 — 100ms settle delay matches NVDA debounce window
-    // (~50ms) and VoiceOver (~100ms). setTimeout(0) was insufficient
-    // — both ATs were dropping the filter-count announcement because
-    // it competed with the aria-pressed pill state-change announce
-    // in the same window. F8 renewal-pipeline live-region uses the
-    // same 100ms cadence.
     const id = setTimeout(() => setLiveCount(filtered.length), 100);
     return () => clearTimeout(id);
   }, [filtered.length]);
@@ -95,7 +93,10 @@ export function AdminTemplateLibrary({
 
   return (
     <>
-      <fieldset className="mb-4 flex items-center gap-2">
+      {/* R3.6 L-5 — flex-wrap added so SV labels (~50 chars across
+          3 pills at text-[0.8rem]) don't overflow horizontally on
+          320px Galaxy S8 baseline viewport. */}
+      <fieldset className="mb-4 flex flex-wrap items-center gap-2">
         <legend className="sr-only">{t('filterLegend')}</legend>
         <button
           type="button"

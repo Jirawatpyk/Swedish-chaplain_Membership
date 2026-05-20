@@ -28,18 +28,26 @@
  * static knowledge of which keys CAN appear.
  */
 
+/**
+ * R3.6 L-2 — tightened return type from `Partial<T>` to
+ * `{ [K in keyof T]?: Exclude<T[K], undefined> }`. The function
+ * runtime-guarantees that present keys have non-undefined values;
+ * the return type now reflects that work (callers see the stripped
+ * type, not `T[K] | undefined`).
+ */
 export function omitUndefined<T extends Record<string, unknown>>(
   input: T,
-): Partial<T> {
-  const out: Partial<T> = {};
+): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  const out: { [K in keyof T]?: Exclude<T[K], undefined> } = {};
   for (const k in input) {
     if (Object.prototype.hasOwnProperty.call(input, k)) {
       const v = input[k];
       if (v !== undefined) {
-        // Cast widens the assignment to satisfy Partial<T> — the
-        // key's value type is by construction T[K] (NOT T[K] | undef
-        // since we just guarded above).
-        out[k] = v as T[Extract<keyof T, string>];
+        // Cast widens the assignment to satisfy the tightened return
+        // type — the key's value type is by construction
+        // Exclude<T[K], undefined> (NOT T[K] | undefined since we
+        // just guarded above).
+        out[k] = v as Exclude<T[Extract<keyof T, string>], undefined>;
       }
     }
   }

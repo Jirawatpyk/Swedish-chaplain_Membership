@@ -1,13 +1,9 @@
 /**
- * Phase 5 Round 1 R2.2 A3+A4 — Centralised template field limits.
+ * Template field length / size limits — single source of truth shared
+ * between Application use-cases (create + update template) and
+ * Presentation Zod schemas (admin templates POST + PATCH routes).
  *
- * Used by Application use-cases (create + update broadcast template)
- * + Presentation Zod schemas (admin templates POST + PATCH). Single
- * source of truth — a future bump (e.g. MAX_BODY_BYTES → 500KB) only
- * touches this constant.
- *
- * Application-layer module: zero framework / ORM imports per
- * Constitution Principle III.
+ * Pure constants — zero framework imports (Constitution Principle III).
  */
 
 /** Template `name` column max length per contract § 1.1 (CHECK constraint also at DB level in migration 0168). */

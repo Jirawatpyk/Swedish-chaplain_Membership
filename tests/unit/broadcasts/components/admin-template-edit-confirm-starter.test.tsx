@@ -12,7 +12,7 @@
  *      stays hidden for already-dismissed templates without a
  *      hydration flash.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { AdminTemplateEditConfirmStarter } from '@/components/broadcast/admin/template-edit-confirm-starter';
@@ -78,13 +78,16 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
   });
 
   it('localStorage write failure closes banner for session without crashing', () => {
-    // Force setItem to throw (mimics private-mode / quota-exceeded).
-    const originalSetItem = window.localStorage.setItem.bind(
-      window.localStorage,
-    );
-    window.localStorage.setItem = () => {
-      throw new Error('QuotaExceededError');
-    };
+    // R3.6 L-4 — vi.spyOn replaces direct method-assignment.
+    // jsdom's localStorage prototype-method assignment can silently
+    // no-op in some versions; spyOn forces the override + restores
+    // automatically via afterEach `vi.restoreAllMocks` (covered by
+    // top-level setup).
+    const spy = vi
+      .spyOn(window.localStorage, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('QuotaExceededError');
+      });
     try {
       renderBanner(TEMPLATE_A);
       expect(screen.getByRole('status')).toBeInTheDocument();
@@ -97,7 +100,7 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
       // Banner is hidden for THIS session even though persist failed.
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
     } finally {
-      window.localStorage.setItem = originalSetItem;
+      spy.mockRestore();
     }
   });
 });

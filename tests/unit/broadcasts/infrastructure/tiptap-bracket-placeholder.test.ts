@@ -38,36 +38,42 @@ function decorationsFor(html: string): DecorationRange[] {
     extensions: [StarterKit, broadcastBracketPlaceholderExtension],
     content: html,
   });
-  const state = editor.state;
-  // Each plugin's `decorations` prop is queried by ProseMirror at
-  // render time. Call EVERY plugin's decorations() (if defined) and
-  // collect those that target our `bracket-placeholder` class. This
-  // sidesteps PluginKey identity comparisons (Tiptap re-wraps the
-  // key internally) and keeps the test future-proof against StarterKit
-  // re-ordering its own plugins.
-  const ranges: DecorationRange[] = [];
-  for (const plugin of state.plugins) {
-    const decFn = plugin.spec.props?.decorations as
-      | ((s: typeof state) => DecorationSet | null | undefined)
-      | undefined;
-    if (!decFn) continue;
-    const set = decFn(state);
-    if (!set) continue;
-    for (const d of set.find()) {
-      // Decoration carries a `type` with `spec` for inline decorations.
-      // Inline decorations made with Decoration.inline({class: '...'})
-      // expose the class via `spec.class` (ProseMirror internal shape).
-      const type = (d as unknown as {
-        type: { attrs?: { class?: string }; spec?: { class?: string } };
-      }).type;
-      const cls = type.attrs?.class ?? type.spec?.class;
-      if (cls === 'bracket-placeholder') {
-        ranges.push({ from: d.from, to: d.to });
+  // R3.6 L-3 — try/finally ensures editor.destroy() runs even on
+  // exception (was bare destroy after return; future malformed-HTML
+  // tests would leak jsdom state on throw).
+  try {
+    const state = editor.state;
+    // Each plugin's `decorations` prop is queried by ProseMirror at
+    // render time. Call EVERY plugin's decorations() (if defined) and
+    // collect those that target our `bracket-placeholder` class. This
+    // sidesteps PluginKey identity comparisons (Tiptap re-wraps the
+    // key internally) and keeps the test future-proof against StarterKit
+    // re-ordering its own plugins.
+    const ranges: DecorationRange[] = [];
+    for (const plugin of state.plugins) {
+      const decFn = plugin.spec.props?.decorations as
+        | ((s: typeof state) => DecorationSet | null | undefined)
+        | undefined;
+      if (!decFn) continue;
+      const set = decFn(state);
+      if (!set) continue;
+      for (const d of set.find()) {
+        // Decoration carries a `type` with `spec` for inline decorations.
+        // Inline decorations made with Decoration.inline({class: '...'})
+        // expose the class via `spec.class` (ProseMirror internal shape).
+        const type = (d as unknown as {
+          type: { attrs?: { class?: string }; spec?: { class?: string } };
+        }).type;
+        const cls = type.attrs?.class ?? type.spec?.class;
+        if (cls === 'bracket-placeholder') {
+          ranges.push({ from: d.from, to: d.to });
+        }
       }
     }
+    return ranges;
+  } finally {
+    editor.destroy();
   }
-  editor.destroy();
-  return ranges;
 }
 
 describe('broadcastBracketPlaceholderExtension — R2.1 H-test-3', () => {

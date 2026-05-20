@@ -66,6 +66,10 @@ export type F7RouteErrorCode =
   | 'invalid_body'
   | 'forbidden'
   | 'feature_disabled'
+  // R3.6 L-1 — typed code for 401 unauthenticated requests on member-
+  // facing surfaces (was stringly-typed 'no-session' in templates GET
+  // route). Provides bilingual message + status mapping.
+  | 'no_session'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -217,6 +221,10 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'Email broadcasts are temporarily unavailable.',
     messageThai: 'ระบบ E-Blast ปิดใช้งานชั่วคราว',
   },
+  no_session: {
+    message: 'You must be signed in to access this resource.',
+    messageThai: 'คุณต้องเข้าสู่ระบบเพื่อเข้าถึงทรัพยากรนี้',
+  },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
     messageThai: 'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
@@ -365,6 +373,7 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   invalid_body: 400,
   forbidden: 403,
   feature_disabled: 503,
+  no_session: 401,
   internal_error: 500,
 };
 

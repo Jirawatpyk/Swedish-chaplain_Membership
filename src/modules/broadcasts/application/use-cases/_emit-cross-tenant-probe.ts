@@ -1,20 +1,16 @@
 /**
- * Phase 5 Round 1 R2.2 A2 — Shared helper for cross-tenant probe audits.
+ * Shared helper for template cross-tenant probe audits.
  *
- * Centralises the `safeAuditEmit(audit, null, {eventType: 'broadcast_
- * cross_tenant_probe', payload: {...}})` pattern used by template
- * use-cases (delete + update + snapshot) when a RLS-confined SELECT
- * returns null. Distinguishes templates from broadcasts via the
- * `resourceKind` discriminant in the payload (added in R1.1 along
- * with the `probedTemplateId` field).
+ * Centralises the safeAuditEmit `broadcast_cross_tenant_probe` payload
+ * shape used by template use-cases (delete + update + snapshot) when
+ * a RLS-confined SELECT returns null. The `resourceKind: 'template'`
+ * discriminant distinguishes template probes from broadcast probes.
  *
- * Why not generalise to broadcasts probes too: broadcast use-cases
- * have varied summary strings + extra payload fields (cancel adds
- * action context, retry adds attempt number, etc.). Templates have
- * a uniform shape so this helper is template-scoped.
+ * Template-scoped (not generalised to broadcasts) — broadcast use-cases
+ * have varied summaries + extra payload fields that don't fit a single
+ * shared signature.
  *
- * Returns void — the use-case still controls the error-result it
- * returns to the caller.
+ * Returns void — the use-case still controls the error-result.
  */
 import { safeAuditEmit } from './_safe-audit-emit';
 import type { AuditPort } from '../ports/audit-port';

@@ -51,6 +51,10 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   invalid_body: 400,
   forbidden: 403,
   feature_disabled: 503,
+  // R3.6 L-1 — typed 401 code for unauthenticated member-facing
+  // routes (was stringly-typed 'no-session' in templates GET route
+  // pre-R3.6).
+  no_session: 401,
   internal_error: 500,
 };
 

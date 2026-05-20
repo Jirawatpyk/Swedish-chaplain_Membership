@@ -48,7 +48,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // Either member OR admin session — shared picker surface.
   const current = await getCurrentSession();
   if (!current) {
-    return jsonError(401, 'no-session', correlationId);
+    // R3.6 L-1 — typed code (was 'no-session' stringly-typed).
+    // F7RouteErrorCode now includes 'no_session' with bilingual
+    // message + status 401 in F7_ERROR_MESSAGES.
+    return jsonError(401, 'no_session', correlationId);
   }
 
   const tenantCtx = resolveTenantFromRequest(request);
