@@ -19,6 +19,7 @@ import type {
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type { ValidateImageSourceAllowlistDeps } from '@/modules/broadcasts/application/use-cases/validate-image-source-allowlist';
 import { ok, err } from '@/lib/result';
+import { logger } from '@/lib/logger';
 
 const TENANT = 'tenant-swe' as never;
 const ACTOR_ADMIN = 'user_admin_42';
@@ -189,36 +190,63 @@ describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
 
   it('R4.3 M-13: already soft-deleted template → not_found + NO cross-tenant probe audit + port.update NOT called', async () => {
     const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
-    const deps = makeDeps({
-      existingTemplate: makeTemplate({
-        deletedAt: SOFT_DELETED_AT,
-        name: 'Already Gone',
-      }),
-    });
-    const r = await updateBroadcastTemplate(deps, {
-      tenantId: TENANT,
-      actorUserId: ACTOR_ADMIN,
-      templateId: TEMPLATE_ID,
-      subject: 'Trying to edit a soft-deleted template',
-      requestId: 'req-r4.3-m13-update',
-    });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('not_found');
-    // Benign double-edit race MUST NOT emit a cross-tenant probe audit.
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: 'broadcast_cross_tenant_probe',
-      }),
-    );
-    // And MUST NOT emit a `broadcast_template_updated` audit.
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: 'broadcast_template_updated',
-      }),
-    );
-    // port.update not invoked — the row is in soft-deleted state.
-    expect(deps.port.update).not.toHaveBeenCalled();
+    // R6.3 M-10 — spy on logger.info to verify the R4.3 M-5
+    // observability hook fires with the expected payload shape.
+    const infoSpy = vi
+      .spyOn(logger, 'info')
+      .mockImplementation(() => undefined);
+    try {
+      const deps = makeDeps({
+        existingTemplate: makeTemplate({
+          deletedAt: SOFT_DELETED_AT,
+          name: 'Already Gone',
+        }),
+      });
+      const r = await updateBroadcastTemplate(deps, {
+        tenantId: TENANT,
+        actorUserId: ACTOR_ADMIN,
+        templateId: TEMPLATE_ID,
+        subject: 'Trying to edit a soft-deleted template',
+        requestId: 'req-r4.3-m13-update',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('not_found');
+      // Benign double-edit race MUST NOT emit a cross-tenant probe audit.
+      expect(deps.audit.emit).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          eventType: 'broadcast_cross_tenant_probe',
+        }),
+      );
+      // And MUST NOT emit a `broadcast_template_updated` audit.
+      expect(deps.audit.emit).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          eventType: 'broadcast_template_updated',
+        }),
+      );
+      // port.update not invoked — the row is in soft-deleted state.
+      expect(deps.port.update).not.toHaveBeenCalled();
+      // R6.3 L-10 — explicit findByIdAllowDeletedInTx call assertion.
+      // 3rd positional arg is the tx token — `null` here (mock withTx).
+      expect(deps.port.findByIdAllowDeletedInTx).toHaveBeenCalledWith(
+        TENANT,
+        TEMPLATE_ID,
+        null,
+      );
+      // R6.3 M-10 — observability hook fired with the expected payload.
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: TENANT,
+          templateId: TEMPLATE_ID,
+          actorUserId: ACTOR_ADMIN,
+          deletedAt: SOFT_DELETED_AT.toISOString(),
+          requestId: 'req-r4.3-m13-update',
+        }),
+        'broadcasts.template.update_idempotent_noop',
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 });

@@ -20,7 +20,10 @@ import type {
   BroadcastTemplatesPort,
 } from '@/modules/broadcasts/application/ports/broadcast-templates-port';
 import type { TenantDisplayNamePort } from '@/modules/broadcasts/application/ports/tenant-display-name-port';
-import type { BroadcastsRepo } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import {
+  BroadcastNotFoundError,
+  type BroadcastsRepo,
+} from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 
 const TENANT = 'tenant-swe' as never;
@@ -328,12 +331,14 @@ const deps = makeDeps({ template: null });
         eventType: 'broadcast_template_snapshotted',
       }),
     );
+    // R6.3 M-9 — anchor the call count so an arg-swap regression
+    // (e.g., positional swap of tx + event) can't slip past the
+    // `not.toHaveBeenCalledWith` assertion above.
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(0);
   });
 
   it('R4.1 C-3: BroadcastNotFoundError post-ownership-check → draft_not_found + NO ghost snapshot audit', async () => {
-    const { BroadcastNotFoundError } = await import(
-      '@/modules/broadcasts/application/ports/broadcasts-repo'
-    );
+    // R6.3 L-9 — `BroadcastNotFoundError` hoisted to module-level import.
     const deps = makeDeps();
     (
       deps.broadcastsRepo as unknown as {
@@ -362,6 +367,10 @@ const deps = makeDeps({ template: null });
         eventType: 'broadcast_template_snapshotted',
       }),
     );
+    // R6.3 M-9 — anchor the call count. BroadcastNotFoundError path
+    // (post-ownership-check disappearance) emits ZERO audit events
+    // (the use-case logs at error severity + returns draft_not_found).
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(0);
   });
 
   it('R1.2 H-sf-3: unexpected generic Error → propagates (NOT mapped to draft_not_found)', async () => {
@@ -396,6 +405,21 @@ const deps = makeDeps({ template: null });
       requestId: 'req-crit4',
     });
     expect(r.ok).toBe(true);
+    // R6.3 L-7 — audit-LAST call-order anchor. The R4.1 C-3 audit-LAST
+    // pattern requires `updateDraftFromTemplate` (mutation) BEFORE
+    // `audit.emitTyped` (success record). vitest assigns monotonic
+    // `invocationCallOrder` to every mock invocation across the test;
+    // mutation order < audit order proves the success audit fires
+    // AFTER mutations succeed, not before.
+    const updateMock = (
+      deps.broadcastsRepo as unknown as {
+        updateDraftFromTemplate: ReturnType<typeof vi.fn>;
+      }
+    ).updateDraftFromTemplate;
+    const emitTypedMock = deps.audit.emitTyped as ReturnType<typeof vi.fn>;
+    expect(updateMock.mock.invocationCallOrder[0]).toBeLessThan(
+      emitTypedMock.mock.invocationCallOrder[0]!,
+    );
     // emit called with tx-token (mock withTx passes null as tx) +
     // template_snapshotted event + payload includes templateId,
     // memberId, broadcastId, templateNameSnapshot.

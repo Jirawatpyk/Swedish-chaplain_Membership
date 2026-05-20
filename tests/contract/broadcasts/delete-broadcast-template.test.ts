@@ -9,7 +9,7 @@
  *
  * RED-first per Constitution Principle II. GREEN at Phase 5D T101.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { deleteBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/delete-broadcast-template';
 import type {
   BroadcastTemplate,
@@ -17,6 +17,7 @@ import type {
 } from '@/modules/broadcasts/application/ports/broadcast-templates-port';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 
 const TENANT = 'tenant-swe' as never;
 const ACTOR_ADMIN = 'user_admin_42';
@@ -111,37 +112,68 @@ const deps = makeDeps({ existingTemplate: null });
 
   it('R4.3 M-13: already soft-deleted template → not_found + NO cross-tenant probe audit + softDelete NOT called', async () => {
     const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
-    const deps = makeDeps({
-      existingTemplate: makeTemplate({
-        deletedAt: SOFT_DELETED_AT,
-        name: 'Already Gone',
-      }),
-    });
-    const r = await deleteBroadcastTemplate(deps, {
-      tenantId: TENANT,
-      actorUserId: ACTOR_ADMIN,
-      templateId: TEMPLATE_ID,
-      requestId: 'req-r4.3-m13-delete',
-    });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('not_found');
-    // Benign double-delete race MUST NOT emit a cross-tenant probe audit
-    // (only the path-(a) branch does that).
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: 'broadcast_cross_tenant_probe',
-      }),
-    );
-    // And MUST NOT emit a second `broadcast_template_deleted` audit.
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: 'broadcast_template_deleted',
-      }),
-    );
-    // softDelete not invoked — the row is already in the deleted state.
-    expect(deps.port.softDelete).not.toHaveBeenCalled();
+    // R6.3 M-10 — spy on logger.info to verify the R4.3 M-5
+    // observability hook fires with the expected payload shape.
+    const infoSpy = vi
+      .spyOn(logger, 'info')
+      .mockImplementation(() => undefined);
+    try {
+      const deps = makeDeps({
+        existingTemplate: makeTemplate({
+          deletedAt: SOFT_DELETED_AT,
+          name: 'Already Gone',
+        }),
+      });
+      const r = await deleteBroadcastTemplate(deps, {
+        tenantId: TENANT,
+        actorUserId: ACTOR_ADMIN,
+        templateId: TEMPLATE_ID,
+        requestId: 'req-r4.3-m13-delete',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('not_found');
+      // Benign double-delete race MUST NOT emit a cross-tenant probe audit
+      // (only the path-(a) branch does that).
+      expect(deps.audit.emit).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          eventType: 'broadcast_cross_tenant_probe',
+        }),
+      );
+      // And MUST NOT emit a second `broadcast_template_deleted` audit.
+      expect(deps.audit.emit).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          eventType: 'broadcast_template_deleted',
+        }),
+      );
+      // softDelete not invoked — the row is already in the deleted state.
+      expect(deps.port.softDelete).not.toHaveBeenCalled();
+      // R6.3 L-10 — explicit assertion that the use-case routed through
+      // findByIdAllowDeletedInTx (not findById, which would have
+      // filtered the row out and dropped into the cross-tenant-probe
+      // branch instead). 3rd positional arg is the tx token — `null`
+      // here because the mock `withTx` passes null in place of a real
+      // Drizzle handle (see makeDeps).
+      expect(deps.port.findByIdAllowDeletedInTx).toHaveBeenCalledWith(
+        TENANT,
+        TEMPLATE_ID,
+        null,
+      );
+      // R6.3 M-10 — observability hook fired with the expected payload.
+      expect(infoSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: TENANT,
+          templateId: TEMPLATE_ID,
+          actorUserId: ACTOR_ADMIN,
+          deletedAt: SOFT_DELETED_AT.toISOString(),
+          requestId: 'req-r4.3-m13-delete',
+        }),
+        'broadcasts.template.delete_idempotent_noop',
+      );
+    } finally {
+      infoSpy.mockRestore();
+    }
   });
 
   it('delete starter template (is_seeded=TRUE) succeeds — admin freedom (FR-021)', async () => {

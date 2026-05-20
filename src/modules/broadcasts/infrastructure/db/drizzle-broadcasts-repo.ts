@@ -164,7 +164,7 @@ async function assertTenantBoundTx(
  * guards in the `if` block let TS flow-narrow without `as string`
  * casts.
  */
-function deriveTemplateProvenance(
+export function deriveTemplateProvenance(
   row: BroadcastRow,
 ): Broadcast['templateProvenance'] {
   if (
