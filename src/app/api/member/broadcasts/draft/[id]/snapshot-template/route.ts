@@ -18,7 +18,7 @@ import {
   f71aUs7DisabledReason,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { baseHeaders } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -30,18 +30,6 @@ const BodySchema = z.object({
 });
 
 const UuidSchema = z.string().uuid();
-
-function jsonError(
-  status: number,
-  code: string,
-  correlationId: string,
-  extra?: Record<string, unknown>,
-): NextResponse {
-  return NextResponse.json(
-    { error: code, ...(extra ?? {}) },
-    { status, headers: baseHeaders(correlationId) },
-  );
-}
 
 interface RouteParams {
   readonly params: Promise<{ readonly id: string }>;

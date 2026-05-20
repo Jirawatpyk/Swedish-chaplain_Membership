@@ -28,7 +28,7 @@ import {
   isF71aUs7Enabled,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { baseHeaders } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -43,18 +43,6 @@ const CreateBodySchema = z.object({
   bodyHtml: z.string().min(1).max(200 * 1024),
   locale: LocaleSchema,
 });
-
-function jsonError(
-  status: number,
-  code: string,
-  correlationId: string,
-  extra?: Record<string, unknown>,
-): NextResponse {
-  return NextResponse.json(
-    { error: code, ...(extra ?? {}) },
-    { status, headers: baseHeaders(correlationId) },
-  );
-}
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();

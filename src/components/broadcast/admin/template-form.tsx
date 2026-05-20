@@ -101,14 +101,36 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
         });
 
         if (!res.ok) {
-          const payload = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
+          // R2.2 silent-H-sf-6 — log parse failures + status so dev tools
+          // surface "stop the line" hints when the route returns a non-
+          // JSON body (CDN 502/cors page) instead of silently mapping
+          // to "unknown".
+          const correlationId =
+            res.headers.get('X-Correlation-Id') ?? undefined;
+          const payload = (await res.json().catch((parseErr) => {
+            console.error(
+              {
+                err:
+                  parseErr instanceof Error ? parseErr.message : String(parseErr),
+                status: res.status,
+                correlationId,
+              },
+              'broadcasts.template.form.error_body_parse_failed',
+            );
+            return {};
+          })) as { error?: string };
           const code = payload.error ?? 'unknown';
           const msg = ((): string => {
             try {
               return t(`errors.${code}` as never);
             } catch {
+              // R2.2 silent-M1 — log unknown code so observability picks
+              // up new server error codes that need an i18n key. Falls
+              // back to a generic translated message for the user.
+              console.warn(
+                { code, correlationId },
+                'broadcasts.template.form.unknown_error_code',
+              );
               return t('errors.unknown');
             }
           })();

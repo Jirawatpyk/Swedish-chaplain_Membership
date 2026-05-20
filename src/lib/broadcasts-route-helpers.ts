@@ -238,6 +238,30 @@ export function baseHeaders(
   };
 }
 
+/**
+ * R2.2 A1 — Shared `{ error: code, ...extra }` envelope used by F7.1a
+ * template + image-upload routes (admin templates, member snapshot,
+ * upload). Distinct from `errorResponse` above (which wraps the
+ * bilingual `messages[code]` envelope used by Submit/Save/Quota).
+ *
+ * Use this helper when the error surface speaks to a single audience
+ * (admin-only or member-only) and the i18n is handled client-side
+ * via the route's specific `admin.broadcasts.templates.errors.{code}`
+ * key set. Use `errorResponse` for surfaces shared between member +
+ * admin where bilingual server-side text is required.
+ */
+export function jsonError(
+  status: number,
+  code: string,
+  correlationId: string,
+  extra?: Record<string, unknown>,
+): NextResponse {
+  return NextResponse.json(
+    { error: code, ...(extra ?? {}) },
+    { status, headers: baseHeaders(correlationId) },
+  );
+}
+
 export interface ErrorResponseExtra {
   /** Seconds before client may retry. Used on 429 broadcast_rate_limit_exceeded. */
   readonly retryAfterSeconds?: number;

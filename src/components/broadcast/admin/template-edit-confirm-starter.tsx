@@ -34,7 +34,7 @@ const STORAGE_PREFIX = 'broadcasts.starter-edit-dismissed:';
 export function AdminTemplateEditConfirmStarter({
   templateId,
   templateName,
-}: Props): React.ReactElement {
+}: Props): React.ReactElement | null {
   const t = useTranslations('admin.broadcasts.templates');
 
   // Lazy initializer reads localStorage once on first client render.
@@ -68,7 +68,7 @@ export function AdminTemplateEditConfirmStarter({
   }
 
   if (dismissed) {
-    return <></>;
+    return null;
   }
 
   return (

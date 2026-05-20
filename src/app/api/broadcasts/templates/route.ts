@@ -26,7 +26,7 @@ import {
   f71aUs7DisabledReason,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { baseHeaders } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -34,18 +34,6 @@ import { logger } from '@/lib/logger';
 export const runtime = 'nodejs';
 
 const LocaleSchema = z.enum(['en', 'th', 'sv']);
-
-function jsonError(
-  status: number,
-  code: string,
-  correlationId: string,
-  extra?: Record<string, unknown>,
-): NextResponse {
-  return NextResponse.json(
-    { error: code, ...(extra ?? {}) },
-    { status, headers: baseHeaders(correlationId) },
-  );
-}
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();

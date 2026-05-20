@@ -23,7 +23,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { substituteChamberName } from '../../domain/value-objects/template-snapshot';
-import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
+import { parseBroadcastId } from '../../domain/broadcast';
 import type { BroadcastTemplatesPort } from '../ports/broadcast-templates-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
@@ -74,13 +74,14 @@ export async function snapshotTemplateToDraft(
   Result<SnapshotTemplateToDraftOutput, SnapshotTemplateToDraftError>
 > {
   // 1. Parse draftId. Route already zod-validated; this is belt-and-
-  //    braces against direct callers (e.g. tests, future internal jobs).
-  let broadcastId: BroadcastId;
-  try {
-    broadcastId = asBroadcastId(input.draftId);
-  } catch {
+  //    braces against direct callers (tests + future internal jobs).
+  //    R2.2 D3 — collapsed try/catch via Result-returning parseBroadcastId
+  //    (asBroadcastId is the trusted-input variant and doesn't throw).
+  const parsed = parseBroadcastId(input.draftId);
+  if (!parsed.ok) {
     return err({ kind: 'invalid_input', detail: 'draftId must be a UUID' });
   }
+  const broadcastId = parsed.value;
 
   // 2. Verify draft ownership BEFORE entering the mutation tx. Catches
   //    cross-member draft-hijack (CRIT-1) where member B guesses

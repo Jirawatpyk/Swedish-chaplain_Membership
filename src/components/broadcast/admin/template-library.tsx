@@ -41,7 +41,9 @@ interface Props {
   readonly rows: readonly TemplateLibraryRow[];
 }
 
-export function AdminTemplateLibrary({ rows }: Props): React.ReactElement {
+export function AdminTemplateLibrary({
+  rows,
+}: Props): React.ReactElement | null {
   const t = useTranslations('admin.broadcasts.templates');
   const [filter, setFilter] = useState<FilterMode>('all');
 
@@ -55,7 +57,7 @@ export function AdminTemplateLibrary({ rows }: Props): React.ReactElement {
   if (rows.length === 0) {
     // Empty state stays in the parent (server page) — this component
     // is only mounted when there's data to filter.
-    return <></>;
+    return null;
   }
 
   // Inline pill renderer — React 19's `react-hooks/static-components`
