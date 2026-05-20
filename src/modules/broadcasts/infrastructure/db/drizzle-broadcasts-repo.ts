@@ -381,6 +381,69 @@ export function makeDrizzleBroadcastsRepo(
       return rowToBroadcast(row as BroadcastRow);
     },
 
+    async updateDraftFromTemplate(
+      txUnknown,
+      tenantIdArg: string,
+      broadcastId: BroadcastId,
+      snapshot: {
+        readonly subject: string;
+        readonly bodyHtml: string;
+        readonly bodySource: string;
+        readonly startedFromTemplateId: string;
+        readonly templateNameSnapshot: string;
+      },
+    ): Promise<Broadcast> {
+      // T102 (F7.1a US7) — narrow UPDATE for template snapshot:
+      // subject + body_html + body_source + started_from_template_id +
+      // template_name_snapshot. Refuses unless status='draft' so the
+      // immutable-after-submit invariant (Q3) holds for template-based
+      // mutations too.
+      const tx = txUnknown as TenantTx;
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          subject: snapshot.subject,
+          bodyHtml: snapshot.bodyHtml,
+          bodySource: snapshot.bodySource,
+          startedFromTemplateId: snapshot.startedFromTemplateId,
+          templateNameSnapshot: snapshot.templateNameSnapshot,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'draft'),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        const probe = await tx
+          .select({ status: broadcasts.status })
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.broadcastId, broadcastId),
+            ),
+          )
+          .limit(1);
+        const probeRow = probe[0];
+        if (probeRow !== undefined) {
+          throw new BroadcastConcurrentMutationError(
+            tenantIdArg,
+            broadcastId,
+            probeRow.status,
+          );
+        }
+        throw new Error(
+          `updateDraftFromTemplate: broadcast ${broadcastId} not found in tenant ${tenantIdArg}`,
+        );
+      }
+      return rowToBroadcast(row as BroadcastRow);
+    },
+
     async findById(
       tenantIdArg: string,
       broadcastId: BroadcastId,

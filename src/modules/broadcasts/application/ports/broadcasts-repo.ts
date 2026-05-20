@@ -103,6 +103,41 @@ export interface BroadcastsRepo {
   ): Promise<Broadcast>;
 
   /**
+   * F7.1a US7 (T102 snapshotTemplateToDraft) — narrow patch that
+   * records the template snapshot onto a draft.
+   *
+   * Writes subject + bodyHtml + bodySource + started_from_template_id
+   * + template_name_snapshot atomically within the caller's tx.
+   * Refuses unless status='draft' (immutable-after-submit invariant
+   * Q3) — throws `BroadcastConcurrentMutationError` if the row
+   * drifted out of draft state.
+   *
+   * Separate from `updateDraft` because the template-snapshot fields
+   * are NOT in NewBroadcastDraftInput (they were added to the
+   * broadcasts table by Phase 2 migration 0162 ADD COLUMN but are
+   * conceptually a one-shot snapshot, not part of the draft form
+   * patch shape).
+   *
+   * **Optional method** (Constitution X Simplicity tradeoff vs ~13
+   * existing test-mock churn): only US7 surfaces (snapshot use-case +
+   * future F7.1a US7 admin proxy snapshot) call this. Production
+   * Drizzle adapter implements it; other test stubs don't need to.
+   * The use-case asserts presence at runtime.
+   */
+  updateDraftFromTemplate?(
+    tx: unknown,
+    tenantId: string,
+    broadcastId: BroadcastId,
+    snapshot: {
+      readonly subject: string;
+      readonly bodyHtml: string;
+      readonly bodySource: string;
+      readonly startedFromTemplateId: string;
+      readonly templateNameSnapshot: string;
+    },
+  ): Promise<Broadcast>;
+
+  /**
    * Find by composite ID. Returns `null` for not-found (caller
    * decides whether to throw or return 404 + cross-tenant probe audit).
    */

@@ -500,6 +500,7 @@ export type {
 export type {
   BroadcastTemplate,
   BroadcastTemplatesPort,
+  BroadcastTemplatesTx,
   CreateTemplateInput,
   ListTemplatesOpts,
   TemplateCreateError,
@@ -508,3 +509,45 @@ export type {
   TemplateUpdateError,
   UpdateTemplateInput,
 } from './application/ports/broadcast-templates-port';
+export type { TenantDisplayNamePort } from './application/ports/tenant-display-name-port';
+
+// US7 Domain VO (T097)
+export {
+  escapeHtml,
+  substituteChamberName,
+} from './domain/value-objects/template-snapshot';
+
+// US7 Application use-cases (Phase 5D T099-T103)
+export {
+  createBroadcastTemplate,
+  type CreateBroadcastTemplateDeps,
+  type CreateBroadcastTemplateError,
+  type CreateBroadcastTemplateInput,
+  type CreateBroadcastTemplateOutput,
+} from './application/use-cases/create-broadcast-template';
+export {
+  updateBroadcastTemplate,
+  type UpdateBroadcastTemplateDeps,
+  type UpdateBroadcastTemplateError,
+  type UpdateBroadcastTemplateInput,
+  type UpdateBroadcastTemplateOutput,
+} from './application/use-cases/update-broadcast-template';
+export {
+  deleteBroadcastTemplate,
+  type DeleteBroadcastTemplateDeps,
+  type DeleteBroadcastTemplateError,
+  type DeleteBroadcastTemplateInput,
+} from './application/use-cases/delete-broadcast-template';
+export {
+  snapshotTemplateToDraft,
+  type SnapshotTemplateToDraftDeps,
+  type SnapshotTemplateToDraftError,
+  type SnapshotTemplateToDraftInput,
+  type SnapshotTemplateToDraftOutput,
+} from './application/use-cases/snapshot-template-to-draft';
+export {
+  listBroadcastTemplates,
+  type ListBroadcastTemplatesDeps,
+  type ListBroadcastTemplatesInput,
+  type ListBroadcastTemplatesOutput,
+} from './application/use-cases/list-broadcast-templates';

@@ -10,6 +10,7 @@
  * (create + update both pipe through validateImageSourceAllowlist).
  */
 import { describe, expect, it, vi } from 'vitest';
+import { createBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/create-broadcast-template';
 import type { BroadcastTemplatesPort } from '@/modules/broadcasts/application/ports/broadcast-templates-port';
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import type {
@@ -22,45 +23,11 @@ import { ok } from '@/lib/result';
 const TENANT = 'tenant-swe' as never;
 const ACTOR_ADMIN = 'user_admin_42';
 
-const dynImport = new Function('m', 'return import(m)') as <T = unknown>(
-  modulePath: string,
-) => Promise<T>;
-
 const ALLOWED_HOST = 'assets.swecham.zyncdata.app' as Hostname;
 const ALLOWLIST: AllowlistEntry[] = [
   { hostname: ALLOWED_HOST, isDefault: true },
   { hostname: 'resend.com' as Hostname, isDefault: true },
 ];
-
-interface CreateBroadcastTemplateInputForTest {
-  readonly tenantId: typeof TENANT;
-  readonly actorUserId: string;
-  readonly name: string;
-  readonly subject: string;
-  readonly bodyHtml: string;
-  readonly locale: 'en' | 'th' | 'sv';
-  readonly requestId: string;
-}
-
-interface CreateBroadcastTemplateModule {
-  readonly createBroadcastTemplate: (
-    deps: {
-      readonly port: BroadcastTemplatesPort;
-      readonly audit: AuditPort;
-      readonly validateImageSourceAllowlist: {
-        readonly allowlistPort: ImageAllowlistPort;
-        readonly audit: AuditPort;
-      };
-    },
-    input: CreateBroadcastTemplateInputForTest,
-  ) => Promise<
-    | { ok: true; value: { templateId: string } }
-    | {
-        ok: false;
-        error: { kind: string; unsafeImageSources?: readonly string[] };
-      }
-  >;
-}
 
 const makeDeps = (allowlist: readonly AllowlistEntry[] = ALLOWLIST): {
   port: BroadcastTemplatesPort;
@@ -113,11 +80,8 @@ const makeDeps = (allowlist: readonly AllowlistEntry[] = ALLOWLIST): {
 
 describe('template save image-allowlist enforcement — T091 (F7.1a US7)', () => {
   it('template body with allowlisted <img src> hostname → save succeeds', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
-    const deps = makeDeps();
-    const r = await mod.createBroadcastTemplate(deps, {
+const deps = makeDeps();
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'WithImage',
@@ -131,11 +95,8 @@ describe('template save image-allowlist enforcement — T091 (F7.1a US7)', () =>
   });
 
   it('template body with non-allowlisted <img src> → template_body_unsafe', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
-    const deps = makeDeps();
-    const r = await mod.createBroadcastTemplate(deps, {
+const deps = makeDeps();
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'WithBadImage',
@@ -147,19 +108,18 @@ describe('template save image-allowlist enforcement — T091 (F7.1a US7)', () =>
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.kind).toBe('template_body_unsafe');
-      expect(r.error.unsafeImageSources).toContain(
-        'https://evil.example.com/payload.png',
-      );
+      if (r.error.kind === 'template_body_unsafe') {
+        expect(r.error.unsafeImageSources).toContain(
+          'https://evil.example.com/payload.png',
+        );
+      }
     }
     expect(deps.port.create).not.toHaveBeenCalled();
   });
 
   it('template body with MIXED allowed + non-allowed → rejected with only the offending sources', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
-    const deps = makeDeps();
-    const r = await mod.createBroadcastTemplate(deps, {
+const deps = makeDeps();
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'MixedImages',

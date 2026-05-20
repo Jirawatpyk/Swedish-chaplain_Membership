@@ -16,6 +16,7 @@
  * GREEN lands at Phase 5D T099.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { createBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/create-broadcast-template';
 import type {
   BroadcastTemplate,
   BroadcastTemplatesPort,
@@ -28,41 +29,6 @@ import { ok, err } from '@/lib/result';
 // at runtime per the manage-image-allowlist precedent.
 const TENANT = 'tenant-swe' as never;
 const ACTOR_ADMIN = 'user_admin_42';
-
-// Dynamic-import wrapper bypasses TS typecheck on not-yet-existent
-// modules (project memory: project_f5_red_import_pattern). The Function
-// constructor evaluates `import(m)` in a fresh scope so the alias plugin
-// + tsconfig path resolution don't fail at compile time.
-const dynImport = new Function('m', 'return import(m)') as <T = unknown>(
-  modulePath: string,
-) => Promise<T>;
-
-interface CreateBroadcastTemplateInputForTest {
-  readonly tenantId: typeof TENANT;
-  readonly actorUserId: string;
-  readonly name: string;
-  readonly subject: string;
-  readonly bodyHtml: string;
-  readonly locale: 'en' | 'th' | 'sv';
-  readonly requestId: string;
-}
-
-interface CreateBroadcastTemplateModule {
-  readonly createBroadcastTemplate: (
-    deps: {
-      readonly port: BroadcastTemplatesPort;
-      readonly audit: AuditPort;
-      readonly validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
-    },
-    input: CreateBroadcastTemplateInputForTest,
-  ) => Promise<
-    | { ok: true; value: { templateId: string } }
-    | {
-        ok: false;
-        error: { kind: string; [key: string]: unknown };
-      }
-  >;
-}
 
 const NOW = new Date('2026-05-20T03:00:00Z');
 
@@ -139,11 +105,8 @@ const makeDeps = (
 
 describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
   it('admin creates template → port.create called + audit broadcast_template_created emitted', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
     const deps = makeDeps();
-    const r = await mod.createBroadcastTemplate(deps, {
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'Monthly Newsletter',
@@ -161,10 +124,10 @@ describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
         locale: 'en',
         createdByUserId: ACTOR_ADMIN,
       }),
-      expect.anything(), // tx token
+      null, // tx token (mock withTx passes null)
     );
     expect(deps.audit.emit).toHaveBeenCalledWith(
-      expect.anything(), // tx token
+      null, // tx token (mock withTx passes null)
       expect.objectContaining({
         eventType: 'broadcast_template_created',
         tenantId: TENANT,
@@ -184,11 +147,8 @@ describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
   });
 
   it('name longer than 100 chars → invalid_input', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
     const deps = makeDeps();
-    const r = await mod.createBroadcastTemplate(deps, {
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'x'.repeat(101),
@@ -203,11 +163,8 @@ describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
   });
 
   it('subject longer than 200 chars → invalid_input', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
     const deps = makeDeps();
-    const r = await mod.createBroadcastTemplate(deps, {
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'OK',
@@ -222,11 +179,8 @@ describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
   });
 
   it('body with non-allowlisted <img src> → template_body_unsafe + unsafe sources in error', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
     const deps = makeDeps({ imageUnsafeSources: ['evil.com'] });
-    const r = await mod.createBroadcastTemplate(deps, {
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'BadTemplate',
@@ -238,19 +192,18 @@ describe('createBroadcastTemplate contract — T086 (F7.1a US7)', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.error.kind).toBe('template_body_unsafe');
-      expect(r.error.unsafeImageSources).toBeDefined();
+      if (r.error.kind === 'template_body_unsafe') {
+        expect(r.error.unsafeImageSources).toBeDefined();
+      }
     }
     expect(deps.port.create).not.toHaveBeenCalled();
   });
 
   it('duplicate name within tenant+locale → duplicate_name from port', async () => {
-    const mod = await dynImport<CreateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/create-broadcast-template',
-    );
     const deps = makeDeps({
       createResult: err({ kind: 'duplicate_name', locale: 'en' }),
     });
-    const r = await mod.createBroadcastTemplate(deps, {
+    const r = await createBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       name: 'Monthly Newsletter',

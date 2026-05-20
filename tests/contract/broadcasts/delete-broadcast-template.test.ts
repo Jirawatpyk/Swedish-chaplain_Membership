@@ -10,6 +10,7 @@
  * RED-first per Constitution Principle II. GREEN at Phase 5D T101.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { deleteBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/delete-broadcast-template';
 import type {
   BroadcastTemplate,
   BroadcastTemplatesPort,
@@ -19,28 +20,6 @@ import { ok } from '@/lib/result';
 
 const TENANT = 'tenant-swe' as never;
 const ACTOR_ADMIN = 'user_admin_42';
-
-const dynImport = new Function('m', 'return import(m)') as <T = unknown>(
-  modulePath: string,
-) => Promise<T>;
-
-interface DeleteBroadcastTemplateModule {
-  readonly deleteBroadcastTemplate: (
-    deps: {
-      readonly port: BroadcastTemplatesPort;
-      readonly audit: AuditPort;
-    },
-    input: {
-      readonly tenantId: typeof TENANT;
-      readonly actorUserId: string;
-      readonly templateId: string;
-      readonly requestId: string;
-    },
-  ) => Promise<
-    | { ok: true; value: undefined }
-    | { ok: false; error: { kind: string; [key: string]: unknown } }
-  >;
-}
 
 const NOW = new Date('2026-05-20T03:00:00Z');
 const TEMPLATE_ID = '33333333-3333-3333-3333-333333333333';
@@ -65,9 +44,11 @@ const makeDeps = (overrides?: {
   existingTemplate?: BroadcastTemplate | null;
 }): { port: BroadcastTemplatesPort; audit: AuditPort } => {
   const port: BroadcastTemplatesPort = {
-    findById: vi
-      .fn()
-      .mockResolvedValue(overrides?.existingTemplate ?? makeTemplate()),
+    findById: vi.fn().mockResolvedValue(
+      overrides && 'existingTemplate' in overrides
+        ? overrides.existingTemplate
+        : makeTemplate(),
+    ),
     findByTenantId: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
@@ -85,13 +66,10 @@ const makeDeps = (overrides?: {
 
 describe('deleteBroadcastTemplate contract — T088 (F7.1a US7)', () => {
   it('admin soft-deletes → audit broadcast_template_deleted with started_from_count snapshot', async () => {
-    const mod = await dynImport<DeleteBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/delete-broadcast-template',
-    );
-    const deps = makeDeps({
+const deps = makeDeps({
       existingTemplate: makeTemplate({ startedFromCount: 27, name: 'Event Invitation' }),
     });
-    const r = await mod.deleteBroadcastTemplate(deps, {
+    const r = await deleteBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,
@@ -101,7 +79,7 @@ describe('deleteBroadcastTemplate contract — T088 (F7.1a US7)', () => {
     expect(deps.port.softDelete).toHaveBeenCalledWith(
       TENANT,
       TEMPLATE_ID,
-      expect.anything(), // tx token
+      null, // tx token (mock withTx passes null)
     );
     const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[1] as { eventType: string; payload: Record<string, unknown> };
@@ -114,11 +92,8 @@ describe('deleteBroadcastTemplate contract — T088 (F7.1a US7)', () => {
   });
 
   it('cross-tenant probe (template belongs to tenant B) → not_found + cross-tenant audit', async () => {
-    const mod = await dynImport<DeleteBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/delete-broadcast-template',
-    );
-    const deps = makeDeps({ existingTemplate: null });
-    const r = await mod.deleteBroadcastTemplate(deps, {
+const deps = makeDeps({ existingTemplate: null });
+    const r = await deleteBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,
@@ -134,13 +109,10 @@ describe('deleteBroadcastTemplate contract — T088 (F7.1a US7)', () => {
   });
 
   it('delete starter template (is_seeded=TRUE) succeeds — admin freedom (FR-021)', async () => {
-    const mod = await dynImport<DeleteBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/delete-broadcast-template',
-    );
-    const deps = makeDeps({
+const deps = makeDeps({
       existingTemplate: makeTemplate({ isSeeded: true }),
     });
-    const r = await mod.deleteBroadcastTemplate(deps, {
+    const r = await deleteBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,

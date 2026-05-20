@@ -11,6 +11,7 @@
  * RED-first per Constitution Principle II. GREEN at Phase 5D T100.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { updateBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/update-broadcast-template';
 import type {
   BroadcastTemplate,
   BroadcastTemplatesPort,
@@ -21,32 +22,6 @@ import { ok, err } from '@/lib/result';
 
 const TENANT = 'tenant-swe' as never;
 const ACTOR_ADMIN = 'user_admin_42';
-
-const dynImport = new Function('m', 'return import(m)') as <T = unknown>(
-  modulePath: string,
-) => Promise<T>;
-
-interface UpdateBroadcastTemplateModule {
-  readonly updateBroadcastTemplate: (
-    deps: {
-      readonly port: BroadcastTemplatesPort;
-      readonly audit: AuditPort;
-      readonly validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
-    },
-    input: {
-      readonly tenantId: typeof TENANT;
-      readonly actorUserId: string;
-      readonly templateId: string;
-      readonly name?: string;
-      readonly subject?: string;
-      readonly bodyHtml?: string;
-      readonly requestId: string;
-    },
-  ) => Promise<
-    | { ok: true; value: { templateId: string } }
-    | { ok: false; error: { kind: string; [key: string]: unknown } }
-  >;
-}
 
 const NOW = new Date('2026-05-20T03:00:00Z');
 const TEMPLATE_ID = '22222222-2222-2222-2222-222222222222';
@@ -75,7 +50,13 @@ const makeDeps = (overrides?: {
   audit: AuditPort;
   validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps;
 } => {
-  const existing = overrides?.existingTemplate ?? makeTemplate();
+  // Explicit undefined check — `??` would treat null as "use default" and
+  // mask the cross-tenant-probe scenario where the test wants findById
+  // to return null.
+  const existing =
+    overrides && 'existingTemplate' in overrides
+      ? overrides.existingTemplate
+      : makeTemplate();
   const port: BroadcastTemplatesPort = {
     findById: vi.fn().mockResolvedValue(existing),
     findByTenantId: vi.fn().mockResolvedValue([]),
@@ -111,11 +92,8 @@ const makeDeps = (overrides?: {
 
 describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
   it('admin updates name → port.update called + audit with before/after', async () => {
-    const mod = await dynImport<UpdateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/update-broadcast-template',
-    );
     const deps = makeDeps();
-    const r = await mod.updateBroadcastTemplate(deps, {
+    const r = await updateBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,
@@ -127,7 +105,7 @@ describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
       TENANT,
       TEMPLATE_ID,
       expect.objectContaining({ name: 'New Name' }),
-      expect.anything(),
+      null, // tx token (mock withTx passes null)
     );
     const auditCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock
       .calls[0]?.[1] as { eventType: string; payload: Record<string, unknown> };
@@ -135,19 +113,18 @@ describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
     expect(auditCall.payload).toMatchObject({
       templateId: TEMPLATE_ID,
       before: expect.objectContaining({ name: 'Monthly Newsletter' }),
-      after: expect.objectContaining({ name: 'New Name' }),
+      // `after.name` reflects what the mock port.update returned (the
+      // mock setup uses 'Updated' as the canonical post-update sentinel)
+      after: expect.objectContaining({ name: 'Updated' }),
     });
   });
 
   it('cross-tenant probe (template belongs to tenant B) → not_found + cross-tenant audit', async () => {
-    const mod = await dynImport<UpdateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/update-broadcast-template',
-    );
     // RLS+FORCE filters tenant B's row out for tenant A context →
     // findById returns null which the use-case translates to not_found
     // and emits broadcast_cross_tenant_probe.
     const deps = makeDeps({ existingTemplate: null });
-    const r = await mod.updateBroadcastTemplate(deps, {
+    const r = await updateBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,
@@ -164,11 +141,8 @@ describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
   });
 
   it('update body with non-allowlisted <img src> → template_body_unsafe', async () => {
-    const mod = await dynImport<UpdateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/update-broadcast-template',
-    );
     const deps = makeDeps();
-    const r = await mod.updateBroadcastTemplate(deps, {
+    const r = await updateBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,
@@ -181,16 +155,13 @@ describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
   });
 
   it('update on non-existent template (port returns not_found) → not_found', async () => {
-    const mod = await dynImport<UpdateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/update-broadcast-template',
-    );
     const deps = makeDeps({
       // simulate the case where findById sees the row but a concurrent
       // delete removed it before the UPDATE — port.update returns
       // not_found
       updateResult: err({ kind: 'not_found' }),
     });
-    const r = await mod.updateBroadcastTemplate(deps, {
+    const r = await updateBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,
@@ -202,11 +173,8 @@ describe('updateBroadcastTemplate contract — T087 (F7.1a US7)', () => {
   });
 
   it('subject longer than 200 → invalid_input', async () => {
-    const mod = await dynImport<UpdateBroadcastTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/update-broadcast-template',
-    );
     const deps = makeDeps();
-    const r = await mod.updateBroadcastTemplate(deps, {
+    const r = await updateBroadcastTemplate(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_ADMIN,
       templateId: TEMPLATE_ID,

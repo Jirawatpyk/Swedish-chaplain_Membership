@@ -14,6 +14,7 @@
  * RED-first per Constitution Principle II. GREEN at Phase 5D T102.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { snapshotTemplateToDraft } from '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft';
 import type {
   BroadcastTemplate,
   BroadcastTemplatesPort,
@@ -26,40 +27,6 @@ const TENANT = 'tenant-swe' as never;
 const ACTOR_MEMBER = 'user_mem_42';
 const DRAFT_ID = '44444444-4444-4444-4444-444444444444';
 const TEMPLATE_ID = '55555555-5555-5555-5555-555555555555';
-
-const dynImport = new Function('m', 'return import(m)') as <T = unknown>(
-  modulePath: string,
-) => Promise<T>;
-
-interface SnapshotTemplateModule {
-  readonly snapshotTemplateToDraft: (
-    deps: {
-      readonly templatesPort: BroadcastTemplatesPort;
-      readonly broadcastsRepo: BroadcastsRepo;
-      readonly tenantDisplayName: TenantDisplayNamePort;
-      readonly audit: AuditPort;
-    },
-    input: {
-      readonly tenantId: typeof TENANT;
-      readonly actorUserId: string;
-      readonly memberId: string;
-      readonly draftId: string;
-      readonly templateId: string;
-      readonly requestId: string;
-    },
-  ) => Promise<
-    | {
-        ok: true;
-        value: {
-          readonly draftId: string;
-          readonly subject: string;
-          readonly bodyHtml: string;
-          readonly templateNameSnapshot: string;
-        };
-      }
-    | { ok: false; error: { kind: string; [key: string]: unknown } }
-  >;
-}
 
 const NOW = new Date('2026-05-20T03:00:00Z');
 
@@ -89,7 +56,12 @@ const makeDeps = (overrides?: {
   tenantDisplayName: TenantDisplayNamePort;
   audit: AuditPort;
 } => {
-  const tpl = overrides?.template ?? makeTemplate();
+  // Explicit undefined-check — `??` would treat null as "use default"
+  // and mask the cross-tenant-probe scenario.
+  const tpl =
+    overrides && 'template' in overrides
+      ? overrides.template
+      : makeTemplate();
   return {
     templatesPort: {
       findById: vi.fn().mockResolvedValue(tpl),
@@ -118,11 +90,8 @@ const makeDeps = (overrides?: {
 
 describe('snapshotTemplateToDraft contract — T089 (F7.1a US7)', () => {
   it('member picks template → draft updated with substituted chamber_name + template_name_snapshot', async () => {
-    const mod = await dynImport<SnapshotTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft',
-    );
-    const deps = makeDeps({ chamberName: 'SweCham' });
-    const r = await mod.snapshotTemplateToDraft(deps, {
+const deps = makeDeps({ chamberName: 'SweCham' });
+    const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
       memberId: 'mem-1',
@@ -145,16 +114,13 @@ describe('snapshotTemplateToDraft contract — T089 (F7.1a US7)', () => {
     expect(deps.templatesPort.incrementStartedFromCount).toHaveBeenCalledWith(
       TENANT,
       TEMPLATE_ID,
-      expect.anything(),
+      null,
     );
   });
 
   it('cross-tenant probe (template belongs to tenant B) → template_not_found + cross-tenant audit', async () => {
-    const mod = await dynImport<SnapshotTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft',
-    );
-    const deps = makeDeps({ template: null });
-    const r = await mod.snapshotTemplateToDraft(deps, {
+const deps = makeDeps({ template: null });
+    const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
       memberId: 'mem-1',
@@ -172,12 +138,9 @@ describe('snapshotTemplateToDraft contract — T089 (F7.1a US7)', () => {
   });
 
   it('soft-deleted template → template_not_found (deleted_at filter)', async () => {
-    const mod = await dynImport<SnapshotTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft',
-    );
-    // findById returns null because port filters deleted_at IS NULL
+// findById returns null because port filters deleted_at IS NULL
     const deps = makeDeps({ template: null });
-    const r = await mod.snapshotTemplateToDraft(deps, {
+    const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
       memberId: 'mem-1',
@@ -190,11 +153,8 @@ describe('snapshotTemplateToDraft contract — T089 (F7.1a US7)', () => {
   });
 
   it('tenant display_name with HTML metacharacters → escaped on substitution (XSS prevention)', async () => {
-    const mod = await dynImport<SnapshotTemplateModule>(
-      '@/modules/broadcasts/application/use-cases/snapshot-template-to-draft',
-    );
-    const deps = makeDeps({ chamberName: '<script>alert(1)</script>' });
-    const r = await mod.snapshotTemplateToDraft(deps, {
+const deps = makeDeps({ chamberName: '<script>alert(1)</script>' });
+    const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
       memberId: 'mem-1',
