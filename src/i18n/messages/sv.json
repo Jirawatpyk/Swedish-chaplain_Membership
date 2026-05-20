@@ -1779,6 +1779,52 @@
         "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
         "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
         "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
+      },
+      "settings": {
+        "pageTitle": "Inställningar för utskick",
+        "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
+        "breadcrumbAdmin": "Administration",
+        "breadcrumbBroadcasts": "E-utskick",
+        "breadcrumbSettings": "Inställningar",
+        "allowlist": {
+          "heading": "Tillåtna bildkällor",
+          "description": "Endast bilder som ligger på dessa värdnamn får visas i utskickets innehåll. Standardposter kan inte tas bort.",
+          "hostnameLabel": "Värdnamn",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "Små bokstäver, minst en punkt, inga wildcards.",
+          "addButton": "Lägg till värdnamn",
+          "removeButton": "Ta bort",
+          "removeAria": "Ta bort {hostname}",
+          "tableCaption": "Poster i bildkällsregistret",
+          "colHostname": "Värdnamn",
+          "colSource": "Källa",
+          "colActions": "Åtgärder",
+          "defaultBadge": "Standard (låst)",
+          "defaultBadgeInline": "(standard)",
+          "customBadge": "Tillagd av administratören",
+          "propagationFootnote": "Träder i kraft inom 60 sekunder för aktiva utkastsessioner.",
+          "addedToast": "Värdnamn tillagt.",
+          "removedToast": "Värdnamn borttaget.",
+          "addedAnnouncement": "{hostname} har lagts till i registret.",
+          "removedAnnouncement": "{hostname} har tagits bort från registret.",
+          "removeConfirm": {
+            "title": "Ta bort {hostname}?",
+            "body": "Medlemmar som skapar utskick kommer inte längre att kunna bädda in bilder från denna domän. Ändringen träder i kraft inom 60 sekunder.",
+            "cancel": "Avbryt",
+            "confirm": "Ta bort"
+          },
+          "errors": {
+            "invalid_hostname": "Ogiltigt värdnamnsformat.",
+            "cannot_remove_default": "Standardposter kan inte tas bort.",
+            "duplicate": "Värdnamnet finns redan i registret.",
+            "not_found": "Värdnamnet hittades inte.",
+            "storage_error": "Kunde inte spara ändringar. Försök igen.",
+            "feature_disabled": "Bildinbäddning är inte aktiverad.",
+            "invalid_body": "Ogiltig begäran.",
+            "internal_error": "Ett oväntat fel inträffade. Försök igen.",
+            "unknown": "Okänt fel."
+          }
+        }
       }
     },
     "renewals": {
@@ -1975,50 +2021,6 @@
           },
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
-        },
-        "pageTitle": "Inställningar för utskick",
-        "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
-        "breadcrumbAdmin": "Administration",
-        "breadcrumbBroadcasts": "E-utskick",
-        "breadcrumbSettings": "Inställningar",
-        "allowlist": {
-          "heading": "Tillåtna bildkällor",
-          "description": "Endast bilder som ligger på dessa värdnamn får visas i utskickets innehåll. Standardposter kan inte tas bort.",
-          "hostnameLabel": "Värdnamn",
-          "hostnamePlaceholder": "cdn.example.com",
-          "hostnameHelp": "Små bokstäver, minst en punkt, inga wildcards.",
-          "addButton": "Lägg till värdnamn",
-          "removeButton": "Ta bort",
-          "removeAria": "Ta bort {hostname}",
-          "tableCaption": "Poster i bildkällsregistret",
-          "colHostname": "Värdnamn",
-          "colSource": "Källa",
-          "colActions": "Åtgärder",
-          "defaultBadge": "Standard (låst)",
-          "defaultBadgeInline": "(standard)",
-          "customBadge": "Tillagd av administratören",
-          "propagationFootnote": "Träder i kraft inom 60 sekunder för aktiva utkastsessioner.",
-          "addedToast": "Värdnamn tillagt.",
-          "removedToast": "Värdnamn borttaget.",
-          "addedAnnouncement": "{hostname} har lagts till i registret.",
-          "removedAnnouncement": "{hostname} har tagits bort från registret.",
-          "removeConfirm": {
-            "title": "Ta bort {hostname}?",
-            "body": "Medlemmar som skapar utskick kommer inte längre att kunna bädda in bilder från denna domän. Ändringen träder i kraft inom 60 sekunder.",
-            "cancel": "Avbryt",
-            "confirm": "Ta bort"
-          },
-          "errors": {
-            "invalid_hostname": "Ogiltigt värdnamnsformat.",
-            "cannot_remove_default": "Standardposter kan inte tas bort.",
-            "duplicate": "Värdnamnet finns redan i registret.",
-            "not_found": "Värdnamnet hittades inte.",
-            "storage_error": "Kunde inte spara ändringar. Försök igen.",
-            "feature_disabled": "Bildinbäddning är inte aktiverad.",
-            "invalid_body": "Ogiltig begäran.",
-            "internal_error": "Ett oväntat fel inträffade. Försök igen.",
-            "unknown": "Okänt fel."
-          }
         }
       },
       "atRisk": {
@@ -3219,11 +3221,12 @@
   "nav": {
     "staff": {
       "dashboard": "Instrumentpanel",
-      "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
+      "settingsPlans": "Medlemskapspaket",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
+      "settingsBroadcasts": "Inställningar för utskick",
       "settingsIntegrationEventcreate": "EventCreate-integration",
       "events": "Evenemang",
       "sections": {

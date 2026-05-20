@@ -1779,6 +1779,52 @@
         "acceptPartialInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ยอมรับการส่งบางส่วน",
         "acceptPartialReasonTooLong": "เหตุผลต้องมีไม่เกิน 500 ตัวอักษร",
         "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง"
+      },
+      "settings": {
+        "pageTitle": "ตั้งค่าการส่งอีเมล",
+        "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
+        "breadcrumbAdmin": "ผู้ดูแล",
+        "breadcrumbBroadcasts": "E-Blast",
+        "breadcrumbSettings": "ตั้งค่า",
+        "allowlist": {
+          "heading": "รายชื่อโดเมนที่อนุญาตให้ฝังรูปภาพ",
+          "description": "รูปภาพในเนื้อหาอีเมลต้องมาจากโดเมนเหล่านี้เท่านั้น รายการเริ่มต้นไม่สามารถลบได้",
+          "hostnameLabel": "ชื่อโดเมน",
+          "hostnamePlaceholder": "cdn.example.com",
+          "hostnameHelp": "ตัวอักษรพิมพ์เล็กและตัวเลขเท่านั้น มีจุดอย่างน้อยหนึ่งจุด และไม่ใช้สัญลักษณ์ wildcard",
+          "addButton": "เพิ่มโดเมน",
+          "removeButton": "ลบ",
+          "removeAria": "ลบ {hostname}",
+          "tableCaption": "รายการโดเมนสำหรับรูปภาพ",
+          "colHostname": "ชื่อโดเมน",
+          "colSource": "แหล่งที่มา",
+          "colActions": "การจัดการ",
+          "defaultBadge": "ค่าเริ่มต้น (ล็อกอยู่)",
+          "defaultBadgeInline": "(ค่าเริ่มต้น)",
+          "customBadge": "เพิ่มโดยผู้ดูแลระบบ",
+          "propagationFootnote": "การเปลี่ยนแปลงจะมีผลภายใน 60 วินาทีกับเซสชันการเขียนที่กำลังทำงานอยู่",
+          "addedToast": "เพิ่มโดเมนเรียบร้อย",
+          "removedToast": "ลบโดเมนเรียบร้อย",
+          "addedAnnouncement": "เพิ่ม {hostname} เข้ารายการอนุญาตแล้ว",
+          "removedAnnouncement": "ลบ {hostname} ออกจากรายการอนุญาตแล้ว",
+          "removeConfirm": {
+            "title": "ลบ {hostname} หรือไม่?",
+            "body": "สมาชิกจะไม่สามารถฝังรูปภาพจากโดเมนนี้ในการเขียน E-Blast ได้อีก การเปลี่ยนแปลงจะมีผลภายใน 60 วินาที",
+            "cancel": "ยกเลิก",
+            "confirm": "ลบ"
+          },
+          "errors": {
+            "invalid_hostname": "รูปแบบชื่อโดเมนไม่ถูกต้อง",
+            "cannot_remove_default": "ไม่สามารถลบรายการเริ่มต้นได้",
+            "duplicate": "โดเมนนี้อยู่ในรายการแล้ว",
+            "not_found": "ไม่พบโดเมนที่ต้องการ",
+            "storage_error": "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง",
+            "feature_disabled": "ฟีเจอร์ฝังรูปภาพยังไม่เปิดใช้งาน",
+            "invalid_body": "คำขอไม่ถูกต้อง",
+            "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองอีกครั้ง",
+            "unknown": "เกิดข้อผิดพลาดที่ไม่รู้จัก"
+          }
+        }
       }
     },
     "renewals": {
@@ -1975,50 +2021,6 @@
           },
           "lastSaved": "บันทึกล่าสุด {date}",
           "stepCount": "{count, plural, =0 {ไม่มีขั้นตอน} other {{count} ขั้นตอน}}"
-        },
-        "pageTitle": "ตั้งค่าการส่งอีเมล",
-        "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
-        "breadcrumbAdmin": "ผู้ดูแล",
-        "breadcrumbBroadcasts": "E-Blast",
-        "breadcrumbSettings": "ตั้งค่า",
-        "allowlist": {
-          "heading": "รายชื่อโดเมนที่อนุญาตให้ฝังรูปภาพ",
-          "description": "รูปภาพในเนื้อหาอีเมลต้องมาจากโดเมนเหล่านี้เท่านั้น รายการเริ่มต้นไม่สามารถลบได้",
-          "hostnameLabel": "ชื่อโดเมน",
-          "hostnamePlaceholder": "cdn.example.com",
-          "hostnameHelp": "ตัวอักษรพิมพ์เล็กและตัวเลขเท่านั้น มีจุดอย่างน้อยหนึ่งจุด และไม่ใช้สัญลักษณ์ wildcard",
-          "addButton": "เพิ่มโดเมน",
-          "removeButton": "ลบ",
-          "removeAria": "ลบ {hostname}",
-          "tableCaption": "รายการโดเมนสำหรับรูปภาพ",
-          "colHostname": "ชื่อโดเมน",
-          "colSource": "แหล่งที่มา",
-          "colActions": "การจัดการ",
-          "defaultBadge": "ค่าเริ่มต้น (ล็อกอยู่)",
-          "defaultBadgeInline": "(ค่าเริ่มต้น)",
-          "customBadge": "เพิ่มโดยผู้ดูแลระบบ",
-          "propagationFootnote": "การเปลี่ยนแปลงจะมีผลภายใน 60 วินาทีกับเซสชันการเขียนที่กำลังทำงานอยู่",
-          "addedToast": "เพิ่มโดเมนเรียบร้อย",
-          "removedToast": "ลบโดเมนเรียบร้อย",
-          "addedAnnouncement": "เพิ่ม {hostname} เข้ารายการอนุญาตแล้ว",
-          "removedAnnouncement": "ลบ {hostname} ออกจากรายการอนุญาตแล้ว",
-          "removeConfirm": {
-            "title": "ลบ {hostname} หรือไม่?",
-            "body": "สมาชิกจะไม่สามารถฝังรูปภาพจากโดเมนนี้ในการเขียน E-Blast ได้อีก การเปลี่ยนแปลงจะมีผลภายใน 60 วินาที",
-            "cancel": "ยกเลิก",
-            "confirm": "ลบ"
-          },
-          "errors": {
-            "invalid_hostname": "รูปแบบชื่อโดเมนไม่ถูกต้อง",
-            "cannot_remove_default": "ไม่สามารถลบรายการเริ่มต้นได้",
-            "duplicate": "โดเมนนี้อยู่ในรายการแล้ว",
-            "not_found": "ไม่พบโดเมนที่ต้องการ",
-            "storage_error": "บันทึกไม่สำเร็จ กรุณาลองอีกครั้ง",
-            "feature_disabled": "ฟีเจอร์ฝังรูปภาพยังไม่เปิดใช้งาน",
-            "invalid_body": "คำขอไม่ถูกต้อง",
-            "internal_error": "เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองอีกครั้ง",
-            "unknown": "เกิดข้อผิดพลาดที่ไม่รู้จัก"
-          }
         }
       },
       "atRisk": {
@@ -3219,11 +3221,12 @@
   "nav": {
     "staff": {
       "dashboard": "แดชบอร์ด",
-      "plans": "แพ็กเกจสมาชิก",
       "users": "ผู้ใช้งาน",
       "settings": "ตั้งค่า",
+      "settingsPlans": "แพ็กเกจสมาชิก",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
+      "settingsBroadcasts": "ตั้งค่าการส่งอีเมล",
       "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
       "events": "กิจกรรม",
       "sections": {
