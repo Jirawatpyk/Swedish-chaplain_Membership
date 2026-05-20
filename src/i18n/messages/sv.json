@@ -1780,6 +1780,62 @@
         "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
         "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen."
       },
+      "templates": {
+        "pageTitle": "Utskicksmallar",
+        "pageDescription": "Återanvändbara utgångspunkter för medlemmarnas E-utskick. Startmallar levereras färdiga; admin-författade mallar ligger sida vid sida.",
+        "newTemplateButton": "Ny mall",
+        "newPageTitle": "Ny utskicksmall",
+        "newPageDescription": "Lägg till en återanvändbar mall som medlemmar kan välja när de skriver ett E-utskick.",
+        "editPageTitle": "Redigera utskicksmall",
+        "editPageDescription": "Uppdatera namn, ämne eller innehåll. Utkast som redan startats från denna mall påverkas INTE (snapshot-semantik).",
+        "starterBadge": "Start",
+        "starterBadgeAria": "Förseedad av plattformen",
+        "starterEditBannerTitle": "Detta är en startmall",
+        "starterEditBannerBody": "Redigering skapar en kammar-specifik version. Plattformen uppdaterar inte denna mall automatiskt om startinnehåll förfinas.",
+        "emptyState": {
+          "title": "Inga mallar ännu",
+          "body": "När mallar läggs till visas de här. Startmallar som förseedats vid kammarens uppstart visas också med en Start-etikett."
+        },
+        "columns": {
+          "name": "Namn",
+          "locale": "Språk",
+          "startedFrom": "Använd",
+          "startedFromAria": "Antal utkast som startats från denna mall",
+          "updatedAt": "Senast ändrad",
+          "actions": "Åtgärder"
+        },
+        "locale": {
+          "en": "English",
+          "th": "ไทย",
+          "sv": "Svenska"
+        },
+        "rowAction": {
+          "edit": "Redigera",
+          "editAria": "Redigera {name}",
+          "delete": "Ta bort",
+          "deleteAria": "Ta bort {name}"
+        },
+        "fields": {
+          "name": "Namn",
+          "nameHelp": "Upp till 100 tecken. Unik per kammare + språk.",
+          "subject": "Ämne",
+          "subjectHelp": "Upp till 200 tecken. Kan innehålla {{chamber_name}}-platshållare.",
+          "bodyHtml": "Innehåll (HTML)",
+          "bodyHtmlHelp": "Upp till 200 KB. Använd [text inom hakparenteser] som platshållare som medlemmen kan redigera; {{chamber_name}} ersätts vid utkaststart.",
+          "localeLabel": "Språk"
+        },
+        "saveButton": "Spara mall",
+        "cancelButton": "Avbryt",
+        "savingButton": "Sparar…",
+        "errors": {
+          "invalid_input": "Vissa fält är ogiltiga. Granska och försök igen.",
+          "template_body_unsafe": "Innehållet innehåller bildkällor som inte finns på kammarens tillåtelselista.",
+          "template_name_duplicate": "En mall med detta namn + språk finns redan.",
+          "template_not_found": "Mallen hittades inte.",
+          "storage_error": "Ett lagringsfel inträffade. Försök igen.",
+          "unknown": "Ett oväntat fel inträffade."
+        }
+      },
       "settings": {
         "pageTitle": "Inställningar för utskick",
         "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
@@ -3274,7 +3330,10 @@
     "invoicing": "Fakturainställningar",
     "integrations": "Integrationer",
     "eventcreate": "EventCreate",
-    "broadcasts": "Utskick"
+    "broadcasts": "Utskick",
+    "templates": "Mallar",
+    "newTemplate": "Ny mall",
+    "editTemplate": "Redigera mall"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

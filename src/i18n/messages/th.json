@@ -1780,6 +1780,62 @@
         "acceptPartialReasonTooLong": "เหตุผลต้องมีไม่เกิน 500 ตัวอักษร",
         "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง"
       },
+      "templates": {
+        "pageTitle": "เทมเพลต E-Blast",
+        "pageDescription": "จุดเริ่มต้นสำเร็จรูปสำหรับสมาชิกในการเขียน E-Blast เทมเพลตเริ่มต้นถูกตั้งค่ามาให้แล้ว และเทมเพลตของหอการค้าจะแสดงร่วมกัน",
+        "newTemplateButton": "เพิ่มเทมเพลต",
+        "newPageTitle": "เพิ่มเทมเพลต E-Blast",
+        "newPageDescription": "สร้างเทมเพลตที่สมาชิกสามารถเลือกใช้เมื่อเขียน E-Blast",
+        "editPageTitle": "แก้ไขเทมเพลต E-Blast",
+        "editPageDescription": "แก้ไขชื่อ หัวข้อ หรือเนื้อหา ฉบับร่างที่เริ่มจากเทมเพลตนี้ไปแล้วจะไม่ถูกแก้ไข (snapshot)",
+        "starterBadge": "เริ่มต้น",
+        "starterBadgeAria": "เทมเพลตเริ่มต้นจากระบบ",
+        "starterEditBannerTitle": "นี่คือเทมเพลตเริ่มต้น",
+        "starterEditBannerBody": "การแก้ไขจะสร้างเทมเพลตเฉพาะของหอการค้า ระบบจะไม่อัปเดตเทมเพลตนี้อัตโนมัติแม้เนื้อหาเริ่มต้นจะมีการปรับปรุง",
+        "emptyState": {
+          "title": "ยังไม่มีเทมเพลต",
+          "body": "เมื่อเพิ่มแล้ว เทมเพลตจะปรากฏที่นี่ เทมเพลตเริ่มต้นที่ถูกตั้งค่าตอนเริ่มใช้งานจะแสดงพร้อมป้าย เริ่มต้น"
+        },
+        "columns": {
+          "name": "ชื่อ",
+          "locale": "ภาษา",
+          "startedFrom": "ใช้แล้ว",
+          "startedFromAria": "จำนวนฉบับร่างที่เริ่มจากเทมเพลตนี้",
+          "updatedAt": "แก้ไขล่าสุด",
+          "actions": "การจัดการ"
+        },
+        "locale": {
+          "en": "English",
+          "th": "ไทย",
+          "sv": "Svenska"
+        },
+        "rowAction": {
+          "edit": "แก้ไข",
+          "editAria": "แก้ไข {name}",
+          "delete": "ลบ",
+          "deleteAria": "ลบ {name}"
+        },
+        "fields": {
+          "name": "ชื่อ",
+          "nameHelp": "ไม่เกิน 100 ตัวอักษร และไม่ซ้ำกันในระดับหอการค้า + ภาษา",
+          "subject": "หัวข้อ",
+          "subjectHelp": "ไม่เกิน 200 ตัวอักษร สามารถใช้ตัวแปร {{chamber_name}} ได้",
+          "bodyHtml": "เนื้อหา (HTML)",
+          "bodyHtmlHelp": "ไม่เกิน 200 KB ใช้ [ข้อความในวงเล็บเหลี่ยม] เป็น placeholder ที่สมาชิกแก้ไขได้ ส่วน {{chamber_name}} จะถูกแทนที่ตอนเริ่มฉบับร่าง",
+          "localeLabel": "ภาษา"
+        },
+        "saveButton": "บันทึกเทมเพลต",
+        "cancelButton": "ยกเลิก",
+        "savingButton": "กำลังบันทึก…",
+        "errors": {
+          "invalid_input": "ข้อมูลบางช่องไม่ถูกต้อง กรุณาตรวจสอบและลองอีกครั้ง",
+          "template_body_unsafe": "เนื้อหามีรูปภาพจากโดเมนที่ไม่ได้อยู่ในรายการที่อนุญาต",
+          "template_name_duplicate": "มีเทมเพลตที่ใช้ชื่อ + ภาษาเดียวกันนี้อยู่แล้ว",
+          "template_not_found": "ไม่พบเทมเพลต",
+          "storage_error": "เกิดข้อผิดพลาดในการบันทึก กรุณาลองอีกครั้ง",
+          "unknown": "เกิดข้อผิดพลาดที่ไม่คาดคิด"
+        }
+      },
       "settings": {
         "pageTitle": "ตั้งค่าการส่งอีเมล",
         "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
@@ -3274,7 +3330,10 @@
     "invoicing": "ตั้งค่าใบแจ้งหนี้",
     "integrations": "การเชื่อมต่อ",
     "eventcreate": "EventCreate",
-    "broadcasts": "ส่งอีเมล"
+    "broadcasts": "ส่งอีเมล",
+    "templates": "เทมเพลต",
+    "newTemplate": "เพิ่มเทมเพลต",
+    "editTemplate": "แก้ไขเทมเพลต"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

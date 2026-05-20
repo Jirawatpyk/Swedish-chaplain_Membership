@@ -1780,6 +1780,62 @@
         "acceptPartialReasonTooLong": "Reason must be 500 characters or fewer.",
         "acceptPartialServerError": "Failed to accept partial delivery. Please try again."
       },
+      "templates": {
+        "pageTitle": "Broadcast templates",
+        "pageDescription": "Reusable starting points for your members' E-Blasts. Starter templates ship pre-seeded; admin-authored ones live alongside them.",
+        "newTemplateButton": "New template",
+        "newPageTitle": "New broadcast template",
+        "newPageDescription": "Add a reusable template members can pick when composing an E-Blast.",
+        "editPageTitle": "Edit broadcast template",
+        "editPageDescription": "Update name, subject, or body. Drafts already started from this template are NOT affected (snapshot semantics).",
+        "starterBadge": "Starter",
+        "starterBadgeAria": "Seeded by the platform",
+        "starterEditBannerTitle": "This is a starter template",
+        "starterEditBannerBody": "Editing creates a tenant-specific version. The platform will not auto-update this template if starter content is refined.",
+        "emptyState": {
+          "title": "No templates yet",
+          "body": "Once added, templates appear here. Starter templates seeded at chamber setup also show with a Starter badge."
+        },
+        "columns": {
+          "name": "Name",
+          "locale": "Locale",
+          "startedFrom": "Started",
+          "startedFromAria": "Number of drafts started from this template",
+          "updatedAt": "Last modified",
+          "actions": "Actions"
+        },
+        "locale": {
+          "en": "English",
+          "th": "ไทย",
+          "sv": "Svenska"
+        },
+        "rowAction": {
+          "edit": "Edit",
+          "editAria": "Edit {name}",
+          "delete": "Delete",
+          "deleteAria": "Delete {name}"
+        },
+        "fields": {
+          "name": "Name",
+          "nameHelp": "Up to 100 characters. Unique within tenant + locale.",
+          "subject": "Subject",
+          "subjectHelp": "Up to 200 characters. May include {{chamber_name}} placeholder.",
+          "bodyHtml": "Body (HTML)",
+          "bodyHtmlHelp": "Up to 200 KB. Use [bracketed text] for member-editable placeholders; {{chamber_name}} is substituted at draft-start.",
+          "localeLabel": "Locale"
+        },
+        "saveButton": "Save template",
+        "cancelButton": "Cancel",
+        "savingButton": "Saving…",
+        "errors": {
+          "invalid_input": "Some fields are invalid. Please review and try again.",
+          "template_body_unsafe": "The body contains image sources that are not on the tenant allowlist.",
+          "template_name_duplicate": "A template with this name + locale already exists.",
+          "template_not_found": "Template not found.",
+          "storage_error": "A storage error occurred. Please try again.",
+          "unknown": "An unexpected error occurred."
+        }
+      },
       "settings": {
         "pageTitle": "Broadcast settings",
         "pageDescription": "Configure how your chamber's E-Blasts behave, including which image sources are allowed in message bodies.",
@@ -3274,7 +3330,10 @@
     "invoicing": "Invoice Settings",
     "integrations": "Integrations",
     "eventcreate": "EventCreate",
-    "broadcasts": "Broadcasts"
+    "broadcasts": "Broadcasts",
+    "templates": "Templates",
+    "newTemplate": "New Template",
+    "editTemplate": "Edit Template"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
