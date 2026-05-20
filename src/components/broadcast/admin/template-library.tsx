@@ -20,7 +20,7 @@
  *   - aria-pressed on each pill button
  *   - Live region announces the filtered row count after change
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { buttonVariants } from '@/components/ui/button';
@@ -59,14 +59,14 @@ export function AdminTemplateLibrary({
   // first; only THEN announce the new filtered count. Without the
   // delay, NVDA + VoiceOver sometimes drop the count update because
   // they're already speaking the new aria-pressed state.
-  const isFirstRender = useRef(true);
-  const [liveCount, setLiveCount] = useState<number>(filtered.length);
+  //
+  // Lazy initializer captures the first-render value synchronously
+  // (no announcement on mount) — only subsequent filter changes go
+  // through the setTimeout(0) defer (react-hooks/set-state-in-effect
+  // forbids a synchronous setState inside useEffect, hence the
+  // initializer pattern instead of an in-effect first-render branch).
+  const [liveCount, setLiveCount] = useState<number>(() => filtered.length);
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      setLiveCount(filtered.length);
-      return;
-    }
     const id = setTimeout(() => setLiveCount(filtered.length), 0);
     return () => clearTimeout(id);
   }, [filtered.length]);

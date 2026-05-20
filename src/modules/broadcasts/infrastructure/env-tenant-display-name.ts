@@ -15,14 +15,28 @@
  * 'SweCham' so the snapshot operation never fails on a missing tenant
  * lookup.
  */
+import { logger } from '@/lib/logger';
 import type { TenantDisplayNamePort } from '../application/ports/tenant-display-name-port';
 
 const FALLBACK_TENANT_NAME = 'SweCham';
+
+// R4-S6 silent-L2 — log the fallback path ONCE per process so dev/
+// staging observability picks up deployments where the env var is
+// missing or empty. Subsequent calls don't re-log so the
+// log volume stays bounded.
+let warnedAboutFallback = false;
 
 export const envTenantDisplayName: TenantDisplayNamePort = {
   resolve: async () => {
     const raw = process.env.NEXT_PUBLIC_TENANT_NAME;
     if (typeof raw === 'string' && raw.length > 0) return raw;
+    if (!warnedAboutFallback) {
+      warnedAboutFallback = true;
+      logger.warn(
+        { fallbackName: FALLBACK_TENANT_NAME },
+        'broadcasts.tenant_display_name.env_fallback',
+      );
+    }
     return FALLBACK_TENANT_NAME;
   },
 };
