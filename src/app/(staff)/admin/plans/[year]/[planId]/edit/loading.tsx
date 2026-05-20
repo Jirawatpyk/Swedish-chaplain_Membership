@@ -1,17 +1,9 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanFormWizardSkeleton } from '@/components/plans/plan-form-wizard-skeleton';
-import {
-  PageSkeletonShell,
-  SkeletonBlock,
-} from '@/components/shell/page-skeletons';
+import { PageSkeletonShell } from '@/components/shell/page-skeletons';
 
 /**
  * Edit uses the same <PlanFormWizard> as /plans/new. Title is generic
@@ -26,11 +18,6 @@ export default async function Loading() {
       <FormContainer>
         <PageHeader title={t('edit.titleGeneric')} />
         <Card>
-          <CardHeader>
-            <CardTitle>
-              <SkeletonBlock className="h-6 w-40" />
-            </CardTitle>
-          </CardHeader>
           <CardContent>
             <PlanFormWizardSkeleton />
           </CardContent>

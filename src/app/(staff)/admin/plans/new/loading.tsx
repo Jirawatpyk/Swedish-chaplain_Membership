@@ -1,10 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanFormWizardSkeleton } from '@/components/plans/plan-form-wizard-skeleton';
@@ -18,9 +13,6 @@ export default async function Loading() {
       <FormContainer>
         <PageHeader title={t('title')} />
         <Card>
-          <CardHeader>
-            <CardTitle>{t('title')}</CardTitle>
-          </CardHeader>
           <CardContent>
             <PlanFormWizardSkeleton />
           </CardContent>
