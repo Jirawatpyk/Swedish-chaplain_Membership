@@ -81,61 +81,65 @@ const FORBIDDEN_PATH_PATTERNS: readonly RegExp[] = [
  * the architecture decision: no NEW deep imports allowed beyond this
  * baseline.
  *
- * Format: `${repo-relative path}:${line}` — exact match required so
- * any drift (line shift, file rename) fails the test loudly.
+ * R3.5 M-4 — format changed from `file:line` to `file::importPath`.
+ * Line-number keys were fragile: any unrelated edit shifting lines
+ * above a backlog import broke the test with confusing "stale + new"
+ * dual failures. Content-key matching is drift-resistant — the
+ * allowlist only changes when the actual deep-import path is added
+ * or removed.
  *
  * Total: 40 entries (12 consumer files across Phase 1-4 work).
  */
 const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   // /portal/broadcasts/new/page.tsx (3) — F7.1a US2 + US7 compose
-  'src/app/(member)/portal/broadcasts/new/page.tsx:24',
-  'src/app/(member)/portal/broadcasts/new/page.tsx:25',
-  'src/app/(member)/portal/broadcasts/new/page.tsx:26',
+  "src/app/(member)/portal/broadcasts/new/page.tsx::@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo",
+  "src/app/(member)/portal/broadcasts/new/page.tsx::@/modules/broadcasts/application/use-cases/_safe-audit-emit",
+  "src/app/(member)/portal/broadcasts/new/page.tsx::@/modules/broadcasts/infrastructure/feature-flags",
   // /admin/broadcasts/[id]/page.tsx (1) — F7.1a US1 batch detail
-  'src/app/(staff)/admin/broadcasts/[id]/page.tsx:23',
+  "src/app/(staff)/admin/broadcasts/[id]/page.tsx::@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo",
   // /admin/broadcasts/templates/[id]/edit/page.tsx (2) — F7.1a US7 edit
-  'src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx:26',
-  'src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx:28',
+  "src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx::@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo",
+  "src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx::@/modules/broadcasts/application/use-cases/_safe-audit-emit",
   // /admin/settings/broadcasts/page.tsx (3) — F7.1a US2 settings
-  'src/app/(staff)/admin/settings/broadcasts/page.tsx:28',
-  'src/app/(staff)/admin/settings/broadcasts/page.tsx:29',
-  'src/app/(staff)/admin/settings/broadcasts/page.tsx:30',
+  "src/app/(staff)/admin/settings/broadcasts/page.tsx::@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo",
+  "src/app/(staff)/admin/settings/broadcasts/page.tsx::@/modules/broadcasts/application/use-cases/manage-image-allowlist",
+  "src/app/(staff)/admin/settings/broadcasts/page.tsx::@/modules/broadcasts/infrastructure/feature-flags",
   // /api/admin/broadcasts/settings/allowlist/route.ts (4) — F7.1a US2 API
-  'src/app/api/admin/broadcasts/settings/allowlist/route.ts:17',
-  'src/app/api/admin/broadcasts/settings/allowlist/route.ts:18',
-  'src/app/api/admin/broadcasts/settings/allowlist/route.ts:22',
-  'src/app/api/admin/broadcasts/settings/allowlist/route.ts:23',
+  "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/application/use-cases/manage-image-allowlist",
+  "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
+  "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/infrastructure/feature-flags",
+  "src/app/api/admin/broadcasts/settings/allowlist/route.ts::@/modules/broadcasts/domain/value-objects/image-source-allowlist",
   // /api/broadcasts/inline-image-upload/route.ts (3) — F7.1a US2 upload
-  'src/app/api/broadcasts/inline-image-upload/route.ts:21',
-  'src/app/api/broadcasts/inline-image-upload/route.ts:22',
-  'src/app/api/broadcasts/inline-image-upload/route.ts:26',
+  "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/application/use-cases/upload-inline-image",
+  "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
+  "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/feature-flags",
   // /api/cron/broadcasts/dispatch-batches/route.ts (14) — F7.1a US1 cron
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:50',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:52',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:55',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:56',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:60',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:61',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:62',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:63',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:64',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:65',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:66',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:67',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:68',
-  'src/app/api/cron/broadcasts/dispatch-batches/route.ts:69',
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/broadcast",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/policies/batch-concurrency-policy",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/application/services/batch-dispatcher",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/members-bridge",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/event-attendees-stub",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/audit-adapter",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/noop-advisory-lock",
+  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
   // /api/cron/broadcasts/split-large-broadcasts/route.ts (6) — F7.1a US1 cron
-  'src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:48',
-  'src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:50',
-  'src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:52',
-  'src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:54',
-  'src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:55',
-  'src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:56',
+  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
+  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/broadcast",
+  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo",
+  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo",
+  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/members-bridge",
+  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/event-attendees-stub",
   // /components/broadcast/* (4) — F7 MVP queue + status display
-  'src/components/broadcast/admin/queue-filters.tsx:42',
-  'src/components/broadcast/status-badge-mapping.ts:21',
-  'src/components/broadcast/tiptap-editor.tsx:32',
-  'src/components/broadcast/tiptap-editor.tsx:33',
+  "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
+  "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",
+  "src/components/broadcast/tiptap-editor.tsx::@/modules/broadcasts/infrastructure/tiptap-image-extension-config",
+  "src/components/broadcast/tiptap-editor.tsx::@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config",
 ]);
 
 async function* walkTs(dir: string): AsyncGenerator<string> {
@@ -166,8 +170,20 @@ async function* walkTs(dir: string): AsyncGenerator<string> {
 }
 
 interface DeepImport {
-  readonly key: string; // `${file}:${line}`
+  readonly key: string; // `${file}::${importPath}` (R3.5 M-4 — was `:line`)
   readonly text: string;
+}
+
+/**
+ * R3.5 M-4 — extract the deep-import PATH from a violating line so
+ * the allowlist key is drift-resistant against unrelated line shifts.
+ * Matches `from '...'` or `from "..."` and returns the path content
+ * inside the quotes. Returns null if no path can be extracted (line
+ * matched the regex but isn't a clean import statement — defensive).
+ */
+function extractImportPath(line: string): string | null {
+  const match = line.match(/from\s+['"]([^'"]+)['"]/);
+  return match?.[1] ?? null;
 }
 
 async function findDeepImports(): Promise<DeepImport[]> {
@@ -182,8 +198,9 @@ async function findDeepImports(): Promise<DeepImport[]> {
           const repoRel = file
             .replace(PROJECT_ROOT + sep, '')
             .replaceAll(sep, '/');
+          const importPath = extractImportPath(line) ?? `<line ${i + 1}>`;
           offenders.push({
-            key: `${repoRel}:${i + 1}`,
+            key: `${repoRel}::${importPath}`,
             text: line.trim(),
           });
         }
@@ -212,8 +229,8 @@ describe('broadcasts module barrel — architecture guard (R1.3-S2)', () => {
           'deep path. See the test file header for the full refactor ' +
           'protocol.\n\n' +
           'Hint: if this import IS legitimately needed and matches an ' +
-          'existing F7.1 backlog refactor, add the `${file}:${line}` key ' +
-          'to KNOWN_BACKLOG in this test file along with a one-line ' +
+          'existing F7.1 backlog refactor, add the `${file}::${importPath}` ' +
+          'key to KNOWN_BACKLOG in this test file along with a one-line ' +
           'context comment. Do not silently allow drift.',
       );
     }

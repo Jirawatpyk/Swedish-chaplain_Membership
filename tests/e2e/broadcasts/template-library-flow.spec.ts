@@ -139,4 +139,37 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
       .analyze();
     expect(a11yResults.violations).toEqual([]);
   });
+
+  test('R3.5 M-16: member picks template via KEYBOARD-ONLY (WCAG 2.1.1)', async ({
+    page,
+  }) => {
+    // WCAG 2.1.1 requires the Combobox to be operable via keyboard.
+    // The Round 2 enterprise-ux-designer audit flagged that the
+    // happy-path E2E test (above) only exercises mouse interaction.
+    // This test exercises Tab → Space-to-open → ArrowDown → Enter.
+    await page.goto('/portal/sign-in');
+    await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
+    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
+    await page.getByRole('button', { name: /sign in/i }).click();
+
+    await page.goto('/portal/broadcasts/new');
+
+    // Focus the combobox trigger directly (matches real-user Tab
+    // sequence after the page header). Then open with Space + ArrowDown
+    // to the second option (skips Blank), Enter to select.
+    const picker = page.getByRole('combobox', {
+      name: /Start from a template/i,
+    });
+    await picker.focus();
+    await page.keyboard.press('Space');
+    // cmdk Combobox: ArrowDown moves through options; Enter selects.
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    // URL navigated to ?template= — the page server-renders with
+    // pre-populated subject. Don't assert specific option here (depends
+    // on seed ordering); just confirm the URL carries the param.
+    await page.waitForURL(/\?template=/);
+    await expect(page.getByLabel(/^Subject$/)).not.toBeEmpty();
+  });
 });

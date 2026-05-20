@@ -1,21 +1,44 @@
 /**
  * snapshotTemplateToDraft — member compose: pull a template into a draft.
  *
- * Per contracts/broadcast-template.md § 1.4 + § 5 + SC-007a:
- *   1. Load template (RLS-confined) — null → emit broadcast_cross_tenant
- *      _probe audit (with probedTemplateId + resourceKind='template')
- *      → return template_not_found
- *   2. Verify draft ownership via broadcastsRepo.findOwnedByMember.
- *      On `cross_member` probeKind → emit broadcast_cross_member_probe
- *      audit → return draft_not_found. On `not_found` → return draft_
- *      not_found (no audit; benign).
- *   3. Resolve tenant display_name (env-backed; never throws).
- *   4. Apply substituteChamberName (Domain VO) to subject + bodyHtml —
- *      HTML-escapes the display name to prevent XSS via tenant-name
- *      injection (§ 5.1).
- *   5. Atomic withTx: emit broadcast_template_snapshotted audit
- *      (Constitution I clause 3), then updateDraftFromTemplate, then
- *      incrementStartedFromCount. All co-commit or roll back together.
+ * Per contracts/broadcast-template.md § 1.4 + § 5 + SC-007a. 6-stage
+ * flow (R3.5 M-9 — header synced to post-R3 implementation):
+ *
+ *   STAGE 1 (pre-tx) — Parse draftId via parseBroadcastId (Result-
+ *     returning; defensive against direct callers bypassing the
+ *     route's zod validation).
+ *   STAGE 2 (pre-tx) — Verify draft ownership via
+ *     broadcastsRepo.findOwnedByMember. On `cross_member` probeKind
+ *     → emit `broadcast_cross_member_probe` audit → return
+ *     `draft_not_found`. On `not_found` → return `draft_not_found`
+ *     silently (benign).
+ *   STAGE 3 (pre-tx) — Resolve tenant display_name (env-backed;
+ *     never throws per TenantDisplayNamePort contract).
+ *   STAGE 4 (withTx open) — Load template via
+ *     `findByIdAllowDeletedInTx` (R3.3 H-3 + R3-F11). Branch:
+ *       (a) null → cross-tenant probe → emit
+ *           `broadcast_cross_tenant_probe` → return
+ *           `template_not_found`
+ *       (b) deletedAt !== null → emit
+ *           `broadcast_template_snapshot_refused_deleted` audit
+ *           (R3.1 C-3) on the active tx → return
+ *           `template_soft_deleted` (HTTP 410)
+ *       (c) live template → continue
+ *   STAGE 5 (in-tx) — substituteChamberName (Domain VO) HTML-escapes
+ *     the chamber name into subject + body (§ 5.1 XSS guard); emit
+ *     `broadcast_template_snapshotted` audit on the active tx
+ *     (Constitution I clause 3 atomicity).
+ *   STAGE 6 (in-tx) — `updateDraftFromTemplate` (typed
+ *     ChamberSubstitutedBody parameters) + `incrementStartedFromCount`.
+ *     Both co-commit with the audit row; failure on any rolls back
+ *     the whole snapshot.
+ *
+ * Error kinds: `template_not_found` (404), `template_soft_deleted`
+ * (410), `draft_not_found` (404), `draft_status_drift` (409 from
+ * BroadcastConcurrentMutationError), `invalid_input` (400). Bare
+ * BroadcastNotFoundError thrown by the adapter (post-ownership-check
+ * disappearance — Constitution I clause 2 invariant violation) is
+ * caught + mapped to `draft_not_found` + logged at error severity.
  *
  * The snapshot is FROZEN — subsequent admin edits to the template do
  * NOT mutate the draft (T094 integration test).

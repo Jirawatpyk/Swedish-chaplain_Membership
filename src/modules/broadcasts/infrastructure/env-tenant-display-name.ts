@@ -24,6 +24,15 @@ const FALLBACK_TENANT_NAME = 'SweCham';
 // staging observability picks up deployments where the env var is
 // missing or empty. Subsequent calls don't re-log so the
 // log volume stays bounded.
+//
+// R3.5 M-12 — test contamination caveat: this flag is module-scoped,
+// so within a single Vitest worker (file-isolation, not test-
+// isolation) the second test that hits the fallback won't see a
+// repeat log. Test fixtures asserting on the warn fire MUST call
+// `vi.resetModules()` before importing this module to clear the
+// flag. The `__resetForTestsOnly` export below is gated on
+// NODE_ENV !== 'production' as an explicit reset hook for fixtures
+// that prefer not to use vi.resetModules.
 let warnedAboutFallback = false;
 
 export const envTenantDisplayName: TenantDisplayNamePort = {
@@ -40,3 +49,19 @@ export const envTenantDisplayName: TenantDisplayNamePort = {
     return FALLBACK_TENANT_NAME;
   },
 };
+
+/**
+ * R3.5 M-12 — explicit reset hook for test fixtures that prefer not
+ * to use `vi.resetModules()` for this single concern. Gated on
+ * NODE_ENV !== 'production' so production callers can't accidentally
+ * clear the flag (which would re-emit the warn on every fallback —
+ * log volume spike).
+ */
+export function __resetForTestsOnly(): void {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'envTenantDisplayName.__resetForTestsOnly is not callable in production',
+    );
+  }
+  warnedAboutFallback = false;
+}

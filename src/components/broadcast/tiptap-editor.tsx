@@ -96,6 +96,22 @@ export interface TiptapEditorProps {
   /** id of the visible <Label> for the editor — wires aria-labelledby on the editable region. */
   readonly labelledById?: string;
   /**
+   * R3.5 M-13 — id(s) of help-text + error elements that describe
+   * the editor's current state. Forwarded as `aria-describedby` on
+   * the inner contenteditable so SR users hear the description when
+   * focus lands on the editor (template-form's body-field error path
+   * pre-R3.5 placed aria-invalid on a wrapper div, which AT couldn't
+   * associate with the editable region).
+   */
+  readonly describedById?: string;
+  /**
+   * R3.5 M-13 — when true, sets `aria-invalid="true"` on the inner
+   * contenteditable so SR users hear the invalid state on focus.
+   * Pre-R3.5 the form wrapped the editor in a `<div aria-invalid>`
+   * which AT did not propagate to the editable region.
+   */
+  readonly invalid?: boolean;
+  /**
    * F7.1a US2 (T078) — when true, registers `broadcastImageExtension`,
    * relaxes the paste sanitiser to allow `<img src,alt>`, and renders
    * the inline-image uploader + ClamAV-unreachable banner. Wired from
@@ -117,6 +133,8 @@ export default function TiptapEditor({
   onChange,
   disabled = false,
   labelledById,
+  describedById,
+  invalid = false,
   imagesEnabled = false,
   draftId = null,
 }: TiptapEditorProps): React.ReactElement {
@@ -155,6 +173,13 @@ export default function TiptapEditor({
         role: 'textbox',
         'aria-multiline': 'true',
         ...(labelledById !== undefined && { 'aria-labelledby': labelledById }),
+        // R3.5 M-13 — describedby + invalid on the contenteditable
+        // (not a wrapper) so SR users get the error + help-text on
+        // focus.
+        ...(describedById !== undefined && {
+          'aria-describedby': describedById,
+        }),
+        ...(invalid && { 'aria-invalid': 'true' }),
       },
       transformPastedHTML(html: string): string {
         const sanitised = DOMPurify.sanitize(html, sanitizerConfig) as string;

@@ -29,7 +29,12 @@
  *   - Clarifications session 5 (Q14 + Q15): 3 events
  *   - Phase 8 verify-fix R3: 2 events
  *   - F7.1a Phase 2 T031 (US1+US2+US7): 10 events
- *   = 54 total
+ *   - R1.1 CRIT-4 snapshot moment: 1 event
+ *   - R2.1 M-test-2 seed skip: 1 event
+ *   - R3.1 C-3 snapshot refusal: 1 event
+ *   = 58 total (R3.5 M-8 — was stale at "54" before the 3 review-
+ *     fix-cycle additions; static-assert at line ~167 is the source
+ *     of truth via `extends 58`).
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */

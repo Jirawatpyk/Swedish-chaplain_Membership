@@ -72,18 +72,29 @@ export function AdminTemplateEditConfirmStarter({
   }
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
+    <section
+      role="region"
+      aria-labelledby="starter-edit-banner-title"
       className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm"
     >
+      {/* R3.5 M-14 — outer <section role="region" aria-labelledby>
+          makes the static-mount banner reachable via F6/landmark
+          navigation. role="status" + aria-live="polite" on the inner
+          dismissal-state container so SR users get a separate
+          announcement when content changes (dismissed=true → hidden).
+          Pre-R3.5 the banner was only announced via role="status" on
+          mount, which NVDA + VoiceOver drop for static content. */}
+      <div role="status" aria-live="polite" className="contents">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           {/* R3.1 C-1 — explicit text-foreground on title overrides
               inherited text-warning-foreground (calibrated for filled
               bg-warning, not bg-warning-surface). Body uses muted-fg
               which sits on bg-warning-surface at AA contrast. */}
-          <p className="font-medium text-foreground">
+          <p
+            id="starter-edit-banner-title"
+            className="font-medium text-foreground"
+          >
             {t('starterEditBannerTitle')}
           </p>
           <p className="mt-1 text-muted-foreground">
@@ -99,6 +110,7 @@ export function AdminTemplateEditConfirmStarter({
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
-    </div>
+      </div>
+    </section>
   );
 }

@@ -79,27 +79,31 @@ describe.skipIf(!RUN_PERF)(
         .returning({ id: broadcastTemplates.id });
       templateId = tpl!.id;
 
-      // Pre-seed 100 empty drafts.
-      for (let i = 0; i < SAMPLE_COUNT; i++) {
+      // R3.5 M-6 — pre-seed 100 empty drafts in ONE batch INSERT
+      // (was sequential loop = 100 × ~25ms RTT = 2.5s minimum).
+      // Batch reduces seed time to ~30ms total + makes connection
+      // pool state consistent for all measurement samples.
+      const draftValues = Array.from({ length: SAMPLE_COUNT }, () => {
         const id = randomUUID();
         draftIds.push(id);
-        await db.insert(broadcasts).values({
+        return {
           tenantId: tenant.ctx.slug,
           broadcastId: id,
           requestedByMemberId: memberId,
           requestedByMemberPlanIdSnapshot: 'corporate',
           submittedByUserId: userId,
-          actorRole: 'member_self_service',
+          actorRole: 'member_self_service' as const,
           subject: 'placeholder',
           bodyHtml: '<p>placeholder</p>',
           bodySource: 'placeholder',
           fromName: 'Member',
           replyToEmail: 'reply@example.com',
-          segmentType: 'all_members',
+          segmentType: 'all_members' as const,
           estimatedRecipientCount: 1,
           status: 'draft' as const,
-        });
-      }
+        };
+      });
+      await db.insert(broadcasts).values(draftValues);
     }, 60_000);
 
     afterAll(async () => {
@@ -113,8 +117,37 @@ describe.skipIf(!RUN_PERF)(
     }, 60_000);
 
     it(`p95 < ${SNAPSHOT_P95_MS}ms over ${SAMPLE_COUNT} sequential samples`, async () => {
-      const samples: number[] = [];
       const deps = makeSnapshotTemplateToDraftDeps(tenant.ctx.slug);
+
+      // R3.5 M-6 — warm-up call: eliminates first-sample connection-
+      // acquire cold-start bias (typically 20-40ms on cold pool).
+      // Uses the FIRST draftId; that sample is replaced post-warmup
+      // by re-seeding the broadcast row back to placeholder state.
+      const warmupId = draftIds[0]!;
+      await runInTenant(tenant.ctx, async () =>
+        snapshotTemplateToDraft(deps, {
+          tenantId: tenant.ctx.slug,
+          actorUserId: userId,
+          memberId,
+          draftId: warmupId,
+          templateId,
+          requestId: 'req-perf-warmup',
+        }),
+      );
+      // Reset the warmup draft so the measurement loop snapshots it
+      // again from the original placeholder state.
+      await db
+        .update(broadcasts)
+        .set({
+          subject: 'placeholder',
+          bodyHtml: '<p>placeholder</p>',
+          bodySource: 'placeholder',
+          startedFromTemplateId: null,
+          templateNameSnapshot: null,
+        })
+        .where(eq(broadcasts.broadcastId, warmupId));
+
+      const samples: number[] = [];
       for (const draftId of draftIds) {
         const t0 = performance.now();
         const r = await runInTenant(tenant.ctx, async () =>

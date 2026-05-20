@@ -67,7 +67,13 @@ export function AdminTemplateLibrary({
   // initializer pattern instead of an in-effect first-render branch).
   const [liveCount, setLiveCount] = useState<number>(() => filtered.length);
   useEffect(() => {
-    const id = setTimeout(() => setLiveCount(filtered.length), 0);
+    // R3.5 M-15 — 100ms settle delay matches NVDA debounce window
+    // (~50ms) and VoiceOver (~100ms). setTimeout(0) was insufficient
+    // — both ATs were dropping the filter-count announcement because
+    // it competed with the aria-pressed pill state-change announce
+    // in the same window. F8 renewal-pipeline live-region uses the
+    // same 100ms cadence.
+    const id = setTimeout(() => setLiveCount(filtered.length), 100);
     return () => clearTimeout(id);
   }, [filtered.length]);
 

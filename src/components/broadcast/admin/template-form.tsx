@@ -46,6 +46,8 @@ const TiptapEditor = loadTiptapEditor<{
   onChange: (html: string) => void;
   disabled?: boolean;
   labelledById?: string;
+  describedById?: string;
+  invalid?: boolean;
   imagesEnabled?: boolean;
   draftId?: string | null;
 }>(() => import('@/components/broadcast/tiptap-editor'));
@@ -112,14 +114,18 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           const correlationId =
             res.headers.get('X-Correlation-Id') ?? undefined;
           const payload = (await res.json().catch((parseErr) => {
+            // R3.5 M-11 — message-first console syntax so log captures
+            // (Sentry, Vercel client logs) display the message string
+            // adjacent to the object payload (pino-style ordering is
+            // server-only). DevTools also renders this more legibly.
             console.error(
+              'broadcasts.template.form.error_body_parse_failed',
               {
                 err:
                   parseErr instanceof Error ? parseErr.message : String(parseErr),
                 status: res.status,
                 correlationId,
               },
-              'broadcasts.template.form.error_body_parse_failed',
             );
             return {};
           })) as { error?: string };
@@ -131,9 +137,10 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
               // R2.2 silent-M1 — log unknown code so observability picks
               // up new server error codes that need an i18n key. Falls
               // back to a generic translated message for the user.
+              // R3.5 M-11 — message-first arg syntax.
               console.warn(
-                { code, correlationId },
                 'broadcasts.template.form.unknown_error_code',
+                { code, correlationId },
               );
               return t('errors.unknown');
             }
@@ -151,7 +158,8 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
         router.refresh();
       } catch (err) {
         // Preserve Error stack for DevTools (Round-3-Final H4 pattern).
-        console.error({ err, mode }, 'broadcasts.template.form.submit_failed');
+        // R3.5 M-11 — message-first arg syntax for legible log capture.
+        console.error('broadcasts.template.form.submit_failed', { err, mode });
         const msg = t('errors.unknown');
         setError(msg);
         toast.error(msg);
@@ -228,15 +236,20 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
 
       <div className="space-y-2">
         <Label id="tpl-body-label">{t('fields.bodyHtml')}</Label>
-        <div aria-invalid={isBodyInvalid || undefined}>
-          <TiptapEditor
-            initialHtml={bodyHtml || '<p></p>'}
-            onChange={setBodyHtml}
-            disabled={isPending}
-            labelledById="tpl-body-label"
-            imagesEnabled={false}
-          />
-        </div>
+        {/* R3.5 M-13 — describedById + invalid forwarded into the
+            contenteditable (not on the wrapper) so SR users get
+            associated help + error + invalid state on focus. */}
+        <TiptapEditor
+          initialHtml={bodyHtml || '<p></p>'}
+          onChange={setBodyHtml}
+          disabled={isPending}
+          labelledById="tpl-body-label"
+          describedById={
+            isBodyInvalid ? 'tpl-body-help tpl-body-error' : 'tpl-body-help'
+          }
+          invalid={isBodyInvalid}
+          imagesEnabled={false}
+        />
         <p id="tpl-body-help" className="text-caption">
           {t('fields.bodyHtmlHelp')}
         </p>

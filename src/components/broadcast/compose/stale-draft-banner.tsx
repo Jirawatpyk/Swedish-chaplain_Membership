@@ -37,17 +37,25 @@ export function ComposeStaleDraftBanner({
   const t = useTranslations('portal.broadcasts.compose.staleDraftBanner');
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
+    <section
+      role="region"
+      aria-labelledby="stale-draft-banner-title"
       className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm"
     >
+      {/* R3.5 M-14 — outer landmark + inner status. See template-
+          edit-confirm-starter.tsx for the rationale. */}
+      <div role="status" aria-live="polite" className="contents">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           {/* R3.1 C-1 — explicit text-foreground on title overrides
               inherited text-warning-foreground (calibrated for filled
               bg-warning, not bg-warning-surface). */}
-          <p className="font-medium text-foreground">{t('title')}</p>
+          <p
+            id="stale-draft-banner-title"
+            className="font-medium text-foreground"
+          >
+            {t('title')}
+          </p>
           <p className="mt-1 text-muted-foreground">
             {t('body', { templateName })}
           </p>
@@ -74,6 +82,7 @@ export function ComposeStaleDraftBanner({
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
-    </div>
+      </div>
+    </section>
   );
 }

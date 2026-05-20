@@ -53,16 +53,22 @@ describe('F7.1a template + allowlist cross-mutation — R2.1 M-test-3', () => {
 
     // Step 1 — seed allowlist with ALLOWED_HOST so the template
     // create + initial snapshot pass validation.
+    // R3.5 M-5 — explicitly wrap in runInTenant so future refactors
+    // that drop the repo's self-wrap (matching BroadcastsRepo's
+    // explicit-tenant-context pattern) don't silently disable RLS
+    // in this test.
     const allowlistPort = makeDrizzleImageAllowlistRepo();
-    await manageImageAllowlist(
-      { port: allowlistPort, audit: f7AuditAdapter },
-      {
-        tenantId: tenant.ctx.slug as never,
-        actorUserId: adminUserId,
-        action: 'add',
-        hostname: ALLOWED_HOST,
-        requestId: 'req-m-test-3-allowlist-add',
-      },
+    await runInTenant(tenant.ctx, async () =>
+      manageImageAllowlist(
+        { port: allowlistPort, audit: f7AuditAdapter },
+        {
+          tenantId: tenant.ctx.slug as never,
+          actorUserId: adminUserId,
+          action: 'add',
+          hostname: ALLOWED_HOST,
+          requestId: 'req-m-test-3-allowlist-add',
+        },
+      ),
     );
 
     // Step 2 — create the template with an img tag pointing to the
@@ -147,16 +153,19 @@ describe('F7.1a template + allowlist cross-mutation — R2.1 M-test-3', () => {
     );
 
     // Step 4 — admin removes ALLOWED_HOST from the allowlist.
+    // R3.5 M-5 — explicit runInTenant (see Step 1 above).
     const allowlistPort = makeDrizzleImageAllowlistRepo();
-    const removeResult = await manageImageAllowlist(
-      { port: allowlistPort, audit: f7AuditAdapter },
-      {
-        tenantId: tenant.ctx.slug as never,
-        actorUserId: adminUserId,
-        action: 'remove',
-        hostname: ALLOWED_HOST,
-        requestId: 'req-m-test-3-allowlist-remove',
-      },
+    const removeResult = await runInTenant(tenant.ctx, async () =>
+      manageImageAllowlist(
+        { port: allowlistPort, audit: f7AuditAdapter },
+        {
+          tenantId: tenant.ctx.slug as never,
+          actorUserId: adminUserId,
+          action: 'remove',
+          hostname: ALLOWED_HOST,
+          requestId: 'req-m-test-3-allowlist-remove',
+        },
+      ),
     );
     expect(removeResult.ok).toBe(true);
 
