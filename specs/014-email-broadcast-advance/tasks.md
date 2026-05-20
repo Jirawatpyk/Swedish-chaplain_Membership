@@ -293,13 +293,13 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 #### Presentation layer
 
-- [ ] T104 [US7] Create `src/app/(staff)/admin/broadcasts/templates/page.tsx` (admin template library list per critique P6): renders templates with Starter badge for `is_seeded=TRUE` + filter pills (Starter only / Admin-authored / All); table with name, subject preview, started-from count, last modified; edit/delete row actions
-- [ ] T105 [US7] Create `src/app/(staff)/admin/broadcasts/templates/new/page.tsx` (admin authoring): Tiptap editor (same instance as member compose) + form fields name + subject + locale picker
-- [ ] T106 [US7] Create `src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx` (admin editing): same editor; for `is_seeded=TRUE` shows confirmation banner per critique P6 + FR-021
-- [ ] T107 [US7] Create `src/app/api/admin/broadcasts/templates/route.ts` POST handler (admin role) per contracts § 1.1
-- [ ] T108 [US7] Create `src/app/api/admin/broadcasts/templates/[id]/route.ts` PATCH + DELETE handlers per contracts § 1.2 + 1.3
-- [ ] T109 [US7] Create `src/app/api/member/broadcasts/draft/[id]/snapshot-template/route.ts` POST handler (member role + draft ownership) per contracts § 1.4
-- [ ] T110 [US7] Create `src/app/api/broadcasts/templates/route.ts` GET handler (member OR admin role) per contracts § 1.5 — list with locale filter
+- [X] T104 [US7] Create `src/app/(staff)/admin/broadcasts/templates/page.tsx` (admin template library list per critique P6): renders templates with Starter badge for `is_seeded=TRUE` + filter pills (Starter only / Admin-authored / All); table with name, subject preview, started-from count, last modified; edit/delete row actions
+- [X] T105 [US7] Create `src/app/(staff)/admin/broadcasts/templates/new/page.tsx` (admin authoring): Tiptap editor (same instance as member compose) + form fields name + subject + locale picker
+- [X] T106 [US7] Create `src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx` (admin editing): same editor; for `is_seeded=TRUE` shows confirmation banner per critique P6 + FR-021
+- [X] T107 [US7] Create `src/app/api/admin/broadcasts/templates/route.ts` POST handler (admin role) per contracts § 1.1
+- [X] T108 [US7] Create `src/app/api/admin/broadcasts/templates/[id]/route.ts` PATCH + DELETE handlers per contracts § 1.2 + 1.3
+- [X] T109 [US7] Create `src/app/api/member/broadcasts/draft/[id]/snapshot-template/route.ts` POST handler (member role + draft ownership) per contracts § 1.4
+- [X] T110 [US7] Create `src/app/api/broadcasts/templates/route.ts` GET handler (member OR admin role) per contracts § 1.5 — list with locale filter
 - [ ] T111 [US7] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — add template picker as first compose action; auto-select template if URL has `?template={id}` query
 - [ ] T112 [P] [US7] Create `src/components/broadcasts/admin-template-library.tsx`: list with Starter badges + filter pills per critique P6
 - [ ] T113 [P] [US7] Create `src/components/broadcasts/admin-template-editor.tsx`: Tiptap editor wrapper + name/subject form + sanitiser pre-check
@@ -316,7 +316,7 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 #### Feature flag wiring
 
-- [ ] T121 [US7] Gate all US7 routes + use-cases behind `FEATURE_F71A_US7_TEMPLATES=true` AND master; when OFF: admin route 404, member compose dropdown shows only "Blank" + F7 MVP starter (seeded rows remain dormant in DB per critique E11 round 2 + E10)
+- [X] T121 [US7] Gate all US7 routes + use-cases behind `FEATURE_F71A_US7_TEMPLATES=true` AND master; when OFF: admin route 404, member compose dropdown shows only "Blank" + F7 MVP starter (seeded rows remain dormant in DB per critique E11 round 2 + E10)
 
 **Checkpoint**: User Story 7 fully functional — verified by T095 + T096 passing on dev environment.
 
