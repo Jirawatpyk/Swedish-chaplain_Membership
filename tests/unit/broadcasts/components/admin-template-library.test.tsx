@@ -11,8 +11,14 @@
  * Test fixture: 3 seeded ("Monthly Newsletter" + 2 others) + 2 admin-
  * authored templates. Total visible rows per filter must match.
  */
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  render,
+  screen,
+  fireEvent,
+  within,
+  waitFor,
+} from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import {
   AdminTemplateLibrary,
@@ -129,5 +135,45 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     expect(
       tbody.getAllByLabelText(/seeded by the platform/i),
     ).toHaveLength(3);
+  });
+
+  it('R3.4 M-3: filter pill click updates live-region count text after settle delay', async () => {
+    // Global Vitest fake timers (tests/setup.ts) break waitFor's
+    // polling cadence; switch to real timers for this test only.
+    // afterEach restores fake-timer state via clearAllMocks +
+    // setSystemTime in setup.ts.
+    vi.useRealTimers();
+    try {
+      renderLibrary();
+      // Initial mount: live region announces total of 5
+      expect(screen.getByRole('status').textContent).toMatch(/5/);
+
+      // Click Starter pill → 3 visible rows. Live-region updates via
+      // setTimeout(0) (template-library.tsx L4 settle delay).
+      fireEvent.click(screen.getByRole('button', { name: /starter only/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('status').textContent).toMatch(/3/);
+      });
+
+      // Click Admin-authored → 2 rows
+      fireEvent.click(
+        screen.getByRole('button', { name: /admin-authored/i }),
+      );
+      await waitFor(() => {
+        expect(screen.getByRole('status').textContent).toMatch(/2/);
+      });
+    } finally {
+      vi.useFakeTimers({
+        now: new Date('2026-04-09T12:00:00.000Z'),
+        shouldAdvanceTime: false,
+        toFake: [
+          'Date',
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+        ],
+      });
+    }
   });
 });

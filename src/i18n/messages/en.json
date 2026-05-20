@@ -1845,6 +1845,7 @@
           "template_body_unsafe": "The body contains image sources that are not on the tenant allowlist.",
           "template_name_duplicate": "A template with this name + locale already exists.",
           "template_not_found": "Template not found.",
+          "template_soft_deleted": "This template has been deleted. Please choose another or start blank.",
           "storage_error": "A storage error occurred. Please try again.",
           "unknown": "An unexpected error occurred."
         }

@@ -1845,6 +1845,7 @@
           "template_body_unsafe": "Innehållet innehåller bildkällor som inte finns på kammarens tillåtelselista.",
           "template_name_duplicate": "En mall med detta namn + språk finns redan.",
           "template_not_found": "Mallen hittades inte.",
+          "template_soft_deleted": "Denna mall har raderats. Välj en annan eller starta tom.",
           "storage_error": "Ett lagringsfel inträffade. Försök igen.",
           "unknown": "Ett oväntat fel inträffade."
         }
