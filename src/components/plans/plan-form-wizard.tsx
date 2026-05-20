@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Stepper, type StepperStep } from '@/components/ui/stepper';
 import { LocaleTextInput } from './locale-text-input';
 import { MoneyInput } from './money-input';
 import { BenefitMatrixEditor } from './benefit-matrix-editor';
@@ -144,6 +145,25 @@ export function PlanFormWizard({
 
   const canProceed = stepValid[step];
 
+  // Canonical Stepper primitive (`@/components/ui/stepper`) — replaces the
+  // earlier ad-hoc `<ol>` text list so F2 plan creation shares the visual
+  // language used by F5 PaySheet + F6 webhook-config-wizard (circle +
+  // connector line + Check icon on completed steps + WCAG `aria-current`).
+  const stepperSteps: StepperStep[] = useMemo(
+    () =>
+      STEPS.map((s, idx) => ({
+        id: s,
+        label: t(`steps.${s}`),
+        status:
+          idx < stepIndex
+            ? 'complete'
+            : idx === stepIndex
+              ? 'current'
+              : 'upcoming',
+      })),
+    [stepIndex, t],
+  );
+
   async function handleSubmit(): Promise<void> {
     const parsed = planSchema.safeParse(draft);
     if (!parsed.success) {
@@ -154,24 +174,10 @@ export function PlanFormWizard({
 
   return (
     <div className="space-y-6">
-      {/* Step indicator */}
-      <ol className="flex items-center gap-4 text-sm" aria-label={t('steps.wizardAriaLabel')}>
-        {STEPS.map((s, idx) => (
-          <li
-            key={s}
-            aria-current={idx === stepIndex ? 'step' : undefined}
-            className={
-              idx === stepIndex
-                ? 'font-semibold text-foreground'
-                : idx < stepIndex
-                  ? 'text-muted-foreground line-through'
-                  : 'text-muted-foreground'
-            }
-          >
-            {idx + 1}. {t(`steps.${s}`)}
-          </li>
-        ))}
-      </ol>
+      <Stepper
+        steps={stepperSteps}
+        aria-label={t('steps.wizardAriaLabel')}
+      />
 
       <Separator />
 

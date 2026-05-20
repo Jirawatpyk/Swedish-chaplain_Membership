@@ -15,7 +15,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asPlanSlug, asPlanYear, getPlan, type PlanSchemaInput } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
@@ -105,9 +105,6 @@ export default async function EditPlanPage({
       <PlanBreadcrumbLabel segment={plan.plan_id} label={plan.plan_name.en} />
       <PageHeader title={t('title', { planName: plan.plan_name.en })} />
       <Card>
-        <CardHeader>
-          <CardTitle>{plan.plan_name.en}</CardTitle>
-        </CardHeader>
         <CardContent>
           <EditPlanClient
             planId={plan.plan_id}

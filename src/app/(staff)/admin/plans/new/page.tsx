@@ -20,7 +20,7 @@ import { getTranslations } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { NewPlanClient } from './new-plan-client';
@@ -51,9 +51,6 @@ export default async function NewPlanPage() {
     <FormContainer>
       <PageHeader title={t('title')} />
       <Card>
-        <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
-        </CardHeader>
         <CardContent>
           <NewPlanClient currentYear={currentYear} currencyPrefix={currencyPrefix} />
         </CardContent>
