@@ -619,9 +619,16 @@ export async function stageB_Plans(
       // 0..(idx-1) are fully committed (plan + audit). Draft idx's
       // plan row IS committed (insert awaits before audit fires);
       // its audit row is NOT (this throw is the audit failure).
+      //
+      // R6-S1 — render the prior-drafts range as "no prior drafts"
+      // when `failedIdx === 0`. Otherwise the message reads
+      // "drafts 1..0 ALREADY committed" which is a zero-width range
+      // that momentarily confuses operators reading the CLI output.
       const failedIdx = drafts.indexOf(draft);
+      const priorDraftsSummary =
+        failedIdx === 0 ? 'no prior drafts' : `drafts 1..${failedIdx}`;
       throw new Error(
-        `[seed] plan_created audit failed for ${inserted.plan_id} (drafts 1..${failedIdx} ALREADY committed + draft ${failedIdx + 1}'s plan row committed + ${failedIdx} audit rows emitted; run cleanup procedure before retry): ${JSON.stringify(auditResult.error)}`,
+        `[seed] plan_created audit failed for ${inserted.plan_id} (${priorDraftsSummary} ALREADY committed + draft ${failedIdx + 1}'s plan row committed + ${failedIdx} audit rows emitted; run cleanup procedure before retry): ${JSON.stringify(auditResult.error)}`,
       );
     }
   }

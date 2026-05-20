@@ -81,3 +81,33 @@ Or the equivalent F4/F5/F7 metrics. Pino structured log line accompanies:
 - [`docs/observability.md` § 23.3](../observability.md) — F8 alert catalogue
 - [`docs/runbooks/cron-jobs.md`](./cron-jobs.md) — F8 cron coordinator topology
 - [`.specify/memory/constitution.md` § Principle VIII](../../.specify/memory/constitution.md) — audit-trail invariant
+
+---
+
+## F2 cancel-scheduled-plan-change error taxonomy (R6-S2 note)
+
+Pin SRE alert rules to **errorId** (structured log field), NOT to message-text strings. The route-side message text at
+`src/app/api/admin/scheduled-plan-changes/[id]/cancel/route.ts` was rewritten in R5 to collapse the prior double-log
+(`logger.warn` + `logger.error`) into a single `logger.error`. If a prior alert rule keyed on the OLD message strings
+(`'cancel-scheduled-plan-change: unhandled error'` or `'cancel-scheduled-plan-change: TOCTOU recheck failed; surfacing
+original transitionStatus error'`), it stops firing silently.
+
+The errorId taxonomy is the stable contract:
+
+| errorId | When it fires |
+|---|---|
+| `F2.PLAN_CHANGE.CANCEL_SERVER_ERROR` | use-case returned `{code:'server_error', recheckFailed:false}` — primary transition error, recheck did NOT also fail |
+| `F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED` | use-case returned `{code:'server_error', recheckFailed:true}` — TOCTOU recheck threw on top of primary transition error |
+| `F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED` | audit DB write failed; route returns 200 + `X-Audit-Backfill-Required: 1` header |
+| `F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD` | audit zod schema rejected the payload (deploy-skew); route returns 200 + `X-Audit-Backfill-Required: 1` header |
+
+For F8 `accept-tier-upgrade`:
+
+| errorId | When it fires |
+|---|---|
+| `F8.ACCEPT_TIER.SERVER_ERROR` | use-case returned `{kind:'server_error', message:'deploy-skew:unhandled-gateway-arm:*'}` — gateway-arm exhaustiveness violation |
+| `F8.ACCEPT_TIER.UNEXPECTED` | route's outer `catch (e)` caught an uncaught throw (R3-C3 pre-tx wrap blocks documented paths; this is defence-in-depth) |
+| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` helper caught an infrastructure error (DB outage during session-lookup) |
+
+The `plans_cancel_audit_backfill_required_total` OTel counter (label `audit_error_type ∈ {persist_failed, invalid_payload}`)
+backs the audit-backfill SLO. Sum the counter against backfilled audit rows to compute SLO depth.

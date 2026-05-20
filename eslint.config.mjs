@@ -775,8 +775,13 @@ const eslintConfig = defineConfig([
         },
         {
           // R5-I9 Pattern (e) — `function f(): BenefitMatrix { return { ... }; }`
+          // R6-I1 — tightened to `> BlockStatement > ReturnStatement >
+          // ObjectExpression` (direct child chain) so that a nested
+          // function inside a BenefitMatrix-returning function with
+          // its own `return {...}` does NOT false-positive. Mirrors
+          // the Pattern (g) direct-child structure.
           selector:
-            "FunctionDeclaration[returnType.typeAnnotation.typeName.name='BenefitMatrix'] ReturnStatement > ObjectExpression",
+            "FunctionDeclaration[returnType.typeAnnotation.typeName.name='BenefitMatrix'] > BlockStatement > ReturnStatement > ObjectExpression",
           message:
             "R5-I9 — function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
             "Build the value via `asBenefitMatrix(input, planCategory)`.",

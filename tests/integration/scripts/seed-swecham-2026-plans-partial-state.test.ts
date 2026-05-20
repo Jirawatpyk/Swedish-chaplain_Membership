@@ -188,8 +188,10 @@ describe('Integration — seed-swecham-2026-plans partial-state contract (R4-C1)
       });
 
     try {
+      // R6-S1 — message renders "no prior drafts" instead of the
+      // zero-width "drafts 1..0" range when failedIdx === 0.
       await expect(stageB_Plans(tenant.ctx, owner.userId)).rejects.toThrow(
-        /drafts 1\.\.0 ALREADY committed \+ draft 1's plan row committed \+ 0 audit rows emitted/,
+        /no prior drafts ALREADY committed \+ draft 1's plan row committed \+ 0 audit rows emitted/,
       );
 
       expect(recordSpy).toHaveBeenCalledTimes(1);
