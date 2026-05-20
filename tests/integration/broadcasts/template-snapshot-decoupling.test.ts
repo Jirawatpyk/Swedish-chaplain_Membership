@@ -129,4 +129,147 @@ describe('F7.1a template snapshot decoupling — SC-007a (T094)', () => {
     expect(draft.startedFromTemplateId).toBe(templateId);
     expect(draft.templateNameSnapshot).toBe('Decoupling Test');
   });
+
+  it('R2.1 M-test-4: template soft-deleted at T2 → draft retains body + subject + templateNameSnapshot', async () => {
+    // Setup: fresh draft + fresh template scoped to this test so the
+    // delete doesn't bleed into other tests.
+    const localTemplate = await db
+      .insert(broadcastTemplates)
+      .values({
+        tenantId: tenant.ctx.slug,
+        name: 'M-test-4 Soft-delete Survivor',
+        subject: 'Survive subject',
+        bodyHtml: '<p>Survive body</p>',
+        locale: 'en',
+        isSeeded: false,
+        createdByUserId: null,
+      })
+      .returning({ id: broadcastTemplates.id });
+    const localTemplateId = localTemplate[0]!.id;
+
+    const localDraftId = randomUUID();
+    await db.insert(broadcasts).values({
+      tenantId: tenant.ctx.slug,
+      broadcastId: localDraftId,
+      requestedByMemberId: memberId,
+      requestedByMemberPlanIdSnapshot: 'corporate',
+      submittedByUserId: userId,
+      actorRole: 'member_self_service',
+      subject: 'placeholder',
+      bodyHtml: '<p>placeholder</p>',
+      bodySource: 'placeholder',
+      fromName: 'Member',
+      replyToEmail: 'reply@example.com',
+      segmentType: 'all_members',
+      estimatedRecipientCount: 1,
+      status: 'draft' as const,
+    });
+
+    // T1 snapshot
+    const snapResult = await runInTenant(tenant.ctx, async () =>
+      snapshotTemplateToDraft(
+        makeSnapshotTemplateToDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: userId,
+          memberId,
+          draftId: localDraftId,
+          templateId: localTemplateId,
+          requestId: 'req-m-test-4',
+        },
+      ),
+    );
+    expect(snapResult.ok).toBe(true);
+
+    // T2 admin soft-deletes the template.
+    await db
+      .update(broadcastTemplates)
+      .set({ deletedAt: new Date() })
+      .where(eq(broadcastTemplates.id, localTemplateId));
+
+    // Verify draft survives the template soft-delete.
+    const draftRows = await db
+      .select({
+        subject: broadcasts.subject,
+        bodyHtml: broadcasts.bodyHtml,
+        startedFromTemplateId: broadcasts.startedFromTemplateId,
+        templateNameSnapshot: broadcasts.templateNameSnapshot,
+      })
+      .from(broadcasts)
+      .where(eq(broadcasts.broadcastId, localDraftId));
+    const draft = draftRows[0]!;
+    expect(draft.subject).toBe('Survive subject');
+    expect(draft.bodyHtml).toBe('<p>Survive body</p>');
+    // The provenance pointer stays even though the template is now
+    // soft-deleted — admins can still trace which template seeded this
+    // draft via the audit log (broadcast_template_snapshotted) +
+    // templateNameSnapshot string.
+    expect(draft.startedFromTemplateId).toBe(localTemplateId);
+    expect(draft.templateNameSnapshot).toBe('M-test-4 Soft-delete Survivor');
+  });
+
+  it('R2.1 M-test-5: template renamed at T2 → draft.templateNameSnapshot still reflects T1 name', async () => {
+    const localTemplate = await db
+      .insert(broadcastTemplates)
+      .values({
+        tenantId: tenant.ctx.slug,
+        name: 'Original Name',
+        subject: 'Rename test subject',
+        bodyHtml: '<p>Rename test body</p>',
+        locale: 'en',
+        isSeeded: false,
+        createdByUserId: null,
+      })
+      .returning({ id: broadcastTemplates.id });
+    const localTemplateId = localTemplate[0]!.id;
+
+    const localDraftId = randomUUID();
+    await db.insert(broadcasts).values({
+      tenantId: tenant.ctx.slug,
+      broadcastId: localDraftId,
+      requestedByMemberId: memberId,
+      requestedByMemberPlanIdSnapshot: 'corporate',
+      submittedByUserId: userId,
+      actorRole: 'member_self_service',
+      subject: 'placeholder',
+      bodyHtml: '<p>placeholder</p>',
+      bodySource: 'placeholder',
+      fromName: 'Member',
+      replyToEmail: 'reply@example.com',
+      segmentType: 'all_members',
+      estimatedRecipientCount: 1,
+      status: 'draft' as const,
+    });
+
+    // T1 snapshot captures "Original Name" into templateNameSnapshot.
+    const snapResult = await runInTenant(tenant.ctx, async () =>
+      snapshotTemplateToDraft(
+        makeSnapshotTemplateToDraftDeps(tenant.ctx.slug),
+        {
+          tenantId: tenant.ctx.slug,
+          actorUserId: userId,
+          memberId,
+          draftId: localDraftId,
+          templateId: localTemplateId,
+          requestId: 'req-m-test-5',
+        },
+      ),
+    );
+    expect(snapResult.ok).toBe(true);
+
+    // T2 admin renames the template.
+    await db
+      .update(broadcastTemplates)
+      .set({ name: 'Renamed At T2' })
+      .where(eq(broadcastTemplates.id, localTemplateId));
+
+    // Draft's templateNameSnapshot still reflects the T1 name (frozen).
+    const draftRows = await db
+      .select({
+        templateNameSnapshot: broadcasts.templateNameSnapshot,
+      })
+      .from(broadcasts)
+      .where(eq(broadcasts.broadcastId, localDraftId));
+    expect(draftRows[0]!.templateNameSnapshot).toBe('Original Name');
+  });
 });
