@@ -73,6 +73,9 @@ const makeDeps = (overrides?: {
   return {
     templatesPort: {
       findById: vi.fn().mockResolvedValue(tpl),
+      // R1.2 H-sf-2: snapshot use-case now calls findByIdInTx inside
+      // withTx to close TOCTOU window. Mock returns same template.
+      findByIdInTx: vi.fn().mockResolvedValue(tpl),
       findByTenantId: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -129,6 +132,10 @@ const deps = makeDeps({ chamberName: 'SweCham' });
 
   it('cross-tenant probe (template belongs to tenant B) → template_not_found + cross-tenant audit with template payload', async () => {
 const deps = makeDeps({ template: null });
+    // R1.2 H-sf-2: findByIdInTx returns null for cross-tenant probe
+    (deps.templatesPort as { findByIdInTx: ReturnType<typeof vi.fn> })
+      .findByIdInTx
+      .mockResolvedValueOnce(null);
     const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
@@ -203,6 +210,66 @@ const deps = makeDeps({ template: null });
       null,
       expect.objectContaining({ eventType: 'broadcast_cross_member_probe' }),
     );
+  });
+
+  it('R1.2 H-sf-3: BroadcastConcurrentMutationError → draft_status_drift kind + broadcast_concurrent_action_blocked audit', async () => {
+    const { BroadcastConcurrentMutationError } = await import(
+      '@/modules/broadcasts/application/ports/broadcasts-repo'
+    );
+    const deps = makeDeps();
+    (deps.broadcastsRepo as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
+      .updateDraftFromTemplate
+      .mockRejectedValueOnce(
+        new BroadcastConcurrentMutationError(
+          'tenant-swe',
+          DRAFT_ID as never,
+          'submitted',
+        ),
+      );
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-1',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-status-drift',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.kind).toBe('draft_status_drift');
+      if (r.error.kind === 'draft_status_drift') {
+        expect(r.error.currentStatus).toBe('submitted');
+      }
+    }
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'broadcast_concurrent_action_blocked',
+        payload: expect.objectContaining({
+          broadcastId: DRAFT_ID,
+          observedStatus: 'submitted',
+        }),
+      }),
+    );
+    // Counter MUST NOT bump on status drift
+    expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+  });
+
+  it('R1.2 H-sf-3: unexpected generic Error → propagates (NOT mapped to draft_not_found)', async () => {
+    const deps = makeDeps();
+    (deps.broadcastsRepo as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
+      .updateDraftFromTemplate
+      .mockRejectedValueOnce(new Error('Postgres connection lost'));
+    await expect(
+      snapshotTemplateToDraft(deps, {
+        tenantId: TENANT,
+        actorUserId: ACTOR_MEMBER,
+        memberId: 'mem-1',
+        draftId: DRAFT_ID,
+        templateId: TEMPLATE_ID,
+        requestId: 'req-unexpected',
+      }),
+    ).rejects.toThrow('Postgres connection lost');
   });
 
   it('CRIT-4: successful snapshot → audit emits broadcast_template_snapshotted inside withTx', async () => {

@@ -111,6 +111,15 @@ export async function POST(
           return jsonError(400, 'invalid_input', correlationId, {
             detail: result.error.detail,
           });
+        // R1.2 H-sf-3: concurrent mutation race (draft status drifted
+        // out of 'draft' between findOwnedByMember + updateDraft tx).
+        // 409 + broadcast_immutable_after_submit gives the compose
+        // surface a clean "draft is no longer editable" signal instead
+        // of misleading "not found".
+        case 'draft_status_drift':
+          return jsonError(409, 'broadcast_immutable_after_submit', correlationId, {
+            currentStatus: result.error.currentStatus,
+          });
         default: {
           const _exhaustive: never = kind;
           void _exhaustive;

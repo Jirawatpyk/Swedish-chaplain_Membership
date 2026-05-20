@@ -21,12 +21,15 @@
  * NOT mutate the draft (T094 integration test).
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { substituteChamberName } from '../../domain/value-objects/template-snapshot';
 import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 import type { BroadcastTemplatesPort } from '../ports/broadcast-templates-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
 import type { TenantDisplayNamePort } from '../ports/tenant-display-name-port';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import { safeAuditEmit } from './_safe-audit-emit';
 import { asMemberId } from '@/modules/members';
 import type { TenantSlug } from '@/modules/tenants';
@@ -50,7 +53,12 @@ export interface SnapshotTemplateToDraftInput {
 export type SnapshotTemplateToDraftError =
   | { readonly kind: 'template_not_found' }
   | { readonly kind: 'draft_not_found' }
-  | { readonly kind: 'invalid_input'; readonly detail: string };
+  | { readonly kind: 'invalid_input'; readonly detail: string }
+  // R1.2 H-sf-3: discriminate concurrent-mutation race from genuine
+  // not-found so the route surfaces 409 (immutable-after-submit) instead
+  // of a misleading 404. currentStatus comes from the repo's TOCTOU
+  // probe inside updateDraftFromTemplate.
+  | { readonly kind: 'draft_status_drift'; readonly currentStatus: BroadcastStatus };
 
 export interface SnapshotTemplateToDraftOutput {
   readonly draftId: string;
@@ -65,30 +73,8 @@ export async function snapshotTemplateToDraft(
 ): Promise<
   Result<SnapshotTemplateToDraftOutput, SnapshotTemplateToDraftError>
 > {
-  // 1. Load template (RLS-confined). Null → cross-tenant probe.
-  const template = await deps.templatesPort.findById(
-    input.tenantId,
-    input.templateId,
-  );
-  if (!template) {
-    await safeAuditEmit(deps.audit, null, {
-      eventType: 'broadcast_cross_tenant_probe',
-      actorUserId: input.actorUserId,
-      tenantId: input.tenantId,
-      summary: `Cross-tenant probe on snapshot-template ${input.templateId}`,
-      payload: {
-        probedTenantId: input.tenantId,
-        probedTemplateId: input.templateId,
-        resourceKind: 'template',
-      },
-      requestId: input.requestId,
-    });
-    return err({ kind: 'template_not_found' });
-  }
-
-  // 2. Parse draftId (UUID brand cast — never throws, but parseBroadcastId
-  //    is the validating variant; route already zod-validated so the
-  //    runtime check here is belt-and-braces against direct callers.)
+  // 1. Parse draftId. Route already zod-validated; this is belt-and-
+  //    braces against direct callers (e.g. tests, future internal jobs).
   let broadcastId: BroadcastId;
   try {
     broadcastId = asBroadcastId(input.draftId);
@@ -96,10 +82,10 @@ export async function snapshotTemplateToDraft(
     return err({ kind: 'invalid_input', detail: 'draftId must be a UUID' });
   }
 
-  // 3. Verify draft ownership BEFORE entering the mutation tx. Catches
+  // 2. Verify draft ownership BEFORE entering the mutation tx. Catches
   //    cross-member draft-hijack (CRIT-1) where member B guesses
   //    member A's draftId and tries to overwrite. RLS only confines
-  //    to tenant; per-member is enforced here.
+  //    to tenant; per-member ownership is enforced here.
   const ownership = await deps.broadcastsRepo.findOwnedByMember(
     input.tenantId as string,
     asMemberId(input.memberId),
@@ -123,27 +109,54 @@ export async function snapshotTemplateToDraft(
     return err({ kind: 'draft_not_found' });
   }
 
-  // 4. Resolve chamber name (env-backed adapter; never throws per
+  // 3. Resolve chamber name (env-backed adapter; never throws per
   //    TenantDisplayNamePort contract).
   const chamberName = await deps.tenantDisplayName.resolve(input.tenantId);
 
-  // 5. Substitute {{chamber_name}} — HTML-escaped per § 5.1.
-  const substitutedSubject = substituteChamberName(
-    template.subject,
-    chamberName,
-  );
-  const substitutedBody = substituteChamberName(
-    template.bodyHtml,
-    chamberName,
-  );
-
-  // 6. Atomic withTx: snapshot audit + draft UPDATE + counter increment.
-  //    All three writes co-commit; a transient failure on any rolls back
-  //    the entire snapshot operation (Constitution I clause 3).
+  // 4. Atomic withTx: template read (TOCTOU-safe via findByIdInTx) +
+  //    snapshot audit + draft UPDATE + counter increment. All writes
+  //    co-commit; failure on any rolls back the whole snapshot
+  //    (Constitution I clause 3 atomicity).
   return deps.templatesPort.withTx(input.tenantId, async (tx) => {
-    // Snapshot-moment audit first — captures actor + template +
-    // broadcast + name BEFORE the mutations so forensic timeline has
-    // a "who/what/when" record even if the subsequent writes fail.
+    // R1.2 H-sf-2: read template INSIDE the same tx where the snapshot
+    // mutation lands. Closes TOCTOU window between read and write.
+    const template = await deps.templatesPort.findByIdInTx(
+      input.tenantId,
+      input.templateId,
+      tx,
+    );
+    if (!template) {
+      // RLS-confined null. Emit probe audit (safeAuditEmit so audit-
+      // storage hiccup doesn't break the rollback flow).
+      await safeAuditEmit(deps.audit, null, {
+        eventType: 'broadcast_cross_tenant_probe',
+        actorUserId: input.actorUserId,
+        tenantId: input.tenantId,
+        summary: `Cross-tenant probe on snapshot-template ${input.templateId}`,
+        payload: {
+          probedTenantId: input.tenantId,
+          probedTemplateId: input.templateId,
+          resourceKind: 'template',
+        },
+        requestId: input.requestId,
+      });
+      return err<SnapshotTemplateToDraftError>({ kind: 'template_not_found' });
+    }
+
+    // Substitute {{chamber_name}} (Domain VO; pure) — HTML-escaped per § 5.1.
+    const substitutedSubject = substituteChamberName(
+      template.subject,
+      chamberName,
+    );
+    const substitutedBody = substituteChamberName(
+      template.bodyHtml,
+      chamberName,
+    );
+
+    // Snapshot-moment audit FIRST — captures actor + template + broadcast
+    // + name BEFORE the mutations so forensic timeline has a "who/what/
+    // when" record even if subsequent writes fail (which would roll back
+    // this audit row too — that's correct semantics).
     await deps.audit.emit(tx, {
       eventType: 'broadcast_template_snapshotted',
       actorUserId: input.actorUserId,
@@ -162,20 +175,59 @@ export async function snapshotTemplateToDraft(
         'broadcastsRepo.updateDraftFromTemplate is not implemented — US7 snapshot path requires it',
       );
     }
-    await deps.broadcastsRepo.updateDraftFromTemplate(
-      tx,
-      input.tenantId as string,
-      broadcastId,
-      {
-        subject: substitutedSubject,
-        bodyHtml: substitutedBody,
-        // bodySource mirrors bodyHtml for templates — admin authors HTML
-        // only; no separate plain-text source.
-        bodySource: substitutedBody,
-        startedFromTemplateId: template.id,
-        templateNameSnapshot: template.name,
-      },
-    );
+    try {
+      await deps.broadcastsRepo.updateDraftFromTemplate(
+        tx,
+        input.tenantId as string,
+        broadcastId,
+        {
+          subject: substitutedSubject,
+          bodyHtml: substitutedBody,
+          // bodySource mirrors bodyHtml for templates — admin authors
+          // HTML only; no separate plain-text source.
+          bodySource: substitutedBody,
+          startedFromTemplateId: template.id,
+          templateNameSnapshot: template.name,
+        },
+      );
+    } catch (e) {
+      // R1.2 H-sf-3: discriminate concurrent-mutation race (status
+      // drifted out of 'draft' between findOwnedByMember check and
+      // this UPDATE) from generic adapter failures. Emit `broadcast_
+      // concurrent_action_blocked` audit (M-code-1 closure) and surface
+      // a typed `draft_status_drift` kind so the route can return HTTP
+      // 409 with broadcast_immutable_after_submit code.
+      if (e instanceof BroadcastConcurrentMutationError) {
+        await safeAuditEmit(deps.audit, null, {
+          eventType: 'broadcast_concurrent_action_blocked',
+          actorUserId: input.actorUserId,
+          tenantId: input.tenantId,
+          summary: `Concurrent mutation on snapshot-template draft ${input.draftId} (observed status=${e.observedStatus})`,
+          payload: {
+            broadcastId: input.draftId,
+            observedStatus: e.observedStatus,
+            attempt: 'snapshot-template',
+          },
+          requestId: input.requestId,
+        });
+        return err<SnapshotTemplateToDraftError>({
+          kind: 'draft_status_drift',
+          currentStatus: e.observedStatus,
+        });
+      }
+      // Unexpected — log + rethrow. Route's outer try/catch maps to 500
+      // internal_error (test mocks may also propagate via this branch).
+      logger.error(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantId: input.tenantId,
+          draftId: input.draftId,
+          templateId: input.templateId,
+        },
+        'broadcasts.snapshot.unexpected_error',
+      );
+      throw e;
+    }
     await deps.templatesPort.incrementStartedFromCount(
       input.tenantId,
       template.id,

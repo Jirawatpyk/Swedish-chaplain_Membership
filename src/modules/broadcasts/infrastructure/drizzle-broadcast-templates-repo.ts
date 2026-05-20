@@ -102,6 +102,32 @@ function isUniqueViolation(e: unknown): boolean {
   return code === '23505';
 }
 
+/**
+ * Shared SELECT implementation for findById + findByIdInTx — both use
+ * the same WHERE clause (id + explicit tenantId belt-and-braces +
+ * deletedAt IS NULL). The tx caller controls the transaction
+ * boundary; findById wraps with runInTenant, findByIdInTx reuses the
+ * caller's withTx scope (closes TOCTOU window per R1.2 H-sf-2).
+ */
+async function findByIdImpl(
+  tx: TenantTx,
+  tenantId: TenantSlug,
+  id: string,
+): Promise<BroadcastTemplate | null> {
+  const rows = await tx
+    .select()
+    .from(broadcastTemplates)
+    .where(
+      and(
+        eq(broadcastTemplates.id, id),
+        eq(broadcastTemplates.tenantId, tenantId as string),
+        isNull(broadcastTemplates.deletedAt),
+      ),
+    )
+    .limit(1);
+  return rows[0] ? toDomain(rows[0] as BroadcastTemplateRow) : null;
+}
+
 export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
   return {
     async withTx<T>(
@@ -120,20 +146,18 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
     ): Promise<BroadcastTemplate | null> {
       return runInTenant(
         asTenantContext(tenantId as unknown as string),
-        async (tx) => {
-          const rows = await tx
-            .select()
-            .from(broadcastTemplates)
-            .where(
-              and(
-                eq(broadcastTemplates.id, id),
-                isNull(broadcastTemplates.deletedAt),
-              ),
-            )
-            .limit(1);
-          return rows[0] ? toDomain(rows[0] as BroadcastTemplateRow) : null;
-        },
+        async (tx) => findByIdImpl(tx as TenantTx, tenantId, id),
       );
+    },
+
+    async findByIdInTx(
+      tenantId: TenantSlug,
+      id: string,
+      tx: BroadcastTemplatesTx,
+    ): Promise<BroadcastTemplate | null> {
+      // R1.2 H-sf-2 tx-aware variant. Reuses findByIdImpl so the SELECT
+      // shape stays identical to findById.
+      return findByIdImpl(tx as TenantTx, tenantId, id);
     },
 
     async findByTenantId(
@@ -224,12 +248,14 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
           if (input.bodyHtml !== undefined) setClause.bodyHtml = input.bodyHtml;
           if (input.locale !== undefined) setClause.locale = input.locale;
 
+          // R1.2 H-code-5: explicit tenantId predicate alongside RLS.
           const updated = await tx
             .update(broadcastTemplates)
             .set(setClause)
             .where(
               and(
                 eq(broadcastTemplates.id, id),
+                eq(broadcastTemplates.tenantId, tenantId as string),
                 isNull(broadcastTemplates.deletedAt),
               ),
             )
@@ -257,12 +283,14 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
     ): Promise<Result<void, TemplateDeleteError>> {
       try {
         return await withTenantTx(tenantId, callerTx, async (tx) => {
+          // R1.2 H-code-5: explicit tenantId predicate alongside RLS.
           const deleted = await tx
             .update(broadcastTemplates)
             .set({ deletedAt: new Date(), updatedAt: new Date() })
             .where(
               and(
                 eq(broadcastTemplates.id, id),
+                eq(broadcastTemplates.tenantId, tenantId as string),
                 isNull(broadcastTemplates.deletedAt),
               ),
             )
@@ -283,15 +311,30 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
       callerTx?: BroadcastTemplatesTx,
     ): Promise<void> {
       // Atomic at row level — `started_from_count = started_from_count + 1`
-      // via the SQL expression. Idempotent at row level; the use-case
-      // calls this once per snapshotTemplateToDraft success.
+      // via the SQL expression. R1.2 H-sf-1: filter `deletedAt IS NULL`
+      // + RETURNING + throw on 0 rows so a TOCTOU soft-delete race
+      // (admin deletes template while member is snapshotting) rolls
+      // back the snapshot's withTx instead of silently completing
+      // against a soft-deleted row. R1.2 H-code-5: explicit tenantId.
       await withTenantTx(tenantId, callerTx, async (tx) => {
-        await tx
+        const updated = await tx
           .update(broadcastTemplates)
           .set({
             startedFromCount: sql`${broadcastTemplates.startedFromCount} + 1`,
           })
-          .where(eq(broadcastTemplates.id, id));
+          .where(
+            and(
+              eq(broadcastTemplates.id, id),
+              eq(broadcastTemplates.tenantId, tenantId as string),
+              isNull(broadcastTemplates.deletedAt),
+            ),
+          )
+          .returning({ id: broadcastTemplates.id });
+        if (updated.length === 0) {
+          throw new Error(
+            `incrementStartedFromCount: template ${id} missing or soft-deleted (tenant ${String(tenantId)})`,
+          );
+        }
       });
     },
   };

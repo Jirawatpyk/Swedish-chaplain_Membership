@@ -393,12 +393,17 @@ export function makeDrizzleBroadcastsRepo(
         readonly templateNameSnapshot: string;
       },
     ): Promise<Broadcast> {
-      // T102 (F7.1a US7) — narrow UPDATE for template snapshot:
-      // subject + body_html + body_source + started_from_template_id +
-      // template_name_snapshot. Refuses unless status='draft' so the
-      // immutable-after-submit invariant (Q3) holds for template-based
-      // mutations too.
+      // Narrow UPDATE for template snapshot: subject + body_html +
+      // body_source + started_from_template_id + template_name_snapshot.
+      // Refuses unless status='draft' so the immutable-after-submit
+      // invariant (Q3) holds for template-based mutations too. R1.2
+      // H-code-1: assertTenantBoundTx as defence-in-depth so a future
+      // cross-port-tx-sharing bug (e.g. snapshot use-case passing a tx
+      // bound to tenant A while this repo is constructed for tenant B)
+      // fails loudly instead of silently writing into the wrong slice.
+      // Mirrors attachResendIds/attachAudienceId/pruneExpiredDrafts.
       const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'updateDraftFromTemplate');
       const updated = await tx
         .update(broadcasts)
         .set({

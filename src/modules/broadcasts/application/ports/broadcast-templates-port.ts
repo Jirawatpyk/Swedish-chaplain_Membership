@@ -114,6 +114,20 @@ export interface BroadcastTemplatesPort {
   ): Promise<BroadcastTemplate | null>;
 
   /**
+   * Tx-aware variant of `findById`. Used by `snapshotTemplateToDraft`
+   * to read the template INSIDE the same withTx scope where the
+   * snapshot mutation lands — closes the TOCTOU window between the
+   * RLS-scoped read and the subsequent UPDATE+counter writes (R1.2
+   * H-sf-2). Same `null` semantics as findById (deletedAt IS NULL
+   * filter applied).
+   */
+  findByIdInTx(
+    tenantId: TenantSlug,
+    id: string,
+    tx: BroadcastTemplatesTx,
+  ): Promise<BroadcastTemplate | null>;
+
+  /**
    * List templates for a tenant, MRU-ordered (updated_at DESC). Filters
    * `deletedAt IS NULL` by default. Phase 5 T103 picker uses this with
    * `opts.locale` filter for the cascade UX (`current_user_locale ||
