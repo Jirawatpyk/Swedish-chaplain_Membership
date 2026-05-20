@@ -101,3 +101,39 @@ export function f71aUs2DisabledReason(): F71aUs2DisabledReason | null {
   if (!env.features.f71aUs2Images) return 'f71a_us2_off';
   return null;
 }
+
+// ----- F7.1a US7 (Multi-template library) -----------------------------------
+//
+// Same 3-layer kill-switch shape as US1+US2, scoped to the US7 surfaces:
+//   - /api/admin/broadcasts/templates (POST + GET + PATCH + DELETE)
+//   - /api/broadcasts/templates (GET — member + admin)
+//   - /api/member/broadcasts/draft/[id]/snapshot-template (POST)
+//   - /admin/broadcasts/templates/** admin pages (Phase 5G)
+//   - /portal/broadcasts/new template picker (Phase 5G T111)
+//
+// When OFF (any layer):
+//   - Admin routes return notFound() (404 — no flag-toggle UI leak)
+//   - Member snapshot/list routes return 503 `feature_disabled`
+//   - Admin template-library page renders notFound() (Phase 5G T104)
+//   - Member compose dropdown shows only "Blank" + the F7 MVP starter
+//     (seeded rows remain dormant in DB per critique E11 round 2)
+
+export function isF71aUs7Enabled(): boolean {
+  return (
+    env.features.f7Broadcasts &&
+    env.features.f71aBroadcastAdvanced &&
+    env.features.f71aUs7Templates
+  );
+}
+
+export type F71aUs7DisabledReason =
+  | 'f7_master_off'
+  | 'f71a_master_off'
+  | 'f71a_us7_off';
+
+export function f71aUs7DisabledReason(): F71aUs7DisabledReason | null {
+  if (!env.features.f7Broadcasts) return 'f7_master_off';
+  if (!env.features.f71aBroadcastAdvanced) return 'f71a_master_off';
+  if (!env.features.f71aUs7Templates) return 'f71a_us7_off';
+  return null;
+}

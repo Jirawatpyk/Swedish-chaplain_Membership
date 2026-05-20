@@ -310,6 +310,9 @@ export {
   isF71aUs1Enabled,
   f71aUs1DisabledReason,
   type F71aUs1DisabledReason,
+  isF71aUs7Enabled,
+  f71aUs7DisabledReason,
+  type F71aUs7DisabledReason,
 } from './infrastructure/feature-flags';
 
 // --- Application use-cases (Phase 5 US3) ---------------------------------
