@@ -547,10 +547,14 @@ export async function stageB_Plans(
   // neither adapter accepts today). So each draft commits via 2
   // independent transactions on potentially-different pool connections.
   //
-  // Failure on draft N:
+  // Failure on draft N (R5-I3 corrected semantics):
   //   - drafts 1..(N-1) + their audit rows: already committed
-  //   - draft N's insert: may or may not have committed before audit threw
-  //   - drafts (N+1)..9: not attempted
+  //   - draft N's plan row: ALWAYS committed (the await chain at
+  //     `await planRepo.insert(ctx, draft);` runs BEFORE the audit
+  //     emit at `await planAuditAdapter.record(...)`; the audit throw
+  //     can only land AFTER planRepo.insert returns successfully).
+  //   - draft N's audit row: NOT committed (it's the source of the throw).
+  //   - drafts (N+1)..9: not attempted.
   //   - Idempotency guard `if (existingCount > 0) return skipped:true`
   //     above will then BLOCK the next run from completing the
   //     catalogue.
@@ -602,8 +606,15 @@ export async function stageB_Plans(
       },
     );
     if (!auditResult.ok) {
+      // R5-I3 — error message reflects the corrected per-draft tx
+      // semantics. `drafts.indexOf(draft)` is 0-based index of the
+      // current draft (the one that failed); prior drafts at indices
+      // 0..(idx-1) are fully committed (plan + audit). Draft idx's
+      // plan row IS committed (insert awaits before audit fires);
+      // its audit row is NOT (this throw is the audit failure).
+      const failedIdx = drafts.indexOf(draft);
       throw new Error(
-        `[seed] plan_created audit failed for ${inserted.plan_id} (drafts 1..${drafts.indexOf(draft)} + their audit rows already committed; run cleanup procedure before retry): ${JSON.stringify(auditResult.error)}`,
+        `[seed] plan_created audit failed for ${inserted.plan_id} (drafts 1..${failedIdx} ALREADY committed + draft ${failedIdx + 1}'s plan row committed + ${failedIdx} audit rows emitted; run cleanup procedure before retry): ${JSON.stringify(auditResult.error)}`,
       );
     }
   }

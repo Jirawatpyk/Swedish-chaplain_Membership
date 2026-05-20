@@ -156,6 +156,36 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept
     expect(loggerErrorMock).not.toHaveBeenCalled();
   });
 
+  // R5-C1 — `requireRenewalAdminContext` infrastructure-error path
+  // (DB outage during session-lookup) now attaches
+  // `errorId: 'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED'` to the
+  // helper's `logger.error` call so SRE alert rules keyed on
+  // `F8.ACCEPT_TIER.*` actually catch this edge case. Previously
+  // the helper logged without errorId → 500 with no alert match.
+  //
+  // The test mocks `requireRenewalAdminContext` directly to short-
+  // circuit at the route entry; the helper's actual catch path is
+  // covered by integration coverage. This test pins that when the
+  // helper returns `{response: errorResponse({status: 500, ...})}`,
+  // the route correctly returns it without invoking the use-case.
+  it('R5-C1: helper context-resolution failure short-circuits before use-case + 500', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce({
+      response: new Response(
+        JSON.stringify({
+          error: { code: 'server_error', correlationId: 'corr-helper' },
+        }),
+        { status: 500, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+
+    expect(res.status).toBe(500);
+    // The use-case must NOT be invoked — helper short-circuited.
+    expect(acceptTierUpgradeMock).not.toHaveBeenCalled();
+  });
+
   // R4-I4 (Batch 5b) — outer catch emits errorId.
   it('500 uncaught throw — outer catch emits errorId F8.ACCEPT_TIER.UNEXPECTED', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);

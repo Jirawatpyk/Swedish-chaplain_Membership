@@ -330,11 +330,23 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     );
   });
 
-  it('500 server_error', async () => {
+  // R5-I1 + R5-I11 — `case 'server_error':` now emits a SINGLE
+  // logger.error with `errorId: 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR'`
+  // when no recheck failure, or `…_RECHECK_FAILED` when the inner
+  // recheck threw. Previously the route fired BOTH logger.warn
+  // (errorId tagged) AND logger.error (untagged) on the recheck
+  // branch — alert-rule double-firing risk.
+  it('500 server_error (no recheck) — single logger.error with F2.PLAN_CHANGE.CANCEL_SERVER_ERROR', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({ code: 'server_error', message: 'postgres timeout' }),
     );
+    const loggerMod = await import('@/lib/logger');
+    const errorSpy = vi.mocked(loggerMod.logger.error);
+    const warnSpy = vi.mocked(loggerMod.logger.warn);
+    errorSpy.mockClear();
+    warnSpy.mockClear();
+
     const { POST } = await import(
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
     );
@@ -344,6 +356,52 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+    const [structured] = errorSpy.mock.calls[0]! as [
+      { errorId: string; recheckErrMessage?: string },
+      string,
+    ];
+    expect(structured.errorId).toBe('F2.PLAN_CHANGE.CANCEL_SERVER_ERROR');
+    expect(structured.recheckErrMessage).toBeUndefined();
+  });
+
+  it('500 server_error (recheck failed) — single logger.error with F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED + recheckErrMessage field', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
+      err({
+        code: 'server_error',
+        message: 'transitionStatus failed',
+        recheckErrMessage: 'rls: connection-pool exhausted',
+      }),
+    );
+    const loggerMod = await import('@/lib/logger');
+    const errorSpy = vi.mocked(loggerMod.logger.error);
+    const warnSpy = vi.mocked(loggerMod.logger.warn);
+    errorSpy.mockClear();
+    warnSpy.mockClear();
+
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+    expect(res.status).toBe(500);
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+    const [structuredRecheck] = errorSpy.mock.calls[0]! as [
+      { errorId: string; recheckErrMessage?: string },
+      string,
+    ];
+    expect(structuredRecheck.errorId).toBe(
+      'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
+    );
+    expect(structuredRecheck.recheckErrMessage).toBe(
+      'rls: connection-pool exhausted',
+    );
   });
 
   // R4-I10 — idempotent replay of the audit_failed 200 response.

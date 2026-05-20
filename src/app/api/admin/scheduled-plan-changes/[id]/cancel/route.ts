@@ -239,28 +239,31 @@ export async function POST(
       });
       return NextResponse.json(body, { status: 200, headers });
     }
-    case 'server_error':
-    default: {
-      // R4-I3 — emit a distinct errorId for the inner-recheck failure
-      // cascade so SRE can correlate the original transitionStatus
-      // error with the recheck-itself-failed signal (typically RLS /
-      // connection-pool exhaustion).
-      if (
-        'recheckErrMessage' in result.error &&
-        result.error.recheckErrMessage !== undefined
-      ) {
-        logger.warn(
-          {
-            errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
-            requestId: ctx.requestId,
-            recheckErrMessage: result.error.recheckErrMessage,
-          },
-          'cancel-scheduled-plan-change: TOCTOU recheck failed; surfacing original transitionStatus error',
-        );
-      }
+    case 'server_error': {
+      // R5-I11 — collapse the recheck-failed warn + generic error log
+      // into ONE logger.error call. The previous shape fired BOTH
+      // logger.warn (errorId: F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED)
+      // AND logger.error (untagged) on the same call path, causing
+      // SRE alert-rule double-firing. The unified emit carries the
+      // recheck discriminator as a structured field; errorId reflects
+      // whether the inner recheck failed too.
+      const recheckErrMessage =
+        'recheckErrMessage' in result.error
+          ? result.error.recheckErrMessage
+          : undefined;
       logger.error(
-        { requestId: ctx.requestId, err: result.error },
-        'cancel-scheduled-plan-change: unhandled error',
+        {
+          errorId:
+            recheckErrMessage !== undefined
+              ? 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'
+              : 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR',
+          requestId: ctx.requestId,
+          err: result.error,
+          ...(recheckErrMessage !== undefined && { recheckErrMessage }),
+        },
+        recheckErrMessage !== undefined
+          ? 'cancel-scheduled-plan-change: TOCTOU recheck failed'
+          : 'cancel-scheduled-plan-change: server error',
       );
       return NextResponse.json(
         {
@@ -268,6 +271,16 @@ export async function POST(
         },
         { status: 500 },
       );
+    }
+    default: {
+      // R5-I1 — exhaustiveness guard. Mirrors `accept/route.ts:91-92`.
+      // If a future `CancelScheduledPlanChangeError` variant is added
+      // without a case-arm above, TS narrows `result.error` to a
+      // non-`never` type at this point and the const assignment to
+      // `never` fails compile. The throw is unreachable today (use-case
+      // error union is closed); it's purely a compile-time guard.
+      const _exhaustive: never = result.error;
+      throw _exhaustive;
     }
   }
 }

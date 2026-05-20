@@ -100,10 +100,12 @@ describe('Integration — seed-swecham-2026-plans partial-state contract (R4-C1)
           ),
         ),
     );
-    // The honest per-draft semantics: planRepo.insert ran 5 times, but
-    // the 5th's audit-emit threw AFTER the plan insert had already
-    // committed in its own tx. So 5 plan rows exist (not 4) — the
-    // throw happens between plan.commit and audit.fail.
+    // R5-I3 corrected semantics: planRepo.insert runs 5 times (calls
+    // 1-4 succeed end-to-end; call 5's plan.insert commits via the
+    // await-chain BEFORE the audit fires). The 5th audit-emit returns
+    // persist_failed → throw lands AFTER plan.commit. So 5 plan rows
+    // ALWAYS persist on N=5 failure — this is deterministic, not
+    // a non-deterministic "may or may not".
     expect(planRows.length).toBe(5);
 
     // Direct-DB verification: exactly 4 plan_created audit rows
