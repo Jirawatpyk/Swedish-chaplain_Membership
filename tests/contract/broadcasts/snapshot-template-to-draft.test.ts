@@ -195,16 +195,13 @@ const deps = makeDeps({ template: null });
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('template_soft_deleted');
-    // R3.1 C-3 + R3.2 H-2 — refusal audit fires as a DISTINCT event
-    // type (broadcast_template_snapshot_refused_deleted, NOT the same
-    // as success), and is emitted via the active tx (not null) so it
-    // co-commits with the snapshot tx (atomicity per Constitution I
-    // clause 3). The first positional arg to audit.emit* is the tx
-    // token; the test mock's withTx callback passes null in place of
-    // a real Drizzle tx.
-    // R6.2 H1 — use-case now calls `audit.emitTyped(tx, ...)` directly
-    // (the R4.3 `??` fallback was dropped). Assert on `emitTyped`.
-    expect(deps.audit.emitTyped).toHaveBeenCalledWith(
+    // R6.4 M-1 — refused-deleted is a TERMINAL READ-ONLY outcome with
+    // no mutations to co-commit. R6.4 swapped the R3.2 H-2 in-tx
+    // `audit.emitTyped(tx, ...)` for `safeAuditEmit(null, ...)` so
+    // audit storage hiccups can't roll the empty tx → convert HTTP
+    // 410 → 500. safeAuditEmit calls `audit.emit` (NOT `emitTyped`),
+    // hence the assertion swap below.
+    expect(deps.audit.emit).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
         eventType: 'broadcast_template_snapshot_refused_deleted',
@@ -221,8 +218,37 @@ const deps = makeDeps({ template: null });
         .updateDraftFromTemplate,
     ).not.toHaveBeenCalled();
     // Only the refusal audit fires — no other audit events.
-    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(1);
-    expect(deps.audit.emit).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
+    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
+  });
+
+  it('R6.4 M-1: refused-deleted + audit storage failure → still returns template_soft_deleted (NOT 500)', async () => {
+    // Audit-storage failure on the refused-deleted path MUST be
+    // swallowed by safeAuditEmit — the use-case still returns the
+    // soft-deleted error (HTTP 410) without 5xx. Forensic record is
+    // lost (best-effort) but the user-visible status is preserved.
+    const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
+    const tpl = makeTemplate({ id: TEMPLATE_ID, deletedAt: SOFT_DELETED_AT });
+    const deps = makeDeps({ template: tpl });
+    (deps.audit.emit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('audit storage down'),
+    );
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-1',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-r6.4-m1-audit-fail',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('template_soft_deleted');
+    // No mutations attempted.
+    expect(
+      (deps.broadcastsRepo as unknown as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
+        .updateDraftFromTemplate,
+    ).not.toHaveBeenCalled();
+    expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
   });
 
   it('CRIT-1: cross-member draft hijack → broadcast_cross_member_probe audit + draft_not_found + counter NOT incremented', async () => {

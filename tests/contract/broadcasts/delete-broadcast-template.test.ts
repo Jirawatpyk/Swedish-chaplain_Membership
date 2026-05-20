@@ -9,7 +9,7 @@
  *
  * RED-first per Constitution Principle II. GREEN at Phase 5D T101.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { deleteBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/delete-broadcast-template';
 import type {
   BroadcastTemplate,

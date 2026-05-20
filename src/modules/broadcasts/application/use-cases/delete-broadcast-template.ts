@@ -83,12 +83,21 @@ export async function deleteBroadcastTemplate(
       // benign branch is hit when a delete returns 404; cross-tenant
       // probes go to the audit log via path (a), but this branch has
       // historically been silent.
+      // R6.4 M-3 — guard against Drizzle driver returning `deletedAt`
+      // as `Date | string` depending on driver settings. The `!== null`
+      // branch above ensures non-null but does NOT prove it's a Date.
+      // Crashing here would convert the idempotent-no-op return into
+      // a 500 internal_error and bypass the documented path-(b)
+      // contract.
       logger.info(
         {
           tenantId: input.tenantId,
           templateId: input.templateId,
           actorUserId: input.actorUserId,
-          deletedAt: existing.deletedAt.toISOString(),
+          deletedAt:
+            existing.deletedAt instanceof Date
+              ? existing.deletedAt.toISOString()
+              : String(existing.deletedAt),
           requestId: input.requestId,
         },
         'broadcasts.template.delete_idempotent_noop',

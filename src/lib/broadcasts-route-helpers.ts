@@ -21,6 +21,7 @@
  */
 import { NextResponse } from 'next/server';
 import { drizzleTenantSettingsRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-tenant-settings-repo';
+import { logger } from '@/lib/logger';
 
 /**
  * Closed union of every F7 route error code. Mirrors the union of
@@ -336,9 +337,22 @@ export async function resolveTenantDisplayName(
     if (settings !== null && settings.identity.legal_name_en.length > 0) {
       return settings.identity.legal_name_en;
     }
-  } catch {
+  } catch (err) {
     // Best-effort — never 5xx the broadcast submit because settings
     // lookup failed. Fall through to slug.
+    //
+    // R6.4 (silent-failure-M5) — surface the failure at warn level so
+    // SRE can correlate "members complain about email showing raw
+    // slug instead of legal name" against schema-drift / RLS-config /
+    // pool-exhaustion incidents. The bare `catch {}` made this class
+    // of failure invisible per Constitution Principle VIII.
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        tenantId,
+      },
+      'broadcasts.tenant_display_name.settings_lookup_failed',
+    );
   }
   return tenantId;
 }

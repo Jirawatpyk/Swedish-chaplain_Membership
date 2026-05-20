@@ -166,12 +166,18 @@ export async function updateBroadcastTemplate(
       // benign branch is hit when an edit returns 404; cross-tenant
       // probes go to the audit log via path (a), but this branch has
       // historically been silent.
+      // R6.4 M-3 — see `delete-broadcast-template.ts` for the
+      // Date|string drift rationale; same guard applied here so the
+      // idempotent-no-op path can't crash on driver-returned strings.
       logger.info(
         {
           tenantId: input.tenantId,
           templateId: input.templateId,
           actorUserId: input.actorUserId,
-          deletedAt: existing.deletedAt.toISOString(),
+          deletedAt:
+            existing.deletedAt instanceof Date
+              ? existing.deletedAt.toISOString()
+              : String(existing.deletedAt),
           requestId: input.requestId,
         },
         'broadcasts.template.update_idempotent_noop',

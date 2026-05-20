@@ -167,18 +167,17 @@ export async function snapshotTemplateToDraft(
     if (template && template.deletedAt !== null) {
       // R3.1 C-3 — distinct event from `broadcast_template_snapshotted`
       // so SIEM count filters don't conflate refusals with successes.
-      // R3.2 H-2 — emit via `audit.emit(tx, ...)` (atomic with snapshot
-      // tx) instead of `safeAuditEmit(audit, null, ...)`, matching the
-      // success-path atomicity guarantee per Constitution I clause 3.
-      // R4.3 M-15 — emitTyped narrows payload to
-      // F7AuditPayloadShapes['broadcast_template_snapshot_refused_deleted'];
-      // missing/misshapen fields surface at compile time.
-      // R6.2 H1 — direct call (no `??` fallback) now that `emitTyped`
-      // is required on every AuditPort adapter. The fallback expression
-      // flowed through a function-union + `.call(...)` that silently
-      // widened the payload back to `Record<string, unknown>`,
-      // defeating the narrowing the typed emit was meant to enforce.
-      await deps.audit.emitTyped(tx, {
+      //
+      // R6.4 M-1 — refused-deleted is a TERMINAL READ-ONLY outcome
+      // with NO mutations to co-commit. Use `safeAuditEmit(null, ...)`
+      // so an audit-storage hiccup does NOT roll back the (empty) tx
+      // and convert the user-visible HTTP 410 → 500. R3.2 H-2's prior
+      // `audit.emit(tx, ...)` choice presumed atomicity-with-mutation,
+      // but no mutations run on this branch — the forensic record
+      // survives best-effort and the 410 status remains correct.
+      // safeAuditEmit accepts the wide AuditEmitInput shape (typed
+      // payload is structurally a subtype of Record<string, unknown>).
+      await safeAuditEmit(deps.audit, null, {
         eventType: 'broadcast_template_snapshot_refused_deleted',
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,
