@@ -3221,9 +3221,9 @@
   "nav": {
     "staff": {
       "dashboard": "แดชบอร์ด",
+      "plans": "แพ็กเกจสมาชิก",
       "users": "ผู้ใช้งาน",
       "settings": "ตั้งค่า",
-      "settingsPlans": "แพ็กเกจสมาชิก",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
       "settingsBroadcasts": "ตั้งค่าการส่งอีเมล",
@@ -3276,7 +3276,8 @@
     "schedules": "ตารางการแจ้งเตือนต่ออายุ",
     "invoicing": "ตั้งค่าใบแจ้งหนี้",
     "integrations": "การเชื่อมต่อ",
-    "eventcreate": "EventCreate"
+    "eventcreate": "EventCreate",
+    "broadcasts": "ส่งอีเมล"
   },
   "layout": {
     "breadcrumbAriaLabel": "การนำทางเส้นทาง",

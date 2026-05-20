@@ -3221,9 +3221,9 @@
   "nav": {
     "staff": {
       "dashboard": "Instrumentpanel",
+      "plans": "Paket",
       "users": "Användare",
       "settings": "Inställningar",
-      "settingsPlans": "Medlemskapspaket",
       "settingsInvoices": "Fakturainställningar",
       "settingsRenewalSchedules": "Påminnelseschema",
       "settingsBroadcasts": "Inställningar för utskick",
@@ -3276,7 +3276,8 @@
     "schedules": "Påminnelseschema",
     "invoicing": "Fakturainställningar",
     "integrations": "Integrationer",
-    "eventcreate": "EventCreate"
+    "eventcreate": "EventCreate",
+    "broadcasts": "Utskick"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",

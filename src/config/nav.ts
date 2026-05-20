@@ -99,6 +99,12 @@ export const staffNavConfig: NavConfig = {
           activePattern: 'exact:/admin',
         },
         {
+          titleKey: 'nav.staff.plans',
+          icon: FileTextIcon,
+          href: '/admin/plans',
+          activePattern: '/admin/plans',
+        },
+        {
           titleKey: 'nav.staff.members',
           icon: BuildingIcon,
           href: '/admin/members',
@@ -152,20 +158,8 @@ export const staffNavConfig: NavConfig = {
       // + registration fee consolidated into Invoice Settings as the
       // authoritative tenant-wide fiscal-config surface. F8 Renewals
       // re-added Renewal Schedules under the same Settings header.
-      // F2 Plans relocated from top-level into Settings per the
-      // centralized-settings IA convention (matches the F8 Renewal
-      // Schedules relocation rationale): Plans are policy/catalogue
-      // config set once per fiscal year (clone-to-year + tier
-      // pricing), not daily operational data. URL `/admin/plans`
-      // unchanged — only the sidebar entry moved.
       titleKey: 'nav.staff.sections.settings',
       items: [
-        {
-          titleKey: 'nav.staff.settingsPlans',
-          icon: FileTextIcon,
-          href: '/admin/plans',
-          activePattern: '/admin/plans',
-        },
         {
           titleKey: 'nav.staff.settingsInvoices',
           icon: FileCog2Icon,
@@ -179,21 +173,21 @@ export const staffNavConfig: NavConfig = {
           activePattern: '/admin/settings/renewals',
         },
         // F7.1a US2 — Broadcast settings (image-source allowlist).
-        // Lives at `/admin/broadcasts/settings` rather than under
-        // `/admin/settings/broadcasts` per the URL hierarchy that
-        // shipped in Phase 4 (T075). Surface gated by
-        // `isF71aUs2Enabled()` server-side — when the flag is OFF the
-        // page returns notFound(); the nav entry stays visible
-        // (mirrors F6 EventCreate pattern at lines 187-192 above
-        // which does not gate on the kill-switch either). If a
-        // future tenant needs to suppress the entry without flag-
-        // flipping, extend NavVisibilityFlag with `f71aUs2Images`
-        // and thread through the resolver.
+        // Relocated 2026-05-21 from `/admin/broadcasts/settings` to
+        // `/admin/settings/broadcasts` per the centralised-settings IA
+        // convention (matches F8 renewal-schedules + F4 invoice-settings
+        // + F6 EventCreate-integration patterns). The auto-derived
+        // breadcrumb reads "Settings / Broadcasts" instead of the
+        // misleading "Broadcasts / Settings" the old URL produced.
+        // Surface gated by `isF71aUs2Enabled()` server-side — when
+        // the flag is OFF the page returns notFound(); the nav entry
+        // stays visible (mirrors F6 EventCreate pattern at lines
+        // 198-208 below which does not gate on the kill-switch either).
         {
           titleKey: 'nav.staff.settingsBroadcasts',
           icon: Settings2Icon,
-          href: '/admin/broadcasts/settings',
-          activePattern: '/admin/broadcasts/settings',
+          href: '/admin/settings/broadcasts',
+          activePattern: '/admin/settings/broadcasts',
         },
         // F6 EventCreate integration. Spec round-2 R1 noted that the
         // entry "is a navigation-affordance decision" — initially we

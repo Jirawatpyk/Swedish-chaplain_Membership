@@ -3221,10 +3221,10 @@
   "nav": {
     "staff": {
       "dashboard": "Dashboard",
+      "plans": "Plans",
       "users": "Users",
       "settings": "Settings",
       "events": "Events",
-      "settingsPlans": "Membership Plans",
       "settingsInvoices": "Invoice Settings",
       "settingsRenewalSchedules": "Reminder schedules",
       "settingsBroadcasts": "Broadcast settings",
@@ -3276,7 +3276,8 @@
     "schedules": "Reminder schedules",
     "invoicing": "Invoice Settings",
     "integrations": "Integrations",
-    "eventcreate": "EventCreate"
+    "eventcreate": "EventCreate",
+    "broadcasts": "Broadcasts"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
