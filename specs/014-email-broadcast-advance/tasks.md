@@ -300,11 +300,11 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 - [X] T108 [US7] Create `src/app/api/admin/broadcasts/templates/[id]/route.ts` PATCH + DELETE handlers per contracts § 1.2 + 1.3
 - [X] T109 [US7] Create `src/app/api/member/broadcasts/draft/[id]/snapshot-template/route.ts` POST handler (member role + draft ownership) per contracts § 1.4
 - [X] T110 [US7] Create `src/app/api/broadcasts/templates/route.ts` GET handler (member OR admin role) per contracts § 1.5 — list with locale filter
-- [ ] T111 [US7] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — add template picker as first compose action; auto-select template if URL has `?template={id}` query
+- [X] T111 [US7] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — add template picker as first compose action; auto-select template if URL has `?template={id}` query
 - [ ] T112 [P] [US7] Create `src/components/broadcasts/admin-template-library.tsx`: list with Starter badges + filter pills per critique P6
 - [ ] T113 [P] [US7] Create `src/components/broadcasts/admin-template-editor.tsx`: Tiptap editor wrapper + name/subject form + sanitiser pre-check
 - [ ] T114 [P] [US7] Create `src/components/broadcasts/admin-template-edit-confirm-starter.tsx` (per critique P6): confirmation banner when editing `is_seeded=TRUE` template; "This is a starter template seeded by the platform..."
-- [ ] T115 [P] [US7] Create `src/components/broadcasts/compose-template-picker.tsx` (per critique X3/E8): shadcn Combobox with locale-cascading filter + MRU ordering + Starter badge in dropdown items
+- [~] T115 [P] [US7] Create `src/components/broadcast/compose/template-picker.tsx` (MVP native `<select>` shipped at Phase 5H.1; shadcn Combobox + typeahead + MRU section + Starter badge in dropdown items = Phase 5H proper) (per critique X3/E8): shadcn Combobox with locale-cascading filter + MRU ordering + Starter badge in dropdown items
 - [ ] T116 [P] [US7] Create `src/components/broadcasts/compose-bracket-placeholder.tsx` (per critique P4 / FR-019): Tiptap node-view rendering `[bracketed text]` with grey background + dashed border; first-use microcopy tooltip "Click any [bracketed text] to replace with your content."
 - [ ] T117 [P] [US7] Create `src/components/broadcasts/compose-stale-draft-banner.tsx` (per critique E5 + FR-019): on draft load, if `template_updated_at > draft.created_at AND draft.created_at < now() - interval '30 days'` show banner with optional "Refresh from current" CTA (re-runs `snapshotTemplateToDraft`)
 
