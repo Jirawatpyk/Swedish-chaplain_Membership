@@ -1247,6 +1247,13 @@
 			"when": 1798012800000,
 			"tag": "0177_f71a_image_unsafe_event_sweep",
 			"breakpoints": true
+		},
+		{
+			"idx": 178,
+			"version": "7",
+			"when": 1798099200000,
+			"tag": "0178_f71a_template_snapshot_refused_event",
+			"breakpoints": true
 		}
 	]
 }

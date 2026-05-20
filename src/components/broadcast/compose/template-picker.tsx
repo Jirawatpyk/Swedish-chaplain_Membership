@@ -154,7 +154,7 @@ export function ComposeTemplatePicker({
                     </span>
                     {tpl.isSeeded ? (
                       <span
-                        className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-warning-surface text-warning"
+                        className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border border-warning/30 bg-warning-surface text-warning"
                         aria-label={t('starterBadgeAria')}
                       >
                         {t('starterSuffix')}

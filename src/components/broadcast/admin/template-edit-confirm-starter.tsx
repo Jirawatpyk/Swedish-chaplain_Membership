@@ -75,11 +75,17 @@ export function AdminTemplateEditConfirmStarter({
     <div
       role="status"
       aria-live="polite"
-      className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm text-warning-foreground"
+      className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
-          <p className="font-medium">{t('starterEditBannerTitle')}</p>
+          {/* R3.1 C-1 — explicit text-foreground on title overrides
+              inherited text-warning-foreground (calibrated for filled
+              bg-warning, not bg-warning-surface). Body uses muted-fg
+              which sits on bg-warning-surface at AA contrast. */}
+          <p className="font-medium text-foreground">
+            {t('starterEditBannerTitle')}
+          </p>
           <p className="mt-1 text-muted-foreground">
             {t('starterEditBannerBody')}
           </p>

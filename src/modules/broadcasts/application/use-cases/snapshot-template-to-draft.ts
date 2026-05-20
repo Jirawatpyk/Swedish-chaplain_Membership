@@ -140,8 +140,13 @@ export async function snapshotTemplateToDraft(
     // render) from genuine not-found / cross-tenant probe. The
     // template's `deletedAt` is populated by the allow-deleted query.
     if (template && template.deletedAt !== null) {
-      await safeAuditEmit(deps.audit, null, {
-        eventType: 'broadcast_template_snapshotted',
+      // R3.1 C-3 — distinct event from `broadcast_template_snapshotted`
+      // so SIEM count filters don't conflate refusals with successes.
+      // R3.2 H-2 — emit via `audit.emit(tx, ...)` (atomic with snapshot
+      // tx) instead of `safeAuditEmit(audit, null, ...)`, matching the
+      // success-path atomicity guarantee per Constitution I clause 3.
+      await deps.audit.emit(tx, {
+        eventType: 'broadcast_template_snapshot_refused_deleted',
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,
         summary: `Refused snapshot of soft-deleted template ${input.templateId}`,

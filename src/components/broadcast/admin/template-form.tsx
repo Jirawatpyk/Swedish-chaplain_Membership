@@ -30,6 +30,10 @@ import {
 } from '@/components/ui/select';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { toast } from 'sonner';
+import {
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
+} from '@/modules/broadcasts';
 
 // T113 (F7.1a US7) — share the F7 MVP Tiptap editor instance with the
 // admin templates surface. Same StarterKit + paste-sanitiser config as
@@ -170,7 +174,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           id="tpl-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          maxLength={100}
+          maxLength={TEMPLATE_MAX_NAME_LENGTH}
           required
           disabled={isPending}
           aria-invalid={isNameInvalid}
@@ -198,7 +202,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           id="tpl-subject"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
-          maxLength={200}
+          maxLength={TEMPLATE_MAX_SUBJECT_LENGTH}
           required
           disabled={isPending}
           aria-invalid={isSubjectInvalid}

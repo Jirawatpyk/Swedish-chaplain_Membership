@@ -142,19 +142,27 @@ export const F7_AUDIT_EVENT_TYPES = [
   // (rare conflict surface); a future Application-layer re-seed use-
   // case will be the primary emit caller.
   'broadcast_template_seed_skipped_existing_name',
+  // R3.1 C-3 (Round 2 close-out): distinct event for when the snapshot
+  // use-case refuses a soft-deleted template (TOCTOU race after the
+  // picker rendered). Round 1 mistakenly reused `broadcast_template_
+  // snapshotted` for both success + refusal, breaking SIEM count
+  // filters (refusals counted as successes). Same payload shape as the
+  // success event so forensic pivots can join the two.
+  'broadcast_template_snapshot_refused_deleted',
 ] as const;
 
 /**
- * Static assertion: count matches the declared 57 (= 43 F7 MVP + 11
+ * Static assertion: count matches the declared 58 (= 43 F7 MVP + 11
  * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
  * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
  * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted` +
- * 1 R2.1 M-test-2 `broadcast_template_seed_skipped_existing_name`).
+ * 1 R2.1 M-test-2 `broadcast_template_seed_skipped_existing_name` +
+ * 1 R3.1 C-3 `broadcast_template_snapshot_refused_deleted`).
  * Catches drift if a spec amendment adds an event without updating this
  * file. The check lives at type level; if the count is wrong, TypeScript
- * errors here with "Type '58' is not assignable to type '57'" (or similar).
+ * errors here with "Type '59' is not assignable to type '58'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 57
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 58
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -285,6 +293,16 @@ export interface F7AuditPayloadShapes {
     readonly attemptedName: string;
     readonly locale: 'en' | 'th' | 'sv';
     readonly source: 'starter_seed' | 'admin_reseed';
+  };
+  // R3.1 C-3 — snapshot use-case refused a soft-deleted template
+  // (TOCTOU race after picker rendered). Same payload shape as the
+  // success event `broadcast_template_snapshotted` so SIEM can
+  // pivot/join the two for "refusal-to-success ratio" alerts.
+  readonly broadcast_template_snapshot_refused_deleted: {
+    readonly broadcastId: string;
+    readonly templateId: string;
+    readonly templateNameSnapshot: string;
+    readonly memberId: string;
   };
   readonly broadcast_webhook_signature_rejected: {
     readonly reason:

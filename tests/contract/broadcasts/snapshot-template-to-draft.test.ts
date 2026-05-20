@@ -195,19 +195,31 @@ const deps = makeDeps({ template: null });
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('template_soft_deleted');
-    // Audit captures the refusal with the template id + name snapshot
+    // R3.1 C-3 + R3.2 H-2 — refusal audit fires as a DISTINCT event
+    // type (broadcast_template_snapshot_refused_deleted, NOT the same
+    // as success), and is emitted via the active tx (not null) so it
+    // co-commits with the snapshot tx (atomicity per Constitution I
+    // clause 3). The first positional arg to audit.emit is the tx
+    // token; the test mock's withTx callback passes null in place of
+    // a real Drizzle tx.
     expect(deps.audit.emit).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
-        eventType: 'broadcast_template_snapshotted',
+        eventType: 'broadcast_template_snapshot_refused_deleted',
         payload: expect.objectContaining({
           templateId: tpl.id,
           templateNameSnapshot: tpl.name,
         }),
       }),
     );
-    // Counter MUST NOT bump on refusal
+    // R3.4 M-2 compound assertion — no mutation side-effects fire.
     expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+    expect(
+      (deps.broadcastsRepo as unknown as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
+        .updateDraftFromTemplate,
+    ).not.toHaveBeenCalled();
+    // Only the refusal audit fires — no other audit events.
+    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
   });
 
   it('CRIT-1: cross-member draft hijack → broadcast_cross_member_probe audit + draft_not_found + counter NOT incremented', async () => {
