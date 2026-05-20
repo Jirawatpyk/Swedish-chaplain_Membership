@@ -146,6 +146,53 @@ async function assertTenantBoundTx(
 // Row → Domain mapping
 // ---------------------------------------------------------------------------
 
+/**
+ * R6.1 H2 + M14 — derive the canonical `templateProvenance` DU from
+ * the raw column pair on `BroadcastRow`. SINGLE writer of the field;
+ * the Domain interface no longer exposes the raw columns (they live
+ * on the Infrastructure-only Row type).
+ *
+ * Invariant: either BOTH columns are populated (snapshot path) or
+ * BOTH are null (blank canvas). If EXACTLY ONE is non-null the row
+ * is corrupt (out-of-band SQL / failed migration / etc); the mapper
+ * still returns `null` (safer than half-truth) and emits an error log
+ * so SRE has a forensic trail to find the offending row.
+ *
+ * Indexed-access return type `Broadcast['templateProvenance']` tracks
+ * Domain drift automatically — if the Domain DU shape changes, this
+ * helper surfaces the mismatch at compile time. Direct `!== null`
+ * guards in the `if` block let TS flow-narrow without `as string`
+ * casts.
+ */
+function deriveTemplateProvenance(
+  row: BroadcastRow,
+): Broadcast['templateProvenance'] {
+  if (
+    row.startedFromTemplateId !== null &&
+    row.templateNameSnapshot !== null
+  ) {
+    return {
+      templateId: row.startedFromTemplateId,
+      templateNameSnapshot: row.templateNameSnapshot,
+    };
+  }
+  if (
+    (row.startedFromTemplateId !== null) !==
+    (row.templateNameSnapshot !== null)
+  ) {
+    logger.error(
+      {
+        broadcastId: row.broadcastId,
+        tenantId: row.tenantId,
+        hasStartedFromTemplateId: row.startedFromTemplateId !== null,
+        hasTemplateNameSnapshot: row.templateNameSnapshot !== null,
+      },
+      'broadcasts.mapper.template_provenance_half_populated',
+    );
+  }
+  return null;
+}
+
 function rowToBroadcast(row: BroadcastRow): Broadcast {
   return {
     tenantId: row.tenantId,
@@ -197,45 +244,7 @@ function rowToBroadcast(row: BroadcastRow): Broadcast {
     manualRetryCount: row.manualRetryCount,
     partialDeliveryAcceptedAt: row.partialDeliveryAcceptedAt,
     partialDeliveryAcceptedByUserId: row.partialDeliveryAcceptedByUserId,
-    startedFromTemplateId: row.startedFromTemplateId,
-    templateNameSnapshot: row.templateNameSnapshot,
-    // R3-F2 — discriminated union populated from the column pair.
-    // Either-both-or-neither invariant enforced at mapper boundary;
-    // if EXACTLY ONE column is non-null (corrupt row), surface as null
-    // to caller — denying broken-state visibility is safer than
-    // emitting a half-populated provenance.
-    //
-    // R4.3 H-3 obs — out-of-band writes (manual SQL / future bulk
-    // migrations) could leave the row with one column populated and
-    // the other null, which is forensically suspicious. Log the
-    // half-populated state at error level so SRE can investigate.
-    // The mapper still returns `null` (safer than half-truth) but the
-    // log carries enough context to find the offending row.
-    templateProvenance: ((): null | {
-      templateId: string;
-      templateNameSnapshot: string;
-    } => {
-      const hasId = row.startedFromTemplateId !== null;
-      const hasName = row.templateNameSnapshot !== null;
-      if (hasId && hasName) {
-        return {
-          templateId: row.startedFromTemplateId as string,
-          templateNameSnapshot: row.templateNameSnapshot as string,
-        };
-      }
-      if (hasId !== hasName) {
-        logger.error(
-          {
-            broadcastId: row.broadcastId,
-            tenantId: row.tenantId,
-            hasStartedFromTemplateId: hasId,
-            hasTemplateNameSnapshot: hasName,
-          },
-          'broadcasts.mapper.template_provenance_half_populated',
-        );
-      }
-      return null;
-    })(),
+    templateProvenance: deriveTemplateProvenance(row),
 
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

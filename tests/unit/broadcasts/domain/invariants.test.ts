@@ -60,8 +60,6 @@ const baseBroadcast: Broadcast = {
   manualRetryCount: 0,
   partialDeliveryAcceptedAt: null,
   partialDeliveryAcceptedByUserId: null,
-  startedFromTemplateId: null,
-  templateNameSnapshot: null,
   templateProvenance: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-01'),

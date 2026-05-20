@@ -174,17 +174,11 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     },
     async insertDraft(_tx, input): Promise<Broadcast> {
       inserted.push(input);
+      // R6.1 H2 — raw fields no longer on `Broadcast`; fixture only
+      // sets the canonical `templateProvenance` discriminant. Source
+      // of truth is the test's `draftRow` input pair below.
       return {
         ...makeBroadcast(input),
-        startedFromTemplateId:
-          opts.draftRow?.startedFromTemplateId ?? null,
-        templateNameSnapshot:
-          opts.draftRow?.templateNameSnapshot ?? null,
-        // R4.2 H-3 — mirror the Drizzle mapper invariant: when both
-        // raw fields are populated, `templateProvenance` is the
-        // discriminated-union view. Submit-broadcast now reads
-        // `templateProvenance?.templateId`, so the fixture must
-        // populate it for the H-test-1 pass-through assertion.
         templateProvenance:
           opts.draftRow?.startedFromTemplateId != null &&
           opts.draftRow?.templateNameSnapshot != null
@@ -234,15 +228,10 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
         estimatedRecipientCount: 0,
         scheduledFor: null,
       };
+      // R6.1 H2 — see `insertDraft` sibling block.
       return {
         ...makeBroadcast(base),
         status,
-        startedFromTemplateId:
-          opts.draftRow?.startedFromTemplateId ?? null,
-        templateNameSnapshot:
-          opts.draftRow?.templateNameSnapshot ?? null,
-        // R4.2 H-3 — see `insertDraft` sibling comment. Mirrors the
-        // Drizzle mapper "both or neither" invariant.
         templateProvenance:
           opts.draftRow?.startedFromTemplateId != null &&
           opts.draftRow?.templateNameSnapshot != null
@@ -324,8 +313,6 @@ function makeBroadcast(input: NewBroadcastDraftInput): Broadcast {
     manualRetryCount: 0,
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
-    startedFromTemplateId: null,
-    templateNameSnapshot: null,
     templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,

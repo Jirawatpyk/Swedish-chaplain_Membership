@@ -163,47 +163,20 @@ export interface Broadcast {
   readonly partialDeliveryAcceptedAt: Date | null;
   readonly partialDeliveryAcceptedByUserId: string | null;
 
-  // F7.1a US7 (Phase 2 0162 ADD COLUMN). FK to broadcast_templates;
-  // null if the draft was Blank. `templateNameSnapshot` is the
-  // denormalised template name at snapshot time (FR-019 critique P9
-  // — survives template deletion for forensic audit).
-  //
-  // R3-F2 (Phase 5 Round 1) — surfaced as a discriminated union
-  // `templateProvenance` below: either BOTH fields populated (snapshot
-  // path) or BOTH null (blank canvas). The raw fields below are
-  // retained for backward compat with the Drizzle row→domain mapper
-  // only; ALL consumers must read `templateProvenance` instead.
-
   /**
-   * @deprecated R4.2 H-3 — read `templateProvenance?.templateId ?? null`
-   * instead. Raw column mirror retained for backward compat with the
-   * Drizzle adapter mapper only. ESLint blocks new reads outside the
-   * `src/modules/broadcasts/infrastructure/db/` mapper (see
-   * `eslint.config.mjs` `no-restricted-syntax` rule). The XOR
-   * invariant "either both or neither populated" is encoded in
-   * `templateProvenance`; reading the raw fields directly breaks
-   * that contract.
-   */
-  readonly startedFromTemplateId: string | null;
-  /**
-   * @deprecated R4.2 H-4 — read
-   * `templateProvenance?.templateNameSnapshot ?? null` instead. See
-   * `startedFromTemplateId` JSDoc for rationale.
-   */
-  readonly templateNameSnapshot: string | null;
-
-  /**
-   * R3-F2 — canonical view of the template-snapshot provenance.
-   * `null` when the draft was Blank; non-null carries BOTH ids
-   * together so callers can't accidentally see one-without-the-other
-   * (which the underlying nullable column pair allowed). Populated
-   * by the Drizzle row→domain mapper from the two columns above.
+   * F7.1a US7 — canonical view of the template-snapshot provenance.
+   * `null` when the draft was Blank; non-null carries BOTH the
+   * template id AND the denormalised template name at snapshot time
+   * (FR-019 critique P9 — survives template deletion for forensic
+   * audit) so callers can't accidentally see one-without-the-other.
    *
-   * R3.3 H-4 — REQUIRED. The Drizzle row→domain mapper always
-   * populates it from the underlying column pair; test fixtures
-   * must mirror this discipline. The optional escape hatch was
-   * removed because it defeated the "either-both-or-neither"
-   * invariant the DU was meant to enforce.
+   * R6.1 H2 — single canonical reader. The underlying `BroadcastRow`
+   * (Infrastructure schema type) keeps `started_from_template_id` +
+   * `template_name_snapshot` nullable columns; the Drizzle mapper at
+   * `infrastructure/db/drizzle-broadcasts-repo.ts:deriveTemplateProvenance`
+   * is the SINGLE writer of this field, enforcing the
+   * "either-both-or-neither" XOR invariant + logging mapper
+   * corruption when exactly one column is non-null.
    */
   readonly templateProvenance:
     | { readonly templateId: string; readonly templateNameSnapshot: string }

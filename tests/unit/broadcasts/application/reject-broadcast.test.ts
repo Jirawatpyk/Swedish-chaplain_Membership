@@ -203,8 +203,6 @@ function makeBroadcast(status: BroadcastStatus, fields: unknown): Broadcast {
     manualRetryCount: 0,
     partialDeliveryAcceptedAt: null,
     partialDeliveryAcceptedByUserId: null,
-    startedFromTemplateId: null,
-    templateNameSnapshot: null,
     templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
