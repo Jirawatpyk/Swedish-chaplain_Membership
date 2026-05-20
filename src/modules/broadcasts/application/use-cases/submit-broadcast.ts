@@ -646,7 +646,10 @@ export async function submitBroadcast(
         'draft', // R4 Types-#5 — race-guard
       );
 
-      // Atomic audit emit (same tx)
+      // Atomic audit emit (same tx). FR-022 (F7.1a US7): payload
+      // carries `startedFromTemplateId` so analytics can identify
+      // which templates drive the most sends. Null for drafts that
+      // began Blank or pre-F7.1a drafts that never had a template.
       await deps.audit.emit(tx, {
         tenantId: deps.tenant.slug,
         eventType: 'broadcast_submitted',
@@ -659,6 +662,7 @@ export async function submitBroadcast(
           segmentType: input.segment.kind,
           estimatedRecipientCount: resolved.value.estimatedCount,
           submittedAt: now.toISOString(),
+          startedFromTemplateId: broadcast.startedFromTemplateId,
         },
         requestId: input.requestId,
       });
