@@ -574,14 +574,12 @@ export {
 } from './infrastructure/broadcasts-deps';
 export { envTenantDisplayName } from './infrastructure/env-tenant-display-name';
 
-/**
- * R4.3 M-14 — test-only barrel re-export of `__resetForTestsOnly`.
- *
- * The runtime impl in `env-tenant-display-name.ts` already throws when
- * called with `NODE_ENV === 'production'`, so a production caller
- * crashes loudly — the barrel export does not weaken the gate. We
- * surface it through the public barrel so test fixtures don't have to
- * deep-import past the module boundary (which the broadcasts
- * architecture-invariant test would flag).
- */
-export { __resetForTestsOnly as __resetEnvTenantDisplayNameForTestsOnly } from './infrastructure/env-tenant-display-name';
+// R6.6 M-4 — dead `__resetEnvTenantDisplayNameForTestsOnly` barrel
+// re-export removed (R4.3 M-14 added it speculatively for test
+// fixtures that never materialised). The underlying
+// `__resetForTestsOnly` was also dropped from
+// `infrastructure/env-tenant-display-name.ts`. If a future test needs
+// to reset the module-scoped `warnedAboutFallback` flag, prefer
+// `vi.resetModules()` which is the standard vitest seam — adding a
+// custom reset hook again would re-introduce the same dead-export
+// surface.

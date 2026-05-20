@@ -25,14 +25,14 @@ const FALLBACK_TENANT_NAME = 'SweCham';
 // missing or empty. Subsequent calls don't re-log so the
 // log volume stays bounded.
 //
-// R3.5 M-12 — test contamination caveat: this flag is module-scoped,
-// so within a single Vitest worker (file-isolation, not test-
-// isolation) the second test that hits the fallback won't see a
-// repeat log. Test fixtures asserting on the warn fire MUST call
-// `vi.resetModules()` before importing this module to clear the
-// flag. The `__resetForTestsOnly` export below is gated on
-// NODE_ENV !== 'production' as an explicit reset hook for fixtures
-// that prefer not to use vi.resetModules.
+// R3.5 M-12 / R6.6 M-4 — test contamination caveat: this flag is
+// module-scoped, so within a single Vitest worker (file-isolation,
+// not test-isolation) the second test that hits the fallback won't
+// see a repeat log. Test fixtures asserting on the warn fire MUST
+// call `vi.resetModules()` before importing this module to clear the
+// flag. (R4.3 M-14 added a `__resetForTestsOnly` export specifically
+// for tests that preferred not to use `vi.resetModules` — R6.6
+// removed it as dead code; no test in the repo ever called it.)
 let warnedAboutFallback = false;
 
 export const envTenantDisplayName: TenantDisplayNamePort = {
@@ -50,24 +50,3 @@ export const envTenantDisplayName: TenantDisplayNamePort = {
   },
 };
 
-/**
- * R3.5 M-12 — explicit reset hook for test fixtures that prefer not
- * to use `vi.resetModules()` for this single concern. Gated on
- * NODE_ENV !== 'production' so production callers can't accidentally
- * clear the flag (which would re-emit the warn on every fallback —
- * log volume spike).
- *
- * @internal R4.4 L-4 — DO NOT call from product code. The runtime
- * guard below throws on production; this annotation is documentation
- * for IDE tooling (TS server, IntelliSense) so test-only intent is
- * visible at the call site. Re-exported from the broadcasts barrel
- * (R4.3 M-14) so test fixtures can import without deep-imports.
- */
-export function __resetForTestsOnly(): void {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error(
-      'envTenantDisplayName.__resetForTestsOnly is not callable in production',
-    );
-  }
-  warnedAboutFallback = false;
-}
