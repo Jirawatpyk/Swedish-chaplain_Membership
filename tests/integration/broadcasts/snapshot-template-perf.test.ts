@@ -169,7 +169,6 @@ describe.skipIf(!RUN_PERF)(
       const p95 = percentile(samples, 95);
       const p99 = percentile(samples, 99);
 
-      // eslint-disable-next-line no-console
       console.log(
         `[M-test-6] snapshotTemplateToDraft samples=${samples.length} ` +
           `p50=${p50.toFixed(0)}ms p95=${p95.toFixed(0)}ms p99=${p99.toFixed(0)}ms`,
