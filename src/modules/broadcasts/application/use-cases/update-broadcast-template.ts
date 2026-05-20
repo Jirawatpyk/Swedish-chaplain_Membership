@@ -99,25 +99,9 @@ export async function updateBroadcastTemplate(
     });
   }
 
-  // 2. Load existing for before-value + cross-tenant probe detection.
-  const existing = await deps.port.findById(input.tenantId, input.templateId);
-  if (!existing) {
-    // RLS-confined SELECT returned null → either no such id (admin
-    // bug) or cross-tenant probe (security event). Emit the probe
-    // audit best-effort + return not_found regardless (FR-021 +
-    // Constitution Principle I).
-    await emitTemplateCrossTenantProbeAudit({
-      audit: deps.audit,
-      tenantId: input.tenantId,
-      actorUserId: input.actorUserId,
-      templateId: input.templateId,
-      operation: 'update',
-      requestId: input.requestId,
-    });
-    return err({ kind: 'not_found' });
-  }
-
-  // 3. Image-source allowlist check on new bodyHtml (if changed).
+  // 2. Image-source allowlist check on new bodyHtml (if changed).
+  //    Runs OUTSIDE the mutation tx — early-fail validation has no
+  //    side effects to roll back.
   if (input.bodyHtml !== undefined) {
     const allowlistCheck = await validateImageSourceAllowlist(
       deps.validateImageSourceAllowlist,
@@ -136,13 +120,38 @@ export async function updateBroadcastTemplate(
     }
   }
 
-  // 4. Atomic mutation + audit. The audit payload records before/after
-  //    so admins can see WHAT changed during forensic review.
+  // 3. R3.2 H-1 — load + branch + mutate + audit in ONE withTx so the
+  //    existing-template read uses findByIdAllowDeletedInTx and we can
+  //    distinguish:
+  //      (a) cross-tenant probe → emit probe audit + not_found
+  //      (b) already soft-deleted → return not_found SILENTLY (benign
+  //          race; no false-positive probe audit)
+  //      (c) live template → update + audit normally
   return deps.port.withTx(input.tenantId, async (tx) => {
-    // Build patch with only the fields actually being changed. R2.2
-    // D4 helper strips undefined keys — `exactOptionalPropertyTypes:
-    // true` rejects `{ name: undefined }`, and omitUndefined keeps
-    // the call site declarative.
+    const existing = await deps.port.findByIdAllowDeletedInTx(
+      input.tenantId,
+      input.templateId,
+      tx,
+    );
+    if (!existing) {
+      // (a) — true cross-tenant probe.
+      await emitTemplateCrossTenantProbeAudit({
+        audit: deps.audit,
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        templateId: input.templateId,
+        operation: 'update',
+        requestId: input.requestId,
+      });
+      return err<UpdateBroadcastTemplateError>({ kind: 'not_found' });
+    }
+    if (existing.deletedAt !== null) {
+      // (b) — benign double-edit race; the template was soft-deleted
+      // between picker render + edit submit.
+      return err<UpdateBroadcastTemplateError>({ kind: 'not_found' });
+    }
+
+    // (c) — live template. Build patch + update + audit.
     const patch: Parameters<typeof deps.port.update>[2] = omitUndefined({
       name: input.name,
       subject: input.subject,

@@ -41,26 +41,41 @@ export async function deleteBroadcastTemplate(
   deps: DeleteBroadcastTemplateDeps,
   input: DeleteBroadcastTemplateInput,
 ): Promise<Result<undefined, DeleteBroadcastTemplateError>> {
-  // Load existing to capture the started_from_count snapshot AND to
-  // detect cross-tenant probes (RLS-confined findById returns null
-  // for foreign templates).
-  const existing = await deps.port.findById(input.tenantId, input.templateId);
-  if (!existing) {
-    await emitTemplateCrossTenantProbeAudit({
-      audit: deps.audit,
-      tenantId: input.tenantId,
-      actorUserId: input.actorUserId,
-      templateId: input.templateId,
-      operation: 'delete',
-      requestId: input.requestId,
-    });
-    return err({ kind: 'not_found' });
-  }
-
-  // Atomic soft-delete + audit. FR-023 — audit row preserves the
-  // `started_from_count` at delete time for forensic auditing even
-  // after the template is gone.
+  // R3.2 H-1 — load + delete + audit in ONE withTx so we can use
+  // findByIdAllowDeletedInTx to distinguish:
+  //   (a) cross-tenant probe (template doesn't exist in tenant) →
+  //       emit cross-tenant-probe audit + return not_found
+  //   (b) already soft-deleted (benign double-delete race) → return
+  //       not_found SILENTLY (no false-positive probe audit)
+  //   (c) live template → soft-delete + audit normally
   return deps.port.withTx(input.tenantId, async (tx) => {
+    const existing = await deps.port.findByIdAllowDeletedInTx(
+      input.tenantId,
+      input.templateId,
+      tx,
+    );
+    if (!existing) {
+      // (a) — true cross-tenant probe. RLS confined the row.
+      await emitTemplateCrossTenantProbeAudit({
+        audit: deps.audit,
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        templateId: input.templateId,
+        operation: 'delete',
+        requestId: input.requestId,
+      });
+      return err<DeleteBroadcastTemplateError>({ kind: 'not_found' });
+    }
+    if (existing.deletedAt !== null) {
+      // (b) — already soft-deleted. Benign double-delete race
+      // (admin clicked twice, two admins raced). Return not_found
+      // without polluting forensics with a false cross-tenant probe.
+      return err<DeleteBroadcastTemplateError>({ kind: 'not_found' });
+    }
+
+    // (c) — live template. Atomic soft-delete + audit. FR-023 —
+    // audit row preserves `started_from_count` at delete time for
+    // forensic visibility even after the template is gone.
     const deleteRes = await deps.port.softDelete(
       input.tenantId,
       input.templateId,

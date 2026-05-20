@@ -185,9 +185,9 @@ export interface Broadcast {
    *
    * Optional (`?`) for compatibility with existing test fixtures
    * built before the DU was introduced. Production code paths
-   * (Drizzle mapper + `startedFromTemplate` helper) always populate
-   * it. New consumers SHOULD read `templateProvenance` over the
-   * raw column-mirror fields above.
+   * (Drizzle row→domain mapper) always populate it. New consumers
+   * SHOULD read `templateProvenance` over the raw column-mirror
+   * fields above. R3.3 H-4 promotes this to REQUIRED.
    */
   readonly templateProvenance?:
     | { readonly templateId: string; readonly templateNameSnapshot: string }
@@ -538,32 +538,10 @@ export function acceptPartialDelivery(
   });
 }
 
-// ---------------------------------------------------------------------------
-// T098 (F7.1a US7) — Broadcast aggregate "started from template" helper.
-//
-// Records the FK + the denormalised name in one type-safe transition so
-// post-deletion forensic audit retains the template name (critique P9 +
-// FR-019). The use-case (T102 snapshotTemplateToDraft) calls this then
-// persists via repo inside `runInTenant(...)`.
-//
-// Pure — no I/O, no clock. Always succeeds: the broadcast may be in any
-// status that still permits draft mutation (status='draft' typically).
-// State-machine policy lives in policies/broadcast-status-transitions.ts;
-// this helper just packs the two new fields into the aggregate.
-// ---------------------------------------------------------------------------
-
-export function startedFromTemplate(
-  broadcast: Broadcast,
-  templateId: string,
-  templateNameSnapshot: string,
-): Broadcast {
-  // R3-F2: populate BOTH the raw column-mirror fields AND the
-  // discriminated `templateProvenance` view. The DU is the canonical
-  // read surface; the raw fields stay for backward compat.
-  return {
-    ...broadcast,
-    startedFromTemplateId: templateId,
-    templateNameSnapshot,
-    templateProvenance: { templateId, templateNameSnapshot },
-  };
-}
+// R3.2 H-9 (Phase 5 Round 2 close-out) — `startedFromTemplate(...)`
+// helper deleted. Was T098 dead code: never called from src/ or tests/.
+// The snapshot use-case writes startedFromTemplateId + templateNameSnapshot
+// directly via `BroadcastsRepo.updateDraftFromTemplate` per
+// `snapshot-template-to-draft.ts`. The Drizzle row→domain mapper
+// (`drizzle-broadcasts-repo.ts:205-212`) is the sole production
+// constructor of `templateProvenance`.

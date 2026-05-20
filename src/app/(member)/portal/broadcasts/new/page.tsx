@@ -11,6 +11,7 @@ import {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import {
   computeQuotaCounter,
   envTenantDisplayName,
@@ -91,8 +92,19 @@ export default async function ComposeBroadcastPage({
         };
       }
     }
-  } catch {
-    // Fall through — client component will fetch /api/broadcasts/quota
+  } catch (err) {
+    // R3.2 H-7 — log quota init failures so RLS misconfig / DB outage
+    // shows up in observability. Page still degrades gracefully (the
+    // client component will retry via /api/broadcasts/quota), but the
+    // server-side initial load no longer fails silently.
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        tenantId: tenant.slug,
+        userId: session.user.id,
+      },
+      'broadcasts.compose.quota_init_failed',
+    );
     initialQuota = null;
   }
 
@@ -128,20 +140,47 @@ export default async function ComposeBroadcastPage({
         locale: r.locale,
         isSeeded: r.isSeeded,
       }));
-    } catch {
-      // Picker gracefully degrades to empty list — does not block
-      // the compose surface.
+    } catch (err) {
+      // R3.2 H-7 — log picker list failures (DB outage / RLS misconfig)
+      // so observability picks up degradation. Picker still gracefully
+      // falls back to empty list — does not block the compose surface.
+      logger.warn(
+        {
+          err: err instanceof Error ? err.message : String(err),
+          tenantId: tenant.slug,
+        },
+        'broadcasts.compose.template_picker_list_failed',
+      );
       pickerRows = [];
     }
 
     // Pre-populate compose fields when `?template={id}` is present.
     if (typeof templateIdParam === 'string' && templateIdParam.length > 0) {
       try {
-        const template = await runInTenant(tenant, async () => {
+        // R3.2 H-1 — findByIdAllowDeletedInTx returns the template
+        // EVEN IF soft-deleted so we can distinguish:
+        //   (a) null → true cross-tenant probe → emit probe audit
+        //   (b) deletedAt !== null → soft-deleted (benign stale link;
+        //       e.g. shared URL after admin deleted the template) →
+        //       fall through to blank compose SILENTLY (no audit)
+        //   (c) live template → substitute + pre-populate as before
+        const template = await runInTenant(tenant, async (tx) => {
           const repo = makeDrizzleBroadcastTemplatesRepo();
-          return repo.findById(tenant.slug as never, templateIdParam);
+          // tx cast: runInTenant supplies a TenantTx; the templates
+          // port brand BroadcastTemplatesTx is the same Drizzle handle
+          // structurally (R3-F4 brand applied at port boundary for
+          // intra-use-case discipline). Cast-through-unknown matches
+          // adapter wiring in drizzle-broadcast-templates-repo.ts.
+          return repo.findByIdAllowDeletedInTx(
+            tenant.slug as never,
+            templateIdParam,
+            tx as unknown as Parameters<
+              typeof repo.findByIdAllowDeletedInTx
+            >[2],
+          );
         });
-        if (template) {
+        if (template && template.deletedAt === null) {
+          // (c) — live template.
           const chamberName = await envTenantDisplayName.resolve(
             tenant.slug as never,
           );
@@ -151,13 +190,10 @@ export default async function ComposeBroadcastPage({
             chamberName,
           );
           selectedTemplateId = template.id;
-        } else {
-          // R1.1 CRIT-3: emit cross-tenant probe audit so SSR page
-          // render path matches the API surface's audit coverage
-          // (Constitution I sub-clause 4). The user-visible UX still
-          // falls through to blank compose; only the audit emission
-          // is added. safeAuditEmit so a transient audit-storage hiccup
-          // doesn't 500 the compose page.
+        } else if (!template) {
+          // (a) — R1.1 CRIT-3: cross-tenant probe audit. Emit
+          // best-effort so a transient audit-storage hiccup doesn't
+          // 500 the compose page.
           await safeAuditEmit(f7AuditAdapter, null, {
             eventType: 'broadcast_cross_tenant_probe',
             actorUserId: session.user.id,
@@ -171,8 +207,19 @@ export default async function ComposeBroadcastPage({
             requestId: null,
           });
         }
-      } catch {
-        // Same graceful-degradation rationale as the picker list above.
+        // (b) implicit — soft-deleted template falls through with no
+        // audit + no pre-population.
+      } catch (err) {
+        // R3.2 H-7 — log so RLS / DB / sanitiser surprises are
+        // observable. Page still falls back to blank compose.
+        logger.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            tenantId: tenant.slug,
+            templateIdParam,
+          },
+          'broadcasts.compose.template_pre_populate_failed',
+        );
       }
     }
   }
