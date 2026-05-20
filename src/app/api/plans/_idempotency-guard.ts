@@ -79,7 +79,7 @@ export async function runIdempotencyGuard(
   );
 
   if (classification.kind === 'replay') {
-    // R4-I1 — re-emit cached headers verbatim so diagnostic signals
+    // Re-emit cached headers verbatim so diagnostic signals
     // (X-Audit-Backfill-Required, X-Audit-Error-Type, etc.) survive
     // the replay. Without this, SRE alert routing keyed on response
     // headers silently loses the discriminator on retry.

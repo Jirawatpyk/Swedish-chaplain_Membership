@@ -141,7 +141,7 @@ export const auditDiffSchema = z.record(
  *
  * Use `MutableAuditDiff` for construction, then widen to `AuditDiff`.
  */
-// R4-I5 — `before?: unknown; after?: unknown` (optional, not required)
+// `before?: unknown; after?: unknown` (optional, not required)
 // to match the zod inference of `z.unknown()` which makes fields
 // optional. The drift guard at the bottom of this file now asserts
 // mutual assignability between this hand-written type and
@@ -435,7 +435,7 @@ export type F2AuditEvent =
 // If either diverges, this assertion fails compile and the maintainer
 // must update BOTH.
 //
-// R4-I5 — the pattern uses a mutual-conditional TUPLE with a const
+// The pattern uses a mutual-conditional TUPLE with a const
 // witness so the assertion is actually evaluated. A bare unused
 // `type` alias that resolves to `never` does NOT trigger a compile
 // error in TypeScript — only assignment of an incompatible value
@@ -448,6 +448,12 @@ export type F2AuditEvent =
 // does not cause spurious divergence. The drift guard fails ONLY on
 // genuine field-shape divergence — extra/missing/renamed fields,
 // wrong literal types, etc.
+// Note: this DeepReadonly assumes plain-object payloads only — no
+// `Map`, `Set`, `Date`, or function types. F2 audit-event payloads
+// contain primitives + nested objects + ReadonlyArrays only, so the
+// assumption holds today. If a future payload schema adds a `Map`-
+// or `Date`-valued field, extend the mapped type before relying on
+// the drift guard.
 type DeepReadonly<T> = T extends ReadonlyArray<infer U>
   ? ReadonlyArray<DeepReadonly<U>>
   : T extends object

@@ -82,7 +82,7 @@ export async function POST(
             details: { message: result.error.message },
           });
         case 'server_error':
-          // R4-C2 — surface the typed server_error message + errorId
+          // Surface the typed server_error message + errorId
           // so SRE alert routing keyed on `F8.ACCEPT_TIER.*` can match
           // the discriminator. Without this emit, the
           // `deploy-skew:unhandled-gateway-arm:*` message inserted by
@@ -115,7 +115,7 @@ export async function POST(
       ctx.correlationId,
     );
   } catch (e) {
-    // R4-I4 — attach errorId so the F8 alert rule keyed on
+    // Attach errorId so the F8 alert rule keyed on
     // `errorId: 'F8.ACCEPT_TIER.*'` actually catches uncaught throws.
     // R3-C3 pre-tx wrap blocks the documented escape paths, but
     // defence-in-depth: any future async-arm regression still emits

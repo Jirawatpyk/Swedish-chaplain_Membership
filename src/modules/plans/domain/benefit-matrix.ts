@@ -104,16 +104,17 @@ type BenefitMatrixBase = {
  * via `matrix.partnership !== null` gives the consumer the variant
  * shape it needs.
  *
- * R4-S4 enforcement (Option C scope-down):
+ * Enforcement model (Option C scope-down — no symbol brand):
  *   - Runtime: `asBenefitMatrix` smart constructor at `rowToPlan` +
  *     the API-boundary zod schema validates the partnership↔category
  *     invariant on every data-in path.
- *   - Compile-time: ESLint `no-restricted-syntax` rule at
- *     `eslint.config.mjs` (R4-S4 block) bans
- *     `const x: BenefitMatrix = {...}` and `{...} as BenefitMatrix`
- *     in `src/modules/**`, `src/components/**`, `src/app/**`. Forces
- *     every production-code construction site to route through
- *     `asBenefitMatrix(input, planCategory)`.
+ *   - Compile-time: ESLint `no-restricted-syntax` rule in
+ *     `eslint.config.mjs` bans inline `BenefitMatrix` literal
+ *     construction in `src/modules/**`, `src/components/**`,
+ *     `src/app/**`. Covered patterns: variable declaration,
+ *     `as BenefitMatrix` cast, `satisfies BenefitMatrix`, conditional
+ *     init, function-return (declaration + arrow), and class
+ *     property declaration.
  *
  * Tests INTENTIONALLY exempt (~92 inline literals across
  * F4/F6/F7/F8/auth/e2e seed fixtures). They write directly to
@@ -179,7 +180,7 @@ export function asBenefitMatrix(
   input: BenefitMatrixInput,
   planCategory: 'partnership',
 ): PartnershipBenefitMatrix;
-// R4-S5 — overload #3 (union-input → union-output) is INTENTIONALLY
+// Overload #3 (union-input → union-output) is INTENTIONALLY
 // kept. `plan-repo.ts:rowToPlan` calls
 // `asBenefitMatrix(matrix, row.planCategory)` where `row.planCategory`
 // is `'corporate' | 'partnership'` (the DB-pgEnum-derived union).

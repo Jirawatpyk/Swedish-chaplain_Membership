@@ -187,7 +187,7 @@ export async function requireRenewalAdminContext(
 
     return { current, sourceIp, requestId, correlationId };
   } catch (error) {
-    // R5-C1 — attach the F8 errorId taxonomy entry so SRE alert rules
+    // Attach the F8 errorId taxonomy entry so SRE alert rules
     // keyed on `F8.ACCEPT_TIER.*` catch infrastructure errors that
     // escape BEFORE the route's outer try/catch (which attaches
     // F8.ACCEPT_TIER.UNEXPECTED). Session-lookup DB outages would

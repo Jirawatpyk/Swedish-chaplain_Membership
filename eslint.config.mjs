@@ -704,36 +704,19 @@ const eslintConfig = defineConfig([
     },
   },
   {
-    // R4-S4 (Option C scope-down) — ban inline `BenefitMatrix` literal
-    // construction in production code. Every production-code value of
-    // type `BenefitMatrix` MUST flow through `asBenefitMatrix(input,
-    // planCategory)` so the partnership↔category integrity invariant
-    // is enforced at construction time (the smart constructor throws
-    // `InvalidBenefitMatrixError` on mismatch).
+    // Ban inline `BenefitMatrix` literal construction in production
+    // code. See `src/modules/plans/domain/benefit-matrix.ts` (Option C
+    // enforcement section) for the rationale + the partnership↔category
+    // invariant + the test-fixture exemption (~92 inline literals
+    // across F4/F6/F7/F8/auth/e2e seeds).
     //
-    // Runtime enforcement at the API zod boundary + `rowToPlan` smart-
-    // constructor call covers the data-in paths today; this rule
-    // forecloses regression in case a new production site forgets to
-    // route through the smart constructor.
-    //
-    // Test code is intentionally exempt: ~92 test fixtures across
-    // F4/F6/F7/F8/auth/e2e construct inline literals to seed the
-    // `membership_plans` table directly (via Drizzle, bypassing
-    // `planRepo.insert`). Re-attempting a full sweep across all
-    // ~92 sites is documented at
-    // `src/modules/plans/domain/benefit-matrix.ts:90-122`.
-    //
-    // The rule targets two patterns:
-    //   (a) variable declaration:
-    //       `const x: BenefitMatrix = { ... }`
-    //   (b) return statement with type-asserted literal:
-    //       `function f(): BenefitMatrix { return { ... } as BenefitMatrix; }`
-    //
-    // Allowed forms:
-    //   - `const x: BenefitMatrix = asBenefitMatrix(input, 'corporate')`
-    //   - `const x = await planRepo.findById(...)` (no inline literal)
-    //   - `as BenefitMatrix` cast at the hydration boundary in
-    //     `plan-repo.ts:cloneBenefitMatrix` (documented exception)
+    // Selectors cover: `const x: BenefitMatrix = {...}`,
+    // `{...} as BenefitMatrix`, `{...} satisfies BenefitMatrix`,
+    // ternary, function-return (declaration + arrow), and class
+    // property declaration. Bypass NOT covered by lint: intermediate-
+    // variable assignment (`const draft = {...}; const x:
+    // BenefitMatrix = draft;`) requires dataflow analysis that ESLint
+    // does not perform — code review catches it.
     files: [
       "src/modules/**/*.ts",
       "src/modules/**/*.tsx",

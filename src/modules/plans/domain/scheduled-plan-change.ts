@@ -131,21 +131,15 @@ export type ScheduledPlanChange =
  * `assertValidScheduledPlanChange` defence tests) use this type
  * directly.
  *
- * **Exception note (R4-S6)**: this type is intentionally exported
- * from the barrel because the Drizzle adapter's `rowToDomain` is
- * production infrastructure code (not test-utility) and needs to
- * build the Mutable shape before narrowing. Application-layer code
- * MUST NEVER expose `MutableScheduledPlanChange` as a public
- * function-parameter or return-type — accept/return the discriminated
- * `ScheduledPlanChange` union instead. If a future module needs to
- * pass a non-narrowed shape around, the right answer is to narrow it
- * at the boundary via `assertValidScheduledPlanChange` and propagate
- * the discriminated union. Reviewers: reject PRs that introduce new
- * Application-layer surfaces typed as `MutableScheduledPlanChange`.
- *
- * Code consumers should NEVER accept `MutableScheduledPlanChange` —
- * the discriminated `ScheduledPlanChange` carries the type-level
- * status↔timestamp invariant.
+ * Application-layer code MUST NEVER accept or return
+ * `MutableScheduledPlanChange` — propagate the discriminated
+ * `ScheduledPlanChange` union (which carries the type-level
+ * status↔timestamp invariant) instead. The barrel export exists ONLY
+ * because the Drizzle adapter's `rowToDomain` (production
+ * Infrastructure) needs the loose shape before narrowing. Enforced
+ * at lint time via the R5-S13 `no-restricted-syntax` rule in
+ * `eslint.config.mjs`, which bans `MutableScheduledPlanChange`
+ * type-annotation references in Application-layer source files.
  */
 export interface MutableScheduledPlanChange extends ScheduledPlanChangeBase {
   readonly status: ScheduledPlanChangeStatus;
@@ -200,7 +194,7 @@ export function makeScheduledPlanChange(
       cancelledAt: null,
     };
   }
-  // R4-I11 + R5-S14 — TS overloads protect typed callers, but a
+  // TS overloads protect typed callers, but a
   // widened-status call (e.g., `makeScheduledPlanChange(base, status
   // as ScheduledPlanChangeStatus)` via an `any` cast or generic
   // propagation) would bypass the compile-time signature. Catch that
@@ -368,7 +362,7 @@ export type CancelScheduledPlanChangeError =
       readonly code: 'server_error';
       readonly message: string;
       /**
-       * R4-I3 — when the TOCTOU recheck `findById` itself throws
+       * When the TOCTOU recheck `findById` itself throws
        * (RLS / connection-pool exhaustion / etc.), the inner catch
        * preserves the recheck error message here so the route can
        * emit a distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`

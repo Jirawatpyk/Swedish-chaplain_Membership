@@ -31,9 +31,6 @@
  *   - server_error                      → 500
  *   - idempotency_conflict              → 409
  *   - idempotency_reservation_failed    → 503 + Retry-After: 5
- *
- * No admin UI surface yet — a future feature will wire a "Cancel
- * pending change" button in the member-detail timeline.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -207,7 +204,7 @@ export async function POST(
         },
         'cancel-scheduled-plan-change: audit write failed',
       );
-      // R4-I2 — emit metric counter so SRE backfill SLO can be graphed
+      // Emit metric counter so SRE backfill SLO can be graphed
       // (log-based attribution would be lossy on sampled pipelines).
       planMetrics.cancelAuditBackfillRequired(
         tenant.slug,
@@ -223,7 +220,7 @@ export async function POST(
         status: result.error.transitioned.status,
         cancelled_at: result.error.transitioned.cancelledAt,
       };
-      // R4-I1 — cache the diagnostic headers alongside body+status so
+      // Cache the diagnostic headers alongside body+status so
       // idempotent replay re-emits them. SRE alert routing keyed on
       // `X-Audit-Backfill-Required` / `X-Audit-Error-Type` would
       // otherwise silently lose the discriminator on retry.

@@ -152,7 +152,7 @@ export async function cancelScheduledPlanChange(
     // "row not found or already terminal" when 0 rows updated. Re-
     // read via findById; if row is terminal, return `already_terminal`
     // (409) — operationally distinct from `server_error` (500).
-    // R4-I3 — capture inner-recheck failure (if any) so the route can
+    // Capture inner-recheck failure (if any) so the route can
     // log it under `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`.
     // Without this, an RLS / connection-pool exhaustion on the recheck
     // is invisible — operator only sees the original transitionStatus

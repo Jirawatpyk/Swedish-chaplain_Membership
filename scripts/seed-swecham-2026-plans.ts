@@ -577,16 +577,13 @@ export async function stageB_Plans(
   // per seed run); production routes use `requestId: ctx.requestId`
   // (typically a UUID without the `seed-stageB-` prefix).
   //
-  // True single-tx atomicity for this seed would require either:
-  //   (a) extending planRepo.insert + planAuditAdapter.record to
-  //       accept an optional `tx` parameter (invasive — shared
-  //       adapters used by many callers); or
-  //   (b) inlining raw SQL inserts + audit emits under one explicit
-  //       `runInTenant(ctx, async (tx) => { ... })` scope using the
-  //       `tx` handle directly (bypasses repo abstractions).
-  // Neither is justified for a one-off catalogue seed — the
-  // idempotency guard + manual cleanup procedure is the pragmatic
-  // contract.
+  // True single-tx atomicity would require extending planRepo.insert
+  // + planAuditAdapter.record to accept an optional `tx` parameter
+  // (invasive — shared adapters with many callers), OR inlining raw
+  // SQL under one explicit `runInTenant(ctx, async (tx) => ...)`
+  // scope (bypasses repo abstractions). Neither is justified for a
+  // one-off catalogue seed — the idempotency guard + manual cleanup
+  // procedure is the pragmatic contract.
   for (const draft of drafts) {
     const inserted = await planRepo.insert(ctx, draft);
     // Capture audit Result. F2 invariant (`recordAuditEvent`) requires
