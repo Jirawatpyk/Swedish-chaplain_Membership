@@ -34,6 +34,19 @@ import type { Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 
 /**
+ * Opaque tx handle threaded by the use-case so a port mutation +
+ * audit emit share one Drizzle/postgres-js transaction (Constitution
+ * Principle I clause 3 atomicity). When omitted, the adapter opens
+ * its own `runInTenant` scope. Use-cases that need to bind mutation
+ * + audit to the same tx (`manageImageAllowlist`) MUST pass the
+ * outer tx through. Typed as `unknown` to keep the port pure
+ * (avoids leaking the Drizzle/postgres-js type into Application).
+ *
+ * PR-review fix 2026-05-20 CR-H1 — atomic-tx threading.
+ */
+export type ImageAllowlistTx = unknown;
+
+/**
  * Hostname Domain branded type. The full Domain definition lands in
  * Phase 4 T069; this port declares the type-name alias to avoid a
  * circular Phase 2 ↔ Phase 4 ordering constraint. The string-shape is
@@ -59,6 +72,19 @@ export type AllowlistRemoveError =
   | { readonly kind: 'storage_error'; readonly detail: string };
 
 export interface ImageAllowlistPort {
+  /**
+   * Open a tenant-bound transaction + invoke `fn` with the tx handle.
+   * The use-case threads `tx` through subsequent `port.add` /
+   * `port.remove` calls AND `audit.emit(tx, …)` so mutation + audit
+   * land in ONE atomic unit (Constitution Principle I clause 3).
+   *
+   * PR-review fix 2026-05-20 CR-H1 — mirror of F7 MVP `BroadcastsRepo.
+   * withTx` pattern. Contract tests mock this by immediately invoking
+   * `fn(null)` so the use-case logic runs against the port mocks
+   * without needing a real DB connection.
+   */
+  withTx<T>(tenantId: TenantSlug, fn: (tx: ImageAllowlistTx) => Promise<T>): Promise<T>;
+
   /**
    * List every allowlisted hostname for a tenant. Both `isDefault=TRUE`
    * (seeded) and admin-added rows are returned. Used by the sanitiser
@@ -100,19 +126,30 @@ export interface ImageAllowlistPort {
    * `(tenant_id, hostname)` pair already exists (unique index defined
    * in migration 0164). Emits `broadcast_image_allowlist_updated`
    * audit at the use case boundary (Phase 4 T072 — NOT the port).
+   *
+   * Optional `tx` parameter (PR-review fix 2026-05-20 CR-H1) — when
+   * provided the adapter uses that tx directly (no nested
+   * `runInTenant`); when omitted the adapter opens its own scope.
+   * Threading the outer tx lets `manageImageAllowlist` commit the
+   * mutation + audit-emit atomically.
    */
   add(
     tenantId: TenantSlug,
     hostname: Hostname,
     actorUserId: string,
+    tx?: ImageAllowlistTx | null,
   ): Promise<Result<void, AllowlistAddError>>;
 
   /**
    * Remove an admin-authored hostname. Refuses to remove rows with
    * `is_default=TRUE` per FR-010 platform invariant.
+   *
+   * Optional `tx` parameter (PR-review fix 2026-05-20 CR-H1) — same
+   * semantics as `add` for atomic-tx threading.
    */
   remove(
     tenantId: TenantSlug,
     hostname: Hostname,
+    tx?: ImageAllowlistTx | null,
   ): Promise<Result<void, AllowlistRemoveError>>;
 }

@@ -11,15 +11,32 @@
  * a11y:
  *   - semantic <table> with caption + <th scope="col">
  *   - <Label htmlFor> on the add-hostname input
- *   - aria-live="polite" on the table body so screen readers
- *     announce the row mutation
+ *   - dedicated <div role="status" aria-live="polite"> outside the
+ *     table for row-mutation announcements (PR-review fix UX-H2 —
+ *     aria-live on <tbody> is not conformant; ATs ignore on
+ *     structural table elements)
  *   - aria-label on per-row Remove button (i18n-keyed)
+ *   - AlertDialog confirmation on Remove (PR-review fix UX-H1 —
+ *     destructive privileged-surface mutation requires confirm per
+ *     docs/ux-standards.md). Add operation stays single-step because
+ *     it's non-destructive.
  */
 import { useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 
 export interface AllowlistRow {
@@ -36,6 +53,10 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   const [rows, setRows] = useState<readonly AllowlistRow[]>(initial);
   const [hostname, setHostname] = useState('');
   const [isPending, startTransition] = useTransition();
+  // PR-review fix 2026-05-20 UX-H2 — dedicated live-region replaces
+  // aria-live on <tbody> (non-conformant). Updated AFTER each
+  // successful mutation so SRs announce the change.
+  const [announcement, setAnnouncement] = useState<string>('');
 
   const submit = (action: 'add' | 'remove', h: string): void => {
     startTransition(async () => {
@@ -55,6 +76,12 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
       const data = (await res.json()) as { allowlist: AllowlistRow[] };
       setRows(data.allowlist);
       toast.success(t(action === 'add' ? 'addedToast' : 'removedToast'));
+      // Live-region announce — SR users hear the mutation result.
+      setAnnouncement(
+        t(action === 'add' ? 'addedAnnouncement' : 'removedAnnouncement', {
+          hostname: h,
+        }),
+      );
       if (action === 'add') setHostname('');
     });
   };
@@ -110,7 +137,7 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
             </th>
           </tr>
         </thead>
-        <tbody aria-live="polite">
+        <tbody>
           {rows.map((row) => (
             <tr key={row.hostname} className="border-t">
               <td className="py-2">{row.hostname}</td>
@@ -120,20 +147,71 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
                 </span>
               </td>
               <td className="py-2 text-right">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={row.isDefault || isPending}
-                  aria-label={t('removeAria', { hostname: row.hostname })}
-                  onClick={() => submit('remove', row.hostname)}
-                >
-                  {t('removeButton')}
-                </Button>
+                {row.isDefault ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled
+                    aria-label={t('removeAria', { hostname: row.hostname })}
+                  >
+                    {t('removeButton')}
+                  </Button>
+                ) : (
+                  // PR-review fix 2026-05-20 UX-H1 — wrap destructive
+                  // Remove action in AlertDialog confirm. Add stays
+                  // single-step (non-destructive).
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={isPending}
+                          aria-label={t('removeAria', {
+                            hostname: row.hostname,
+                          })}
+                        >
+                          {t('removeButton')}
+                        </Button>
+                      }
+                    />
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          {t('removeConfirm.title', {
+                            hostname: row.hostname,
+                          })}
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {t('removeConfirm.body')}
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>
+                          {t('removeConfirm.cancel')}
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          variant="destructive"
+                          onClick={() => submit('remove', row.hostname)}
+                        >
+                          {t('removeConfirm.confirm')}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {/* PR-review fix 2026-05-20 UX-H2 — dedicated live-region for
+          row-mutation announcements. Persistent in DOM so SR
+          announcement fires on text change, not element mount. */}
+      <span className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </span>
     </section>
   );
 }

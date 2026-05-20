@@ -19,7 +19,10 @@ import type {
 import type { AuditPort } from '@/modules/broadcasts/application/ports/audit-port';
 import { err, ok } from '@/lib/result';
 
-const TENANT = 'tenant_swe' as never;
+// PR-review fix 2026-05-20 CR-H1 — use hyphen-form slug (underscore
+// rejected at runtime by asTenantContext after manageImageAllowlist
+// began wrapping in runInTenant for atomic mutation+audit tx).
+const TENANT = 'tenant-swe' as never;
 const ACTOR = 'user_admin_42';
 
 interface Overrides {
@@ -47,6 +50,13 @@ const makeDeps = (
   findMock.mockResolvedValueOnce(after);
   return {
     port: {
+      // PR-review fix 2026-05-20 CR-H1 — port mock invokes the fn
+      // with a sentinel `null` tx so the use-case logic runs against
+      // the port mocks without needing a real DB connection. Mirrors
+      // F7 MVP BroadcastsRepo.withTx mock pattern.
+      withTx: vi.fn(async <T>(_tenantId: never, fn: (tx: unknown) => Promise<T>) =>
+        fn(null),
+      ),
       findByTenantId: findMock,
       seedDefaults: vi.fn().mockResolvedValue(undefined),
       add: vi.fn().mockResolvedValue(o?.addResult ?? ok(undefined)),

@@ -14,11 +14,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
-import { clamavVirusScanner } from '@/modules/broadcasts/infrastructure/clamav-virus-scanner';
+import { makeClamavVirusScanner } from '@/modules/broadcasts/infrastructure/clamav-virus-scanner';
 import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructure/drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from '@/modules/broadcasts/infrastructure/vercel-blob-image-storage';
-import { runInTenant } from '@/modules/tenants';
-import { asTenantContext } from '@/modules/tenants/domain';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 
 const hasClamAV = !!process.env.CLAMAV_HOST;
 const PNG_HEADER = Buffer.concat([
@@ -40,7 +40,7 @@ describe.skipIf(!hasClamAV)(
         return uploadInlineImage(
           {
             allowlistPort: makeDrizzleImageAllowlistRepo(),
-            scanner: clamavVirusScanner,
+            scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
             audit: {
               async emit(_tx, e) {
@@ -72,7 +72,7 @@ describe.skipIf(!hasClamAV)(
         return uploadInlineImage(
           {
             allowlistPort: makeDrizzleImageAllowlistRepo(),
-            scanner: clamavVirusScanner,
+            scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
             audit: { async emit() {} },
           },
@@ -96,7 +96,7 @@ describe.skipIf(!hasClamAV)(
       for (let i = 0; i < 10; i++) {
         const buf = Buffer.alloc(2 * 1024 * 1024, 0xab);
         const start = performance.now();
-        const v = await clamavVirusScanner.scan(buf);
+        const v = await makeClamavVirusScanner().scan(buf);
         const dur = performance.now() - start;
         samples.push(dur);
         expect(v.verdict).toBe('clean');

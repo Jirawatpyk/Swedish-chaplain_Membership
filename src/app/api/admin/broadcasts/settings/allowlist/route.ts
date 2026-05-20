@@ -60,7 +60,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const ctx = await requireAdminContext(request, {
     resource: 'broadcast',
-    action: 'update',
+    action: 'write',
   });
   if ('response' in ctx) return ctx.response;
 

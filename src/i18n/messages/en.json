@@ -1998,6 +1998,14 @@
           "customBadge": "Custom",
           "addedToast": "Hostname added.",
           "removedToast": "Hostname removed.",
+          "addedAnnouncement": "{hostname} added to allowlist.",
+          "removedAnnouncement": "{hostname} removed from allowlist.",
+          "removeConfirm": {
+            "title": "Remove {hostname}?",
+            "body": "Members composing E-Blasts will no longer be able to embed images from this domain. This change takes effect within 60 seconds.",
+            "cancel": "Cancel",
+            "confirm": "Remove"
+          },
           "errors": {
             "invalid_hostname": "Invalid hostname format.",
             "cannot_remove_default": "Default entries cannot be removed.",
@@ -3536,6 +3544,7 @@
           "uploadButton": "Upload image",
           "uploadingLabel": "Uploading…",
           "progressAria": "Image upload progress",
+          "uploadingAria": "Uploading image — please wait",
           "uploadedToast": "Image uploaded.",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
           "draftRequiredHint": "Save this draft first to enable image uploads.",

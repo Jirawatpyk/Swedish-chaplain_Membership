@@ -114,6 +114,13 @@ export async function uploadInlineImage(
   );
   if (existing) {
     const hostname = safeUrlHostname(existing) ?? '';
+    // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
+    // hostname is in the tenant allowlist BEFORE returning success.
+    // Without this, a member whose first upload landed but whose seed
+    // hiccupped (or whose admin removed the allowlist entry between
+    // uploads) sees upload OK then submit-time REJECT with no path to
+    // recovery. ensureBlobHostAllowlisted is idempotent best-effort.
+    await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
     return ok({ blobUrl: existing, allowlistedHostname: hostname, contentHash });
   }
 
@@ -153,37 +160,44 @@ export async function uploadInlineImage(
   });
   const hostname = safeUrlHostname(blobUrl) ?? '';
 
-  // C1/E1 fix (verify-run 2026-05-20) — close the upload→submit
-  // linkage gap: the blob storage host is platform-controlled (we own
-  // the Vercel Blob store) but isn't necessarily in the tenant's
-  // allowlist on first upload. Idempotently add it as a default-seed
-  // entry so the subsequent `validateImageSourceAllowlist` at submit
-  // boundary accepts the blob URL the editor inserted.
-  //
-  // Best-effort: if the seed fails (DB hiccup), we log + continue.
-  // The upload still returned successfully; if the seed didn't
-  // persist, validation at submit will surface the same allowlist
-  // error path that an attacker's external-host paste would, and the
-  // next upload by the same tenant will re-attempt the seed.
-  if (hostname) {
-    const hRes = asHostname(hostname);
-    if (hRes.ok) {
-      try {
-        await deps.allowlistPort.seedDefaults(input.tenantId, [hRes.value]);
-      } catch (e) {
-        logger.warn(
-          {
-            err: e instanceof Error ? e.message : String(e),
-            tenantId: input.tenantId,
-            hostname,
-          },
-          'broadcasts.uploadInlineImage.allowlist_seed_failed',
-        );
-      }
-    }
-  }
+  // PR-review fix 2026-05-20 CR-H2 — auto-allowlist the resulting blob
+  // hostname on BOTH dedup short-circuit AND fresh-upload paths via
+  // the shared `ensureBlobHostAllowlisted` helper (extracted below).
+  await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
 
   return ok({ blobUrl, allowlistedHostname: hostname, contentHash });
+}
+
+/**
+ * PR-review fix 2026-05-20 CR-H2 — idempotently ensure the
+ * platform-controlled blob hostname is in the tenant's allowlist.
+ * Called on BOTH the dedup short-circuit branch AND the fresh-upload
+ * branch (previously only the latter, which left first-upload-then-
+ * dedup races with submit-time REJECT and no recovery path).
+ *
+ * Best-effort: failure is logged at warn level + ignored so the upload
+ * still returns success. Subsequent uploads re-attempt the seed.
+ */
+async function ensureBlobHostAllowlisted(
+  deps: UploadInlineImageDeps,
+  tenantId: TenantSlug,
+  hostname: string,
+): Promise<void> {
+  if (!hostname) return;
+  const hRes = asHostname(hostname);
+  if (!hRes.ok) return;
+  try {
+    await deps.allowlistPort.seedDefaults(tenantId, [hRes.value]);
+  } catch (e) {
+    logger.warn(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId,
+        hostname,
+      },
+      'broadcasts.uploadInlineImage.allowlist_seed_failed',
+    );
+  }
 }
 
 function sanitiseFilename(raw: string): string {

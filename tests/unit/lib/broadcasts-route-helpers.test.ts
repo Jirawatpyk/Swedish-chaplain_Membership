@@ -24,6 +24,8 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   broadcast_subject_empty: 422,
   broadcast_body_too_large: 422,
   broadcast_body_unsafe_html: 422,
+  // F7.1a US2 (FR-011, AS2 closure 2026-05-20)
+  broadcast_body_image_source_unsafe: 422,
   broadcast_custom_recipient_unknown: 422,
   broadcast_custom_recipient_invalid_format: 422,
   broadcast_custom_recipient_empty: 422,

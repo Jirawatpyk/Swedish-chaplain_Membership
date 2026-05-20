@@ -1998,6 +1998,14 @@
           "customBadge": "Tillagd",
           "addedToast": "Värdnamn tillagt.",
           "removedToast": "Värdnamn borttaget.",
+          "addedAnnouncement": "{hostname} har lagts till i registret.",
+          "removedAnnouncement": "{hostname} har tagits bort från registret.",
+          "removeConfirm": {
+            "title": "Ta bort {hostname}?",
+            "body": "Medlemmar som skapar utskick kommer inte längre att kunna bädda in bilder från denna domän. Ändringen träder i kraft inom 60 sekunder.",
+            "cancel": "Avbryt",
+            "confirm": "Ta bort"
+          },
           "errors": {
             "invalid_hostname": "Ogiltigt värdnamnsformat.",
             "cannot_remove_default": "Standardposter kan inte tas bort.",
@@ -3536,6 +3544,7 @@
           "uploadButton": "Ladda upp bild",
           "uploadingLabel": "Laddar upp…",
           "progressAria": "Förlopp för bilduppladdning",
+          "uploadingAria": "Laddar upp bild — vänta",
           "uploadedToast": "Bilden har laddats upp.",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",

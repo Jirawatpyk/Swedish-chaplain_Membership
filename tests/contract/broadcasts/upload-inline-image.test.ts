@@ -44,6 +44,9 @@ const makeDeps = (
   audit: AuditPort;
 } => {
   const allowlistPort: ImageAllowlistPort = {
+    withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) =>
+      fn(null),
+    ),
     findByTenantId: vi.fn().mockResolvedValue([
       { hostname: 'assets.swecham.zyncdata.app' as Hostname, isDefault: true },
     ]),

@@ -505,9 +505,19 @@ const schema = z.object({
   CLAMAV_PORT: z.coerce.number().int().min(1).max(65535).default(3310),
   // Scan timeout per file. FR-013 mandates conservative `error` verdict
   // on timeout — the use-case (T071 upload-inline-image) refuses to
-  // persist the file. 5 min default matches the deferred-F7.1b attachment
-  // contract for cross-feature parity (see T151).
-  CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600000).default(300000),
+  // persist the file.
+  //
+  // PR-review fix 2026-05-20 SF-H5 — default lowered from 300_000ms
+  // (5 min) to 50_000ms (50 s) to fit inside the inline-image-upload
+  // route's `maxDuration = 60`. The previous 300s ceiling created a
+  // TOCTOU window: function timeout (60s) fires while ClamAV scan is
+  // still running → orphaned scan eventually completes against bytes
+  // that already passed the size cap → audit `broadcast_image_unsafe`
+  // never fires for that path because the use-case awaited a verdict
+  // the route had already abandoned. The 50s default leaves a 10s
+  // headroom for Blob put + audit emit inside the function budget.
+  // Deferred-F7.1b attachments may opt UP via env override (max 600_000ms).
+  CLAMAV_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600000).default(50000),
   // Note: CLAMAV_SHARED_SECRET removed 2026-05-19 per /speckit.superb.critique
   // Important #1 — env var was documented as auth but never reached the
   // daemon (clamscan@2.4 doesn't support auth headers, Dockerfile has no

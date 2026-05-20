@@ -95,12 +95,22 @@ export function ComposeInlineImageUploader({
         variant="outline"
         onClick={handlePick}
         disabled={uploading}
+        // PR-review fix 2026-05-20 UX-H3 — mobile tap target ≥44px
+        // per iOS HIG (default Button height is 36px, fails on file-
+        // picker triggers on mobile Safari).
+        className="min-h-[44px]"
       >
         {uploading ? t('uploadingLabel') : t('uploadButton')}
       </Button>
       {uploading && (
+        // PR-review fix 2026-05-20 UX-H4 — <progress> is indeterminate
+        // (no value), so the aria-label must reflect indeterminate
+        // semantics. Was 'progressAria' = "Image upload progress" which
+        // implied a percentage; now 'uploadingAria' = "Uploading image
+        // — please wait". Real byte-progress would need
+        // XMLHttpRequest.upload.onprogress wiring; deferred to F7.1b.
         <progress
-          aria-label={t('progressAria')}
+          aria-label={t('uploadingAria')}
           className="w-full"
         />
       )}

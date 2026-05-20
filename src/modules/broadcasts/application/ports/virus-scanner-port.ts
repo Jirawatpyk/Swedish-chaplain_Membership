@@ -18,7 +18,11 @@
  *                   adapter returns `error` with `reason: 'unconfigured'`
  *                   (see Phase 1 `verify-clamav-connectivity.ts` exit
  *                   code 2 contract).
- *   - `timeout`   — scan exceeded `CLAMAV_TIMEOUT_MS` (default 300s).
+ *   - `timeout`   — scan exceeded `CLAMAV_TIMEOUT_MS` (default 50s,
+ *                   lowered from 300s by PR-review fix 2026-05-20 SF-H5
+ *                   to fit inside the inline-image-upload route's
+ *                   `maxDuration = 60` Vercel function budget — see
+ *                   env.ts:510 comment for the TOCTOU rationale).
  *                   Same fail-closed treatment as `error`.
  *
  * `durationMs` is captured for the `broadcasts.image_scan_duration_ms`

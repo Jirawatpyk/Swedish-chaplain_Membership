@@ -54,7 +54,7 @@ import { pgAdvisoryLockAdapter } from './pg-advisory-lock-adapter';
 // F7.1a Phase 4 (US2 — Image embedding + allowlist + ClamAV scan)
 import { makeDrizzleImageAllowlistRepo } from './drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from './vercel-blob-image-storage';
-import { clamavVirusScanner } from './clamav-virus-scanner';
+import { makeClamavVirusScanner } from './clamav-virus-scanner';
 import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-image-allowlist';
 import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
 import type { ValidateImageSourceAllowlistDeps } from '../application/use-cases/validate-image-source-allowlist';
@@ -638,7 +638,12 @@ export function makeUploadInlineImageDeps(
 ): UploadInlineImageDeps {
   return {
     allowlistPort: makeDrizzleImageAllowlistRepo(),
-    scanner: clamavVirusScanner,
+    // `clamav-virus-scanner` exports a FACTORY (per Phase 2 T025
+    // pattern — adapter holds Phase 1 connectivity probe state) not a
+    // singleton. Compile-fix 2026-05-20 after dev-server build error
+    // surfaced the import mismatch (contract tests use mocks so
+    // didn't catch).
+    scanner: makeClamavVirusScanner(),
     storage: vercelBlobImageStorage,
     audit: f7AuditAdapter,
   };

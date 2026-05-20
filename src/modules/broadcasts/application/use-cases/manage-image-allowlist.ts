@@ -106,35 +106,62 @@ export async function manageImageAllowlist(
   // C1 fix (verify-run 2026-05-20) — ensure platform default hosts
   // (resend.com etc.) are seeded BEFORE returning the snapshot, so the
   // admin settings page never shows an empty default-row set on first
-  // visit. Idempotent at storage layer.
+  // visit. Idempotent at storage layer. Runs OUTSIDE the atomic
+  // mutation tx so a transient seed failure does not roll back the
+  // admin's intended mutation (best-effort vs hard-fail tradeoff
+  // documented in seedPlatformDefaults).
   await seedPlatformDefaults(deps.port, input.tenantId);
 
   const before = await deps.port.findByTenantId(input.tenantId);
   const beforeCount = before.length;
 
-  if (input.action === 'add') {
-    const r = await deps.port.add(input.tenantId, hostname, input.actorUserId);
-    if (!r.ok) return err(r.error as AllowlistAddError);
-  } else {
-    const r = await deps.port.remove(input.tenantId, hostname);
-    if (!r.ok) return err(r.error as AllowlistRemoveError);
-  }
+  // PR-review fix 2026-05-20 CR-H1 — port mutation + audit emit run
+  // in ONE tx so a transient audit-storage failure rolls back the
+  // allowlist mutation rather than leaving a regulator-visible audit
+  // gap (Constitution Principle I clause 3 atomicity + spec FR-015
+  // "audit log MUST record image-source-allowlist mutations").
+  //
+  // The audit.emit is RAW (not safeAuditEmit) here because the audit
+  // row is the load-bearing forensic record for the mutation — a
+  // failed emit MUST tear down the mutation. The use-case caller
+  // (admin route) receives the exception → maps to 500 → admin
+  // retries → both succeed or fail together. Compare safeAuditEmit
+  // in security-reject paths (upload-inline-image / validate-image-
+  // source-allowlist) where there is no mutation to roll back.
+  //
+  // `port.withTx` mirrors F7 MVP `BroadcastsRepo.withTx` — contract
+  // tests mock by invoking the callback with `null` so use-case logic
+  // exercises the port mocks without needing a real DB connection.
+  return deps.port.withTx(input.tenantId, async (tx) => {
+    if (input.action === 'add') {
+      const r = await deps.port.add(
+        input.tenantId,
+        hostname,
+        input.actorUserId,
+        tx,
+      );
+      if (!r.ok) return err(r.error as AllowlistAddError);
+    } else {
+      const r = await deps.port.remove(input.tenantId, hostname, tx);
+      if (!r.ok) return err(r.error as AllowlistRemoveError);
+    }
 
-  const after = await deps.port.findByTenantId(input.tenantId);
+    const after = await deps.port.findByTenantId(input.tenantId);
 
-  await deps.audit.emit(null, {
-    eventType: 'broadcast_image_allowlist_updated',
-    actorUserId: input.actorUserId,
-    tenantId: input.tenantId,
-    summary: `Allowlist ${input.action}: ${hostname}`,
-    payload: {
-      action: input.action,
-      hostname,
-      beforeCount,
-      afterCount: after.length,
-    },
-    requestId: input.requestId,
+    await deps.audit.emit(tx, {
+      eventType: 'broadcast_image_allowlist_updated',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Allowlist ${input.action}: ${hostname}`,
+      payload: {
+        action: input.action,
+        hostname,
+        beforeCount,
+        afterCount: after.length,
+      },
+      requestId: input.requestId,
+    });
+
+    return ok({ allowlist: after });
   });
-
-  return ok({ allowlist: after });
 }

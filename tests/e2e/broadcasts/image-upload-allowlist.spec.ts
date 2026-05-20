@@ -11,7 +11,8 @@
  * machine hangs.
  */
 import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from '../fixtures';
+import { type Page } from '@playwright/test';
+import { expect, test } from '../fixtures';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -30,7 +31,7 @@ async function signIn(
   await page.getByLabel(/email/i).fill(email);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL((url) => {
+  await page.waitForURL((url: URL) => {
     const p = url.pathname;
     return (
       p.startsWith(`/${surface}`) && !p.startsWith(`/${surface}/sign-in`)

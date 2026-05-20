@@ -29,7 +29,7 @@
  * touched.
  */
 import { and, eq } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import type {
   AllowlistAddError,
@@ -37,10 +37,31 @@ import type {
   AllowlistRemoveError,
   Hostname,
   ImageAllowlistPort,
+  ImageAllowlistTx,
 } from '../application/ports/image-allowlist-port';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import { tenantImageSourceAllowlist } from './schema';
+
+/**
+ * Tx-thread helper — runs the callback either inside the caller's
+ * provided tx (atomic-tx threading per PR-review CR-H1) OR inside a
+ * fresh `runInTenant` scope when tx is null/undefined. Centralises
+ * the conditional so all 4 port methods share the same idiom.
+ */
+async function withTenantTx<T>(
+  tenantId: TenantSlug,
+  tx: ImageAllowlistTx | null | undefined,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  if (tx) {
+    return fn(tx as TenantTx);
+  }
+  return runInTenant(
+    asTenantContext(tenantId as unknown as string),
+    async (innerTx) => fn(innerTx),
+  );
+}
 
 /**
  * Surface the underlying PG error code when present (Drizzle wraps in
@@ -60,6 +81,16 @@ function describeStorageError(e: unknown): string {
 
 export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
   return {
+    async withTx<T>(
+      tenantId: TenantSlug,
+      fn: (tx: ImageAllowlistTx) => Promise<T>,
+    ): Promise<T> {
+      return runInTenant(
+        asTenantContext(tenantId as unknown as string),
+        async (tx) => fn(tx),
+      );
+    },
+
     async findByTenantId(
       tenantId: TenantSlug,
     ): Promise<readonly AllowlistEntry[]> {
@@ -113,28 +144,26 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
       tenantId: TenantSlug,
       hostname: Hostname,
       actorUserId: string,
+      callerTx?: ImageAllowlistTx | null,
     ): Promise<Result<void, AllowlistAddError>> {
       try {
-        const result = await runInTenant(
-          asTenantContext(tenantId as unknown as string),
-          async (tx) => {
-            return tx
-              .insert(tenantImageSourceAllowlist)
-              .values({
-                tenantId: tenantId as string,
-                hostname: hostname as string,
-                isDefault: false,
-                createdByUserId: actorUserId,
-              })
-              .onConflictDoNothing({
-                target: [
-                  tenantImageSourceAllowlist.tenantId,
-                  tenantImageSourceAllowlist.hostname,
-                ],
-              })
-              .returning({ id: tenantImageSourceAllowlist.id });
-          },
-        );
+        const result = await withTenantTx(tenantId, callerTx, async (tx) => {
+          return tx
+            .insert(tenantImageSourceAllowlist)
+            .values({
+              tenantId: tenantId as string,
+              hostname: hostname as string,
+              isDefault: false,
+              createdByUserId: actorUserId,
+            })
+            .onConflictDoNothing({
+              target: [
+                tenantImageSourceAllowlist.tenantId,
+                tenantImageSourceAllowlist.hostname,
+              ],
+            })
+            .returning({ id: tenantImageSourceAllowlist.id });
+        });
         if (result.length === 0) {
           return err({ kind: 'duplicate' });
         }
@@ -147,10 +176,12 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
     async remove(
       tenantId: TenantSlug,
       hostname: Hostname,
+      callerTx?: ImageAllowlistTx | null,
     ): Promise<Result<void, AllowlistRemoveError>> {
       try {
-        const { removed, defaultMarker } = await runInTenant(
-          asTenantContext(tenantId as unknown as string),
+        const { removed, defaultMarker } = await withTenantTx(
+          tenantId,
+          callerTx,
           async (tx) => {
             // Filter `is_default=false` so admin can only remove non-
             // default rows. Then probe whether the row exists at all to

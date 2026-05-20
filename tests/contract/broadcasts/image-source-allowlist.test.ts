@@ -35,6 +35,11 @@ const makeDeps = (
   }));
   return {
     allowlistPort: {
+      // CR-H1 port shape — mock invokes fn(null) so use-case runs
+      // without DB.
+      withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) =>
+        fn(null),
+      ),
       findByTenantId: vi.fn().mockResolvedValue(entries),
       seedDefaults: vi.fn().mockResolvedValue(undefined),
       add: vi.fn(),
@@ -146,6 +151,9 @@ describe('validateImageSourceAllowlist contract — T062 (F7.1a US2)', () => {
     const allowlistB = ['host-a.example.com', 'host-b.example.com'];
 
     const allowlistPort: ImageAllowlistPort = {
+      withTx: vi.fn(async <T>(_t: never, fn: (tx: unknown) => Promise<T>) =>
+        fn(null),
+      ),
       findByTenantId: vi.fn(),
       seedDefaults: vi.fn().mockResolvedValue(undefined),
       add: vi.fn(),

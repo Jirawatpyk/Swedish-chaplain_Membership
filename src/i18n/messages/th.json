@@ -1998,6 +1998,14 @@
           "customBadge": "ที่ผู้ดูแลเพิ่มเอง",
           "addedToast": "เพิ่มโดเมนเรียบร้อย",
           "removedToast": "ลบโดเมนเรียบร้อย",
+          "addedAnnouncement": "เพิ่ม {hostname} เข้ารายการอนุญาตแล้ว",
+          "removedAnnouncement": "ลบ {hostname} ออกจากรายการอนุญาตแล้ว",
+          "removeConfirm": {
+            "title": "ลบ {hostname} หรือไม่?",
+            "body": "สมาชิกจะไม่สามารถฝังรูปภาพจากโดเมนนี้ในการเขียน E-Blast ได้อีก การเปลี่ยนแปลงจะมีผลภายใน 60 วินาที",
+            "cancel": "ยกเลิก",
+            "confirm": "ลบ"
+          },
           "errors": {
             "invalid_hostname": "รูปแบบชื่อโดเมนไม่ถูกต้อง",
             "cannot_remove_default": "ไม่สามารถลบรายการเริ่มต้นได้",
@@ -3536,6 +3544,7 @@
           "uploadButton": "อัปโหลดรูปภาพ",
           "uploadingLabel": "กำลังอัปโหลด…",
           "progressAria": "ความคืบหน้าการอัปโหลดรูปภาพ",
+          "uploadingAria": "กำลังอัปโหลดรูปภาพ กรุณารอสักครู่",
           "uploadedToast": "อัปโหลดรูปภาพเรียบร้อย",
           "helpText": "รองรับไฟล์ PNG, JPG, WebP หรือ GIF ขนาดไม่เกิน 5 MB ระบบจะสแกนไวรัสก่อนอัปโหลด",
           "draftRequiredHint": "กรุณาบันทึกฉบับร่างก่อนเพื่อเปิดใช้งานการอัปโหลดรูปภาพ",
