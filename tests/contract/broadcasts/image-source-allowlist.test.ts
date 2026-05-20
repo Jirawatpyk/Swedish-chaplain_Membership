@@ -45,7 +45,7 @@ const makeDeps = (
       add: vi.fn(),
       remove: vi.fn(),
     },
-    audit: { emit: vi.fn().mockResolvedValue(undefined) },
+    audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
   };
 };
 
@@ -195,7 +195,7 @@ describe('validateImageSourceAllowlist contract — T062 (F7.1a US2)', () => {
         allowlistB.map((h) => ({ hostname: h as Hostname, isDefault: false })),
       );
 
-    const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined) };
+    const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) };
     const deps = { allowlistPort, audit };
 
     // First submit: hostB NOT yet in allowlist → reject

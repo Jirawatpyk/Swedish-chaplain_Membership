@@ -391,18 +391,18 @@ export interface AuditPort {
    * `F7AuditPayloadShapes`) so the compiler catches missing or
    * misshapen fields at the call site.
    *
-   * OPTIONAL on the port — the runtime adapter (`f7AuditAdapter`)
-   * implements it as a thin pass-through to `emit`, but the ~13
-   * existing test fixtures (R3-vintage) build minimal `{ emit }`
-   * mock objects. Marking it optional avoids a 13-fixture migration
-   * for a structural-only addition. Call sites use the
-   * `emitOrEmitTyped(audit, ...)` helper which gracefully falls back
-   * to `emit` when the adapter is a minimal mock.
-   *
-   * Migration policy: new emit sites SHOULD prefer `emitTyped`; the
-   * type-narrowing payoff is at compile-time on the call site.
+   * R6.2 H1 — REQUIRED on the port. The R4.3 M-15 optional marker
+   * caused TypeScript to lose narrowing at every call site that fell
+   * back via `(audit.emitTyped ?? audit.emit).call(...)` (function-
+   * union + `Function.prototype.call` widened the payload type back
+   * to `Record<string, unknown>`). Every adapter MUST implement it;
+   * the production `f7AuditAdapter` provides a structural pass-through
+   * to `emit`, and test fixtures declare both methods (typically the
+   * same `vi.fn()` so behaviour mirrors). Legacy untyped events still
+   * flow through `emit`; new emit sites SHOULD prefer `emitTyped` for
+   * compile-time payload narrowing.
    */
-  emitTyped?<E extends F7AuditEventType>(
+  emitTyped<E extends F7AuditEventType>(
     tx: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void>;

@@ -78,7 +78,7 @@ const makeDeps = (
       async <T>(_t: never, fn: (tx: unknown) => Promise<T>) => fn(null),
     ),
   } as BroadcastTemplatesPort;
-  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined) };
+  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) };
   const validateImageSourceAllowlist: ValidateImageSourceAllowlistDeps = {
     allowlistPort: {
       findByTenantId: vi
@@ -93,7 +93,7 @@ const makeDeps = (
       add: vi.fn(),
       remove: vi.fn(),
     } as never,
-    audit: { emit: vi.fn().mockResolvedValue(undefined) },
+    audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
   };
   // Wire `validateImageSourceAllowlist` use-case behaviour via the
   // allowlist — when imageUnsafeSources is supplied the body contains

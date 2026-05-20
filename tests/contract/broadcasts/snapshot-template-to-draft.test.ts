@@ -98,7 +98,7 @@ const makeDeps = (overrides?: {
         .fn()
         .mockResolvedValue(overrides?.chamberName ?? 'SweCham'),
     },
-    audit: { emit: vi.fn().mockResolvedValue(undefined) },
+    audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
   };
 };
 
@@ -196,10 +196,12 @@ const deps = makeDeps({ template: null });
     // type (broadcast_template_snapshot_refused_deleted, NOT the same
     // as success), and is emitted via the active tx (not null) so it
     // co-commits with the snapshot tx (atomicity per Constitution I
-    // clause 3). The first positional arg to audit.emit is the tx
+    // clause 3). The first positional arg to audit.emit* is the tx
     // token; the test mock's withTx callback passes null in place of
     // a real Drizzle tx.
-    expect(deps.audit.emit).toHaveBeenCalledWith(
+    // R6.2 H1 — use-case now calls `audit.emitTyped(tx, ...)` directly
+    // (the R4.3 `??` fallback was dropped). Assert on `emitTyped`.
+    expect(deps.audit.emitTyped).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
         eventType: 'broadcast_template_snapshot_refused_deleted',
@@ -216,7 +218,8 @@ const deps = makeDeps({ template: null });
         .updateDraftFromTemplate,
     ).not.toHaveBeenCalled();
     // Only the refusal audit fires — no other audit events.
-    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(1);
+    expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
   it('CRIT-1: cross-member draft hijack → broadcast_cross_member_probe audit + draft_not_found + counter NOT incremented', async () => {
@@ -318,7 +321,8 @@ const deps = makeDeps({ template: null });
     // which left ghost `broadcast_template_snapshotted` rows when
     // the use-case caught + returned err() (Drizzle only rolls back
     // on thrown exceptions, not returned-Err).
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+    // R6.2 H1 — use-case calls `emitTyped` for the success path.
+    expect(deps.audit.emitTyped).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         eventType: 'broadcast_template_snapshotted',
@@ -351,7 +355,8 @@ const deps = makeDeps({ template: null });
     // Counter MUST NOT bump on post-ownership disappearance
     expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
     // R4.1 C-3 ghost-audit guard — success audit MUST NOT fire.
-    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+    // R6.2 H1 — assert via emitTyped (post-`??`-fallback drop).
+    expect(deps.audit.emitTyped).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         eventType: 'broadcast_template_snapshotted',
@@ -393,8 +398,9 @@ const deps = makeDeps({ template: null });
     expect(r.ok).toBe(true);
     // emit called with tx-token (mock withTx passes null as tx) +
     // template_snapshotted event + payload includes templateId,
-    // memberId, broadcastId, templateNameSnapshot
-    expect(deps.audit.emit).toHaveBeenCalledWith(
+    // memberId, broadcastId, templateNameSnapshot.
+    // R6.2 H1 — use-case calls `audit.emitTyped(tx, ...)` directly.
+    expect(deps.audit.emitTyped).toHaveBeenCalledWith(
       null, // tx (mock withTx)
       expect.objectContaining({
         eventType: 'broadcast_template_snapshotted',

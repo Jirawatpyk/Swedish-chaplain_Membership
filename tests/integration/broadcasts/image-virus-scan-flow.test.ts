@@ -46,6 +46,9 @@ describe.skipIf(!hasClamAV)(
               async emit(_tx, e) {
                 auditEvents.push({ eventType: e.eventType });
               },
+              async emitTyped(_tx, e) {
+                auditEvents.push({ eventType: e.eventType });
+              },
             },
           },
           {
@@ -74,7 +77,7 @@ describe.skipIf(!hasClamAV)(
             allowlistPort: makeDrizzleImageAllowlistRepo(),
             scanner: makeClamavVirusScanner(),
             storage: vercelBlobImageStorage,
-            audit: { async emit() {} },
+            audit: { async emit() {}, async emitTyped() {} },
           },
           {
             tenantId: tenantId as never,

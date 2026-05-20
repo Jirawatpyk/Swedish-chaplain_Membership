@@ -72,7 +72,7 @@ const makeDeps = (
       contentHash: 'abc',
     }),
   };
-  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined) };
+  const audit: AuditPort = { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) };
   return { allowlistPort, scanner, storage, audit };
 };
 

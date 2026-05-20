@@ -51,6 +51,9 @@ const auditPort: AuditPort = {
   async emit(_tx, e) {
     auditEmits.push(e);
   },
+  async emitTyped(_tx, e) {
+    auditEmits.push(e as AuditEmitInput);
+  },
 };
 
 interface State {

@@ -172,10 +172,13 @@ export async function snapshotTemplateToDraft(
       // success-path atomicity guarantee per Constitution I clause 3.
       // R4.3 M-15 — emitTyped narrows payload to
       // F7AuditPayloadShapes['broadcast_template_snapshot_refused_deleted'];
-      // missing/misshapen fields surface at compile time. Falls back to
-      // legacy `emit` when the adapter (e.g. minimal test mock) hasn't
-      // implemented `emitTyped`.
-      await (deps.audit.emitTyped ?? deps.audit.emit).call(deps.audit, tx, {
+      // missing/misshapen fields surface at compile time.
+      // R6.2 H1 — direct call (no `??` fallback) now that `emitTyped`
+      // is required on every AuditPort adapter. The fallback expression
+      // flowed through a function-union + `.call(...)` that silently
+      // widened the payload back to `Record<string, unknown>`,
+      // defeating the narrowing the typed emit was meant to enforce.
+      await deps.audit.emitTyped(tx, {
         eventType: 'broadcast_template_snapshot_refused_deleted',
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,
@@ -307,10 +310,10 @@ export async function snapshotTemplateToDraft(
     // must co-commit per Constitution I clause 3).
     //
     // R4.3 M-15 — emitTyped narrows payload to
-    // F7AuditPayloadShapes['broadcast_template_snapshotted']. Falls
-    // back to legacy `emit` when the adapter (e.g. minimal test mock)
-    // hasn't implemented `emitTyped`.
-    await (deps.audit.emitTyped ?? deps.audit.emit).call(deps.audit, tx, {
+    // F7AuditPayloadShapes['broadcast_template_snapshotted'].
+    // R6.2 H1 — see refused-deleted-branch sibling comment for why the
+    // R4.3 `??` fallback was dropped (it silently widened the payload).
+    await deps.audit.emitTyped(tx, {
       eventType: 'broadcast_template_snapshotted',
       actorUserId: input.actorUserId,
       tenantId: input.tenantId,

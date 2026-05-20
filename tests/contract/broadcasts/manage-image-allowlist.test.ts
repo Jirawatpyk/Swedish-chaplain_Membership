@@ -62,7 +62,7 @@ const makeDeps = (
       add: vi.fn().mockResolvedValue(o?.addResult ?? ok(undefined)),
       remove: vi.fn().mockResolvedValue(o?.removeResult ?? ok(undefined)),
     },
-    audit: { emit: vi.fn().mockResolvedValue(undefined) },
+    audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
   };
 };
 

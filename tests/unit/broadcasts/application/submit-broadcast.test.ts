@@ -92,6 +92,9 @@ function makeAuditEmits(): {
       async emit(_tx, event) {
         emits.push(event);
       },
+      async emitTyped(_tx, event) {
+        emits.push(event as AuditEmitInput);
+      },
     },
   };
 }
@@ -865,6 +868,9 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
     // Override the audit port to throw on every emit
     (deps as { audit: AuditPort }).audit = {
       async emit() {
+        throw new Error('audit DB unreachable');
+      },
+      async emitTyped() {
         throw new Error('audit DB unreachable');
       },
     };

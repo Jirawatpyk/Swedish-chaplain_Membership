@@ -73,7 +73,7 @@ const makeDeps = (overrides?: {
   } as BroadcastTemplatesPort;
   return {
     port,
-    audit: { emit: vi.fn().mockResolvedValue(undefined) },
+    audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
     validateImageSourceAllowlist: {
       allowlistPort: {
         findByTenantId: vi.fn().mockResolvedValue([
@@ -86,7 +86,7 @@ const makeDeps = (overrides?: {
         add: vi.fn(),
         remove: vi.fn(),
       } as never,
-      audit: { emit: vi.fn().mockResolvedValue(undefined) },
+      audit: { emit: vi.fn().mockResolvedValue(undefined), emitTyped: vi.fn().mockResolvedValue(undefined) },
     },
   };
 };

@@ -118,7 +118,12 @@ function makeDeps(
     }),
   };
 
-  const audit: AuditPort = { emit: auditEmit };
+  const audit: AuditPort = {
+    emit: auditEmit,
+    // R6.2 H1 — typed emit pass-through; tests assert on auditEmit.calls
+    // regardless of which method the use-case invokes.
+    emitTyped: auditEmit as unknown as AuditPort['emitTyped'],
+  };
 
   return {
     tenant: tenantCtx,

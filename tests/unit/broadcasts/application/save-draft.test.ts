@@ -228,6 +228,9 @@ function makeAudit(): {
       async emit(_tx, event) {
         emits.push(event);
       },
+      async emitTyped(_tx, event) {
+        emits.push(event as AuditEmitInput);
+      },
     },
   };
 }

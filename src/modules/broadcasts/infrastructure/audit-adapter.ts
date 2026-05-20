@@ -61,11 +61,19 @@ export const f7AuditAdapter: AuditPort = {
    * are indistinguishable; the only difference is the call-site type
    * narrowing (payload constrained by `F7AuditPayloadFor<E>`). Forward
    * the typed input through the wide-payload INSERT.
+   *
+   * R6.2 M-2 — dispatch via `this.emit(...)` instead of the module-
+   * level binding `f7AuditAdapter.emit(...)`. The dynamic dispatch
+   * lets future audit-pipeline middleware wrap the adapter via
+   * `Object.create(f7AuditAdapter)` + override `emit`, and have
+   * `emitTyped` route through the wrapper's overridden method. The
+   * 2 production call sites use `deps.audit.emitTyped(tx, event)`
+   * which preserves the receiver binding; no destructuring exists.
    */
   async emitTyped<E extends F7AuditEventType>(
     txUnknown: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void> {
-    await f7AuditAdapter.emit(txUnknown, event as AuditEmitInput);
+    await this.emit(txUnknown, event as AuditEmitInput);
   },
 };

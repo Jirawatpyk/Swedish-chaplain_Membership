@@ -40,6 +40,7 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
   it('audit.emit resolves → no log, no throw', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
+      emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).resolves.toBeUndefined();
     expect(audit.emit).toHaveBeenCalledWith(null, SAMPLE_EVENT);
@@ -50,6 +51,7 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
     const failureCause = new Error('audit-storage transient failure');
     const audit: AuditPort = {
       emit: vi.fn().mockRejectedValue(failureCause),
+      emitTyped: vi.fn().mockRejectedValue(failureCause),
     };
 
     // MUST NOT throw — the load-bearing behaviour is that the caller's
@@ -77,6 +79,7 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
   it('audit.emit rejects with non-Error value → still catches + logs stringified err', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockRejectedValue('plain string failure'),
+      emitTyped: vi.fn().mockRejectedValue('plain string failure'),
     };
     await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
@@ -88,6 +91,7 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
   it('threads tx argument unchanged (atomic-tx path used by manageImageAllowlist)', async () => {
     const audit: AuditPort = {
       emit: vi.fn().mockResolvedValue(undefined),
+      emitTyped: vi.fn().mockResolvedValue(undefined),
     };
     const fakeTx = { __test: 'tx-handle' };
     await safeAuditEmit(audit, fakeTx, SAMPLE_EVENT);

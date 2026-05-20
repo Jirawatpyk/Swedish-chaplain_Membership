@@ -81,8 +81,9 @@ function makeRepoMocks(opts: {
 
 function makeAuditEmitMock() {
   const emit = vi.fn<AuditPort['emit']>(async () => undefined);
-  const audit: AuditPort = { emit };
-  return { audit, emit };
+  const emitTyped = vi.fn<AuditPort['emitTyped']>(async () => undefined);
+  const audit: AuditPort = { emit, emitTyped };
+  return { audit, emit, emitTyped };
 }
 
 describe('getMemberBroadcast', () => {
@@ -130,6 +131,9 @@ describe('getMemberBroadcast', () => {
   it('cross_member path โ€” audit emit failure does NOT change response (anti-enumeration preserved)', async () => {
     const audit: AuditPort = {
       emit: vi.fn<AuditPort['emit']>(async () => {
+        throw new Error('audit transport down');
+      }),
+      emitTyped: vi.fn<AuditPort['emitTyped']>(async () => {
         throw new Error('audit transport down');
       }),
     };
