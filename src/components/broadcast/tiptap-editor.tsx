@@ -27,6 +27,7 @@ import StarterKit from '@tiptap/starter-kit';
 import DOMPurify from 'isomorphic-dompurify';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { Info } from 'lucide-react';
 import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
 import { broadcastImageExtension } from '@/modules/broadcasts/infrastructure/tiptap-image-extension-config';
 import { ComposeInlineImageUploader } from './compose-inline-image-uploader';
@@ -216,9 +217,13 @@ export default function TiptapEditor({
               onUploaded={handleUploaded}
             />
           ) : (
-            <p className="text-caption text-muted-foreground">
-              {tImage('draftRequiredHint')}
-            </p>
+            // PR-review fix 2026-05-20 UX-M3 — pair the hint with an
+            // Info icon + alert styling (was plain <p>, blended into
+            // surrounding body text). Matches F7 quota-warning pattern.
+            <div className="flex items-start gap-2 text-muted-foreground text-sm">
+              <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+              <p>{tImage('draftRequiredHint')}</p>
+            </div>
           )}
         </div>
       )}

@@ -218,14 +218,38 @@ export function ComposeForm({
         body: JSON.stringify(body),
       });
 
-      const responseBody = (await res.json().catch(() => ({}))) as {
+      // PR-review fix 2026-05-20 SF-M1 — distinguish malformed-JSON
+      // from network failure. The previous `.catch(() => ({}))` made
+      // them indistinguishable in the toast layer. Now: success-path
+      // JSON parse failure logs + shows specific toast; error path
+      // keeps the silent default.
+      let responseBody: {
         error?: {
           code?: string;
           message?: string;
           details?: { disallowedSources?: ReadonlyArray<string> };
         };
         broadcastId?: string;
-      };
+      } = {};
+      try {
+        responseBody = (await res.json()) as typeof responseBody;
+      } catch (parseErr) {
+        if (res.ok) {
+          // 2xx with malformed body — server bug, not user fault.
+          // Log + treat as failure so the success-redirect path
+          // doesn't fire on a missing broadcastId.
+          // eslint-disable-next-line no-console
+          console.error(
+            { err: String(parseErr), status: res.status },
+            'broadcasts.submit.response_invalid_json',
+          );
+          toast.error(tErr('internal_error'));
+          return;
+        }
+        // Non-2xx + malformed body — fall through to error-mapping
+        // with the default empty {} (route was reachable but didn't
+        // return JSON; likely 5xx with HTML error page).
+      }
 
       if (res.ok && responseBody.broadcastId) {
         setUnsafeImageSources(null);
@@ -262,6 +286,14 @@ export function ComposeForm({
       setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
       toast.error(msg);
     } catch (e) {
+      // PR-review fix 2026-05-20 SF-M2 — log network failures so CSP /
+      // CORS / offline are distinguishable in browser console; toast
+      // copy stays generic for the member.
+      // eslint-disable-next-line no-console
+      console.error(
+        { err: String(e) },
+        'broadcasts.submit.network_failed',
+      );
       toast.error(
         e instanceof Error ? e.message : tErr('internal_error'),
       );

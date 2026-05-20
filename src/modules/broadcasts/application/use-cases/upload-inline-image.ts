@@ -65,7 +65,13 @@ export type UploadInlineImageError =
       readonly kind: 'broadcast_image_invalid_mime';
       readonly receivedMime: string;
     }
-  | { readonly kind: 'broadcast_image_unsafe'; readonly reason: string };
+  | { readonly kind: 'broadcast_image_unsafe'; readonly reason: string }
+  // PR-review fix 2026-05-20 SF-M4 — distinguishes Blob/storage layer
+  // outage (token expired / store suspended / rate-limited) from
+  // application-layer rejects. Route maps to HTTP 503 instead of 500
+  // so member sees "service unavailable, try again" rather than a
+  // generic internal error.
+  | { readonly kind: 'storage_unavailable'; readonly reason: string };
 
 export interface UploadInlineImageOutput {
   readonly blobUrl: string;
@@ -78,6 +84,23 @@ export async function uploadInlineImage(
   input: UploadInlineImageInput,
 ): Promise<Result<UploadInlineImageOutput, UploadInlineImageError>> {
   if (!ALLOWED_MIME.has(input.mimeType as ImageMimeType)) {
+    // PR-review fix 2026-05-20 CR-M6 — emit audit for invalid_mime
+    // reject so SIEM can alert on probing patterns (e.g. attacker
+    // posting application/octet-stream payloads). Reuses
+    // `broadcast_image_unsafe` event-type with `reason: 'invalid_mime'`
+    // discriminant to keep audit-event-type count stable at 55.
+    await safeAuditEmit(deps.audit, null, {
+      eventType: 'broadcast_image_unsafe',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Inline image rejected — invalid MIME ${input.mimeType}`,
+      payload: {
+        draftId: input.draftId,
+        reason: 'invalid_mime',
+        receivedMime: input.mimeType,
+      },
+      requestId: input.requestId,
+    });
     return err({
       kind: 'broadcast_image_invalid_mime',
       receivedMime: input.mimeType,
@@ -107,21 +130,35 @@ export async function uploadInlineImage(
     .digest('hex');
 
   // Dedup short-circuit (best-effort; correctness handled by put's
-  // tenant-scoped + content-addressed key).
+  // tenant-scoped + content-addressed key). CR-M3 — passes mime so
+  // adapter probes ONE key not 4.
   const existing = await deps.storage.existsByContentHash(
     input.tenantId,
     contentHash,
+    mime,
   );
   if (existing) {
     const hostname = safeUrlHostname(existing) ?? '';
-    // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
-    // hostname is in the tenant allowlist BEFORE returning success.
-    // Without this, a member whose first upload landed but whose seed
-    // hiccupped (or whose admin removed the allowlist entry between
-    // uploads) sees upload OK then submit-time REJECT with no path to
-    // recovery. ensureBlobHostAllowlisted is idempotent best-effort.
-    await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
-    return ok({ blobUrl: existing, allowlistedHostname: hostname, contentHash });
+    // PR-review fix 2026-05-20 SF-M3 — when the existing blob URL is
+    // unparseable (corrupt cache / future URL-shape change), don't
+    // return an unusable success. Log + fall through to fresh upload
+    // so the member's image actually ends up at a hostname the
+    // submit-time allowlist can validate.
+    if (!hostname) {
+      logger.warn(
+        { tenantId: input.tenantId, contentHash, existing },
+        'broadcasts.uploadInlineImage.dedup_url_unparseable_fallthrough',
+      );
+    } else {
+      // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
+      // hostname is in the tenant allowlist BEFORE returning success.
+      await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
+      return ok({
+        blobUrl: existing,
+        allowlistedHostname: hostname,
+        contentHash,
+      });
+    }
   }
 
   const verdict = await deps.scanner.scan(Buffer.from(input.fileBytes));
@@ -151,13 +188,40 @@ export async function uploadInlineImage(
     return err({ kind: 'broadcast_image_unsafe', reason });
   }
 
-  const { blobUrl } = await deps.storage.put({
-    tenantId: input.tenantId,
-    bytes: input.fileBytes as Uint8Array,
-    contentHash,
-    mimeType: mime,
-    sanitisedFilename,
-  });
+  // PR-review fix 2026-05-20 SF-M4 — wrap storage.put + map Blob error
+  // classes to a typed `storage_unavailable` result so the route can
+  // return 503 (not generic 500) on token-expired / suspended /
+  // rate-limited outages. Other exceptions still propagate.
+  let blobUrl: string;
+  try {
+    const result = await deps.storage.put({
+      tenantId: input.tenantId,
+      bytes: input.fileBytes as Uint8Array,
+      contentHash,
+      mimeType: mime,
+      sanitisedFilename,
+    });
+    blobUrl = result.blobUrl;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (
+      /BlobAccessError|BlobStoreSuspendedError|BlobClientTokenExpiredError|BlobServiceRateLimited|BlobServiceNotAvailable/i.test(
+        msg,
+      )
+    ) {
+      logger.error(
+        {
+          err: msg,
+          tenantId: input.tenantId,
+          contentHash,
+          mime,
+        },
+        'broadcasts.blob_put_failed',
+      );
+      return err({ kind: 'storage_unavailable', reason: msg });
+    }
+    throw e;
+  }
   const hostname = safeUrlHostname(blobUrl) ?? '';
 
   // PR-review fix 2026-05-20 CR-H2 — auto-allowlist the resulting blob

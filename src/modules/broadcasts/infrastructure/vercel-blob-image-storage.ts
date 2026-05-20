@@ -51,31 +51,32 @@ export const vercelBlobImageStorage: ImageStoragePort = {
   async existsByContentHash(
     tenantId: TenantSlug,
     contentHash: string,
+    mimeType: ImageMimeType,
   ): Promise<string | null> {
-    for (const mime of Object.keys(MIME_EXT) as ImageMimeType[]) {
-      try {
-        const meta = await head(buildKey(tenantId, contentHash, mime), {
-          token: env.blob.readWriteToken,
-        });
-        return meta.url;
-      } catch (e) {
-        // PR-review fix SF-H1 — narrow swallow to NOT-FOUND only.
-        // Other error classes (BlobAccessError / BlobClientTokenExpired /
-        // BlobStoreSuspended / BlobServiceRateLimited) silently
-        // looked like cache-miss + masked ops incidents. Now they
-        // log at warn level + abort the probe (caller proceeds to
-        // fresh `put` which will surface the same error class
-        // explicitly via PUT path).
-        const msg = e instanceof Error ? e.message : String(e);
-        if (BLOB_NOT_FOUND_PATTERN.test(msg)) continue;
-        logger.warn(
-          { err: msg, tenantId, contentHash, mime },
-          'broadcasts.blob_head_error',
-        );
-        return null;
-      }
+    // PR-review fix 2026-05-20 CR-M3 — probe ONE key (caller knows
+    // MIME) instead of the previous 4-MIME fan-out. The cross-MIME
+    // dedup guarantee was meaningless because SHA-256 over format-
+    // header-bearing bytes cannot collide across formats.
+    try {
+      const meta = await head(buildKey(tenantId, contentHash, mimeType), {
+        token: env.blob.readWriteToken,
+      });
+      return meta.url;
+    } catch (e) {
+      // PR-review fix SF-H1 — narrow swallow to NOT-FOUND only.
+      // Other error classes (BlobAccessError / BlobClientTokenExpired /
+      // BlobStoreSuspended / BlobServiceRateLimited) silently looked
+      // like cache-miss + masked ops incidents. Now they log at warn
+      // level + return null (caller proceeds to fresh `put` which
+      // will surface the same error class explicitly via PUT path).
+      const msg = e instanceof Error ? e.message : String(e);
+      if (BLOB_NOT_FOUND_PATTERN.test(msg)) return null;
+      logger.warn(
+        { err: msg, tenantId, contentHash, mime: mimeType },
+        'broadcasts.blob_head_error',
+      );
+      return null;
     }
-    return null;
   },
 
   async put(input: {

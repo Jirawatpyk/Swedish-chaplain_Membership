@@ -50,8 +50,17 @@ export function ClamavUnreachableBanner(): React.ReactElement | null {
           ok?: boolean;
         };
         setUnreachable(body.ok === false);
-      } catch {
-        if (!cancelled) setUnreachable(true);
+      } catch (err) {
+        // PR-review fix 2026-05-20 SF-M2 — log probe failure so
+        // CSP/CORS/offline are distinguishable in browser console
+        // (silent setUnreachable(true) made the cause invisible).
+        if (cancelled) return;
+        // eslint-disable-next-line no-console
+        console.warn(
+          { err: String(err) },
+          'broadcasts.clamav_health_probe_failed',
+        );
+        setUnreachable(true);
       }
     };
     void probe();

@@ -43,6 +43,20 @@ export function ComposeInlineImageUploader({
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
+
+    // PR-review fix 2026-05-20 CR-M4 — client-side size pre-check.
+    // Reject locally before constructing FormData + POSTing so members
+    // don't burn upload bandwidth + admin Blob quota only to see a
+    // 413 reject. Server-side cap still enforced (defence-in-depth).
+    const MAX_BYTES = 5 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      const msg = t('errors.broadcast_image_too_large');
+      setError(msg);
+      toast.error(msg);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+
     setUploading(true);
 
     const fd = new FormData();
@@ -68,6 +82,13 @@ export function ComposeInlineImageUploader({
       onUploaded(data.blobUrl);
       toast.success(t('uploadedToast'));
     } catch (err) {
+      // PR-review fix 2026-05-20 SF-M2 — log so CSP / CORS / offline
+      // are distinguishable in browser console; toast stays generic.
+      // eslint-disable-next-line no-console
+      console.error(
+        { err: String(err), draftId },
+        'broadcasts.inline_image_upload.fetch_failed',
+      );
       const msg = t('errors.unknown');
       setError(msg);
       toast.error(msg);

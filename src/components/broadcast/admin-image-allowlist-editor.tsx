@@ -60,29 +60,46 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
 
   const submit = (action: 'add' | 'remove', h: string): void => {
     startTransition(async () => {
-      const res = await fetch('/api/admin/broadcasts/settings/allowlist', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action, hostname: h }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        const code = body.error ?? 'unknown';
-        toast.error(t(`errors.${code}`));
-        return;
+      try {
+        const res = await fetch('/api/admin/broadcasts/settings/allowlist', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action, hostname: h }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          const code = body.error ?? 'unknown';
+          toast.error(t(`errors.${code}`));
+          return;
+        }
+        const data = (await res.json()) as { allowlist: AllowlistRow[] };
+        setRows(data.allowlist);
+        // PR-review fix 2026-05-20 UX-M4 — append 60s propagation
+        // microcopy via toast description so admin understands active
+        // compose sessions may use stale allowlist briefly.
+        toast.success(
+          t(action === 'add' ? 'addedToast' : 'removedToast'),
+          { description: t('propagationFootnote') },
+        );
+        // Live-region announce — SR users hear the mutation result.
+        setAnnouncement(
+          t(action === 'add' ? 'addedAnnouncement' : 'removedAnnouncement', {
+            hostname: h,
+          }),
+        );
+        if (action === 'add') setHostname('');
+      } catch (err) {
+        // PR-review fix 2026-05-20 SF-M2 — log network failures so
+        // CSP/CORS/offline are distinguishable in browser console.
+        // eslint-disable-next-line no-console
+        console.error(
+          { err: String(err), action, hostname: h },
+          'broadcasts.allowlist.fetch_failed',
+        );
+        toast.error(t('errors.unknown'));
       }
-      const data = (await res.json()) as { allowlist: AllowlistRow[] };
-      setRows(data.allowlist);
-      toast.success(t(action === 'add' ? 'addedToast' : 'removedToast'));
-      // Live-region announce — SR users hear the mutation result.
-      setAnnouncement(
-        t(action === 'add' ? 'addedAnnouncement' : 'removedAnnouncement', {
-          hostname: h,
-        }),
-      );
-      if (action === 'add') setHostname('');
     });
   };
 
@@ -129,7 +146,10 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
             <th scope="col" className="text-left py-2">
               {t('colHostname')}
             </th>
-            <th scope="col" className="text-left py-2">
+            {/* PR-review fix 2026-05-20 UX-M1 — hide Source column at
+                <sm (320-639px). The badge moves inline next to the
+                hostname via the `(default)` parenthetical pattern below. */}
+            <th scope="col" className="hidden sm:table-cell text-left py-2">
               {t('colSource')}
             </th>
             <th scope="col" className="sr-only">
@@ -140,8 +160,18 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
         <tbody>
           {rows.map((row) => (
             <tr key={row.hostname} className="border-t">
-              <td className="py-2">{row.hostname}</td>
-              <td className="py-2">
+              {/* UX-M1 — break-all so long hostnames wrap on narrow viewports
+                  + inline `(default)` parenthetical visible only at <sm
+                  (replaces the hidden Source column at mobile width). */}
+              <td className="py-2 break-all">
+                {row.hostname}
+                {row.isDefault ? (
+                  <span className="sm:hidden text-caption text-muted-foreground ml-1">
+                    {t('defaultBadgeInline')}
+                  </span>
+                ) : null}
+              </td>
+              <td className="hidden sm:table-cell py-2">
                 <span className="text-caption">
                   {row.isDefault ? t('defaultBadge') : t('customBadge')}
                 </span>

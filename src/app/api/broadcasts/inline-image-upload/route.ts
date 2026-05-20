@@ -98,14 +98,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     if (!result.ok) {
-      const status =
-        result.error.kind === 'broadcast_image_too_large'
-          ? 413
-          : result.error.kind === 'broadcast_image_invalid_mime'
-            ? 415
-            : result.error.kind === 'broadcast_image_unsafe'
-              ? 422
-              : 500;
+      // PR-review fix 2026-05-20 SF-M4 — `storage_unavailable` maps
+      // to 503 so client distinguishes transient Blob outage from
+      // generic 500. Use switch for exhaustive narrowing.
+      let status: number;
+      switch (result.error.kind) {
+        case 'broadcast_image_too_large':
+          status = 413;
+          break;
+        case 'broadcast_image_invalid_mime':
+          status = 415;
+          break;
+        case 'broadcast_image_unsafe':
+          status = 422;
+          break;
+        case 'storage_unavailable':
+          status = 503;
+          break;
+        default: {
+          const _exhaustive: never = result.error;
+          void _exhaustive;
+          status = 500;
+        }
+      }
       return NextResponse.json(
         { error: result.error.kind },
         { status, headers: baseHeaders(correlationId) },

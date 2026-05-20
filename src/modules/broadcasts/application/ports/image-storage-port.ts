@@ -30,10 +30,15 @@ export interface ImageStoragePort {
    * free to perform a `HEAD`-style probe; absence is not a strict
    * guarantee that the bytes are gone, but presence is a strict
    * guarantee that they are still reachable.
+   *
+   * PR-review fix 2026-05-20 CR-M3 — caller passes `mimeType` so the
+   * adapter probes ONE key (vs all 4 MIME extensions, 160-320ms p95
+   * waste). The caller already knows MIME at the cap-check boundary.
    */
   existsByContentHash(
     tenantId: TenantSlug,
     contentHash: string,
+    mimeType: ImageMimeType,
   ): Promise<string | null>;
 
   /**
