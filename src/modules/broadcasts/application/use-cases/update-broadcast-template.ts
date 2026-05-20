@@ -17,21 +17,27 @@
  * Pure Application logic.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { omitUndefined } from '@/lib/object-helpers';
 import type {
   BroadcastTemplatesPort,
   TemplateUpdateError,
 } from '../ports/broadcast-templates-port';
 import type { AuditPort } from '../ports/audit-port';
-import { safeAuditEmit } from './_safe-audit-emit';
+import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import {
   validateImageSourceAllowlist,
   type ValidateImageSourceAllowlistDeps,
 } from './validate-image-source-allowlist';
 import type { TenantSlug } from '@/modules/tenants';
+import {
+  TEMPLATE_MAX_BODY_BYTES,
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
+} from './_template-field-limits';
 
-const MAX_NAME = 100;
-const MAX_SUBJECT = 200;
-const MAX_BODY = 200 * 1024;
+const MAX_NAME = TEMPLATE_MAX_NAME_LENGTH;
+const MAX_SUBJECT = TEMPLATE_MAX_SUBJECT_LENGTH;
+const MAX_BODY = TEMPLATE_MAX_BODY_BYTES;
 
 export interface UpdateBroadcastTemplateDeps {
   readonly port: BroadcastTemplatesPort;
@@ -100,16 +106,12 @@ export async function updateBroadcastTemplate(
     // bug) or cross-tenant probe (security event). Emit the probe
     // audit best-effort + return not_found regardless (FR-021 +
     // Constitution Principle I).
-    await safeAuditEmit(deps.audit, null, {
-      eventType: 'broadcast_cross_tenant_probe',
-      actorUserId: input.actorUserId,
+    await emitTemplateCrossTenantProbeAudit({
+      audit: deps.audit,
       tenantId: input.tenantId,
-      summary: `Cross-tenant probe on update-template ${input.templateId}`,
-      payload: {
-        probedTenantId: input.tenantId,
-        probedTemplateId: input.templateId,
-        resourceKind: 'template',
-      },
+      actorUserId: input.actorUserId,
+      templateId: input.templateId,
+      operation: 'update',
       requestId: input.requestId,
     });
     return err({ kind: 'not_found' });
@@ -137,14 +139,15 @@ export async function updateBroadcastTemplate(
   // 4. Atomic mutation + audit. The audit payload records before/after
   //    so admins can see WHAT changed during forensic review.
   return deps.port.withTx(input.tenantId, async (tx) => {
-    // Build patch with only the fields actually being changed.
-    // `exactOptionalPropertyTypes: true` rejects `{ name: undefined }`,
-    // so we conditionally spread instead.
-    const patch: Parameters<typeof deps.port.update>[2] = {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.subject !== undefined ? { subject: input.subject } : {}),
-      ...(input.bodyHtml !== undefined ? { bodyHtml: input.bodyHtml } : {}),
-    };
+    // Build patch with only the fields actually being changed. R2.2
+    // D4 helper strips undefined keys — `exactOptionalPropertyTypes:
+    // true` rejects `{ name: undefined }`, and omitUndefined keeps
+    // the call site declarative.
+    const patch: Parameters<typeof deps.port.update>[2] = omitUndefined({
+      name: input.name,
+      subject: input.subject,
+      bodyHtml: input.bodyHtml,
+    });
     const updateRes = await deps.port.update(
       input.tenantId,
       input.templateId,

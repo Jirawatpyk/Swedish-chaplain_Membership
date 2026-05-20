@@ -26,6 +26,9 @@ import {
   makeCreateBroadcastTemplateDeps,
   makeListBroadcastTemplatesDeps,
   isF71aUs7Enabled,
+  TEMPLATE_MAX_BODY_BYTES,
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
@@ -38,9 +41,9 @@ export const runtime = 'nodejs';
 const LocaleSchema = z.enum(['en', 'th', 'sv']);
 
 const CreateBodySchema = z.object({
-  name: z.string().min(1).max(100),
-  subject: z.string().min(1).max(200),
-  bodyHtml: z.string().min(1).max(200 * 1024),
+  name: z.string().min(1).max(TEMPLATE_MAX_NAME_LENGTH),
+  subject: z.string().min(1).max(TEMPLATE_MAX_SUBJECT_LENGTH),
+  bodyHtml: z.string().min(1).max(TEMPLATE_MAX_BODY_BYTES),
   locale: LocaleSchema,
 });
 

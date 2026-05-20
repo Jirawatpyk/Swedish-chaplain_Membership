@@ -18,6 +18,9 @@ import {
   makeUpdateBroadcastTemplateDeps,
   makeDeleteBroadcastTemplateDeps,
   isF71aUs7Enabled,
+  TEMPLATE_MAX_BODY_BYTES,
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
@@ -29,12 +32,12 @@ export const runtime = 'nodejs';
 
 const UpdateBodySchema = z
   .object({
-    name: z.string().min(1).max(100).optional(),
-    subject: z.string().min(1).max(200).optional(),
+    name: z.string().min(1).max(TEMPLATE_MAX_NAME_LENGTH).optional(),
+    subject: z.string().min(1).max(TEMPLATE_MAX_SUBJECT_LENGTH).optional(),
     bodyHtml: z
       .string()
       .min(1)
-      .max(200 * 1024)
+      .max(TEMPLATE_MAX_BODY_BYTES)
       .optional(),
   })
   .refine(

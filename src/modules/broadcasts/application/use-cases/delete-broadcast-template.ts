@@ -20,7 +20,7 @@ import type {
   TemplateDeleteError,
 } from '../ports/broadcast-templates-port';
 import type { AuditPort } from '../ports/audit-port';
-import { safeAuditEmit } from './_safe-audit-emit';
+import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import type { TenantSlug } from '@/modules/tenants';
 
 export interface DeleteBroadcastTemplateDeps {
@@ -46,16 +46,12 @@ export async function deleteBroadcastTemplate(
   // for foreign templates).
   const existing = await deps.port.findById(input.tenantId, input.templateId);
   if (!existing) {
-    await safeAuditEmit(deps.audit, null, {
-      eventType: 'broadcast_cross_tenant_probe',
-      actorUserId: input.actorUserId,
+    await emitTemplateCrossTenantProbeAudit({
+      audit: deps.audit,
       tenantId: input.tenantId,
-      summary: `Cross-tenant probe on delete-template ${input.templateId}`,
-      payload: {
-        probedTenantId: input.tenantId,
-        probedTemplateId: input.templateId,
-        resourceKind: 'template',
-      },
+      actorUserId: input.actorUserId,
+      templateId: input.templateId,
+      operation: 'delete',
       requestId: input.requestId,
     });
     return err({ kind: 'not_found' });

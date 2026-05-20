@@ -31,6 +31,7 @@ import type { TenantDisplayNamePort } from '../ports/tenant-display-name-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import { safeAuditEmit } from './_safe-audit-emit';
+import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import { asMemberId } from '@/modules/members';
 import type { TenantSlug } from '@/modules/tenants';
 
@@ -128,17 +129,14 @@ export async function snapshotTemplateToDraft(
     );
     if (!template) {
       // RLS-confined null. Emit probe audit (safeAuditEmit so audit-
-      // storage hiccup doesn't break the rollback flow).
-      await safeAuditEmit(deps.audit, null, {
-        eventType: 'broadcast_cross_tenant_probe',
-        actorUserId: input.actorUserId,
+      // storage hiccup doesn't break the rollback flow). R2.2 A2
+      // helper handles the resourceKind='template' payload shape.
+      await emitTemplateCrossTenantProbeAudit({
+        audit: deps.audit,
         tenantId: input.tenantId,
-        summary: `Cross-tenant probe on snapshot-template ${input.templateId}`,
-        payload: {
-          probedTenantId: input.tenantId,
-          probedTemplateId: input.templateId,
-          resourceKind: 'template',
-        },
+        actorUserId: input.actorUserId,
+        templateId: input.templateId,
+        operation: 'snapshot',
         requestId: input.requestId,
       });
       return err<SnapshotTemplateToDraftError>({ kind: 'template_not_found' });

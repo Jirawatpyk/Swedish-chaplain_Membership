@@ -27,10 +27,17 @@ import {
   type ValidateImageSourceAllowlistDeps,
 } from './validate-image-source-allowlist';
 import type { TenantSlug } from '@/modules/tenants';
+import {
+  TEMPLATE_MAX_BODY_BYTES,
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
+} from './_template-field-limits';
 
-const MAX_NAME = 100;
-const MAX_SUBJECT = 200;
-const MAX_BODY = 200 * 1024;
+// R2.2 A3 — re-exported as local aliases to keep call-site grep
+// patterns short while routing through the central constant.
+const MAX_NAME = TEMPLATE_MAX_NAME_LENGTH;
+const MAX_SUBJECT = TEMPLATE_MAX_SUBJECT_LENGTH;
+const MAX_BODY = TEMPLATE_MAX_BODY_BYTES;
 
 export interface CreateBroadcastTemplateDeps {
   readonly port: BroadcastTemplatesPort;

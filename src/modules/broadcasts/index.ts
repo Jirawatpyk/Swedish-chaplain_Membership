@@ -520,6 +520,15 @@ export {
   substituteChamberName,
 } from './domain/value-objects/template-snapshot';
 
+// US7 Phase 5 Round 1 R2.2 A3+A4 — template field limits (shared
+// between Application use-cases + Presentation Zod schemas in the
+// API route handlers). Constants only — no validation logic.
+export {
+  TEMPLATE_MAX_BODY_BYTES,
+  TEMPLATE_MAX_NAME_LENGTH,
+  TEMPLATE_MAX_SUBJECT_LENGTH,
+} from './application/use-cases/_template-field-limits';
+
 // US7 Application use-cases (Phase 5D T099-T103)
 export {
   createBroadcastTemplate,
