@@ -71,6 +71,14 @@ interface FixtureOpts {
     memberId: string;
     primaryContactEmail: string | null;
   }>;
+  // R2.1 H-test-1 (FR-022): provenance fields read by submit-broadcast
+  // use-case to populate broadcast_submitted audit payload. Wired into
+  // makeBroadcast default + applyTransition mock so the submitted
+  // event carries the template UUID instead of always null.
+  readonly draftRow?: {
+    startedFromTemplateId?: string | null;
+    templateNameSnapshot?: string | null;
+  };
 }
 
 function makeAuditEmits(): {
@@ -166,7 +174,13 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     },
     async insertDraft(_tx, input): Promise<Broadcast> {
       inserted.push(input);
-      return makeBroadcast(input);
+      return {
+        ...makeBroadcast(input),
+        startedFromTemplateId:
+          opts.draftRow?.startedFromTemplateId ?? null,
+        templateNameSnapshot:
+          opts.draftRow?.templateNameSnapshot ?? null,
+      };
     },
     async updateDraft() {
       throw new Error('not used in submit happy path (no existing draft)');
@@ -204,7 +218,14 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
         estimatedRecipientCount: 0,
         scheduledFor: null,
       };
-      return { ...makeBroadcast(base), status };
+      return {
+        ...makeBroadcast(base),
+        status,
+        startedFromTemplateId:
+          opts.draftRow?.startedFromTemplateId ?? null,
+        templateNameSnapshot:
+          opts.draftRow?.templateNameSnapshot ?? null,
+      };
     },
     async attachResendIds() {},
       async attachAudienceId() {},
@@ -717,6 +738,37 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
       expect(submitted.payload['memberId']).toBe('m-1');
       expect(submitted.payload['segmentType']).toBe('all_members');
       expect(submitted.payload['estimatedRecipientCount']).toBe(1);
+      // R2.1 H-test-1 (FR-022): startedFromTemplateId is always present
+      // on broadcast_submitted (null for blank-canvas drafts, the
+      // template UUID for snapshotted drafts). Static-shape contract
+      // for forensic timeline + downstream analytics filters.
+      expect('startedFromTemplateId' in submitted.payload).toBe(true);
+      expect(submitted.payload['startedFromTemplateId']).toBeNull();
+    }
+  });
+
+  it('R2.1 H-test-1: broadcast_submitted.startedFromTemplateId pass-through when draft snapshotted from template', async () => {
+    const { audit, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'r@example.com' },
+      ],
+      // Pre-populate a draft that carries the snapshot provenance —
+      // mirrors what snapshotTemplateToDraft would have written.
+      draftRow: {
+        startedFromTemplateId: '99999999-9999-9999-9999-999999999999',
+        templateNameSnapshot: 'Monthly Newsletter',
+      },
+    });
+    await submitBroadcast(deps, baseInput);
+    const submitted = audit.emits.find(
+      (e) => e.eventType === 'broadcast_submitted',
+    );
+    expect(submitted).toBeDefined();
+    if (submitted !== undefined) {
+      expect(submitted.payload['startedFromTemplateId']).toBe(
+        '99999999-9999-9999-9999-999999999999',
+      );
     }
   });
 
