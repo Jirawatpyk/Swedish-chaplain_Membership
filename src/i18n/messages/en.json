@@ -378,7 +378,8 @@
           "basics": "Basics",
           "fees": "Fees",
           "benefits": "Benefits",
-          "review": "Review"
+          "review": "Review",
+          "mobileSummary": "Step {current}/{total} — {label}"
         },
         "matrix": {
           "section": {

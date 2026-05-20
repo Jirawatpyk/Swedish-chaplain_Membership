@@ -20,7 +20,7 @@
  */
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,6 +48,27 @@ import {
 
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
+
+// F2 polish round 2 — map a zod-rejected field path back to the wizard
+// step that owns it. Used when `planSchema.safeParse(draft)` fails at
+// final submit to flag the offending step with `status='error'` on the
+// Stepper. Fall-through default = basics (covers plan_id, plan_year,
+// plan_name, description, plan_category, member_type_scope, sort_order).
+function zodFieldToStep(fieldPath: PropertyKey | undefined): StepKey {
+  const field = typeof fieldPath === 'string' ? fieldPath : '';
+  if (field.startsWith('benefit_matrix')) return 'benefits';
+  if (
+    field === 'annual_fee_minor_units' ||
+    field === 'min_turnover_minor_units' ||
+    field === 'max_turnover_minor_units' ||
+    field === 'max_member_age' ||
+    field === 'max_duration_years' ||
+    field === 'includes_corporate_plan_id'
+  ) {
+    return 'fees';
+  }
+  return 'basics';
+}
 
 // R4-S4 — route through `asBenefitMatrix` so the empty wizard initial
 // state satisfies the partnership↔category integrity invariant. Default
@@ -115,6 +136,47 @@ export function PlanFormWizard({
   const [draft, setDraft] = useState<PlanSchemaInput>(
     () => initialValues ?? emptyDraft(currentYear),
   );
+  // F2 polish round 2 — which step (if any) failed final zod validation
+  // at submit. Drives `status='error'` on the Stepper so users see the
+  // red circle + AlertCircle on the offending step instead of being
+  // stranded on Review with only a generic "fix validation errors" toast.
+  const [failedStep, setFailedStep] = useState<StepKey | null>(null);
+
+  // F2 polish round 2 — focus management on step transitions (WCAG 2.4.3
+  // Focus Order). Without this, clicking Next leaves focus on the Next
+  // button while the visible content swaps — keyboard + SR users lose
+  // their place. Each step's <section> takes tabIndex={-1} so we can
+  // programmatically focus it; the screen reader then reads the h2.
+  const basicsRef = useRef<HTMLElement>(null);
+  const feesRef = useRef<HTMLElement>(null);
+  const benefitsRef = useRef<HTMLElement>(null);
+  const reviewRef = useRef<HTMLElement>(null);
+  // Don't steal focus on initial render — only on user-driven step changes.
+  const isFirstStepRenderRef = useRef(true);
+  useEffect(() => {
+    if (isFirstStepRenderRef.current) {
+      isFirstStepRenderRef.current = false;
+      return;
+    }
+    // Map step → ref inline so the effect's dep array only tracks
+    // `step`; the four refs are stable across renders by useRef contract.
+    const refForStep: Record<StepKey, React.RefObject<HTMLElement | null>> = {
+      basics: basicsRef,
+      fees: feesRef,
+      benefits: benefitsRef,
+      review: reviewRef,
+    };
+    refForStep[step].current?.focus();
+  }, [step]);
+
+  // Step navigation helper — clears the error badge whenever the user
+  // explicitly moves through the wizard (Back / Next / Step click).
+  // Submit-fail uses raw setStep/setFailedStep so the badge persists
+  // until the user actively edits, not just lands on the failed step.
+  function navigateToStep(target: StepKey): void {
+    setStep(target);
+    setFailedStep(null);
+  }
 
   function update<K extends keyof PlanSchemaInput>(key: K, value: PlanSchemaInput[K]): void {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -149,24 +211,36 @@ export function PlanFormWizard({
   // earlier ad-hoc `<ol>` text list so F2 plan creation shares the visual
   // language used by F5 PaySheet + F6 webhook-config-wizard (circle +
   // connector line + Check icon on completed steps + WCAG `aria-current`).
+  // Round 2 adds an `error` status (driven by `failedStep`) so a final-
+  // submit validation failure is signalled visually on the offending
+  // step's circle rather than only via a generic error toast on Review.
   const stepperSteps: StepperStep[] = useMemo(
     () =>
       STEPS.map((s, idx) => ({
         id: s,
         label: t(`steps.${s}`),
         status:
-          idx < stepIndex
-            ? 'complete'
-            : idx === stepIndex
-              ? 'current'
-              : 'upcoming',
+          s === failedStep
+            ? 'error'
+            : idx < stepIndex
+              ? 'complete'
+              : idx === stepIndex
+                ? 'current'
+                : 'upcoming',
       })),
-    [stepIndex, t],
+    [stepIndex, failedStep, t],
   );
 
   async function handleSubmit(): Promise<void> {
     const parsed = planSchema.safeParse(draft);
     if (!parsed.success) {
+      // Map the first zod issue back to the wizard step that owns it
+      // and jump the user there so they can fix it. The useEffect on
+      // [step, failedStep] clears the badge as soon as they arrive.
+      const firstIssuePath = parsed.error.issues[0]?.path[0];
+      const targetStep = zodFieldToStep(firstIssuePath);
+      setFailedStep(targetStep);
+      setStep(targetStep);
       return;
     }
     await onSubmit(parsed.data);
@@ -177,12 +251,32 @@ export function PlanFormWizard({
       <Stepper
         steps={stepperSteps}
         aria-label={t('steps.wizardAriaLabel')}
+        compact
       />
+      {/* F2 polish round 2 — mobile-only compact summary. Stepper hides
+          labels below sm:640px so 3-4 long Thai/Swedish labels don't
+          overflow; this single-line summary replaces them. aria-hidden
+          because the Stepper already exposes `aria-current="step"` to
+          screen readers — we don't want a double announcement. */}
+      <p
+        className="text-muted-foreground sm:hidden text-center text-sm"
+        aria-hidden="true"
+      >
+        {t('steps.mobileSummary', {
+          current: stepIndex + 1,
+          total: STEPS.length,
+          label: t(`steps.${step}`),
+        })}
+      </p>
 
       <Separator />
 
       {step === 'basics' ? (
-        <section className="space-y-4">
+        <section
+          ref={basicsRef}
+          tabIndex={-1}
+          className="space-y-4 focus-visible:outline-none"
+        >
           <h2 className="text-lg font-semibold">{t('steps.basics')}</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="space-y-1">
@@ -276,7 +370,11 @@ export function PlanFormWizard({
       ) : null}
 
       {step === 'fees' ? (
-        <section className="space-y-4">
+        <section
+          ref={feesRef}
+          tabIndex={-1}
+          className="space-y-4 focus-visible:outline-none"
+        >
           <h2 className="text-lg font-semibold">{t('steps.fees')}</h2>
           <MoneyInput
             label={tLabels('annualFee')}
@@ -348,7 +446,11 @@ export function PlanFormWizard({
       ) : null}
 
       {step === 'benefits' ? (
-        <section className="space-y-4">
+        <section
+          ref={benefitsRef}
+          tabIndex={-1}
+          className="space-y-4 focus-visible:outline-none"
+        >
           <h2 className="text-lg font-semibold">{t('steps.benefits')}</h2>
           <BenefitMatrixEditor
             value={draft.benefit_matrix}
@@ -359,7 +461,11 @@ export function PlanFormWizard({
       ) : null}
 
       {step === 'review' ? (
-        <section className="space-y-4">
+        <section
+          ref={reviewRef}
+          tabIndex={-1}
+          className="space-y-4 focus-visible:outline-none"
+        >
           <h2 className="text-lg font-semibold">{t('steps.review')}</h2>
           <div className="rounded-md border p-4 text-sm">
             <dl className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -414,7 +520,7 @@ export function PlanFormWizard({
             <Button
               variant="outline"
               type="button"
-              onClick={() => setStep(STEPS[stepIndex - 1]!)}
+              onClick={() => navigateToStep(STEPS[stepIndex - 1]!)}
               disabled={submitting}
             >
               {tButtons('back')}
@@ -423,7 +529,7 @@ export function PlanFormWizard({
           {step !== 'review' ? (
             <Button
               type="button"
-              onClick={() => setStep(STEPS[stepIndex + 1]!)}
+              onClick={() => navigateToStep(STEPS[stepIndex + 1]!)}
               disabled={!canProceed || submitting}
             >
               {tButtons('next')}

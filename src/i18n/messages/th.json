@@ -378,7 +378,8 @@
           "basics": "ข้อมูลพื้นฐาน",
           "fees": "ค่าธรรมเนียม",
           "benefits": "สิทธิประโยชน์",
-          "review": "ตรวจสอบ"
+          "review": "ตรวจสอบ",
+          "mobileSummary": "ขั้นที่ {current}/{total} — {label}"
         },
         "matrix": {
           "section": {

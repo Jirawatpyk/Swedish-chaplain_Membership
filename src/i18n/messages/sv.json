@@ -378,7 +378,8 @@
           "basics": "Grunder",
           "fees": "Avgifter",
           "benefits": "Förmåner",
-          "review": "Granska"
+          "review": "Granska",
+          "mobileSummary": "Steg {current}/{total} — {label}"
         },
         "matrix": {
           "section": {

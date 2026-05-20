@@ -21,9 +21,10 @@ import { SkeletonBlock } from '@/components/shell/page-skeletons';
 export function PlanFormWizardSkeleton() {
   return (
     <div className="space-y-6" aria-busy="true">
-      {/* Step indicator — 4 steps; mirrors `<Stepper>` shape (size-7
-          circle + connector hairlines flex-1) to keep CLS minimal when
-          the real wizard hydrates. */}
+      {/* Step indicator — 4 steps; mirrors `<Stepper compact>` shape
+          (size-7 circle + connector hairlines flex-1) to keep CLS
+          minimal when the real wizard hydrates. Labels are hidden in
+          compact mode on <sm, so no SkeletonBlock for label slots. */}
       <div className="flex w-full items-start gap-0">
         {Array.from({ length: 4 }).map((_, i) => (
           <div
@@ -52,6 +53,10 @@ export function PlanFormWizardSkeleton() {
           </div>
         ))}
       </div>
+      {/* Mobile compact-summary placeholder — matches the real wizard's
+          `<p className="sm:hidden">Step 2/4 — {label}</p>` so the row
+          doesn't pop in on hydrate (CLS-0). */}
+      <SkeletonBlock className="mx-auto h-4 w-32 sm:hidden" />
       {/* Separator */}
       <div className="border-t border-border" />
       {/* Basics section */}
