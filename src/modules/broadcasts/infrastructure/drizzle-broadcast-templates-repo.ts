@@ -22,6 +22,7 @@ import { db } from '@/lib/db';
 import type {
   BroadcastTemplate,
   BroadcastTemplatesPort,
+  BroadcastTemplatesTx,
   CreateTemplateInput,
   ListTemplatesOpts,
   TemplateCreateError,
@@ -44,6 +45,12 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
   void broadcastTemplates;
 
   return {
+    async withTx<T>(
+      _tenantId: TenantSlug,
+      _callback: (tx: BroadcastTemplatesTx) => Promise<T>,
+    ): Promise<T> {
+      notImplemented('withTx');
+    },
     async findById(
       _tenantId: TenantSlug,
       _id: string,
@@ -59,6 +66,7 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
     async create(
       _tenantId: TenantSlug,
       _input: CreateTemplateInput,
+      _tx?: BroadcastTemplatesTx,
     ): Promise<Result<BroadcastTemplate, TemplateCreateError>> {
       notImplemented('create');
     },
@@ -66,18 +74,21 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
       _tenantId: TenantSlug,
       _id: string,
       _input: UpdateTemplateInput,
+      _tx?: BroadcastTemplatesTx,
     ): Promise<Result<BroadcastTemplate, TemplateUpdateError>> {
       notImplemented('update');
     },
     async softDelete(
       _tenantId: TenantSlug,
       _id: string,
+      _tx?: BroadcastTemplatesTx,
     ): Promise<Result<void, TemplateDeleteError>> {
       notImplemented('softDelete');
     },
     async incrementStartedFromCount(
       _tenantId: TenantSlug,
       _id: string,
+      _tx?: BroadcastTemplatesTx,
     ): Promise<void> {
       notImplemented('incrementStartedFromCount');
     },

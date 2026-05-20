@@ -27,6 +27,15 @@
 import type { Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 
+/**
+ * Opaque transaction token. The Drizzle adapter (Phase 5C) treats it
+ * as a `TenantTx`; mocks treat it as `null`. Use cases pass the token
+ * through to both the port's mutation methods AND `audit.emit(tx, ...)`
+ * so the mutation + the audit row land in the SAME transaction
+ * (Constitution Principle I clause 3 atomicity).
+ */
+export type BroadcastTemplatesTx = unknown;
+
 export type TemplateLocale = 'en' | 'th' | 'sv';
 
 export interface BroadcastTemplate {
@@ -83,6 +92,18 @@ export type TemplateDeleteError =
 
 export interface BroadcastTemplatesPort {
   /**
+   * Open a tenant-scoped transaction and invoke `callback` with a tx
+   * token that the caller forwards to mutation methods + `audit.emit`.
+   * Mirrors `ImageAllowlistPort.withTx` — mutation + audit share one
+   * rollback boundary.
+   */
+  withTx<T>(
+    tenantId: TenantSlug,
+    callback: (tx: BroadcastTemplatesTx) => Promise<T>,
+  ): Promise<T>;
+
+
+  /**
    * Fetch a template by id, tenant-scoped. Returns `null` for
    * not-found OR cross-tenant (RLS + the explicit `tenantId` filter
    * are belt-and-braces).
@@ -111,6 +132,7 @@ export interface BroadcastTemplatesPort {
   create(
     tenantId: TenantSlug,
     input: CreateTemplateInput,
+    tx?: BroadcastTemplatesTx,
   ): Promise<Result<BroadcastTemplate, TemplateCreateError>>;
 
   /**
@@ -121,6 +143,7 @@ export interface BroadcastTemplatesPort {
     tenantId: TenantSlug,
     id: string,
     input: UpdateTemplateInput,
+    tx?: BroadcastTemplatesTx,
   ): Promise<Result<BroadcastTemplate, TemplateUpdateError>>;
 
   /**
@@ -132,6 +155,7 @@ export interface BroadcastTemplatesPort {
   softDelete(
     tenantId: TenantSlug,
     id: string,
+    tx?: BroadcastTemplatesTx,
   ): Promise<Result<void, TemplateDeleteError>>;
 
   /**
@@ -143,5 +167,6 @@ export interface BroadcastTemplatesPort {
   incrementStartedFromCount(
     tenantId: TenantSlug,
     id: string,
+    tx?: BroadcastTemplatesTx,
   ): Promise<void>;
 }
