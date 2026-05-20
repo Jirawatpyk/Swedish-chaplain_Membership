@@ -237,31 +237,35 @@ export async function POST(
       return NextResponse.json(body, { status: 200, headers });
     }
     case 'server_error': {
-      // R5-I11 — collapse the recheck-failed warn + generic error log
-      // into ONE logger.error call. The previous shape fired BOTH
-      // logger.warn (errorId: F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED)
-      // AND logger.error (untagged) on the same call path, causing
-      // SRE alert-rule double-firing. The unified emit carries the
-      // recheck discriminator as a structured field; errorId reflects
-      // whether the inner recheck failed too.
-      const recheckErrMessage =
-        'recheckErrMessage' in result.error
-          ? result.error.recheckErrMessage
-          : undefined;
-      logger.error(
-        {
-          errorId:
-            recheckErrMessage !== undefined
-              ? 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'
-              : 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR',
-          requestId: ctx.requestId,
-          err: result.error,
-          ...(recheckErrMessage !== undefined && { recheckErrMessage }),
-        },
-        recheckErrMessage !== undefined
-          ? 'cancel-scheduled-plan-change: TOCTOU recheck failed'
-          : 'cancel-scheduled-plan-change: server error',
-      );
+      // R5-S12 — narrow via the `recheckFailed` boolean discriminator.
+      // The discriminated `server_error` variant has TWO sub-shapes:
+      //   - { recheckFailed: false, message } — primary throw, no recheck failure
+      //   - { recheckFailed: true,  message, recheckErrMessage } — recheck also threw
+      //
+      // R5-I11 collapsed the previous warn + error double-emit into a
+      // single logger.error. The unified emit carries `recheckErrMessage`
+      // as a structured field iff `recheckFailed === true`; errorId
+      // reflects which sub-shape fired.
+      if (result.error.recheckFailed) {
+        logger.error(
+          {
+            errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED',
+            requestId: ctx.requestId,
+            err: result.error,
+            recheckErrMessage: result.error.recheckErrMessage,
+          },
+          'cancel-scheduled-plan-change: TOCTOU recheck failed',
+        );
+      } else {
+        logger.error(
+          {
+            errorId: 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR',
+            requestId: ctx.requestId,
+            err: result.error,
+          },
+          'cancel-scheduled-plan-change: server error',
+        );
+      }
       return NextResponse.json(
         {
           error: { code: 'server_error', message: 'Internal server error.' },

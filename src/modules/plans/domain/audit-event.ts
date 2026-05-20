@@ -448,6 +448,20 @@ export type F2AuditEvent =
 // does not cause spurious divergence. The drift guard fails ONLY on
 // genuine field-shape divergence — extra/missing/renamed fields,
 // wrong literal types, etc.
+//
+// Optional-vs-required drift IS caught (validated empirically when
+// `_AssertHandWrittenMatchesZodInfer` was wired in Batch 5b — the
+// guard surfaced 8 pre-existing nullable-optional field divergences
+// across plan_activated/plan_deactivated/plan_soft_deleted/plan_undeleted
+// /plan_change_scheduled/plan_change_superseded/plan_change_cancelled/
+// plan_change_applied). For example: `z.string().nullable().optional()`
+// infers as `T | null | undefined` with optional key — if the hand-
+// written declares `field: string | null` (REQUIRED key) or `field?:
+// string | null` (optional key WITHOUT undefined value under
+// `exactOptionalPropertyTypes: true`), the guard catches the
+// asymmetry. Similarly, `z.string().default('')` infers as `string`
+// (required, non-nullable); a hand-written `?: string` mismatch
+// would fail.
 // Note: this DeepReadonly assumes plain-object payloads only — no
 // `Map`, `Set`, `Date`, or function types. F2 audit-event payloads
 // contain primitives + nested objects + ReadonlyArrays only, so the

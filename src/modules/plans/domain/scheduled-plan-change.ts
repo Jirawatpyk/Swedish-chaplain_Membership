@@ -358,18 +358,26 @@ export type CancelScheduledPlanChangeError =
       readonly message: string;
       readonly transitioned: ScheduledPlanChange;
     }
+  /**
+   * R5-S12 — `server_error` is a discriminated union over the
+   * `recheckFailed` boolean. When the TOCTOU recheck `findById`
+   * itself threw (RLS / connection-pool exhaustion / etc.), the
+   * variant carries `recheckErrMessage`; otherwise it omits the
+   * field at the type level. The route narrows on
+   * `result.error.recheckFailed === true` instead of the
+   * `'recheckErrMessage' in error` heuristic, making the alert-routing
+   * branch self-documenting.
+   */
   | {
       readonly code: 'server_error';
+      readonly recheckFailed: false;
       readonly message: string;
-      /**
-       * When the TOCTOU recheck `findById` itself throws
-       * (RLS / connection-pool exhaustion / etc.), the inner catch
-       * preserves the recheck error message here so the route can
-       * emit a distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`
-       * log alongside the original transitionStatus error. Without
-       * this, the cascading inner failure is invisible.
-       */
-      readonly recheckErrMessage?: string;
+    }
+  | {
+      readonly code: 'server_error';
+      readonly recheckFailed: true;
+      readonly message: string;
+      readonly recheckErrMessage: string;
     };
 
 /** Resolved plan for a renewal cycle — output of `getEffectivePlanForRenewal`. */

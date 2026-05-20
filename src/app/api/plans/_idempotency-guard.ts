@@ -86,6 +86,14 @@ export async function runIdempotencyGuard(
     const init: ResponseInit = {
       status: classification.previousResponse.status,
     };
+    // The `!== undefined` guard is intentional. `new Headers(undefined)`
+    // would produce an empty Headers — semantically equivalent at the
+    // HTTP level — but the guard prevents a spurious `init.headers =
+    // new Headers({})` assignment that would obscure the
+    // "no diagnostic headers cached" case from downstream telemetry
+    // distinguishability. Routes that legitimately need to re-emit an
+    // empty Headers object explicitly pass `headers: {}` to
+    // rememberIdempotentResponse.
     if (classification.previousResponse.headers !== undefined) {
       init.headers = new Headers(classification.previousResponse.headers);
     }

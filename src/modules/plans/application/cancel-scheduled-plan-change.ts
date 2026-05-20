@@ -101,6 +101,7 @@ export async function cancelScheduledPlanChange(
   } catch (e) {
     return err({
       code: 'server_error',
+      recheckFailed: false,
       message: `cancelScheduledPlanChange.findById: ${(e as Error)?.message ?? 'unknown'}`,
     });
   }
@@ -176,10 +177,21 @@ export async function cancelScheduledPlanChange(
     } catch (recheckErr) {
       recheckErrMessage = (recheckErr as Error)?.message ?? 'unknown';
     }
+    const baseMessage = `cancelScheduledPlanChange.transitionStatus: ${(e as Error)?.message ?? 'unknown'}`;
+    // R5-S12 — construct one of the two `server_error` discriminated
+    // variants based on whether the recheck also threw.
+    if (recheckErrMessage !== undefined) {
+      return err({
+        code: 'server_error',
+        recheckFailed: true,
+        message: baseMessage,
+        recheckErrMessage,
+      });
+    }
     return err({
       code: 'server_error',
-      message: `cancelScheduledPlanChange.transitionStatus: ${(e as Error)?.message ?? 'unknown'}`,
-      ...(recheckErrMessage !== undefined && { recheckErrMessage }),
+      recheckFailed: false,
+      message: baseMessage,
     });
   }
 

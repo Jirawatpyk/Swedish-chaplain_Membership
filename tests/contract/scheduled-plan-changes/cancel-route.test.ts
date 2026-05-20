@@ -63,9 +63,20 @@ vi.mock('@/lib/idempotency', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
-// R4-I2 — observe the new planMetrics.cancelAuditBackfillRequired
-// counter. We mock the whole `@/lib/metrics` module so the assertion
-// can inspect `planMetrics.cancelAuditBackfillRequired.mock.calls`.
+// Observe the planMetrics.cancelAuditBackfillRequired counter via a
+// partial mock of `@/lib/metrics`. `vi.importActual` + spread preserves
+// every other planMetrics method; we replace only the specific counter
+// with `vi.fn()` so call-args can be asserted.
+//
+// R5-S7 fragility note: this mock pins the CALL-ARGS shape
+// (tenantId: string, auditErrorType: 'invalid_payload' | 'persist_failed').
+// If the production signature is refactored to e.g. an object-form
+// payload (`{tenant, errorType}`), the route's call-site MUST be
+// updated AND this mock will silently accept the new shape without
+// failing the test — until the assertions below also break.
+// `pnpm typecheck` over the route's import of `@/lib/metrics`
+// catches signature drift first; this mock + assertions are
+// behaviour-level coverage layered on top.
 vi.mock('@/lib/metrics', async () => {
   const actual = await vi.importActual<typeof import('@/lib/metrics')>(
     '@/lib/metrics',
@@ -339,7 +350,11 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   it('500 server_error (no recheck) — single logger.error with F2.PLAN_CHANGE.CANCEL_SERVER_ERROR', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
-      err({ code: 'server_error', message: 'postgres timeout' }),
+      err({
+        code: 'server_error',
+        recheckFailed: false as const,
+        message: 'postgres timeout',
+      }),
     );
     const loggerMod = await import('@/lib/logger');
     const errorSpy = vi.mocked(loggerMod.logger.error);
@@ -372,6 +387,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'server_error',
+        recheckFailed: true as const,
         message: 'transitionStatus failed',
         recheckErrMessage: 'rls: connection-pool exhausted',
       }),

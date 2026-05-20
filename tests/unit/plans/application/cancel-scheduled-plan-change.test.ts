@@ -446,12 +446,11 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     expect(result.error.message).toContain('original transitionStatus');
   });
 
-  // R4-I3 — the inner recheck catch{} used to swallow the recheck
-  // failure silently; an RLS / connection-pool exhaustion on the
-  // re-read was invisible. Now the typed server_error variant
-  // optionally carries `recheckErrMessage` so the route can log a
-  // distinct `errorId: 'F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED'`.
-  it('R4-I3: server_error.recheckErrMessage carries inner recheck failure for alert routing', async () => {
+  // R4-I3 + R5-S12 — `server_error` is now a discriminated union over
+  // the `recheckFailed` boolean. The narrowing pattern at the route is
+  // `result.error.recheckFailed === true`, replacing the prior
+  // `'recheckErrMessage' in error` heuristic.
+  it('R4-I3 + R5-S12: server_error.recheckFailed=true variant carries recheckErrMessage', async () => {
     const deps = makeDeps();
     vi.mocked(deps.repo.findById)
       .mockResolvedValueOnce(makePending())
@@ -466,12 +465,14 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
     expect(result.error.message).toContain('transitionStatus');
+    expect(result.error.recheckFailed).toBe(true);
+    if (!result.error.recheckFailed) throw new Error('unreachable');
     expect(result.error.recheckErrMessage).toBe(
       'rls: connection-pool exhausted',
     );
   });
 
-  it('R4-I3: server_error.recheckErrMessage is absent when recheck succeeded', async () => {
+  it('R4-I3 + R5-S12: server_error.recheckFailed=false variant when recheck succeeded', async () => {
     const deps = makeDeps();
     // Recheck returns null (no terminal row) → falls through to
     // server_error WITHOUT a recheck error.
@@ -487,7 +488,9 @@ describe('cancelScheduledPlanChange — server_error paths', () => {
     if (result.ok) throw new Error('unreachable');
     expect(result.error.code).toBe('server_error');
     if (result.error.code !== 'server_error') throw new Error('unreachable');
-    expect(result.error.recheckErrMessage).toBeUndefined();
+    expect(result.error.recheckFailed).toBe(false);
+    // No recheckErrMessage on this variant (boolean discriminator
+    // enforces this at the type level).
   });
 });
 
