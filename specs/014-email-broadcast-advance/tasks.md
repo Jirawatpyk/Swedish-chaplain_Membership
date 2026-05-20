@@ -274,7 +274,7 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 - [X] T093 [P] [US7] Integration test `tests/integration/broadcasts/template-cross-tenant-probe.test.ts` (Principle I): tenant B cannot read/modify tenant A's templates
 - [X] T094 [P] [US7] Integration test `tests/integration/broadcasts/template-snapshot-decoupling.test.ts` (SC-007a): create template → start draft → edit template → reload draft → draft body matches PRE-edit template content
 - [X] T095 [P] [US7] Integration test `tests/integration/broadcasts/starter-template-seed.test.ts` (SC-007b per critique P10): run migration 0168 (renumbered from 0134 Phase 2) → assert `SELECT COUNT(*) FROM broadcast_templates WHERE tenant_id=$1 AND is_seeded=TRUE` returns exactly 15 per tenant; re-run → no duplicates + `broadcast_template_seed_skipped_existing_name` audit emitted
-- [~] T096 [P] [US7] E2E test (RED stub authored Phase 5A; full happy path lands Phase 5J after Phase 5G+H surfaces ship) `tests/e2e/broadcasts/template-library-flow.spec.ts` (Playwright + axe-core): admin CRUD + member picker + snapshot decoupling + Starter badge + stale-draft banner
+- [~] T096 [P] [US7] E2E test `tests/e2e/broadcasts/template-library-flow.spec.ts` — full happy path authored Phase 5H.3 for shipped surfaces (admin list + filter pills a11y / admin new template / member picker substitution + bracket survival). Env-gated `describe.skipIf` on E2E_*_EMAIL — runs at staging /speckit.qa.run pre-flag-flip per T145. `tests/e2e/broadcasts/template-library-flow.spec.ts` (Playwright + axe-core): admin CRUD + member picker + snapshot decoupling + Starter badge + stale-draft banner
 
 ### Implementation for User Story 7
 
@@ -301,9 +301,9 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 - [X] T109 [US7] Create `src/app/api/member/broadcasts/draft/[id]/snapshot-template/route.ts` POST handler (member role + draft ownership) per contracts § 1.4
 - [X] T110 [US7] Create `src/app/api/broadcasts/templates/route.ts` GET handler (member OR admin role) per contracts § 1.5 — list with locale filter
 - [X] T111 [US7] Extend `src/app/(member)/portal/broadcasts/new/page.tsx` (F7 MVP compose) — add template picker as first compose action; auto-select template if URL has `?template={id}` query
-- [ ] T112 [P] [US7] Create `src/components/broadcasts/admin-template-library.tsx`: list with Starter badges + filter pills per critique P6
-- [ ] T113 [P] [US7] Create `src/components/broadcasts/admin-template-editor.tsx`: Tiptap editor wrapper + name/subject form + sanitiser pre-check
-- [ ] T114 [P] [US7] Create `src/components/broadcasts/admin-template-edit-confirm-starter.tsx` (per critique P6): confirmation banner when editing `is_seeded=TRUE` template; "This is a starter template seeded by the platform..."
+- [X] T112 [P] [US7] Create `src/components/broadcast/admin/template-library.tsx`: list with Starter badges + filter pills per critique P6
+- [X] T113 [P] [US7] Wire shared F7 MVP TiptapEditor into `src/components/broadcast/admin/template-form.tsx`: Tiptap editor wrapper + name/subject form + sanitiser pre-check
+- [X] T114 [P] [US7] Create `src/components/broadcast/admin/template-edit-confirm-starter.tsx` (per critique P6): confirmation banner when editing `is_seeded=TRUE` template; "This is a starter template seeded by the platform..."
 - [~] T115 [P] [US7] Create `src/components/broadcast/compose/template-picker.tsx` (MVP native `<select>` shipped at Phase 5H.1; shadcn Combobox + typeahead + MRU section + Starter badge in dropdown items = Phase 5H proper) (per critique X3/E8): shadcn Combobox with locale-cascading filter + MRU ordering + Starter badge in dropdown items
 - [ ] T116 [P] [US7] Create `src/components/broadcasts/compose-bracket-placeholder.tsx` (per critique P4 / FR-019): Tiptap node-view rendering `[bracketed text]` with grey background + dashed border; first-use microcopy tooltip "Click any [bracketed text] to replace with your content."
 - [ ] T117 [P] [US7] Create `src/components/broadcasts/compose-stale-draft-banner.tsx` (per critique E5 + FR-019): on draft load, if `template_updated_at > draft.created_at AND draft.created_at < now() - interval '30 days'` show banner with optional "Refresh from current" CTA (re-runs `snapshotTemplateToDraft`)
