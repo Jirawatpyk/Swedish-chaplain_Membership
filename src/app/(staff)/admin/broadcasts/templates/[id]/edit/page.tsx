@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { AdminTemplateForm } from '@/components/broadcast/admin/template-form';
+import { AdminTemplateEditConfirmStarter } from '@/components/broadcast/admin/template-edit-confirm-starter';
 import {
   isF71aUs7Enabled,
   makeListBroadcastTemplatesDeps,
@@ -73,16 +74,10 @@ export default async function AdminBroadcastEditTemplatePage({
       />
 
       {template.isSeeded ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm"
-        >
-          <p className="font-medium">{t('starterEditBannerTitle')}</p>
-          <p className="mt-1 text-muted-foreground">
-            {t('starterEditBannerBody')}
-          </p>
-        </div>
+        <AdminTemplateEditConfirmStarter
+          templateId={template.id}
+          templateName={template.name}
+        />
       ) : null}
 
       <Card>

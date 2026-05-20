@@ -1792,6 +1792,7 @@
         "starterBadgeAria": "Seeded by the platform",
         "starterEditBannerTitle": "This is a starter template",
         "starterEditBannerBody": "Editing creates a tenant-specific version. The platform will not auto-update this template if starter content is refined.",
+        "starterEditBannerDismiss": "Dismiss starter warning for {name}",
         "emptyState": {
           "title": "No templates yet",
           "body": "Once added, templates appear here. Starter templates seeded at chamber setup also show with a Starter badge."

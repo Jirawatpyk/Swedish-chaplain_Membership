@@ -23,8 +23,23 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { toast } from 'sonner';
+
+// T113 (F7.1a US7) — share the F7 MVP Tiptap editor instance with the
+// admin templates surface. Same StarterKit + paste-sanitiser config as
+// the member compose surface; `imagesEnabled=false` because templates
+// don't carry a draft id for the upload route + admin authors paste
+// allowlisted URLs by hand (validateImageSourceAllowlist runs on
+// every save).
+const TiptapEditor = loadTiptapEditor<{
+  initialHtml: string;
+  onChange: (html: string) => void;
+  disabled?: boolean;
+  labelledById?: string;
+  imagesEnabled?: boolean;
+  draftId?: string | null;
+}>(() => import('@/components/broadcast/tiptap-editor'));
 
 type Locale = 'en' | 'th' | 'sv';
 
@@ -145,16 +160,13 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="tpl-body">{t('fields.bodyHtml')}</Label>
-        <Textarea
-          id="tpl-body"
-          value={bodyHtml}
-          onChange={(e) => setBodyHtml(e.target.value)}
-          rows={12}
-          required
+        <Label id="tpl-body-label">{t('fields.bodyHtml')}</Label>
+        <TiptapEditor
+          initialHtml={bodyHtml || '<p></p>'}
+          onChange={setBodyHtml}
           disabled={isPending}
-          aria-describedby="tpl-body-help"
-          className="font-mono text-sm"
+          labelledById="tpl-body-label"
+          imagesEnabled={false}
         />
         <p id="tpl-body-help" className="text-caption">
           {t('fields.bodyHtmlHelp')}
