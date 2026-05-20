@@ -1506,6 +1506,7 @@
       "queue": {
         "title": "คิวตรวจสอบ E-Blast",
         "subtitle": "ตรวจสอบและอนุมัติ E-Blast ที่สมาชิกส่งมา",
+        "templatesEntryButton": "เทมเพลต",
         "empty": "เมื่อสมาชิกส่ง E-Blast จะปรากฏที่นี่ให้คุณตรวจสอบ",
         "emptyTitle": "ไม่มีรายการรอตรวจสอบ",
         "totalPending": "{count} รายการรอตรวจ",

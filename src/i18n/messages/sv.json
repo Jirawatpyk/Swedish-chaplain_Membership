@@ -1506,6 +1506,7 @@
       "queue": {
         "title": "Granskningskö för E-Blast",
         "subtitle": "Granska och godkänn utskick som medlemmar har skickat in.",
+        "templatesEntryButton": "Mallar",
         "empty": "När medlemmar skickar in utskick visas de här för granskning.",
         "emptyTitle": "Kön är tom",
         "totalPending": "{count} väntar",

@@ -1,13 +1,17 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { sql } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
+import { LayoutTemplateIcon } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { buttonVariants } from '@/components/ui/button';
 import { QueueTable, type QueueRow } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
+import { isF71aUs7Enabled } from '@/modules/broadcasts';
 import {
   BROADCAST_STATUSES,
   type BroadcastStatus,
@@ -254,16 +258,40 @@ export default async function AdminBroadcastsPage({
   )) as unknown as Array<{ n: number }>;
   const totalPending = pendingRows[0]?.n ?? 0;
 
+  // F7.1a US7 (T112+) — surface admin templates entry-point on the
+  // queue header. Gated by isF71aUs7Enabled so when the flag is OFF
+  // the link doesn't render a path that would 404 via notFound() on
+  // /admin/broadcasts/templates. Manager (read-only) sees it too —
+  // template CRUD requires admin role enforced at the route level,
+  // but a manager visiting the page gets a clean 404 not a forbidden
+  // hidden link (parity with how /admin/broadcasts/[id] read-only
+  // works for managers).
+  const templatesEnabled = isF71aUs7Enabled();
+
   return (
     <TableContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={
-          totalPending > 0
-            ? `${t('subtitle')} · ${t('totalPending', { count: totalPending })}`
-            : t('subtitle')
-        }
-      />
+      <div className="flex items-start justify-between gap-4">
+        <PageHeader
+          title={t('title')}
+          subtitle={
+            totalPending > 0
+              ? `${t('subtitle')} · ${t('totalPending', { count: totalPending })}`
+              : t('subtitle')
+          }
+        />
+        {templatesEnabled ? (
+          <Link
+            href="/admin/broadcasts/templates"
+            className={buttonVariants()}
+          >
+            <LayoutTemplateIcon
+              className="mr-2 size-4"
+              aria-hidden="true"
+            />
+            {t('templatesEntryButton')}
+          </Link>
+        ) : null}
+      </div>
       <SlaBanner stats={slaStats} />
       <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
