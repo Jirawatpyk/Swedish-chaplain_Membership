@@ -1827,9 +1827,9 @@
           "name": "Name",
           "nameHelp": "Up to 100 characters. Unique within tenant + locale.",
           "subject": "Subject",
-          "subjectHelp": "Up to 200 characters. May include {{chamber_name}} placeholder.",
+          "subjectHelp": "Up to 200 characters. May include '{{chamber_name}}' placeholder.",
           "bodyHtml": "Body (HTML)",
-          "bodyHtmlHelp": "Up to 200 KB. Use [bracketed text] for member-editable placeholders; {{chamber_name}} is substituted at draft-start.",
+          "bodyHtmlHelp": "Up to 200 KB. Use [bracketed text] for member-editable placeholders; '{{chamber_name}}' is substituted at draft-start.",
           "localeLabel": "Locale"
         },
         "saveButton": "Save template",

@@ -1827,9 +1827,9 @@
           "name": "Namn",
           "nameHelp": "Upp till 100 tecken. Unik per kammare + språk.",
           "subject": "Ämne",
-          "subjectHelp": "Upp till 200 tecken. Kan innehålla {{chamber_name}}-platshållare.",
+          "subjectHelp": "Upp till 200 tecken. Kan innehålla '{{chamber_name}}'-platshållare.",
           "bodyHtml": "Innehåll (HTML)",
-          "bodyHtmlHelp": "Upp till 200 KB. Använd [text inom hakparenteser] som platshållare som medlemmen kan redigera; {{chamber_name}} ersätts vid utkaststart.",
+          "bodyHtmlHelp": "Upp till 200 KB. Använd [text inom hakparenteser] som platshållare som medlemmen kan redigera; '{{chamber_name}}' ersätts vid utkaststart.",
           "localeLabel": "Språk"
         },
         "saveButton": "Spara mall",
