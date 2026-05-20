@@ -3498,6 +3498,12 @@
       "compose": {
         "title": "Skapa E-Blast",
         "subtitle": "Skicka ett meddelande till din kammares medlemmar.",
+        "templatePicker": {
+          "triggerLabel": "Börja från en mall",
+          "blankOption": "Tom — börja från noll",
+          "starterSuffix": "Start",
+          "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar."
+        },
         "fields": {
           "subject": "Ämne",
           "subjectPlaceholder": "Ämnesrad (max 200 tecken)",

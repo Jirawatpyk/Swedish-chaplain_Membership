@@ -3498,6 +3498,12 @@
       "compose": {
         "title": "Compose E-Blast",
         "subtitle": "Send a message to your chamber's members.",
+        "templatePicker": {
+          "triggerLabel": "Start from a template",
+          "blankOption": "Blank — start from scratch",
+          "starterSuffix": "Starter",
+          "helpText": "Picking a template fills the subject + message. You can still edit before sending."
+        },
         "fields": {
           "subject": "Subject",
           "subjectPlaceholder": "Subject line (max 200 characters)",

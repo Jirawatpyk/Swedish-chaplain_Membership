@@ -3498,6 +3498,12 @@
       "compose": {
         "title": "เขียน E-Blast",
         "subtitle": "ส่งข้อความไปยังสมาชิกของหอการค้า",
+        "templatePicker": {
+          "triggerLabel": "เริ่มจากเทมเพลต",
+          "blankOption": "เว้นว่าง — เริ่มจากศูนย์",
+          "starterSuffix": "เริ่มต้น",
+          "helpText": "การเลือกเทมเพลตจะเติมหัวข้อและเนื้อหาให้ คุณยังแก้ไขก่อนส่งได้"
+        },
         "fields": {
           "subject": "หัวข้อ",
           "subjectPlaceholder": "ระบุหัวข้อ (ไม่เกิน 200 ตัวอักษร)",
