@@ -158,6 +158,9 @@ function makeRepo(opts: RepoOpts): {
       async updateDraft() {
         throw new Error('not used');
       },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in approve-broadcast fixture');
+      },
       async findById() {
         return null;
       },

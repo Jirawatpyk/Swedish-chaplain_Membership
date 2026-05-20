@@ -118,13 +118,13 @@ export interface BroadcastsRepo {
    * conceptually a one-shot snapshot, not part of the draft form
    * patch shape).
    *
-   * **Optional method** (Constitution X Simplicity tradeoff vs ~13
-   * existing test-mock churn): only US7 surfaces (snapshot use-case +
-   * future F7.1a US7 admin proxy snapshot) call this. Production
-   * Drizzle adapter implements it; other test stubs don't need to.
-   * The use-case asserts presence at runtime.
+   * R3-S4 (Phase 5 Round 1) — promoted from optional to REQUIRED.
+   * The runtime presence check in the snapshot use-case now becomes a
+   * compile-time guarantee; every BroadcastsRepo mock must provide a
+   * stub. The 13 existing mocks that didn't need US7 behaviour use
+   * a `throw new Error('not used in <fixture>')` stub.
    */
-  updateDraftFromTemplate?(
+  updateDraftFromTemplate(
     tx: unknown,
     tenantId: string,
     broadcastId: BroadcastId,

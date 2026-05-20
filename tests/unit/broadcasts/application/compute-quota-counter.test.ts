@@ -68,6 +68,9 @@ function makeBroadcastsRepo({
     async updateDraft() {
       throw new Error('not used');
     },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in compute-quota-counter fixture');
+    },
     async findById() {
       return null;
     },

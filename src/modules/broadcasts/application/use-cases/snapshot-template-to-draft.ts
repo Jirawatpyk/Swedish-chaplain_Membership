@@ -171,11 +171,9 @@ export async function snapshotTemplateToDraft(
       },
       requestId: input.requestId,
     });
-    if (!deps.broadcastsRepo.updateDraftFromTemplate) {
-      throw new Error(
-        'broadcastsRepo.updateDraftFromTemplate is not implemented — US7 snapshot path requires it',
-      );
-    }
+    // R3-S4: updateDraftFromTemplate is REQUIRED on BroadcastsRepo —
+    // every mock provides a stub at compile time. Runtime presence
+    // check removed.
     try {
       await deps.broadcastsRepo.updateDraftFromTemplate(
         tx,

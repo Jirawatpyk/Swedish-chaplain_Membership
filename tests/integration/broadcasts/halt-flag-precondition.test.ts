@@ -145,6 +145,9 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async updateDraft() {
       throw new Error('not used');
     },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in halt-flag-precondition fixture');
+    },
     async findById() {
       return null;
     },

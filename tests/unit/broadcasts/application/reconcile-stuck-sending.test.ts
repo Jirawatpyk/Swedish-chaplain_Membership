@@ -110,6 +110,7 @@ function makeBroadcastsRepo(args: {
     },
     async insertDraft() { throw new Error('not used'); },
     async updateDraft() { throw new Error('not used'); },
+    async updateDraftFromTemplate() { throw new Error('not used in reconcile-stuck-sending fixture'); },
     async findById() { return current; },
     async findByIdInTx() { return current; },
     async lockForUpdate() { return current?.status ?? null; },

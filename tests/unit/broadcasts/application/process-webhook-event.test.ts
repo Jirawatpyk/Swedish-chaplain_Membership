@@ -105,6 +105,9 @@ function makeBroadcastsRepo(args: {
     async updateDraft() {
       throw new Error('not used');
     },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in process-webhook-event fixture');
+    },
     async findById() {
       return current;
     },

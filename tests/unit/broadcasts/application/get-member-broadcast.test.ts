@@ -40,6 +40,9 @@ function makeRepoMocks(opts: {
     updateDraft: async () => {
       throw new Error('not used');
     },
+    updateDraftFromTemplate: async () => {
+      throw new Error('not used in get-member-broadcast fixture');
+    },
     findById: async () => null,
     findByIdInTx: async () => null,
     lockForUpdate: async () => null,

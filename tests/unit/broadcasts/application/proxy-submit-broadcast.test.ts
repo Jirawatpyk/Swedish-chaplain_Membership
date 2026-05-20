@@ -153,6 +153,9 @@ function makeRepo(opts: FixtureOpts): {
       async updateDraft() {
         throw new Error('not used');
       },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in proxy-submit-broadcast fixture');
+      },
       async findById() {
         return null;
       },

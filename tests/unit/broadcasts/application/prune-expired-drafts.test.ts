@@ -38,6 +38,9 @@ function makeRepo(opts: {
       async updateDraft() {
         throw new Error('not used');
       },
+      async updateDraftFromTemplate() {
+        throw new Error('not used in prune-expired-drafts fixture');
+      },
       async findById() {
         return null;
       },

@@ -123,6 +123,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       };
       return makeBroadcast(synthetic);
     },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in save-draft fixture');
+    },
     async findById() {
       return null;
     },

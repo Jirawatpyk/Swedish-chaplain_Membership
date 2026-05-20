@@ -185,6 +185,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
     async updateDraft() {
       throw new Error('not used in submit happy path (no existing draft)');
     },
+    async updateDraftFromTemplate() {
+      throw new Error('not used in submit-broadcast fixture');
+    },
     async findById() {
       return null;
     },
