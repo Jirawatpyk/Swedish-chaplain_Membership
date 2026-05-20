@@ -1793,6 +1793,13 @@
         "starterEditBannerTitle": "Detta är en startmall",
         "starterEditBannerBody": "Redigering skapar en kammar-specifik version. Plattformen uppdaterar inte denna mall automatiskt om startinnehåll förfinas.",
         "starterEditBannerDismiss": "Stäng startmallsvarning för {name}",
+        "filterLegend": "Filtrera mallar efter källa",
+        "filterPill": {
+          "all": "Alla",
+          "starter": "Endast startmallar",
+          "authored": "Kammar-författade"
+        },
+        "filterCount": "{count, plural, =0 {Inga mallar matchar} one {# mall} other {# mallar}}",
         "emptyState": {
           "title": "Inga mallar ännu",
           "body": "När mallar läggs till visas de här. Startmallar som förseedats vid kammarens uppstart visas också med en Start-etikett."

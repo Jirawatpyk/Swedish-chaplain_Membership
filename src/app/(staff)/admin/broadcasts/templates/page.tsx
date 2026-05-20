@@ -20,11 +20,14 @@ import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  AdminTemplateLibrary,
+  type TemplateLibraryRow,
+} from '@/components/broadcast/admin/template-library';
 import {
   isF71aUs7Enabled,
   listBroadcastTemplates,
@@ -55,6 +58,17 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
     }),
   );
 
+  const rows: readonly TemplateLibraryRow[] = templates.map((tpl) => ({
+    id: tpl.id,
+    name: tpl.name,
+    locale: tpl.locale,
+    startedFromCount: tpl.startedFromCount,
+    isSeeded: tpl.isSeeded,
+    // Serialise to ISO at the server boundary — client component only
+    // needs the YYYY-MM-DD prefix for display, never a Date instance.
+    updatedAtIso: tpl.updatedAt.toISOString(),
+  }));
+
   return (
     <TableContainer>
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
@@ -67,7 +81,7 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
         </Link>
       </div>
 
-      {templates.length === 0 ? (
+      {rows.length === 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>{t('emptyState.title')}</CardTitle>
@@ -75,79 +89,7 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
           </CardHeader>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <table className="w-full border-collapse">
-              <caption className="sr-only">{t('pageTitle')}</caption>
-              <thead>
-                <tr className="border-b">
-                  <th scope="col" className="text-left p-3">
-                    {t('columns.name')}
-                  </th>
-                  <th scope="col" className="text-left p-3">
-                    {t('columns.locale')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="text-right p-3 hidden sm:table-cell"
-                    aria-label={t('columns.startedFromAria')}
-                  >
-                    {t('columns.startedFrom')}
-                  </th>
-                  <th
-                    scope="col"
-                    className="text-left p-3 hidden md:table-cell"
-                  >
-                    {t('columns.updatedAt')}
-                  </th>
-                  <th scope="col" className="sr-only">
-                    {t('columns.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {templates.map((tpl) => (
-                  <tr key={tpl.id} className="border-b last:border-b-0">
-                    <td className="p-3">
-                      <span className="font-medium">{tpl.name}</span>
-                      {tpl.isSeeded ? (
-                        <span
-                          className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-caption bg-muted text-muted-foreground"
-                          aria-label={t('starterBadgeAria')}
-                        >
-                          {t('starterBadge')}
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="p-3 text-caption text-muted-foreground">
-                      {t(`locale.${tpl.locale}`)}
-                    </td>
-                    <td className="p-3 text-right hidden sm:table-cell tabular-nums">
-                      {tpl.startedFromCount}
-                    </td>
-                    <td className="p-3 text-caption text-muted-foreground hidden md:table-cell">
-                      {tpl.updatedAt.toISOString().slice(0, 10)}
-                    </td>
-                    <td className="p-3 text-right">
-                      <Link
-                        href={`/admin/broadcasts/templates/${tpl.id}/edit`}
-                        className={buttonVariants({
-                          variant: 'ghost',
-                          size: 'sm',
-                        })}
-                        aria-label={t('rowAction.editAria', {
-                          name: tpl.name,
-                        })}
-                      >
-                        {t('rowAction.edit')}
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
+        <AdminTemplateLibrary rows={rows} />
       )}
     </TableContainer>
   );

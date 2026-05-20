@@ -1793,6 +1793,13 @@
         "starterEditBannerTitle": "This is a starter template",
         "starterEditBannerBody": "Editing creates a tenant-specific version. The platform will not auto-update this template if starter content is refined.",
         "starterEditBannerDismiss": "Dismiss starter warning for {name}",
+        "filterLegend": "Filter templates by source",
+        "filterPill": {
+          "all": "All",
+          "starter": "Starter only",
+          "authored": "Admin-authored"
+        },
+        "filterCount": "{count, plural, =0 {No templates match} one {# template} other {# templates}}",
         "emptyState": {
           "title": "No templates yet",
           "body": "Once added, templates appear here. Starter templates seeded at chamber setup also show with a Starter badge."
