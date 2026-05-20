@@ -126,7 +126,7 @@ describe('F7 webhook signature integration (T151)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'T151 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

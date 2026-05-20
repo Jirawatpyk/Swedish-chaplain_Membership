@@ -108,7 +108,7 @@ describe('F1 transactional vs F7 Broadcasts API separation (T152a / FR-019)', ()
         planId,
         planYear: 2026,
         planName: { en: 'T152a Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

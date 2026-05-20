@@ -89,7 +89,7 @@ describe('F7 immutable-after-submit DB trigger (R6 W-T1)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'WT1 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

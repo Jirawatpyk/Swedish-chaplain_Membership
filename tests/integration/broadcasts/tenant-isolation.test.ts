@@ -108,7 +108,7 @@ describe('F7 Tenant isolation — REVIEW-GATE BLOCKER (T022)', () => {
           planId,
           planYear: 2026,
           planName: { en: 'F7 Test Plan' },
-          description: { en: '' },
+          description: { en: 'Test description' },
           sortOrder: 10,
           planCategory: 'corporate',
           memberTypeScope: 'company',
