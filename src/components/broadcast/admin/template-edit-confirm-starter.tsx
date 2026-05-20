@@ -104,7 +104,7 @@ export function AdminTemplateEditConfirmStarter({
         <button
           type="button"
           onClick={dismiss}
-          className="shrink-0 rounded-md p-1 text-warning hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning/50"
+          className="shrink-0 rounded-md p-1 text-foreground hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t('starterEditBannerDismiss', { name: templateName })}
         >
           <X className="h-4 w-4" aria-hidden="true" />

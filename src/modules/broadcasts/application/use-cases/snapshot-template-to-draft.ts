@@ -211,26 +211,15 @@ export async function snapshotTemplateToDraft(
       chamberName,
     );
 
-    // Snapshot-moment audit FIRST — captures actor + template + broadcast
-    // + name BEFORE the mutations so forensic timeline has a "who/what/
-    // when" record even if subsequent writes fail (which would roll back
-    // this audit row too — that's correct semantics).
-    await deps.audit.emit(tx, {
-      eventType: 'broadcast_template_snapshotted',
-      actorUserId: input.actorUserId,
-      tenantId: input.tenantId,
-      summary: `Snapshotted template ${template.name} into draft ${input.draftId}`,
-      payload: {
-        broadcastId: input.draftId,
-        templateId: template.id,
-        templateNameSnapshot: template.name,
-        memberId: input.memberId,
-      },
-      requestId: input.requestId,
-    });
-    // R3-S4: updateDraftFromTemplate is REQUIRED on BroadcastsRepo —
-    // every mock provides a stub at compile time. Runtime presence
-    // check removed.
+    // R4.1 C-3 — AUDIT-LAST pattern: mutations run FIRST so failures
+    // (BroadcastConcurrentMutationError / BroadcastNotFoundError /
+    // unexpected throws) bubble out of withTx → Drizzle rolls back
+    // → no audit row persists for failed snapshots. The pre-R4.1 order
+    // (audit FIRST, then mutations) left ghost `broadcast_template_
+    // snapshotted` rows on the audit log when subsequent UPDATEs threw
+    // because the use-case caught + returned err(...) — but Drizzle
+    // only rolls back on THROWN exceptions, not returned-Err Results.
+    // SIEM false-positives the ghost rows as successful snapshots.
     try {
       await deps.broadcastsRepo.updateDraftFromTemplate(
         tx,
@@ -246,13 +235,20 @@ export async function snapshotTemplateToDraft(
           templateNameSnapshot: template.name,
         },
       );
+      await deps.templatesPort.incrementStartedFromCount(
+        input.tenantId,
+        template.id,
+        tx,
+      );
     } catch (e) {
       // R1.2 H-sf-3: discriminate concurrent-mutation race (status
       // drifted out of 'draft' between findOwnedByMember check and
       // this UPDATE) from generic adapter failures. Emit `broadcast_
-      // concurrent_action_blocked` audit (M-code-1 closure) and surface
-      // a typed `draft_status_drift` kind so the route can return HTTP
-      // 409 with broadcast_immutable_after_submit code.
+      // concurrent_action_blocked` via safeAuditEmit(null) so the
+      // failure-audit survives the tx rollback (forensic record of
+      // the failure — co-commits with the snapshot tx would make it
+      // disappear). Different semantics from the success audit below
+      // which DOES need atomic co-commit.
       if (e instanceof BroadcastConcurrentMutationError) {
         await safeAuditEmit(deps.audit, null, {
           eventType: 'broadcast_concurrent_action_blocked',
@@ -301,11 +297,23 @@ export async function snapshotTemplateToDraft(
       );
       throw e;
     }
-    await deps.templatesPort.incrementStartedFromCount(
-      input.tenantId,
-      template.id,
-      tx,
-    );
+    // R4.1 C-3 — emit success audit AFTER mutations succeed. If
+    // audit storage fails here, the withTx rolls back the mutations
+    // (audit failure is a stop-the-line signal — mutations + audit
+    // must co-commit per Constitution I clause 3).
+    await deps.audit.emit(tx, {
+      eventType: 'broadcast_template_snapshotted',
+      actorUserId: input.actorUserId,
+      tenantId: input.tenantId,
+      summary: `Snapshotted template ${template.name} into draft ${input.draftId}`,
+      payload: {
+        broadcastId: input.draftId,
+        templateId: template.id,
+        templateNameSnapshot: template.name,
+        memberId: input.memberId,
+      },
+      requestId: input.requestId,
+    });
     return ok({
       draftId: input.draftId,
       subject: substitutedSubject,

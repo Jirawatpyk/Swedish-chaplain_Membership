@@ -316,6 +316,50 @@ const deps = makeDeps({ template: null });
     );
     // Counter MUST NOT bump on status drift
     expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+    // R4.1 C-3 — audit-last reorder: success audit MUST NOT fire
+    // when the mutation throws. Pre-R4.1 emit order was audit-first
+    // which left ghost `broadcast_template_snapshotted` rows when
+    // the use-case caught + returned err() (Drizzle only rolls back
+    // on thrown exceptions, not returned-Err).
+    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'broadcast_template_snapshotted',
+      }),
+    );
+  });
+
+  it('R4.1 C-3: BroadcastNotFoundError post-ownership-check → draft_not_found + NO ghost snapshot audit', async () => {
+    const { BroadcastNotFoundError } = await import(
+      '@/modules/broadcasts/application/ports/broadcasts-repo'
+    );
+    const deps = makeDeps();
+    (
+      deps.broadcastsRepo as unknown as {
+        updateDraftFromTemplate: ReturnType<typeof vi.fn>;
+      }
+    ).updateDraftFromTemplate.mockRejectedValueOnce(
+      new BroadcastNotFoundError('tenant-swe', DRAFT_ID as never),
+    );
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-1',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-not-found',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('draft_not_found');
+    // Counter MUST NOT bump on post-ownership disappearance
+    expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+    // R4.1 C-3 ghost-audit guard — success audit MUST NOT fire.
+    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'broadcast_template_snapshotted',
+      }),
+    );
   });
 
   it('R1.2 H-sf-3: unexpected generic Error → propagates (NOT mapped to draft_not_found)', async () => {

@@ -162,6 +162,11 @@ describe('getMemberBroadcast', () => {
         bodyHtml: '<p/>',
         status: 'sent',
         estimatedRecipientCount: 1,
+        // R4.1 C-4 — R3.3 H-4 made templateProvenance REQUIRED on
+        // Broadcast. This fixture uses `as unknown as Broadcast` cast
+        // which bypasses the compile-time check, so the field has to
+        // be added by hand to keep production-vs-test shape aligned.
+        templateProvenance: null,
       } as unknown as Broadcast,
       probeKind: 'owned' as const,
     }));
@@ -197,6 +202,8 @@ describe('getMemberBroadcast', () => {
       estimatedRecipientCount: 130,
       submittedAt: new Date(),
       sentAt: new Date(),
+      // R4.1 C-4 — see L165 sibling comment for rationale.
+      templateProvenance: null,
     } as unknown as Broadcast;
     const broadcastsRepo = makeRepoMocks({
       findOwned: async () => ({ broadcast, probeKind: 'owned' }),

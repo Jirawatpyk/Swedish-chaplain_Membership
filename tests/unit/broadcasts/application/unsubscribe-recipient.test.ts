@@ -92,6 +92,11 @@ function makeDeps(
     sentAt: null,
     cancelledAt: null,
     cancelledByUserId: null,
+    // R4.1 C-4 — R3.3 H-4 made templateProvenance REQUIRED on
+    // Broadcast. This literal carries `as unknown as Broadcast` so
+    // the compile-time check is bypassed; add the field by hand to
+    // keep production-vs-test shape aligned.
+    templateProvenance: null,
   } as unknown as Broadcast;
 
   const broadcastsRepo: Partial<BroadcastsRepo> = {
