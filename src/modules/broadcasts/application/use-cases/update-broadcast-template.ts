@@ -107,7 +107,8 @@ export async function updateBroadcastTemplate(
       summary: `Cross-tenant probe on update-template ${input.templateId}`,
       payload: {
         probedTenantId: input.tenantId,
-        probedBroadcastId: input.templateId,
+        probedTemplateId: input.templateId,
+        resourceKind: 'template',
       },
       requestId: input.requestId,
     });

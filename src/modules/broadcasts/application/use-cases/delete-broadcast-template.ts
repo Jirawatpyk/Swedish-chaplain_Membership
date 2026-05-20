@@ -53,7 +53,8 @@ export async function deleteBroadcastTemplate(
       summary: `Cross-tenant probe on delete-template ${input.templateId}`,
       payload: {
         probedTenantId: input.tenantId,
-        probedBroadcastId: input.templateId,
+        probedTemplateId: input.templateId,
+        resourceKind: 'template',
       },
       requestId: input.requestId,
     });

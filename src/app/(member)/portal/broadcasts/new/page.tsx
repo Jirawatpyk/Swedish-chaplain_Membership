@@ -14,6 +14,7 @@ import { runInTenant } from '@/lib/db';
 import {
   computeQuotaCounter,
   envTenantDisplayName,
+  f7AuditAdapter,
   isF71aUs7Enabled,
   listBroadcastTemplates,
   makeComputeQuotaDeps,
@@ -21,6 +22,7 @@ import {
   substituteChamberName,
 } from '@/modules/broadcasts';
 import { makeDrizzleBroadcastTemplatesRepo } from '@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo';
+import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { isF71aUs2Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
@@ -148,9 +150,26 @@ export default async function ComposeBroadcastPage({
             chamberName,
           );
           selectedTemplateId = template.id;
+        } else {
+          // R1.1 CRIT-3: emit cross-tenant probe audit so SSR page
+          // render path matches the API surface's audit coverage
+          // (Constitution I sub-clause 4). The user-visible UX still
+          // falls through to blank compose; only the audit emission
+          // is added. safeAuditEmit so a transient audit-storage hiccup
+          // doesn't 500 the compose page.
+          await safeAuditEmit(f7AuditAdapter, null, {
+            eventType: 'broadcast_cross_tenant_probe',
+            actorUserId: session.user.id,
+            tenantId: tenant.slug,
+            summary: `Cross-tenant probe on member compose ?template= ${templateIdParam}`,
+            payload: {
+              probedTenantId: tenant.slug,
+              probedTemplateId: templateIdParam,
+              resourceKind: 'template',
+            },
+            requestId: null,
+          });
         }
-        // null template (cross-tenant probe / not-found / soft-deleted)
-        // silently falls through to blank compose — no toast surface yet.
       } catch {
         // Same graceful-degradation rationale as the picker list above.
       }

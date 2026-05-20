@@ -1,15 +1,10 @@
 /**
- * T104 (F7.1a US7) — Admin broadcast templates list page.
+ * Admin broadcast templates list (admin-only + flag-gated).
  *
- * Route: `/admin/broadcasts/templates`.
- * Authz: admin-only (manager has read-only on the broadcasts queue;
- * template CRUD is privileged, mirrors US2 allowlist scope).
- * Dark-rollout via `isF71aUs7Enabled()` — returns notFound() when OFF.
- *
- * Lean MVP — semantic <table> + "New template" button + Starter badge
- * + Edit link per row. Delete action lands at Phase 5H (T114
- * admin-template-edit-confirm-starter + AlertDialog primitive). Filter
- * pills (Starter / Admin-authored / All) also Phase 5H.
+ * Route: `/admin/broadcasts/templates`. Renders <AdminTemplateLibrary>
+ * with filter pills (Starter / Admin-authored / All) + per-row Edit
+ * link. Delete is performed via PATCH/DELETE on /api/admin/broadcasts/
+ * templates/[id] (no in-list AlertDialog confirmation yet — backlog).
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';

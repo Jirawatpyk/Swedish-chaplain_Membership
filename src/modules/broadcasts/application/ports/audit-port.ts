@@ -125,22 +125,27 @@ export const F7_AUDIT_EVENT_TYPES = [
   'broadcast_image_unsafe',
   'broadcast_image_allowlist_updated',
 
-  // --- F7.1a US7 (Template library CRUD) — 3 events -----------------
+  // --- F7.1a US7 (Template library CRUD) — 4 events -----------------
   'broadcast_template_created',
   'broadcast_template_updated',
   'broadcast_template_deleted',
+  // R1.1 (review Round 1 CRIT-4): snapshot moment audit so forensics
+  // can answer "who pulled which template into draft X at when". Emitted
+  // inside the snapshot use-case's withTx atomically with the body+
+  // counter mutations (Constitution I clause 3).
+  'broadcast_template_snapshotted',
 ] as const;
 
 /**
- * Static assertion: count matches the declared 55 (= 43 F7 MVP + 11
+ * Static assertion: count matches the declared 56 (= 43 F7 MVP + 11
  * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
  * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
- * `broadcast_image_unsafe`). Catches drift if a spec amendment adds
- * an event without updating this file. The check lives at type level;
- * if the count is wrong, TypeScript errors here with "Type '56' is
- * not assignable to type '55'" (or similar).
+ * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted`).
+ * Catches drift if a spec amendment adds an event without updating this
+ * file. The check lives at type level; if the count is wrong, TypeScript
+ * errors here with "Type '57' is not assignable to type '56'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 55
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 56
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -207,6 +212,9 @@ export interface F7AuditPayloadShapes {
     readonly actorRole: 'member_self_service' | 'admin_proxy';
     readonly segmentType: string;
     readonly estimatedRecipientCount: number;
+    // R1.1 M-code-2: FR-022 analytics field — null when draft began
+    // Blank, populated when draft was started from a template via T102.
+    readonly startedFromTemplateId: string | null;
   };
   readonly broadcast_cancelled: {
     readonly broadcastId: string;
@@ -231,7 +239,12 @@ export interface F7AuditPayloadShapes {
   };
   readonly broadcast_cross_tenant_probe: {
     readonly probedTenantId: string;
-    readonly probedBroadcastId: string;
+    // R1.1 H-code-4: one of probedBroadcastId | probedTemplateId is set,
+    // discriminated by resourceKind. Older emit sites pre-R1.1 omit
+    // resourceKind (treated as 'broadcast' default for back-compat).
+    readonly probedBroadcastId?: string;
+    readonly probedTemplateId?: string;
+    readonly resourceKind?: 'broadcast' | 'template';
   };
   readonly broadcast_cross_member_probe: {
     readonly probedMemberId: string;
@@ -243,6 +256,15 @@ export interface F7AuditPayloadShapes {
     readonly batchIndex: number;
     readonly resendEventId: string;
     readonly resendEventType: string;
+  };
+  // R1.1 CRIT-4: snapshot-moment forensic audit. Emitted inside the
+  // snapshot use-case's withTx so audit row + body mutation + counter
+  // increment co-commit (Constitution I clause 3 atomicity).
+  readonly broadcast_template_snapshotted: {
+    readonly broadcastId: string;
+    readonly templateId: string;
+    readonly templateNameSnapshot: string;
+    readonly memberId: string;
   };
   readonly broadcast_webhook_signature_rejected: {
     readonly reason:

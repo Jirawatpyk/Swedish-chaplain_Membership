@@ -50,6 +50,10 @@ const makeTemplate = (overrides?: Partial<BroadcastTemplate>): BroadcastTemplate
 const makeDeps = (overrides?: {
   template?: BroadcastTemplate | null;
   chamberName?: string;
+  ownership?:
+    | { readonly probeKind: 'owned'; readonly broadcast: unknown }
+    | { readonly probeKind: 'not_found'; readonly broadcast: null }
+    | { readonly probeKind: 'cross_member'; readonly broadcast: null };
 }): {
   templatesPort: BroadcastTemplatesPort;
   broadcastsRepo: BroadcastsRepo;
@@ -62,6 +66,10 @@ const makeDeps = (overrides?: {
     overrides && 'template' in overrides
       ? overrides.template
       : makeTemplate();
+  const ownership = overrides?.ownership ?? {
+    probeKind: 'owned' as const,
+    broadcast: { broadcastId: DRAFT_ID, requestedByMemberId: 'mem-1' },
+  };
   return {
     templatesPort: {
       findById: vi.fn().mockResolvedValue(tpl),
@@ -75,8 +83,9 @@ const makeDeps = (overrides?: {
       ),
     } as BroadcastTemplatesPort,
     broadcastsRepo: {
-      // Minimal mock — snapshot use-case only needs to UPDATE the draft
-      // body+subject+started_from_template_id+template_name_snapshot.
+      // Minimal mock — snapshot use-case needs findOwnedByMember (R1.1
+      // CRIT-1 draft-ownership check) + updateDraftFromTemplate.
+      findOwnedByMember: vi.fn().mockResolvedValue(ownership),
       updateDraftFromTemplate: vi.fn().mockResolvedValue(undefined),
     } as unknown as BroadcastsRepo,
     tenantDisplayName: {
@@ -118,7 +127,7 @@ const deps = makeDeps({ chamberName: 'SweCham' });
     );
   });
 
-  it('cross-tenant probe (template belongs to tenant B) → template_not_found + cross-tenant audit', async () => {
+  it('cross-tenant probe (template belongs to tenant B) → template_not_found + cross-tenant audit with template payload', async () => {
 const deps = makeDeps({ template: null });
     const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
@@ -130,11 +139,100 @@ const deps = makeDeps({ template: null });
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('template_not_found');
+    // R1.1 H-code-4: payload now uses probedTemplateId + resourceKind
     expect(deps.audit.emit).toHaveBeenCalledWith(
       null,
-      expect.objectContaining({ eventType: 'broadcast_cross_tenant_probe' }),
+      expect.objectContaining({
+        eventType: 'broadcast_cross_tenant_probe',
+        payload: expect.objectContaining({
+          probedTenantId: TENANT,
+          probedTemplateId: TEMPLATE_ID,
+          resourceKind: 'template',
+        }),
+      }),
     );
     expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+  });
+
+  it('CRIT-1: cross-member draft hijack → broadcast_cross_member_probe audit + draft_not_found + counter NOT incremented', async () => {
+    const deps = makeDeps({
+      ownership: { probeKind: 'cross_member', broadcast: null },
+    });
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-attacker',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-crit1',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('draft_not_found');
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'broadcast_cross_member_probe',
+        payload: expect.objectContaining({
+          probedMemberId: 'mem-attacker',
+          probedBroadcastId: DRAFT_ID,
+        }),
+      }),
+    );
+    // Counter MUST NOT bump on hostile probe
+    expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+    // Body MUST NOT be touched
+    expect(deps.broadcastsRepo.updateDraftFromTemplate).not.toHaveBeenCalled();
+  });
+
+  it('CRIT-1: draft genuinely not found → draft_not_found WITHOUT cross-member audit (benign cache miss)', async () => {
+    const deps = makeDeps({
+      ownership: { probeKind: 'not_found', broadcast: null },
+    });
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-1',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-crit1b',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('draft_not_found');
+    // No probe audit for benign not_found
+    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ eventType: 'broadcast_cross_member_probe' }),
+    );
+  });
+
+  it('CRIT-4: successful snapshot → audit emits broadcast_template_snapshotted inside withTx', async () => {
+    const deps = makeDeps();
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-1',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-crit4',
+    });
+    expect(r.ok).toBe(true);
+    // emit called with tx-token (mock withTx passes null as tx) +
+    // template_snapshotted event + payload includes templateId,
+    // memberId, broadcastId, templateNameSnapshot
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null, // tx (mock withTx)
+      expect.objectContaining({
+        eventType: 'broadcast_template_snapshotted',
+        actorUserId: ACTOR_MEMBER,
+        tenantId: TENANT,
+        payload: expect.objectContaining({
+          broadcastId: DRAFT_ID,
+          templateId: TEMPLATE_ID,
+          templateNameSnapshot: 'Monthly Newsletter',
+          memberId: 'mem-1',
+        }),
+      }),
+    );
   });
 
   it('soft-deleted template → template_not_found (deleted_at filter)', async () => {

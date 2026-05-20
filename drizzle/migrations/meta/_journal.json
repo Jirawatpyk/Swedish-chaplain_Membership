@@ -1226,6 +1226,13 @@
 			"when": 1797753600000,
 			"tag": "0174_membership_plans_en_locale_non_empty",
 			"breakpoints": true
+		},
+		{
+			"idx": 175,
+			"version": "7",
+			"when": 1797840000000,
+			"tag": "0175_f71a_template_snapshotted_event",
+			"breakpoints": true
 		}
 	]
 }
