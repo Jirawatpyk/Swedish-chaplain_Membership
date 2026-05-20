@@ -3510,7 +3510,17 @@
           "triggerLabel": "Start from a template",
           "blankOption": "Blank — start from scratch",
           "starterSuffix": "Starter",
+          "starterBadgeAria": "Seeded by the platform",
+          "searchPlaceholder": "Search templates by name",
+          "emptyMessage": "No templates match your search",
           "helpText": "Picking a template fills the subject + message. You can still edit before sending."
+        },
+        "staleDraftBanner": {
+          "title": "Template has been updated",
+          "body": "The \"{templateName}\" template was edited since you started this draft. Refresh to load the current version (your edits to subject + body will be overwritten).",
+          "refreshButton": "Refresh from current",
+          "refreshingButton": "Refreshing…",
+          "dismissAria": "Dismiss stale-draft notice for {templateName}"
         },
         "fields": {
           "subject": "Subject",

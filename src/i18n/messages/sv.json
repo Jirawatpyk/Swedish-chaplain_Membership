@@ -3510,7 +3510,17 @@
           "triggerLabel": "Börja från en mall",
           "blankOption": "Tom — börja från noll",
           "starterSuffix": "Start",
+          "starterBadgeAria": "Förseedad av plattformen",
+          "searchPlaceholder": "Sök mallar efter namn",
+          "emptyMessage": "Inga mallar matchar din sökning",
           "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar."
+        },
+        "staleDraftBanner": {
+          "title": "Mallen har uppdaterats",
+          "body": "Mallen \"{templateName}\" har redigerats sedan du startade detta utkast. Klicka uppdatera för att ladda nuvarande version (dina ändringar i ämne och innehåll skrivs över).",
+          "refreshButton": "Uppdatera från nuvarande",
+          "refreshingButton": "Uppdaterar…",
+          "dismissAria": "Stäng meddelandet om föråldrat utkast för {templateName}"
         },
         "fields": {
           "subject": "Ämne",
