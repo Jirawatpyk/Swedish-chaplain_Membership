@@ -163,7 +163,18 @@ export async function updateBroadcastTemplate(
       patch,
       tx,
     );
-    if (!updateRes.ok) return err(updateRes.error);
+    if (!updateRes.ok) {
+      // R3.3 H-5 — adapter's duplicate_name path defaults locale to
+      // input.locale ?? 'en' (the adapter cannot know the existing
+      // row's locale without a re-fetch). Override with `existing.locale`
+      // so the i18n surface shows the right language in the UI ("name
+      // already exists in Swedish" not "in English") when an admin
+      // edits a TH/SV template's name to one that collides.
+      if (updateRes.error.kind === 'duplicate_name') {
+        return err({ kind: 'duplicate_name', locale: existing.locale });
+      }
+      return err(updateRes.error);
+    }
 
     const after = updateRes.value;
     await deps.audit.emit(tx, {

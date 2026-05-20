@@ -90,6 +90,7 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     partialDeliveryAcceptedByUserId: null,
     startedFromTemplateId: null,
     templateNameSnapshot: null,
+    templateProvenance: null,
     createdAt: FROZEN_NOW,
     updatedAt: FROZEN_NOW,
     ...overrides,

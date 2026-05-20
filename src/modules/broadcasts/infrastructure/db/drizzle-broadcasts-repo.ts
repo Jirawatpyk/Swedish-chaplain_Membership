@@ -25,6 +25,7 @@ import {
   type BroadcastId,
 } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
   ListByTenantStatusOpts,
@@ -33,6 +34,7 @@ import type {
 } from '../../application/ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
 } from '../../application/ports/broadcasts-repo';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
@@ -399,9 +401,14 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: string,
       broadcastId: BroadcastId,
       snapshot: {
-        readonly subject: string;
-        readonly bodyHtml: string;
-        readonly bodySource: string;
+        // R3.3 H-3 — brand flows end-to-end. The adapter accepts
+        // ChamberSubstitutedBody (Domain VO output) to match the port
+        // contract; Drizzle's `text` column type structurally accepts
+        // the brand (it's a string subtype) so no runtime cast needed
+        // at the .set() call.
+        readonly subject: ChamberSubstitutedBody;
+        readonly bodyHtml: ChamberSubstitutedBody;
+        readonly bodySource: ChamberSubstitutedBody;
         readonly startedFromTemplateId: string;
         readonly templateNameSnapshot: string;
       },
@@ -455,9 +462,11 @@ export function makeDrizzleBroadcastsRepo(
             probeRow.status,
           );
         }
-        throw new Error(
-          `updateDraftFromTemplate: broadcast ${broadcastId} not found in tenant ${tenantIdArg}`,
-        );
+        // R3.3 H-6 — typed error so the snapshot use-case catch can
+        // narrow (vs bare Error → generic 500). Should never fire
+        // post-ownership-check (Constitution I clause 2 invariant
+        // violation if it does — log severity stays loud at caller).
+        throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
       }
       return rowToBroadcast(row as BroadcastRow);
     },

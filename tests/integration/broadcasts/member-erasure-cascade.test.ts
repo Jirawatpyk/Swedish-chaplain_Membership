@@ -89,6 +89,7 @@ function makeBroadcast(
     partialDeliveryAcceptedByUserId: null,
     startedFromTemplateId: null,
     templateNameSnapshot: null,
+    templateProvenance: null,
     createdAt: NOW,
     updatedAt: NOW,
   };

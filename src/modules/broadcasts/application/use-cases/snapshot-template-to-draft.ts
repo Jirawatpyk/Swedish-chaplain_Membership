@@ -26,7 +26,10 @@ import { substituteChamberName } from '../../domain/value-objects/template-snaps
 import { parseBroadcastId } from '../../domain/broadcast';
 import type { BroadcastTemplatesPort } from '../ports/broadcast-templates-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import { BroadcastConcurrentMutationError } from '../ports/broadcasts-repo';
+import {
+  BroadcastConcurrentMutationError,
+  BroadcastNotFoundError,
+} from '../ports/broadcasts-repo';
 import type { TenantDisplayNamePort } from '../ports/tenant-display-name-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
@@ -244,6 +247,23 @@ export async function snapshotTemplateToDraft(
           kind: 'draft_status_drift',
           currentStatus: e.observedStatus,
         });
+      }
+      // R3.3 H-6 — typed BroadcastNotFoundError = post-ownership-check
+      // disappearance (should never fire — Constitution I clause 2
+      // invariant violation if it does). Surface as draft_not_found
+      // to give the route handler a clean 404 path; log at error
+      // severity so observability picks up the invariant violation
+      // separately from the user-facing 404.
+      if (e instanceof BroadcastNotFoundError) {
+        logger.error(
+          {
+            tenantId: input.tenantId,
+            draftId: input.draftId,
+            templateId: input.templateId,
+          },
+          'broadcasts.snapshot.post_ownership_check_disappearance',
+        );
+        return err<SnapshotTemplateToDraftError>({ kind: 'draft_not_found' });
       }
       // Unexpected — log + rethrow. Route's outer try/catch maps to 500
       // internal_error (test mocks may also propagate via this branch).

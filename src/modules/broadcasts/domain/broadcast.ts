@@ -183,13 +183,13 @@ export interface Broadcast {
    * (which the underlying nullable column pair allowed). Populated
    * by the Drizzle row→domain mapper from the two columns above.
    *
-   * Optional (`?`) for compatibility with existing test fixtures
-   * built before the DU was introduced. Production code paths
-   * (Drizzle row→domain mapper) always populate it. New consumers
-   * SHOULD read `templateProvenance` over the raw column-mirror
-   * fields above. R3.3 H-4 promotes this to REQUIRED.
+   * R3.3 H-4 — REQUIRED. The Drizzle row→domain mapper always
+   * populates it from the underlying column pair; test fixtures
+   * must mirror this discipline. The optional escape hatch was
+   * removed because it defeated the "either-both-or-neither"
+   * invariant the DU was meant to enforce.
    */
-  readonly templateProvenance?:
+  readonly templateProvenance:
     | { readonly templateId: string; readonly templateNameSnapshot: string }
     | null;
 

@@ -66,6 +66,11 @@ const KNOWN_NOT_YET_EMITTED: ReadonlyArray<string> = [
   'broadcast_template_created',
   'broadcast_template_updated',
   'broadcast_template_deleted',
+  // R2.1 M-test-2 close-out — forward-looking event. Migration 0168
+  // seeds run-once at first apply (rare conflict surface); a future
+  // Application-layer `reseedStarterTemplates` use-case will become
+  // the primary emit caller. No emit site in src/ today.
+  'broadcast_template_seed_skipped_existing_name',
 ];
 
 function listTsFiles(root: string): string[] {
