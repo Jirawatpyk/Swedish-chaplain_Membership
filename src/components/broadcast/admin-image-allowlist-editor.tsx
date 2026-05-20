@@ -3,7 +3,7 @@
 /**
  * T079 (F7.1a US2) — Admin image-source allowlist editor.
  *
- * Surfaces in `/admin/broadcasts/settings`. Default entries
+ * Surfaces in `/admin/settings/broadcasts`. Default entries
  * (`is_default=TRUE`) render with disabled Remove buttons so the
  * platform invariant (chamber asset domain + Resend CDN always
  * allowlisted) is enforced in UI as well as DB.

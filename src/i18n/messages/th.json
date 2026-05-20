@@ -1783,9 +1783,6 @@
       "settings": {
         "pageTitle": "ตั้งค่าการส่งอีเมล",
         "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
-        "breadcrumbAdmin": "ผู้ดูแล",
-        "breadcrumbBroadcasts": "E-Blast",
-        "breadcrumbSettings": "ตั้งค่า",
         "allowlist": {
           "heading": "รายชื่อโดเมนที่อนุญาตให้ฝังรูปภาพ",
           "description": "รูปภาพในเนื้อหาอีเมลต้องมาจากโดเมนเหล่านี้เท่านั้น รายการเริ่มต้นไม่สามารถลบได้",

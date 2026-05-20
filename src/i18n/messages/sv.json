@@ -1783,9 +1783,6 @@
       "settings": {
         "pageTitle": "Inställningar för utskick",
         "pageDescription": "Konfigurera hur kammarens E-utskick fungerar, inklusive vilka bildkällor som tillåts i meddelandekroppen.",
-        "breadcrumbAdmin": "Administration",
-        "breadcrumbBroadcasts": "E-utskick",
-        "breadcrumbSettings": "Inställningar",
         "allowlist": {
           "heading": "Tillåtna bildkällor",
           "description": "Endast bilder som ligger på dessa värdnamn får visas i utskickets innehåll. Standardposter kan inte tas bort.",

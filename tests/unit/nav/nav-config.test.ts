@@ -60,6 +60,18 @@ describe('staffNavConfig', () => {
     );
     const broadcastSettingsItem = settingsSection.items[2]! as NavItem;
     expect(broadcastSettingsItem.href).toBe('/admin/settings/broadcasts');
+
+    // Structural sibling — survives nav reordering. If a future commit
+    // inserts a new Settings entry above broadcasts, the positional
+    // asserts above fail loudly while this one keeps verifying the
+    // entry itself still exists with the right href + titleKey contract.
+    const broadcastsByHref = settingsSection.items.find(
+      (item): item is NavItem =>
+        !isNavGroup(item) &&
+        (item as NavItem).href === '/admin/settings/broadcasts',
+    );
+    expect(broadcastsByHref?.titleKey).toBe('nav.staff.settingsBroadcasts');
+
     // F6 Phase 5 — integration setup wizard entry.
     expect(settingsSection.items[3]!.titleKey).toBe(
       'nav.staff.settingsIntegrationEventcreate',

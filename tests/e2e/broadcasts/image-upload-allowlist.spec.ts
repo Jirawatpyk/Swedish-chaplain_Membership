@@ -46,7 +46,8 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
       'E2E_ADMIN_* env vars not set',
     );
     await signIn(page, 'admin', ADMIN_EMAIL!, ADMIN_PASSWORD!);
-    await page.goto('/admin/broadcasts/settings');
+    // Relocated 2026-05-20 to centralised-settings IA.
+    await page.goto('/admin/settings/broadcasts');
     await expect(
       page.getByRole('heading', { name: /image source allowlist/i }),
     ).toBeVisible();
