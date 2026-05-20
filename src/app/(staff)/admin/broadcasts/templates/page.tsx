@@ -68,15 +68,18 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
 
   return (
     <TableContainer>
-      <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-      <div className="flex items-center justify-end mb-4">
-        <Link
-          href="/admin/broadcasts/templates/new"
-          className={buttonVariants()}
-        >
-          {t('newTemplateButton')}
-        </Link>
-      </div>
+      <PageHeader
+        title={t('pageTitle')}
+        subtitle={t('pageDescription')}
+        actions={
+          <Link
+            href="/admin/broadcasts/templates/new"
+            className={buttonVariants()}
+          >
+            {t('newTemplateButton')}
+          </Link>
+        }
+      />
 
       {rows.length === 0 ? (
         <Card>
