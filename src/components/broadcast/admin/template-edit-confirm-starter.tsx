@@ -14,7 +14,8 @@
  * starter does not silence the warning for others.
  *
  * a11y:
- *   - role="alert" + aria-live="polite" so SR users hear the warning
+ *   - role="status" + aria-live="polite" so SR users hear the warning
+ *     without it interrupting the current navigation cue
  *   - dismiss button has aria-label (close + name of template)
  *   - banner stays in DOM after dismissal (hidden with `hidden` attr)
  *     so re-opening the page after localStorage reset re-shows it
@@ -72,9 +73,9 @@ export function AdminTemplateEditConfirmStarter({
 
   return (
     <div
-      role="alert"
+      role="status"
       aria-live="polite"
-      className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm"
+      className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm text-warning-foreground"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
@@ -86,7 +87,7 @@ export function AdminTemplateEditConfirmStarter({
         <button
           type="button"
           onClick={dismiss}
-          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-amber-100"
+          className="shrink-0 rounded-md p-1 text-warning hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning/50"
           aria-label={t('starterEditBannerDismiss', { name: templateName })}
         >
           <X className="h-4 w-4" aria-hidden="true" />

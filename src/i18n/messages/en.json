@@ -1837,8 +1837,10 @@
         "saveButton": "Save template",
         "cancelButton": "Cancel",
         "savingButton": "Saving…",
+        "savedToast": "Template saved.",
         "errors": {
           "invalid_input": "Some fields are invalid. Please review and try again.",
+          "field_required": "This field is required.",
           "template_body_unsafe": "The body contains image sources that are not on the tenant allowlist.",
           "template_name_duplicate": "A template with this name + locale already exists.",
           "template_not_found": "Template not found.",

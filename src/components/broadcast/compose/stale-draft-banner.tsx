@@ -40,7 +40,7 @@ export function ComposeStaleDraftBanner({
     <div
       role="status"
       aria-live="polite"
-      className="mb-4 rounded-md border border-amber-300 bg-amber-50 p-4 text-sm"
+      className="mb-4 rounded-md border border-warning/30 bg-warning-surface p-4 text-sm text-warning-foreground"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
@@ -65,7 +65,7 @@ export function ComposeStaleDraftBanner({
           type="button"
           onClick={onDismiss}
           disabled={refreshing}
-          className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-amber-100 disabled:opacity-50"
+          className="shrink-0 rounded-md p-1 text-warning hover:bg-warning/20 focus-visible:ring-2 focus-visible:ring-warning/50 disabled:opacity-50"
           aria-label={t('dismissAria', { templateName })}
         >
           <X className="h-4 w-4" aria-hidden="true" />

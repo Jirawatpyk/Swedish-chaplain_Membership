@@ -17,9 +17,17 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { toast } from 'sonner';
 
@@ -64,6 +72,14 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
   const [bodyHtml, setBodyHtml] = useState(initial.bodyHtml);
   const [locale, setLocale] = useState<Locale>(initial.locale);
   const [error, setError] = useState<string | null>(null);
+  // M-ux-3: track whether the user has attempted submit so per-field
+  // error hints render only AFTER first interaction (avoids shouting
+  // "required" the moment the page mounts).
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+
+  const isNameInvalid = submitAttempted && !name.trim();
+  const isSubjectInvalid = submitAttempted && !subject.trim();
+  const isBodyInvalid = submitAttempted && !bodyHtml.trim();
 
   function submit(): void {
     setError(null);
@@ -101,9 +117,10 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           return;
         }
 
-        toast.success(
-          isEdit ? t('editPageTitle') : t('newPageTitle'),
-        );
+        // M-ux-1: dedicated success toast key (was reusing page title
+        // which read as "Edit broadcast template" — confusing as a
+        // success confirmation).
+        toast.success(t('savedToast'));
         router.push('/admin/broadcasts/templates');
         router.refresh();
       } catch (err) {
@@ -121,6 +138,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
       className="space-y-6"
       onSubmit={(e) => {
         e.preventDefault();
+        setSubmitAttempted(true);
         if (name.trim() && subject.trim() && bodyHtml.trim()) submit();
       }}
     >
@@ -133,11 +151,23 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           maxLength={100}
           required
           disabled={isPending}
-          aria-describedby="tpl-name-help"
+          aria-invalid={isNameInvalid}
+          aria-describedby={
+            isNameInvalid ? 'tpl-name-help tpl-name-error' : 'tpl-name-help'
+          }
         />
         <p id="tpl-name-help" className="text-caption">
           {t('fields.nameHelp')}
         </p>
+        {isNameInvalid ? (
+          <p
+            id="tpl-name-error"
+            role="alert"
+            className="text-caption text-destructive"
+          >
+            {t('errors.field_required')}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
@@ -149,41 +179,73 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           maxLength={200}
           required
           disabled={isPending}
-          aria-describedby="tpl-subject-help"
+          aria-invalid={isSubjectInvalid}
+          aria-describedby={
+            isSubjectInvalid
+              ? 'tpl-subject-help tpl-subject-error'
+              : 'tpl-subject-help'
+          }
         />
         <p id="tpl-subject-help" className="text-caption">
           {t('fields.subjectHelp')}
         </p>
+        {isSubjectInvalid ? (
+          <p
+            id="tpl-subject-error"
+            role="alert"
+            className="text-caption text-destructive"
+          >
+            {t('errors.field_required')}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-2">
         <Label id="tpl-body-label">{t('fields.bodyHtml')}</Label>
-        <TiptapEditor
-          initialHtml={bodyHtml || '<p></p>'}
-          onChange={setBodyHtml}
-          disabled={isPending}
-          labelledById="tpl-body-label"
-          imagesEnabled={false}
-        />
+        <div aria-invalid={isBodyInvalid || undefined}>
+          <TiptapEditor
+            initialHtml={bodyHtml || '<p></p>'}
+            onChange={setBodyHtml}
+            disabled={isPending}
+            labelledById="tpl-body-label"
+            imagesEnabled={false}
+          />
+        </div>
         <p id="tpl-body-help" className="text-caption">
           {t('fields.bodyHtmlHelp')}
         </p>
+        {isBodyInvalid ? (
+          <p
+            id="tpl-body-error"
+            role="alert"
+            className="text-caption text-destructive"
+          >
+            {t('errors.field_required')}
+          </p>
+        ) : null}
       </div>
 
       {mode === 'new' ? (
         <div className="space-y-2">
           <Label htmlFor="tpl-locale">{t('fields.localeLabel')}</Label>
-          <select
-            id="tpl-locale"
+          <Select
             value={locale}
-            onChange={(e) => setLocale(e.target.value as Locale)}
+            onValueChange={(v) => setLocale(v as Locale)}
             disabled={isPending}
-            className="block w-full rounded-md border border-input bg-background px-3 h-[var(--input-height)] text-sm"
           >
-            <option value="en">{t('locale.en')}</option>
-            <option value="th">{t('locale.th')}</option>
-            <option value="sv">{t('locale.sv')}</option>
-          </select>
+            <SelectTrigger
+              id="tpl-locale"
+              aria-label={t('fields.localeLabel')}
+              className="w-full"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en">{t('locale.en')}</SelectItem>
+              <SelectItem value="th">{t('locale.th')}</SelectItem>
+              <SelectItem value="sv">{t('locale.sv')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       ) : null}
 
@@ -208,7 +270,17 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
             isPending || !name.trim() || !subject.trim() || !bodyHtml.trim()
           }
         >
-          {isPending ? t('savingButton') : t('saveButton')}
+          {isPending ? (
+            <>
+              <Loader2
+                className="mr-2 size-4 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+              {t('savingButton')}
+            </>
+          ) : (
+            t('saveButton')
+          )}
         </Button>
       </div>
     </form>

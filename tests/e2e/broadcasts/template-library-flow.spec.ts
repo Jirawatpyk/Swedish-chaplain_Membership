@@ -103,17 +103,23 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
 
     await page.goto('/portal/broadcasts/new');
 
-    // Template picker is the first compose action — native <select>
-    // exposes implicit combobox role. selectOption fires the change
-    // handler which navigates to ?template={id} server-side.
-    const picker = page.getByLabel(/Start from a template/i);
-    // Exact label match — seeded migration 0168 ships "Monthly
-    // Newsletter" in the EN locale (TH/SV variants ship localised
-    // names). The starter suffix `(Starter)` is appended in the option
-    // label per ComposeTemplatePicker, so the substring helper needs
-    // the full prefix to match unambiguously when multiple starters
-    // begin with the same word.
-    await picker.selectOption({ label: 'Monthly Newsletter (Starter)' });
+    // Template picker is now the cmdk Combobox primitive (R1.4 H-code-3
+    // — shipped via ComposeTemplatePicker). Interaction: click the
+    // trigger to open the popover, then click the option by its
+    // accessible name. The "(Starter)" suffix lives in a sibling <span>
+    // (per R1.4 H-ux-1 separation) — assert it via a SEPARATE locator
+    // rather than embedding into the option name.
+    const picker = page.getByRole('combobox', {
+      name: /Start from a template/i,
+    });
+    await picker.click();
+    await page
+      .getByRole('option', { name: /^Monthly Newsletter$/ })
+      .click();
+    // Starter badge sibling stays visible while popover is open AND
+    // after selection (it sits on the row in both the popover list and
+    // the post-select trigger label).
+    await expect(page.getByText(/Starter/).first()).toBeVisible();
 
     // After navigation, the compose form should be pre-populated.
     // SweCham comes from NEXT_PUBLIC_TENANT_NAME fallback (or whatever

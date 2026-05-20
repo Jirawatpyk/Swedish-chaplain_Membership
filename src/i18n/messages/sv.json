@@ -1837,8 +1837,10 @@
         "saveButton": "Spara mall",
         "cancelButton": "Avbryt",
         "savingButton": "Sparar…",
+        "savedToast": "Mallen sparad.",
         "errors": {
           "invalid_input": "Vissa fält är ogiltiga. Granska och försök igen.",
+          "field_required": "Detta fält är obligatoriskt.",
           "template_body_unsafe": "Innehållet innehåller bildkällor som inte finns på kammarens tillåtelselista.",
           "template_name_duplicate": "En mall med detta namn + språk finns redan.",
           "template_not_found": "Mallen hittades inte.",
