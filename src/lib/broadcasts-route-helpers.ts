@@ -38,6 +38,8 @@ export type F7RouteErrorCode =
   | 'broadcast_subject_empty'
   | 'broadcast_body_too_large'
   | 'broadcast_body_unsafe_html'
+  // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 / AS2 closure.
+  | 'broadcast_body_image_source_unsafe'
   | 'broadcast_custom_recipient_unknown'
   | 'broadcast_custom_recipient_invalid_format'
   | 'broadcast_custom_recipient_empty'
@@ -111,6 +113,12 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
   broadcast_body_unsafe_html: {
     message: 'Message body contains forbidden HTML — please remove unsupported elements.',
     messageThai: 'เนื้อหามี HTML ที่ไม่อนุญาต กรุณาลบองค์ประกอบที่ไม่รองรับ',
+  },
+  broadcast_body_image_source_unsafe: {
+    message:
+      'Message body contains images from sources not in your chamber\'s allowlist. Replace or remove the listed images.',
+    messageThai:
+      'เนื้อหาอีเมลมีรูปภาพจากแหล่งที่ไม่อยู่ในรายการอนุญาตของหอการค้า กรุณาเปลี่ยนหรือลบรูปภาพที่ระบุไว้',
   },
   broadcast_custom_recipient_unknown: {
     message: 'Some custom recipients are not in your tenant directory.',
@@ -309,6 +317,7 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   broadcast_subject_empty: 422,
   broadcast_body_too_large: 422,
   broadcast_body_unsafe_html: 422,
+  broadcast_body_image_source_unsafe: 422,
   broadcast_custom_recipient_unknown: 422,
   broadcast_custom_recipient_invalid_format: 422,
   broadcast_custom_recipient_empty: 422,

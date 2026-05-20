@@ -62,18 +62,22 @@ export function ClamavUnreachableBanner(): React.ReactElement | null {
     };
   }, []);
 
-  if (!unreachable) return null;
+  // PR-review fix 2026-05-20 UX-C2 — persistent live-region wrapper.
+  // The outer <div role="status" aria-live="polite"> MUST be in the
+  // DOM at all times so screen readers announce the state CHANGE
+  // (content mutation), not the element-mount event (which NVDA/JAWS
+  // do not announce reliably for late-mounted live regions).
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-start gap-2 p-3 border border-warning rounded bg-warning/10"
-    >
-      <AlertCircle className="w-4 h-4 mt-0.5 text-warning" aria-hidden />
-      <div>
-        <p className="text-body font-medium">{t('title')}</p>
-        <p className="text-caption">{t('description')}</p>
-      </div>
+    <div role="status" aria-live="polite" aria-atomic="true">
+      {unreachable ? (
+        <div className="flex items-start gap-2 p-3 border border-warning rounded bg-warning/10">
+          <AlertCircle className="w-4 h-4 mt-0.5 text-warning" aria-hidden />
+          <div>
+            <p className="text-body font-medium">{t('title')}</p>
+            <p className="text-caption">{t('description')}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -34,6 +34,7 @@ import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
+import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -65,6 +66,11 @@ const ERROR_CODE_FIELD: Record<string, ServerErrorField> = {
   broadcast_subject_empty: 'subject',
   broadcast_body_too_large: 'body',
   broadcast_body_unsafe_html: 'body',
+  // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 + AS2 closure.
+  // Field focus jumps to body editor; structured list of disallowed
+  // image sources renders below via <UnsafeImageSourcesList /> from
+  // route response `error.details.disallowedSources`.
+  broadcast_body_image_source_unsafe: 'body',
   broadcast_empty_segment_blocked: 'segment',
   broadcast_audience_too_large: 'segment',
   broadcast_custom_recipient_unknown: 'customList',
@@ -133,6 +139,13 @@ export function ComposeForm({
     field: ServerErrorField;
     message: string;
   } | null>(null);
+  // PR-review fix 2026-05-20 UX-C1 — accumulated <img src> URLs the
+  // server rejected because their hostname is not in the tenant's
+  // image-source allowlist. Cleared when the user edits the body OR
+  // re-submits successfully.
+  const [unsafeImageSources, setUnsafeImageSources] = useState<
+    readonly string[] | null
+  >(null);
 
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyContainerRef = useRef<HTMLDivElement>(null);
@@ -206,11 +219,16 @@ export function ComposeForm({
       });
 
       const responseBody = (await res.json().catch(() => ({}))) as {
-        error?: { code?: string; message?: string };
+        error?: {
+          code?: string;
+          message?: string;
+          details?: { disallowedSources?: ReadonlyArray<string> };
+        };
         broadcastId?: string;
       };
 
       if (res.ok && responseBody.broadcastId) {
+        setUnsafeImageSources(null);
         toast.success(t('toast.submitted'), {
           description: t('toast.submittedSlaHint'),
         });
@@ -221,6 +239,18 @@ export function ComposeForm({
       }
 
       const code = responseBody.error?.code ?? 'internal_error';
+      // PR-review fix 2026-05-20 UX-C1 — surface accumulated list of
+      // disallowed image sources from route payload so the
+      // <UnsafeImageSourcesList /> below the editor can render each
+      // offender (AS2 + FR-011).
+      if (
+        code === 'broadcast_body_image_source_unsafe' &&
+        Array.isArray(responseBody.error?.details?.disallowedSources)
+      ) {
+        setUnsafeImageSources(responseBody.error.details.disallowedSources);
+      } else {
+        setUnsafeImageSources(null);
+      }
       // Use the i18n key if recognised; fall back to the server message.
       let msg: string;
       try {
@@ -394,12 +424,22 @@ export function ComposeForm({
               onChange={(next) => {
                 setBodyHtml(next);
                 if (serverError?.field === 'body') setServerError(null);
+                // PR-review fix 2026-05-20 UX-C1 — clear disallowed-
+                // sources list when the user edits the body (they may
+                // be acting on the listed offenders).
+                if (unsafeImageSources !== null) setUnsafeImageSources(null);
               }}
               disabled={submitting}
               labelledById="broadcast-body-label"
               imagesEnabled={imagesEnabled}
               draftId={initialDraftId}
             />
+            {/* PR-review fix 2026-05-20 UX-C1 — accumulated disallowed
+                image sources list. role=alert so SR users hear it
+                immediately on submit. */}
+            {unsafeImageSources !== null && unsafeImageSources.length > 0 ? (
+              <UnsafeImageSourcesList urls={unsafeImageSources} />
+            ) : null}
             {serverError?.field === 'body' ? (
               <p
                 id="broadcast-body-error"

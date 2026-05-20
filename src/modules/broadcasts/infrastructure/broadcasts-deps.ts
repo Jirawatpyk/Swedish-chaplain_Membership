@@ -83,6 +83,10 @@ export function makeSubmitBroadcastDeps(
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     sanitizer: dompurifySanitizer,
+    // PR-review fix 2026-05-20 UX-C1 — wire image-source allowlist
+    // validation into submit pipeline so the spec's AS2 + FR-011
+    // reject-with-disallowed-srcs UX surface actually fires.
+    imageAllowlistPort: makeDrizzleImageAllowlistRepo(),
     membersBridge,
     plansBridge,
     emailValidator: rfc5321EmailValidator,

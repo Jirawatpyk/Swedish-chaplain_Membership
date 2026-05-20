@@ -47,6 +47,7 @@ import {
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { HtmlSanitizerPort } from '../ports/html-sanitizer-port';
+import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailValidatorPort } from '../ports/email-validator-port';
@@ -54,6 +55,7 @@ import type { EventAttendeesRepository } from '../ports/event-attendees-reposito
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { RateLimiterPort } from '../ports/rate-limiter-port';
 import { sanitizeHtml } from './sanitize-html';
+import { validateImageSourceAllowlist } from './validate-image-source-allowlist';
 import { validateCustomRecipients } from './validate-custom-recipients';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
 import { computeQuotaCounter } from './compute-quota-counter';
@@ -87,6 +89,15 @@ export type SubmitBroadcastError =
   | { readonly kind: 'broadcast_subject_empty' }
   | { readonly kind: 'broadcast_body_too_large'; readonly bytes: number }
   | { readonly kind: 'broadcast_body_unsafe_html'; readonly reason: string }
+  // PR-review fix 2026-05-20 UX-C1 — F7.1a US2 FR-011 + AS2 closure.
+  // `validateImageSourceAllowlist` is invoked AFTER sanitizeHtml +
+  // BEFORE persistence; non-allowlisted <img src> hosts surface here
+  // with the full accumulated list so the compose UI can highlight
+  // every offender at once (spec FR-011 UX requirement).
+  | {
+      readonly kind: 'broadcast_body_image_source_unsafe';
+      readonly unsafeImageSources: ReadonlyArray<string>;
+    }
   | {
       readonly kind: 'broadcast_custom_recipient_unknown';
       readonly unresolved: ReadonlyArray<string>;
@@ -114,6 +125,15 @@ export interface SubmitBroadcastDeps {
   readonly tenant: TenantContext;
   readonly broadcastsRepo: BroadcastsRepo;
   readonly sanitizer: HtmlSanitizerPort;
+  /**
+   * PR-review fix 2026-05-20 UX-C1 — F7.1a US2 source-allowlist
+   * validation runs after sanitiser, before persistence. Optional in
+   * the type so F7 MVP test fixtures + back-compat callers don't
+   * break; when omitted the validation step is SKIPPED (legacy F7
+   * MVP behaviour: <img> stripped entirely by sanitiser). Production
+   * composition root (`makeSubmitBroadcastDeps`) always wires it.
+   */
+  readonly imageAllowlistPort?: ImageAllowlistPort;
   readonly membersBridge: MembersBridgePort;
   readonly plansBridge: PlansBridgePort;
   readonly emailValidator: EmailValidatorPort;
@@ -390,6 +410,38 @@ export async function submitBroadcast(
         : { reason: sanitised.error.reason }),
     });
     return err(sanitised.error);
+  }
+
+  // ---- Precondition (e2): image-source allowlist (F7.1a US2) -------
+  // PR-review fix 2026-05-20 UX-C1 — runs on the SANITISED body so
+  // any <img src=non-http(s)> already had its src stripped by the
+  // DOMPurify hook. Surviving <img src> hosts must match the tenant's
+  // allowlist (FR-011). Rejection accumulates ALL unsafe srcs so the
+  // editor can highlight every offender at once (FR-011 UX).
+  // emit-site logs `broadcast_body_image_source_unsafe` via
+  // safeAuditEmit (fail-soft).
+  if (deps.imageAllowlistPort) {
+    const imageCheck = await validateImageSourceAllowlist(
+      {
+        allowlistPort: deps.imageAllowlistPort,
+        audit: deps.audit,
+      },
+      {
+        bodyHtml: sanitised.value.sanitisedHtml,
+        tenantId: deps.tenant.slug as never,
+        actorUserId: input.submittedByUserId,
+        requestId: input.requestId ?? 'submit-broadcast',
+      },
+    );
+    if (!imageCheck.ok) {
+      // No emitReject() here — validateImageSourceAllowlist already
+      // emitted `broadcast_body_image_source_unsafe` via its own
+      // safeAuditEmit (fail-soft). emitReject would double-audit.
+      return err({
+        kind: 'broadcast_body_image_source_unsafe',
+        unsafeImageSources: imageCheck.error.unsafeImageSources,
+      });
+    }
   }
 
   // ---- Precondition (h): custom-list validation --------------------

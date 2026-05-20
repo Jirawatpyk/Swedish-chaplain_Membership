@@ -21,6 +21,7 @@ import { createHash } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { asHostname } from '../../domain/value-objects/image-source-allowlist';
+import { safeAuditEmit } from './_safe-audit-emit';
 import type {
   ImageAllowlistPort,
 } from '../ports/image-allowlist-port';
@@ -86,7 +87,10 @@ export async function uploadInlineImage(
 
   const sizeBytes = input.fileBytes.byteLength;
   if (sizeBytes > MAX_BYTES) {
-    await deps.audit.emit(null, {
+    // PR-review fix 2026-05-20 SF-H3: safeAuditEmit preserves the
+    // 413-reject effect even when audit storage hiccups (would
+    // previously bubble as 500 + lose the security event).
+    await safeAuditEmit(deps.audit, null, {
       eventType: 'broadcast_image_too_large',
       actorUserId: input.actorUserId,
       tenantId: input.tenantId,
@@ -121,7 +125,10 @@ export async function uploadInlineImage(
         : verdict.verdict === 'error'
           ? `scanner_error:${verdict.reason}`
           : 'scanner_timeout';
-    await deps.audit.emit(null, {
+    // PR-review fix 2026-05-20 SF-H2: safeAuditEmit preserves the
+    // 422-reject + bytes-NEVER-persisted invariant even when audit
+    // storage hiccups (pipeline-order invariant from FR-013).
+    await safeAuditEmit(deps.audit, null, {
       eventType: 'broadcast_image_unsafe',
       actorUserId: input.actorUserId,
       tenantId: input.tenantId,

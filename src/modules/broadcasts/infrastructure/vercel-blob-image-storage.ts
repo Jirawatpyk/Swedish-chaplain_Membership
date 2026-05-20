@@ -14,12 +14,22 @@
  * arbitrary tenant content).
  */
 import { put, head } from '@vercel/blob';
+import { logger } from '@/lib/logger';
 import type {
   ImageMimeType,
   ImageStoragePort,
 } from '../application/ports/image-storage-port';
 import type { TenantSlug } from '@/modules/tenants';
 import { env } from '@/lib/env';
+
+/**
+ * @vercel/blob does not export typed error classes — F4 detects
+ * NOT-FOUND via message regex (see get-credit-note-pdf-signed-url.ts:103).
+ * Mirror that pattern here so dedup probes only swallow genuine
+ * not-founds; auth / suspend / rate-limit errors surface to logger
+ * for ops visibility (PR-review fix 2026-05-20 SF-H1 closure).
+ */
+const BLOB_NOT_FOUND_PATTERN = /not found|404|BlobNotFoundError/i;
 
 const MIME_EXT: Record<ImageMimeType, string> = {
   'image/png': 'png',
@@ -48,8 +58,21 @@ export const vercelBlobImageStorage: ImageStoragePort = {
           token: env.blob.readWriteToken,
         });
         return meta.url;
-      } catch {
-        // not found — try next extension
+      } catch (e) {
+        // PR-review fix SF-H1 — narrow swallow to NOT-FOUND only.
+        // Other error classes (BlobAccessError / BlobClientTokenExpired /
+        // BlobStoreSuspended / BlobServiceRateLimited) silently
+        // looked like cache-miss + masked ops incidents. Now they
+        // log at warn level + abort the probe (caller proceeds to
+        // fresh `put` which will surface the same error class
+        // explicitly via PUT path).
+        const msg = e instanceof Error ? e.message : String(e);
+        if (BLOB_NOT_FOUND_PATTERN.test(msg)) continue;
+        logger.warn(
+          { err: msg, tenantId, contentHash, mime },
+          'broadcasts.blob_head_error',
+        );
+        return null;
       }
     }
     return null;

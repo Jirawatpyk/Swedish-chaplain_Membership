@@ -3539,6 +3539,8 @@
           "uploadedToast": "Bilden har laddats upp.",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
+          "disallowedSourcesHeading": "Dessa bildkällor är inte tillåtna:",
+          "disallowedSourceItem": "{host} — ersätt med en bild från kammarens tillåtna lista.",
           "errors": {
             "broadcast_image_too_large": "Bilden är större än 5 MB.",
             "broadcast_image_unsafe": "Bilden markerades av virusskannern och avvisades.",

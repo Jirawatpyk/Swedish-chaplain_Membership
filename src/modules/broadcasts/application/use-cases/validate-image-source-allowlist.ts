@@ -25,6 +25,7 @@ import {
 import type { ImageAllowlistPort } from '../ports/image-allowlist-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { TenantSlug } from '@/modules/tenants';
+import { safeAuditEmit } from './_safe-audit-emit';
 
 export interface ValidateImageSourceAllowlistDeps {
   readonly allowlistPort: ImageAllowlistPort;
@@ -72,7 +73,9 @@ export async function validateImageSourceAllowlist(
 
   if (unsafe.length === 0) return ok(undefined);
 
-  await deps.audit.emit(null, {
+  // PR-review fix 2026-05-20 SF-H4: safeAuditEmit preserves the
+  // submit-rejection effect even when audit storage hiccups.
+  await safeAuditEmit(deps.audit, null, {
     eventType: 'broadcast_body_image_source_unsafe',
     actorUserId: input.actorUserId,
     tenantId: input.tenantId,
