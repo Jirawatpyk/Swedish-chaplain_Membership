@@ -138,11 +138,19 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo",
   "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/members-bridge",
   "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/event-attendees-stub",
-  // /components/broadcast/* (4) — F7 MVP queue + status display
+  // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/tiptap-editor.tsx::@/modules/broadcasts/infrastructure/tiptap-image-extension-config",
   "src/components/broadcast/tiptap-editor.tsx::@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config",
+  // R5 Final 2 hotfix — template-form.tsx (client) deep-imports the
+  // pure-constants `_template-field-limits.ts` to break the barrel
+  // import chain that pulled in `@/modules/payments` infrastructure
+  // (which imports `revalidateTag`/`unstable_cache` from `next/cache`,
+  // server-only). See template-form.tsx for the full import-trace
+  // rationale; long-term fix is to extract `verifyContactEmail →
+  // renewals-deps` to a port.
+  "src/components/broadcast/admin/template-form.tsx::@/modules/broadcasts/application/use-cases/_template-field-limits",
 ]);
 
 async function* walkTs(dir: string): AsyncGenerator<string> {

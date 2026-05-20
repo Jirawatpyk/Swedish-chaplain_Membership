@@ -30,10 +30,26 @@ import {
 } from '@/components/ui/select';
 import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
 import { toast } from 'sonner';
+// R5 Final 2 hotfix — deep-import constants instead of the broadcasts
+// public barrel. The barrel re-exports `submitBroadcast`, which pulls
+// in `@/modules/members` → `verifyContactEmail` → `@/modules/renewals` →
+// `renewals-deps` → `@/modules/payments/infrastructure/di` →
+// `drizzle-tenant-payment-settings-repo` (which imports
+// `revalidateTag`/`unstable_cache` from `next/cache`). Next.js 16
+// Turbopack walks the full client bundle graph and rejects the build
+// because `next/cache` is server-only. The constants file
+// (`_template-field-limits.ts`) is pure — zero framework imports —
+// so deep-importing it breaks the client→server-only chain.
+//
+// The architecture test (`tests/unit/architecture/broadcasts-barrel.test.ts`)
+// allowlists this import. Long-term fix is to extract the
+// `verifyContactEmail → renewals-deps` value-import to a port so
+// Application no longer pulls in another module's composition root
+// (Constitution Principle III).
 import {
   TEMPLATE_MAX_NAME_LENGTH,
   TEMPLATE_MAX_SUBJECT_LENGTH,
-} from '@/modules/broadcasts';
+} from '@/modules/broadcasts/application/use-cases/_template-field-limits';
 
 // T113 (F7.1a US7) — share the F7 MVP Tiptap editor instance with the
 // admin templates surface. Same StarterKit + paste-sanitiser config as
