@@ -31,6 +31,7 @@ import {
 } from '@/lib/broadcasts-route-helpers';
 import { requireMemberContext } from '@/lib/member-context';
 import { logger } from '@/lib/logger';
+import { assertNever } from '@/lib/assert-never';
 
 export const runtime = 'nodejs';
 // Increase route function timeout — ClamAV scan + Blob upload can take
@@ -100,7 +101,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (!result.ok) {
       // PR-review fix 2026-05-20 SF-M4 — `storage_unavailable` maps
       // to 503 so client distinguishes transient Blob outage from
-      // generic 500. Use switch for exhaustive narrowing.
+      // generic 500. PR-review fix TD-M4 — assertNever from shared
+      // helper replaces inline `const _exhaustive: never`.
       let status: number;
       switch (result.error.kind) {
         case 'broadcast_image_too_large':
@@ -115,11 +117,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         case 'storage_unavailable':
           status = 503;
           break;
-        default: {
-          const _exhaustive: never = result.error;
-          void _exhaustive;
-          status = 500;
-        }
+        default:
+          assertNever(result.error);
       }
       return NextResponse.json(
         { error: result.error.kind },

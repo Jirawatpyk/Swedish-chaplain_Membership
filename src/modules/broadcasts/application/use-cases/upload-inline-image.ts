@@ -26,20 +26,16 @@ import type {
   ImageAllowlistPort,
 } from '../ports/image-allowlist-port';
 import type { VirusScannerPort } from '../ports/virus-scanner-port';
-import type {
-  ImageStoragePort,
-  ImageMimeType,
+import {
+  isImageMimeType,
+  type ImageMimeType,
+  type ImageStoragePort,
 } from '../ports/image-storage-port';
+import type { Hostname } from '../ports/image-allowlist-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { TenantSlug } from '@/modules/tenants';
 
 const MAX_BYTES = 5 * 1024 * 1024;
-const ALLOWED_MIME = new Set<ImageMimeType>([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/gif',
-]);
 
 export interface UploadInlineImageDeps {
   readonly allowlistPort: ImageAllowlistPort;
@@ -75,7 +71,12 @@ export type UploadInlineImageError =
 
 export interface UploadInlineImageOutput {
   readonly blobUrl: string;
-  readonly allowlistedHostname: string;
+  // PR-review fix 2026-05-20 TD-M2 — Hostname brand preserved at API
+  // boundary. Empty-string used to indicate "blob URL was unparseable"
+  // — now explicit `null` keeps the type honest + forces consumers to
+  // handle the null branch. (Successful uploads always produce a
+  // parseable URL; null only fires on the dedup-fallthrough log path.)
+  readonly allowlistedHostname: Hostname | null;
   readonly contentHash: string;
 }
 
@@ -83,7 +84,7 @@ export async function uploadInlineImage(
   deps: UploadInlineImageDeps,
   input: UploadInlineImageInput,
 ): Promise<Result<UploadInlineImageOutput, UploadInlineImageError>> {
-  if (!ALLOWED_MIME.has(input.mimeType as ImageMimeType)) {
+  if (!isImageMimeType(input.mimeType)) {
     // PR-review fix 2026-05-20 CR-M6 — emit audit for invalid_mime
     // reject so SIEM can alert on probing patterns (e.g. attacker
     // posting application/octet-stream payloads). Reuses
@@ -106,7 +107,9 @@ export async function uploadInlineImage(
       receivedMime: input.mimeType,
     });
   }
-  const mime = input.mimeType as ImageMimeType;
+  // Post-narrow: `input.mimeType` is now `ImageMimeType` via the
+  // user-defined type guard above — no `as` cast needed.
+  const mime: ImageMimeType = input.mimeType;
 
   const sizeBytes = input.fileBytes.byteLength;
   if (sizeBytes > MAX_BYTES) {
@@ -138,13 +141,13 @@ export async function uploadInlineImage(
     mime,
   );
   if (existing) {
-    const hostname = safeUrlHostname(existing) ?? '';
+    const dedupHost = safeAsHostname(existing);
     // PR-review fix 2026-05-20 SF-M3 — when the existing blob URL is
     // unparseable (corrupt cache / future URL-shape change), don't
     // return an unusable success. Log + fall through to fresh upload
     // so the member's image actually ends up at a hostname the
     // submit-time allowlist can validate.
-    if (!hostname) {
+    if (!dedupHost) {
       logger.warn(
         { tenantId: input.tenantId, contentHash, existing },
         'broadcasts.uploadInlineImage.dedup_url_unparseable_fallthrough',
@@ -152,10 +155,10 @@ export async function uploadInlineImage(
     } else {
       // PR-review fix 2026-05-20 CR-H2 — ensure the deduped blob's
       // hostname is in the tenant allowlist BEFORE returning success.
-      await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
+      await ensureBlobHostAllowlisted(deps, input.tenantId, dedupHost);
       return ok({
         blobUrl: existing,
-        allowlistedHostname: hostname,
+        allowlistedHostname: dedupHost,
         contentHash,
       });
     }
@@ -222,12 +225,14 @@ export async function uploadInlineImage(
     }
     throw e;
   }
-  const hostname = safeUrlHostname(blobUrl) ?? '';
+  const hostname = safeAsHostname(blobUrl);
 
   // PR-review fix 2026-05-20 CR-H2 — auto-allowlist the resulting blob
   // hostname on BOTH dedup short-circuit AND fresh-upload paths via
   // the shared `ensureBlobHostAllowlisted` helper (extracted below).
-  await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
+  if (hostname) {
+    await ensureBlobHostAllowlisted(deps, input.tenantId, hostname);
+  }
 
   return ok({ blobUrl, allowlistedHostname: hostname, contentHash });
 }
@@ -245,13 +250,10 @@ export async function uploadInlineImage(
 async function ensureBlobHostAllowlisted(
   deps: UploadInlineImageDeps,
   tenantId: TenantSlug,
-  hostname: string,
+  hostname: Hostname,
 ): Promise<void> {
-  if (!hostname) return;
-  const hRes = asHostname(hostname);
-  if (!hRes.ok) return;
   try {
-    await deps.allowlistPort.seedDefaults(tenantId, [hRes.value]);
+    await deps.allowlistPort.seedDefaults(tenantId, [hostname]);
   } catch (e) {
     logger.warn(
       {
@@ -273,10 +275,20 @@ function sanitiseFilename(raw: string): string {
     .slice(0, 255);
 }
 
-function safeUrlHostname(u: string): string | null {
+/**
+ * PR-review fix 2026-05-20 TD-M2 — chains URL parsing + `asHostname`
+ * branding so the resulting hostname is either a validated `Hostname`
+ * brand or `null`. Replaces the previous `safeUrlHostname` that
+ * returned raw `string` (defeated the brand precisely at the API
+ * boundary where it matters most for submit-time allowlist validation).
+ */
+function safeAsHostname(u: string): Hostname | null {
+  let raw: string;
   try {
-    return new URL(u).hostname.toLowerCase();
+    raw = new URL(u).hostname.toLowerCase();
   } catch {
     return null;
   }
+  const res = asHostname(raw);
+  return res.ok ? res.value : null;
 }

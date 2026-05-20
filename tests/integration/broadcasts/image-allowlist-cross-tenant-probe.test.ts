@@ -125,6 +125,19 @@ describe('F7.1a image-allowlist cross-tenant probe — REVIEW-GATE BLOCKER (T065
     expect(bRows).toHaveLength(1);
   });
 
+  // PR-review fix TA-M3 — data-model.md § 7 + Constitution Principle I
+  // sub-clause 4 list `broadcast_cross_tenant_probe` audit-emission as
+  // the 4th canonical probe case. The current F7.1a US2 surface
+  // (allowlist CRUD) does not invoke `enforceCrossTenantIsolation` (the
+  // helper that emits this audit) — Phase 3 Cluster B precedent
+  // (T036 pagination probe lines 228-238 expect.fail) defers the
+  // wiring. Marking todo here documents the gap explicitly so a future
+  // audit-wiring commit picks it up rather than the LOW finding
+  // resurfacing in /speckit-review.
+  it.todo(
+    'AUDIT: cross-tenant access attempts emit broadcast_cross_tenant_probe — pending Phase 6 enforceCrossTenantIsolation wiring for allowlist surface',
+  );
+
   it('INSERT: tenant A cannot INSERT a row with tenantId=tenantB (WITH CHECK rejects)', async () => {
     await expect(async () => {
       await runInTenant(tenantA.ctx, async (tx) =>

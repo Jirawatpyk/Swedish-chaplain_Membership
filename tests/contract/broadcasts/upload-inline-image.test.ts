@@ -144,7 +144,7 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     expect(deps.storage.put).not.toHaveBeenCalled();
   });
 
-  it('ClamAV verdict=error → fail-closed reject', async () => {
+  it('ClamAV verdict=error → fail-closed reject + audit emits with verdict=error (TA-M2 closure)', async () => {
     const deps = makeDeps({ scanVerdict: 'error' });
     const r = await uploadInlineImage(deps, {
       tenantId: TENANT,
@@ -158,6 +158,16 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     });
     expect(r.ok).toBe(false);
     expect(deps.storage.put).not.toHaveBeenCalled();
+    // PR-review fix TA-M2 — pin the fail-closed audit branch. A future
+    // refactor that swallows the scanner-error audit emit (turning
+    // 422 reject into a silent fail-open class of bug) would break here.
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'broadcast_image_unsafe',
+        payload: expect.objectContaining({ verdict: 'error' }),
+      }),
+    );
   });
 
   it('duplicate upload (same content-hash) returns existing blobUrl, no second storage write', async () => {

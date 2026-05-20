@@ -38,11 +38,21 @@ export type ValidateHostnameError = {
   readonly hostname: string;
 };
 
-// RFC 1035 hostname format: lowercase ASCII label(.label)+ — at least
-// one dot, no trailing dot, no wildcards. Each label is [a-z0-9] with
-// optional internal hyphens. Total length capped at 253 chars at the
-// validator (separate check below).
-const HOSTNAME_REGEX =
+/**
+ * RFC 1035 hostname format: lowercase ASCII label(.label)+ — at least
+ * one dot, no trailing dot, no wildcards. Each label is [a-z0-9] with
+ * optional internal hyphens. Total length capped at 253 chars at the
+ * validator (separate check below).
+ *
+ * PR-review fix 2026-05-20 TD-M5 — exported as a constant so the
+ * admin allowlist route (`src/app/api/admin/broadcasts/settings/
+ * allowlist/route.ts`) imports + uses this in its zod schema instead
+ * of duplicating the regex literal. Migration 0164's DB CHECK
+ * constraint remains as defence-in-depth (3-way: Domain VO + zod
+ * route + DB CHECK) but the Domain VO is the single source of truth
+ * the runtime + boot-time validators share.
+ */
+export const HOSTNAME_REGEX =
   /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 /** Validate and brand a hostname string per FR-010. */

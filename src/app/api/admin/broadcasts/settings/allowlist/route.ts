@@ -20,6 +20,8 @@ import {
   isF71aUs2Enabled,
   f71aUs2DisabledReason,
 } from '@/modules/broadcasts/infrastructure/feature-flags';
+import { HOSTNAME_REGEX } from '@/modules/broadcasts/domain/value-objects/image-source-allowlist';
+import { assertNever } from '@/lib/assert-never';
 import { runInTenant } from '@/lib/db';
 import {
   baseHeaders,
@@ -31,17 +33,15 @@ import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 
-// Hostname regex mirrors the Domain VO + DB CHECK constraint
-// (migration 0164 + image-source-allowlist.ts:50 + schema.ts:719) —
-// kept in sync intentionally; a future amendment must update all four.
+// PR-review fix 2026-05-20 TD-M5 — single source of truth via
+// Domain VO `HOSTNAME_REGEX` import (was a duplicated literal).
+// Migration 0164 DB CHECK still mirrors this pattern as the
+// defence-in-depth storage-layer guard.
 const HostnameSchema = z
   .string()
   .min(1)
   .max(253)
-  .regex(
-    /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/,
-    'invalid_hostname',
-  );
+  .regex(HOSTNAME_REGEX, 'invalid_hostname');
 
 const BodySchema = z.object({
   action: z.enum(['add', 'remove']),
@@ -94,16 +94,30 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
 
     if (!result.ok) {
-      const status =
-        result.error.kind === 'cannot_remove_default'
-          ? 403
-          : result.error.kind === 'invalid_hostname'
-            ? 400
-            : result.error.kind === 'duplicate'
-              ? 409
-              : result.error.kind === 'not_found'
-                ? 404
-                : 500;
+      // PR-review fix 2026-05-20 TD-M4 — switch + assertNever for
+      // exhaustive narrowing. New error kinds added to
+      // ManageImageAllowlistError fail typecheck here at the route
+      // (forces an explicit case) instead of silently mapping to 500.
+      let status: number;
+      switch (result.error.kind) {
+        case 'cannot_remove_default':
+          status = 403;
+          break;
+        case 'invalid_hostname':
+          status = 400;
+          break;
+        case 'duplicate':
+          status = 409;
+          break;
+        case 'not_found':
+          status = 404;
+          break;
+        case 'storage_error':
+          status = 500;
+          break;
+        default:
+          assertNever(result.error);
+      }
       return NextResponse.json(
         { error: result.error.kind },
         { status, headers: baseHeaders(correlationId) },

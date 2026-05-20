@@ -23,6 +23,23 @@ export type ImageMimeType =
   | 'image/webp'
   | 'image/gif';
 
+const IMAGE_MIME_TYPES = new Set<string>([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/gif',
+]);
+
+/**
+ * PR-review fix 2026-05-20 TD-M3 — user-defined type guard so the
+ * use-case narrows `string → ImageMimeType` without an `as` cast.
+ * Replaces `ALLOWED_MIME.has(input.mimeType as ImageMimeType)` which
+ * lied to the type system (Set.has accepts string regardless).
+ */
+export function isImageMimeType(s: string): s is ImageMimeType {
+  return IMAGE_MIME_TYPES.has(s);
+}
+
 export interface ImageStoragePort {
   /**
    * Return the existing blob URL for `contentHash` in the tenant's

@@ -1996,7 +1996,7 @@
           "colActions": "Åtgärder",
           "defaultBadge": "Standard (låst)",
           "defaultBadgeInline": "(standard)",
-          "customBadge": "Tillagd",
+          "customBadge": "Tillagd av administratören",
           "propagationFootnote": "Träder i kraft inom 60 sekunder för aktiva utkastsessioner.",
           "addedToast": "Värdnamn tillagt.",
           "removedToast": "Värdnamn borttaget.",

@@ -140,6 +140,26 @@ describe('validateImageSourceAllowlist contract — T062 (F7.1a US2)', () => {
     expect(result.ok).toBe(false);
   });
 
+  it('treats uppercase host as unsafe (asHostname-err branch — TD/D2 LOW closure)', async () => {
+    // PR-review fix TA-LOW — pin the asHostname-err branch distinctly
+    // from the malformed-URL catch. URL parser accepts uppercase hosts
+    // ("EXAMPLE.com"), but asHostname rejects them via RFC-1035
+    // lowercase regex. Branch must surface as `unsafe`, not pass.
+    const deps = makeDeps(['cdn.example.com']);
+    const result = await validateImageSourceAllowlist(deps, {
+      bodyHtml: '<img src="https://EXAMPLE.com/x.png">',
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      requestId: 'req-007u',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.unsafeImageSources).toContain(
+        'https://EXAMPLE.com/x.png',
+      );
+    }
+  });
+
   it('allowlist change is visible to next submit within the same call (Scenario 3 propagation — verify-run G1 closure)', async () => {
     // Acceptance Scenario 3 asserts "subsequent submissions validate
     // against the new allowlist within ≤60 seconds of save". The
