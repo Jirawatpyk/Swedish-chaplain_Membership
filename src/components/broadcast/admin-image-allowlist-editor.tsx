@@ -222,6 +222,15 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
                         </AlertDialogCancel>
                         <AlertDialogAction
                           variant="destructive"
+                          // PR-review fix 2026-05-21 R4-M1 — block
+                          // double-click inside open dialog. Trigger's
+                          // own disabled={isPending} only blocks
+                          // RE-OPENING; without this prop a quick
+                          // second click on the confirm fires a
+                          // concurrent submit → second call hits a
+                          // hostname already removed → unexpected
+                          // error toast.
+                          disabled={isPending}
                           onClick={() => submit('remove', row.hostname)}
                         >
                           {t('removeConfirm.confirm')}

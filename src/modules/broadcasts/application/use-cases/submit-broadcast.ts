@@ -189,6 +189,10 @@ type SubmitPrecondition =
   | 'subject_too_long'
   | 'body_too_large'
   | 'body_unsafe_html'
+  // PR-review fix 2026-05-21 R4-H4 — F7.1a US2 image-source rejection
+  // surfaces on the submit-funnel SLO-F7-002 dashboard. Was missed by
+  // Phase A wiring; on-call could not see image-allowlist probe spikes.
+  | 'body_image_source_unsafe'
   | 'audience_too_large'
   | 'custom_recipient_unknown'
   | 'member_missing_primary_contact_email'
@@ -203,6 +207,8 @@ const PRECONDITION_BY_EVENT = {
   broadcast_subject_empty: 'subject_too_long', // R6 W-R3 — both length-violations share the same precondition bucket
   broadcast_body_too_large: 'body_too_large',
   broadcast_body_unsafe_html: 'body_unsafe_html',
+  // R4-H4 — image-source allowlist rejection (Phase A FR-011 wiring)
+  broadcast_body_image_source_unsafe: 'body_image_source_unsafe',
   broadcast_audience_too_large: 'audience_too_large',
   broadcast_custom_recipient_unknown: 'custom_recipient_unknown',
   broadcast_member_missing_primary_contact_email:
@@ -437,6 +443,14 @@ export async function submitBroadcast(
       // No emitReject() here — validateImageSourceAllowlist already
       // emitted `broadcast_body_image_source_unsafe` via its own
       // safeAuditEmit (fail-soft). emitReject would double-audit.
+      //
+      // PR-review fix 2026-05-21 R4-H4 — wire submit-funnel counter so
+      // image-source rejections appear on the SLO-F7-002 dashboard.
+      // Direct call (not via emitReject which would double-audit).
+      broadcastsMetrics.submitPreconditionBlocked(
+        deps.tenant.slug,
+        'body_image_source_unsafe',
+      );
       return err({
         kind: 'broadcast_body_image_source_unsafe',
         unsafeImageSources: imageCheck.error.unsafeImageSources,

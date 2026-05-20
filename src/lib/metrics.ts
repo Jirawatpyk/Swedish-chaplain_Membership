@@ -1251,6 +1251,8 @@ export const broadcastsMetrics = {
       | 'subject_too_long'
       | 'body_too_large'
       | 'body_unsafe_html'
+      // R4-H4 — keep in sync with submit-broadcast.ts SubmitPrecondition
+      | 'body_image_source_unsafe'
       | 'audience_too_large'
       | 'custom_recipient_unknown'
       | 'member_missing_primary_contact_email'

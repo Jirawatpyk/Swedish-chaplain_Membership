@@ -132,6 +132,18 @@ export async function manageImageAllowlist(
   // `port.withTx` mirrors F7 MVP `BroadcastsRepo.withTx` — contract
   // tests mock by invoking the callback with `null` so use-case logic
   // exercises the port mocks without needing a real DB connection.
+  //
+  // R4-H1 follow-up (PR-review round 4 2026-05-21) — production call
+  // stack is route→runInTenant → use-case→port.withTx (runInTenant)
+  // → seedPlatformDefaults (runInTenant). Postgres-js maps the nested
+  // db.transaction calls to SAVEPOINTs, NOT distinct top-level txs.
+  // The atomicity guarantee still holds: an exception in the inner
+  // `audit.emit(tx, ...)` rolls back the inner SAVEPOINT, which rolls
+  // back the port mutation (same SAVEPOINT). The outer route-level tx
+  // remains open with its GUC bindings and commits empty on success.
+  // The "ONE tx" phrasing above refers to the atomicity-unit
+  // (audit+mutation share one rollback boundary), not literal
+  // tx-nesting depth.
   return deps.port.withTx(input.tenantId, async (tx) => {
     if (input.action === 'add') {
       const r = await deps.port.add(
