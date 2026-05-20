@@ -388,6 +388,19 @@ body {
   overflow: hidden;
 }
 
+/* --- Bracket placeholder (F7.1a US7 T116) -------------------------------
+   Tiptap Decoration.inline class applied to [bracketed text] matches by
+   `broadcastBracketPlaceholderExtension`. Visual: muted background +
+   dashed border so members spot template placeholders to replace.
+   No animation — reduced-motion safe by construction. */
+.bracket-placeholder {
+  background: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0 3px;
+  cursor: text;
+}
+
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
 .skeleton-shimmer {
   background: linear-gradient(

@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { Info } from 'lucide-react';
 import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
 import { broadcastImageExtension } from '@/modules/broadcasts/infrastructure/tiptap-image-extension-config';
+import { broadcastBracketPlaceholderExtension } from '@/modules/broadcasts/infrastructure/tiptap-bracket-placeholder-config';
 import { ComposeInlineImageUploader } from './compose-inline-image-uploader';
 import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
 
@@ -129,9 +130,16 @@ export default function TiptapEditor({
     () => makeSanitizerConfig(imagesEnabled),
     [imagesEnabled],
   );
+  // T116 (F7.1a US7) — bracketPlaceholder loaded unconditionally
+  // because [bracketed text] semantics are universal across the
+  // broadcast body editor (admin authors them in templates; members
+  // see + replace them in compose). Decoration is style-only — no
+  // schema mutation, so safe to always-on.
   const extensions = useMemo(
     () =>
-      imagesEnabled ? [StarterKit, broadcastImageExtension] : [StarterKit],
+      imagesEnabled
+        ? [StarterKit, broadcastImageExtension, broadcastBracketPlaceholderExtension]
+        : [StarterKit, broadcastBracketPlaceholderExtension],
     [imagesEnabled],
   );
 

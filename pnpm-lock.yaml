@@ -49,9 +49,15 @@ importers:
       '@tanstack/react-virtual':
         specifier: ^3
         version: 3.13.24(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@tiptap/core':
+        specifier: 3.22.5
+        version: 3.22.5(@tiptap/pm@3.22.5)
       '@tiptap/extension-image':
         specifier: ^3.22.5
         version: 3.22.5(@tiptap/core@3.22.5(@tiptap/pm@3.22.5))
+      '@tiptap/pm':
+        specifier: 3.22.5
+        version: 3.22.5
       '@tiptap/react':
         specifier: 3.22.5
         version: 3.22.5(@floating-ui/dom@1.7.6)(@tiptap/core@3.22.5(@tiptap/pm@3.22.5))(@tiptap/pm@3.22.5)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
