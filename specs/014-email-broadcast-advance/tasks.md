@@ -264,32 +264,32 @@ After `/speckit-review Phase 1-2-3 + enterprise-ux-designer` surfaced 93+ findin
 
 ### Tests for User Story 7 (TDD RED-first) ⚠️
 
-- [ ] T086 [P] [US7] Contract test `tests/contract/broadcasts/create-broadcast-template.test.ts` per contracts/broadcast-template.md § 1.1: admin creates template → persisted, audited; member role rejected (RBAC)
-- [ ] T087 [P] [US7] Contract test `tests/contract/broadcasts/update-broadcast-template.test.ts` per contracts § 1.2: edit existing template → audit before/after
-- [ ] T088 [P] [US7] Contract test `tests/contract/broadcasts/delete-broadcast-template.test.ts` per contracts § 1.3: soft-delete; audit row captures started_from_count snapshot per FR-023
-- [ ] T089 [P] [US7] Contract test `tests/contract/broadcasts/snapshot-template-to-draft.test.ts` (SC-007a): snapshot copies subject+body verbatim into draft; subsequent template edits don't mutate draft
-- [ ] T090 [P] [US7] Contract test `tests/contract/broadcasts/template-variable-substitution.test.ts` per contracts § 5.4 (NEW per critique E9): only `{{chamber_name}}` substituted at snapshot; `[bracketed]` text preserved literal; XSS escape verification (tenant.display_name with `<script>` → escaped)
-- [ ] T091 [P] [US7] Contract test `tests/contract/broadcasts/template-save-image-allowlist.test.ts` per critique E9: template body with non-allowlisted `<img src>` rejected at SAVE time (FR-017)
-- [ ] T092 [P] [US7] Contract test `tests/contract/broadcasts/template-render-html-escape.test.ts` per critique E6+E9: `{{chamber_name}}` value HTML-escaped before substitution (XSS prevention)
-- [ ] T093 [P] [US7] Integration test `tests/integration/broadcasts/template-cross-tenant-probe.test.ts` (Principle I): tenant B cannot read/modify tenant A's templates
-- [ ] T094 [P] [US7] Integration test `tests/integration/broadcasts/template-snapshot-decoupling.test.ts` (SC-007a): create template → start draft → edit template → reload draft → draft body matches PRE-edit template content
-- [ ] T095 [P] [US7] Integration test `tests/integration/broadcasts/starter-template-seed.test.ts` (SC-007b per critique P10): run migration 0168 (renumbered from 0134 Phase 2) → assert `SELECT COUNT(*) FROM broadcast_templates WHERE tenant_id=$1 AND is_seeded=TRUE` returns exactly 15 per tenant; re-run → no duplicates + `broadcast_template_seed_skipped_existing_name` audit emitted
-- [ ] T096 [P] [US7] E2E test `tests/e2e/broadcasts/template-library-flow.spec.ts` (Playwright + axe-core): admin CRUD + member picker + snapshot decoupling + Starter badge + stale-draft banner
+- [X] T086 [P] [US7] Contract test `tests/contract/broadcasts/create-broadcast-template.test.ts` per contracts/broadcast-template.md § 1.1: admin creates template → persisted, audited; member role rejected (RBAC)
+- [X] T087 [P] [US7] Contract test `tests/contract/broadcasts/update-broadcast-template.test.ts` per contracts § 1.2: edit existing template → audit before/after
+- [X] T088 [P] [US7] Contract test `tests/contract/broadcasts/delete-broadcast-template.test.ts` per contracts § 1.3: soft-delete; audit row captures started_from_count snapshot per FR-023
+- [X] T089 [P] [US7] Contract test `tests/contract/broadcasts/snapshot-template-to-draft.test.ts` (SC-007a): snapshot copies subject+body verbatim into draft; subsequent template edits don't mutate draft
+- [X] T090 [P] [US7] Contract test `tests/contract/broadcasts/template-variable-substitution.test.ts` per contracts § 5.4 (NEW per critique E9): only `{{chamber_name}}` substituted at snapshot; `[bracketed]` text preserved literal; XSS escape verification (tenant.display_name with `<script>` → escaped)
+- [X] T091 [P] [US7] Contract test `tests/contract/broadcasts/template-save-image-allowlist.test.ts` per critique E9: template body with non-allowlisted `<img src>` rejected at SAVE time (FR-017)
+- [X] T092 [P] [US7] Contract test `tests/contract/broadcasts/template-render-html-escape.test.ts` per critique E6+E9: `{{chamber_name}}` value HTML-escaped before substitution (XSS prevention)
+- [X] T093 [P] [US7] Integration test `tests/integration/broadcasts/template-cross-tenant-probe.test.ts` (Principle I): tenant B cannot read/modify tenant A's templates
+- [X] T094 [P] [US7] Integration test `tests/integration/broadcasts/template-snapshot-decoupling.test.ts` (SC-007a): create template → start draft → edit template → reload draft → draft body matches PRE-edit template content
+- [X] T095 [P] [US7] Integration test `tests/integration/broadcasts/starter-template-seed.test.ts` (SC-007b per critique P10): run migration 0168 (renumbered from 0134 Phase 2) → assert `SELECT COUNT(*) FROM broadcast_templates WHERE tenant_id=$1 AND is_seeded=TRUE` returns exactly 15 per tenant; re-run → no duplicates + `broadcast_template_seed_skipped_existing_name` audit emitted
+- [~] T096 [P] [US7] E2E test (RED stub authored Phase 5A; full happy path lands Phase 5J after Phase 5G+H surfaces ship) `tests/e2e/broadcasts/template-library-flow.spec.ts` (Playwright + axe-core): admin CRUD + member picker + snapshot decoupling + Starter badge + stale-draft banner
 
 ### Implementation for User Story 7
 
 #### Domain layer
 
-- [ ] T097 [P] [US7] Create `src/modules/broadcasts/domain/value-objects/template-snapshot.ts`: pure function `substituteChamberName(body: string, chamberName: string): string` (HTML-escapes chamberName via existing F7 MVP `escapeHtml` helper; substitutes `{{chamber_name}}` ONLY; leaves all other `{{var}}` and `[bracketed]` literal)
-- [ ] T098 [US7] Extend `src/modules/broadcasts/domain/broadcast.ts` aggregate with `startedFromTemplate(templateId, templateNameSnapshot)` method that records both FK + denormalised name (per critique P9)
+- [X] T097 [P] [US7] Create `src/modules/broadcasts/domain/value-objects/template-snapshot.ts`: pure function `substituteChamberName(body: string, chamberName: string): string` (HTML-escapes chamberName via existing F7 MVP `escapeHtml` helper; substitutes `{{chamber_name}}` ONLY; leaves all other `{{var}}` and `[bracketed]` literal)
+- [X] T098 [US7] Extend `src/modules/broadcasts/domain/broadcast.ts` aggregate with `startedFromTemplate(templateId, templateNameSnapshot)` method that records both FK + denormalised name (per critique P9)
 
 #### Application layer
 
-- [ ] T099 [US7] Create `src/modules/broadcasts/application/use-cases/create-broadcast-template.ts` per contracts § 1.1: validates name uniqueness (tenant-scoped), runs body through F7 MVP sanitiser + US2 image-source allowlist validation (FR-017), persists, audits `broadcast_template_created`
-- [ ] T100 [US7] Create `src/modules/broadcasts/application/use-cases/update-broadcast-template.ts` per contracts § 1.2
-- [ ] T101 [US7] Create `src/modules/broadcasts/application/use-cases/delete-broadcast-template.ts` per contracts § 1.3: soft-delete; audit captures `started_from_count`
-- [ ] T102 [US7] Create `src/modules/broadcasts/application/use-cases/snapshot-template-to-draft.ts` per contracts § 1.4: loads template (RLS-scoped) → calls `substituteChamberName(body, tenant.display_name)` → updates draft subject+body+template_name_snapshot+started_from_template_id → increments template.started_from_count
-- [ ] T103 [US7] Create `src/modules/broadcasts/application/use-cases/list-broadcast-templates.ts` per contracts § 1.5: returns templates filtered by `locale=current_user_locale || tenant_default_locale || 'en'` (cascading per critique P3 + Clarifications round 3 Q3); MRU ordering per FR-018
+- [X] T099 [US7] Create `src/modules/broadcasts/application/use-cases/create-broadcast-template.ts` per contracts § 1.1: validates name uniqueness (tenant-scoped), runs body through F7 MVP sanitiser + US2 image-source allowlist validation (FR-017), persists, audits `broadcast_template_created`
+- [X] T100 [US7] Create `src/modules/broadcasts/application/use-cases/update-broadcast-template.ts` per contracts § 1.2
+- [X] T101 [US7] Create `src/modules/broadcasts/application/use-cases/delete-broadcast-template.ts` per contracts § 1.3: soft-delete; audit captures `started_from_count`
+- [X] T102 [US7] Create `src/modules/broadcasts/application/use-cases/snapshot-template-to-draft.ts` per contracts § 1.4: loads template (RLS-scoped) → calls `substituteChamberName(body, tenant.display_name)` → updates draft subject+body+template_name_snapshot+started_from_template_id → increments template.started_from_count
+- [X] T103 [US7] Create `src/modules/broadcasts/application/use-cases/list-broadcast-templates.ts` per contracts § 1.5: returns templates filtered by `locale=current_user_locale || tenant_default_locale || 'en'` (cascading per critique P3 + Clarifications round 3 Q3); MRU ordering per FR-018
 
 #### Presentation layer
 
