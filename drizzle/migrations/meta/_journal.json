@@ -1233,6 +1233,20 @@
 			"when": 1797840000000,
 			"tag": "0175_f71a_template_snapshotted_event",
 			"breakpoints": true
+		},
+		{
+			"idx": 176,
+			"version": "7",
+			"when": 1797926400000,
+			"tag": "0176_f71a_template_seed_skipped_event",
+			"breakpoints": true
+		},
+		{
+			"idx": 177,
+			"version": "7",
+			"when": 1798012800000,
+			"tag": "0177_f71a_image_unsafe_event_sweep",
+			"breakpoints": true
 		}
 	]
 }

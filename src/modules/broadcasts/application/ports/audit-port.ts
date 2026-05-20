@@ -134,18 +134,27 @@ export const F7_AUDIT_EVENT_TYPES = [
   // inside the snapshot use-case's withTx atomically with the body+
   // counter mutations (Constitution I clause 3).
   'broadcast_template_snapshotted',
+  // R2.1 M-test-2 (review Round 1 close-out): seed-time skip event for
+  // forensic forensics when the migration 0168 ON CONFLICT DO NOTHING
+  // path silently drops a starter template row because the tenant
+  // pre-seeded a template with the same (name, locale) tuple. Forward-
+  // looking emit hook — current migration runs ONCE at first apply
+  // (rare conflict surface); a future Application-layer re-seed use-
+  // case will be the primary emit caller.
+  'broadcast_template_seed_skipped_existing_name',
 ] as const;
 
 /**
- * Static assertion: count matches the declared 56 (= 43 F7 MVP + 11
+ * Static assertion: count matches the declared 57 (= 43 F7 MVP + 11
  * F7.1a additions per T031 Phase 2 + 1 Phase 3F.11.3 M3 closure
  * `broadcast_webhook_batch_missing` + 1 Phase 4 US2 addition
- * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted`).
+ * `broadcast_image_unsafe` + 1 R1.1 fix `broadcast_template_snapshotted` +
+ * 1 R2.1 M-test-2 `broadcast_template_seed_skipped_existing_name`).
  * Catches drift if a spec amendment adds an event without updating this
  * file. The check lives at type level; if the count is wrong, TypeScript
- * errors here with "Type '57' is not assignable to type '56'" (or similar).
+ * errors here with "Type '58' is not assignable to type '57'" (or similar).
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 56
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 57
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
@@ -265,6 +274,17 @@ export interface F7AuditPayloadShapes {
     readonly templateId: string;
     readonly templateNameSnapshot: string;
     readonly memberId: string;
+  };
+  // R2.1 M-test-2 — seed-time conflict between a starter template's
+  // (name, locale) and a tenant-pre-existing template with the same
+  // tuple. ON CONFLICT DO NOTHING in migration 0168 silently dropped
+  // the starter row; this audit row makes the skip forensically
+  // visible.
+  readonly broadcast_template_seed_skipped_existing_name: {
+    readonly tenantId: string;
+    readonly attemptedName: string;
+    readonly locale: 'en' | 'th' | 'sv';
+    readonly source: 'starter_seed' | 'admin_reseed';
   };
   readonly broadcast_webhook_signature_rejected: {
     readonly reason:
