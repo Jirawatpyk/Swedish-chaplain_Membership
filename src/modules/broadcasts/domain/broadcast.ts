@@ -514,3 +514,29 @@ export function acceptPartialDelivery(
     partialDeliveryAcceptedByUserId: actor.userId,
   });
 }
+
+// ---------------------------------------------------------------------------
+// T098 (F7.1a US7) — Broadcast aggregate "started from template" helper.
+//
+// Records the FK + the denormalised name in one type-safe transition so
+// post-deletion forensic audit retains the template name (critique P9 +
+// FR-019). The use-case (T102 snapshotTemplateToDraft) calls this then
+// persists via repo inside `runInTenant(...)`.
+//
+// Pure — no I/O, no clock. Always succeeds: the broadcast may be in any
+// status that still permits draft mutation (status='draft' typically).
+// State-machine policy lives in policies/broadcast-status-transitions.ts;
+// this helper just packs the two new fields into the aggregate.
+// ---------------------------------------------------------------------------
+
+export function startedFromTemplate(
+  broadcast: Broadcast,
+  templateId: string,
+  templateNameSnapshot: string,
+): Broadcast {
+  return {
+    ...broadcast,
+    startedFromTemplateId: templateId,
+    templateNameSnapshot,
+  };
+}
