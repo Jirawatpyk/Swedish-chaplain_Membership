@@ -772,6 +772,111 @@ const eslintConfig = defineConfig([
             "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans` so the partnership↔category " +
             "integrity invariant is enforced at construction time.",
         },
+        {
+          // R5-I9 Pattern (c) — `{...} satisfies BenefitMatrix`
+          selector:
+            "TSSatisfiesExpression[typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R5-I9 — do not use `{...} satisfies BenefitMatrix` in production code. " +
+            "Use `asBenefitMatrix(input, planCategory)` from `@/modules/plans`.",
+        },
+        {
+          // R5-I9 Pattern (d) — `const x: BenefitMatrix = cond ? a : { ... }`
+          // Targets the ObjectExpression inside the ConditionalExpression
+          // initializer of a BenefitMatrix-typed VariableDeclarator.
+          selector:
+            "VariableDeclarator[id.typeAnnotation.typeAnnotation.typeName.name='BenefitMatrix'] ConditionalExpression > ObjectExpression",
+          message:
+            "R5-I9 — do not construct `BenefitMatrix` via conditional expression with inline object literals. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)` first, then assign.",
+        },
+        {
+          // R5-I9 Pattern (e) — `function f(): BenefitMatrix { return { ... }; }`
+          selector:
+            "FunctionDeclaration[returnType.typeAnnotation.typeName.name='BenefitMatrix'] ReturnStatement > ObjectExpression",
+          message:
+            "R5-I9 — function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+        {
+          // R5-I9 Pattern (f) — `const f = (): BenefitMatrix => ({...})`
+          // Concise-body arrow function returning an annotated BenefitMatrix.
+          selector:
+            "ArrowFunctionExpression[returnType.typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R5-I9 — arrow function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+        {
+          // R5-I9 Pattern (g) — `const f = (): BenefitMatrix => { return {...}; }`
+          // Block-body arrow function.
+          selector:
+            "ArrowFunctionExpression[returnType.typeAnnotation.typeName.name='BenefitMatrix'] BlockStatement > ReturnStatement > ObjectExpression",
+          message:
+            "R5-I9 — arrow function declared as returning `BenefitMatrix` cannot return an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+        {
+          // R5-S2 Pattern (h) — class/object property declaration
+          // `class X { matrix: BenefitMatrix = {...}; }`
+          selector:
+            "PropertyDefinition[typeAnnotation.typeAnnotation.typeName.name='BenefitMatrix'] > ObjectExpression",
+          message:
+            "R5-S2 — class property typed as `BenefitMatrix` cannot be initialized with an inline object literal. " +
+            "Build the value via `asBenefitMatrix(input, planCategory)`.",
+        },
+      ],
+    },
+  },
+  {
+    // R5-S13 — symmetric to R4-S4 Option C: ban
+    // `MutableScheduledPlanChange` as a public Application-layer
+    // function-parameter or return-type annotation. The loose hydration
+    // shape is exported from `@/modules/plans` ONLY because the Drizzle
+    // adapter's `rowToDomain` (Infrastructure) needs it before
+    // narrowing via `assertValidScheduledPlanChange`. Application-layer
+    // code MUST accept/return the discriminated `ScheduledPlanChange`
+    // union instead.
+    //
+    // Known limitation: the rule fires on ANY type-annotation use of
+    // the identifier inside Application files. This catches function
+    // parameters, return types, and local declarations alike. If a
+    // future Application-layer test fixture needs to construct an
+    // explicitly-malformed `MutableScheduledPlanChange` for `assertValid`
+    // testing, that test file should be moved to `tests/unit/plans/domain/`
+    // (which is not in this rule's `files` scope).
+    files: [
+      "src/modules/plans/application/**/*.ts",
+      "src/modules/plans/application/**/*.tsx",
+      "src/modules/members/application/**/*.ts",
+      "src/modules/members/application/**/*.tsx",
+      "src/modules/renewals/application/**/*.ts",
+      "src/modules/renewals/application/**/*.tsx",
+      "src/modules/invoicing/application/**/*.ts",
+      "src/modules/invoicing/application/**/*.tsx",
+      "src/modules/payments/application/**/*.ts",
+      "src/modules/payments/application/**/*.tsx",
+      "src/modules/events/application/**/*.ts",
+      "src/modules/events/application/**/*.tsx",
+      "src/modules/broadcasts/application/**/*.ts",
+      "src/modules/broadcasts/application/**/*.tsx",
+      "src/modules/auth/application/**/*.ts",
+      "src/modules/auth/application/**/*.tsx",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // Type-annotation reference to MutableScheduledPlanChange
+          // (function parameters, variable declarations, return types).
+          selector:
+            "TSTypeReference[typeName.name='MutableScheduledPlanChange']",
+          message:
+            "R5-S13 / R4-S6 — Application-layer code must never accept or expose " +
+            "`MutableScheduledPlanChange`; use the discriminated `ScheduledPlanChange` " +
+            "union instead. The loose type is for Infrastructure hydration only " +
+            "(`drizzle-scheduled-plan-change-repo.ts:rowToDomain`).",
+        },
       ],
     },
   },
