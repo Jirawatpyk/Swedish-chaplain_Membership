@@ -43,12 +43,13 @@ const makeTemplate = (overrides?: Partial<BroadcastTemplate>): BroadcastTemplate
 const makeDeps = (overrides?: {
   existingTemplate?: BroadcastTemplate | null;
 }): { port: BroadcastTemplatesPort; audit: AuditPort } => {
+  const existing =
+    overrides && 'existingTemplate' in overrides
+      ? overrides.existingTemplate
+      : makeTemplate();
   const port: BroadcastTemplatesPort = {
-    findById: vi.fn().mockResolvedValue(
-      overrides && 'existingTemplate' in overrides
-        ? overrides.existingTemplate
-        : makeTemplate(),
-    ),
+    findById: vi.fn().mockResolvedValue(existing),
+    findByIdInTx: vi.fn().mockResolvedValue(existing),
     findByTenantId: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),

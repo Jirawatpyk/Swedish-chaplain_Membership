@@ -27,13 +27,14 @@ import { isF71aUs2Enabled } from '@/modules/broadcasts/infrastructure/feature-fl
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
 /**
- * T079 — Compose page (server component).
+ * Compose page (server component).
  *
- * - Resolves the signed-in member via session + F3 lookup
- * - Computes initial quota snapshot for SSR-rendered <QuotaDisplay />
- * - Loads existing draft (if `?draftId=...`) for resume flow (deferred
- *   to a follow-up — MVP creates fresh drafts only)
- * - Passes everything to the client `<ComposeForm />`
+ * Coordinates: signed-in member resolution → quota snapshot → optional
+ * `?template=<id>` pre-population (US7) → image-upload flag readiness
+ * (US2) → handoff to client `<ComposeForm />`. Emits a cross-tenant
+ * probe audit when a `?template=` ID resolves to null (R1.1 CRIT-3).
+ * F7.1b draft-resume (`?draftId=`) is backlog — MVP creates fresh
+ * drafts only.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('portal.broadcasts.compose');

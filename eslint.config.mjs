@@ -638,6 +638,30 @@ const eslintConfig = defineConfig([
     // caller MUST use the validated default (`asEventId` /
     // `asRegistrationId`) which enforces the regex at the HTTP / CSV
     // boundary.
+    //
+    // Phase 5 Round 1 R1.3 H-code-2 finding: this block's
+    // `files: ["src/**/*.{ts,tsx}"]` + flat-config last-wins semantics
+    // shadow the cross-module barrel-guard + Application-layer rules
+    // defined above, silently masking ~89 Constitution Principle III
+    // violations across F1+F4+F5+F6+F8 modules. The shadow CANNOT be
+    // removed in Phase 5 Round 1 scope — a clean fix requires
+    // refactoring 42 callers to route through public barrels (out of
+    // scope for the broadcasts US7 review).
+    //
+    // Mitigation:
+    //   1. KEEP the shadow block (status quo preserves CI for F1-F8).
+    //   2. CLOSE H-code-2 via a SOURCE-SCAN architecture test
+    //      (`tests/unit/architecture/broadcasts-barrel.test.ts`) that
+    //      is independent of ESLint flat-config quirks and catches the
+    //      3 broadcasts deep imports from Phase 5 (template page /
+    //      template edit page / tiptap-editor).
+    //   3. Track the 89 surfaced violations as a SEPARATE backlog item
+    //      in F1.1/F4.1/F5.1/F6.1/F8.1 cycles. The architecture-test
+    //      pattern is reusable across modules.
+    //
+    // Reference: specs/014-email-broadcast-advance/retrospective.md
+    // § "Phase 5 Round 1 R1.3 — ESLint shadow bug + architecture test
+    // defence-in-depth".
     files: ["src/**/*.{ts,tsx}"],
     ignores: [
       "src/modules/events/infrastructure/**",
@@ -660,10 +684,6 @@ const eslintConfig = defineConfig([
                 "Unchecked brand constructors are infrastructure-only (DB row reads). " +
                 "Use asEventId / asRegistrationId / tryEventId / tryRegistrationId at HTTP/CSV boundaries — they validate UUID v4 shape.",
             },
-            // R3.4.1 / IMP-2 — defense-in-depth against relative-import
-            // bypass. The alias rule above catches `@/modules/events` +
-            // `@/modules/events/domain/branded-types`; this path-name
-            // catches direct deep-import via the full module path.
             {
               name: "@/modules/events/domain/branded-types",
               importNames: [
@@ -677,11 +697,6 @@ const eslintConfig = defineConfig([
                 "Defense-in-depth: this rule mirrors the @/modules/events alias rule for direct path imports.",
             },
           ],
-          // R3.4.1 / IMP-2 — relative-import bypass coverage. A caller
-          // using `import { asEventIdUnchecked } from '../../../modules/events/domain/branded-types'`
-          // would route around the `paths` alias rule above. The
-          // `patterns` array catches arbitrary relative paths ending
-          // at `branded-types(.ts)`.
           patterns: [
             {
               group: [

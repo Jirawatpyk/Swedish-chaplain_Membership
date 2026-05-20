@@ -1,35 +1,20 @@
 'use client';
 
 /**
- * T117 (F7.1a US7) — Stale draft banner.
+ * Stale draft banner (FR-019).
  *
- * Per critique E5 + FR-019: when a member loaded a draft >30 days
- * old and the template they snapshotted from has been edited since,
- * surface a banner offering to refresh from the current template
- * version. Re-runs snapshotTemplateToDraft → overwrites the draft
- * body + subject with the latest template content.
+ * Surfaces above the compose form when a member's draft is >30 days
+ * old AND the source template has been edited since. `onRefresh` is
+ * expected to re-run `snapshotTemplateToDraft` to overwrite the draft
+ * body+subject with the latest template content; `onDismiss` lets the
+ * consumer persist a localStorage suppress flag.
  *
- * STANDALONE COMPONENT — the parent consumer page decides WHEN to
- * mount it based on draft.created_at + template.updated_at + 30-day
- * threshold. The draft-load flow at /portal/broadcasts/new doesn't
- * exist in F7.1a (members compose fresh drafts only); the consumer
- * wiring lands at F7.1b when draft-resume is added.
+ * Standalone reusable banner. Consumer wiring lands in F7.1b draft-
+ * resume; today the component has no mount-point in production code.
  *
- * UX:
- *   - Sticky-style banner above the compose form
- *   - Title + body explaining the staleness
- *   - "Refresh from current" primary button → fires onRefresh()
- *     callback (parent calls POST /api/member/broadcasts/draft/[id]/
- *     snapshot-template)
- *   - Dismiss button (X) → fires onDismiss() callback (parent can
- *     persist localStorage flag if needed)
- *
- * a11y:
- *   - role="status" + aria-live="polite" so SR users hear the
- *     banner on mount without interrupting
- *   - Dismiss button has aria-label
- *   - Refresh button shows pending state via aria-busy when
- *     `refreshing=true`
+ * a11y: role="status" + aria-live="polite" (announce without
+ * interrupting), aria-busy reflects refresh in-flight, dismiss button
+ * carries aria-label.
  */
 import { useTranslations } from 'next-intl';
 import { X } from 'lucide-react';

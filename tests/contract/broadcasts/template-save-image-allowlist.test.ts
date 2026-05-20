@@ -39,6 +39,7 @@ const makeDeps = (allowlist: readonly AllowlistEntry[] = ALLOWLIST): {
 } => ({
   port: {
     findById: vi.fn().mockResolvedValue(null),
+    findByIdInTx: vi.fn().mockResolvedValue(null),
     findByTenantId: vi.fn().mockResolvedValue([]),
     create: vi.fn().mockResolvedValue(
       ok({

@@ -63,6 +63,7 @@ const makeDeps = (
 } => {
   const port: BroadcastTemplatesPort = {
     findById: vi.fn().mockResolvedValue(null),
+    findByIdInTx: vi.fn().mockResolvedValue(null),
     findByTenantId: vi.fn().mockResolvedValue([]),
     create: vi
       .fn()

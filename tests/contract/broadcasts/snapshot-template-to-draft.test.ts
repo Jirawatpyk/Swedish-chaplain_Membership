@@ -133,9 +133,11 @@ const deps = makeDeps({ chamberName: 'SweCham' });
   it('cross-tenant probe (template belongs to tenant B) → template_not_found + cross-tenant audit with template payload', async () => {
 const deps = makeDeps({ template: null });
     // R1.2 H-sf-2: findByIdInTx returns null for cross-tenant probe
-    (deps.templatesPort as { findByIdInTx: ReturnType<typeof vi.fn> })
-      .findByIdInTx
-      .mockResolvedValueOnce(null);
+    (
+      deps.templatesPort as unknown as {
+        findByIdInTx: ReturnType<typeof vi.fn>;
+      }
+    ).findByIdInTx.mockResolvedValueOnce(null);
     const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
@@ -217,15 +219,17 @@ const deps = makeDeps({ template: null });
       '@/modules/broadcasts/application/ports/broadcasts-repo'
     );
     const deps = makeDeps();
-    (deps.broadcastsRepo as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
-      .updateDraftFromTemplate
-      .mockRejectedValueOnce(
-        new BroadcastConcurrentMutationError(
-          'tenant-swe',
-          DRAFT_ID as never,
-          'submitted',
-        ),
-      );
+    (
+      deps.broadcastsRepo as unknown as {
+        updateDraftFromTemplate: ReturnType<typeof vi.fn>;
+      }
+    ).updateDraftFromTemplate.mockRejectedValueOnce(
+      new BroadcastConcurrentMutationError(
+        'tenant-swe',
+        DRAFT_ID as never,
+        'submitted',
+      ),
+    );
     const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
@@ -257,9 +261,13 @@ const deps = makeDeps({ template: null });
 
   it('R1.2 H-sf-3: unexpected generic Error → propagates (NOT mapped to draft_not_found)', async () => {
     const deps = makeDeps();
-    (deps.broadcastsRepo as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
-      .updateDraftFromTemplate
-      .mockRejectedValueOnce(new Error('Postgres connection lost'));
+    (
+      deps.broadcastsRepo as unknown as {
+        updateDraftFromTemplate: ReturnType<typeof vi.fn>;
+      }
+    ).updateDraftFromTemplate.mockRejectedValueOnce(
+      new Error('Postgres connection lost'),
+    );
     await expect(
       snapshotTemplateToDraft(deps, {
         tenantId: TENANT,

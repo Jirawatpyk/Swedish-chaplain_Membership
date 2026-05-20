@@ -1,21 +1,18 @@
 'use client';
 
 /**
- * Phase 5G.2 (F7.1a US7) — Shared admin template form (new + edit).
+ * Shared admin template form (new + edit).
  *
  * Used by both /admin/broadcasts/templates/new and /admin/broadcasts/
  * templates/[id]/edit. Single-source-of-truth for field shape,
- * validation messages, and API call wiring.
+ * validation messages, and API call wiring. Body editor reuses the
+ * F7 MVP Tiptap instance via `loadTiptapEditor` so paste-sanitiser +
+ * bracket-placeholder config stay aligned with the member compose
+ * surface.
  *
- * MVP body editor: <textarea> with raw HTML input. The Tiptap rich-
- * text editor lands at Phase 5H T113 + replaces the textarea with the
- * same shared editor instance the F7 MVP compose surface uses.
- *
- * a11y:
- *   - semantic <form> + <label htmlFor>
- *   - aria-describedby on every field → help text + per-field error
- *   - role="alert" on submit-failure announcement
- *   - destructive errors highlight + announce live
+ * a11y: semantic <form> + <label htmlFor>, aria-describedby on every
+ * field, role="alert" on submit-failure announcement, destructive
+ * errors highlight + announce live.
  */
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
