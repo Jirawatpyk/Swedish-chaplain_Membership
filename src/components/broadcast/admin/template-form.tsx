@@ -184,7 +184,17 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
         // so the exception is captured with full stack + request
         // context (correlationId already in scope here and at the
         // sibling `error_body_parse_failed` site above).
-        console.error('broadcasts.template.form.submit_failed', { err, mode });
+        // R6.5 L-8 — constrain the logged shape to explicit error
+        // fields so `err.cause` chains can't accidentally serialise
+        // request body / form data into the DevTools console. The
+        // stack trace is preserved via `errStack`; Sentry-readiness
+        // note above still applies once `@sentry/nextjs` is wired.
+        console.error('broadcasts.template.form.submit_failed', {
+          errName: err instanceof Error ? err.name : 'unknown',
+          errMessage: err instanceof Error ? err.message : String(err),
+          errStack: err instanceof Error ? err.stack : undefined,
+          mode,
+        });
         const msg = t('errors.unknown');
         setError(msg);
         toast.error(msg);

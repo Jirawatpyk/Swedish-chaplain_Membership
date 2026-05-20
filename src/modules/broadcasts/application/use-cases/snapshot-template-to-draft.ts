@@ -292,6 +292,14 @@ export async function snapshotTemplateToDraft(
       }
       // Unexpected — log + rethrow. Route's outer try/catch maps to 500
       // internal_error (test mocks may also propagate via this branch).
+      //
+      // R6.5 L-3 — Sentry-readiness note (mirror of `template-form.tsx`
+      // R4.3 M-7): when Sentry is added in F7.1b, wrap with
+      // `Sentry.captureException(e)` BEFORE `throw e` so the
+      // exception lands in Sentry with full stack + correlationId
+      // (currently in scope as `input.requestId`). The structured
+      // `err: e.message` log loses the stack — Sentry would preserve
+      // it.
       logger.error(
         {
           err: e instanceof Error ? e.message : String(e),

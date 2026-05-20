@@ -35,28 +35,33 @@
  * the return type now reflects that work (callers see the stripped
  * type, not `T[K] | undefined`).
  *
- * R4.4 L-3 — re-implemented via `Object.entries` + `reduce` to
- * eliminate the inner `as Exclude<…>` cast. The cast was structurally
- * brittle (the right-hand side widened to
- * `T[Extract<keyof T, string>]` not the original `T[K]`); the
- * Object.entries path keeps the value typed via `T[keyof T]` and
- * lets TypeScript narrow it via the runtime undefined guard with
- * zero hand-written assertion.
+ * R4.4 L-3 — re-implemented via `Object.entries` + `reduce` to drop
+ * the inner `as Exclude<…>` cast that widened the right-hand side
+ * across all string keys.
+ *
+ * R6.5 M-13 + L-2 — narrowed the cast back to per-value (closer to
+ * the original R3.6 shape) so the type assertion only widens the
+ * VALUE the runtime guard has just narrowed, not the entire
+ * accumulator. Iteration via `Object.entries` covers OWN-ENUMERABLE-
+ * STRING-KEYED properties only; symbol keys + inherited prototype
+ * properties are dropped silently. The `T extends Record<string,
+ * unknown>` constraint statically forbids symbol keys, so the
+ * runtime semantic matches the typed contract.
  */
 export function omitUndefined<T extends Record<string, unknown>>(
   input: T,
 ): { [K in keyof T]?: Exclude<T[K], undefined> } {
-  type Output = { [K in keyof T]?: Exclude<T[K], undefined> };
-  return (Object.entries(input) as Array<[keyof T, T[keyof T]]>).reduce<Output>(
-    (acc, [key, value]) => {
-      if (value !== undefined) {
-        // The runtime guard above narrows `value` to
-        // `Exclude<T[keyof T], undefined>`; assigning into the
-        // optional-property slot is structurally sound.
-        (acc as Record<keyof T, T[keyof T]>)[key] = value;
-      }
-      return acc;
-    },
-    {} as Output,
-  );
+  const out: { [K in keyof T]?: Exclude<T[K], undefined> } = {};
+  for (const [key, value] of Object.entries(input) as Array<
+    [keyof T, T[keyof T]]
+  >) {
+    if (value !== undefined) {
+      // R6.5 M-13 — per-value cast: the runtime `!== undefined` guard
+      // narrows `value`, so the assertion only papers over what TS
+      // can't propagate through the bound iteration variable. Narrower
+      // than the R4.4 wrap-the-whole-accumulator approach.
+      out[key] = value as Exclude<T[keyof T], undefined>;
+    }
+  }
+  return out;
 }

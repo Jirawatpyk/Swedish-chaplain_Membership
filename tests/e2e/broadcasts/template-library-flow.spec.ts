@@ -180,8 +180,17 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     // cmdk Combobox: ArrowDown moves through options; Enter selects.
     // Press TWICE so we land on the FIRST template row (index 1) and
     // skip the "Blank" option at index 0.
+    //
+    // R6.5 L-6 — anchor each ArrowDown on the selection-state change
+    // (cmdk sets `data-selected="true"` on the active item). Pressing
+    // ArrowDown while the listbox is mid-reposition can drop the key
+    // on slow CI runners; the selection-anchor assertion serialises
+    // the key sequence against the DOM state instead of relying on
+    // raw key-press timing.
     await page.keyboard.press('ArrowDown');
+    await expect(page.locator('[data-cmdk-item][data-selected="true"]')).toBeVisible();
     await page.keyboard.press('ArrowDown');
+    await expect(page.locator('[data-cmdk-item][data-selected="true"]')).toBeVisible();
     await page.keyboard.press('Enter');
 
     // URL navigated to ?template= — the page server-renders with
