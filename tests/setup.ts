@@ -112,6 +112,23 @@ afterEach(() => {
   // import-hang root cause, which is addressed directly by the
   // `testTimeout: 10_000` bump in vitest.config.ts — hangs now fail
   // loud at 10s instead of cascading through unconsumed mock queues.
+  //
+  // R4.4 L-9 — interaction caveat for audit-event tests:
+  // `clearAllMocks` does NOT consume queued `mockResolvedValueOnce` /
+  // `mockRejectedValueOnce` entries. A test that primes one and never
+  // calls the mock leaves the queue live for the next test in the
+  // same file. The 4 tests under
+  // `tests/unit/broadcasts/application/safe-audit-emit.test.ts` are
+  // the most-exposed surface — they reset queues explicitly via
+  // `mockReset()` inside `beforeEach` to defend against the queue-
+  // leak class. New audit-event tests should follow the same pattern
+  // when they enqueue per-test failure modes.
+  //
+  // `restoreAllMocks` (which DOES restore prototype-spy implementations
+  // back to the original method) runs once in `afterAll` below — see
+  // tests/unit/broadcasts/components/admin-template-edit-confirm-starter.test.tsx
+  // for an example where the local `finally { spy.mockRestore() }`
+  // IS the active per-test restore path (afterEach can't do it).
   vi.clearAllMocks();
 });
 

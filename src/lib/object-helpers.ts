@@ -34,22 +34,29 @@
  * runtime-guarantees that present keys have non-undefined values;
  * the return type now reflects that work (callers see the stripped
  * type, not `T[K] | undefined`).
+ *
+ * R4.4 L-3 — re-implemented via `Object.entries` + `reduce` to
+ * eliminate the inner `as Exclude<…>` cast. The cast was structurally
+ * brittle (the right-hand side widened to
+ * `T[Extract<keyof T, string>]` not the original `T[K]`); the
+ * Object.entries path keeps the value typed via `T[keyof T]` and
+ * lets TypeScript narrow it via the runtime undefined guard with
+ * zero hand-written assertion.
  */
 export function omitUndefined<T extends Record<string, unknown>>(
   input: T,
 ): { [K in keyof T]?: Exclude<T[K], undefined> } {
-  const out: { [K in keyof T]?: Exclude<T[K], undefined> } = {};
-  for (const k in input) {
-    if (Object.prototype.hasOwnProperty.call(input, k)) {
-      const v = input[k];
-      if (v !== undefined) {
-        // Cast widens the assignment to satisfy the tightened return
-        // type — the key's value type is by construction
-        // Exclude<T[K], undefined> (NOT T[K] | undefined since we
-        // just guarded above).
-        out[k] = v as Exclude<T[Extract<keyof T, string>], undefined>;
+  type Output = { [K in keyof T]?: Exclude<T[K], undefined> };
+  return (Object.entries(input) as Array<[keyof T, T[keyof T]]>).reduce<Output>(
+    (acc, [key, value]) => {
+      if (value !== undefined) {
+        // The runtime guard above narrows `value` to
+        // `Exclude<T[keyof T], undefined>`; assigning into the
+        // optional-property slot is structurally sound.
+        (acc as Record<keyof T, T[keyof T]>)[key] = value;
       }
-    }
-  }
-  return out;
+      return acc;
+    },
+    {} as Output,
+  );
 }

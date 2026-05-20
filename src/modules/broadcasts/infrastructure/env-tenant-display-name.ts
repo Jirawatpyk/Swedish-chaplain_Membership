@@ -56,6 +56,12 @@ export const envTenantDisplayName: TenantDisplayNamePort = {
  * NODE_ENV !== 'production' so production callers can't accidentally
  * clear the flag (which would re-emit the warn on every fallback —
  * log volume spike).
+ *
+ * @internal R4.4 L-4 — DO NOT call from product code. The runtime
+ * guard below throws on production; this annotation is documentation
+ * for IDE tooling (TS server, IntelliSense) so test-only intent is
+ * visible at the call site. Re-exported from the broadcasts barrel
+ * (R4.3 M-14) so test fixtures can import without deep-imports.
  */
 export function __resetForTestsOnly(): void {
   if (process.env.NODE_ENV === 'production') {

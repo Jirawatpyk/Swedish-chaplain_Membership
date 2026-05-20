@@ -34,12 +34,12 @@ export async function emitTemplateCrossTenantProbeAudit(
     tenantId: input.tenantId,
     summary: `Cross-tenant probe on ${input.operation}-template ${input.templateId}`,
     payload: {
-      // R3.5 M-10 — `probedTenantId` is the ACTOR'S OWN tenant (the
-      // RLS boundary the actor was querying INTO). NOT a foreign
-      // tenant id. Forensic analysts should read this as "tenant X
-      // emitted a probe against its own namespace + got null back"
-      // — typically a stale link, deleted-then-undeleted race, or
-      // genuine attack attempt against UUID-guessed template ids.
+      // `probedTenantId` is the ACTOR'S OWN tenant (the RLS boundary
+      // the actor was querying INTO). NOT a foreign tenant id.
+      // Forensic analysts should read this as "tenant X emitted a
+      // probe against its own namespace + got null back" — typically
+      // a stale link, deleted-then-undeleted race, or genuine attack
+      // attempt against UUID-guessed template ids.
       probedTenantId: input.tenantId,
       probedTemplateId: input.templateId,
       resourceKind: 'template',

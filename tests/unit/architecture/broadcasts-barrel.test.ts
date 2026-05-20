@@ -88,7 +88,10 @@ const FORBIDDEN_PATH_PATTERNS: readonly RegExp[] = [
  * allowlist only changes when the actual deep-import path is added
  * or removed.
  *
- * Total: 40 entries (12 consumer files across Phase 1-4 work).
+ * Total: 40 entries (11 consumer files across Phase 1-4 work).
+ * R4.4 L-5 — count corrected from "12" → "11" (cmdk-pages share the
+ * same allowlist file group; the actual distinct consumer file count
+ * is 11 per the grouping comments below).
  */
 const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   // /portal/broadcasts/new/page.tsx (3) — F7.1a US2 + US7 compose

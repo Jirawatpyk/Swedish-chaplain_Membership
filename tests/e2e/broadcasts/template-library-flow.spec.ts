@@ -61,6 +61,15 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     ).toHaveAttribute('aria-pressed', 'true');
     await expect(allPill).toHaveAttribute('aria-pressed', 'false');
 
+    // R4.4 L-8 — assert the sibling sr-only `role="status"` live
+    // region announces the filtered count. The 150ms settle delay
+    // in template-library.tsx batches multi-pill clicks; Playwright's
+    // auto-retry on `toContainText` handles the window without an
+    // explicit waitForTimeout.
+    await expect(
+      page.locator('[role="status"][aria-live="polite"].sr-only'),
+    ).toContainText(/15/);
+
     // Filter to Admin-authored — count drops to 0 for fresh tenant
     await page.getByRole('button', { name: /Admin-authored/ }).click();
     // Header row still shown but data rows = 0

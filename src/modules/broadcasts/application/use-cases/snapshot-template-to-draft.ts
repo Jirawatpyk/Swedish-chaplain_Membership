@@ -2,7 +2,7 @@
  * snapshotTemplateToDraft — member compose: pull a template into a draft.
  *
  * Per contracts/broadcast-template.md § 1.4 + § 5 + SC-007a. 6-stage
- * flow (R3.5 M-9 — header synced to post-R3 implementation):
+ * flow:
  *
  *   STAGE 1 (pre-tx) — Parse draftId via parseBroadcastId (Result-
  *     returning; defensive against direct callers bypassing the
@@ -15,23 +15,22 @@
  *   STAGE 3 (pre-tx) — Resolve tenant display_name (env-backed;
  *     never throws per TenantDisplayNamePort contract).
  *   STAGE 4 (withTx open) — Load template via
- *     `findByIdAllowDeletedInTx` (R3.3 H-3 + R3-F11). Branch:
+ *     `findByIdAllowDeletedInTx`. Branch:
  *       (a) null → cross-tenant probe → emit
  *           `broadcast_cross_tenant_probe` → return
  *           `template_not_found`
  *       (b) deletedAt !== null → emit
- *           `broadcast_template_snapshot_refused_deleted` audit
- *           (R3.1 C-3) on the active tx → return
- *           `template_soft_deleted` (HTTP 410)
+ *           `broadcast_template_snapshot_refused_deleted` audit on
+ *           the active tx → return `template_soft_deleted` (HTTP 410)
  *       (c) live template → continue
  *   STAGE 5 (in-tx) — substituteChamberName (Domain VO) HTML-escapes
- *     the chamber name into subject + body (§ 5.1 XSS guard); emit
- *     `broadcast_template_snapshotted` audit on the active tx
- *     (Constitution I clause 3 atomicity).
- *   STAGE 6 (in-tx) — `updateDraftFromTemplate` (typed
- *     ChamberSubstitutedBody parameters) + `incrementStartedFromCount`.
- *     Both co-commit with the audit row; failure on any rolls back
- *     the whole snapshot.
+ *     the chamber name into subject + body (§ 5.1 XSS guard).
+ *   STAGE 6 (in-tx, audit-LAST) — `updateDraftFromTemplate` (typed
+ *     ChamberSubstitutedBody parameters) + `incrementStartedFromCount`,
+ *     then emit `broadcast_template_snapshotted` audit on the active
+ *     tx (Constitution I clause 3 atomicity). Audit fires AFTER both
+ *     mutations succeed so a thrown BroadcastConcurrentMutationError
+ *     can roll back the whole tx without leaving a ghost audit row.
  *
  * Error kinds: `template_not_found` (404), `template_soft_deleted`
  * (410), `draft_not_found` (404), `draft_status_drift` (409 from

@@ -12,6 +12,12 @@
  * Standalone reusable banner. Consumer wiring lands in F7.1b draft-
  * resume; today the component has no mount-point in production code.
  *
+ * @internal R4.4 L-6 — currently HEADLESS (no production caller).
+ * Retained because the F7.1b draft-resume work will wire it into the
+ * member compose flow; deleting now would force re-implementation
+ * from scratch + lose the R3.5 / R4.1 / R4.3 a11y + WCAG fixes
+ * already baked in. Track follow-up wiring under F7.1b backlog.
+ *
  * a11y (post-R3.5 + R4.1):
  *   - Outer `<section role="region" aria-labelledby="...">` keeps the
  *     banner reachable via F6 / landmark-navigation in screen readers.

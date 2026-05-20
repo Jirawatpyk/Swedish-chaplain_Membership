@@ -93,9 +93,9 @@ export function AdminTemplateLibrary({
 
   return (
     <>
-      {/* R3.6 L-5 — flex-wrap added so SV labels (~50 chars across
-          3 pills at text-[0.8rem]) don't overflow horizontally on
-          320px Galaxy S8 baseline viewport. */}
+      {/* flex-wrap keeps SV labels (~50 chars across 3 pills at
+          text-[0.8rem]) from overflowing horizontally on the 320px
+          Galaxy S8 baseline viewport. */}
       <fieldset className="mb-4 flex flex-wrap items-center gap-2">
         <legend className="sr-only">{t('filterLegend')}</legend>
         <button
