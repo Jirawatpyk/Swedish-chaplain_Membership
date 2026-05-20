@@ -25,6 +25,15 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 type FilterMode = 'all' | 'starter' | 'authored';
 
@@ -86,10 +95,15 @@ export function AdminTemplateLibrary({
   // pulling FilterPill to module-level would force threading `t` +
   // `filter` + `setFilter` through props. The literal 3-button JSX
   // below stays under 30 lines and keeps the parent function readable.
+  //
+  // Sizing: default (h-9 / 36px) matches the F4 project standard for
+  // touch-targets (WCAG 2.5.5 / 2.5.8) and Button height parity with
+  // form Inputs. Pre-fix used `size: 'sm'` (h-7 / 28px) which was
+  // smaller than every other admin filter row in the codebase.
   const pillClass = (mode: FilterMode): string =>
     filter === mode
-      ? buttonVariants({ size: 'sm' })
-      : buttonVariants({ variant: 'outline', size: 'sm' });
+      ? buttonVariants()
+      : buttonVariants({ variant: 'outline' });
 
   return (
     <>
@@ -134,35 +148,36 @@ export function AdminTemplateLibrary({
 
       <Card>
         <CardContent className="p-0">
-          <table className="w-full border-collapse">
-            <caption className="sr-only">{t('pageTitle')}</caption>
-            <thead>
-              <tr className="border-b">
-                <th scope="col" className="text-left p-3">
-                  {t('columns.name')}
-                </th>
-                <th scope="col" className="text-left p-3">
-                  {t('columns.locale')}
-                </th>
-                <th
+          {/* Use the shadcn Table primitive for tokenised row-height,
+              consistent cell padding, sticky header, and overflow-x
+              wrapping — matching the F4 invoices / credit-notes /
+              events admin tables. The pre-fix raw `<table>` skipped
+              all of those design-system affordances. */}
+          <Table>
+            <TableCaption className="sr-only">{t('pageTitle')}</TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">{t('columns.name')}</TableHead>
+                <TableHead scope="col">{t('columns.locale')}</TableHead>
+                <TableHead
                   scope="col"
-                  className="text-right p-3 hidden sm:table-cell"
+                  className="text-right hidden sm:table-cell"
                   aria-label={t('columns.startedFromAria')}
                 >
                   {t('columns.startedFrom')}
-                </th>
-                <th scope="col" className="text-left p-3 hidden md:table-cell">
+                </TableHead>
+                <TableHead scope="col" className="hidden md:table-cell">
                   {t('columns.updatedAt')}
-                </th>
-                <th scope="col" className="sr-only">
+                </TableHead>
+                <TableHead scope="col" className="sr-only">
                   {t('columns.actions')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {filtered.map((tpl) => (
-                <tr key={tpl.id} className="border-b last:border-b-0">
-                  <td className="p-3">
+                <TableRow key={tpl.id}>
+                  <TableCell>
                     <span className="font-medium">{tpl.name}</span>
                     {tpl.isSeeded ? (
                       <span
@@ -172,17 +187,17 @@ export function AdminTemplateLibrary({
                         {t('starterBadge')}
                       </span>
                     ) : null}
-                  </td>
-                  <td className="p-3 text-caption text-muted-foreground">
+                  </TableCell>
+                  <TableCell className="text-caption text-muted-foreground">
                     {t(`locale.${tpl.locale}`)}
-                  </td>
-                  <td className="p-3 text-right hidden sm:table-cell tabular-nums">
+                  </TableCell>
+                  <TableCell className="text-right hidden sm:table-cell tabular-nums">
                     {tpl.startedFromCount}
-                  </td>
-                  <td className="p-3 text-caption text-muted-foreground hidden md:table-cell">
+                  </TableCell>
+                  <TableCell className="text-caption text-muted-foreground hidden md:table-cell">
                     {tpl.updatedAtIso.slice(0, 10)}
-                  </td>
-                  <td className="p-3 text-right">
+                  </TableCell>
+                  <TableCell className="text-right">
                     <Link
                       href={`/admin/broadcasts/templates/${tpl.id}/edit`}
                       className={buttonVariants({
@@ -195,11 +210,11 @@ export function AdminTemplateLibrary({
                     >
                       {t('rowAction.edit')}
                     </Link>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </>
