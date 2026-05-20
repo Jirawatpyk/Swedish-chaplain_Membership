@@ -61,7 +61,7 @@ describe('directory-search integration (T059, US2)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Dir Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

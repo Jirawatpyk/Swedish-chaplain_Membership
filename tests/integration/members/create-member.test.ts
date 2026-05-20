@@ -78,7 +78,7 @@ describe('create-member integration (T041, US1)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Test Premium' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

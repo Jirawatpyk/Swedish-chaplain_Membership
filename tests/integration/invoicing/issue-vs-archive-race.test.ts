@@ -97,7 +97,7 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Arc Race Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

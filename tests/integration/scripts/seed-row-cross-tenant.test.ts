@@ -57,7 +57,7 @@ describe('seedRow cross-tenant write probe (Phase 6 round-3 TestQ2)', () => {
         planId: PLAN_ID,
         planYear: PLAN_YEAR,
         planName: { en: 'Regular' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         planCategory: 'corporate',
         memberTypeScope: 'company',
         annualFeeMinorUnits: 5_000_000,

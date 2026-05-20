@@ -203,7 +203,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
         planId: 'rfnd-mp-plan',
         planYear: 2026,
         planName: { en: 'Refund Multi-Partial Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

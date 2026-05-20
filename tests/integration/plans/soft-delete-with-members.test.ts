@@ -67,7 +67,7 @@ function seed(userId: string): PlanDraftInput {
     plan_id: 'premium',
     plan_year: 2027,
     plan_name: { en: 'Premium' },
-    description: { en: '' },
+    description: { en: 'Test description' },
     sort_order: 10,
     plan_category: 'corporate',
     member_type_scope: 'company',
@@ -197,6 +197,13 @@ describe('Integration: soft-delete with attached members (T125)', () => {
         planYear,
         registrationFeePaid: false,
         status,
+        // R6 QA fix — F3 schema enforces a status↔archived_at CHECK
+        // constraint (`members_archived_at_iff_archived`). Setting
+        // status='archived' WITHOUT archived_at violates the invariant
+        // and the row is rejected with PostgresError 23514. Pair the
+        // archived flag with a current timestamp; for non-archived
+        // statuses leave archived_at as the column default (null).
+        ...(status === 'archived' ? { archivedAt: new Date() } : {}),
       });
     });
   }

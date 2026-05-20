@@ -105,7 +105,7 @@ async function seedTenantPlanAndSettings(ctx: TestTenant['ctx'], adminId: string
       planId: PLAN_ID,
       planYear: 2026,
       planName: { en: 'Test Premium' },
-      description: { en: '' },
+      description: { en: 'Test description' },
       sortOrder: 10,
       planCategory: 'corporate',
       memberTypeScope: 'company',

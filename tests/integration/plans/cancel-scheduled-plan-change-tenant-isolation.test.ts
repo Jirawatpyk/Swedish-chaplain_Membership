@@ -159,6 +159,14 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
     const pair = await createTwoTestTenants();
     cleanups.push(pair.a.cleanup, pair.b.cleanup);
 
+    // R6 QA fix — pass valid UUID for scheduledChangeId so the test
+    // isolates the memberId rejection. R3-C2 (Batch 4a) tightened
+    // scheduledChangeId to `z.string().uuid()` which is now validated
+    // BEFORE memberId in the schema declaration order; the use-case's
+    // first-issue translation at `cancel-scheduled-plan-change.ts:75-80`
+    // therefore returns scheduledChangeId as the failing field when
+    // both are non-UUID. Supplying a valid UUID here keeps the test
+    // focused on the memberId boundary check (its original intent).
     const result = await cancelScheduledPlanChange(
       {
         tenant: pair.a.ctx,
@@ -169,7 +177,7 @@ describe('Integration — cancelScheduledPlanChange tenant isolation (R2-C5)', (
         sourceIp: null,
       },
       {
-        scheduledChangeId: 'arbitrary-non-empty-id',
+        scheduledChangeId: randomUUID(),
         memberId: 'not-a-uuid',
         effectiveAtCycleId: randomUUID(),
         reason: null,

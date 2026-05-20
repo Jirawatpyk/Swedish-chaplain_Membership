@@ -234,7 +234,7 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'T128 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

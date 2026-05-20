@@ -116,7 +116,7 @@ describe('R10-T4 — PDF-download audit emit (live Neon happy path)', () => {
         planId: 'rt4-plan',
         planYear: 2026,
         planName: { en: 'R10-T4 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

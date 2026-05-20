@@ -96,7 +96,7 @@ describe.skipIf(!RUN_PERF)('timeline perf (E3, RUN_PERF=1)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Perf Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

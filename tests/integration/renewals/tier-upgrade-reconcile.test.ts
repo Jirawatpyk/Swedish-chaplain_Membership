@@ -147,7 +147,7 @@ describe('F8 tier-upgrade reconcile — integration (T204)', () => {
         planId: 'regular',
         planYear: 2026,
         planName: { en: 'Regular' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

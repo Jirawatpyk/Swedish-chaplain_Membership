@@ -106,7 +106,7 @@ describe('I5 — PDF routes cross-tenant probe (Principle I Review-Gate)', () =>
         planId: 'i5-plan',
         planYear: 2026,
         planName: { en: 'I5 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

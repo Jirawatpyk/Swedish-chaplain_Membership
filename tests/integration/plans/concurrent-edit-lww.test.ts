@@ -54,7 +54,7 @@ function seed(userId: string): PlanDraftInput {
     plan_id: 'premium',
     plan_year: 2027,
     plan_name: { en: 'Original' },
-    description: { en: '' },
+    description: { en: 'Test description' },
     sort_order: 10,
     plan_category: 'corporate',
     member_type_scope: 'company',

@@ -125,7 +125,7 @@ describe('F3 × F4 timeline integration (T083, US7)', () => {
         planId: 'us7-plan',
         planYear: 2026,
         planName: { en: 'US7 Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

@@ -71,7 +71,7 @@ describe('contract: GET /api/plans (T062)', () => {
             plan_id: 'premium',
             plan_year: 2026,
             plan_name: { en: 'Premium', th: 'พรีเมียม', sv: 'Premium' },
-            description: { en: '' },
+            description: { en: 'Test description' },
             plan_category: 'corporate',
             member_type_scope: 'company',
             annual_fee_minor_units: 3_600_000,

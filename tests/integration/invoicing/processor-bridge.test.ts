@@ -207,7 +207,7 @@ describe('F5 → F4 processor-bridge integration (T015)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Bridge Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

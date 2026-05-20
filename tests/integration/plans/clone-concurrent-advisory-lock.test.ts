@@ -43,7 +43,7 @@ function buildDrafts(userId: string, year: number, count: number): PlanDraftInpu
         plan_id: `lock-src-${i}`,
         plan_year: year,
         plan_name: { en: `Lock Source ${i}` },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sort_order: i * 10,
         plan_category: 'corporate',
         member_type_scope: 'company',

@@ -2,7 +2,7 @@
  * R3 Batch 4a (R3-C1) — seed script end-to-end smoke test.
  *
  * Round 3 review (R3-C1) flagged: `seed-swecham-2026-plans.ts:459,494`
- * pushed `description: { en: '' }` for every plan draft. Batch 3e
+ * pushed `description: { en: 'Test description' }` for every plan draft. Batch 3e
  * (`bf4d6d5c`) tightened `plan-repo.ts:rowToPlan` to call
  * `asLocaleText(row.description)`. `asLocaleText` rejects empty `en`
  * with `EmptyEnLocaleTextError`. Result: production seed CRASHES on

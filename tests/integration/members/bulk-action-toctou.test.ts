@@ -68,7 +68,7 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Test Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

@@ -43,7 +43,7 @@ function makeDraft(
     plan_id: planId,
     plan_year: 2026,
     plan_name: { en: `Plan ${planId}` },
-    description: { en: '' },
+    description: { en: 'Test description' },
     sort_order: 10,
     plan_category: 'corporate',
     member_type_scope: 'company',

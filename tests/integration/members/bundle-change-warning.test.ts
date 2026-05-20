@@ -52,7 +52,7 @@ describe('affected-members-count — SC-008 (T076)', () => {
         planId: 'premium',
         planYear: 2026,
         planName: { en: 'Premium' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

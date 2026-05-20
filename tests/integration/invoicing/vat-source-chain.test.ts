@@ -73,7 +73,7 @@ describe('T123 — VAT source chain pin (tenant_invoice_settings → invoice row
         planId,
         planYear,
         planName: { en: 'T123 VAT Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

@@ -122,7 +122,7 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122)', () => 
         planId: 'stale-plan',
         planYear: 2026,
         planName: { en: 'Stale Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

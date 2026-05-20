@@ -126,7 +126,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         planId: 'audit-plan',
         planYear: 2026,
         planName: { en: 'Audit Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',

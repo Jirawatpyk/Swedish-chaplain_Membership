@@ -200,7 +200,7 @@ describe('F4 US5 — void-invoice (T098)', () => {
         planId,
         planYear: 2026,
         planName: { en: 'Void Plan' },
-        description: { en: '' },
+        description: { en: 'Test description' },
         sortOrder: 10,
         planCategory: 'corporate',
         memberTypeScope: 'company',
