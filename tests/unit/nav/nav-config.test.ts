@@ -37,7 +37,7 @@ describe('staffNavConfig', () => {
     // (tenant_invoice_settings is the authoritative source). F8 added
     // Reminder schedules at /admin/settings/renewals/schedules. F6
     // Phase 5 added EventCreate integration setup wizard. F7.1a US2
-    // 2026-05-21 added Broadcast settings (image-source allowlist) at
+    // added Broadcast settings (image-source allowlist) at
     // /admin/settings/broadcasts (relocated from /admin/broadcasts/
     // settings to align with centralised-settings IA + auto-derived
     // breadcrumb).
@@ -54,7 +54,7 @@ describe('staffNavConfig', () => {
     expect(renewalSchedulesItem.href).toBe(
       '/admin/settings/renewals/schedules',
     );
-    // F7.1a US2 2026-05-21 — broadcast settings (image-source allowlist).
+    // F7.1a US2 — broadcast settings (image-source allowlist).
     expect(settingsSection.items[2]!.titleKey).toBe(
       'nav.staff.settingsBroadcasts',
     );

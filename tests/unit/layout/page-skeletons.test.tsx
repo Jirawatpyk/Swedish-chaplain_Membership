@@ -175,3 +175,49 @@ describe('PageSkeletonShell', () => {
     expect(getByText('Loading dashboard')).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// /admin/settings/broadcasts loading.tsx (F7.1a US2 — H1)
+// ---------------------------------------------------------------------------
+// Convention check: real PageHeader title + real Card title/description
+// from i18n; skeleton ONLY the interactive content. Mocks next-intl
+// getTranslations with a passthrough returning the key as the value so
+// the async server component is renderable in isolation.
+
+vi.mock('next-intl/server', () => ({
+  getTranslations: vi.fn(async (_ns?: string) => (key: string) => key),
+}));
+
+import { vi } from 'vitest';
+import BroadcastSettingsLoading from '@/app/(staff)/admin/settings/broadcasts/loading';
+
+describe('admin/settings/broadcasts loading.tsx', () => {
+  it('renders the PageSkeletonShell aria-busy contract', async () => {
+    const { container } = render((await BroadcastSettingsLoading()) as React.ReactElement);
+    // PageSkeletonShell is the OUTER landmark — its root carries the
+    // aria-busy + aria-live region (page-skeletons.test.tsx asserts
+    // this at the shell level too).
+    const shell = container.querySelector('[aria-busy="true"][aria-live="polite"]');
+    expect(shell).not.toBeNull();
+  });
+
+  it('renders real title + card heading + card description from i18n (no skeleton stubs in chrome)', async () => {
+    const { container } = render((await BroadcastSettingsLoading()) as React.ReactElement);
+    // Mocked getTranslations returns the key as the value, so the visible
+    // text is the literal i18n key. That's enough to prove the chrome
+    // renders REAL text, not a SkeletonBlock placeholder.
+    expect(container.textContent).toContain('pageTitle');
+    expect(container.textContent).toContain('pageDescription');
+    expect(container.textContent).toContain('heading');
+    expect(container.textContent).toContain('description');
+  });
+
+  it('skeletons the interactive bits (form + table rows) with at least 4 SkeletonBlocks', async () => {
+    const { container } = render((await BroadcastSettingsLoading()) as React.ReactElement);
+    // Form row (Label + Input + Button + Help) + 4 table rows (3 blocks
+    // each at sm+) = ≥4 minimum. soft-bound per the file-header policy.
+    expect(
+      container.querySelectorAll('[data-slot="skeleton-block"]').length,
+    ).toBeGreaterThanOrEqual(4);
+  });
+});

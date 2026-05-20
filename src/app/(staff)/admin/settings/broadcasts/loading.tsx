@@ -14,15 +14,9 @@ import {
 } from '@/components/shell/page-skeletons';
 
 /**
- * Loading skeleton for `/admin/settings/broadcasts`.
- *
- * Convention (matches `/admin/settings/invoicing/loading.tsx` +
- * `/admin/settings/renewals/schedules/loading.tsx`): render real
- * PageHeader + real Card title/description from i18n on the server
- * so the visible chrome is identical to the loaded page; skeleton
- * only the interactive content (allowlist form fields + table rows).
- * Eliminates the title/description flicker and "Broadcast settings /
- * Configure…" duplicate-skeleton the previous loading.tsx introduced.
+ * Mirrors `/admin/settings/invoicing/loading.tsx` — real PageHeader
+ * + Card title/description from i18n; skeleton only the interactive
+ * form + table to avoid title flicker on navigation.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.broadcasts.settings');

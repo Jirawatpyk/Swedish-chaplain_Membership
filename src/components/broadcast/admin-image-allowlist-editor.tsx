@@ -53,9 +53,6 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   const [rows, setRows] = useState<readonly AllowlistRow[]>(initial);
   const [hostname, setHostname] = useState('');
   const [isPending, startTransition] = useTransition();
-  // PR-review fix 2026-05-20 UX-H2 — dedicated live-region replaces
-  // aria-live on <tbody> (non-conformant). Updated AFTER each
-  // successful mutation so SRs announce the change.
   const [announcement, setAnnouncement] = useState<string>('');
 
   const submit = (action: 'add' | 'remove', h: string): void => {
@@ -91,11 +88,10 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
         );
         if (action === 'add') setHostname('');
       } catch (err) {
-        // PR-review fix 2026-05-20 SF-M2 — log network failures so
-        // CSP/CORS/offline are distinguishable in browser console.
-         
+        // Pass Error object directly so DevTools preserves the stack
+        // (String(err) would reduce to "Error: message" and drop it).
         console.error(
-          { err: String(err), action, hostname: h },
+          { err, action, hostname: h },
           'broadcasts.allowlist.fetch_failed',
         );
         toast.error(t('errors.unknown'));
@@ -105,27 +101,7 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
 
   return (
     <div className="space-y-6">
-      {/*
-       * 2026-05-21 UX bug fix — the heading/description used to live
-       * here inside the editor (when the page didn't wrap in Card).
-       * Now CardHeader on the page renders the title; the editor
-       * itself is body-only. Removes the duplicated h2 and the
-       * "raw form on background" feel.
-       *
-       * Form layout: Label + Input + Button on a single visual row at
-       * sm+, with the help-text below the WHOLE row (not inside the
-       * input wrapper). The previous layout had the help text inside
-       * the flex-1 input wrapper, which pushed the wrapper's height +
-       * dragged the `sm:items-end`-aligned Button down to the bottom
-       * of the wrapper (visually below the input). Restructure so:
-       *
-       *     [ Label                          ]
-       *     [ Input ............. ] [ Button ]
-       *     [ Help text                       ]
-       *
-       * Input row uses flex-row at sm+ with items-stretch so input
-       * height + button height match. Button shrinks to natural width.
-       */}
+      {/* Label / [Input + Button row sm:items-stretch] / Help text — stretch keeps button height matched to input. */}
       <form
         className="space-y-2"
         onSubmit={(e) => {
@@ -264,9 +240,6 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
         </tbody>
       </table>
 
-      {/* PR-review fix 2026-05-20 UX-H2 — dedicated live-region for
-          row-mutation announcements. Persistent in DOM so SR
-          announcement fires on text change, not element mount. */}
       <span className="sr-only" role="status" aria-live="polite">
         {announcement}
       </span>

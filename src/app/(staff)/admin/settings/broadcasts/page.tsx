@@ -1,25 +1,13 @@
 /**
  * T075 (F7.1a US2) — Admin broadcast settings page.
  *
- * Route: `/admin/settings/broadcasts`
+ * Route: `/admin/settings/broadcasts` (centralised-settings IA — see
+ * `src/config/nav.ts` for relocation rationale + breadcrumb impact).
  *
- * Relocated 2026-05-21 from `/admin/broadcasts/settings` per the
- * centralised-settings IA convention (matches F8 renewal-schedules
- * + F4 invoice-settings + F6 EventCreate-integration patterns). The
- * auto-derived breadcrumb now reads "Settings / Broadcasts" instead
- * of the misleading "Broadcasts / Settings" the old URL produced.
- *
- * Currently houses a single section: image-source allowlist editor
- * (FR-010 + FR-015). Future F7.1a / F7.1b sections will live here too
- * (attachment-source allowlist, marketing-consent toggle, etc).
- *
- * Authz: admin (manager not allowed — modifying the allowlist is a
- * privileged surface; manager can read but cannot mutate). When the
- * F71A US2 flag is OFF, the route returns notFound() so admins can't
- * stumble onto an empty form during dark rollout.
- *
- * Tenant scoping: `resolveTenantFromRequest()` + `runInTenant()` —
- * same pattern as the F7 admin queue page (admin/broadcasts/page.tsx).
+ * Authz: admin-only (manager has read-only on the broadcasts queue;
+ * allowlist mutation is privileged, parity with F4 logo upload + F2
+ * plan management). Dark-rollout via `isF71aUs2Enabled()` — returns
+ * notFound() when flag is OFF.
  */
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -68,10 +56,9 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
     tenantCtx,
     async () => {
       const repo = makeDrizzleImageAllowlistRepo();
-      // C1 fix (verify-run 2026-05-20) — seed platform-mandated default
-      // hosts (resend.com etc.) on every page visit so the admin sees a
-      // non-empty allowlist row set on first contact with the surface.
-      // Idempotent at storage layer via ON CONFLICT DO NOTHING.
+      // Idempotent — platform-mandated defaults (resend.com etc.)
+      // ensured on every visit so admins see a non-empty allowlist
+      // on first contact. Storage uses ON CONFLICT DO NOTHING.
       await seedPlatformDefaults(repo, tenantCtx.slug as never);
       const entries = await repo.findByTenantId(tenantCtx.slug as never);
       return entries.map((e) => ({
@@ -81,11 +68,6 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
     },
   );
 
-  // 2026-05-21 user-reported UX bug — page lacked a Card wrapper so
-  // the form sat raw on the background (inconsistent with admin/
-  // account, admin/settings/invoicing, etc). Wrap the editor in
-  // Card + CardHeader/CardContent matching the established F1+F4+F8
-  // settings-page pattern.
   return (
     <FormContainer>
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
