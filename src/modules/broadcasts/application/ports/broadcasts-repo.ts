@@ -20,6 +20,7 @@
 import type { MemberId } from '@/modules/members';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
 export interface NewBroadcastDraftInput {
   readonly tenantId: string;
@@ -129,9 +130,15 @@ export interface BroadcastsRepo {
     tenantId: string,
     broadcastId: BroadcastId,
     snapshot: {
-      readonly subject: string;
-      readonly bodyHtml: string;
-      readonly bodySource: string;
+      // R3-F1: subject + bodyHtml MUST be branded as
+      // ChamberSubstitutedBody — the only producer is the Domain VO
+      // `substituteChamberName`. Repo writers that accept this brand
+      // cannot accidentally store raw template content with
+      // un-substituted `{{chamber_name}}` literals or with an
+      // XSS-leaking chamber-name suffix.
+      readonly subject: ChamberSubstitutedBody;
+      readonly bodyHtml: ChamberSubstitutedBody;
+      readonly bodySource: ChamberSubstitutedBody;
       readonly startedFromTemplateId: string;
       readonly templateNameSnapshot: string;
     },

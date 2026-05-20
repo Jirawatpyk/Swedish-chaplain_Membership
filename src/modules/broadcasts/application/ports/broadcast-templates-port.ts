@@ -33,8 +33,17 @@ import type { TenantSlug } from '@/modules/tenants';
  * through to both the port's mutation methods AND `audit.emit(tx, ...)`
  * so the mutation + the audit row land in the SAME transaction
  * (Constitution Principle I clause 3 atomicity).
+ *
+ * R3-F4 (Phase 5 Round 1) — branded so callers cannot accidentally
+ * pass a raw value (e.g. `null` outside of test fixtures, the wrong
+ * tenant's tx). The brand is producer-controlled: the `withTx`
+ * callback receives a `BroadcastTemplatesTx` token; adapters cast at
+ * the boundary, tests cast `null as unknown as BroadcastTemplatesTx`.
  */
-export type BroadcastTemplatesTx = unknown;
+declare const BroadcastTemplatesTxBrand: unique symbol;
+export type BroadcastTemplatesTx = {
+  readonly [BroadcastTemplatesTxBrand]: true;
+};
 
 export type TemplateLocale = 'en' | 'th' | 'sv';
 
@@ -122,6 +131,23 @@ export interface BroadcastTemplatesPort {
    * filter applied).
    */
   findByIdInTx(
+    tenantId: TenantSlug,
+    id: string,
+    tx: BroadcastTemplatesTx,
+  ): Promise<BroadcastTemplate | null>;
+
+  /**
+   * R3-F11 (Phase 5 Round 1) — tx-aware findById that does NOT filter
+   * `deletedAt IS NULL`. Used ONLY by the snapshot use-case to
+   * distinguish "template was soft-deleted between picker render and
+   * snapshot click" (TOCTOU race; emit `template_soft_deleted` →
+   * HTTP 410 Gone) from "template never existed in this tenant"
+   * (cross-tenant probe or stale picker → 404 + cross-tenant audit).
+   *
+   * Returned Template carries `deletedAt` populated when applicable —
+   * caller branches on its truthiness.
+   */
+  findByIdAllowDeletedInTx(
     tenantId: TenantSlug,
     id: string,
     tx: BroadcastTemplatesTx,

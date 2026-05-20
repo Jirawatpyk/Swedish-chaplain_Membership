@@ -28,6 +28,23 @@ export function escapeHtml(raw: string): string {
 }
 
 /**
+ * R3-F1 (Phase 5 Round 1) — branded type proving that a string value
+ * has passed through `substituteChamberName` (chamber-name interpolation
+ * applied + HTML-escape of the substituted name). Repo writers that
+ * accept this brand cannot accidentally store raw template content
+ * with un-substituted `{{chamber_name}}` literals or with an XSS-
+ * leaking chamber-name suffix.
+ *
+ * No runtime constructor — the only way to obtain a value of this type
+ * is to call `substituteChamberName`. Use `as unknown as ChamberSubstitutedBody`
+ * only at trusted boundaries (e.g. tests that pre-fill draft content).
+ */
+declare const ChamberSubstitutedBodyBrand: unique symbol;
+export type ChamberSubstitutedBody = string & {
+  readonly [ChamberSubstitutedBodyBrand]: true;
+};
+
+/**
  * Substitute `{{chamber_name}}` literal in template body/subject with
  * the tenant's display name (HTML-escaped first per § 5.1).
  *
@@ -40,7 +57,10 @@ export function escapeHtml(raw: string): string {
 export function substituteChamberName(
   body: string,
   chamberName: string,
-): string {
+): ChamberSubstitutedBody {
   const escaped = escapeHtml(chamberName);
-  return body.replace(/\{\{chamber_name\}\}/g, escaped);
+  return body.replace(
+    /\{\{chamber_name\}\}/g,
+    escaped,
+  ) as ChamberSubstitutedBody;
 }

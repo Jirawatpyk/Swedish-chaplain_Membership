@@ -93,6 +93,11 @@ export async function POST(
       switch (kind) {
         case 'template_not_found':
           return jsonError(404, 'template_not_found', correlationId);
+        // R3-F11: distinct status for soft-deleted template — gives the
+        // compose surface a clean "this template was deleted; choose
+        // another or start blank" signal vs the misleading 404.
+        case 'template_soft_deleted':
+          return jsonError(410, 'template_soft_deleted', correlationId);
         case 'draft_not_found':
           return jsonError(404, 'broadcast_not_found', correlationId);
         case 'invalid_input':

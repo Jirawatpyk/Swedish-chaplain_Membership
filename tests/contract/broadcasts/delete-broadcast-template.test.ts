@@ -50,6 +50,7 @@ const makeDeps = (overrides?: {
   const port: BroadcastTemplatesPort = {
     findById: vi.fn().mockResolvedValue(existing),
     findByIdInTx: vi.fn().mockResolvedValue(existing),
+    findByIdAllowDeletedInTx: vi.fn().mockResolvedValue(existing),
     findByTenantId: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),

@@ -76,6 +76,11 @@ const makeDeps = (overrides?: {
       // R1.2 H-sf-2: snapshot use-case now calls findByIdInTx inside
       // withTx to close TOCTOU window. Mock returns same template.
       findByIdInTx: vi.fn().mockResolvedValue(tpl),
+      // R3-F11: snapshot use-case now calls findByIdAllowDeletedInTx
+      // INSTEAD of findByIdInTx so it can distinguish soft-deleted
+      // from never-existed. Mock default returns the same template
+      // (deletedAt null per makeTemplate default).
+      findByIdAllowDeletedInTx: vi.fn().mockResolvedValue(tpl),
       findByTenantId: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
@@ -132,12 +137,14 @@ const deps = makeDeps({ chamberName: 'SweCham' });
 
   it('cross-tenant probe (template belongs to tenant B) → template_not_found + cross-tenant audit with template payload', async () => {
 const deps = makeDeps({ template: null });
-    // R1.2 H-sf-2: findByIdInTx returns null for cross-tenant probe
+    // R3-F11: snapshot use-case now reads via findByIdAllowDeletedInTx.
+    // Return null → cross-tenant probe (vs returning a row with
+    // deletedAt populated which would be template_soft_deleted).
     (
       deps.templatesPort as unknown as {
-        findByIdInTx: ReturnType<typeof vi.fn>;
+        findByIdAllowDeletedInTx: ReturnType<typeof vi.fn>;
       }
-    ).findByIdInTx.mockResolvedValueOnce(null);
+    ).findByIdAllowDeletedInTx.mockResolvedValueOnce(null);
     const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,
       actorUserId: ACTOR_MEMBER,
@@ -160,6 +167,46 @@ const deps = makeDeps({ template: null });
         }),
       }),
     );
+    expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+  });
+
+  it('R3-F11: template soft-deleted between picker render + snapshot click → template_soft_deleted (distinct from not_found)', async () => {
+    // Same template the picker showed at T1, now soft-deleted at T2
+    // (admin deleted it while member was composing). Mock returns the
+    // row with `deletedAt` populated.
+    const tpl = makeTemplate();
+    const softDeletedTpl: typeof tpl = {
+      ...tpl,
+      deletedAt: new Date('2026-05-20T12:00:00Z'),
+    };
+    const deps = makeDeps();
+    (
+      deps.templatesPort as unknown as {
+        findByIdAllowDeletedInTx: ReturnType<typeof vi.fn>;
+      }
+    ).findByIdAllowDeletedInTx.mockResolvedValueOnce(softDeletedTpl);
+    const r = await snapshotTemplateToDraft(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_MEMBER,
+      memberId: 'mem-1',
+      draftId: DRAFT_ID,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-soft-deleted',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('template_soft_deleted');
+    // Audit captures the refusal with the template id + name snapshot
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'broadcast_template_snapshotted',
+        payload: expect.objectContaining({
+          templateId: tpl.id,
+          templateNameSnapshot: tpl.name,
+        }),
+      }),
+    );
+    // Counter MUST NOT bump on refusal
     expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
   });
 

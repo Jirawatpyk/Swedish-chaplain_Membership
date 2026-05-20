@@ -53,6 +53,13 @@ export interface SnapshotTemplateToDraftInput {
 
 export type SnapshotTemplateToDraftError =
   | { readonly kind: 'template_not_found' }
+  // R3-F11 — distinguishes "template was soft-deleted between picker
+  // render and snapshot click" (TOCTOU race) from "template never
+  // existed in this tenant" (cross-tenant probe / stale picker). The
+  // route surfaces this as HTTP 410 Gone with a member-facing message
+  // hint ("This template was deleted by an admin. Choose another or
+  // start blank.") instead of a confusing 404.
+  | { readonly kind: 'template_soft_deleted' }
   | { readonly kind: 'draft_not_found' }
   | { readonly kind: 'invalid_input'; readonly detail: string }
   // R1.2 H-sf-3: discriminate concurrent-mutation race from genuine
@@ -120,13 +127,34 @@ export async function snapshotTemplateToDraft(
   //    co-commit; failure on any rolls back the whole snapshot
   //    (Constitution I clause 3 atomicity).
   return deps.templatesPort.withTx(input.tenantId, async (tx) => {
-    // R1.2 H-sf-2: read template INSIDE the same tx where the snapshot
-    // mutation lands. Closes TOCTOU window between read and write.
-    const template = await deps.templatesPort.findByIdInTx(
+    // R1.2 H-sf-2 + R3-F11: read template INSIDE the same tx where
+    // the snapshot mutation lands (TOCTOU-safe). Use the
+    // allow-deleted variant so we can distinguish soft-deleted from
+    // never-existed without an extra query.
+    const template = await deps.templatesPort.findByIdAllowDeletedInTx(
       input.tenantId,
       input.templateId,
       tx,
     );
+    // R3-F11: discriminate soft-deleted (TOCTOU race after picker
+    // render) from genuine not-found / cross-tenant probe. The
+    // template's `deletedAt` is populated by the allow-deleted query.
+    if (template && template.deletedAt !== null) {
+      await safeAuditEmit(deps.audit, null, {
+        eventType: 'broadcast_template_snapshotted',
+        actorUserId: input.actorUserId,
+        tenantId: input.tenantId,
+        summary: `Refused snapshot of soft-deleted template ${input.templateId}`,
+        payload: {
+          broadcastId: input.draftId,
+          templateId: template.id,
+          templateNameSnapshot: template.name,
+          memberId: input.memberId,
+        },
+        requestId: input.requestId,
+      });
+      return err<SnapshotTemplateToDraftError>({ kind: 'template_soft_deleted' });
+    }
     if (!template) {
       // RLS-confined null. Emit probe audit (safeAuditEmit so audit-
       // storage hiccup doesn't break the rollback flow). R2.2 A2

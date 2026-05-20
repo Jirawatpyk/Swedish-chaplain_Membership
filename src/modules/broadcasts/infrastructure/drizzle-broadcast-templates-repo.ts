@@ -60,7 +60,7 @@ async function withTenantTx<T>(
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
   if (tx) {
-    return fn(tx as TenantTx);
+    return fn(tx as unknown as TenantTx);
   }
   return runInTenant(
     asTenantContext(tenantId as unknown as string),
@@ -128,6 +128,29 @@ async function findByIdImpl(
   return rows[0] ? toDomain(rows[0] as BroadcastTemplateRow) : null;
 }
 
+/**
+ * R3-F11 (Phase 5 Round 1) — like findByIdImpl but WITHOUT the
+ * `deletedAt IS NULL` predicate. The snapshot use-case needs to
+ * distinguish soft-deleted from never-existed.
+ */
+async function findByIdAllowDeletedImpl(
+  tx: TenantTx,
+  tenantId: TenantSlug,
+  id: string,
+): Promise<BroadcastTemplate | null> {
+  const rows = await tx
+    .select()
+    .from(broadcastTemplates)
+    .where(
+      and(
+        eq(broadcastTemplates.id, id),
+        eq(broadcastTemplates.tenantId, tenantId as string),
+      ),
+    )
+    .limit(1);
+  return rows[0] ? toDomain(rows[0] as BroadcastTemplateRow) : null;
+}
+
 export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
   return {
     async withTx<T>(
@@ -136,7 +159,7 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
     ): Promise<T> {
       return runInTenant(
         asTenantContext(tenantId as unknown as string),
-        async (tx) => fn(tx),
+        async (tx) => fn(tx as unknown as BroadcastTemplatesTx),
       );
     },
 
@@ -146,7 +169,7 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
     ): Promise<BroadcastTemplate | null> {
       return runInTenant(
         asTenantContext(tenantId as unknown as string),
-        async (tx) => findByIdImpl(tx as TenantTx, tenantId, id),
+        async (tx) => findByIdImpl(tx as unknown as TenantTx, tenantId, id),
       );
     },
 
@@ -157,7 +180,18 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
     ): Promise<BroadcastTemplate | null> {
       // R1.2 H-sf-2 tx-aware variant. Reuses findByIdImpl so the SELECT
       // shape stays identical to findById.
-      return findByIdImpl(tx as TenantTx, tenantId, id);
+      return findByIdImpl(tx as unknown as TenantTx, tenantId, id);
+    },
+
+    async findByIdAllowDeletedInTx(
+      tenantId: TenantSlug,
+      id: string,
+      tx: BroadcastTemplatesTx,
+    ): Promise<BroadcastTemplate | null> {
+      // R3-F11 — does NOT filter deletedAt IS NULL. Caller (snapshot
+      // use-case) branches on `template.deletedAt !== null` to emit
+      // template_soft_deleted vs cross-tenant probe audit.
+      return findByIdAllowDeletedImpl(tx as unknown as TenantTx, tenantId, id);
     },
 
     async findByTenantId(
