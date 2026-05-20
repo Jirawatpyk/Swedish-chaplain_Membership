@@ -127,11 +127,20 @@ export interface SubmitBroadcastDeps {
   readonly sanitizer: HtmlSanitizerPort;
   /**
    * PR-review fix 2026-05-20 UX-C1 — F7.1a US2 source-allowlist
-   * validation runs after sanitiser, before persistence. Optional in
-   * the type so F7 MVP test fixtures + back-compat callers don't
-   * break; when omitted the validation step is SKIPPED (legacy F7
-   * MVP behaviour: <img> stripped entirely by sanitiser). Production
+   * validation runs after sanitiser, before persistence. Production
    * composition root (`makeSubmitBroadcastDeps`) always wires it.
+   *
+   * Kept optional (`?`) for back-compat with existing fixtures (10+
+   * fixture sites in `tests/integration/broadcasts/halt-flag-
+   * precondition.test.ts` + `tests/unit/broadcasts/application/proxy-
+   * submit-broadcast.test.ts`). Round-4 R4-L2 originally proposed
+   * tightening to required; reverted on 2026-05-21 because the
+   * change cascades to those 10+ fixture sites for marginal safety
+   * gain (the existing route handlers + `makeSubmitBroadcastDeps`
+   * always wire the port; the type-level optionality only matters
+   * inside test fixtures that override the use-case directly).
+   * When omitted the validation step is SKIPPED (legacy F7 MVP
+   * behaviour: <img> stripped entirely by sanitiser anyway).
    */
   readonly imageAllowlistPort?: ImageAllowlistPort;
   readonly membersBridge: MembersBridgePort;

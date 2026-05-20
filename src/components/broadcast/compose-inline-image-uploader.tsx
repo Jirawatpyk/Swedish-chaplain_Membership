@@ -84,7 +84,7 @@ export function ComposeInlineImageUploader({
     } catch (err) {
       // PR-review fix 2026-05-20 SF-M2 — log so CSP / CORS / offline
       // are distinguishable in browser console; toast stays generic.
-      // eslint-disable-next-line no-console
+       
       console.error(
         { err: String(err), draftId },
         'broadcasts.inline_image_upload.fetch_failed',

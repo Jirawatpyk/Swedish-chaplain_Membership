@@ -803,9 +803,15 @@ export const env = {
 
   // F7.1a US2 — ClamAV virus scanner connection settings. The clamav-
   // virus-scanner adapter (Phase 2 T025) consumes this block. Empty
-  // `host` ⇒ adapter returns `error` verdict; when the master F7.1a
-  // flag flips ON the adapter additionally requires `sharedSecret`
-  // to be ≥32 chars. See infra/clamav/README.md for deploy procedure.
+  // `host` ⇒ adapter returns `error` verdict.
+  //
+  // PR-review fix 2026-05-21 R4-L1 — auth boundary is Fly.io 6PN
+  // private network, not an env-var shared secret. `CLAMAV_SHARED_SECRET`
+  // was removed 2026-05-19 per the `clamav-virus-scanner` superb
+  // critique (see env.ts:511-516 comment for the rationale: clamscan@2.4
+  // doesn't support auth headers, Dockerfile has no proxy, so the env
+  // var was documented as auth but never reached the daemon). See
+  // infra/clamav/README.md for deploy procedure + 6PN topology.
   clamav: {
     host: raw.CLAMAV_HOST,
     port: raw.CLAMAV_PORT,

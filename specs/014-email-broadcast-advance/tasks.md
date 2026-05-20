@@ -382,6 +382,7 @@ Within the US1+US2 ship of this branch (AMENDED 2026-05-20):
 
 - [ ] T127 [P] Extend `tests/integration/broadcasts/pagination-cross-tenant-probe.test.ts` (T036) with ≥4 probe cases (READ, UPDATE, DELETE, audit-emission) per data-model § 6 pattern
 - [ ] T128 [P] Extend `tests/integration/broadcasts/image-allowlist-cross-tenant-probe.test.ts` (T065) with same 4 probe cases
+- [ ] T128b [P] [US2] Wire `enforceCrossTenantIsolation` use-case for `tenant_image_source_allowlist` surface so cross-tenant access attempts emit `broadcast_cross_tenant_probe` audit. Closes PR-review Round-4 R4-M4 + the `it.todo` placeholder in `tests/integration/broadcasts/image-allowlist-cross-tenant-probe.test.ts:137-139`. Data-model.md § 7 + Constitution Principle I sub-clause 4 mandate this forensic emit. Mirror of F7.1a US1 T036:228-238 `expect.fail` pattern — the helper exists but is not wired for the allowlist surface yet.
 - [ ] T129 [P] Extend `tests/integration/broadcasts/template-cross-tenant-probe.test.ts` (T093) with same 4 probe cases
 
 ### CI gates

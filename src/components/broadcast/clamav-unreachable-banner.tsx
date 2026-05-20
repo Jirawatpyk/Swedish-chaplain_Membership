@@ -55,7 +55,7 @@ export function ClamavUnreachableBanner(): React.ReactElement | null {
         // CSP/CORS/offline are distinguishable in browser console
         // (silent setUnreachable(true) made the cause invisible).
         if (cancelled) return;
-        // eslint-disable-next-line no-console
+         
         console.warn(
           { err: String(err) },
           'broadcasts.clamav_health_probe_failed',

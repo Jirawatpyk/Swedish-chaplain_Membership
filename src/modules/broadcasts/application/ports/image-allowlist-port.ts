@@ -43,6 +43,15 @@ import type { TenantSlug } from '@/modules/tenants';
  * (avoids leaking the Drizzle/postgres-js type into Application).
  *
  * PR-review fix 2026-05-20 CR-H1 — atomic-tx threading.
+ *
+ * PR-review fix 2026-05-21 R4-L4 considered tightening to a nominal
+ * brand `{ readonly __brand: 'ImageAllowlistTx' }` for stronger
+ * encapsulation but deferred — the brand cascades to 4 test-fixture
+ * mock typings (`vi.fn(async <T>(_t, fn) => fn(null))`) and 2 adapter
+ * runtime casts. Marginal safety gain (the only escape hatch is
+ * already documented inside the Drizzle adapter) does not justify
+ * the cross-file ripple. Keep `unknown`; revisit if a future
+ * regression points to a real bug class enabled by the looseness.
  */
 export type ImageAllowlistTx = unknown;
 

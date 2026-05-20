@@ -264,6 +264,60 @@ describe('uploadInlineImage contract — T063 (F7.1a US2)', () => {
     expect(deps.allowlistPort.seedDefaults).not.toHaveBeenCalled();
   });
 
+  // PR-review fix 2026-05-21 R4-M3 — pin SF-M4 storage_unavailable
+  // regex-narrowing. Without these tests, a future Vercel Blob SDK
+  // rename of error classes would silently route ALL storage failures
+  // through the `throw e` rethrow at upload-inline-image.ts:226 → 500
+  // instead of 503, regressing the SF-M4 fix unobserved.
+  it.each([
+    'BlobAccessError',
+    'BlobStoreSuspendedError',
+    'BlobClientTokenExpiredError',
+    'BlobServiceRateLimited',
+    'BlobServiceNotAvailable',
+  ])(
+    'storage.put rejects with %s → maps to storage_unavailable err (SF-M4 regression net)',
+    async (errName) => {
+      const deps = makeDeps();
+      (deps.storage.put as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error(`${errName}: simulated outage`), {
+          name: errName,
+        }),
+      );
+      const r = await uploadInlineImage(deps, {
+        tenantId: TENANT,
+        actorUserId: ACTOR,
+        actorEmail: ACTOR_EMAIL,
+        draftId: DRAFT,
+        requestId: `req-blob-${errName}`,
+        fileBytes: PNG_4MB,
+        filename: 'ok.png',
+        mimeType: 'image/png',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('storage_unavailable');
+    },
+  );
+
+  it('storage.put rejects with non-Blob error → rethrows (does NOT mask as storage_unavailable)', async () => {
+    const deps = makeDeps();
+    (deps.storage.put as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('UnrelatedError: simulated unknown failure'),
+    );
+    await expect(
+      uploadInlineImage(deps, {
+        tenantId: TENANT,
+        actorUserId: ACTOR,
+        actorEmail: ACTOR_EMAIL,
+        draftId: DRAFT,
+        requestId: 'req-unrelated',
+        fileBytes: PNG_4MB,
+        filename: 'ok.png',
+        mimeType: 'image/png',
+      }),
+    ).rejects.toThrow('UnrelatedError');
+  });
+
   it('does NOT auto-allowlist when upload is rejected (scanner verdict=infected)', async () => {
     const deps = makeDeps({ scanVerdict: 'infected' });
     const r = await uploadInlineImage(deps, {

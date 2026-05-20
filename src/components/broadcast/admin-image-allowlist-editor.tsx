@@ -93,7 +93,7 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
       } catch (err) {
         // PR-review fix 2026-05-20 SF-M2 — log network failures so
         // CSP/CORS/offline are distinguishable in browser console.
-        // eslint-disable-next-line no-console
+         
         console.error(
           { err: String(err), action, hostname: h },
           'broadcasts.allowlist.fetch_failed',

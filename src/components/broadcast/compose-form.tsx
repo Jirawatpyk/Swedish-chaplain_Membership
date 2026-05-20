@@ -238,7 +238,7 @@ export function ComposeForm({
           // 2xx with malformed body — server bug, not user fault.
           // Log + treat as failure so the success-redirect path
           // doesn't fire on a missing broadcastId.
-          // eslint-disable-next-line no-console
+           
           console.error(
             { err: String(parseErr), status: res.status },
             'broadcasts.submit.response_invalid_json',
@@ -289,7 +289,7 @@ export function ComposeForm({
       // PR-review fix 2026-05-20 SF-M2 — log network failures so CSP /
       // CORS / offline are distinguishable in browser console; toast
       // copy stays generic for the member.
-      // eslint-disable-next-line no-console
+       
       console.error(
         { err: String(e) },
         'broadcasts.submit.network_failed',

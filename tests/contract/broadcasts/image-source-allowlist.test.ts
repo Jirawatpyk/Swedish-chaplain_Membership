@@ -140,11 +140,19 @@ describe('validateImageSourceAllowlist contract — T062 (F7.1a US2)', () => {
     expect(result.ok).toBe(false);
   });
 
-  it('treats uppercase host as unsafe (asHostname-err branch — TD/D2 LOW closure)', async () => {
-    // PR-review fix TA-LOW — pin the asHostname-err branch distinctly
-    // from the malformed-URL catch. URL parser accepts uppercase hosts
-    // ("EXAMPLE.com"), but asHostname rejects them via RFC-1035
-    // lowercase regex. Branch must surface as `unsafe`, not pass.
+  it('treats uppercase-host URL as unsafe (R4-L3 — corrected comment scope)', async () => {
+    // PR-review fix R4-L3 (Round 4 2026-05-21) — corrected comment:
+    // Node's URL parser auto-lowercases the hostname BEFORE asHostname
+    // sees the value, so `EXAMPLE.com` becomes `example.com` and the
+    // asHostname regex actually PASSES. This test pins the "uppercase
+    // raw input → unsafe via allowlist-miss" path, NOT the literal
+    // asHostname-err branch the original Phase D comment claimed.
+    //
+    // The asHostname-err branch (hostnames that survive
+    // `.toLowerCase()` but fail RFC-1035) is structurally unreachable
+    // in production because URL parser normalisation strips any
+    // such characters first. Branch remains defensive but dead-code-
+    // equivalent given the lowercase normalisation upstream.
     const deps = makeDeps(['cdn.example.com']);
     const result = await validateImageSourceAllowlist(deps, {
       bodyHtml: '<img src="https://EXAMPLE.com/x.png">',
