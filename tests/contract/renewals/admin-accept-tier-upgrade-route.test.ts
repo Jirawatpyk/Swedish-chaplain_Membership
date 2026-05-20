@@ -186,6 +186,106 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept
     expect(acceptTierUpgradeMock).not.toHaveBeenCalled();
   });
 
+  // R5-I6 — all 6 use-case error variants mapped to HTTP status codes.
+  // Sibling cancel-route contract test added these in R3-I11 (parity).
+  // Each case proves the route's switch arm forwards to the documented
+  // status code; a future refactor that re-maps `suggestion_not_found`
+  // → 500 would fail these tests instead of shipping silently.
+
+  it('400 invalid_input — use-case returns kind:invalid_input', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockResolvedValueOnce(
+      err({
+        kind: 'invalid_input' as const,
+        message: 'suggestionId is not a UUID',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('invalid_input');
+  });
+
+  it('404 suggestion_not_found — use-case returns kind:suggestion_not_found', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockResolvedValueOnce(
+      err({ kind: 'suggestion_not_found' as const }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe('suggestion_not_found');
+  });
+
+  it('409 suggestion_not_open — use-case returns kind:suggestion_not_open', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockResolvedValueOnce(
+      err({ kind: 'suggestion_not_open' as const }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('suggestion_not_open');
+  });
+
+  it('409 no_active_cycle — use-case returns kind:no_active_cycle', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockResolvedValueOnce(
+      err({ kind: 'no_active_cycle' as const }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('no_active_cycle');
+  });
+
+  it('502 plan_change_failed — use-case returns kind:plan_change_failed', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockResolvedValueOnce(
+      err({
+        kind: 'plan_change_failed' as const,
+        message: 'F2 supersedeAndInsertPendingAtomically threw',
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error.code).toBe('plan_change_failed');
+  });
+
+  it('401 unauthenticated — helper short-circuits before use-case', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce({
+      response: new Response(
+        JSON.stringify({ error: { code: 'unauthenticated' } }),
+        { status: 401, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(401);
+    expect(acceptTierUpgradeMock).not.toHaveBeenCalled();
+  });
+
+  it('403 forbidden — manager attempting write short-circuits before use-case', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce({
+      response: new Response(
+        JSON.stringify({
+          error: { code: 'forbidden', message: 'admin role required' },
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+    expect(res.status).toBe(403);
+    expect(acceptTierUpgradeMock).not.toHaveBeenCalled();
+  });
+
   // R4-I4 (Batch 5b) — outer catch emits errorId.
   it('500 uncaught throw — outer catch emits errorId F8.ACCEPT_TIER.UNEXPECTED', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);

@@ -76,6 +76,16 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     expect(seeded.inserted.status).toBe('pending');
     const scheduledChangeId = seeded.inserted.scheduledChangeId;
 
+    // R5-S11 coverage note: `planMetrics.cancelAuditBackfillRequired`
+    // fires at the ROUTE-handler level
+    // (`cancel/route.ts:204-208`), not in the use-case. This integration
+    // test calls the use-case directly, so the metric counter is not
+    // exercised here — it's covered by the contract test at
+    // `tests/contract/scheduled-plan-changes/cancel-route.test.ts`
+    // (R4-I2 audit_failed mock assertions). A future route-level
+    // integration test (route + live Neon) would extend coverage; not
+    // implemented today because the route's metric wiring is mechanical.
+
     // Custom audit-port that always returns persist_failed.
     let auditCallCount = 0;
     const failingAudit: AuditPort = {
@@ -243,5 +253,107 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     );
     expect(dbRows.length).toBe(1);
     expect(dbRows[0]!.status).toBe('cancelled');
+  }, 30_000);
+
+  // R5-I8 — coverage parity for the `invalid_payload` audit-error
+  // variant. The persist_failed branch above proves the row-persists
+  // contract for one error type; this proves the same contract for
+  // the zod-rejection branch (R3-I5 discriminator preserved end-to-end).
+  it('R5-I8: row is cancelled in DB but audit row absent when audit-port returns invalid_payload', async () => {
+    const tenant = await createTestTenant('test-swecham');
+    cleanups.push(tenant.cleanup);
+
+    const { memberId, cycleId, ownerCleanup } = await seedMemberAndRenewalCycle({
+      tenant: tenant.ctx,
+    });
+    cleanups.push(ownerCleanup);
+
+    const adminUserId = randomUUID();
+
+    const seeded =
+      await drizzleScheduledPlanChangeRepo.supersedeAndInsertPendingAtomically(
+        tenant.ctx,
+        {
+          memberId,
+          effectiveAtCycleId: cycleId,
+          fromPlanId: 'corporate-regular',
+          toPlanId: 'corporate-premier',
+          scheduledByUserId: adminUserId,
+        },
+      );
+    const scheduledChangeId = seeded.inserted.scheduledChangeId;
+
+    let auditCallCount = 0;
+    const invalidPayloadAudit: AuditPort = {
+      record: async (): Promise<
+        Result<
+          void,
+          | { type: 'persist_failed'; message: string }
+          | { type: 'invalid_payload'; issues: string[] }
+        >
+      > => {
+        auditCallCount += 1;
+        return err({
+          type: 'invalid_payload' as const,
+          issues: ['simulated zod rejection on payload.member_id'],
+        });
+      },
+    };
+
+    const result = await cancelScheduledPlanChange(
+      {
+        tenant: tenant.ctx,
+        repo: drizzleScheduledPlanChangeRepo,
+        audit: invalidPayloadAudit,
+        actorUserId: adminUserId,
+        requestId: 'r5-i8-invalid-payload-probe',
+        sourceIp: null,
+      },
+      {
+        scheduledChangeId,
+        memberId,
+        effectiveAtCycleId: cycleId,
+        reason: null,
+      },
+    );
+
+    expect(auditCallCount).toBe(1);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('unreachable — invalid_payload must fail');
+    expect(result.error.code).toBe('audit_failed');
+    if (result.error.code !== 'audit_failed') throw new Error('unreachable');
+    expect(result.error.auditErrorType).toBe('invalid_payload');
+    expect(result.error.transitioned.status).toBe('cancelled');
+
+    // Row IS cancelled despite the audit invalid_payload rejection.
+    const dbRows = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(scheduledPlanChanges)
+        .where(
+          and(
+            eq(scheduledPlanChanges.tenantId, tenant.ctx.slug),
+            eq(scheduledPlanChanges.scheduledChangeId, scheduledChangeId),
+          ),
+        ),
+    );
+    expect(dbRows.length).toBe(1);
+    expect(dbRows[0]!.status).toBe('cancelled');
+    expect(dbRows[0]!.cancelledAt).not.toBeNull();
+
+    // No audit row exists — confirmed via tenant-scoped query.
+    const auditRows = await runInTenant(tenant.ctx, async (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'plan_change_cancelled'),
+            sql`(${auditLog.payload}->>'scheduled_change_id') = ${scheduledChangeId}`,
+          ),
+        ),
+    );
+    expect(auditRows.length).toBe(0);
   }, 30_000);
 });

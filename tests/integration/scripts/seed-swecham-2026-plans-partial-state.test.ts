@@ -161,4 +161,131 @@ describe('Integration — seed-swecham-2026-plans partial-state contract (R4-C1)
     );
     expect(auditRowsAfter.length).toBe(4);
   }, 60_000);
+
+  // R5-I7 — boundary case: failure on draft 1 (the FIRST draft).
+  // Verifies the corrected R5-I3 semantics handle the N=1 edge: 1
+  // plan row committed (the failing draft itself) + 0 audit rows.
+  it('R5-I7: audit failure on draft 1 leaves 1 plan row + 0 audit rows; error message reports drafts 1..0 ALREADY committed', async () => {
+    const tenant = await createTestTenant('test-swecham');
+    cleanups.push(tenant.cleanup);
+
+    const owner = await createActiveTestUser();
+    cleanups.push(() => deleteTestUser(owner));
+
+    const realRecord = planAuditAdapter.record.bind(planAuditAdapter);
+    let callCount = 0;
+    const recordSpy = vi
+      .spyOn(planAuditAdapter, 'record')
+      .mockImplementation(async (ctx, event) => {
+        callCount += 1;
+        if (callCount >= 1) {
+          return err({
+            type: 'persist_failed' as const,
+            message: 'simulated failure on draft 1',
+          });
+        }
+        return realRecord(ctx, event);
+      });
+
+    try {
+      await expect(stageB_Plans(tenant.ctx, owner.userId)).rejects.toThrow(
+        /drafts 1\.\.0 ALREADY committed \+ draft 1's plan row committed \+ 0 audit rows emitted/,
+      );
+
+      expect(recordSpy).toHaveBeenCalledTimes(1);
+
+      const planRows = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(membershipPlans)
+          .where(
+            and(
+              eq(membershipPlans.tenantId, tenant.ctx.slug),
+              eq(membershipPlans.planYear, 2026),
+            ),
+          ),
+      );
+      expect(planRows.length).toBe(1);
+
+      const auditRows = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.tenantId, tenant.ctx.slug),
+              eq(auditLog.eventType, 'plan_created'),
+              sql`(${auditLog.payload}->>'plan_year')::int = 2026`,
+            ),
+          ),
+      );
+      expect(auditRows.length).toBe(0);
+    } finally {
+      recordSpy.mockRestore();
+    }
+  }, 60_000);
+
+  // R5-I7 — boundary case: failure on draft 9 (the LAST draft).
+  // Verifies that the audit-failure threw AFTER all 9 plan rows
+  // committed but only 8 audit rows landed (the 9th audit was the
+  // throw source).
+  it('R5-I7: audit failure on draft 9 leaves 9 plan rows + 8 audit rows; error message reports drafts 1..8 ALREADY committed', async () => {
+    const tenant = await createTestTenant('test-swecham');
+    cleanups.push(tenant.cleanup);
+
+    const owner = await createActiveTestUser();
+    cleanups.push(() => deleteTestUser(owner));
+
+    const realRecord = planAuditAdapter.record.bind(planAuditAdapter);
+    let callCount = 0;
+    const recordSpy = vi
+      .spyOn(planAuditAdapter, 'record')
+      .mockImplementation(async (ctx, event) => {
+        callCount += 1;
+        if (callCount >= 9) {
+          return err({
+            type: 'persist_failed' as const,
+            message: 'simulated failure on draft 9',
+          });
+        }
+        return realRecord(ctx, event);
+      });
+
+    try {
+      await expect(stageB_Plans(tenant.ctx, owner.userId)).rejects.toThrow(
+        /drafts 1\.\.8 ALREADY committed \+ draft 9's plan row committed \+ 8 audit rows emitted/,
+      );
+
+      expect(recordSpy).toHaveBeenCalledTimes(9);
+
+      const planRows = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(membershipPlans)
+          .where(
+            and(
+              eq(membershipPlans.tenantId, tenant.ctx.slug),
+              eq(membershipPlans.planYear, 2026),
+            ),
+          ),
+      );
+      expect(planRows.length).toBe(9);
+
+      const auditRows = await runInTenant(tenant.ctx, async (tx) =>
+        tx
+          .select()
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.tenantId, tenant.ctx.slug),
+              eq(auditLog.eventType, 'plan_created'),
+              sql`(${auditLog.payload}->>'plan_year')::int = 2026`,
+            ),
+          ),
+      );
+      expect(auditRows.length).toBe(8);
+    } finally {
+      recordSpy.mockRestore();
+    }
+  }, 60_000);
 });

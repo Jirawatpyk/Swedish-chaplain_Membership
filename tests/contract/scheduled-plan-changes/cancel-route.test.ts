@@ -404,6 +404,48 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     );
   });
 
+  // R5-S6 — production write-path of the diagnostic headers.
+  // Asserts that when audit_failed fires for the FIRST time (no
+  // replay), `rememberIdempotentResponse` is called with a `.headers`
+  // payload populated. The R4-I10 replay test (below) pre-seeds the
+  // headers in the mock — this complementary test verifies they
+  // actually flow into the cache on the write side. Without this,
+  // a regression that silently drops `.headers` from
+  // `rememberIdempotentResponse(... { status, body, headers })` would
+  // ship green.
+  it('R5-S6: rememberIdempotentResponse receives the diagnostic headers on audit_failed write', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
+      err({
+        code: 'audit_failed',
+        auditErrorType: 'persist_failed' as const,
+        message: 'DB connection refused',
+        transitioned: cancelledRow,
+      }),
+    );
+    const idem = await import('@/lib/idempotency');
+    vi.mocked(idem.rememberIdempotentResponse).mockClear();
+
+    const { POST } = await import(
+      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+    );
+    const res = await POST(makeRequest(validBody), {
+      params: params(SCHEDULED_ID),
+    });
+    expect(res.status).toBe(200);
+
+    // Inspect the captured argument shape — the headers field MUST
+    // be present + populated with the diagnostic header pair.
+    expect(idem.rememberIdempotentResponse).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(idem.rememberIdempotentResponse).mock.calls[0]!;
+    const [, , , response] = call;
+    expect(response.status).toBe(200);
+    expect(response.headers).toEqual({
+      'X-Audit-Backfill-Required': '1',
+      'X-Audit-Error-Type': 'persist_failed',
+    });
+  });
+
   // R4-I10 — idempotent replay of the audit_failed 200 response.
   // Stub classifyIdempotencyRequest to return `kind:'replay'` with a
   // cached envelope INCLUDING the diagnostic headers. Assert the
