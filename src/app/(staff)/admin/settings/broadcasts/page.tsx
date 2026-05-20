@@ -1,7 +1,13 @@
 /**
  * T075 (F7.1a US2) — Admin broadcast settings page.
  *
- * Route: `/admin/broadcasts/settings`
+ * Route: `/admin/settings/broadcasts`
+ *
+ * Relocated 2026-05-21 from `/admin/broadcasts/settings` per the
+ * centralised-settings IA convention (matches F8 renewal-schedules
+ * + F4 invoice-settings + F6 EventCreate-integration patterns). The
+ * auto-derived breadcrumb now reads "Settings / Broadcasts" instead
+ * of the misleading "Broadcasts / Settings" the old URL produced.
  *
  * Currently houses a single section: image-source allowlist editor
  * (FR-010 + FR-015). Future F7.1a / F7.1b sections will live here too
@@ -20,6 +26,13 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import {
   AdminImageAllowlistEditor,
   type AllowlistRow,
@@ -47,6 +60,9 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
 
   const tenantCtx = resolveTenantFromRequest();
   const t = await getTranslations('admin.broadcasts.settings');
+  const tAllowlist = await getTranslations(
+    'admin.broadcasts.settings.allowlist',
+  );
 
   const rows: readonly AllowlistRow[] = await runInTenant(
     tenantCtx,
@@ -65,10 +81,23 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
     },
   );
 
+  // 2026-05-21 user-reported UX bug — page lacked a Card wrapper so
+  // the form sat raw on the background (inconsistent with admin/
+  // account, admin/settings/invoicing, etc). Wrap the editor in
+  // Card + CardHeader/CardContent matching the established F1+F4+F8
+  // settings-page pattern.
   return (
     <FormContainer>
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-      <AdminImageAllowlistEditor initial={rows} />
+      <Card>
+        <CardHeader>
+          <CardTitle>{tAllowlist('heading')}</CardTitle>
+          <CardDescription>{tAllowlist('description')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <AdminImageAllowlistEditor initial={rows} />
+        </CardContent>
+      </Card>
     </FormContainer>
   );
 }

@@ -152,6 +152,13 @@ const STATIC_LABEL_KEYS = {
   // closed in F6 Phase 5 verify-fix together with the new
   // `integrations`/`eventcreate` segments.
   invoicing: 'invoicing',
+  // F7.1a US2 (2026-05-21) — `/admin/settings/broadcasts` breadcrumb
+  // segment. The URL slug `broadcasts` is shared with the top-level
+  // /admin/broadcasts queue page (which doesn't render breadcrumbs
+  // because it's only 1 level deep). The label override here lets
+  // the centralised-settings page render "Settings / Broadcasts"
+  // correctly.
+  broadcasts: 'broadcasts',
   // F6 — `/admin/integrations/eventcreate` breadcrumb segments.
   // `integrations` is an organisational segment (no page.tsx at that
   // level — handled by NON_ROUTE_BY_PARENT in breadcrumb-path.ts so

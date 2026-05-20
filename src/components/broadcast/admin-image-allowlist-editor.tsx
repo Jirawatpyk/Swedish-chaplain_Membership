@@ -104,23 +104,37 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   };
 
   return (
-    <section aria-labelledby="allowlist-heading" className="space-y-6">
-      <header className="space-y-2">
-        <h2 id="allowlist-heading" className="text-h2">
-          {t('heading')}
-        </h2>
-        <p className="text-body text-muted-foreground">{t('description')}</p>
-      </header>
-
+    <div className="space-y-6">
+      {/*
+       * 2026-05-21 UX bug fix — the heading/description used to live
+       * here inside the editor (when the page didn't wrap in Card).
+       * Now CardHeader on the page renders the title; the editor
+       * itself is body-only. Removes the duplicated h2 and the
+       * "raw form on background" feel.
+       *
+       * Form layout: Label + Input + Button on a single visual row at
+       * sm+, with the help-text below the WHOLE row (not inside the
+       * input wrapper). The previous layout had the help text inside
+       * the flex-1 input wrapper, which pushed the wrapper's height +
+       * dragged the `sm:items-end`-aligned Button down to the bottom
+       * of the wrapper (visually below the input). Restructure so:
+       *
+       *     [ Label                          ]
+       *     [ Input ............. ] [ Button ]
+       *     [ Help text                       ]
+       *
+       * Input row uses flex-row at sm+ with items-stretch so input
+       * height + button height match. Button shrinks to natural width.
+       */}
       <form
-        className="flex flex-col gap-2 sm:flex-row sm:items-end"
+        className="space-y-2"
         onSubmit={(e) => {
           e.preventDefault();
           if (hostname.trim()) submit('add', hostname.trim());
         }}
       >
-        <div className="flex-1 space-y-1">
-          <Label htmlFor="allowlist-hostname">{t('hostnameLabel')}</Label>
+        <Label htmlFor="allowlist-hostname">{t('hostnameLabel')}</Label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
           <Input
             id="allowlist-hostname"
             value={hostname}
@@ -129,14 +143,19 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
             aria-describedby="allowlist-hostname-help"
             disabled={isPending}
             autoComplete="off"
+            className="flex-1"
           />
-          <p id="allowlist-hostname-help" className="text-caption">
-            {t('hostnameHelp')}
-          </p>
+          <Button
+            type="submit"
+            disabled={isPending || !hostname.trim()}
+            className="shrink-0"
+          >
+            {t('addButton')}
+          </Button>
         </div>
-        <Button type="submit" disabled={isPending || !hostname.trim()}>
-          {t('addButton')}
-        </Button>
+        <p id="allowlist-hostname-help" className="text-caption">
+          {t('hostnameHelp')}
+        </p>
       </form>
 
       <table className="w-full border-collapse">
@@ -251,6 +270,6 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
       <span className="sr-only" role="status" aria-live="polite">
         {announcement}
       </span>
-    </section>
+    </div>
   );
 }
