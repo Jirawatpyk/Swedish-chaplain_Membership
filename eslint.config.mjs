@@ -631,6 +631,54 @@ const eslintConfig = defineConfig([
     },
   },
   {
+    // R4.2 H-3 + H-4 — block direct reads of `Broadcast.startedFromTemplateId`
+    // and `.templateNameSnapshot` raw column mirrors outside the Drizzle
+    // row→domain mapper. The canonical reader is `templateProvenance`
+    // (R3-F2 discriminated union); raw fields are JSDoc @deprecated as
+    // of R4.2 and retained only because the Infrastructure mapper writes
+    // them when hydrating the aggregate.
+    //
+    // Scope: `src/modules/broadcasts/**` only — the rule does NOT fire
+    // on use-case OUTPUT shapes that legitimately carry their own
+    // `templateNameSnapshot` field (e.g.
+    // `snapshot-template-to-draft.ts` returns a `SnapshotResult` with
+    // `{templateNameSnapshot: string}` distinct from the Broadcast
+    // aggregate) because output-shape consumers live in `src/app/api/`
+    // — outside this rule's `files` glob.
+    //
+    // Exempt: `src/modules/broadcasts/infrastructure/db/**` (Drizzle
+    // mapper) — the row→domain function MUST write the raw fields plus
+    // `templateProvenance`. Both writes happen there and only there.
+    files: [
+      "src/modules/broadcasts/**/*.ts",
+      "src/modules/broadcasts/**/*.tsx",
+    ],
+    ignores: [
+      "src/modules/broadcasts/infrastructure/db/**",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "MemberExpression[property.name='startedFromTemplateId']",
+          message:
+            "R4.2 H-3 — read `broadcast.templateProvenance?.templateId ?? null` " +
+            "instead of the deprecated raw field. ESLint exempt only inside " +
+            "the Drizzle mapper (`infrastructure/db/`).",
+        },
+        {
+          selector:
+            "MemberExpression[property.name='templateNameSnapshot']",
+          message:
+            "R4.2 H-4 — read `broadcast.templateProvenance?.templateNameSnapshot ?? null` " +
+            "instead of the deprecated raw field. ESLint exempt only inside " +
+            "the Drizzle mapper (`infrastructure/db/`).",
+        },
+      ],
+    },
+  },
+  {
     // H3.3 — `*Unchecked` branded-type constructors skip the UUID v4
     // regex. They are INFRASTRUCTURE-ONLY: only Drizzle row-read
     // adapters (where the DB type system guarantees UUID shape via

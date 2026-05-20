@@ -1,17 +1,30 @@
 /**
  * T100 (F7.1a US7) — `updateBroadcastTemplate` Application use-case.
  *
- * Admin edit per contracts/broadcast-template.md § 1.2:
- *   1. Validate input lengths (subset of T099 — only changed fields)
- *   2. Load existing template (RLS-scoped) — null → cross-tenant probe
- *      audit + not_found
- *   3. If bodyHtml is provided, validate against image-source allowlist
- *   4. Atomic mutation+audit via port.withTx — audit payload records
- *      before/after value for forensic visibility (FR-021)
+ * Admin edit per contracts/broadcast-template.md § 1.2.
+ *
+ * Flow:
+ *   1. Validate input lengths (subset of T099 — only changed fields).
+ *   2. If `bodyHtml` is provided, validate against the tenant's image-
+ *      source allowlist (`validateImageSourceAllowlist`) BEFORE
+ *      entering the tx so we don't open a transaction we'll roll back.
+ *
+ * Post-R3.2 in-tx 3-branch flow (single tx via `withTxAllowDeleted`)
+ * after `findByIdAllowDeletedInTx`:
+ *   (a) row not found in RLS scope → cross-tenant probe → emit
+ *       `broadcast_template_cross_tenant_probe` (tx=null) → return
+ *       `{kind: 'not_found'}`
+ *   (b) row exists but already soft-deleted → idempotent no-op →
+ *       `logger.info` benign branch (R4.3 M-5) → return
+ *       `{kind: 'not_found'}` (treat soft-deleted as gone from the
+ *       admin edit surface)
+ *   (c) live row → `port.update` → emit `broadcast_template_updated`
+ *       with before/after payload (FR-021 forensic visibility) →
+ *       return `ok`
  *
  * Snapshot invariant (FR-019): drafts already started from this
- * template are NOT modified (the broadcasts.body_html column is
- * independent of broadcast_templates.body_html — `updateDraft` and
+ * template are NOT modified (the `broadcasts.body_html` column is
+ * independent of `broadcast_templates.body_html` — `updateDraft` and
  * `updateDraftFromTemplate` are the only writers to draft body).
  *
  * Pure Application logic.

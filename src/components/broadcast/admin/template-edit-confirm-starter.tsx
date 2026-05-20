@@ -13,12 +13,25 @@
  * the banner. localStorage key encodes the templateId so dismissing one
  * starter does not silence the warning for others.
  *
- * a11y:
- *   - role="status" + aria-live="polite" so SR users hear the warning
- *     without it interrupting the current navigation cue
- *   - dismiss button has aria-label (close + name of template)
- *   - banner stays in DOM after dismissal (hidden with `hidden` attr)
- *     so re-opening the page after localStorage reset re-shows it
+ * a11y (post-R3.5 + R4.1):
+ *   - Outer `<section role="region" aria-labelledby="...">` keeps the
+ *     banner reachable via F6 / landmark-navigation in screen readers
+ *     even before any state change.
+ *   - Inner `<div role="status" aria-live="polite">` announces the
+ *     dismiss-state transition (banner removal) without interrupting
+ *     focus. Static role="status" on the outer element is silently
+ *     dropped by NVDA + VoiceOver, hence the wrapper split.
+ *   - Title text uses explicit `text-foreground` to override inherited
+ *     `text-warning-foreground` (calibrated for filled `bg-warning`,
+ *     not the lighter `bg-warning-surface` used here).
+ *   - Dismiss button uses `text-foreground` + `ring-ring` (R4.1 C-2)
+ *     for ≥4.5:1 contrast on `bg-warning-surface` — `text-warning`
+ *     on that surface measured ~2.6:1 (fails WCAG SC 1.4.3).
+ *   - Dismiss button carries `aria-label` (close + template name).
+ *   - On dismiss the component `return null`s (NOT hidden with the
+ *     HTML `hidden` attribute); re-render after localStorage reset
+ *     restores the banner because `useState` reads localStorage on
+ *     mount.
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';

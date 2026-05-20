@@ -148,7 +148,7 @@ export async function snapshotTemplateToDraft(
   //    TenantDisplayNamePort contract).
   const chamberName = await deps.tenantDisplayName.resolve(input.tenantId);
 
-  // 4. Atomic withTx: template read (TOCTOU-safe via findByIdInTx) +
+  // 4. Atomic withTx: template read (TOCTOU-safe via findByIdAllowDeletedInTx) +
   //    snapshot audit + draft UPDATE + counter increment. All writes
   //    co-commit; failure on any rolls back the whole snapshot
   //    (Constitution I clause 3 atomicity).

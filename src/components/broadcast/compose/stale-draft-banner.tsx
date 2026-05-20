@@ -12,9 +12,18 @@
  * Standalone reusable banner. Consumer wiring lands in F7.1b draft-
  * resume; today the component has no mount-point in production code.
  *
- * a11y: role="status" + aria-live="polite" (announce without
- * interrupting), aria-busy reflects refresh in-flight, dismiss button
- * carries aria-label.
+ * a11y (post-R3.5 + R4.1):
+ *   - Outer `<section role="region" aria-labelledby="...">` keeps the
+ *     banner reachable via F6 / landmark-navigation in screen readers.
+ *   - Inner `<div role="status" aria-live="polite">` announces stale-
+ *     draft warnings without interrupting focus.
+ *   - Refresh button carries `aria-busy={refreshing}` so SR users hear
+ *     the in-flight state during the snapshot re-run.
+ *   - Title uses `text-foreground` (overrides inherited
+ *     `text-warning-foreground`) and dismiss button uses
+ *     `text-foreground` + `ring-ring` (R4.1 C-2) for ≥4.5:1 contrast
+ *     on `bg-warning-surface`.
+ *   - Dismiss button carries `aria-label` (close + template name).
  */
 import { useTranslations } from 'next-intl';
 import { X } from 'lucide-react';

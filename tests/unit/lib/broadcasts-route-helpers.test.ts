@@ -55,6 +55,9 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   // routes (was stringly-typed 'no-session' in templates GET route
   // pre-R3.6).
   no_session: 401,
+  // R4.2 H-1 — typed 400 code for invalid `locale` query parameter
+  // on GET /api/broadcasts/templates (was stringly-typed pre-R4.2).
+  invalid_locale: 400,
   internal_error: 500,
 };
 

@@ -171,9 +171,25 @@ export interface Broadcast {
   // R3-F2 (Phase 5 Round 1) — surfaced as a discriminated union
   // `templateProvenance` below: either BOTH fields populated (snapshot
   // path) or BOTH null (blank canvas). The raw fields below are
-  // retained for backward compat with existing audit emit + UI
-  // readers; new code SHOULD read `templateProvenance` instead.
+  // retained for backward compat with the Drizzle row→domain mapper
+  // only; ALL consumers must read `templateProvenance` instead.
+
+  /**
+   * @deprecated R4.2 H-3 — read `templateProvenance?.templateId ?? null`
+   * instead. Raw column mirror retained for backward compat with the
+   * Drizzle adapter mapper only. ESLint blocks new reads outside the
+   * `src/modules/broadcasts/infrastructure/db/` mapper (see
+   * `eslint.config.mjs` `no-restricted-syntax` rule). The XOR
+   * invariant "either both or neither populated" is encoded in
+   * `templateProvenance`; reading the raw fields directly breaks
+   * that contract.
+   */
   readonly startedFromTemplateId: string | null;
+  /**
+   * @deprecated R4.2 H-4 — read
+   * `templateProvenance?.templateNameSnapshot ?? null` instead. See
+   * `startedFromTemplateId` JSDoc for rationale.
+   */
   readonly templateNameSnapshot: string | null;
 
   /**

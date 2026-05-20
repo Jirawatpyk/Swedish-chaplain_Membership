@@ -70,6 +70,11 @@ export type F7RouteErrorCode =
   // facing surfaces (was stringly-typed 'no-session' in templates GET
   // route). Provides bilingual message + status mapping.
   | 'no_session'
+  // R4.2 H-1 — typed code for 400 invalid `locale` query parameter on
+  // GET /api/broadcasts/templates. Was stringly-typed 'invalid_locale'
+  // via `jsonError(400, 'invalid_locale', ...)` pre-R4.2; now flows
+  // through `errorResponse` so the bilingual envelope lands.
+  | 'invalid_locale'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -225,6 +230,10 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'You must be signed in to access this resource.',
     messageThai: 'คุณต้องเข้าสู่ระบบเพื่อเข้าถึงทรัพยากรนี้',
   },
+  invalid_locale: {
+    message: 'The locale parameter is invalid (must be one of: en, th, sv).',
+    messageThai: 'พารามิเตอร์ภาษาไม่ถูกต้อง (ต้องเป็น en, th, หรือ sv)',
+  },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
     messageThai: 'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
@@ -374,6 +383,7 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   forbidden: 403,
   feature_disabled: 503,
   no_session: 401,
+  invalid_locale: 400,
   internal_error: 500,
 };
 

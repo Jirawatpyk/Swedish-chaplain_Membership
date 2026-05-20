@@ -180,6 +180,19 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
           opts.draftRow?.startedFromTemplateId ?? null,
         templateNameSnapshot:
           opts.draftRow?.templateNameSnapshot ?? null,
+        // R4.2 H-3 — mirror the Drizzle mapper invariant: when both
+        // raw fields are populated, `templateProvenance` is the
+        // discriminated-union view. Submit-broadcast now reads
+        // `templateProvenance?.templateId`, so the fixture must
+        // populate it for the H-test-1 pass-through assertion.
+        templateProvenance:
+          opts.draftRow?.startedFromTemplateId != null &&
+          opts.draftRow?.templateNameSnapshot != null
+            ? {
+                templateId: opts.draftRow.startedFromTemplateId,
+                templateNameSnapshot: opts.draftRow.templateNameSnapshot,
+              }
+            : null,
       };
     },
     async updateDraft() {
@@ -228,6 +241,16 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
           opts.draftRow?.startedFromTemplateId ?? null,
         templateNameSnapshot:
           opts.draftRow?.templateNameSnapshot ?? null,
+        // R4.2 H-3 — see `insertDraft` sibling comment. Mirrors the
+        // Drizzle mapper "both or neither" invariant.
+        templateProvenance:
+          opts.draftRow?.startedFromTemplateId != null &&
+          opts.draftRow?.templateNameSnapshot != null
+            ? {
+                templateId: opts.draftRow.startedFromTemplateId,
+                templateNameSnapshot: opts.draftRow.templateNameSnapshot,
+              }
+            : null,
       };
     },
     async attachResendIds() {},

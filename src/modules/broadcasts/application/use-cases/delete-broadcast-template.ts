@@ -1,16 +1,24 @@
 /**
  * T101 (F7.1a US7) — `deleteBroadcastTemplate` Application use-case.
  *
- * Admin soft-delete per contracts/broadcast-template.md § 1.3 + FR-023:
- *   - Load existing template (RLS-scoped) — null → cross-tenant probe
- *     audit + not_found
- *   - port.softDelete (sets deleted_at = now())
- *   - audit broadcast_template_deleted with `started_from_count`
- *     snapshot at delete time (forensic visibility per FR-023)
+ * Admin soft-delete per contracts/broadcast-template.md § 1.3 + FR-023.
+ *
+ * Post-R3.2 flow (single tx via `withTxAllowDeleted`) — three branches
+ * after `findByIdAllowDeletedInTx`:
+ *   (a) row not found in RLS scope → cross-tenant probe → emit
+ *       `broadcast_template_cross_tenant_probe` (tx=null, forensic
+ *       record of the failure) → return `{kind: 'not_found'}`
+ *   (b) row exists but already soft-deleted → idempotent no-op →
+ *       `logger.info` benign branch (R4.3 M-5) → return
+ *       `{kind: 'not_found'}` (audit emit skipped; first-delete audit
+ *       row already exists)
+ *   (c) live row → `port.softDelete` (sets deleted_at = now()) → emit
+ *       `broadcast_template_deleted` with `startedFromCount` snapshot
+ *       (FR-023 forensic visibility) → return `ok`
  *
  * Drafts that originated from this template are NOT affected — the
  * broadcasts.started_from_template_id FK uses ON DELETE SET NULL but
- * templateNameSnapshot column on broadcasts preserves the name.
+ * `templateNameSnapshot` column on broadcasts preserves the name.
  *
  * Pure Application logic.
  */

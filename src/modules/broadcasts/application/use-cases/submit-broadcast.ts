@@ -662,7 +662,11 @@ export async function submitBroadcast(
           segmentType: input.segment.kind,
           estimatedRecipientCount: resolved.value.estimatedCount,
           submittedAt: now.toISOString(),
-          startedFromTemplateId: broadcast.startedFromTemplateId,
+          // R4.2 H-3 — read via canonical `templateProvenance` discriminated
+          // union (was `broadcast.startedFromTemplateId` direct read,
+          // deprecated post-R4.2; raw column kept for Drizzle mapper only).
+          startedFromTemplateId:
+            broadcast.templateProvenance?.templateId ?? null,
         },
         requestId: input.requestId,
       });

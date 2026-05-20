@@ -26,7 +26,7 @@ import {
   f71aUs7DisabledReason,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
+import { baseHeaders, errorResponse } from '@/lib/broadcasts-route-helpers';
 import { getCurrentSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -48,10 +48,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // Either member OR admin session — shared picker surface.
   const current = await getCurrentSession();
   if (!current) {
-    // R3.6 L-1 — typed code (was 'no-session' stringly-typed).
-    // F7RouteErrorCode now includes 'no_session' with bilingual
-    // message + status 401 in F7_ERROR_MESSAGES.
-    return jsonError(401, 'no_session', correlationId);
+    // R4.2 H-2 — bilingual envelope path. R3.6 L-1 added 'no_session'
+    // to F7RouteErrorCode + F7_ERROR_MESSAGES but the route still
+    // routed through `jsonError` which emits `{error: code}` instead
+    // of the canonical `{error: {code, message, messageThai}}`
+    // envelope. The bilingual message never reached the client.
+    return errorResponse(401, 'no_session', correlationId);
   }
 
   const tenantCtx = resolveTenantFromRequest(request);
@@ -68,7 +70,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (localeParam !== null) {
     const parsed = LocaleSchema.safeParse(localeParam);
     if (!parsed.success) {
-      return jsonError(400, 'invalid_locale', correlationId);
+      // R4.2 H-1 — typed code via errorResponse for bilingual envelope.
+      // Pre-R4.2 used jsonError + stringly-typed 'invalid_locale'.
+      return errorResponse(400, 'invalid_locale', correlationId);
     }
     currentUserLocale = parsed.data;
   }
@@ -110,6 +114,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       },
       'broadcasts.templates.list.unexpected_error',
     );
-    return jsonError(500, 'internal_error', correlationId);
+    return errorResponse(500, 'internal_error', correlationId);
   }
 }
