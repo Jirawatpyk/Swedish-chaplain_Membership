@@ -282,7 +282,7 @@ export default async function AdminBroadcastsPage({
         {templatesEnabled ? (
           <Link
             href="/admin/broadcasts/templates"
-            className={buttonVariants()}
+            className={buttonVariants({ variant: 'outline' })}
           >
             <LayoutTemplateIcon
               className="mr-2 size-4"
