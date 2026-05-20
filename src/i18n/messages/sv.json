@@ -1804,7 +1804,8 @@
         "filterCount": "{count, plural, =0 {Inga mallar matchar} one {# mall} other {# mallar}}",
         "emptyState": {
           "title": "Inga mallar ännu",
-          "body": "När mallar läggs till visas de här. Startmallar som förseedats vid kammarens uppstart visas också med en Start-etikett."
+          "body": "När mallar läggs till visas de här. Startmallar som förseedats vid kammarens uppstart visas också med en Start-etikett.",
+          "cta": "Skapa din första mall"
         },
         "columns": {
           "name": "Namn",
@@ -3261,7 +3262,8 @@
       "newInvoice": "Skapa ny faktura",
       "issueRefund": "Utfärda återbetalning — hitta betald faktura",
       "reviewBroadcasts": "Granska utskickskön",
-      "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning"
+      "broadcastsHalted": "Spärrade medlemmar — utskicksgranskning",
+      "newBroadcastTemplate": "Skapa ny E-Blast-mall"
     },
     "navigate": {
       "plansList": "Paketlista",
@@ -3273,6 +3275,7 @@
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
       "broadcastsQueue": "Granskningskö för E-Blast",
+      "broadcastTemplates": "Mallbibliotek för E-Blast",
       "renewalsList": "Förnyelsepipeline",
       "renewalSchedules": "Förnyelseschemaprinciper",
       "escalationTasks": "Uppföljningsuppgifter",

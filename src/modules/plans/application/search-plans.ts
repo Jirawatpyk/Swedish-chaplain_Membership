@@ -137,6 +137,15 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     url: '/admin/broadcasts?status=halted',
     requires: 'admin',
   },
+  // F7.1a US7 Round 1 R4-S7 L2 — direct ⌘K jump to author a new
+  // broadcast template. High-frequency admin task once chambers
+  // start customising starter templates (J4-B9 smart-feature pattern).
+  {
+    id: 'broadcast.newTemplate',
+    label: 'palette.actions.newBroadcastTemplate',
+    url: '/admin/broadcasts/templates/new',
+    requires: 'admin',
+  },
 ];
 
 const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
@@ -201,6 +210,15 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.broadcasts',
     label: 'palette.navigate.broadcastsQueue',
     url: '/admin/broadcasts',
+    requires: 'read',
+  },
+  // F7.1a US7 Round 1 R4-S7 L2 — admin broadcast templates library.
+  // Read-only requires for visibility (manager can browse the library
+  // even though they cannot edit; matches the templates page RBAC).
+  {
+    id: 'nav.broadcastTemplates',
+    label: 'palette.navigate.broadcastTemplates',
+    url: '/admin/broadcasts/templates',
     requires: 'read',
   },
   // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without

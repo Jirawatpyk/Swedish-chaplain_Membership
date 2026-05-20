@@ -20,7 +20,7 @@
  *   - aria-pressed on each pill button
  *   - Live region announces the filtered row count after change
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { buttonVariants } from '@/components/ui/button';
@@ -53,6 +53,23 @@ export function AdminTemplateLibrary({
       filter === 'starter' ? r.isSeeded : !r.isSeeded,
     );
   }, [rows, filter]);
+
+  // R4-S7 L4 — debounce filter-count announcement by a tick so the
+  // screen reader's focus-cue from the aria-pressed pill click lands
+  // first; only THEN announce the new filtered count. Without the
+  // delay, NVDA + VoiceOver sometimes drop the count update because
+  // they're already speaking the new aria-pressed state.
+  const isFirstRender = useRef(true);
+  const [liveCount, setLiveCount] = useState<number>(filtered.length);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      setLiveCount(filtered.length);
+      return;
+    }
+    const id = setTimeout(() => setLiveCount(filtered.length), 0);
+    return () => clearTimeout(id);
+  }, [filtered.length]);
 
   if (rows.length === 0) {
     // Empty state stays in the parent (server page) — this component
@@ -99,7 +116,7 @@ export function AdminTemplateLibrary({
           {t('filterPill.authored')}
         </button>
         <span role="status" aria-live="polite" className="sr-only">
-          {t('filterCount', { count: filtered.length })}
+          {t('filterCount', { count: liveCount })}
         </span>
       </fieldset>
 

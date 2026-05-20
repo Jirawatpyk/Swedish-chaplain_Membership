@@ -10,11 +10,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
+import { LayoutTemplate } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Card,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -78,10 +80,24 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
 
       {rows.length === 0 ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="items-center text-center">
+            <LayoutTemplate
+              className="size-12 text-muted-foreground"
+              aria-hidden="true"
+            />
             <CardTitle>{t('emptyState.title')}</CardTitle>
-            <CardDescription>{t('emptyState.body')}</CardDescription>
+            <CardDescription className="max-w-md mx-auto">
+              {t('emptyState.body')}
+            </CardDescription>
           </CardHeader>
+          <CardContent className="flex justify-center pb-6">
+            <Link
+              href="/admin/broadcasts/templates/new"
+              className={buttonVariants()}
+            >
+              {t('emptyState.cta')}
+            </Link>
+          </CardContent>
         </Card>
       ) : (
         <AdminTemplateLibrary rows={rows} />
