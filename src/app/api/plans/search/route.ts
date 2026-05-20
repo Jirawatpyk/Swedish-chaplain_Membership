@@ -203,23 +203,36 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           }
           refundableInvoices = items;
           if (failedInvoiceIds.length > 0) {
-            logger.warn(
-              {
-                errorId: 'F2.PALETTE.REFUNDABLE_ACTIVITY_UNAVAILABLE',
-                requestId: ctx.requestId,
-                failedInvoiceIds,
-                failedCount: failedInvoiceIds.length,
-                // Map serialised to object for structured logs.
-                // Keys are error codes/kinds; values are occurrence
-                // counts.
-                errorKindCounts: Object.fromEntries(errorKindCounts),
-                errorKindsTruncatedAt:
-                  errorKindCounts.size >= ERROR_KIND_CAP
-                    ? ERROR_KIND_CAP
-                    : null,
-              },
-              'palette.refundable_invoice_activity_unavailable',
-            );
+            // R5-S10 — escalate warn → error when ≥10 invoices fail
+            // (suggested threshold for "wide F5 outage"). SRE alert
+            // rules keyed on error-level catch the wide outage;
+            // warn-level remains for partial degradation (1-9 failed).
+            const structured = {
+              errorId: 'F2.PALETTE.REFUNDABLE_ACTIVITY_UNAVAILABLE',
+              requestId: ctx.requestId,
+              failedInvoiceIds,
+              failedCount: failedInvoiceIds.length,
+              // Map serialised to object for structured logs.
+              // Keys are error codes/kinds; values are occurrence
+              // counts.
+              errorKindCounts: Object.fromEntries(errorKindCounts),
+              errorKindsTruncatedAt:
+                errorKindCounts.size >= ERROR_KIND_CAP
+                  ? ERROR_KIND_CAP
+                  : null,
+            };
+            const WIDE_OUTAGE_THRESHOLD = 10;
+            if (failedInvoiceIds.length >= WIDE_OUTAGE_THRESHOLD) {
+              logger.error(
+                structured,
+                'palette.refundable_invoice_activity_unavailable (wide outage)',
+              );
+            } else {
+              logger.warn(
+                structured,
+                'palette.refundable_invoice_activity_unavailable',
+              );
+            }
           }
         } else {
           // Surface listInvoicesPaged Result.err (F5 disabled,

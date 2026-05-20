@@ -187,32 +187,41 @@ export function makeScheduledPlanChange(
   status: ScheduledPlanChangeStatus,
   timestamp?: string,
 ): ScheduledPlanChange {
-  // R4-I11 — TS overloads protect typed callers, but a widened-status
-  // call (e.g., `makeScheduledPlanChange(base, status as ScheduledPlanChangeStatus)`
-  // via an `any` cast or generic propagation) would bypass the
-  // compile-time signature. Catch that path at runtime so a corrupt
-  // record with `appliedAt: undefined` cannot escape — the runtime
-  // throw is more informative than the downstream
-  // `assertValidScheduledPlanChange` failure.
-  if (status !== 'pending' && timestamp === undefined) {
+  // R5-S14 — early-return pending separately so TS narrows `status`
+  // to the non-pending union AND `timestamp` to `string` in the
+  // remaining branches via the runtime guard below. This eliminates
+  // the `as string` casts previously used in each terminal-status arm.
+  if (status === 'pending') {
+    return {
+      ...base,
+      status: 'pending',
+      appliedAt: null,
+      supersededAt: null,
+      cancelledAt: null,
+    };
+  }
+  // R4-I11 + R5-S14 — TS overloads protect typed callers, but a
+  // widened-status call (e.g., `makeScheduledPlanChange(base, status
+  // as ScheduledPlanChangeStatus)` via an `any` cast or generic
+  // propagation) would bypass the compile-time signature. Catch that
+  // path at runtime so a corrupt record with `appliedAt: undefined`
+  // cannot escape — the runtime throw is more informative than the
+  // downstream `assertValidScheduledPlanChange` failure.
+  //
+  // The narrowing-via-throw lets TS treat `timestamp` as `string`
+  // (not `string | undefined`) in each terminal-status arm below
+  // without any `as` casts.
+  if (timestamp === undefined) {
     throw new Error(
       `makeScheduledPlanChange: 'timestamp' is required when status='${status}'`,
     );
   }
   switch (status) {
-    case 'pending':
-      return {
-        ...base,
-        status: 'pending',
-        appliedAt: null,
-        supersededAt: null,
-        cancelledAt: null,
-      };
     case 'applied':
       return {
         ...base,
         status: 'applied',
-        appliedAt: timestamp as string,
+        appliedAt: timestamp,
         supersededAt: null,
         cancelledAt: null,
       };
@@ -221,7 +230,7 @@ export function makeScheduledPlanChange(
         ...base,
         status: 'superseded',
         appliedAt: null,
-        supersededAt: timestamp as string,
+        supersededAt: timestamp,
         cancelledAt: null,
       };
     case 'cancelled':
@@ -230,7 +239,7 @@ export function makeScheduledPlanChange(
         status: 'cancelled',
         appliedAt: null,
         supersededAt: null,
-        cancelledAt: timestamp as string,
+        cancelledAt: timestamp,
       };
   }
 }

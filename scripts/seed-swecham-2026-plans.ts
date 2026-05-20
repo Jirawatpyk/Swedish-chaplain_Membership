@@ -563,9 +563,19 @@ export async function stageB_Plans(
   //   DELETE FROM audit_log
   //     WHERE event_type = 'plan_created'
   //       AND tenant_id = 'swecham'
-  //       AND payload->>'plan_year' = '2026';
+  //       AND payload->>'plan_year' = '2026'
+  //       AND request_id LIKE 'seed-stageB-%';
   //   DELETE FROM membership_plans
   //     WHERE plan_year = 2026 AND tenant_id = 'swecham';
+  //
+  // R5-I10 — the `request_id LIKE 'seed-stageB-%'` filter scopes the
+  // audit DELETE to seed-script runs only, avoiding accidental
+  // deletion of `plan_created` audit rows from production admin
+  // actions on 2026 plans (e.g., a chamber admin creating a custom
+  // plan tier mid-year). The seed script writes audit rows with
+  // `requestId: \`seed-stageB-${runUUID}\`` (single correlation id
+  // per seed run); production routes use `requestId: ctx.requestId`
+  // (typically a UUID without the `seed-stageB-` prefix).
   //
   // True single-tx atomicity for this seed would require either:
   //   (a) extending planRepo.insert + planAuditAdapter.record to

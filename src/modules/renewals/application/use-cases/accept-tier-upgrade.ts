@@ -805,6 +805,26 @@ export async function acceptTierUpgrade(
       memberNotifiedDeliveryId,
     });
   } catch (e) {
+    // R5-S9 caller-responsibility contract:
+    //
+    // This use-case wraps internal throws as a typed `server_error`
+    // Result so callers can route them via the Application-layer
+    // error union (Constitution III — Application MUST NOT import
+    // `@/lib/logger`).
+    //
+    // The HTTP route caller at
+    // `src/app/api/admin/renewals/tier-upgrades/[suggestionId]/accept/route.ts`
+    // logs both `kind:'server_error'` (R4-C2 `errorId:
+    // 'F8.ACCEPT_TIER.SERVER_ERROR'`) AND any uncaught throw
+    // (R4-I4 outer catch `errorId: 'F8.ACCEPT_TIER.UNEXPECTED'`)
+    // — so the HTTP path is fully covered.
+    //
+    // If a future non-HTTP caller (cron, queue worker, internal
+    // service) invokes `acceptTierUpgrade(...)`, THAT caller MUST
+    // wrap the call with equivalent log emission. The Result.err
+    // `message` field carries the original throw's message verbatim
+    // for diagnostic purposes; callers should log with errorId
+    // matching their context (e.g., `F8.ACCEPT_TIER.CRON_INVOKED_THREW`).
     return err({
       kind: 'server_error',
       message: (e as Error)?.message ?? 'unknown',
