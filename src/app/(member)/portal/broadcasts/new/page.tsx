@@ -144,10 +144,13 @@ export default async function ComposeBroadcastPage({
       // R3.2 H-7 — log picker list failures (DB outage / RLS misconfig)
       // so observability picks up degradation. Picker still gracefully
       // falls back to empty list — does not block the compose surface.
+      // R4.3 M-6 — see template_pre_populate_failed sibling log; same
+      // userId-in-context rationale applies to picker-list failures.
       logger.warn(
         {
           err: err instanceof Error ? err.message : String(err),
           tenantId: tenant.slug,
+          userId: session.user.id,
         },
         'broadcasts.compose.template_picker_list_failed',
       );
@@ -212,11 +215,16 @@ export default async function ComposeBroadcastPage({
       } catch (err) {
         // R3.2 H-7 — log so RLS / DB / sanitiser surprises are
         // observable. Page still falls back to blank compose.
+        // R4.3 M-6 — include `userId` in the log context so SRE can
+        // correlate the warn line with the audit log and the
+        // per-tenant rate-limit bucket when triage-ing recurring
+        // pre-populate failures.
         logger.warn(
           {
             err: err instanceof Error ? err.message : String(err),
             tenantId: tenant.slug,
             templateIdParam,
+            userId: session.user.id,
           },
           'broadcasts.compose.template_pre_populate_failed',
         );

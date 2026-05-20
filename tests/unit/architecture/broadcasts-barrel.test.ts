@@ -180,6 +180,22 @@ interface DeepImport {
  * Matches `from '...'` or `from "..."` and returns the path content
  * inside the quotes. Returns null if no path can be extracted (line
  * matched the regex but isn't a clean import statement — defensive).
+ *
+ * R4.3 M-12 — KNOWN LIMITATION: this is a SINGLE-LINE scanner. Multi-
+ * line imports of the form
+ *
+ *     import {
+ *       Foo,
+ *       Bar,
+ *     } from '@/modules/broadcasts/domain/foo';
+ *
+ * have `from '...'` on a different line than the named-import list,
+ * so the FORBIDDEN_PATH_PATTERNS regex matches the `from` line but
+ * not the named-import line. The current implementation still catches
+ * these (the `from`-line carries the forbidden path) but loses the
+ * named-import context. For drift the simpler key is acceptable; if
+ * a future scenario needs the named-import list, swap to a TS AST
+ * scan (e.g., `ts-morph`) rather than extending the regex.
  */
 function extractImportPath(line: string): string | null {
   const match = line.match(/from\s+['"]([^'"]+)['"]/);

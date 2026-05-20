@@ -123,20 +123,6 @@ export interface BroadcastTemplatesPort {
   ): Promise<BroadcastTemplate | null>;
 
   /**
-   * Tx-aware variant of `findById`. Used by `snapshotTemplateToDraft`
-   * to read the template INSIDE the same withTx scope where the
-   * snapshot mutation lands — closes the TOCTOU window between the
-   * RLS-scoped read and the subsequent UPDATE+counter writes (R1.2
-   * H-sf-2). Same `null` semantics as findById (deletedAt IS NULL
-   * filter applied).
-   */
-  findByIdInTx(
-    tenantId: TenantSlug,
-    id: string,
-    tx: BroadcastTemplatesTx,
-  ): Promise<BroadcastTemplate | null>;
-
-  /**
    * R3-F11 (Phase 5 Round 1) — tx-aware findById that does NOT filter
    * `deletedAt IS NULL`. Used ONLY by the snapshot use-case to
    * distinguish "template was soft-deleted between picker render and

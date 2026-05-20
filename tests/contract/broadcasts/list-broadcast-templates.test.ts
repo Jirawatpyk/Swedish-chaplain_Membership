@@ -46,7 +46,7 @@ function makeTemplate(
 function makePort(rows: readonly BroadcastTemplate[]): BroadcastTemplatesPort {
   return {
     findById: vi.fn(),
-    findByIdInTx: vi.fn(),
+    findByIdAllowDeletedInTx: vi.fn(),
     findByTenantId: vi.fn().mockResolvedValue(rows),
     create: vi.fn(),
     update: vi.fn(),

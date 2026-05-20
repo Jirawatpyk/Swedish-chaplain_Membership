@@ -49,7 +49,6 @@ const makeDeps = (overrides?: {
       : makeTemplate();
   const port: BroadcastTemplatesPort = {
     findById: vi.fn().mockResolvedValue(existing),
-    findByIdInTx: vi.fn().mockResolvedValue(existing),
     findByIdAllowDeletedInTx: vi.fn().mockResolvedValue(existing),
     findByTenantId: vi.fn(),
     create: vi.fn(),
@@ -107,6 +106,41 @@ const deps = makeDeps({ existingTemplate: null });
       null,
       expect.objectContaining({ eventType: 'broadcast_cross_tenant_probe' }),
     );
+    expect(deps.port.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('R4.3 M-13: already soft-deleted template → not_found + NO cross-tenant probe audit + softDelete NOT called', async () => {
+    const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
+    const deps = makeDeps({
+      existingTemplate: makeTemplate({
+        deletedAt: SOFT_DELETED_AT,
+        name: 'Already Gone',
+      }),
+    });
+    const r = await deleteBroadcastTemplate(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR_ADMIN,
+      templateId: TEMPLATE_ID,
+      requestId: 'req-r4.3-m13-delete',
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('not_found');
+    // Benign double-delete race MUST NOT emit a cross-tenant probe audit
+    // (only the path-(a) branch does that).
+    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'broadcast_cross_tenant_probe',
+      }),
+    );
+    // And MUST NOT emit a second `broadcast_template_deleted` audit.
+    expect(deps.audit.emit).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'broadcast_template_deleted',
+      }),
+    );
+    // softDelete not invoked — the row is already in the deleted state.
     expect(deps.port.softDelete).not.toHaveBeenCalled();
   });
 

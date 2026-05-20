@@ -53,7 +53,12 @@ export function ComposeStaleDraftBanner({
     >
       {/* R3.5 M-14 — outer landmark + inner status. See template-
           edit-confirm-starter.tsx for the rationale. */}
-      <div role="status" aria-live="polite" className="contents">
+      {/* R4.3 M-2 — explicit block wrapper instead of
+          `className="contents"`. WebKit < 17.4 has known layout bugs
+          on `display: contents` boxes with role+aria-live attached;
+          the wrapper now participates in normal flow which keeps
+          announcements reliable across all evergreen browsers. */}
+      <div role="status" aria-live="polite">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           {/* R3.1 C-1 — explicit text-foreground on title overrides

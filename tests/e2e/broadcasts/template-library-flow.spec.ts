@@ -162,7 +162,16 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     });
     await picker.focus();
     await page.keyboard.press('Space');
+    // R4.3 M-4 — fail-fast assertion: cmdk Combobox renders a Radix
+    // Popover containing a `<div role="listbox">` only AFTER Space
+    // opens it. Asserting visibility upfront converts an ArrowDown-
+    // sent-to-collapsed-trigger flake into a clear "popover didn't
+    // open" failure with a helpful stack.
+    await expect(page.getByRole('listbox')).toBeVisible();
     // cmdk Combobox: ArrowDown moves through options; Enter selects.
+    // Press TWICE so we land on the FIRST template row (index 1) and
+    // skip the "Blank" option at index 0.
+    await page.keyboard.press('ArrowDown');
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
 

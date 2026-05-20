@@ -19,6 +19,8 @@ import {
   f7RetentionFor,
   type AuditEmitInput,
   type AuditPort,
+  type F7AuditEventType,
+  type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
 
@@ -53,5 +55,17 @@ export const f7AuditAdapter: AuditPort = {
          ${event.tenantId},
          ${retentionYears})
     `);
+  },
+  /**
+   * R4.3 M-15 — typed counterpart of `emit`. At runtime the two paths
+   * are indistinguishable; the only difference is the call-site type
+   * narrowing (payload constrained by `F7AuditPayloadFor<E>`). Forward
+   * the typed input through the wide-payload INSERT.
+   */
+  async emitTyped<E extends F7AuditEventType>(
+    txUnknown: unknown,
+    event: TypedAuditEmitInput<E>,
+  ): Promise<void> {
+    await f7AuditAdapter.emit(txUnknown, event as AuditEmitInput);
   },
 };

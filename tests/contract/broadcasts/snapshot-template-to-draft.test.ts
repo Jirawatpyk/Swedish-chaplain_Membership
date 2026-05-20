@@ -73,13 +73,10 @@ const makeDeps = (overrides?: {
   return {
     templatesPort: {
       findById: vi.fn().mockResolvedValue(tpl),
-      // R1.2 H-sf-2: snapshot use-case now calls findByIdInTx inside
-      // withTx to close TOCTOU window. Mock returns same template.
-      findByIdInTx: vi.fn().mockResolvedValue(tpl),
-      // R3-F11: snapshot use-case now calls findByIdAllowDeletedInTx
-      // INSTEAD of findByIdInTx so it can distinguish soft-deleted
-      // from never-existed. Mock default returns the same template
-      // (deletedAt null per makeTemplate default).
+      // R3-F11 + R4.3 M-10: snapshot use-case calls
+      // findByIdAllowDeletedInTx (TOCTOU-safe AND distinguishes
+      // soft-deleted from never-existed). Mock default returns the
+      // same template (deletedAt null per makeTemplate default).
       findByIdAllowDeletedInTx: vi.fn().mockResolvedValue(tpl),
       findByTenantId: vi.fn(),
       create: vi.fn(),

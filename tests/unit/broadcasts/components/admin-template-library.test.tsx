@@ -140,8 +140,11 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
   it('R3.4 M-3: filter pill click updates live-region count text after settle delay', async () => {
     // Global Vitest fake timers (tests/setup.ts) break waitFor's
     // polling cadence; switch to real timers for this test only.
-    // afterEach restores fake-timer state via clearAllMocks +
-    // setSystemTime in setup.ts.
+    //
+    // R4.3 M-11 — fake-timer state is restored by the explicit
+    // `vi.useFakeTimers()` call in the local `finally` block below;
+    // the global `afterEach` only clears mock call history via
+    // `vi.clearAllMocks()`, which does NOT toggle the timer mode.
     vi.useRealTimers();
     try {
       renderLibrary();

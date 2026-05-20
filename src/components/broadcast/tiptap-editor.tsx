@@ -228,7 +228,11 @@ export default function TiptapEditor({
     <div className="space-y-2">
       {imagesEnabled && <ClamavUnreachableBanner />}
       <div
-        className="rounded-md border focus-within:ring-2 focus-within:ring-ring min-w-0 overflow-hidden"
+        className={
+          invalid
+            ? 'rounded-md border border-destructive focus-within:ring-2 focus-within:ring-destructive min-w-0 overflow-hidden'
+            : 'rounded-md border focus-within:ring-2 focus-within:ring-ring min-w-0 overflow-hidden'
+        }
         data-testid="tiptap-editor"
       >
         <TiptapToolbar editor={editor} onAnnounce={announceState} />

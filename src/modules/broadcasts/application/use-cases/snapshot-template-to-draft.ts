@@ -171,7 +171,12 @@ export async function snapshotTemplateToDraft(
       // R3.2 H-2 — emit via `audit.emit(tx, ...)` (atomic with snapshot
       // tx) instead of `safeAuditEmit(audit, null, ...)`, matching the
       // success-path atomicity guarantee per Constitution I clause 3.
-      await deps.audit.emit(tx, {
+      // R4.3 M-15 — emitTyped narrows payload to
+      // F7AuditPayloadShapes['broadcast_template_snapshot_refused_deleted'];
+      // missing/misshapen fields surface at compile time. Falls back to
+      // legacy `emit` when the adapter (e.g. minimal test mock) hasn't
+      // implemented `emitTyped`.
+      await (deps.audit.emitTyped ?? deps.audit.emit).call(deps.audit, tx, {
         eventType: 'broadcast_template_snapshot_refused_deleted',
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,
@@ -301,7 +306,12 @@ export async function snapshotTemplateToDraft(
     // audit storage fails here, the withTx rolls back the mutations
     // (audit failure is a stop-the-line signal — mutations + audit
     // must co-commit per Constitution I clause 3).
-    await deps.audit.emit(tx, {
+    //
+    // R4.3 M-15 — emitTyped narrows payload to
+    // F7AuditPayloadShapes['broadcast_template_snapshotted']. Falls
+    // back to legacy `emit` when the adapter (e.g. minimal test mock)
+    // hasn't implemented `emitTyped`.
+    await (deps.audit.emitTyped ?? deps.audit.emit).call(deps.audit, tx, {
       eventType: 'broadcast_template_snapshotted',
       actorUserId: input.actorUserId,
       tenantId: input.tenantId,

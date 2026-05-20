@@ -23,6 +23,7 @@
  * Pure Application logic.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type {
   BroadcastTemplatesPort,
   TemplateDeleteError,
@@ -78,6 +79,20 @@ export async function deleteBroadcastTemplate(
       // (b) — already soft-deleted. Benign double-delete race
       // (admin clicked twice, two admins raced). Return not_found
       // without polluting forensics with a false cross-tenant probe.
+      // R4.3 M-5 — info-level observability so SRE can confirm the
+      // benign branch is hit when a delete returns 404; cross-tenant
+      // probes go to the audit log via path (a), but this branch has
+      // historically been silent.
+      logger.info(
+        {
+          tenantId: input.tenantId,
+          templateId: input.templateId,
+          actorUserId: input.actorUserId,
+          deletedAt: existing.deletedAt.toISOString(),
+          requestId: input.requestId,
+        },
+        'broadcasts.template.delete_idempotent_noop',
+      );
       return err<DeleteBroadcastTemplateError>({ kind: 'not_found' });
     }
 

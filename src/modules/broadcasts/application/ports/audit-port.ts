@@ -1,7 +1,7 @@
 /**
  * T028 — `AuditPort` Application port (F7 MVP) + T031 F7.1a extension.
  *
- * 54 audit event types as a const tuple + discriminated union for
+ * 58 audit event types as a const tuple + discriminated union for
  * compile-time safety on emit sites. Mirror of F4 audit-port pattern,
  * but ALL F7 events default to **5-year retention** (no tax-document
  * overlap; F7 is operational + marketing-consent + privacy events).
@@ -28,13 +28,15 @@
  *   - Plan-expiry edge (US6): 1 event
  *   - Clarifications session 5 (Q14 + Q15): 3 events
  *   - Phase 8 verify-fix R3: 2 events
- *   - F7.1a Phase 2 T031 (US1+US2+US7): 10 events
+ *   - F7.1a Phase 2 T031 (US1+US2+US7 initial CRUD): 11 events
+ *     (4 US1 retry + 4 US2 image + 3 US7 CRUD)
  *   - R1.1 CRIT-4 snapshot moment: 1 event
  *   - R2.1 M-test-2 seed skip: 1 event
  *   - R3.1 C-3 snapshot refusal: 1 event
- *   = 58 total (R3.5 M-8 — was stale at "54" before the 3 review-
- *     fix-cycle additions; static-assert at line ~167 is the source
- *     of truth via `extends 58`).
+ *   = 58 total. Static-assert at line ~170 (`extends 58`) is the
+ *   source of truth; the header summary is informational only and
+ *   should be re-derived when the assert changes. R4.3 M-8 fixed
+ *   the "10" → "11" double-count drift that R3.5 M-8 missed.
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -383,4 +385,39 @@ export interface AuditEmitInput extends F7AuditEvent {
  */
 export interface AuditPort {
   emit(tx: unknown, event: AuditEmitInput): Promise<void>;
+  /**
+   * R4.3 M-15 — typed emit variant. The `payload` field is constrained
+   * by `F7AuditPayloadFor<E>` (the per-event payload shape from
+   * `F7AuditPayloadShapes`) so the compiler catches missing or
+   * misshapen fields at the call site.
+   *
+   * OPTIONAL on the port — the runtime adapter (`f7AuditAdapter`)
+   * implements it as a thin pass-through to `emit`, but the ~13
+   * existing test fixtures (R3-vintage) build minimal `{ emit }`
+   * mock objects. Marking it optional avoids a 13-fixture migration
+   * for a structural-only addition. Call sites use the
+   * `emitOrEmitTyped(audit, ...)` helper which gracefully falls back
+   * to `emit` when the adapter is a minimal mock.
+   *
+   * Migration policy: new emit sites SHOULD prefer `emitTyped`; the
+   * type-narrowing payoff is at compile-time on the call site.
+   */
+  emitTyped?<E extends F7AuditEventType>(
+    tx: unknown,
+    event: TypedAuditEmitInput<E>,
+  ): Promise<void>;
+}
+
+/**
+ * Typed counterpart of `AuditEmitInput`. The discriminant
+ * `eventType: E` narrows the payload shape via
+ * `F7AuditPayloadFor<E>`.
+ */
+export interface TypedAuditEmitInput<E extends F7AuditEventType> {
+  readonly eventType: E;
+  readonly actorUserId: string;
+  readonly summary: string;
+  readonly payload: F7AuditPayloadFor<E>;
+  readonly tenantId: string | null;
+  readonly requestId: string | null;
 }

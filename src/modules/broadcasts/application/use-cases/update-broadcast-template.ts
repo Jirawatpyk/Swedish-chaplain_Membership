@@ -30,6 +30,7 @@
  * Pure Application logic.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import { omitUndefined } from '@/lib/object-helpers';
 import type {
   BroadcastTemplatesPort,
@@ -161,6 +162,20 @@ export async function updateBroadcastTemplate(
     if (existing.deletedAt !== null) {
       // (b) — benign double-edit race; the template was soft-deleted
       // between picker render + edit submit.
+      // R4.3 M-5 — info-level observability so SRE can confirm the
+      // benign branch is hit when an edit returns 404; cross-tenant
+      // probes go to the audit log via path (a), but this branch has
+      // historically been silent.
+      logger.info(
+        {
+          tenantId: input.tenantId,
+          templateId: input.templateId,
+          actorUserId: input.actorUserId,
+          deletedAt: existing.deletedAt.toISOString(),
+          requestId: input.requestId,
+        },
+        'broadcasts.template.update_idempotent_noop',
+      );
       return err<UpdateBroadcastTemplateError>({ kind: 'not_found' });
     }
 

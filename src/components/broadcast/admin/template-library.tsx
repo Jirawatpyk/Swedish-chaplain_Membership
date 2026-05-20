@@ -122,10 +122,15 @@ export function AdminTemplateLibrary({
         >
           {t('filterPill.authored')}
         </button>
-        <span role="status" aria-live="polite" className="sr-only">
-          {t('filterCount', { count: liveCount })}
-        </span>
       </fieldset>
+      {/* R4.3 M-3 — live-count announcement moved OUT of <fieldset>.
+          JAWS "forms-mode" semantics treat a fieldset as a form
+          container; status announcements nested INSIDE one can be
+          dropped on focus-mode toggle. The sibling placement keeps
+          the announcement audible across NVDA/JAWS/VoiceOver. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {t('filterCount', { count: liveCount })}
+      </span>
 
       <Card>
         <CardContent className="p-0">

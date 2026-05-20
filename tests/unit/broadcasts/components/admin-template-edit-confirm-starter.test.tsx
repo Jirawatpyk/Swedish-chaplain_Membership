@@ -80,9 +80,15 @@ describe('<AdminTemplateEditConfirmStarter> — R2.1 H-test-5', () => {
   it('localStorage write failure closes banner for session without crashing', () => {
     // R3.6 L-4 — vi.spyOn replaces direct method-assignment.
     // jsdom's localStorage prototype-method assignment can silently
-    // no-op in some versions; spyOn forces the override + restores
-    // automatically via afterEach `vi.restoreAllMocks` (covered by
-    // top-level setup).
+    // no-op in some versions; spyOn forces the override.
+    //
+    // R4.3 M-11 — restore comment fix: the test must call
+    // `spy.mockRestore()` explicitly in the finally block (see below)
+    // because `tests/setup.ts` only invokes `vi.restoreAllMocks()` in
+    // `afterAll`, not `afterEach` (afterEach does `clearAllMocks`,
+    // which preserves implementations). The previous comment claimed
+    // afterEach restored the spy, which would have leaked the
+    // throwing mock into subsequent tests in the same file.
     const spy = vi
       .spyOn(window.localStorage, 'setItem')
       .mockImplementation(() => {

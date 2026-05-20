@@ -573,3 +573,15 @@ export {
   makeListBroadcastTemplatesDeps,
 } from './infrastructure/broadcasts-deps';
 export { envTenantDisplayName } from './infrastructure/env-tenant-display-name';
+
+/**
+ * R4.3 M-14 — test-only barrel re-export of `__resetForTestsOnly`.
+ *
+ * The runtime impl in `env-tenant-display-name.ts` already throws when
+ * called with `NODE_ENV === 'production'`, so a production caller
+ * crashes loudly — the barrel export does not weaken the gate. We
+ * surface it through the public barrel so test fixtures don't have to
+ * deep-import past the module boundary (which the broadcasts
+ * architecture-invariant test would flag).
+ */
+export { __resetForTestsOnly as __resetEnvTenantDisplayNameForTestsOnly } from './infrastructure/env-tenant-display-name';

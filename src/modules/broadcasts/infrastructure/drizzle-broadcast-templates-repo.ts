@@ -103,11 +103,15 @@ function isUniqueViolation(e: unknown): boolean {
 }
 
 /**
- * Shared SELECT implementation for findById + findByIdInTx — both use
- * the same WHERE clause (id + explicit tenantId belt-and-braces +
- * deletedAt IS NULL). The tx caller controls the transaction
- * boundary; findById wraps with runInTenant, findByIdInTx reuses the
- * caller's withTx scope (closes TOCTOU window per R1.2 H-sf-2).
+ * Shared SELECT implementation for `findById`. The tx caller controls
+ * the transaction boundary; `findById` wraps with `runInTenant` so the
+ * RLS+FORCE policy is applied. WHERE clause: id + explicit tenantId
+ * belt-and-braces + deletedAt IS NULL.
+ *
+ * R4.3 M-10 — the previous `findByIdInTx` tx-aware variant was removed.
+ * It became dead code after R3.3 H-3 migrated the only caller
+ * (`snapshotTemplateToDraft`) to `findByIdAllowDeletedInTx` to
+ * distinguish soft-deleted from never-existed templates.
  */
 async function findByIdImpl(
   tx: TenantTx,
@@ -171,16 +175,6 @@ export function makeDrizzleBroadcastTemplatesRepo(): BroadcastTemplatesPort {
         asTenantContext(tenantId as unknown as string),
         async (tx) => findByIdImpl(tx as unknown as TenantTx, tenantId, id),
       );
-    },
-
-    async findByIdInTx(
-      tenantId: TenantSlug,
-      id: string,
-      tx: BroadcastTemplatesTx,
-    ): Promise<BroadcastTemplate | null> {
-      // R1.2 H-sf-2 tx-aware variant. Reuses findByIdImpl so the SELECT
-      // shape stays identical to findById.
-      return findByIdImpl(tx as unknown as TenantTx, tenantId, id);
     },
 
     async findByIdAllowDeletedInTx(

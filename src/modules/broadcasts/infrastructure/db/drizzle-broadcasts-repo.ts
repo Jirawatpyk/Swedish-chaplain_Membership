@@ -204,14 +204,38 @@ function rowToBroadcast(row: BroadcastRow): Broadcast {
     // if EXACTLY ONE column is non-null (corrupt row), surface as null
     // to caller — denying broken-state visibility is safer than
     // emitting a half-populated provenance.
-    templateProvenance:
-      row.startedFromTemplateId !== null &&
-      row.templateNameSnapshot !== null
-        ? {
-            templateId: row.startedFromTemplateId,
-            templateNameSnapshot: row.templateNameSnapshot,
-          }
-        : null,
+    //
+    // R4.3 H-3 obs — out-of-band writes (manual SQL / future bulk
+    // migrations) could leave the row with one column populated and
+    // the other null, which is forensically suspicious. Log the
+    // half-populated state at error level so SRE can investigate.
+    // The mapper still returns `null` (safer than half-truth) but the
+    // log carries enough context to find the offending row.
+    templateProvenance: ((): null | {
+      templateId: string;
+      templateNameSnapshot: string;
+    } => {
+      const hasId = row.startedFromTemplateId !== null;
+      const hasName = row.templateNameSnapshot !== null;
+      if (hasId && hasName) {
+        return {
+          templateId: row.startedFromTemplateId as string,
+          templateNameSnapshot: row.templateNameSnapshot as string,
+        };
+      }
+      if (hasId !== hasName) {
+        logger.error(
+          {
+            broadcastId: row.broadcastId,
+            tenantId: row.tenantId,
+            hasStartedFromTemplateId: hasId,
+            hasTemplateNameSnapshot: hasName,
+          },
+          'broadcasts.mapper.template_provenance_half_populated',
+        );
+      }
+      return null;
+    })(),
 
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

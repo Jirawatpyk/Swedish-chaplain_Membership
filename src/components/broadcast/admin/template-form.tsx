@@ -159,6 +159,15 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
       } catch (err) {
         // Preserve Error stack for DevTools (Round-3-Final H4 pattern).
         // R3.5 M-11 — message-first arg syntax for legible log capture.
+        //
+        // R4.3 M-7 — Sentry-readiness note: this project does not yet
+        // wire `@sentry/nextjs` (no instrumentation-client.ts Sentry
+        // init found 2026-05-21). When Sentry is added in F7.1b, the
+        // three `console.error` calls in this file should be wrapped
+        // with `Sentry.captureException(err)` BEFORE the console call
+        // so the exception is captured with full stack + request
+        // context (correlationId already in scope here and at the
+        // sibling `error_body_parse_failed` site above).
         console.error('broadcasts.template.form.submit_failed', { err, mode });
         const msg = t('errors.unknown');
         setError(msg);

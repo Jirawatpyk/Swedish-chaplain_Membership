@@ -97,7 +97,10 @@ export function AdminTemplateEditConfirmStarter({
           announcement when content changes (dismissed=true → hidden).
           Pre-R3.5 the banner was only announced via role="status" on
           mount, which NVDA + VoiceOver drop for static content. */}
-      <div role="status" aria-live="polite" className="contents">
+      {/* R4.3 M-2 — explicit block wrapper instead of
+          `className="contents"`. See sibling stale-draft-banner.tsx
+          for the WebKit < 17.4 rationale. */}
+      <div role="status" aria-live="polite">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1">
           {/* R3.1 C-1 — explicit text-foreground on title overrides
