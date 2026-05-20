@@ -25,8 +25,12 @@ import { broadcastTemplates } from '@/modules/broadcasts/infrastructure/schema';
 // SweCham is the F7.1a launch tenant per CLAUDE.md.
 const SWECHAM_TENANT_SLUG = 'swecham';
 
-// Expected starter template names per FR-020 + starter-templates.md
-const EXPECTED_NAMES = [
+// Expected EN-locale starter template names per FR-020 + starter-
+// templates.md. NOTE: TH + SV variants ship with LOCALIZED names
+// (e.g. "จดหมายข่าวประจำเดือน" for Thai) — the seed migration treats
+// each (name, locale) tuple independently. Spec invariant is 5 × 3 = 15
+// rows per tenant; this list is the EN-locale validation set.
+const EXPECTED_EN_NAMES = [
   'Monthly Newsletter',
   'Event Invitation',
   'Member Spotlight',
@@ -55,38 +59,55 @@ describe('F7.1a starter template seed — SC-007b (T095)', () => {
     expect(rows).toHaveLength(15);
   });
 
-  it.each(EXPECTED_NAMES)(
-    'template "%s" has all 3 locale rows (EN+TH+SV)',
+  it('exactly 5 seeded templates per locale (EN+TH+SV)', async () => {
+    for (const locale of EXPECTED_LOCALES) {
+      const rows = await db
+        .select({ name: broadcastTemplates.name })
+        .from(broadcastTemplates)
+        .where(
+          and(
+            eq(broadcastTemplates.tenantId, SWECHAM_TENANT_SLUG),
+            eq(broadcastTemplates.isSeeded, true),
+            eq(broadcastTemplates.locale, locale),
+          ),
+        );
+      expect(rows, `locale=${locale}`).toHaveLength(5);
+    }
+  });
+
+  it.each(EXPECTED_EN_NAMES)(
+    'EN-locale starter template "%s" present',
     async (templateName) => {
       const rows = await db
-        .select({ locale: broadcastTemplates.locale })
+        .select({ name: broadcastTemplates.name })
         .from(broadcastTemplates)
         .where(
           and(
             eq(broadcastTemplates.tenantId, SWECHAM_TENANT_SLUG),
             eq(broadcastTemplates.name, templateName),
+            eq(broadcastTemplates.locale, 'en'),
             eq(broadcastTemplates.isSeeded, true),
           ),
         );
-      const locales = rows.map((r) => r.locale).sort();
-      expect(locales).toEqual([...EXPECTED_LOCALES].sort());
+      expect(rows).toHaveLength(1);
     },
   );
 
-  it('all seeded templates carry is_seeded=TRUE (per FR-021 Starter badge UX)', async () => {
+  it('all 15 seeded rows carry is_seeded=TRUE (per FR-021 Starter badge UX)', async () => {
     const rows = await db
       .select({
         name: broadcastTemplates.name,
         isSeeded: broadcastTemplates.isSeeded,
       })
       .from(broadcastTemplates)
-      .where(eq(broadcastTemplates.tenantId, SWECHAM_TENANT_SLUG));
-    const seeded = rows.filter((r) => EXPECTED_NAMES.includes(r.name as never));
-    expect(seeded.length).toBeGreaterThanOrEqual(15);
-    for (const r of seeded) {
-      // Only assert isSeeded=TRUE for rows whose name matches the
-      // starter set (admin-authored rows with the same name would also
-      // pass the filter — they're skipped per FR-020 idempotency).
+      .where(
+        and(
+          eq(broadcastTemplates.tenantId, SWECHAM_TENANT_SLUG),
+          eq(broadcastTemplates.isSeeded, true),
+        ),
+      );
+    expect(rows).toHaveLength(15);
+    for (const r of rows) {
       expect(r.isSeeded).toBe(true);
     }
   });
