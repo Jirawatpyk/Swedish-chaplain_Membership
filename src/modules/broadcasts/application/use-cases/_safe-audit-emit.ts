@@ -20,12 +20,35 @@
  * Pure Application logic — no framework imports beyond logger.
  */
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import type {
   AuditPort,
   AuditEmitInput,
   F7AuditPayloadShapes,
   TypedAuditEmitInput,
 } from '../ports/audit-port';
+
+/**
+ * R8.5 (R7 code-reviewer LOW-1 close) — re-throw guard for
+ * programmer-bug invariants raised by `f7AuditAdapter` (e.g.,
+ * "mutation tx requires non-null tenantId"). These are NOT transient
+ * storage hiccups; they signal a wiring bug that MUST surface as a
+ * test failure / 5xx, not be silently swallowed by the fail-soft
+ * envelope.
+ *
+ * Identification: the adapter's invariant throws all begin with the
+ * literal prefix `f7AuditAdapter:`. Matching by message prefix is
+ * fragile (string equality) but matches the only signal we have —
+ * the throw is a bare `Error` instance, not a tagged subclass. If a
+ * future refactor migrates the adapter to a tagged `AuditPortInvariantError`
+ * class, swap the prefix check for `e instanceof AuditPortInvariantError`.
+ */
+function isAdapterInvariantError(e: unknown): boolean {
+  return (
+    e instanceof Error &&
+    e.message.startsWith('f7AuditAdapter:')
+  );
+}
 
 export async function safeAuditEmit(
   audit: AuditPort,
@@ -35,6 +58,10 @@ export async function safeAuditEmit(
   try {
     await audit.emit(tx, event);
   } catch (e) {
+    // R8.5 LOW-1 — re-throw programmer-bug invariants. The fail-soft
+    // envelope is for TRANSIENT storage hiccups; adapter-invariant
+    // throws are a wiring bug + must surface as a test failure.
+    if (isAdapterInvariantError(e)) throw e;
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
@@ -45,6 +72,13 @@ export async function safeAuditEmit(
       },
       'broadcasts.audit.emit_failed',
     );
+    // R8.5 (R7 silent-failure MED-1 close) — increment the
+    // `broadcasts_audit_emit_failed_total{event_type, tenant}`
+    // counter so the SLO alarm in `docs/observability.md` (5-min
+    // rate ≥ 1 pages on-call) actually fires on these losses.
+    // Pre-R8.5 the metric was defined but never incremented — the
+    // logger.error line alone was invisible to dashboard alerting.
+    broadcastsMetrics.auditEmitFailed(event.eventType, event.tenantId);
     // Intentional: swallow exception so caller's Result return is
     // preserved. The security rejection is the load-bearing effect
     // for the user; the audit row loss is captured in logger + SIEM
@@ -79,6 +113,10 @@ export async function safeAuditEmitTyped<
   try {
     await audit.emitTyped(tx, event);
   } catch (e) {
+    // R8.5 LOW-1 — re-throw adapter invariants (see safeAuditEmit
+    // sibling). Mirror behaviour: programmer-bug throws must surface,
+    // not be swallowed by the fail-soft envelope.
+    if (isAdapterInvariantError(e)) throw e;
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
@@ -89,5 +127,7 @@ export async function safeAuditEmitTyped<
       },
       'broadcasts.audit.emit_failed',
     );
+    // R8.5 MED-1 — increment alarm-source counter (see safeAuditEmit).
+    broadcastsMetrics.auditEmitFailed(event.eventType, event.tenantId);
   }
 }

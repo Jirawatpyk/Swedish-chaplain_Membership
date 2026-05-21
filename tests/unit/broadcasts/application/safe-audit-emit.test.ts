@@ -97,4 +97,46 @@ describe('safeAuditEmit (Phase A R4-M2 closure)', () => {
     await safeAuditEmit(audit, fakeTx, SAMPLE_EVENT);
     expect(audit.emit).toHaveBeenCalledWith(fakeTx, SAMPLE_EVENT);
   });
+
+  it('R8.5 LOW-1: re-throws adapter invariant errors (f7AuditAdapter: prefix)', async () => {
+    // Programmer-bug invariants raised by `f7AuditAdapter` (e.g.,
+    // "mutation tx requires non-null tenantId") MUST surface as test
+    // failures / 5xx, NOT be silently swallowed by the fail-soft
+    // envelope. Identification: message prefix `f7AuditAdapter:`.
+    const audit: AuditPort = {
+      emit: vi.fn().mockRejectedValue(
+        new Error(
+          'f7AuditAdapter: mutation tx requires non-null tenantId ' +
+            '(eventType=broadcast_template_snapshotted). Use tx=null for system audits.',
+        ),
+      ),
+      emitTyped: vi.fn().mockResolvedValue(undefined),
+    };
+    await expect(safeAuditEmit(audit, null, SAMPLE_EVENT)).rejects.toThrow(
+      /f7AuditAdapter:/,
+    );
+    // Logger should NOT have fired — the invariant re-throws before
+    // the error path runs.
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('R8.5 LOW-1: non-invariant Errors still get swallowed + logged', async () => {
+    // Sanity: the fail-soft envelope still works for transient
+    // hiccups whose message does NOT start with `f7AuditAdapter:`.
+    const audit: AuditPort = {
+      emit: vi
+        .fn()
+        .mockRejectedValue(new Error('connection terminated unexpectedly')),
+      emitTyped: vi.fn().mockResolvedValue(undefined),
+    };
+    await expect(
+      safeAuditEmit(audit, null, SAMPLE_EVENT),
+    ).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: 'connection terminated unexpectedly',
+      }),
+      'broadcasts.audit.emit_failed',
+    );
+  });
 });

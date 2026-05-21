@@ -193,7 +193,15 @@ export function deriveTemplateProvenance(
   return null;
 }
 
-function rowToBroadcast(row: BroadcastRow): Broadcast {
+/**
+ * @internal — exported solely for the R8.5 end-to-end mapper test
+ * (`tests/unit/broadcasts/infrastructure/drizzle-broadcasts-repo-mapper.test.ts`).
+ * Production callers SHOULD invoke the repo's `findById` / other port
+ * methods which wrap this with `runInTenant`. Importing `rowToBroadcast`
+ * directly from outside this file bypasses the Drizzle adapter's
+ * tenant-bound tx + Domain port boundary.
+ */
+export function rowToBroadcast(row: BroadcastRow): Broadcast {
   return {
     tenantId: row.tenantId,
     broadcastId: asBroadcastId(row.broadcastId),

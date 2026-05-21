@@ -50,9 +50,20 @@ describe('AuditPort.emitTyped<E> generic constraint — R6.7 M-12', () => {
     // widened back to F7AuditEventType, this `@ts-expect-error` will
     // become unused and TS will surface a directive-unused error
     // which fails the typecheck. That failure is the test.
+    //
+    // R8.5 (R7 senior-tester MED-4 close) — use
+    // `broadcast_subject_empty` as the marker event instead of
+    // `broadcast_drafted`. Both are in F7_AUDIT_EVENT_TYPES but NOT
+    // in F7AuditPayloadShapes today. Promotion risk is LOWER for
+    // `broadcast_subject_empty` because it's a precondition-validation
+    // signal (no structured payload semantics beyond eventType +
+    // brodcastId), while `broadcast_drafted` is US1's primary
+    // draft-state event and a likely future candidate for typed
+    // payload. If `broadcast_subject_empty` ever gets promoted, swap
+    // for another precondition event (e.g., `broadcast_audience_too_large`).
     type _UntypedEventShouldFail =
-      // @ts-expect-error — `broadcast_drafted` is not in keyof F7AuditPayloadShapes
-      TypedAuditEmitInput<'broadcast_drafted'>;
+      // @ts-expect-error — `broadcast_subject_empty` is not in keyof F7AuditPayloadShapes
+      TypedAuditEmitInput<'broadcast_subject_empty'>;
     // Touch the type to keep the binding live for ESLint.
     const _typeTouch: _UntypedEventShouldFail | undefined = undefined;
     void _typeTouch;

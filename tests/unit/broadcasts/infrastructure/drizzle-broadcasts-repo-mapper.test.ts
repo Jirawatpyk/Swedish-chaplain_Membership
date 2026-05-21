@@ -16,10 +16,14 @@
  *   (c) id-only        → return null, logger.error fires
  *   (d) name-only      → return null, logger.error fires
  */
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, expectTypeOf, it, vi, beforeEach, afterEach } from 'vitest';
 import { logger } from '@/lib/logger';
-import { deriveTemplateProvenance } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import {
+  deriveTemplateProvenance,
+  rowToBroadcast,
+} from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import type { BroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
+import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 const BASE_ROW: BroadcastRow = {
   broadcastId: '11111111-1111-1111-1111-111111111111',
@@ -96,5 +100,102 @@ describe('deriveTemplateProvenance — R6.3 H-5 XOR mapper', () => {
       }),
       'broadcasts.mapper.template_provenance_half_populated',
     );
+  });
+});
+
+describe('rowToBroadcast end-to-end — R8.5 (R7 code-reviewer LOW-2 close)', () => {
+  /**
+   * R7 code-reviewer LOW-2 flagged that the standalone
+   * `deriveTemplateProvenance` test does NOT prove the full
+   * `rowToBroadcast` mapper correctly composes the helper into the
+   * Domain shape. A future refactor that accidentally removes the
+   * `templateProvenance: deriveTemplateProvenance(row)` line from
+   * the mapper would pass the standalone helper test + only fail
+   * the integration suite. R8.5 closes by exercising the wiring
+   * directly.
+   */
+
+  const NOW = new Date('2026-05-21T00:00:00Z');
+  const FULL_ROW: BroadcastRow = {
+    broadcastId: '11111111-1111-1111-1111-111111111111',
+    tenantId: 'tenant-test',
+    requestedByMemberId: '22222222-2222-2222-2222-222222222222',
+    requestedByMemberPlanIdSnapshot: '33333333-3333-3333-3333-333333333333',
+    submittedByUserId: '44444444-4444-4444-4444-444444444444',
+    actorRole: 'member_self_service',
+    subject: 'Subject',
+    bodyHtml: '<p>Body</p>',
+    bodySource: 'plain',
+    fromName: 'Test Chamber',
+    replyToEmail: 'test@test.local',
+    segmentType: 'all_members',
+    segmentParams: null,
+    customRecipientEmails: null,
+    estimatedRecipientCount: 100,
+    status: 'submitted',
+    submittedAt: NOW,
+    approvedAt: null,
+    approvedByUserId: null,
+    rejectedAt: null,
+    rejectedByUserId: null,
+    rejectionReason: null,
+    scheduledFor: null,
+    sendingStartedAt: null,
+    sentAt: null,
+    cancelledAt: null,
+    cancelledByUserId: null,
+    cancellationReason: null,
+    failedToDispatchAt: null,
+    failureReason: null,
+    quotaYearConsumed: null,
+    quotaConsumedAt: null,
+    resendAudienceId: null,
+    resendBroadcastId: null,
+    retentionYears: 5,
+    manualRetryCount: 0,
+    partialDeliveryAcceptedAt: null,
+    partialDeliveryAcceptedByUserId: null,
+    startedFromTemplateId: 'tpl-snapshot-id',
+    templateNameSnapshot: 'Monthly Newsletter',
+    createdAt: NOW,
+    updatedAt: NOW,
+  } as unknown as BroadcastRow;
+
+  it('composes templateProvenance via deriveTemplateProvenance helper', () => {
+    const out = rowToBroadcast(FULL_ROW);
+    // Wiring assertion: if a future refactor removes the
+    // `templateProvenance: deriveTemplateProvenance(row)` line, this
+    // assertion fails — even if deriveTemplateProvenance itself is
+    // unchanged.
+    expect(out.templateProvenance).toEqual({
+      templateId: 'tpl-snapshot-id',
+      templateNameSnapshot: 'Monthly Newsletter',
+    });
+  });
+
+  it('rowToBroadcast carries every BroadcastRow field into the Domain shape', () => {
+    const out = rowToBroadcast(FULL_ROW);
+    // Sanity sample — checking every field would duplicate the
+    // structural type. Verify the critical denormalised ones:
+    expect(out.broadcastId).toBe(FULL_ROW.broadcastId);
+    expect(out.tenantId).toBe(FULL_ROW.tenantId);
+    expect(out.status).toBe('submitted');
+    expect(out.retentionYears).toBe(5);
+    expect(out.createdAt).toEqual(NOW);
+  });
+
+  it('R8.5 L-5 (R7 type-design): templateProvenance type-equivalence lock', () => {
+    /**
+     * Indexed-access type lock (mirrors `_AssertF7AuditEventCount`
+     * pattern in audit-port.ts:172). If the Domain `Broadcast.templateProvenance`
+     * shape drifts (e.g., adds a new field like `snapshottedAt`),
+     * this expectTypeOf catches it immediately at typecheck time —
+     * forcing a deliberate review-and-update rather than silent
+     * propagation through the mapper.
+     */
+    expectTypeOf<Broadcast['templateProvenance']>().toEqualTypeOf<
+      | { readonly templateId: string; readonly templateNameSnapshot: string }
+      | null
+    >();
   });
 });
