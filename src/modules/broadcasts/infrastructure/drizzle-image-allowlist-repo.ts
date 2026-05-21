@@ -77,23 +77,29 @@ export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
 
     async findByTenantId(
       tenantId: TenantSlug,
+      tx?: ImageAllowlistTx | null,
     ): Promise<readonly AllowlistEntry[]> {
-      return runInTenant(
-        asTenantContext(tenantId as unknown as string),
-        async (tx) => {
-          const rows = await tx
-            .select({
-              hostname: tenantImageSourceAllowlist.hostname,
-              isDefault: tenantImageSourceAllowlist.isDefault,
-            })
-            .from(tenantImageSourceAllowlist)
-            .where(eq(tenantImageSourceAllowlist.tenantId, tenantId as string));
-          return rows.map((r) => ({
-            hostname: r.hostname as Hostname,
-            isDefault: r.isDefault,
-          }));
-        },
-      );
+      // 2026-05-22 (post-/code-review borderline #2): when called from
+      // within an active `withTx` (manage-image-allowlist `after`
+      // snapshot read), thread the existing `tx` so the read joins the
+      // atomicity boundary instead of opening a nested SAVEPOINT via
+      // `runInTenant`. When `tx` is null/undefined (sanitiser hot path,
+      // admin settings page read), `withTenantTx` opens its own
+      // `runInTenant` for RLS binding. Either way the read runs under
+      // `app.current_tenant` (RLS+FORCE migration 0166).
+      return withTenantTx(tenantId, tx ?? null, async (innerTx) => {
+        const rows = await innerTx
+          .select({
+            hostname: tenantImageSourceAllowlist.hostname,
+            isDefault: tenantImageSourceAllowlist.isDefault,
+          })
+          .from(tenantImageSourceAllowlist)
+          .where(eq(tenantImageSourceAllowlist.tenantId, tenantId as string));
+        return rows.map((r) => ({
+          hostname: r.hostname as Hostname,
+          isDefault: r.isDefault,
+        }));
+      });
     },
 
     async seedDefaults(

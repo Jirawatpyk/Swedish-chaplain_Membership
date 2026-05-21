@@ -107,8 +107,22 @@ export interface ImageAllowlistPort {
    * List every allowlisted hostname for a tenant. Both `isDefault=TRUE`
    * (seeded) and admin-added rows are returned. Used by the sanitiser
    * to validate every `<img src>` host (FR-011).
+   *
+   * `tx` parameter added 2026-05-22 (post-/code-review borderline #2):
+   * when called from within an active `withTx` callback (e.g.
+   * `manage-image-allowlist.ts` `after` snapshot read), pass the same
+   * `tx` so the read joins the existing atomicity boundary instead of
+   * creating a nested SAVEPOINT via `runInTenant`. When `tx` is null
+   * (sanitiser hot path, admin settings page read), the adapter opens
+   * its own `runInTenant` for RLS binding. Either way RLS is enforced
+   * (no global-`db` pool bypass; see MEMORY.md
+   * `project_drizzle_repo_tx_pattern.md` for the F7.1a US2 2026-05-20
+   * incident this guards against).
    */
-  findByTenantId(tenantId: TenantSlug): Promise<readonly AllowlistEntry[]>;
+  findByTenantId(
+    tenantId: TenantSlug,
+    tx?: ImageAllowlistTx | null,
+  ): Promise<readonly AllowlistEntry[]>;
 
   /**
    * Idempotently seed default `is_default=TRUE` entries for a tenant

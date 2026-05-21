@@ -113,9 +113,6 @@ export async function manageImageAllowlist(
   // documented in seedPlatformDefaults).
   await seedPlatformDefaults(deps.port, input.tenantId);
 
-  const before = await deps.port.findByTenantId(input.tenantId);
-  const beforeCount = before.length;
-
   // PR-review fix 2026-05-20 CR-H1 — port mutation + audit emit run
   // in ONE tx so a transient audit-storage failure rolls back the
   // allowlist mutation rather than leaving a regulator-visible audit
@@ -146,6 +143,14 @@ export async function manageImageAllowlist(
   // (audit+mutation share one rollback boundary), not literal
   // tx-nesting depth.
   return deps.port.withTx(input.tenantId, async (tx) => {
+    // 2026-05-22 (post-/code-review borderline #2): `before` snapshot
+    // read moved INSIDE `withTx` so `beforeCount` reflects the state
+    // at the moment of THIS mutation (no race with concurrent admin
+    // edits between `findByTenantId` and the mutation). Same tx joins
+    // the read into the atomicity boundary.
+    const before = await deps.port.findByTenantId(input.tenantId, tx);
+    const beforeCount = before.length;
+
     if (input.action === 'add') {
       const r = await deps.port.add(
         input.tenantId,
@@ -206,7 +211,14 @@ export async function manageImageAllowlist(
       }
     }
 
-    const after = await deps.port.findByTenantId(input.tenantId);
+    // 2026-05-22 (post-/code-review borderline #2): thread `tx` so the
+    // `after` snapshot read joins the atomicity boundary. Without `tx`
+    // the adapter would open a nested `runInTenant` (SAVEPOINT) +
+    // potentially read a NOT-YET-COMMITTED state from a concurrent
+    // admin's interleaving mutation, producing a stale `afterCount` in
+    // the audit payload. With `tx`, the read sees the just-applied
+    // mutation on the same connection.
+    const after = await deps.port.findByTenantId(input.tenantId, tx);
 
     await deps.audit.emit(tx, {
       eventType: 'broadcast_image_allowlist_updated',

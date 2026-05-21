@@ -65,9 +65,14 @@ import { asTenantContext } from '@/modules/tenants';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 // Domain policy import — Domain types are barrel-pure but
-// `DEFAULT_CONCURRENCY_CAP` is a const not re-exported there yet
-// (it's a Domain-internal constant). Keep direct import.
-import { DEFAULT_CONCURRENCY_CAP } from '@/modules/broadcasts/domain/policies/batch-concurrency-policy';
+// `DEFAULT_CONCURRENCY_CAP` + `validateConcurrencyCap` are Domain-internal
+// constants not re-exported via the broadcasts barrel yet. Keep direct
+// import. `validateConcurrencyCap` added 2026-05-22 to honor the
+// `clamped via Domain` comment at line 297 (post-/code-review borderline #1).
+import {
+  DEFAULT_CONCURRENCY_CAP,
+  validateConcurrencyCap,
+} from '@/modules/broadcasts/domain/policies/batch-concurrency-policy';
 import type {
   BroadcastContent,
   DispatchBroadcastBatchDeps,
@@ -298,6 +303,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // exists for this tenant (most tenants will rely on the
       // default; only those with elevated Resend account-tier limits
       // opt up via the future admin settings UI).
+      //
+      // Defence-in-depth (post-/code-review borderline #1, 2026-05-22):
+      // even though migration 0165 has `CHECK BETWEEN 1 AND 8`, the value
+      // is also clamped at the boundary via the Domain
+      // `validateConcurrencyCap` policy. If the DB constraint is ever
+      // relaxed or the column type changes, the cron still refuses
+      // out-of-range values rather than handing them to
+      // `dispatchAllPendingBatches` (where a 0 would silently stop
+      // dispatch + a >8 would exceed the Resend account-tier limit).
       let concurrencyCap: number = DEFAULT_CONCURRENCY_CAP;
       try {
         const settingsRows = (await runInTenant(tenant, async (tx) =>
@@ -309,7 +323,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           `),
         )) as unknown as Array<{ dispatch_concurrency_cap: number }>;
         if (settingsRows.length > 0) {
-          concurrencyCap = settingsRows[0]!.dispatch_concurrency_cap;
+          const rawCap = settingsRows[0]!.dispatch_concurrency_cap;
+          const validation = validateConcurrencyCap(rawCap);
+          if (validation.ok) {
+            concurrencyCap = rawCap;
+          } else {
+            // DB row had an out-of-range value (CHECK constraint bypass
+            // via direct DB edit or a future migration mistake). Log
+            // + fall back to default to keep dispatch healthy.
+            logger.warn(
+              {
+                tenantId: tenant.slug,
+                rawCap,
+                error: validation.error,
+              },
+              'cron.broadcasts.dispatch_batches.concurrency_cap_out_of_range',
+            );
+          }
         }
       } catch (e) {
         logger.warn(
