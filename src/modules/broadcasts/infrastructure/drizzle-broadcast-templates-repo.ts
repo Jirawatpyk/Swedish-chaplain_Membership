@@ -27,8 +27,9 @@
  * inline at Phase 5E (broadcasts-deps.ts).
  */
 import { and, eq, isNull, desc, sql } from 'drizzle-orm';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+import { describeStorageError, isUniqueViolation } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import type {
@@ -48,24 +49,16 @@ import {
   type BroadcastTemplateRow,
 } from './schema';
 
-/**
- * Tx-thread helper — runs the callback either inside the caller's
- * provided tx OR inside a fresh `runInTenant` scope when tx is
- * null/undefined. Centralises the conditional so all 5 mutation methods
- * share one idiom (mirrors image-allowlist `withTenantTx`).
- */
+// `withTenantTx` lifted to `@/lib/db.withTenantTxOrOpen` 2026-05-21
+// (review finding simplifier H4). Local alias preserves the shorter
+// name + BroadcastTemplatesTx-branded signature.
 async function withTenantTx<T>(
   tenantId: TenantSlug,
   tx: BroadcastTemplatesTx | null | undefined,
   fn: (tx: TenantTx) => Promise<T>,
 ): Promise<T> {
-  if (tx) {
-    return fn(tx as unknown as TenantTx);
-  }
-  return runInTenant(
-    asTenantContext(tenantId as unknown as string),
-    async (innerTx) => fn(innerTx),
-  );
+  // M5 Round 2 fix 2026-05-21: lib helper now accepts `TenantSlug` directly.
+  return withTenantTxOrOpen(tenantId, tx, fn);
 }
 
 /** Domain row mapper. */
@@ -86,21 +79,12 @@ function toDomain(row: BroadcastTemplateRow): BroadcastTemplate {
   };
 }
 
-/** Surface PG error code (23505 = unique_violation) for caller mapping. */
-function describeStorageError(e: unknown): string {
-  const err_ = e as {
-    message?: string;
-    cause?: { code?: string; message?: string };
-  };
-  const detail = err_?.cause?.message ?? err_?.message ?? 'unknown';
-  const code = err_?.cause?.code ? ` [${err_.cause.code}]` : '';
-  return `${detail}${code}`;
-}
-
-function isUniqueViolation(e: unknown): boolean {
-  const code = (e as { cause?: { code?: string } })?.cause?.code;
-  return code === '23505';
-}
+// `describeStorageError` + `isUniqueViolation` lifted to `@/lib/db-errors`
+// 2026-05-21 (review finding simplifier H3) — was byte-identical to the
+// helpers in `drizzle-image-allowlist-repo.ts`. Walks the full cause
+// chain (Drizzle 0.45+ wraps multiple levels) rather than only checking
+// the top-level `.cause` — strictly more capable than the prior local
+// implementation.
 
 /**
  * Shared SELECT implementation for `findById`. The tx caller controls

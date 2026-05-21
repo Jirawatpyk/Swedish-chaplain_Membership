@@ -45,6 +45,7 @@
 
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
+import { useTranslations } from 'next-intl';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /**
@@ -71,11 +72,12 @@ export function loadTiptapEditor<TProps>(
  * (≈ 240 px). Sized to minimise CLS when the real editor mounts.
  */
 function TiptapLoadingSkeleton(): React.ReactElement {
+  const t = useTranslations('shell');
   return (
     <div
       role="status"
       aria-live="polite"
-      aria-label="Loading editor"
+      aria-label={t('editorLoading')}
       data-testid="tiptap-loading"
       className="space-y-3"
     >

@@ -40,6 +40,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { logAuditEmitFailure } from '../audit-emit-failure-logger';
+import { safeAuditEmit } from './_safe-audit-emit';
 import type {
   BatchCounterField,
   BatchManifestsPort,
@@ -176,36 +177,27 @@ export async function applyBatchWebhookEvent(
   // increment is the truth-of-record; the audit is observability.
   // Log on failure (operator alerts on the rate) + return ok so the
   // webhook returns 200 + Svix moves on.
-  try {
-    await deps.audit.emit(null, {
-      tenantId: input.tenantId,
-      eventType: 'broadcast_delivery_recorded',
-      actorUserId: 'system:resend-webhook',
-      summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId} recorded ${input.eventType} event`,
-      payload: {
-        broadcastId: input.broadcastId,
-        batchManifestId: input.batchManifestId,
-        batchIndex: input.batchIndex,
-        eventType: input.eventType,
-        counterField,
-        recipientEmailHashed: input.recipientEmailHashed,
-        resendEventId: input.resendEventId,
-        recordedAt: deps.clock.now().toISOString(),
-      },
-      requestId: input.requestId ?? null,
-    });
-  } catch (auditErr) {
-    logger.error(
-      {
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        tenantId: input.tenantId,
-        batchManifestId: input.batchManifestId,
-        broadcastId: input.broadcastId,
-        eventType: input.eventType,
-      },
-      'broadcasts.batch.apply_webhook_audit_failed',
-    );
-  }
+  // simplifier H2 migration 2026-05-21: post-commit best-effort emit via
+  // `safeAuditEmit`. Counter increment is the truth-of-record (already
+  // committed); audit failure post-commit MUST return ok so the webhook
+  // returns 200 + Svix moves on (otherwise replay re-increments counters).
+  await safeAuditEmit(deps.audit, null, {
+    tenantId: input.tenantId,
+    eventType: 'broadcast_delivery_recorded',
+    actorUserId: 'system:resend-webhook',
+    summary: `Batch ${input.batchIndex} of broadcast ${input.broadcastId} recorded ${input.eventType} event`,
+    payload: {
+      broadcastId: input.broadcastId,
+      batchManifestId: input.batchManifestId,
+      batchIndex: input.batchIndex,
+      eventType: input.eventType,
+      counterField,
+      recipientEmailHashed: input.recipientEmailHashed,
+      resendEventId: input.resendEventId,
+      recordedAt: deps.clock.now().toISOString(),
+    },
+    requestId: input.requestId ?? null,
+  });
 
   return ok(undefined);
 }

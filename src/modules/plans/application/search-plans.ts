@@ -221,6 +221,18 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/broadcasts/templates',
     requires: 'read',
   },
+  // F7.1a US2 image-allowlist editor (UX M-1 fix 2026-05-21,
+  // review finding enterprise-ux-designer M-1). Admin surface for
+  // managing the per-tenant `<img src>` hostname allowlist. `admin`
+  // required (write surface — manager cannot mutate even via palette
+  // jump). Without this entry, ⌘K cannot reach the allowlist editor,
+  // forcing the admin to remember the sidebar nesting.
+  {
+    id: 'nav.broadcastImageSettings',
+    label: 'palette.navigate.broadcastImageSettings',
+    url: '/admin/broadcasts/settings',
+    requires: 'admin',
+  },
   // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without
   // these entries, ⌘K-driven jumps to the renewal pipeline +
   // schedule editor are missing — every other major admin surface

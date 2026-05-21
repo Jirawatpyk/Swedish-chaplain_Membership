@@ -22,7 +22,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -44,6 +44,17 @@ export interface TemplateLibraryRow {
   readonly startedFromCount: number;
   readonly isSeeded: boolean;
   readonly updatedAtIso: string;
+  /**
+   * Subject preview (LOW UX review fix 2026-05-21 + C1 Round 2 wire-up):
+   * admin can scan subject lines at-a-glance without opening each
+   * template's edit page. Truncated server-side to ≤60 chars + `…`
+   * ellipsis on overflow (see `page.tsx:58-78` mapping site). Full
+   * subject is visible in the edit form. Field is REQUIRED post-Round-2
+   * (page always populates from `tpl.subject` which is non-empty per
+   * FR-017); kept as `string | undefined` for graceful degradation when
+   * any future consumer constructs a row without going through `page.tsx`.
+   */
+  readonly subjectPreview: string | undefined;
 }
 
 interface Props {
@@ -54,6 +65,28 @@ export function AdminTemplateLibrary({
   rows,
 }: Props): React.ReactElement | null {
   const t = useTranslations('admin.broadcasts.templates');
+  const locale = useLocale();
+
+  // UX M-2 fix 2026-05-21 (review finding enterprise-ux-designer M-2):
+  // mirrors `formatDispatchedAt` pattern from batch-breakdown.tsx —
+  // pin Asia/Bangkok TZ + apply Buddhist Era calendar for th-TH so
+  // TH admins read 2569 not 2026. Other locales pass through native
+  // BCP-47 toLocaleString. Fallback to ISO substring on any
+  // Intl.DateTimeFormat throw (extremely rare — bounded by browser
+  // Intl support which is ubiquitous since Edge 16+).
+  function formatUpdatedAt(iso: string): string {
+    try {
+      const resolvedLocale = locale === 'th' ? 'th-TH-u-ca-buddhist' : locale;
+      return new Date(iso).toLocaleDateString(resolvedLocale, {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        timeZone: 'Asia/Bangkok',
+      });
+    } catch {
+      return iso.slice(0, 10);
+    }
+  }
   const [filter, setFilter] = useState<FilterMode>('all');
 
   const filtered = useMemo(() => {
@@ -158,6 +191,12 @@ export function AdminTemplateLibrary({
             <TableHeader>
               <TableRow>
                 <TableHead scope="col">{t('columns.name')}</TableHead>
+                <TableHead
+                  scope="col"
+                  className="hidden lg:table-cell text-caption"
+                >
+                  {t('columns.subjectPreview')}
+                </TableHead>
                 <TableHead scope="col">{t('columns.locale')}</TableHead>
                 <TableHead
                   scope="col"
@@ -188,6 +227,20 @@ export function AdminTemplateLibrary({
                       </span>
                     ) : null}
                   </TableCell>
+                  <TableCell className="hidden lg:table-cell text-caption text-muted-foreground">
+                    {/*
+                      M8 Round 2 fix 2026-05-21 (review finding
+                      enterprise-ux-designer M8): `truncate max-w-[24rem]`
+                      on `<td>` requires `table-layout: fixed` to take
+                      effect; shadcn `Table` uses `auto`. Wrap in a
+                      `block` span so the truncate works regardless of
+                      table layout. Matches the F4 portal/layout
+                      truncate pattern.
+                    */}
+                    <span className="block truncate max-w-[24rem]">
+                      {tpl.subjectPreview ?? '—'}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-caption text-muted-foreground">
                     {t(`locale.${tpl.locale}`)}
                   </TableCell>
@@ -195,7 +248,7 @@ export function AdminTemplateLibrary({
                     {tpl.startedFromCount}
                   </TableCell>
                   <TableCell className="text-caption text-muted-foreground hidden md:table-cell">
-                    {tpl.updatedAtIso.slice(0, 10)}
+                    {formatUpdatedAt(tpl.updatedAtIso)}
                   </TableCell>
                   <TableCell className="text-right">
                     <Link

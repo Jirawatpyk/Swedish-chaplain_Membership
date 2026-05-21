@@ -22,6 +22,7 @@
 import { useCallback, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -187,7 +188,17 @@ export function RetryConfirmationDialog({
               onConfirm();
             }}
           >
-            {pending ? t('submitting') : t('confirm')}
+            {pending ? (
+              <>
+                <Loader2
+                  className="mr-2 size-4 motion-safe:animate-spin"
+                  aria-hidden="true"
+                />
+                {t('submitting')}
+              </>
+            ) : (
+              t('confirm')
+            )}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

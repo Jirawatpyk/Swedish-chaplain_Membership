@@ -91,6 +91,16 @@ WCAG verification: dropdown is **shadcn Combobox** with proper ARIA roles (per c
 
 **Starter badge (per critique P6)**: rows with `is_seeded = TRUE` render a "Starter" badge (visually distinct, dismissible). When admin clicks Edit on a starter template, the editor surfaces a confirmation banner: "This is a starter template seeded by the platform. Editing creates a tenant-specific version (it will no longer auto-update if the platform refines starter content)."
 
+**Tab-order policy for the shadcn Combobox template picker (T157 / CHK010 closure 2026-05-21)**:
+1. **On open** — focus enters the dropdown panel. The `CommandInput` (typeahead filter input) receives initial focus so users can immediately begin typing to narrow results. ARIA: `aria-expanded="true"` on the trigger; `role="combobox"` on the trigger; `role="listbox"` on the dropdown panel; `role="option"` on each item with `aria-selected` toggling for the active item.
+2. **While open** — Tab cycles through VISIBLE items (filter pills + Blank option + visible template rows). Hidden / filtered-out items are NOT in the tab order. ArrowUp/ArrowDown move the active descendant via `aria-activedescendant`; the focused element does NOT change on arrow navigation (keeps the input focused so the user can keep typing).
+3. **On Enter** — selects the active descendant + closes the dropdown + restores focus to the trigger button.
+4. **On Esc** — closes the dropdown WITHOUT selection + restores focus to the trigger button.
+5. **On click-outside** — closes the dropdown WITHOUT selection + focus moves naturally (no explicit restore — matches platform expectation for click-outside cancellations).
+6. **Disabled items** are skipped in Tab order + announced to screen readers with `aria-disabled="true"`. Currently no template rows are programmatically disabled in F7.1a; the policy is documented for forward-compat with F7.1b features (e.g., locale-filtered out templates could be shown but disabled to indicate "available but not in your locale").
+
+The shadcn Combobox (`cmdk` + `Popover`) provides this behaviour out-of-the-box; the policy is documented here so reviewers can verify the picker has not regressed during refactors.
+
 ---
 
 ## 5. Variable resolution semantics (per critique E1 / X1 — 2026-05-18)

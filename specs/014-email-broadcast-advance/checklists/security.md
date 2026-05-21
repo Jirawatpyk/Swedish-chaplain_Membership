@@ -65,7 +65,7 @@
 ## OWASP Top 10 + DPIA
 
 - [x] CHK035 Are OWASP risks mapped to F7.1a surfaces (XSS, SSRF, broken-access-control, injection, insecure-deserialisation)? [Coverage, plan.md Constitution Check I]
-- [ ] CHK036 Is the DPIA addendum scope for F7.1a documented (US2 image uploads = member-content processing surface; US7 template authoring = admin-content surface)? [Completeness, plan.md Constitution Check I — DPIA addendum mentioned but content unspecified]
+- [X] CHK036 Is the DPIA addendum scope for F7.1a documented (US2 image uploads = member-content processing surface; US7 template authoring = admin-content surface)? [Completeness, plan.md Constitution Check I — DPIA addendum mentioned but content unspecified] — **CLOSED 2026-05-21** (R007 Round 2 staff-review COND-3): `dpia-addendum.md` authored 2026-05-21 with 6 sections covering both surfaces; 17 audit event types catalogued; ROPA additions specified; 6 residual risks documented (including Round 2 § 5 Blob URL capability-token addition); reviewed by maintainer + 3-agent staff-review.
 - [x] CHK037 Is the SSRF defence for US2 image upload (NEVER fetch external `<img src>` server-side; only upload to chamber bucket) explicitly stated? [Clarity, plan.md Constitution Check I + Spec FR-012]
 
 ## Notes

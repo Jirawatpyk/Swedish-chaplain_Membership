@@ -162,8 +162,10 @@
     "pagination": {
       "prev": "Go to previous page",
       "next": "Go to next page",
-      "morePages": "More pages"
+      "morePages": "More pages",
+      "navAriaLabel": "Pagination"
     },
+    "editorLoading": "Loading editor",
     "breadcrumbUI": {
       "label": "Breadcrumb",
       "more": "More"
@@ -1809,6 +1811,7 @@
         },
         "columns": {
           "name": "Name",
+          "subjectPreview": "Subject",
           "locale": "Locale",
           "startedFrom": "Started",
           "startedFromAria": "Number of drafts started from this template",
@@ -3277,6 +3280,7 @@
       "creditNotesList": "Credit notes list",
       "broadcastsQueue": "E-Blast review queue",
       "broadcastTemplates": "E-Blast templates library",
+      "broadcastImageSettings": "E-Blast image source settings",
       "renewalsList": "Renewal pipeline",
       "renewalSchedules": "Renewal schedule policies",
       "escalationTasks": "Escalation tasks queue",
@@ -3561,6 +3565,7 @@
         "comingSoon": "(coming soon)",
         "tierLabel": "Tier code",
         "editor": {
+          "bracketHint": "Click any [bracketed text] to replace with your content.",
           "aria": {
             "toolbar": "Formatting toolbar",
             "bold": "Bold (Ctrl+B)",

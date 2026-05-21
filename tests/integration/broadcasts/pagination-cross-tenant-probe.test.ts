@@ -38,6 +38,9 @@ import {
   type NewBroadcastRow,
   type NewBroadcastBatchManifestRow,
 } from '@/modules/broadcasts/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { retryFailedBatches } from '@/modules/broadcasts/application/use-cases/retry-failed-batches';
+import { makeRetryFailedBatchesDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
 describe('F7.1a Pagination cross-tenant probe — REVIEW-GATE BLOCKER (T036)', () => {
@@ -78,13 +81,14 @@ describe('F7.1a Pagination cross-tenant probe — REVIEW-GATE BLOCKER (T036)', (
       replyToEmail: 'reply@example.com',
       segmentType: 'all_members',
       estimatedRecipientCount: 1,
-      // NOTE: F7.1a will add 'partially_sent' + 'partial_delivery_accepted'
-      // enum values via a follow-up migration (Phase 2 gap — original
-      // migrations 0162-0167 added columns but not the enum extension
-      // FR-008a requires). Fixture uses 'sending' (F7 MVP value) for the
-      // cross-tenant probe because the probe tests tenant_id RLS isolation,
-      // NOT status semantics. Phase 3B audit-port wiring will surface this.
-      status: 'sending' as const,
+      // Migration 0169 added 'partially_sent' + 'partial_delivery_accepted'
+      // enum values 2026-05 — fixture switched 2026-05-21 (review finding
+      // pr-test-analyzer #4) to `partially_sent` so the retry-trigger
+      // probe at T127 exercises the SAME state the production retry path
+      // sees. Previously the fixture used 'sending' which would let a
+      // regression in `retryFailedBatches` that only manifests under
+      // `partially_sent` slip past this probe.
+      status: 'partially_sent' as const,
     });
 
     const baseBatchManifest = (
@@ -225,17 +229,65 @@ describe('F7.1a Pagination cross-tenant probe — REVIEW-GATE BLOCKER (T036)', (
     });
   });
 
-  describe('cross_tenant_probe audit emit (Phase 3 Cluster B wiring)', () => {
-    // [RED — pending T036's audit-emit wiring in
-    // enforce-tenant-context.ts extension for batch_manifests. The
-    // F7 MVP enforce-tenant-context only knows about broadcasts +
-    // deliveries + segments + suppressions; F7.1a extends it to
-    // also emit on cross-tenant batch_manifest probes.]
-    it.skip('attempted cross-tenant batch_manifest read emits broadcast_cross_tenant_probe', async () => {
-      // Will be implemented + un-skipped in Phase 3 Cluster B when
-      // enforceTenantContext is extended to cover batch_manifests.
-      // See contracts/batch-dispatch.md § 2 row CROSS_TENANT_PROBE.
-      expect.fail('pending Phase 3 Cluster B audit wiring');
+  describe('cross_tenant_probe audit emit (T127 — Phase 6 wiring verify)', () => {
+    // T127 (F7.1a Phase 6) — un-skipped 2026-05-21. Phase 3F.1 fix F-01
+    // wired the probe-emit into `retryFailedBatches.ts:115-144`: when
+    // the broadcast lookup returns null under RLS (cross-tenant or
+    // genuinely missing), the use-case emits `broadcast_cross_tenant_probe`
+    // BEFORE returning BROADCAST_NOT_FOUND. This test drives that path
+    // end-to-end against live Neon and verifies the audit row commits.
+    //
+    // Probe vector: tenant A actor calls retryFailedBatches targeting
+    // tenant B's broadcastId → broadcasts.findById(tenantA, bBroadcastId)
+    // returns null under RLS → use-case emits probe + returns err.
+    //
+    // Verification: query audit_log via schema-owner bypass-RLS read
+    // (no tenant filter — we want to see the row from tenant A's emit).
+    it('retryFailedBatches with cross-tenant broadcastId emits broadcast_cross_tenant_probe', async () => {
+      const probeRequestId = `t127-probe-${randomUUID()}`;
+      const actorUserId = randomUUID();
+
+      const result = await retryFailedBatches(
+        makeRetryFailedBatchesDeps(tenantA.ctx.slug),
+        {
+          // Phase 3F.11.6 TxToken brand — tenantA.ctx is a TenantContext
+          tenantId: tenantA.ctx,
+          // Cross-tenant probe target: B's broadcast under A's context
+          broadcastId: bBroadcastId as never,
+          actorUserId,
+          requestId: probeRequestId,
+        },
+      );
+
+      // Step 1: result is BROADCAST_NOT_FOUND (RLS hid B's broadcast)
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.kind).toBe('BROADCAST_NOT_FOUND');
+      }
+
+      // Step 2: audit row committed via schema-owner bypass-RLS read.
+      // Filter by requestId (unique per probe) + tenantId — eventType
+      // is asserted in JS to dodge Drizzle's narrow enum-inferred type
+      // (the DB enum is correct; the .ts schema lags behind migrations).
+      const probeRows = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.requestId, probeRequestId),
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+          ),
+        );
+
+      expect(probeRows).toHaveLength(1);
+      const row = probeRows[0];
+      expect(row?.eventType).toBe('broadcast_cross_tenant_probe');
+      expect(row?.actorUserId).toBe(actorUserId);
+      expect(row?.payload).toMatchObject({
+        probedBroadcastId: bBroadcastId,
+        expectedTenantId: tenantA.ctx.slug,
+        useCase: 'retry-failed-batches',
+      });
     });
   });
 });

@@ -19,7 +19,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
-import { logAuditEmitFailure } from '../audit-emit-failure-logger';
+import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import { authorizeCancel } from '../../domain/policies/cancel-cutoff-policy';
@@ -117,39 +117,26 @@ export async function cancelBroadcast(
         input.broadcastId,
       );
       if (existing === null) {
-        // Phase 3F.11.3 (M1 — Round 2 fix) — emit cross-tenant probe
-        // audit on admin probes of unknown broadcasts (mirrors the
-        // Phase 3F.1 pattern in retry-failed-batches + accept-partial-
-        // delivery). Member-actor branch BELOW intentionally returns
-        // the same `broadcast_not_found` shape without audit to avoid
-        // existence-leak (a member probing another member's broadcast
-        // must get the same response as a probe of a nonexistent one).
+        // Phase 3F.11.3 (M1 — Round 2 fix) + H5 Round 2 closure 2026-05-21
+        // (review finding simplifier H5): consolidated to the canonical
+        // `emitCrossTenantProbe` helper — mirrors the retry-failed-batches
+        // + accept-partial-delivery pattern. Member-actor branch BELOW
+        // intentionally returns the same `broadcast_not_found` shape
+        // WITHOUT audit emit to avoid existence-leak (member probing
+        // another member's broadcast must look identical to a probe of
+        // a nonexistent one).
         if (input.actor.kind === 'admin') {
-          try {
-            await deps.audit.emit(null, {
-              tenantId: deps.tenant.slug,
-              eventType: 'broadcast_cross_tenant_probe',
-              actorUserId,
-              summary: `Admin ${actorUserId} probed unknown broadcast ${input.broadcastId} (cancel path)`,
-              payload: {
-                broadcastId: input.broadcastId,
-                probedBroadcastId: input.broadcastId,
-                expectedTenantId: deps.tenant.slug,
-                useCase: 'cancel-broadcast',
-              },
-              requestId: input.requestId,
-            });
-          } catch (auditErr) {
-            // Phase 3F.11.9 (Round 3 comment-MED) — delegate to
-            // canonical helper. See `application/audit-emit-failure-logger.ts`.
-            logAuditEmitFailure(logger, {
-              err: auditErr,
-              tenantId: deps.tenant.slug,
-              probedBroadcastId: input.broadcastId as string,
-              actorUserId,
+          await emitCrossTenantProbe({
+            audit: deps.audit,
+            tenantId: deps.tenant.slug,
+            actorUserId,
+            requestId: input.requestId,
+            surface: {
+              kind: 'broadcast',
+              broadcastId: input.broadcastId as string,
               useCase: 'cancel-broadcast',
-            });
-          }
+            },
+          });
         }
         return err({
           kind: 'broadcast_not_found',

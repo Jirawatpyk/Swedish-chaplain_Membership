@@ -11,6 +11,22 @@
  * broadcast_templates.body_html — UPDATEs on one do NOT cascade).
  *
  * Runs against live Neon Singapore per CLAUDE.md `pnpm test:integration`.
+ *
+ * SC-007a perf-bench fixture parameters (T154 / CHK033 closure 2026-05-21):
+ *   - body size:       200 KB   (F7 MVP body cap — sanitiser maximum)
+ *   - tenant members:  1000     (mid-tier chamber scale; well under F7.1a 50k US1 ceiling)
+ *   - locale variant:  TH       (highest UTF-8 byte count per character —
+ *                                 Thai script + AAT diacritics maximise the
+ *                                 substitution-pass cost over a fixed body length)
+ * Rationale: TH-locale at 200 KB body is the worst-case realistic snapshot
+ * shape. The escape + substitute pass runs over the full body length once;
+ * 1000 members exercises the per-member compose-funnel observability
+ * without inflating the test-DB row count. The current happy-path test
+ * below uses a smaller body (`<p>v1 body</p>`) — the bench harness reuses
+ * the same `snapshotTemplateToDraft` entrypoint with the 200KB/1000/TH
+ * fixture at staging /speckit.qa.run pre-flag-flip (T142 operator gate).
+ * Pinning the fixture here ensures the staging run does NOT accidentally
+ * measure a smaller workload than the SLO budget assumes.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';

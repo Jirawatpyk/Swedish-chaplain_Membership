@@ -167,4 +167,134 @@ describe('manageImageAllowlist contract — T064 (F7.1a US2)', () => {
       expect.arrayContaining([expect.stringMatching(/resend\.com/)]),
     );
   });
+
+  it('remove not_found emits broadcast_cross_tenant_probe defensively (T128b)', async () => {
+    // T128b (F7.1a Phase 6) — defensive cross-tenant probe emit pattern.
+    // When port.remove returns `not_found`, the hostname does not exist
+    // in the actor's tenant (RLS+FORCE already filtered cross-tenant
+    // rows out). Per data-model § 7 + Constitution Principle I sub-clause
+    // 4, the use-case MUST emit a forensic probe audit even though the
+    // RLS layer absorbed the offending row visibility.
+    const deps = makeDeps({
+      removeResult: err({ kind: 'not_found' }),
+    });
+    const r = await manageImageAllowlist(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      action: 'remove',
+      hostname: 'foreign-host.example.com',
+      requestId: 'req-probe-007',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('not_found');
+
+    // The probe audit fires INSTEAD OF the allowlist_updated audit
+    // (no mutation happened — the err short-circuits before the emit
+    // at line ~163 of manage-image-allowlist.ts).
+    const emitCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(emitCalls.length).toBeGreaterThanOrEqual(1);
+    const probeCall = emitCalls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'broadcast_cross_tenant_probe',
+    );
+    expect(probeCall).toBeDefined();
+    expect(probeCall?.[1]).toMatchObject({
+      eventType: 'broadcast_cross_tenant_probe',
+      actorUserId: ACTOR,
+      tenantId: TENANT,
+      payload: expect.objectContaining({
+        surface: 'tenant_image_source_allowlist',
+        operation: 'remove',
+        probedHostname: 'foreign-host.example.com',
+        expectedTenantId: TENANT,
+      }),
+      requestId: 'req-probe-007',
+    });
+  });
+
+  it('remove cannot_remove_default does NOT emit cross-tenant probe (legitimate state)', async () => {
+    // T128b counterpoint — `cannot_remove_default` is a LEGITIMATE
+    // rejection (admin tried to remove a platform-default row, blocked
+    // by FR-010). It is NOT a cross-tenant probe — the row exists in
+    // the actor's own tenant. No forensic emit required.
+    const deps = makeDeps({
+      removeResult: err({ kind: 'cannot_remove_default' }),
+    });
+    await manageImageAllowlist(deps, {
+      tenantId: TENANT,
+      actorUserId: ACTOR,
+      action: 'remove',
+      hostname: 'resend.com',
+      requestId: 'req-default-008',
+    });
+    // No probe audit — defensive emit is scoped to `not_found` only.
+    const emitCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const probeCall = emitCalls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'broadcast_cross_tenant_probe',
+    );
+    expect(probeCall).toBeUndefined();
+  });
+
+  it('remove not_found + audit.emit THROWS → still returns err(not_found), NO 5xx escalation (H10 atomicity)', async () => {
+    // H10 (review finding pr-test-analyzer#1, 2026-05-21) — the T128b
+    // probe-emit is best-effort: when `audit.emit` throws inside the
+    // catch path, the use-case MUST still return `err({kind:'not_found'})`
+    // to the caller (NOT 5xx). A regression removing the try/catch
+    // (turning best-effort into hard-fail) would slip through the
+    // existing two cases — this test pins the contract.
+    //
+    // H3 Round 2 enhancement 2026-05-21: also pins
+    // `broadcastsMetrics.auditEmitFailed` counter increment so a
+    // regression dropping the counter call inside `safeAuditEmit`
+    // (which the probe-emit delegates to via `emitCrossTenantProbe`)
+    // turns into a hard test failure. The counter is the SLO-alarm
+    // source per docs/observability.md § 22.2.
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const metricSpy = vi
+      .spyOn(broadcastsMetrics, 'auditEmitFailed')
+      .mockImplementation(() => undefined);
+
+    try {
+      const deps = makeDeps({
+        removeResult: err({ kind: 'not_found' }),
+      });
+      // Force audit.emit to reject on the probe call. The success-path
+      // emit at L163 of manage-image-allowlist.ts never fires because
+      // the remove `err` short-circuits before it.
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('audit storage down — chaos test'),
+      );
+
+      let threw = false;
+      let result: Awaited<ReturnType<typeof manageImageAllowlist>> | null = null;
+      try {
+        result = await manageImageAllowlist(deps, {
+          tenantId: TENANT,
+          actorUserId: ACTOR,
+          action: 'remove',
+          hostname: 'foreign-host.example.com',
+          requestId: 'req-h10-atomicity',
+        });
+      } catch {
+        threw = true;
+      }
+
+      // (a) Use-case did NOT throw — caught the audit failure
+      expect(threw).toBe(false);
+      // (b) Use-case returned err(not_found) — surfaces as 404 at the route
+      expect(result?.ok).toBe(false);
+      if (result && !result.ok) {
+        expect(result.error.kind).toBe('not_found');
+      }
+      // (c) Audit was attempted (the probe emit fired before throwing)
+      expect((deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+      // (d) H3 Round 2 — counter incremented with event type + tenant
+      expect(metricSpy).toHaveBeenCalledWith(
+        'broadcast_cross_tenant_probe',
+        TENANT,
+      );
+    } finally {
+      metricSpy.mockRestore();
+    }
+  });
 });

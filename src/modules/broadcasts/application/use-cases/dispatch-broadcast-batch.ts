@@ -35,6 +35,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { AdvisoryLockPort } from '../ports/advisory-lock-port';
@@ -270,8 +271,17 @@ export async function dispatchBroadcastBatch(
         'broadcasts.batch.failed_transition_db_write_failed',
       );
     }
-    try {
-      await deps.audit.emit(null, {
+    // simplifier H2 migration 2026-05-21: post-commit best-effort emit via
+    // `safeAuditEmit` — auto-emits `broadcasts_audit_emit_failed_total`
+    // counter for SRE alerting. H1 Round 2 closure 2026-05-21: extraContext
+    // preserves the per-site forensic fields (batchManifestId + batchIndex +
+    // gatewayStage) in the pino log line on audit-emit failure, so SIEM
+    // queries that pivot on `batchManifestId` keep working during an
+    // audit-rail outage.
+    await safeAuditEmit(
+      deps.audit,
+      null,
+      {
         tenantId: tenantSlug,
         eventType: 'broadcast_failed_to_dispatch',
         actorUserId: 'system',
@@ -285,17 +295,14 @@ export async function dispatchBroadcastBatch(
           failedAt: failedAt.toISOString(),
         },
         requestId: input.requestId ?? null,
-      });
-    } catch (auditErr) {
-      logger.error(
-        {
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-          tenantId: tenantSlug,
-          batchManifestId: manifest.id,
-        },
-        'broadcasts.batch.failed_to_dispatch_audit_emit_failed',
-      );
-    }
+      },
+      {
+        broadcastId: input.broadcastContent.broadcastId,
+        batchManifestId: manifest.id,
+        batchIndex: manifest.batchIndex,
+        gatewayStage,
+      },
+    );
     return err({
       kind: 'GATEWAY_ERROR',
       stage: gatewayStage,
@@ -328,8 +335,12 @@ export async function dispatchBroadcastBatch(
     // outcomes even though Resend already delivered — the F-7 failure
     // path wrap (lines 273-298) had this protection but the success
     // path did not. Mirror that pattern exactly.
-    try {
-      await deps.audit.emit(null, {
+    // simplifier H2 + H1 Round 2: extraContext preserves per-site
+    // forensic fields for SIEM pivot during audit-rail outage.
+    await safeAuditEmit(
+      deps.audit,
+      null,
+      {
         tenantId: tenantSlug,
         eventType: 'broadcast_resend_resource_missing',
         actorUserId: 'system',
@@ -343,21 +354,15 @@ export async function dispatchBroadcastBatch(
           persistError: persistAudience.error.kind,
         },
         requestId: input.requestId ?? null,
-      });
-    } catch (auditErr) {
-      logger.error(
-        {
-          err: auditErr,
-          tenantId: tenantSlug,
-          broadcastId: input.broadcastContent.broadcastId,
-          batchManifestId: manifest.id,
-          batchIndex: manifest.batchIndex,
-          providerAudienceId,
-          resendBroadcastId,
-        },
-        'broadcasts.dispatch.resend_resource_missing_audit_emit_failed',
-      );
-    }
+      },
+      {
+        broadcastId: input.broadcastContent.broadcastId,
+        batchManifestId: manifest.id,
+        batchIndex: manifest.batchIndex,
+        providerAudienceId,
+        resendBroadcastId,
+      },
+    );
   }
 
   // 7. Success audit — emits `broadcast_send_started` per-batch with
@@ -368,8 +373,13 @@ export async function dispatchBroadcastBatch(
   // if this final audit emit throws. Without the wrap, batch-dispatcher's
   // worker catches the throw and synthesises `failed` → ops dashboards
   // misreport the dispatch state.
-  try {
-    await deps.audit.emit(null, {
+  // simplifier H2 + H1 Round 2: extraContext preserves per-site forensic
+  // fields. Resend already accepted the send; audit failure MUST NOT
+  // propagate (would synthesise `failed` + misreport dispatch).
+  await safeAuditEmit(
+    deps.audit,
+    null,
+    {
       tenantId: tenantSlug,
       eventType: 'broadcast_send_started',
       actorUserId: 'system',
@@ -385,21 +395,15 @@ export async function dispatchBroadcastBatch(
         dispatchedAt: dispatchedAt.toISOString(),
       },
       requestId: input.requestId ?? null,
-    });
-  } catch (auditErr) {
-    logger.error(
-      {
-        err: auditErr,
-        tenantId: tenantSlug,
-        broadcastId: input.broadcastContent.broadcastId,
-        batchManifestId: manifest.id,
-        batchIndex: manifest.batchIndex,
-        providerAudienceId,
-        resendBroadcastId,
-      },
-      'broadcasts.dispatch.send_started_audit_emit_failed',
-    );
-  }
+    },
+    {
+      broadcastId: input.broadcastContent.broadcastId,
+      batchManifestId: manifest.id,
+      batchIndex: manifest.batchIndex,
+      providerAudienceId,
+      resendBroadcastId,
+    },
+  );
 
   return ok({
     providerAudienceId,

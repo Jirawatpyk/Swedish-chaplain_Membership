@@ -225,35 +225,60 @@ const deps = makeDeps({ template: null });
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
-  it('R6.4 M-1: refused-deleted + audit storage failure → still returns template_soft_deleted (NOT 500)', async () => {
+  it('R6.4 M-1: refused-deleted + audit storage failure → still returns template_soft_deleted (NOT 500) + metric counter increments', async () => {
     // Audit-storage failure on the refused-deleted path MUST be
     // swallowed by safeAuditEmitTyped — the use-case still returns the
     // soft-deleted error (HTTP 410) without 5xx. Forensic record is
     // lost (best-effort) but the user-visible status is preserved.
     // R8.1 M-1 — assertion now rejects `emitTyped` (post-typed-helper
     // migration).
-    const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
-    const tpl = makeTemplate({ id: TEMPLATE_ID, deletedAt: SOFT_DELETED_AT });
-    const deps = makeDeps({ template: tpl });
-    (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error('audit storage down'),
-    );
-    const r = await snapshotTemplateToDraft(deps, {
-      tenantId: TENANT,
-      actorUserId: ACTOR_MEMBER,
-      memberId: 'mem-1',
-      draftId: DRAFT_ID,
-      templateId: TEMPLATE_ID,
-      requestId: 'req-r6.4-m1-audit-fail',
-    });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.kind).toBe('template_soft_deleted');
-    // No mutations attempted.
-    expect(
-      (deps.broadcastsRepo as unknown as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
-        .updateDraftFromTemplate,
-    ).not.toHaveBeenCalled();
-    expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+    //
+    // R010 Round 2 closure 2026-05-21 (senior-tester staff-review):
+    // also pin `broadcastsMetrics.auditEmitFailed` counter increment.
+    // The metric is the SIEM-alarm source per docs/observability.md
+    // § 22.2 — a regression dropping the counter call inside
+    // `safeAuditEmitTyped` (`_safe-audit-emit.ts:146`) would silently
+    // kill the alert pipeline for this event type. The
+    // `safe-audit-emit.test.ts` R008 block pins the helper in unit-
+    // isolation; this assertion pins it through the use-case caller
+    // surface so a refactor that bypasses the helper (e.g., re-inlines
+    // the try/catch with no counter call) also fails.
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const metricSpy = vi
+      .spyOn(broadcastsMetrics, 'auditEmitFailed')
+      .mockImplementation(() => undefined);
+
+    try {
+      const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
+      const tpl = makeTemplate({ id: TEMPLATE_ID, deletedAt: SOFT_DELETED_AT });
+      const deps = makeDeps({ template: tpl });
+      (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('audit storage down'),
+      );
+      const r = await snapshotTemplateToDraft(deps, {
+        tenantId: TENANT,
+        actorUserId: ACTOR_MEMBER,
+        memberId: 'mem-1',
+        draftId: DRAFT_ID,
+        templateId: TEMPLATE_ID,
+        requestId: 'req-r6.4-m1-audit-fail',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.kind).toBe('template_soft_deleted');
+      // No mutations attempted.
+      expect(
+        (deps.broadcastsRepo as unknown as { updateDraftFromTemplate: ReturnType<typeof vi.fn> })
+          .updateDraftFromTemplate,
+      ).not.toHaveBeenCalled();
+      expect(deps.templatesPort.incrementStartedFromCount).not.toHaveBeenCalled();
+      // R010 metric assertion: counter incremented with event type + tenant id.
+      expect(metricSpy).toHaveBeenCalledWith(
+        'broadcast_template_snapshot_refused_deleted',
+        TENANT,
+      );
+    } finally {
+      metricSpy.mockRestore();
+    }
   });
 
   it('CRIT-1: cross-member draft hijack → broadcast_cross_member_probe audit + draft_not_found + counter NOT incremented', async () => {
@@ -318,7 +343,7 @@ const deps = makeDeps({ template: null });
       }
     ).updateDraftFromTemplate.mockRejectedValueOnce(
       new BroadcastConcurrentMutationError(
-        'tenant-swe',
+        'tenant-swe' as never,
         DRAFT_ID as never,
         'submitted',
       ),
@@ -376,7 +401,7 @@ const deps = makeDeps({ template: null });
         updateDraftFromTemplate: ReturnType<typeof vi.fn>;
       }
     ).updateDraftFromTemplate.mockRejectedValueOnce(
-      new BroadcastNotFoundError('tenant-swe', DRAFT_ID as never),
+      new BroadcastNotFoundError('tenant-swe' as never, DRAFT_ID as never),
     );
     const r = await snapshotTemplateToDraft(deps, {
       tenantId: TENANT,

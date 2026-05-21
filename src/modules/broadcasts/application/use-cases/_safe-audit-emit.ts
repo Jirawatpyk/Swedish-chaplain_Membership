@@ -54,6 +54,20 @@ export async function safeAuditEmit(
   audit: AuditPort,
   tx: unknown,
   event: AuditEmitInput,
+  /**
+   * H1 Round 2 fix 2026-05-21 (code-reviewer + silent-failure-hunter
+   * H-1 closure): callers can pass a small bounded record of forensic
+   * context fields that are MERGED into the `logger.error` payload on
+   * audit-emit failure. Use case: dispatch + retry paths want
+   * `batchManifestId + batchIndex + gatewayStage` in the SIEM pino log
+   * line so on-call can correlate a failed audit-emit to a specific
+   * batch without pivoting to the (probably-also-failed) audit_log
+   * table. Keep the field count small (≤5) + bounded-cardinality so
+   * the log line remains scrapeable. Optional — security paths pass
+   * nothing; rich-context paths pass `{batchManifestId, gatewayStage}`
+   * etc.
+   */
+  extraContext?: Record<string, unknown>,
 ): Promise<void> {
   try {
     await audit.emit(tx, event);
@@ -69,6 +83,7 @@ export async function safeAuditEmit(
         tenantId: event.tenantId,
         actorUserId: event.actorUserId,
         requestId: event.requestId,
+        ...extraContext,
       },
       'broadcasts.audit.emit_failed',
     );

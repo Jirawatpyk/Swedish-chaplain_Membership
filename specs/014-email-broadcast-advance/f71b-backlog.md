@@ -24,14 +24,18 @@ Rationale (from critique P1, X1):
 
 ## Promotion criteria (per-US)
 
-| US | Promote to F7.1b when |
-|----|----------------------|
-| **US3** (Per-contact opt-in) | ≥1 chamber admin requests it OR ≥3 unsubscribe complaints cite "wrong contact at company" |
-| **US4** (Attachments) | ≥5 events/quarter where chamber events team asks "can I attach the agenda?" |
-| **US5** (Open/click tracking) | ≥1 chamber's board demands "show me what worked" |
-| **US6** (Saved segments) | First tenant onboards with >1000 members AND uses ≥4 distinct segment patterns |
-| ~~US7~~ | ~~Promoted to F7.1a 2026-05-18~~ |
-| **US8** (PII scanner) | Compliance officer audit finds ≥1 broadcast leaked PII to recipients |
+Updated 2026-05-21 (T138) — promotion thresholds now reference the live F7 MVP baseline at `docs/observability/f7-mvp-baseline-2026-05-21.md` (re-snapshot quarterly). The Source-of-truth column maps each criterion to its measurable signal so promotion decisions are evidence-driven rather than opinion-driven.
+
+| US | Promote to F7.1b when | Source-of-truth (measurable signal) |
+|----|----------------------|--------------------------------------|
+| **US3** (Per-contact opt-in) | (a) suppression-list growth > 5 new suppressions/week sustained ≥ 4 weeks AND ≥30% of bounce/unsubscribe complaints reference "wrong contact at company"; OR (b) ≥1 chamber admin formally requests it via support ticket | Baseline § 6 (suppression growth rate) + Resend dashboard complaint-text classification |
+| **US4** (Attachments) | (a) ≥5 events/quarter where chamber events team asks "can I attach the agenda?" via support; OR (b) ≥10% of broadcasts in baseline § 3 segment distribution use the `event_announcement` segment AND member-portal compose data shows ≥3 attempted attachment-paste actions (telemetry stub today; instrument at F7.1b promotion time) | Baseline § 3 (segment distribution) + future compose-funnel instrumentation |
+| **US5** (Open/click tracking) | (a) ≥1 chamber's board demands "show me what worked" in writing; OR (b) sender-reputation metrics (bounce-rate, complaint-rate) cross § 22.3 alert thresholds on ≥2 tenants — open-rate signal becomes a debugging tool rather than an analytics one | Resend dashboard + `broadcasts.bounce_rate_per_broadcast` / `broadcasts.complaint_rate_per_broadcast` per § 22.3 |
+| **US6** (Saved segments) | (a) First tenant onboards with >1000 members AND baseline § 3 shows ≥4 distinct `segment_type` values used by that tenant in 90 days; OR (b) ≥2 segments per broadcast (avg over 30 days) showing manual-recompose burden | Baseline § 1 (tenant count + scale) + § 3 (segment distribution diversity) |
+| ~~US7~~ | ~~Promoted to F7.1a 2026-05-18~~ | — |
+| **US8** (PII scanner) | (a) Compliance officer audit finds ≥1 broadcast leaked PII to recipients; OR (b) audit_log shows ≥3 `broadcast_body_image_source_unsafe` events in any 30-day window (proxy for sloppy authoring patterns that PII scanner would catch); the audit-event check leverages existing § 22.10 F7.1a observability rather than waiting for an external trigger | `audit_log` query + compliance review |
+
+**Baseline numbers are scaffold today (2026-05-21).** Operator MUST replace `<TBD>` placeholders in `docs/observability/f7-mvp-baseline-2026-{ship-date}.md` on ship-day and again on each quarterly re-snapshot. Promotion decisions taken against stale baselines (>90 days old) should re-snapshot first.
 
 ---
 

@@ -11,6 +11,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { asHostname } from '../../domain/value-objects/image-source-allowlist';
+import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type {
   AllowlistEntry,
   ImageAllowlistPort,
@@ -155,7 +156,54 @@ export async function manageImageAllowlist(
       if (!r.ok) return err(r.error as AllowlistAddError);
     } else {
       const r = await deps.port.remove(input.tenantId, hostname, tx);
-      if (!r.ok) return err(r.error as AllowlistRemoveError);
+      if (!r.ok) {
+        // T128b (F7.1a Phase 6) — defensive cross-tenant probe emit.
+        // `not_found` under RLS+FORCE means the requested hostname does
+        // not exist in the actor's tenant. Four possible causes:
+        //   (a) stale admin UI (row removed concurrently by the same
+        //       actor in another browser tab)
+        //   (b) typo in the request
+        //   (c) genuine cross-tenant probe attempt (attacker tries to
+        //       remove a hostname they observed in another tenant via
+        //       OOB channel)
+        //   (d) intra-tenant concurrent remove race (two admins of the
+        //       SAME tenant remove the same hostname; the loser sees
+        //       `not_found`) — this is a benign false-positive probe
+        //       emit. Accepted as rare (admin pool is small per
+        //       chamber) + recoverable from audit forensic review
+        //       (paired-near-in-time successful remove + probe emit
+        //       from same tenant is the signature). Alternative:
+        //       per-(tenant, hostname) advisory lock — rejected as
+        //       over-engineering for F7.1a MVP.
+        // Per data-model § 7 + Constitution Principle I sub-clause 4,
+        // forensic emit is mandatory on the probe class even when the
+        // RLS layer has already filtered the offending row. Mirrors the
+        // F7.1a US1 `retryFailedBatches` pattern (lines 115-144). The
+        // emit is best-effort — same tx so it rolls back with the err
+        // result (no commit-half-state risk). NOT emitted on
+        // `cannot_remove_default` (legitimate state) or `storage_error`
+        // (infra failure, not probe).
+        if (r.error.kind === 'not_found') {
+          // simplifier H1 migration 2026-05-21: replaced inline
+          // try/catch + logger.warn + broadcastsMetrics.auditEmitFailed
+          // (~30 LOC) with the canonical `emitCrossTenantProbe` helper.
+          // The helper internally calls `safeAuditEmit` which already
+          // wires the `broadcasts_audit_emit_failed_total` counter +
+          // canonical `broadcasts.audit.emit_failed` log key. Net: same
+          // CRITICAL silent-failure protection (originally added inline
+          // 2026-05-21 round 3) but now uniformly applied across all 3
+          // probe surfaces (template / allowlist / broadcast).
+          await emitCrossTenantProbe({
+            audit: deps.audit,
+            tenantId: input.tenantId,
+            actorUserId: input.actorUserId,
+            requestId: input.requestId,
+            surface: { kind: 'allowlist', hostname, operation: 'remove' },
+            tx,
+          });
+        }
+        return err(r.error as AllowlistRemoveError);
+      }
     }
 
     const after = await deps.port.findByTenantId(input.tenantId);

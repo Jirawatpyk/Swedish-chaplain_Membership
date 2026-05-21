@@ -121,7 +121,13 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async insertDraft(_tx, input): Promise<Broadcast> {
       state.insertedRows.push(input);
       return {
-        ...(input as Broadcast),
+        // Pre-Round-5 `as Broadcast` cast worked because both
+        // NewBroadcastDraftInput + Broadcast shared `tenantId: string`.
+        // Post-Round-5 LOW2 closure the port's tenantId is `TenantSlug`
+        // (brand) while Domain's is plain string — TypeScript now
+        // refuses the direct overlap. `as unknown as Broadcast` is the
+        // sanctioned bypass for mock-row construction in test fixtures.
+        ...(input as unknown as Broadcast),
         status: 'draft',
         submittedAt: null,
         approvedAt: null,

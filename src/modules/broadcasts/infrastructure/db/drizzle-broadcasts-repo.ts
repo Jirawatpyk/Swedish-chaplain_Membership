@@ -18,7 +18,7 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { asTenantContext } from '@/modules/tenants';
+import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import {
   asBroadcastId,
   type Broadcast,
@@ -366,7 +366,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async updateDraft(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       patch: Partial<NewBroadcastDraftInput>,
     ): Promise<Broadcast> {
@@ -439,7 +439,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async updateDraftFromTemplate(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       snapshot: {
         // R3.3 H-3 — brand flows end-to-end. The adapter accepts
@@ -513,7 +513,7 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     async findById(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
     ): Promise<Broadcast | null> {
       return runInTenant(ctx, async (tx) => {
@@ -535,7 +535,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async findByIdInTx(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
     ): Promise<Broadcast | null> {
       const tx = txUnknown as TenantTx;
@@ -554,7 +554,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async lockForUpdate(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
     ): Promise<BroadcastStatus | null> {
       const tx = txUnknown as TenantTx;
@@ -579,7 +579,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async applyTransition(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       target: BroadcastStatus,
       fields: Partial<Broadcast>,
@@ -644,7 +644,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async attachResendIds(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendAudienceId: string,
       resendBroadcastId: string,
@@ -683,7 +683,7 @@ export function makeDrizzleBroadcastsRepo(
 
     async attachAudienceId(
       txUnknown,
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendAudienceId: string,
     ): Promise<void> {
@@ -712,7 +712,7 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     async listByTenantStatus(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       opts: ListByTenantStatusOpts,
     ): Promise<ListByTenantStatusResult> {
       return runInTenant(ctx, async (tx) => {
@@ -778,7 +778,7 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     async countForMemberQuota(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       memberId: string,
       quotaYear: number,
     ): Promise<{
@@ -828,7 +828,7 @@ export function makeDrizzleBroadcastsRepo(
     async findByResendBroadcastIdBypassRls(
       resendBroadcastId: string,
     ): Promise<
-      { readonly tenantId: string; readonly broadcast: Broadcast } | null
+      { readonly tenantId: TenantSlug; readonly broadcast: Broadcast } | null
     > {
       // Webhook pre-tenant resolution path (FR-024 / T160). Reads via
       // the default `db` connection — the schema owner has BYPASSRLS
@@ -843,14 +843,21 @@ export function makeDrizzleBroadcastsRepo(
         .where(eq(broadcasts.resendBroadcastId, resendBroadcastId))
         .limit(1);
       if (row === undefined) return null;
+      // Brand the row's tenant_id back to `TenantSlug` at the
+      // bypass-RLS adapter boundary. The DB column is `text` so
+      // it lacks the brand; the regex guard inside `asTenantContext`
+      // is the source of truth for slug validity — but we don't need
+      // a full ctx here, just the brand. Cast is safe because the
+      // row is sourced from a tenant-isolated insert path (the only
+      // writes to `broadcasts.tenant_id` go through `runInTenant`).
       return {
-        tenantId: row.tenantId,
+        tenantId: row.tenantId as TenantSlug,
         broadcast: rowToBroadcast(row as BroadcastRow),
       };
     },
 
     async listForMemberPaginated(
-      tenantIdArg: string,
+      tenantIdArg: TenantSlug,
       memberId: string,
       opts: { readonly page: number; readonly perPage: number },
     ): Promise<{

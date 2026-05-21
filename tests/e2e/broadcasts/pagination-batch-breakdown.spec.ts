@@ -38,14 +38,27 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const PARTIAL_BROADCAST_ID = process.env.E2E_PARTIAL_BROADCAST_ID;
 
 async function signInAsAdmin(page: import('@playwright/test').Page): Promise<void> {
-  await page.goto('/sign-in');
+  // E2E route fix 2026-05-21: F1 routes are `/admin/sign-in` and
+  // `/portal/sign-in` — there is no plain `/sign-in`. Also the
+  // `waitForURL` regex must EXCLUDE `/admin/sign-in` itself so the
+  // wait doesn't fall through immediately on a failed sign-in (the
+  // page stays on /admin/sign-in which matches `/\/admin/`).
+  await page.goto('/admin/sign-in');
   await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-  await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+  await page.getByRole('textbox', { name: 'Password' }).fill(ADMIN_PASSWORD!);
   await page.getByRole('button', { name: /sign in/i }).click();
-  await page.waitForURL(/\/admin/, { timeout: 10_000 });
+  await page.waitForURL(
+    (url) =>
+      url.pathname.startsWith('/admin') &&
+      !url.pathname.startsWith('/admin/sign-in'),
+    { timeout: 10_000 },
+  );
 }
 
 test.describe('@a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T040)', () => {
+  // E2E rate-limit fix 2026-05-21 (matches sibling specs).
+  test.describe.configure({ retries: 0 });
+
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to run admin-portal e2e scans',
@@ -90,7 +103,7 @@ test.describe('@a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T
     await page.goto(`/admin/broadcasts/${PARTIAL_BROADCAST_ID}`);
 
     await page
-      .getByRole('button', { name: /retry failed batches/i })
+      .getByRole('button', { name: /retry \d+ failed batches/i })
       .first()
       .click();
 
@@ -140,15 +153,21 @@ test.describe('@a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T
     const context = await browser.newContext({ reducedMotion: 'reduce' });
     const page = await context.newPage();
 
-    await page.goto('/sign-in');
+    // E2E route fix 2026-05-21: /admin/sign-in (not /sign-in).
+    await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: 'Password' }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/admin/, { timeout: 10_000 });
+    await page.waitForURL(
+      (url) =>
+        url.pathname.startsWith('/admin') &&
+        !url.pathname.startsWith('/admin/sign-in'),
+      { timeout: 10_000 },
+    );
 
     await page.goto(`/admin/broadcasts/${PARTIAL_BROADCAST_ID}`);
     await page
-      .getByRole('button', { name: /retry failed batches/i })
+      .getByRole('button', { name: /retry \d+ failed batches/i })
       .first()
       .click();
 

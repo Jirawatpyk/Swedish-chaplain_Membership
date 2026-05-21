@@ -16,9 +16,13 @@
  * Runs against live Neon Singapore per CLAUDE.md `pnpm test:integration`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { broadcastTemplates } from '@/modules/broadcasts/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { deleteBroadcastTemplate } from '@/modules/broadcasts/application/use-cases/delete-broadcast-template';
+import { makeDeleteBroadcastTemplateDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import {
   createTwoTestTenants,
   type TestTenant,
@@ -155,6 +159,74 @@ describe('F7.1a templates cross-tenant probe — REVIEW-GATE BLOCKER (T093)', ()
       .from(broadcastTemplates)
       .where(eq(broadcastTemplates.name, 'Injected'));
     expect(forged).toHaveLength(0);
+  });
+
+  // T129 (F7.1a Phase 6) — audit-emit probe expansion.
+  //
+  // Data-model § 6 + Constitution Principle I sub-clause 4: every
+  // cross-tenant probe MUST emit `broadcast_cross_tenant_probe`. The
+  // template-use-cases already wire the emit via
+  // `emitTemplateCrossTenantProbeAudit` (see
+  // `src/modules/broadcasts/application/use-cases/_emit-cross-tenant-probe.ts`)
+  // — called when a use-case lookup returns null under RLS.
+  //
+  // This test drives `deleteBroadcastTemplate` from tenant B's
+  // context targeting tenant A's templateId → RLS filters A's row →
+  // use-case emits `broadcast_cross_tenant_probe` with
+  // `payload.resourceKind='template'` BEFORE returning `not_found`.
+  //
+  // Filter by `requestId` (unique per probe) + `tenantId` (the actor's
+  // own tenant — `emitTemplateCrossTenantProbeAudit` uses the actor's
+  // tenant for the audit row because the actor was querying INTO its
+  // OWN namespace). eventType asserted in JS to dodge Drizzle's narrow
+  // enum-inferred type for `audit_event_type`.
+  it('AUDIT: tenant B delete probe of tenant A template emits broadcast_cross_tenant_probe', async () => {
+    const probeRequestId = `t129-probe-${randomUUID()}`;
+    const actorUserId = randomUUID();
+
+    const result = await runInTenant(tenantB.ctx, async () =>
+      deleteBroadcastTemplate(makeDeleteBroadcastTemplateDeps(tenantB.ctx.slug), {
+        tenantId: tenantB.ctx.slug as never,
+        templateId: templateAId, // cross-tenant probe target
+        actorUserId,
+        requestId: probeRequestId,
+      }),
+    );
+
+    // Step 1: result is `not_found` (RLS hid A's template from B)
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('not_found');
+    }
+
+    // Step 2: probe audit row committed via schema-owner bypass-RLS
+    const probeRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.requestId, probeRequestId),
+          eq(auditLog.tenantId, tenantB.ctx.slug),
+        ),
+      );
+
+    expect(probeRows).toHaveLength(1);
+    const row = probeRows[0];
+    expect(row?.eventType).toBe('broadcast_cross_tenant_probe');
+    expect(row?.actorUserId).toBe(actorUserId);
+    expect(row?.payload).toMatchObject({
+      probedTenantId: tenantB.ctx.slug,
+      probedTemplateId: templateAId,
+      resourceKind: 'template',
+    });
+
+    // Step 3: tenant A's template is untouched (defence-in-depth)
+    const aRows = await db
+      .select({ id: broadcastTemplates.id, name: broadcastTemplates.name })
+      .from(broadcastTemplates)
+      .where(eq(broadcastTemplates.id, templateAId));
+    expect(aRows).toHaveLength(1);
+    expect(aRows[0]?.name).toBe('TenantA Private');
   });
 
   it('tenant A still sees its own row + tenant B still sees its own row', async () => {

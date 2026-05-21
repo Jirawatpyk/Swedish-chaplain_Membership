@@ -36,7 +36,7 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
+import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import { rotateForAutoRetry } from '../../domain/value-objects/idempotency-key';
@@ -130,40 +130,27 @@ export async function autoRetryFailedBatch(
     });
   }
 
-  // Phase 3F.4 (F-8 silent-fail fix) — wrap audit emit in try/catch.
-  // The status flip + retry_count bump ARE committed; an audit-port
-  // throw post-commit shouldn't fail the use case (the retry will
-  // execute on the next dispatch-batches tick regardless of audit).
-  try {
-    await deps.audit.emit(null, {
-      tenantId: tenantSlug,
-      eventType: 'broadcast_retry_initiated',
-      actorUserId: 'system',
-      summary: `Auto-retry batch ${batch.batchIndex} of broadcast ${batch.broadcastId as unknown as string} (attempt ${newRetryCount}/${AUTO_RETRY_BUDGET})`,
-      payload: {
-        broadcastId: batch.broadcastId,
-        batchManifestId: batch.id,
-        batchIndex: batch.batchIndex,
-        retryCount: newRetryCount,
-        autoRetryBudget: AUTO_RETRY_BUDGET,
-        automated: true,
-        previousFailureReason: batch.failureReason,
-        retriedAt: deps.clock.now().toISOString(),
-      },
-      requestId: input.requestId ?? null,
-    });
-  } catch (auditErr) {
-    logger.error(
-      {
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        tenantId: tenantSlug,
-        batchManifestId: batch.id,
-        broadcastId: batch.broadcastId,
-        newRetryCount,
-      },
-      'broadcasts.auto_retry.audit_emit_failed',
-    );
-  }
+  // simplifier H2 migration 2026-05-21: post-commit best-effort emit via
+  // `safeAuditEmit`. Status flip + retry_count bump ARE committed; audit
+  // failure post-commit MUST NOT fail the use case (retry executes on
+  // next dispatch-batches tick regardless of audit).
+  await safeAuditEmit(deps.audit, null, {
+    tenantId: tenantSlug,
+    eventType: 'broadcast_retry_initiated',
+    actorUserId: 'system',
+    summary: `Auto-retry batch ${batch.batchIndex} of broadcast ${batch.broadcastId as unknown as string} (attempt ${newRetryCount}/${AUTO_RETRY_BUDGET})`,
+    payload: {
+      broadcastId: batch.broadcastId,
+      batchManifestId: batch.id,
+      batchIndex: batch.batchIndex,
+      retryCount: newRetryCount,
+      autoRetryBudget: AUTO_RETRY_BUDGET,
+      automated: true,
+      previousFailureReason: batch.failureReason,
+      retriedAt: deps.clock.now().toISOString(),
+    },
+    requestId: input.requestId ?? null,
+  });
 
   return ok({
     batchManifestId: batch.id,

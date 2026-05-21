@@ -126,7 +126,7 @@ function makeRepo(opts: RepoOpts = {}): {
       transitions.push({ status, fields });
       if (opts.applyTransitionThrows) {
         throw new BroadcastConcurrentMutationError(
-          'test-tenant',
+          'test-tenant' as never,
           broadcastId,
           'sending',
         );

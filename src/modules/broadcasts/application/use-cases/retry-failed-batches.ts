@@ -25,12 +25,11 @@
  * Pure orchestration — no framework imports (Constitution Principle III).
  */
 import { err, ok, type Result } from '@/lib/result';
-import { logger } from '@/lib/logger';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import { rotateForManualRetry } from '../../domain/value-objects/idempotency-key';
 import { type AdvisoryLockPort } from '../ports/advisory-lock-port';
-import { logAuditEmitFailure } from '../audit-emit-failure-logger';
+import { emitCrossTenantProbe } from './_emit-cross-tenant-probe';
 import type { AuditPort } from '../ports/audit-port';
 import type { BatchManifestsPort } from '../ports/batch-manifests-port';
 import type { BroadcastsRetryRepo } from '../ports/broadcasts-retry-repo';
@@ -112,36 +111,27 @@ export async function retryFailedBatches(
       tx,
     );
     if (snapshot === null) {
-      // Phase 3F.1 (F-01 fix) — emit cross-tenant probe audit BEFORE
-      // returning BROADCAST_NOT_FOUND. Constitution v1.4.0 Principle I
-      // sub-clause 4 — every cross-tenant probe MUST leave a forensic
-      // trail. Pattern mirrors `enforce-tenant-context.ts:60-78`.
-      try {
-        await deps.audit.emit(tx, {
-          tenantId: tenantSlug,
-          eventType: 'broadcast_cross_tenant_probe',
-          actorUserId: input.actorUserId,
-          summary: `Admin ${input.actorUserId} probed unknown broadcast ${input.broadcastId} (retry path)`,
-          payload: {
-            broadcastId: input.broadcastId,
-            probedBroadcastId: input.broadcastId,
-            expectedTenantId: tenantSlug,
-            useCase: 'retry-failed-batches',
-          },
-          requestId: input.requestId ?? null,
-        });
-      } catch (auditErr) {
-        // Phase 3F.11.9 (Round 3 comment-MED) — delegate to canonical
-        // helper. See `application/audit-emit-failure-logger.ts` for
-        // the Principle I sub-clause 4 rationale.
-        logAuditEmitFailure(logger, {
-          err: auditErr,
-          tenantId: tenantSlug,
-          probedBroadcastId: input.broadcastId,
-          actorUserId: input.actorUserId,
+      // Phase 3F.1 (F-01 fix) + simplifier H1 migration 2026-05-21:
+      // emit cross-tenant probe audit BEFORE returning BROADCAST_NOT_FOUND
+      // via the canonical `emitCrossTenantProbe` helper. Constitution
+      // v1.4.0 Principle I sub-clause 4 — every cross-tenant probe MUST
+      // leave a forensic trail. The helper wraps `safeAuditEmit` which
+      // auto-increments `broadcasts_audit_emit_failed_total` on transient
+      // audit-port failures (SRE alert per docs/observability.md § 22.2).
+      // tx-binding preserved: emit participates in the same withTx
+      // rollback boundary as the snapshot read.
+      await emitCrossTenantProbe({
+        audit: deps.audit,
+        tenantId: tenantSlug,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId ?? null,
+        surface: {
+          kind: 'broadcast',
+          broadcastId: input.broadcastId,
           useCase: 'retry-failed-batches',
-        });
-      }
+        },
+        tx,
+      });
       return err({
         kind: 'BROADCAST_NOT_FOUND',
         broadcastId: input.broadcastId,

@@ -289,13 +289,23 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     // Phase 3F.11.10 (Round 3 Gap 1) — assert ops feed receives the
     // forensic signal. A regression that drops the logger.error call
     // would ship green without this assertion.
+    //
+    // Simplifier H2 migration 2026-05-21: log key changed from
+    // `broadcasts.dispatch.send_started_audit_emit_failed` to the
+    // canonical `broadcasts.audit.emit_failed` emitted by
+    // `safeAuditEmit`. The behaviour (logger.error called + use case
+    // returns ok) is preserved; the key consolidation means SIEM
+    // alerts now pivot on a single key across all 6+ post-commit
+    // audit-emit sites. The payload structure changed too: previously
+    // a custom shape with `tenantId + batchManifestId`; now the
+    // canonical `tenantId + actorUserId + eventType + requestId`
+    // shape from `_safe-audit-emit.ts:64-74`.
     expect(loggerErrorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        err: expect.any(Error),
+        eventType: 'broadcast_send_started',
         tenantId: 'test-tenant',
-        batchManifestId: 'batch-id-1',
       }),
-      'broadcasts.dispatch.send_started_audit_emit_failed',
+      'broadcasts.audit.emit_failed',
     );
   });
 
@@ -318,15 +328,17 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect(result.ok).toBe(true);
 
     // Phase 3F.11.10 (Round 3 Gap 1) — same assertion for the
-    // resource-missing audit-throw path. Distinct log-key tag so ops
-    // can distinguish the two failure modes in pino feed.
+    // resource-missing audit-throw path. Distinct event_type tag
+    // (in the structured log payload) lets ops distinguish the two
+    // failure modes in the pino feed even though the log KEY is
+    // now the canonical `broadcasts.audit.emit_failed` (simplifier
+    // H2 migration 2026-05-21).
     expect(loggerErrorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        err: expect.any(Error),
+        eventType: 'broadcast_resend_resource_missing',
         tenantId: 'test-tenant',
-        batchManifestId: 'batch-id-1',
       }),
-      'broadcasts.dispatch.resend_resource_missing_audit_emit_failed',
+      'broadcasts.audit.emit_failed',
     );
   });
 

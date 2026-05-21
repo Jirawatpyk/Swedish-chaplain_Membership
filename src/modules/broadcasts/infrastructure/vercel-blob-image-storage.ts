@@ -91,6 +91,19 @@ export const vercelBlobImageStorage: ImageStoragePort = {
       access: 'public',
       contentType: input.mimeType,
       token: env.blob.readWriteToken,
+      // Content-hash key + addRandomSuffix:false means re-uploading the
+      // SAME content (matching sha256) → idempotent (Blob returns the
+      // existing URL). LOW review note 2026-05-21 (code-reviewer-full
+      // L-3): allowOverwrite=false additionally rejects any attempt to
+      // overwrite a different-content entry at the same key — defence
+      // in depth against sha256-preimage collisions (infeasible) AND
+      // against a Vercel Blob content-type-confusion bug. Recovery
+      // from a poisoned-cache scenario would require manual ops:
+      // (a) `vercel blob delete <key>` via Vercel CLI, (b) re-upload
+      // legitimate content. M1 Round 2 closure 2026-05-21 (comment-
+      // analyzer H-3): no dedicated runbook authored — the procedure
+      // above IS the recovery; create a `docs/runbooks/blob-poisoned-
+      // cache.md` only if the incident ever occurs (zero hits to date).
       addRandomSuffix: false,
       allowOverwrite: false,
     });

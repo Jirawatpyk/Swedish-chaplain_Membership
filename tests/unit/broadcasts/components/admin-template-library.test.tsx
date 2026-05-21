@@ -30,6 +30,7 @@ const FIXTURE_ROWS: readonly TemplateLibraryRow[] = [
   {
     id: '11111111-1111-1111-1111-111111111111',
     name: 'Monthly Newsletter',
+    subjectPreview: 'Your monthly chamber update',
     locale: 'en',
     startedFromCount: 12,
     isSeeded: true,
@@ -38,6 +39,7 @@ const FIXTURE_ROWS: readonly TemplateLibraryRow[] = [
   {
     id: '22222222-2222-2222-2222-222222222222',
     name: 'Event Reminder',
+    subjectPreview: 'Reminder: chamber event tomorrow',
     locale: 'en',
     startedFromCount: 8,
     isSeeded: true,
@@ -46,6 +48,7 @@ const FIXTURE_ROWS: readonly TemplateLibraryRow[] = [
   {
     id: '33333333-3333-3333-3333-333333333333',
     name: 'Welcome Package',
+    subjectPreview: 'Welcome to the chamber',
     locale: 'en',
     startedFromCount: 3,
     isSeeded: true,
@@ -54,6 +57,7 @@ const FIXTURE_ROWS: readonly TemplateLibraryRow[] = [
   {
     id: '44444444-4444-4444-4444-444444444444',
     name: 'Custom Quarterly Update',
+    subjectPreview: 'Q2 newsletter from your chamber',
     locale: 'en',
     startedFromCount: 5,
     isSeeded: false,
@@ -62,6 +66,7 @@ const FIXTURE_ROWS: readonly TemplateLibraryRow[] = [
   {
     id: '55555555-5555-5555-5555-555555555555',
     name: 'Custom Member Spotlight',
+    subjectPreview: 'Member spotlight: meet our newest',
     locale: 'en',
     startedFromCount: 2,
     isSeeded: false,

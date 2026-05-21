@@ -73,7 +73,19 @@ export function ComposeInlineImageUploader({
           error?: string;
         };
         const code = body.error ?? 'unknown';
-        const msg = t(`errors.${code}`);
+        // UX M-3 fix 2026-05-21 (review finding enterprise-ux-designer
+        // M-3): wrap dynamic-key lookup in try/catch with fallback to
+        // `errors.unknown`. next-intl throws on missing keys by
+        // default — a future API expansion adding a new error code
+        // (e.g. `rate_limited`, `tenant_not_found`) would crash the
+        // upload UI before this guard landed. Pattern mirrors F6.1
+        // Phase 5 US5 fix.
+        let msg: string;
+        try {
+          msg = t(`errors.${code}`);
+        } catch {
+          msg = t('errors.unknown');
+        }
         setError(msg);
         toast.error(msg);
         return;

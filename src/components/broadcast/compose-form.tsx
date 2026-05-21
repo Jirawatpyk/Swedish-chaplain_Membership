@@ -127,6 +127,14 @@ export function ComposeForm({
 
   const [subject, setSubject] = useState<string>(initialSubject);
   const [bodyHtml, setBodyHtml] = useState<string>(initialBodyHtml);
+  // E2E + UX bug fix 2026-05-21: track the draft id locally so the
+  // Tiptap editor's `draftId` prop is the AUTHORITATIVE source for
+  // whether the inline-image uploader renders (gated behind
+  // `draftId !== null`). Initialised from the server prop; updated
+  // when `Save as draft` POST returns a new broadcastId.
+  const [currentDraftId, setCurrentDraftId] = useState<string | null>(
+    initialDraftId,
+  );
   const [segment, setSegment] = useState<SegmentPickerValue>({
     kind: 'all_members',
     tierCodes: [],
@@ -209,7 +217,7 @@ export function ComposeForm({
         segment: buildSegmentPayload(segment, customLines),
         scheduledFor,
       };
-      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+      if (currentDraftId !== null) body['draftId'] = currentDraftId;
 
       const res = await fetch('/api/broadcasts/submit', {
         method: 'POST',
@@ -315,8 +323,8 @@ export function ComposeForm({
         customRecipientEmails: segment.kind === 'custom' ? customLines : null,
         scheduledFor,
       };
-      const method = initialDraftId !== null ? 'PUT' : 'POST';
-      if (initialDraftId !== null) body['draftId'] = initialDraftId;
+      const method = currentDraftId !== null ? 'PUT' : 'POST';
+      if (currentDraftId !== null) body['draftId'] = currentDraftId;
 
       const res = await fetch('/api/broadcasts/draft', {
         method,
@@ -339,6 +347,32 @@ export function ComposeForm({
         return;
       }
       toast.success(t('toast.drafted'));
+
+      // E2E + UX bug fix 2026-05-21: when the FIRST `Save as draft` POST
+      // creates a new draft, the API returns `{ broadcastId }` but the
+      // component previously dropped the id on the floor — `currentDraftId`
+      // stayed `null`, so the Tiptap editor's inline-image uploader
+      // remained hidden (gated behind `draftId !== null`). Real-world
+      // symptom: member saves draft, expects to upload an image, sees
+      // only the "Save draft first" hint indefinitely. Fix: capture the
+      // new broadcastId from the response + update local `currentDraftId`
+      // state so the TiptapEditor re-renders with the new draftId prop
+      // (which renders the inline-image uploader instead of the hint).
+      // The compose page (server component) does not yet support
+      // `?draftId=` resume — that is F7.1b scope — so we manage the
+      // draft-id transition entirely in client state.
+      if (currentDraftId === null) {
+        try {
+          const respBody = (await res.json().catch(() => null)) as {
+            broadcastId?: string;
+          } | null;
+          if (respBody?.broadcastId) {
+            setCurrentDraftId(respBody.broadcastId);
+          }
+        } catch {
+          // best-effort — the toast already confirmed success
+        }
+      }
     } finally {
       setSubmitting(false);
     }
@@ -464,7 +498,7 @@ export function ComposeForm({
               disabled={submitting}
               labelledById="broadcast-body-label"
               imagesEnabled={imagesEnabled}
-              draftId={initialDraftId}
+              draftId={currentDraftId}
             />
             {/* PR-review fix 2026-05-20 UX-C1 — accumulated disallowed
                 image sources list. role=alert so SR users hear it

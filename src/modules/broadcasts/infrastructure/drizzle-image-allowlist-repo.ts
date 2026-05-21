@@ -29,8 +29,9 @@
  * touched.
  */
 import { and, eq } from 'drizzle-orm';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenant, withTenantTxOrOpen } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+import { describeStorageError } from '@/lib/db-errors';
 import type {
   AllowlistAddError,
   AllowlistEntry,
@@ -43,41 +44,24 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantSlug } from '@/modules/tenants';
 import { tenantImageSourceAllowlist } from './schema';
 
-/**
- * Tx-thread helper — runs the callback either inside the caller's
- * provided tx (atomic-tx threading per PR-review CR-H1) OR inside a
- * fresh `runInTenant` scope when tx is null/undefined. Centralises
- * the conditional so all 4 port methods share the same idiom.
- */
+// `withTenantTx` lifted to `@/lib/db.withTenantTxOrOpen` 2026-05-21
+// (review finding simplifier H4 — was byte-identical to the helper in
+// `drizzle-broadcast-templates-repo.ts`). Local alias preserves the
+// shorter name + ImageAllowlistTx-branded signature at the call sites
+// below without forcing a type-cast at every consumer.
 async function withTenantTx<T>(
   tenantId: TenantSlug,
   tx: ImageAllowlistTx | null | undefined,
-  fn: (tx: TenantTx) => Promise<T>,
+  fn: (tx: import('@/lib/db').TenantTx) => Promise<T>,
 ): Promise<T> {
-  if (tx) {
-    return fn(tx as TenantTx);
-  }
-  return runInTenant(
-    asTenantContext(tenantId as unknown as string),
-    async (innerTx) => fn(innerTx),
-  );
+  // M5 Round 2 fix 2026-05-21: lib helper now accepts `TenantSlug` directly,
+  // no `as unknown as string` cast needed.
+  return withTenantTxOrOpen(tenantId, tx, fn);
 }
 
-/**
- * Surface the underlying PG error code when present (Drizzle wraps in
- * its own error type but the postgres-js cause carries `code` like
- * 42501 (insufficient_privilege / RLS) or 42P01 (undefined_table) for
- * misconfig diagnostics). Used by both add() and remove() catch blocks.
- */
-function describeStorageError(e: unknown): string {
-  const err_ = e as {
-    message?: string;
-    cause?: { code?: string; message?: string };
-  };
-  const detail = err_?.cause?.message ?? err_?.message ?? 'unknown';
-  const code = err_?.cause?.code ? ` [${err_.cause.code}]` : '';
-  return `${detail}${code}`;
-}
+// `describeStorageError` lifted to `@/lib/db-errors` 2026-05-21
+// (review finding simplifier H3). Re-export not needed — direct import
+// at the top of this file.
 
 export function makeDrizzleImageAllowlistRepo(): ImageAllowlistPort {
   return {

@@ -29,7 +29,7 @@ async function signIn(
 ): Promise<void> {
   await page.goto(`/${surface}/sign-in`);
   await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
+  await page.getByRole('textbox', { name: 'Password' }).fill(password);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL((url: URL) => {
     const p = url.pathname;
@@ -40,6 +40,12 @@ async function signIn(
 }
 
 test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
+  // E2E rate-limit fix 2026-05-21: matches template-library-flow.spec.ts
+  // — each test signs in fresh; retries multiply sign-ins and trip the
+  // Upstash IP rate-limit bucket (30/15min). Disable retries so a real
+  // regression fails on first attempt.
+  test.describe.configure({ retries: 0 });
+
   test('admin allowlist editor renders + passes axe scan', async ({ page }) => {
     test.skip(
       !ADMIN_EMAIL || !ADMIN_PASSWORD,
@@ -48,9 +54,14 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
     await signIn(page, 'admin', ADMIN_EMAIL!, ADMIN_PASSWORD!);
     // Relocated 2026-05-20 to centralised-settings IA.
     await page.goto('/admin/settings/broadcasts');
+    // E2E selector fix 2026-05-21: the allowlist title is rendered by
+    // shadcn `<CardTitle>` → `<div data-slot="card-title">`, NOT an
+    // h-element. `getByRole('heading')` would not match. Use the
+    // text+test-id pattern instead. 30s expect-poll covers Turbopack
+    // cold-compile of this route on first request.
     await expect(
-      page.getByRole('heading', { name: /image source allowlist/i }),
-    ).toBeVisible();
+      page.locator('[data-slot="card-title"]', { hasText: /image source allowlist/i }),
+    ).toBeVisible({ timeout: 30_000 });
 
     const a11y = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
@@ -72,9 +83,18 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
     await signIn(page, 'portal', MEMBER_EMAIL!, MEMBER_PASSWORD!);
     await page.goto('/portal/broadcasts/new');
 
-    // The upload button must be discoverable by accessible role+name
+    // E2E behaviour fix 2026-05-21: the upload button is gated behind
+    // `draftId !== null` (POST /api/broadcasts/draft must succeed first
+    // so the inline-image upload route can FK to a real broadcast row).
+    // Before save, the editor renders the `draftRequiredHint` instead
+    // of the button. The test originally pre-dated that gating; assert
+    // the upload UI is DISCOVERABLE — either the button (post-save) OR
+    // the hint (pre-save). Both routes satisfy SC-008 (the surface is
+    // visible to keyboard + SR users).
     await expect(
-      page.getByRole('button', { name: /upload image/i }),
+      page
+        .getByRole('button', { name: /upload image/i })
+        .or(page.getByText(/save this draft first to enable image uploads/i)),
     ).toBeVisible({ timeout: 30_000 });
 
     const a11y = await new AxeBuilder({ page })
@@ -90,15 +110,36 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
     );
     await signIn(page, 'portal', MEMBER_EMAIL!, MEMBER_PASSWORD!);
     await page.goto('/portal/broadcasts/new');
+
+    // E2E flow fix 2026-05-21: the upload button is gated behind
+    // `draftId !== null` — must save a draft first. Fill required
+    // fields (subject + body have validators in compose-form.tsx
+    // SubmitSchema; saveDraft only requires non-empty subject) then
+    // click "Save as draft" + wait for the editor toolbar to expose
+    // the upload button.
+    await page.getByLabel(/^Subject$/).fill('E2E 6MB upload test');
+    await page.getByRole('button', { name: /save.*draft/i }).click();
+
+    // Saving creates the draft via POST /api/broadcasts/draft +
+    // updates `initialDraftId`. The Tiptap editor re-renders +
+    // exposes the inline-image upload button.
+    await expect(
+      page.getByRole('button', { name: /upload image/i }),
+    ).toBeVisible({ timeout: 30_000 });
     await page.getByRole('button', { name: /upload image/i }).click();
+
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles({
       name: 'huge.png',
       mimeType: 'image/png',
       buffer: Buffer.alloc(6 * 1024 * 1024, 0x42),
     });
-    await expect(page.getByRole('alert')).toContainText(/5 mb/i, {
-      timeout: 30_000,
-    });
+    // E2E selector fix 2026-05-21: `getByRole('alert')` matches BOTH the
+    // real error alert AND Next.js's internal `__next-route-announcer__`
+    // (also role=alert + aria-live=assertive). Scope to the main-content
+    // region to exclude the route announcer.
+    await expect(
+      page.locator('#main-content').getByRole('alert'),
+    ).toContainText(/5 mb/i, { timeout: 30_000 });
   });
 });

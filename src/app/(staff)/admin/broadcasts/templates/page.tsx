@@ -58,6 +58,17 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
   const rows: readonly TemplateLibraryRow[] = templates.map((tpl) => ({
     id: tpl.id,
     name: tpl.name,
+    // C1 fix 2026-05-21 (review finding comment-analyzer CRITICAL #1):
+    // server-side truncate of `subject` to ≤60 chars + ellipsis. Avoids
+    // shipping the full subject string (could be ~200 chars per F7 MVP
+    // cap) to the client when the admin only needs an at-a-glance scan.
+    // The client component renders this with `?? '—'` fallback so a
+    // missing/null value degrades gracefully — but the field IS now
+    // populated for every row (truncation produces empty string only
+    // when `tpl.subject` itself is empty, which is impossible under
+    // FR-017 ≥1-char invariant).
+    subjectPreview:
+      tpl.subject.length > 60 ? `${tpl.subject.slice(0, 57)}…` : tpl.subject,
     locale: tpl.locale,
     startedFromCount: tpl.startedFromCount,
     isSeeded: tpl.isSeeded,

@@ -121,7 +121,7 @@ export async function snapshotTemplateToDraft(
   //    member A's draftId and tries to overwrite. RLS only confines
   //    to tenant; per-member ownership is enforced here.
   const ownership = await deps.broadcastsRepo.findOwnedByMember(
-    input.tenantId as string,
+    input.tenantId,
     asMemberId(input.memberId),
     broadcastId,
   );
@@ -233,7 +233,7 @@ export async function snapshotTemplateToDraft(
     try {
       await deps.broadcastsRepo.updateDraftFromTemplate(
         tx,
-        input.tenantId as string,
+        input.tenantId,
         broadcastId,
         {
           subject: substitutedSubject,

@@ -162,8 +162,10 @@
     "pagination": {
       "prev": "ไปหน้าก่อนหน้า",
       "next": "ไปหน้าถัดไป",
-      "morePages": "หน้าเพิ่มเติม"
+      "morePages": "หน้าเพิ่มเติม",
+      "navAriaLabel": "การแบ่งหน้า"
     },
+    "editorLoading": "กำลังโหลดตัวแก้ไข",
     "breadcrumbUI": {
       "label": "เส้นทางนำทาง",
       "more": "เพิ่มเติม"
@@ -1809,6 +1811,7 @@
         },
         "columns": {
           "name": "ชื่อ",
+          "subjectPreview": "หัวข้อ",
           "locale": "ภาษา",
           "startedFrom": "ใช้แล้ว",
           "startedFromAria": "จำนวนฉบับร่างที่เริ่มจากเทมเพลตนี้",
@@ -3277,6 +3280,7 @@
       "creditNotesList": "รายการใบลดหนี้",
       "broadcastsQueue": "คิวตรวจสอบ E-Blast",
       "broadcastTemplates": "คลังเทมเพลต E-Blast",
+      "broadcastImageSettings": "การตั้งค่าแหล่งรูปภาพ E-Blast",
       "renewalsList": "ไทม์ไลน์การต่ออายุสมาชิก",
       "renewalSchedules": "นโยบายตารางการต่ออายุ",
       "escalationTasks": "งานติดตามด่วน",
@@ -3561,6 +3565,7 @@
         "comingSoon": "(เร็ว ๆ นี้)",
         "tierLabel": "รหัสระดับ",
         "editor": {
+          "bracketHint": "คลิกที่ [ข้อความในวงเล็บ] เพื่อแทนที่ด้วยเนื้อหาของคุณ",
           "aria": {
             "toolbar": "แถบเครื่องมือจัดรูปแบบ",
             "bold": "ตัวหนา (Ctrl+B)",

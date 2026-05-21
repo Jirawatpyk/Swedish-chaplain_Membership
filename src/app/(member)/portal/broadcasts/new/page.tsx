@@ -241,7 +241,18 @@ export default async function ComposeBroadcastPage({
           selectedId={selectedTemplateId}
         />
       ) : null}
+      {/*
+        E2E + UX bug fix 2026-05-21: pass `selectedTemplateId` (or
+        'blank') as React key so a `router.push(?template=<id>)`
+        client-side navigation REMOUNTS the form with fresh state.
+        Without the key, React preserves the prior `useState` values
+        for `subject` + `bodyHtml`, ignoring the new prop values from
+        the re-rendered server component. Symptom: member picks a
+        template, URL updates, but Subject stays empty (T172 SLO-F7-001
+        cold-render is correct; the bug is the client-side persist).
+      */}
       <ComposeForm
+        key={selectedTemplateId ?? 'blank'}
         initialQuota={initialQuota}
         imagesEnabled={imagesEnabled}
         {...(initialSubject !== undefined ? { initialSubject } : {})}

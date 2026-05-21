@@ -103,11 +103,20 @@ export function extractImgSources(
   let match: RegExpExecArray | null;
   while ((match = imgRe.exec(stripped)) !== null) {
     const attrs = match[1] ?? '';
-    const srcMatch = /src\s*=\s*"([^"]+)"/i.exec(attrs);
-    if (!srcMatch?.[1]) continue;
-    const altMatch = /alt\s*=\s*"([^"]*)"/i.exec(attrs);
-    const entry: { src: string; alt?: string } = { src: srcMatch[1] };
-    if (altMatch?.[1] !== undefined) entry.alt = altMatch[1];
+    // LOW review fix 2026-05-21 (code-reviewer-full L-1): accept BOTH
+    // single-quoted AND double-quoted src/alt attributes. Sanitised
+    // bodies from DOMPurify always emit double-quotes, but a downstream
+    // consumer that mutates output OR a future sanitiser config flag
+    // could leak single-quoted forms. Defence-in-depth — the allowlist
+    // validator MUST see every `<img src>` regardless of quote style.
+    // Pattern: capture group [1] = double-quoted value, [2] = single-quoted.
+    const srcMatch = /src\s*=\s*(?:"([^"]+)"|'([^']+)')/i.exec(attrs);
+    const src = srcMatch?.[1] ?? srcMatch?.[2];
+    if (!src) continue;
+    const altMatch = /alt\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrs);
+    const alt = altMatch?.[1] ?? altMatch?.[2];
+    const entry: { src: string; alt?: string } = { src };
+    if (alt !== undefined) entry.alt = alt;
     out.push(entry);
   }
   return out;

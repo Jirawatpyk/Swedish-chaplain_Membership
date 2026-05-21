@@ -249,10 +249,11 @@ tests/
 
 ## Complexity Tracking
 
-> 4 deviations from Principles. All justified; rejected simpler alternatives documented.
+> 5 deviations from Principles. All justified; rejected simpler alternatives documented.
 
 | # | Violation | Why Needed | Simpler Alternative Rejected Because |
 |---|-----------|------------|-------------------------------------|
+| **5** | **Domain→Application import inversion at `src/modules/broadcasts/domain/value-objects/image-source-allowlist.ts:27`** (Principle III — Clean Architecture, NON-NEGOTIABLE) | The `Hostname` brand type was first declared in `src/modules/broadcasts/application/ports/image-allowlist-port.ts` during Phase 2 (port-first scaffolding) BEFORE the Phase 4 Domain VO was authored. The Domain VO at `image-source-allowlist.ts:27` `import type { AllowlistEntry, Hostname } from '../../application/ports/image-allowlist-port'` reverses the Clean Arch direction (Domain SHOULD NOT import from Application). The import carries ONLY a type alias (`Hostname = string & { __brand: 'Hostname' }`) with zero framework content — the runtime purity invariant holds. R002 Round 2 staff-review identified this as a 🟡 Warning. | **Block Phase 2 ship until Phase 4 Domain VO lands first.** Rejected because Phase 2 + Phase 4 user stories ship independently per Spec Kit MVP-first sequencing — circular dependency would have blocked BOTH USs. **Duplicate `Hostname` brand in both files.** Rejected because brand-type identity is nominal — two declarations create two incompatible brand types + breaks type-flow through the port boundary. **Inline string at port boundary (no brand).** Rejected because the brand is the load-bearing XSS defence — losing it at the port layer means downstream consumers can pass unbranded strings. **F7.1b remediation**: extract `Hostname` to a new `src/modules/broadcasts/domain/value-objects/branded-types.ts` shared file; both Domain VO + Application port import from there. Tracked as F7.1b backlog item per `retrospective.md § Architectural debt`. |
 | **1** | **New external runtime dependency: ClamAV daemon on Fly.io persistent micro-VM** (Principle X — Simplicity) | US2 requires virus scanning before persisting member-uploaded inline images. Without a virus scanner, F7.1a fan-out (≤50k recipients per US1) means a single malware-bearing image is an existential incident. Clarifications Q2 selected self-hosted ClamAV after explicit rejection of managed alternatives. Audit finding C2 replaced the original muddled "Vercel Function sidecar" answer with a **Fly.io `sin`-region persistent micro-VM** running `clamav/clamav:stable`. Cost ~$2/month (free tier at SweCham scale). Operational surface: 1 `fly.toml` + 1 `Dockerfile` + 1 SLO (`clamav_signature_age_hours <48h`) + 1 runbook. Signature refresh is `freshclam` in-container (no external cron needed). | **Reject inline image uploads entirely** (no virus scanner needed). Rejected because the F7 retrospective stakeholder review named this as the single largest UX complaint; shipping F7.1a without it undermines US2's value proposition. **Bundle `clamscan` binary mode into Vercel Function** rejected: 3-5× slower than daemon mode breaks the FR-013 SLO; 150 MB signature DB doesn't fit Vercel's 250 MB function-size limit. **Managed third-party scanning API** rejected per Q2: per-scan cost + bandwidth surcharge scale adversely; sending member-uploaded content to a third party adds compliance surface. Fly.io persistent VM is the boring, well-documented daemon-shaped choice. |
 | **2** | **Per-batch state machine + 3-retry admin loop** (Principle X — Simplicity) | US1 + Clarifications Q3 selected non-terminal `partially_sent` with explicit admin retry capped at 3 attempts. This introduces 3 new audit event types, a `retrying` transient state, a `manual_retry_count` column, per-batch idempotency keys + advisory locks, AND a per-broadcast `broadcasts-retry:` advisory-lock namespace to serialise concurrent retry attempts (FR-008d per critique E4). | **Terminal `partially_sent` state** (admin recreates broadcast to retry). Rejected because segment-drift between attempts causes duplicate-or-miss sends. The 3-retry cap bounds operator workload + audit-trail size; admins still have the "Accept partial delivery" escape hatch for cases where retries exhaust without resolution. |
 | **3** | **Solo-maintainer review substitute** (Principle IX — ≥2 reviewers default) | F7.1a is built under the same solo-dev posture as F1–F8. No second human reviewer is available. Per Principle IX substitute clause, security-sensitive changes (US2 image upload + scan, F7.1a admin allowlist surface) require the 5-check automated stack. | **Wait for a second maintainer to join the project before shipping F7.1a.** Rejected because F1-F8 precedent has demonstrated the substitute's 5-check stack delivers higher signal:noise than typical human PR reviews. The substitute is reversible. **Concrete substitute checks for F7.1a (5/5)**: (1) ≥3 `/speckit.review` rounds; (2) ≥1 `/speckit.staff-review` with chamber-os-architect + security-threat-modeler + senior-tester agents; (3) Domain 100% line + Application 80% line/branch + 100% branch on security-critical use-cases (validate-image-source-allowlist, scan-inline-image-for-virus, enforce-cross-tenant-isolation); (4) RLS+FORCE policies + CHECK constraints (tenant_id NOT NULL, dispatch_concurrency_cap BETWEEN 1 AND 8, manual_retry_count BETWEEN 0 AND 3, hostname format CHECK, partial unique index on batch idempotency key); (5) post-remediation independent re-review via fresh agent run. Maintainer co-signs the security checklist alongside the staff-review agent. |
@@ -421,4 +422,45 @@ After Phase 1 design completion + Strategy B scope reduction, re-evaluating agai
 
 ---
 
-*Generated by `/speckit.plan` on 2026-05-17; split to F7.1a on 2026-05-18 per critique Strategy B. Original 8-US scope preserved in `f71b-backlog.md`.*
+## Phase 6 Polish Closures (T150-T162) — Checklist Gap Anchors
+
+Phase 6 polish (per `tasks.md` Phase 6 § Checklist-driven polish tasks) closes 13 ❌/⚠️ items identified in the 2026-05-18 manual checklist walkthrough. The closures below anchor each requirement to its source `checklists/*.md` ID and provide the policy text for downstream artefacts (UI tasks, e2e suites, audit gates).
+
+### Constitution Check I — additional invariant (T150, CHK006 closure)
+
+**Cross-member-within-tenant guard invariant (preserved for F7.1b promotion)**: F7.1a admin surfaces (allowlist editor, batch breakdown, retry/accept-partial dialogs) authenticate via `requireAdminContext` which enforces tenant scope but does NOT further partition by member. F7.1a does not expose a route where an admin can act on another member's broadcast outside the legitimate moderation surfaces. This invariant matters at F7.1b promotion time (US3 contact opt-in, US4 attachments) because those surfaces COULD introduce cross-member-within-tenant access patterns (e.g., admin editing another member's per-contact opt-in). Future F7.1b spec MUST re-evaluate this invariant when introducing such surfaces; F7.1a explicitly carries it forward as a Constitution I clause-3 sub-invariant for traceability.
+
+### Constitution Check VI — strengthening on a11y + i18n (T155, T156, T158, T159, T161, T162)
+
+The following requirements extend the WCAG 2.1 AA + i18n posture for new F7.1a surfaces. They are policy statements verified by automated and manual QA at the `/speckit.verify` gate:
+
+- **(T155, CHK004) — Color contrast**: all 11 new F7.1a surfaces MUST achieve ≥4.5:1 contrast for body text and ≥3:1 for large text (WCAG 2.1 SC 1.4.3). Inherits F4 design tokens; verified by axe-core `color-contrast` rule on every e2e spec.
+- **(T156, CHK012 + CHK014) — Focus-management on modal/dialog components**: T053 (retry confirmation), T054 (accept-partial modal) — shadcn `AlertDialog` already provides (a) focus-trap during open, (b) focus-restoration to triggering button on close, (c) universal focus ring via F4 design system tokens. T081 (ClamAV unreachable banner) is non-modal — focus-ring requirement applies to its Dismiss button; focus-trap is N/A.
+- **(T158, CHK019) — Label association on T080 image upload**: the file-picker component MUST associate `<label for>` with the underlying `<input type="file">` element; accessible name MUST come from an i18n key (not a hard-coded string). Icon-only file-picker buttons are forbidden — visible text label OR visually-hidden but SR-discoverable label required.
+- **(T159, CHK028) — Playwright viewport-matrix**: every new F7.1a e2e spec under `tests/e2e/broadcasts/` MUST run at 4 viewports: **320×568** (mobile-min), **768×1024** (tablet), **1280×800** (desktop), **1920×1080** (desktop-wide). Critical interaction paths verified at all 4; full axe-core scan at the canonical 1280×800.
+- **(T161, CHK033) — i18n-keyed aria-label policy**: JSX `aria-*` attributes on user-facing components MUST resolve their string value via `t('namespace.key')` calls — not string literals. Same rule applies to `role`-relative labels (e.g., `aria-labelledby` targets). Enforcement: a future `scripts/check-i18n-coverage.ts --strict-aria` flag (deferred TODO — F7.1b scope) will AST-scan TSX files for violations. F7.1a closes the policy gap; the AST scanner is the enforcement gap and is tracked as a follow-up. Reviewer responsibility for F7.1a ship: manual sweep of the 11 new surfaces during `/speckit.review`.
+- **(T162, CHK037 + CHK038) — axe-core scan threshold + remediation policy**: zero violations on critical surfaces (admin batch breakdown, image upload, template picker); warnings logged and reviewed at Polish phase; **block-merge on `color-contrast` + `label` axe-rule failures only** (other a11y findings logged for tracking but not gate-blocking). Critical-surface scans are pinned in the e2e spec; non-critical surfaces are scanned but pass on warnings.
+
+### Spec FR-013 + SC-008 strengthening (T151, T152, T155)
+
+The substantive policy text lands in `spec.md`:
+- FR-013 now carries the **5-minute ClamAV scan timeout** (verdict=`error` on timeout) per **T151** (CHK020).
+- FR-013 now carries the **pipeline-order invariant** ("Image bytes MUST NOT reach Vercel Blob persistence layer BEFORE scan verdict='clean' is recorded") per **T152** (CHK023).
+- SC-008 now carries the **explicit ≥4.5:1 color contrast** requirement per **T155** (CHK004).
+
+### DPIA addendum (T153, CHK036)
+
+Authored at `specs/014-email-broadcast-advance/dpia-addendum.md` per **T153**. Covers: (a) US2 member-content processing surface (image upload + ClamAV scan as sub-processor), (b) US7 admin-content authoring surface (templates with platform-controlled content + tenant-scoped RLS), (c) GDPR Art. 13 lawful-basis enumeration for the 10 new audit event types, (d) ROPA additions.
+
+### Deferred items (documented in checklists; NOT new F7.1a tasks)
+
+The following gaps from the `checklists/` walkthrough are intentionally deferred:
+- `security CHK030` — consent-withdrawability invariant (F7.1b US3 contact opt-in deferred).
+- `performance CHK006` — Constitution VII budget traceability (docs polish; low priority).
+- `performance CHK018` — template-picker scale fixture (F7.1a low priority — SweCham 131 members < threshold).
+- `performance CHK028` — ClamAV-down policy explicit (implicit via CHK022 banner UX + auto-retry).
+- `a11y CHK035` — text-spacing for TH/SV expansion (inherited from F7 MVP baseline; no F7.1a-specific risk).
+
+---
+
+*Generated by `/speckit.plan` on 2026-05-17; split to F7.1a on 2026-05-18 per critique Strategy B. Original 8-US scope preserved in `f71b-backlog.md`. Phase 6 polish closures appended 2026-05-21 per `tasks.md` T150-T162.*

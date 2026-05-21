@@ -162,8 +162,10 @@
     "pagination": {
       "prev": "Gå till föregående sida",
       "next": "Gå till nästa sida",
-      "morePages": "Fler sidor"
+      "morePages": "Fler sidor",
+      "navAriaLabel": "Sidnavigering"
     },
+    "editorLoading": "Laddar redigerare",
     "breadcrumbUI": {
       "label": "Brödsmulor",
       "more": "Mer"
@@ -1767,9 +1769,9 @@
         "reasonPlaceholder": "Valfri — t.ex. Resend rate-limit kvarstår, medlem informerad separat…",
         "reasonHelp": "Valfri kontext för granskningsspår. Max 500 tecken.",
         "reasonCounter": "{count} / 500",
-        "confirm": "Godkänn partiell",
+        "confirm": "Bekräfta partiell leverans",
         "cancel": "Avbryt",
-        "submitting": "Godkänner…"
+        "submitting": "Bekräftar…"
       },
       "toast": {
         "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
@@ -1809,6 +1811,7 @@
         },
         "columns": {
           "name": "Namn",
+          "subjectPreview": "Ämne",
           "locale": "Språk",
           "startedFrom": "Använd",
           "startedFromAria": "Antal utkast som startats från denna mall",
@@ -3277,6 +3280,7 @@
       "creditNotesList": "Kreditnotalista",
       "broadcastsQueue": "Granskningskö för E-Blast",
       "broadcastTemplates": "Mallbibliotek för E-Blast",
+      "broadcastImageSettings": "Bildkällsinställningar för E-Blast",
       "renewalsList": "Förnyelsepipeline",
       "renewalSchedules": "Förnyelseschemaprinciper",
       "escalationTasks": "Uppföljningsuppgifter",
@@ -3561,6 +3565,7 @@
         "comingSoon": "(kommer snart)",
         "tierLabel": "Nivåkod",
         "editor": {
+          "bracketHint": "Klicka på [text inom hakparenteser] för att ersätta med ditt innehåll.",
           "aria": {
             "toolbar": "Formateringsverktygsfält",
             "bold": "Fet (Ctrl+B)",

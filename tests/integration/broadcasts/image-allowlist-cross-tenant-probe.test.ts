@@ -21,8 +21,12 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, and, inArray } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { tenantImageSourceAllowlist } from '@/modules/broadcasts/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { manageImageAllowlist } from '@/modules/broadcasts/application/use-cases/manage-image-allowlist';
+import { makeManageImageAllowlistDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
 describe('F7.1a image-allowlist cross-tenant probe — REVIEW-GATE BLOCKER (T065)', () => {
@@ -125,18 +129,78 @@ describe('F7.1a image-allowlist cross-tenant probe — REVIEW-GATE BLOCKER (T065
     expect(bRows).toHaveLength(1);
   });
 
-  // PR-review fix TA-M3 — data-model.md § 7 + Constitution Principle I
-  // sub-clause 4 list `broadcast_cross_tenant_probe` audit-emission as
-  // the 4th canonical probe case. The current F7.1a US2 surface
-  // (allowlist CRUD) does not invoke `enforceCrossTenantIsolation` (the
-  // helper that emits this audit) — Phase 3 Cluster B precedent
-  // (T036 pagination probe lines 228-238 expect.fail) defers the
-  // wiring. Marking todo here documents the gap explicitly so a future
-  // audit-wiring commit picks it up rather than the LOW finding
-  // resurfacing in /speckit-review.
-  it.todo(
-    'AUDIT: cross-tenant access attempts emit broadcast_cross_tenant_probe — pending Phase 6 enforceCrossTenantIsolation wiring for allowlist surface',
-  );
+  // T128 + T128b (F7.1a Phase 6) — un-todo'd 2026-05-21 once the
+  // wiring landed in `manage-image-allowlist.ts:147-200` (defensive
+  // probe-emit on `port.remove` returning `not_found`). Data-model § 7
+  // + Constitution Principle I sub-clause 4 mandate a forensic emit
+  // for every cross-tenant probe class — this case captures the
+  // remove-from-foreign-tenant vector (admin under tenant B tries to
+  // remove a hostname they observed in tenant A via OOB channel).
+  //
+  // Drives the use-case end-to-end against live Neon under
+  // runInTenant(tenantB.ctx) so the storage tx scope mirrors the route
+  // handler exactly. RLS+FORCE filters tenant A's row from tenant B's
+  // visibility → port.remove returns not_found → use-case emits
+  // broadcast_cross_tenant_probe defensively.
+  it('AUDIT: tenant B remove probe of tenant A hostname emits broadcast_cross_tenant_probe', async () => {
+    const probeRequestId = `t128-probe-${randomUUID()}`;
+    const actorUserId = randomUUID();
+
+    const result = await runInTenant(tenantB.ctx, async () =>
+      manageImageAllowlist(makeManageImageAllowlistDeps(tenantB.ctx.slug), {
+        // tenantB context = actor's session-resolved tenant
+        tenantId: tenantB.ctx.slug as never,
+        actorUserId,
+        action: 'remove',
+        // A_HOST exists in tenant A but is invisible to tenant B
+        // under RLS — port.remove will return `not_found`.
+        hostname: A_HOST,
+        requestId: probeRequestId,
+      }),
+    );
+
+    // Step 1: result is `not_found` (RLS filtered A_HOST from B's view)
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('not_found');
+    }
+
+    // Step 2: audit row committed — query via schema-owner bypass-RLS.
+    // Filter by requestId (unique per probe) + tenantId; eventType
+    // asserted in JS to dodge Drizzle's narrow enum-inferred type.
+    const probeRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.requestId, probeRequestId),
+          eq(auditLog.tenantId, tenantB.ctx.slug),
+        ),
+      );
+
+    expect(probeRows).toHaveLength(1);
+    const row = probeRows[0];
+    expect(row?.eventType).toBe('broadcast_cross_tenant_probe');
+    expect(row?.actorUserId).toBe(actorUserId);
+    expect(row?.payload).toMatchObject({
+      surface: 'tenant_image_source_allowlist',
+      operation: 'remove',
+      probedHostname: A_HOST,
+      expectedTenantId: tenantB.ctx.slug,
+    });
+
+    // Step 3: tenant A's row is unchanged (defence-in-depth verify)
+    const aRows = await db
+      .select()
+      .from(tenantImageSourceAllowlist)
+      .where(
+        and(
+          eq(tenantImageSourceAllowlist.tenantId, tenantA.ctx.slug),
+          eq(tenantImageSourceAllowlist.hostname, A_HOST),
+        ),
+      );
+    expect(aRows).toHaveLength(1);
+  });
 
   it('INSERT: tenant A cannot INSERT a row with tenantId=tenantB (WITH CHECK rejects)', async () => {
     await expect(async () => {

@@ -5,10 +5,25 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
+  // WCAG 2.1 SC 2.1.1 (Keyboard) + axe-core `scrollable-region-focusable`
+  // closure 2026-05-21 (E2E template-library a11y blocker): when the
+  // table overflows horizontally on narrow viewports, keyboard users
+  // need a way to pan-scroll via arrow keys. `tabIndex={0}` makes the
+  // scrollable container focus-able; once focused, arrow keys natively
+  // pan-scroll the region. `role="region"` + `aria-label` give it a
+  // landmark identity in screen-reader navigation. Operators with
+  // multiple tables on a page SHOULD override `aria-label` per table
+  // (e.g., "Membership plans table") via the prop spread below — this
+  // primitive provides a sensible default so the rule never fails out
+  // of the box. The focus-visible:ring-3 mirrors the F4 form-input
+  // focus token so the keyboard-focus indicator is consistent.
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      tabIndex={0}
+      role="region"
+      aria-label="Data table"
     >
       <table
         data-slot="table"

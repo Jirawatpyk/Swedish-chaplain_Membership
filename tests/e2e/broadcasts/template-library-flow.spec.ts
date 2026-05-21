@@ -18,25 +18,81 @@
  */
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import postgres from 'postgres';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+const DB_URL = process.env.DATABASE_URL;
 
 const skipReason =
   !ADMIN_EMAIL || !ADMIN_PASSWORD || !MEMBER_EMAIL || !MEMBER_PASSWORD;
 
+/**
+ * E2E hygiene helper 2026-05-21: delete any leftover "E2E Test
+ * Template" rows from prior runs so Test #1's row-count assertion is
+ * deterministic. Test #2 creates this template but cannot reliably
+ * delete it after the suite ends. The cleanup runs in `beforeAll` so
+ * Tests #1 + #2 + #3 + #4 share a known-clean starting state.
+ *
+ * Idempotent: no-op when DATABASE_URL is unset (CI without DB cred).
+ */
+async function cleanupE2ETestTemplate(): Promise<void> {
+  if (!DB_URL) return;
+  const sql = postgres(DB_URL, { ssl: 'require', max: 1 });
+  try {
+    await sql`
+      DELETE FROM broadcast_templates
+      WHERE tenant_id = 'swecham'
+        AND name = 'E2E Test Template'
+    `;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 test.describe('F7.1a US7 template library flow @template-library', () => {
   test.skip(skipReason, 'E2E credentials not configured');
+  // E2E rate-limit fix 2026-05-21: each test signs in fresh
+  // (Playwright isolates browser context per test), and the 5 sign-
+  // ins per 15-min Upstash rate-limit bucket is shared across all 4
+  // tests + their retries. With 4 tests × 3 retries = 12 sign-ins
+  // per account per run, the bucket trips mid-suite. Disable retries
+  // for this spec so we hit the bucket at most ONCE per account per
+  // test — comfortably within budget. A real regression now fails on
+  // first attempt instead of hiding behind retries.
+  test.describe.configure({ retries: 0 });
+
+  test.beforeAll(async () => {
+    await cleanupE2ETestTemplate();
+  });
+
+  test.afterAll(async () => {
+    await cleanupE2ETestTemplate();
+  });
 
   test('admin sees 15 starter templates with Starter badge + filter pills', async ({
     page,
   }) => {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
-    await page.getByLabel(/password/i).fill(ADMIN_PASSWORD!);
+    await page.getByRole('textbox', { name: 'Password' }).fill(ADMIN_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
+    // E2E sign-in fix 2026-05-21: WAIT for the post-sign-in redirect
+    // to settle before navigating away. The login API → cookie set →
+    // server redirect is async; `page.goto` before this completes
+    // races the cookie write and lands the next request unauthenticated.
+    // Wait for sign-in to redirect AWAY from /admin/sign-in (catches
+    // both /admin and /admin/<anything-not-sign-in>) — the prior regex
+    // `/\/admin(\/|$)/` matched /admin/sign-in itself so the wait fell
+    // through immediately even on failed sign-in.
+    await page.waitForURL(
+      (url) =>
+        url.pathname.startsWith('/admin') &&
+        !url.pathname.startsWith('/admin/sign-in'),
+      { timeout: 10_000 },
+    );
 
     await page.goto('/admin/broadcasts/templates');
 
@@ -84,6 +140,24 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
   });
 
   test('admin creates new template → appears in list', async ({ page }) => {
+    // E2E sign-in fix 2026-05-21: each Playwright test has a FRESH
+    // browser context — the prior test's auth cookie is gone, so we
+    // must sign in again before hitting an authenticated route.
+    await page.goto('/admin/sign-in');
+    await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
+    await page.getByRole('textbox', { name: 'Password' }).fill(ADMIN_PASSWORD!);
+    await page.getByRole('button', { name: /sign in/i }).click();
+    // Wait for sign-in to redirect AWAY from /admin/sign-in (catches
+    // both /admin and /admin/<anything-not-sign-in>) — the prior regex
+    // `/\/admin(\/|$)/` matched /admin/sign-in itself so the wait fell
+    // through immediately even on failed sign-in.
+    await page.waitForURL(
+      (url) =>
+        url.pathname.startsWith('/admin') &&
+        !url.pathname.startsWith('/admin/sign-in'),
+      { timeout: 10_000 },
+    );
+
     await page.goto('/admin/broadcasts/templates/new');
 
     await page.getByLabel(/^Name$/).fill('E2E Test Template');
@@ -107,8 +181,14 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
   }) => {
     await page.goto('/portal/sign-in');
     await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
+    await page.getByRole('textbox', { name: 'Password' }).fill(MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL(
+      (url) =>
+        url.pathname.startsWith('/portal') &&
+        !url.pathname.startsWith('/portal/sign-in'),
+      { timeout: 10_000 },
+    );
 
     await page.goto('/portal/broadcasts/new');
 
@@ -122,21 +202,48 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
       name: /Start from a template/i,
     });
     await picker.click();
-    await page
-      .getByRole('option', { name: /^Monthly Newsletter$/ })
-      .click();
-    // Starter badge sibling stays visible while popover is open AND
-    // after selection (it sits on the row in both the popover list and
-    // the post-select trigger label).
+
+    // E2E ordering fix 2026-05-21: Starter badge is ONLY rendered
+    // INSIDE the open popover's option list (not on the collapsed
+    // trigger label which shows just the template name). Assert
+    // badge visibility BEFORE clicking the option (popover closes
+    // immediately on selection + navigation, so badge is unreachable
+    // post-nav). Earlier wording in the surrounding comment said the
+    // badge stays visible "after selection" — that is incorrect for
+    // the current template-picker.tsx implementation where the
+    // trigger only renders `{tpl.name}` via `triggerLabel`.
     await expect(page.getByText(/Starter/).first()).toBeVisible();
+
+    // Relax: option accessible name includes the starter-badge
+    // aria-label ("Seeded by the platform") as a sibling span, so the
+    // full accessible name is "Monthly Newsletter Seeded by the
+    // platform". Using \b instead of $ anchor matches just the
+    // template name segment while keeping the test specific.
+    await page
+      .getByRole('option', { name: /^Monthly Newsletter\b/ })
+      .click();
+
+    // E2E timing fix 2026-05-21: selectTemplate calls `router.push`
+    // with `?template=<id>` — wait for the URL to actually carry the
+    // param so the server re-render with the populated subject lands
+    // before the toBeEmpty assertion runs. Without this wait, Subject
+    // is still empty on the prior route render.
+    await page.waitForURL(/\?template=/, { timeout: 10_000 });
 
     // After navigation, the compose form should be pre-populated.
     // SweCham comes from NEXT_PUBLIC_TENANT_NAME fallback (or whatever
     // tenant.display_name resolves to in the staging env).
+    //
+    // E2E assertion fix 2026-05-21: `toBeEmpty()` checks textContent
+    // which is ALWAYS empty for `<input>` elements (input value lives
+    // on the .value property, not in text children). Use `toHaveValue`
+    // with regex matcher so Playwright polls until the controlled
+    // input picks up the substituted subject from the server render.
+    // Generous 10s timeout because Turbopack dev mode cold-compiles
+    // `/portal/broadcasts/new` with the new ?template= param on first
+    // request — production builds are sub-second.
     const subject = page.getByLabel(/^Subject$/);
-    await expect(subject).not.toBeEmpty();
-    const subjectValue = await subject.inputValue();
-    expect(subjectValue).toMatch(/Newsletter/);
+    await expect(subject).toHaveValue(/Newsletter/, { timeout: 10_000 });
 
     // Bracket placeholders survive the substitution literal
     const bodyEditor = page.getByLabel(/^Message$/);
@@ -158,8 +265,14 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     // This test exercises Tab → Space-to-open → ArrowDown → Enter.
     await page.goto('/portal/sign-in');
     await page.getByLabel(/email/i).fill(MEMBER_EMAIL!);
-    await page.getByLabel(/password/i).fill(MEMBER_PASSWORD!);
+    await page.getByRole('textbox', { name: 'Password' }).fill(MEMBER_PASSWORD!);
     await page.getByRole('button', { name: /sign in/i }).click();
+    await page.waitForURL(
+      (url) =>
+        url.pathname.startsWith('/portal') &&
+        !url.pathname.startsWith('/portal/sign-in'),
+      { timeout: 10_000 },
+    );
 
     await page.goto('/portal/broadcasts/new');
 
@@ -188,15 +301,21 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     // the key sequence against the DOM state instead of relying on
     // raw key-press timing.
     await page.keyboard.press('ArrowDown');
-    await expect(page.locator('[data-cmdk-item][data-selected="true"]')).toBeVisible();
+    await expect(page.locator('[cmdk-item][data-selected="true"]')).toBeVisible();
     await page.keyboard.press('ArrowDown');
-    await expect(page.locator('[data-cmdk-item][data-selected="true"]')).toBeVisible();
+    await expect(page.locator('[cmdk-item][data-selected="true"]')).toBeVisible();
     await page.keyboard.press('Enter');
 
     // URL navigated to ?template= — the page server-renders with
     // pre-populated subject. Don't assert specific option here (depends
     // on seed ordering); just confirm the URL carries the param.
     await page.waitForURL(/\?template=/);
-    await expect(page.getByLabel(/^Subject$/)).not.toBeEmpty();
+    // E2E assertion fix 2026-05-21 (same root cause as test #3):
+    // `<input>` value is on .value, not textContent — toBeEmpty always
+    // passes/fails on textContent. Use toHaveValue with non-empty
+    // pattern + 10s poll for Turbopack cold-compile.
+    await expect(page.getByLabel(/^Subject$/)).not.toHaveValue('', {
+      timeout: 10_000,
+    });
   });
 });

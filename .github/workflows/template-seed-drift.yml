@@ -9,7 +9,7 @@
 #      (the human-edited source-of-truth content)
 #   2. scripts/generate-template-seed-migration.ts
 #      (the generator + parser logic)
-#   3. drizzle/migrations/0134_f71a_default_template_seed.sql
+#   3. drizzle/migrations/0168_f71a_default_template_seed.sql
 #      (the committed output that must match what the generator
 #       emits at HEAD)
 #
@@ -27,7 +27,7 @@ on:
     paths:
       - 'specs/014-email-broadcast-advance/starter-templates.md'
       - 'scripts/generate-template-seed-migration.ts'
-      - 'drizzle/migrations/0134_f71a_default_template_seed.sql'
+      - 'drizzle/migrations/0168_f71a_default_template_seed.sql'
   # Allow manual re-runs from the Actions UI without opening a PR.
   workflow_dispatch: {}
 
