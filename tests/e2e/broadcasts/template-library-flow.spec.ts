@@ -16,8 +16,9 @@
  * for member picker (T115 MVP ships native <select>); bracket
  * placeholder Tiptap node-view (T116) + stale-draft banner (T117).
  */
-import { expect, test } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from '../fixtures';
+// F7.1b B7 closure 2026-05-21 — uses centralized axe-scan helper.
+import { runAxeScan } from '../helpers/axe-scan';
 import postgres from 'postgres';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -132,11 +133,8 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     const dataRows = page.locator('tbody tr');
     await expect(dataRows).toHaveCount(0);
 
-    // a11y baseline scan (WCAG 2.1 AA)
-    const a11yResults = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa'])
-      .analyze();
-    expect(a11yResults.violations).toEqual([]);
+    // a11y baseline scan (WCAG 2.1 AA) — uses shared helper.
+    await runAxeScan(page, test.info());
   });
 
   test('admin creates new template → appears in list', async ({ page }) => {
@@ -249,11 +247,8 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
     const bodyEditor = page.getByLabel(/^Message$/);
     await expect(bodyEditor).toContainText('[');
 
-    // a11y scan on compose surface with picker
-    const a11yResults = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa'])
-      .analyze();
-    expect(a11yResults.violations).toEqual([]);
+    // a11y scan on compose surface with picker — shared helper.
+    await runAxeScan(page, test.info());
   });
 
   test('R3.5 M-16: member picks template via KEYBOARD-ONLY (WCAG 2.1.1)', async ({

@@ -116,28 +116,20 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/application/use-cases/upload-inline-image",
   "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
   "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/feature-flags",
-  // /api/cron/broadcasts/dispatch-batches/route.ts (14) — F7.1a US1 cron
+  // /api/cron/broadcasts/dispatch-batches/route.ts (4 remaining post F7.1b B2)
+  // — 10 entries closed 2026-05-21 by moving composition-root deps through
+  // the broadcasts barrel. Remaining 4 are Domain-internal imports that
+  // are NOT through the barrel intentionally (Domain types/policies are
+  // direct-import-pure; `dispatch-broadcast-batch` Application use-case
+  // imports its OWN Deps interface which is internal to that file).
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/broadcast",
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/policies/batch-concurrency-policy",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/application/services/batch-dispatcher",
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/members-bridge",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/event-attendees-stub",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/audit-adapter",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/noop-advisory-lock",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
-  // /api/cron/broadcasts/split-large-broadcasts/route.ts (6) — F7.1a US1 cron
+  // /api/cron/broadcasts/split-large-broadcasts/route.ts (2 remaining post F7.1b B2)
+  // — 4 entries closed 2026-05-21. Remaining 2 are Domain-internal.
   "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
   "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/broadcast",
-  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo",
-  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo",
-  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/members-bridge",
-  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/infrastructure/event-attendees-stub",
   // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",

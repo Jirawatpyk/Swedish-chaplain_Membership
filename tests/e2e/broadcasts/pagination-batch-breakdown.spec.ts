@@ -30,7 +30,8 @@
  *   - Retry AlertDialog has aria-modal + focus-trap + Escape closes
  *   - reduced-motion media query honored
  */
-import { AxeBuilder } from '@axe-core/playwright';
+// F7.1b B7 closure 2026-05-21 — uses centralized axe-scan helper.
+import { runAxeScan } from '../helpers/axe-scan';
 import { expect, test } from '../fixtures';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -86,14 +87,10 @@ test.describe('@a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T
     // Status column rendered (rows depend on seed; sanity-check ≥1).
     await expect(page.getByRole('row').first()).toBeVisible();
 
-    // axe-core scan — 0 serious/critical violations on the expanded view.
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-      .analyze();
-    const seriousOrCritical = results.violations.filter(
-      (v) => v.impact === 'serious' || v.impact === 'critical',
-    );
-    expect(seriousOrCritical).toEqual([]);
+    // axe-core scan — 0 serious/critical violations on the expanded
+    // view. Moderate violations are attached as test report warnings
+    // via the shared helper.
+    await runAxeScan(page, test.info());
   });
 
   test('retry button → AlertDialog with budget-remaining + focus-trap + Esc closes', async ({
@@ -181,7 +178,11 @@ test.describe('@a11y F7.1a US1 — admin broadcast detail per-batch breakdown (T
       (el) => window.getComputedStyle(el).animationDuration,
     );
     // Tailwind's `motion-reduce:transition-none` zeroes the duration.
-    expect(['0s', '0ms', '']).toContain(animationDuration);
+    // F7.1b B8 closure 2026-05-21 — tightened from accept-empty to strict
+    // numeric-zero match. Empty string meant the `prefers-reduced-motion`
+    // media query wasn't applied at all (no animation-duration set), a
+    // silent false-positive. Now we require an explicit `0s` or `0ms`.
+    expect(animationDuration).toMatch(/^0(s|ms)$/);
 
     await context.close();
   });

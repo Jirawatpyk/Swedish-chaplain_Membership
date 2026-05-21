@@ -56,14 +56,23 @@ import type { TenantSlug } from '@/modules/tenants';
 export type ImageAllowlistTx = unknown;
 
 /**
- * Hostname Domain branded type. The full Domain definition lands in
- * Phase 4 T069; this port declares the type-name alias to avoid a
- * circular Phase 2 ↔ Phase 4 ordering constraint. The string-shape is
- * RFC-1035 lowercase ASCII, ≥1 dot, no wildcards. Validation lives in
- * `asHostname` Domain VO (Phase 4 T069). Migration 0164's CHECK
- * constraint provides DB-layer enforcement.
+ * Hostname Domain branded type.
+ *
+ * F7.1b B1 closure 2026-05-21 (closes Plan.md Complexity Tracking #5):
+ * the canonical declaration now lives in
+ * `src/modules/broadcasts/domain/value-objects/branded-types.ts`
+ * (Domain layer). This port preserves a `export type {Hostname}`
+ * re-export for back-compat with existing imports — both
+ * `import { Hostname } from '../ports/image-allowlist-port'` and
+ * `import { Hostname } from '../../domain/value-objects/branded-types'`
+ * resolve to the same nominal brand.
+ *
+ * The original Phase 2 ↔ Phase 4 ordering rationale that forced the
+ * brand into the port is no longer needed — the Domain VO module
+ * exists and is the proper owner.
  */
-export type Hostname = string & { readonly __brand: 'Hostname' };
+import type { Hostname } from '../../domain/value-objects/branded-types';
+export type { Hostname };
 
 export interface AllowlistEntry {
   readonly hostname: Hostname;

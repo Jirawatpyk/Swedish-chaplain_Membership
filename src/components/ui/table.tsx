@@ -23,6 +23,11 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
       className="relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
       tabIndex={0}
       role="region"
+      // shadcn primitive fallback for WCAG 2.1 SC 2.1.1
+      // (scrollable-region-focusable). Operators SHOULD override with
+      // an i18n-keyed `aria-label` on `<Table aria-label={t(...)}>` —
+      // shadcn merges via spread.
+      // strict-aria-ignore-next-line
       aria-label="Data table"
     >
       <table

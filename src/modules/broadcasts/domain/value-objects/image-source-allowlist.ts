@@ -9,10 +9,10 @@
  * boundary so Application + Infrastructure layers cannot accept a
  * raw `string` as a hostname.
  *
- * The `Hostname` brand was declared in the Phase-2 port
- * (`image-allowlist-port.ts:44`) to avoid a circular Phase-2 ↔ Phase-4
- * ordering constraint. This file is the canonical Domain source for
- * the brand's runtime validator (`asHostname`).
+ * F7.1b B1 closure 2026-05-21 (closes Plan.md Complexity Tracking #5):
+ * the `Hostname` brand now lives at `./branded-types.ts` (Domain). This
+ * file owns the runtime validator (`asHostname`) + membership semantics
+ * (`validateHostname`).
  *
  * Membership semantics for `validateHostname` (FR-010 critique
  * E11 round 2): exact-match only. Subdomains do NOT inherit a parent
@@ -21,10 +21,8 @@
  * escalation.
  */
 import { err, ok, type Result } from '@/lib/result';
-import type {
-  AllowlistEntry,
-  Hostname,
-} from '../../application/ports/image-allowlist-port';
+import type { Hostname } from './branded-types';
+import type { AllowlistEntry } from '../../application/ports/image-allowlist-port';
 
 export type { Hostname };
 

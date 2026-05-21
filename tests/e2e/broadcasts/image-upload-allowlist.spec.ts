@@ -10,7 +10,8 @@
  * runner uses `pnpm test:e2e --workers=1`. Otherwise the user's
  * machine hangs.
  */
-import AxeBuilder from '@axe-core/playwright';
+// F7.1b B7 closure 2026-05-21 — uses centralized axe-scan helper.
+import { runAxeScan } from '../helpers/axe-scan';
 import { type Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 
@@ -63,10 +64,7 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
       page.locator('[data-slot="card-title"]', { hasText: /image source allowlist/i }),
     ).toBeVisible({ timeout: 30_000 });
 
-    const a11y = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
-      .analyze();
-    expect(a11y.violations).toEqual([]);
+    await runAxeScan(page, test.info());
 
     // Default entries should be present with disabled Remove buttons
     const removeBtns = page.getByRole('button', { name: /remove/i });
@@ -97,10 +95,7 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
         .or(page.getByText(/save this draft first to enable image uploads/i)),
     ).toBeVisible({ timeout: 30_000 });
 
-    const a11y = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
-      .analyze();
-    expect(a11y.violations).toEqual([]);
+    await runAxeScan(page, test.info());
   });
 
   test('upload of 6MB file shows size-cap error inline', async ({ page }) => {

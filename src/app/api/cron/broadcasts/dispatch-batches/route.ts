@@ -40,33 +40,38 @@ import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
+// F7.1b B2 closure 2026-05-21 — composition-root dependencies now
+// imported through the broadcasts barrel (closes ~12 of the 40
+// `broadcasts-barrel.test.ts` KNOWN_BACKLOG entries for this route).
 import {
   asBroadcastId,
-  resolveSegmentRecipients,
-  tenantDefaultLocaleFor,
-  isF71aUs1Enabled,
+  dispatchAllPendingBatches,
+  eventAttendeesStub,
   f71aUs1DisabledReason,
+  f7AuditAdapter,
+  isF71aUs1Enabled,
+  makeDrizzleBatchManifestsRepo,
+  makeDrizzleBroadcastsRepo,
+  makeDrizzleMarketingUnsubscribesRepo,
+  membersBridge,
+  noOpAdvisoryLock,
+  resendBroadcastsGateway,
+  resolveSegmentRecipients,
+  systemClock,
+  tenantDefaultLocaleFor,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
-// F7.1a Phase 3 Cluster B + 3C — composition imports (Application + Infra)
+// Domain policy import — Domain types are barrel-pure but
+// `DEFAULT_CONCURRENCY_CAP` is a const not re-exported there yet
+// (it's a Domain-internal constant). Keep direct import.
 import { DEFAULT_CONCURRENCY_CAP } from '@/modules/broadcasts/domain/policies/batch-concurrency-policy';
-import { dispatchAllPendingBatches } from '@/modules/broadcasts/application/services/batch-dispatcher';
 import type {
   BroadcastContent,
   DispatchBroadcastBatchDeps,
 } from '@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch';
-import { makeDrizzleBatchManifestsRepo } from '@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo';
-import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
-import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
-import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
-import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
-import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
-import { noOpAdvisoryLock } from '@/modules/broadcasts/infrastructure/noop-advisory-lock';
-import { systemClock } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

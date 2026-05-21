@@ -434,6 +434,21 @@ export { makeTickMemoizedMembersBridge } from './infrastructure/tick-memoized-me
 // `member_acknowledged_broadcasts_terms` event AFTER the F3 use-case
 // completes, outside its port boundary (Round-4 CRIT-B).
 export { f7AuditAdapter } from './infrastructure/audit-adapter';
+
+// F7.1b B2 closure 2026-05-21 — Infrastructure singletons + factories
+// exposed at the barrel so the 2 broadcasts cron routes
+// (`/api/cron/broadcasts/dispatch-batches` + `split-large-broadcasts`)
+// can compose their deps without 12+ deep imports from
+// `@/modules/broadcasts/infrastructure/...`. Closes ~28 entries from
+// the `broadcasts-barrel.test.ts` KNOWN_BACKLOG (Round 2 staff-review
+// W3 architectural warning).
+export { makeDrizzleBatchManifestsRepo } from './infrastructure/drizzle-batch-manifests-repo';
+export { makeDrizzleBroadcastsRepo } from './infrastructure/db/drizzle-broadcasts-repo';
+export { makeDrizzleMarketingUnsubscribesRepo } from './infrastructure/db/drizzle-marketing-unsubscribes-repo';
+export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
+export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
+export { noOpAdvisoryLock } from './infrastructure/noop-advisory-lock';
+export { dispatchAllPendingBatches } from './application/services/batch-dispatcher';
 export type {
   MemberHaltSummary,
   MemberRecipient,

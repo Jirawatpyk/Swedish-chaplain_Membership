@@ -67,20 +67,37 @@ Plus cross-cutting: 5 OTel metrics + 4 alerts + 3 runbooks + DPIA addendum + 17 
 
 ## Architectural debt — F7.1b backlog
 
-**B1 — Extract `Hostname` brand to `domain/value-objects/branded-types.ts`** (closes Complexity Tracking #5)
+**STATUS UPDATE 2026-05-21** — Round 7 closure pass executed against
+this backlog. ✅ = closed in-session; 🔵 = deferred (documented rationale);
+✗ = moot (dropped from scope per exploration).
+
+| Item | Status | Notes |
+|---|---|---|
+| B1 | ✅ closed | `Hostname` brand extracted to `domain/value-objects/branded-types.ts`. Plan.md CT #5 marked CLOSED. |
+| B2 | ✅ closed (14/40) | 14 deep imports moved through barrel; `broadcasts-barrel.test.ts` KNOWN_BACKLOG shrunk accordingly. |
+| B3 | ✅ closed | `AuditPortInvariantError` tagged class added with back-compat prefix fallback. |
+| B4 | 🔵 deferred | Live-Blob test needs staging Vercel Blob token + cleanup automation. Pre-flag-flip staging exercise. |
+| B5 | ✅ closed | `ADVISORY_LOCK_NOT_ACQUIRED` branch test added to `retry-failed-batches.test.ts` (7/7 GREEN). |
+| B6 | ✅ closed | `page.on('pageerror')` fixture added to `fixtures.ts`; 3 F7.1a broadcasts specs migrated. |
+| B7 | ✅ partial-closed | Shared `tests/e2e/helpers/axe-scan.ts` helper created + 3 F7.1a specs migrated. Remaining 17+ specs are F7.2 a11y-hardening sweep. |
+| B8 | ✅ closed | Reduced-motion assertion tightened from accept-empty → strict `/^0(s\|ms)$/`. |
+| B9 | ✗ moot | `autoRetryFailedBatch` does not use advisory locks in production (retries are idempotent via key rotation). Closed-by-analysis; no test change needed. |
+| B10 | 🔵 deferred | Disposable Neon branch is a CI infra change (~4h) — platform-wide initiative beyond F7.1a/b scope. |
+
+**B1 ✅ CLOSED 2026-05-21 — Extract `Hostname` brand to `domain/value-objects/branded-types.ts`** (closes Complexity Tracking #5)
 - Source: R002 Round 2 staff-review architectural warning
 - Effort: ~15 min (move brand declaration; update 2 imports)
 - Risk: low — pure type-only refactor; no runtime impact
 - Owner: F7.1b kickoff
 
-**B2 — Refactor 2 cron routes to import via broadcasts barrel** (closes 14 of 40 KNOWN_BACKLOG items)
+**B2 ✅ CLOSED 2026-05-21 — Refactor 2 cron routes to import via broadcasts barrel** (closes 14 of 40 KNOWN_BACKLOG items)
 - Source: R003 Round 2 staff-review architectural warning
 - Routes affected: `src/app/api/cron/broadcasts/dispatch-batches/route.ts` (14 deep imports) + `src/app/api/cron/broadcasts/split-large-broadcasts/route.ts` (similar pattern)
 - Effort: ~1 hour (barrel-export needed symbols; update imports; verify architecture test still GREEN)
 - Risk: low — adapter signatures unchanged
 - Owner: F7.1b kickoff
 
-**B3 — Promote `f7AuditAdapter:` invariant-throw string-prefix to tagged `AuditPortInvariantError` class** (S2 polish suggestion)
+**B3 ✅ CLOSED 2026-05-21 — Promote `f7AuditAdapter:` invariant-throw string-prefix to tagged `AuditPortInvariantError` class** (S2 polish suggestion)
 - Source: R8.5 LOW-1 polish note + Round 2 staff-review S2
 - Current: `isAdapterInvariantError(e)` matches `e.message.startsWith('f7AuditAdapter:')` — fragile to message text refactors
 - Future: tagged class with `instanceof AuditPortInvariantError` check
@@ -95,33 +112,38 @@ Plus cross-cutting: 5 OTel metrics + 4 alerts + 3 runbooks + DPIA addendum + 17 
 - Risk: medium — needs careful Blob fixture cleanup to avoid pollution
 - Owner: F7.1b kickoff OR pre-flag-flip staging exercise
 
-**B5 — Consolidate retry advisory-lock branch coverage** (S3 polish suggestion)
+**B5 ✅ CLOSED 2026-05-21 — Consolidate retry advisory-lock branch coverage** (S3 polish suggestion)
 - Source: senior-tester S3
 - Current: `retry-failed-batches.test.ts` covers `acquired: true` path; `concurrent-retry-race.test.ts` covers `acquired: false` path
 - Future: single test file pinning both branches in isolation (the split is intentional but creates a "read together" cognitive burden)
 - Effort: ~20 min
 - Owner: F7.1b kickoff
 
-**B6 — Add `page.on('pageerror', ...)` console capture to E2E config** (S4 polish suggestion)
+**B6 ✅ CLOSED 2026-05-21 — Add `page.on('pageerror', ...)` console capture to E2E config** (S4 polish suggestion)
 - Source: senior-tester S4 — project-wide gap, not F7.1a-specific
 - Current: E2E specs miss client-side React hydration errors + unhandled rejections
 - Future: `playwright.config.ts` collects pageerrors + fails on any
 - Effort: ~30 min
 - Owner: project-wide (not F7.1a deliverable)
 
-**B7 — Tighten axe-core E2E filter from `serious/critical` to all impact levels** (S5 polish suggestion)
+**B7 ✅ PARTIAL CLOSED 2026-05-21 (F7.1a 3 specs migrated; remaining 17+ → F7.2 a11y sweep) — Shared axe-scan helper + moderate violations as warnings** (S5 polish suggestion)
 - Source: senior-tester S5
 - Current: E2E axe scans filter `impact === 'serious' || 'critical'`
 - Future: include `moderate` violations as warnings (fail-on-new pattern)
 - Owner: F7.2 a11y hardening
 
-**B8 — Tighten reduced-motion E2E assertion** (S6 polish suggestion)
+**B8 ✅ CLOSED 2026-05-21 — Tighten reduced-motion E2E assertion** (S6 polish suggestion)
 - Source: senior-tester S6
 - Current: `expect(['0s', '0ms', '']).toContain(animationDuration)` accepts empty string
 - Future: `expect(animationDuration).toBe('0s')` — empty string means media query not applied
 - Owner: F7.1b polish
 
-**B9 — Add advisory-lock branch coverage to `auto-retry-failed-batches.test.ts`** (S7 polish suggestion)
+**B9 ✗ MOOT — DROPPED 2026-05-21 (closed-by-analysis) — Add advisory-lock branch coverage to `auto-retry-failed-batches.test.ts`** (S7 polish suggestion)
+- Per F7.1b exploration: production `autoRetryFailedBatch` use-case
+  does NOT use advisory locks. Retries are inherently idempotent via
+  idempotency-key rotation (`-autoretry-N` suffix). The stub-deps
+  factory accurately reflects production deps. Adding lock branch
+  coverage would test code that doesn't exist.
 - Source: senior-tester S7
 - Current: stub deps have no `advisoryLock` key
 - Future: if production auto-retry ever requires a lock, test must catch the regression

@@ -27,7 +27,10 @@
 import { test as base, type Locator, type Page } from '@playwright/test';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-export const test = base.extend<{ autoClearRateLimits: void }>({
+export const test = base.extend<{
+  autoClearRateLimits: void;
+  page: Page;
+}>({
   // `auto: true` makes this fixture run for every test in any
   // spec that imports `test` from this file. The implementation
   // calls `clearE2ERateLimits()` before the test, hands control
@@ -39,6 +42,53 @@ export const test = base.extend<{ autoClearRateLimits: void }>({
     },
     { auto: true },
   ],
+
+  /**
+   * F7.1b B6 closure 2026-05-21 — capture client-side JavaScript
+   * runtime errors. The default Playwright `page` fixture silently
+   * ignores `pageerror` events (unhandled exceptions thrown in the
+   * browser context), which means React hydration errors, unhandled
+   * promise rejections, and other client bugs slip past every spec
+   * unless the test happens to fail another assertion as a side
+   * effect. This wrapper attaches a listener, accumulates errors,
+   * surfaces them via `testInfo.attach`, AND fails the test when
+   * any pageerror occurred — turning silent client breakage into a
+   * loud, attributable failure.
+   *
+   * Opt-out via env: `E2E_PAGEERROR_IGNORE=true` keeps capture +
+   * attachment but skips the auto-fail. Use sparingly (e.g. tests
+   * that intentionally trigger client errors as part of UX flows
+   * — Sentry-style debugging, malformed-input tests).
+   */
+  // The Playwright fixture callback parameter is conventionally named
+  // `use` but we use `runTest` here to avoid the `react-hooks/rules-of-hooks`
+  // lint rule (which mistakes Playwright's `use(value)` for React's
+  // `use()` hook).
+  page: async ({ page }, runTest, testInfo) => {
+    const errors: Error[] = [];
+    const handler = (error: Error): void => {
+      errors.push(error);
+    };
+    page.on('pageerror', handler);
+    try {
+      await runTest(page);
+    } finally {
+      page.off('pageerror', handler);
+      if (errors.length > 0) {
+        await testInfo.attach('page-errors.txt', {
+          body: errors
+            .map((e, i) => `[${i + 1}] ${e.name}: ${e.message}\n${e.stack ?? '(no stack)'}`)
+            .join('\n---\n'),
+          contentType: 'text/plain',
+        });
+        if (process.env.E2E_PAGEERROR_IGNORE !== 'true') {
+          throw new Error(
+            `Captured ${errors.length} client-side pageerror(s); first: ${errors[0]!.message}`,
+          );
+        }
+      }
+    }
+  },
 });
 
 export { expect } from '@playwright/test';

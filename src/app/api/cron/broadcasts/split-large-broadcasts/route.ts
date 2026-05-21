@@ -37,23 +37,25 @@ import { logger } from '@/lib/logger';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
+// F7.1b B2 closure 2026-05-21 — consolidated barrel imports
+// (closes ~5 of the 40 `broadcasts-barrel.test.ts` KNOWN_BACKLOG
+// entries for this route).
 import {
   asBroadcastId,
+  BroadcastConcurrentMutationError,
+  eventAttendeesStub,
+  f71aUs1DisabledReason,
+  isF71aUs1Enabled,
+  makeDrizzleBroadcastsRepo,
+  makeDrizzleMarketingUnsubscribesRepo,
+  makeSplitBroadcastIntoBatchesDeps,
+  membersBridge,
   resolveSegmentRecipients,
   splitBroadcastIntoBatches,
-  makeSplitBroadcastIntoBatchesDeps,
-  isF71aUs1Enabled,
-  f71aUs1DisabledReason,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
 import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
-
-import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
-import { BroadcastConcurrentMutationError } from '@/modules/broadcasts';
-import { makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-marketing-unsubscribes-repo';
-import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
-import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

@@ -21,6 +21,7 @@
  */
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { AuditPortInvariantError } from '../ports/audit-port';
 import type {
   AuditPort,
   AuditEmitInput,
@@ -36,14 +37,17 @@ import type {
  * test failure / 5xx, not be silently swallowed by the fail-soft
  * envelope.
  *
- * Identification: the adapter's invariant throws all begin with the
- * literal prefix `f7AuditAdapter:`. Matching by message prefix is
- * fragile (string equality) but matches the only signal we have —
- * the throw is a bare `Error` instance, not a tagged subclass. If a
- * future refactor migrates the adapter to a tagged `AuditPortInvariantError`
- * class, swap the prefix check for `e instanceof AuditPortInvariantError`.
+ * Identification: F7.1b B3 closure 2026-05-21 — the adapter now
+ * throws a tagged `AuditPortInvariantError` class. The check uses
+ * `instanceof` (primary) AND retains the legacy `f7AuditAdapter:`
+ * prefix match (back-compat — covers any in-flight error paths that
+ * still throw bare `Error` instances during the migration window).
+ * Both checks SHOULD return identical results post-migration; the
+ * prefix fallback can be deleted in F7.2 once all consumers have
+ * adopted the tagged class.
  */
 function isAdapterInvariantError(e: unknown): boolean {
+  if (e instanceof AuditPortInvariantError) return true;
   return (
     e instanceof Error &&
     e.message.startsWith('f7AuditAdapter:')

@@ -16,6 +16,7 @@
  */
 import { sql } from 'drizzle-orm';
 import {
+  AuditPortInvariantError,
   f7RetentionFor,
   type AuditEmitInput,
   type AuditPort,
@@ -33,9 +34,13 @@ export const f7AuditAdapter: AuditPort = {
     // wrong RLS slice. Fail fast at the adapter so the bug surfaces at
     // the call site, not in a downstream RLS audit log scan.
     if (txUnknown !== null && event.tenantId === null) {
-      throw new Error(
-        `f7AuditAdapter: mutation tx requires non-null tenantId ` +
-          `(eventType=${event.eventType}). Use tx=null for system audits.`,
+      // F7.1b B3 closure 2026-05-21: use tagged class for instanceof
+      // discrimination; keep the same message body so log scans + the
+      // legacy `f7AuditAdapter:`-prefix back-compat check continue to
+      // work during the migration window.
+      throw new AuditPortInvariantError(
+        event.eventType,
+        `mutation tx requires non-null tenantId. Use tx=null for system audits.`,
       );
     }
 

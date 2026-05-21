@@ -166,9 +166,7 @@ async function main(): Promise<void> {
       )
     `;
 
-    // eslint-disable-next-line no-console
     console.log(`E2E_PARTIAL_BROADCAST_ID=${broadcastId}`);
-    // eslint-disable-next-line no-console
     console.log(
       `[seed-partial-broadcast] OK — tenant=${TENANT_ID} broadcast=${broadcastId} ` +
         `status=partially_sent batches=2 (sent + failed)`,

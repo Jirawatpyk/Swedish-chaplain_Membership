@@ -56,7 +56,17 @@ type BroadcastFixture = {
   failedBatchIds: string[];
 };
 
-function makeStubDeps(broadcast: BroadcastFixture): {
+/**
+ * F7.1b B5 closure 2026-05-21 — accepts an optional `advisoryLockAcquired`
+ * override so the `{acquired: false}` branch can be tested HERE without
+ * the heavyweight `concurrent-retry-race.test.ts` integration scaffold.
+ * Default true preserves the original semantics for all pre-existing
+ * tests.
+ */
+function makeStubDeps(
+  broadcast: BroadcastFixture,
+  options?: { readonly advisoryLockAcquired?: boolean },
+): {
   emits: Array<{ eventType: string }>;
   manualRetryCountAfter: () => number;
   statusUpdates: Array<{ batchId: string; update: { status: string; retryCount?: number; idempotencyKey?: string } }>;
@@ -125,7 +135,8 @@ function makeStubDeps(broadcast: BroadcastFixture): {
       },
       advisoryLock: {
         async acquire(_tx: unknown, _lockKey: string) {
-          return { acquired: true };
+          // F7.1b B5 closure 2026-05-21: option overrides default true.
+          return { acquired: options?.advisoryLockAcquired ?? true };
         },
       },
       clock: { now: () => new Date('2026-06-15T05:00:00Z') },
@@ -276,5 +287,39 @@ describe('retryFailedBatches contract (T033)', () => {
       expect(u.update.idempotencyKey).toMatch(/-manualretry-1$/);
       expect(u.update.idempotencyKey).not.toMatch(/-autoretry-/);
     }
+  });
+
+  it('F7.1b B5: advisoryLock.acquire returns {acquired:false} → ALREADY_RETRYING_IN_PROGRESS (no mutations)', async () => {
+    // Pins the second advisory-lock branch in the SAME contract file
+    // (was previously only covered in `concurrent-retry-race.test.ts`).
+    // When a concurrent retry holds the per-broadcast advisory lock,
+    // this caller MUST short-circuit BEFORE incrementing manual_retry_count
+    // or emitting retry_initiated — the concurrent admin owns the
+    // increment + audit emission.
+    const { retryFailedBatches } = await importRetryUseCase();
+    const { deps, emits, manualRetryCountAfter, statusUpdates } = makeStubDeps(
+      {
+        status: 'partially_sent',
+        manualRetryCount: 0,
+        failedBatchIds: ['batch-3'],
+      },
+      { advisoryLockAcquired: false },
+    );
+
+    const r = await retryFailedBatches(deps as never, {
+      tenantId: 'swecham' as never,
+      actorUserId: '00000000-0000-0000-0000-000000000001',
+      broadcastId: '11111111-1111-1111-1111-111111111111' as never,
+      requestId: 'req-b5-lock-not-acquired',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('ALREADY_RETRYING_IN_PROGRESS');
+
+    // No mutations: increment NOT applied, NO batch status updates,
+    // NO audit emissions (the concurrent retry owns those side effects).
+    expect(manualRetryCountAfter()).toBe(0);
+    expect(statusUpdates).toHaveLength(0);
+    expect(emits).toHaveLength(0);
   });
 });

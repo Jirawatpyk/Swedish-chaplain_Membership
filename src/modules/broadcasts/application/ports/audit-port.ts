@@ -348,6 +348,31 @@ export interface F7AuditEvent {
   readonly payload: Record<string, unknown>;
 }
 
+/**
+ * Tagged error class for AuditPort adapter invariant violations.
+ *
+ * F7.1b B3 closure 2026-05-21 — replaces the previous fragile string-
+ * prefix matching (`message.startsWith('f7AuditAdapter:')`) with a
+ * proper `instanceof AuditPortInvariantError` discriminator. The
+ * adapter throws this when a programmer-bug is detected (e.g. a
+ * mutation tx passed with null tenantId) — distinct from transient
+ * storage failures that should be swallowed by `safeAuditEmit` +
+ * metered via `broadcastsMetrics.auditEmitFailed`.
+ *
+ * Callers (in `safeAuditEmit` / `safeAuditEmitTyped`) re-throw on
+ * `instanceof AuditPortInvariantError` so the bug surfaces as a 5xx at
+ * the route boundary instead of silently dropping the audit row.
+ */
+export class AuditPortInvariantError extends Error {
+  constructor(
+    public readonly eventType: string,
+    detail: string,
+  ) {
+    super(`AuditPortInvariantError(${eventType}): ${detail}`);
+    this.name = 'AuditPortInvariantError';
+  }
+}
+
 export interface AuditEmitInput extends F7AuditEvent {
   /**
    * Tenant slug. `null` is permitted ONLY for pre-tenant audit paths
