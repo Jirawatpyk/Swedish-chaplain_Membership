@@ -296,6 +296,25 @@ export const broadcasts = pgTable(
       sql`${table.manualRetryCount} BETWEEN 0 AND 3`,
     ),
 
+    // R8.4 (R7 silent-failure-LOW-2 defense-in-depth) — template-
+    // provenance XOR invariant enforced at the DB layer. Pre-R8.4 the
+    // invariant was application-layer only (Drizzle mapper at
+    // `deriveTemplateProvenance` returned null + logger.error for
+    // half-populated rows). Out-of-band SQL writes / failed migrations
+    // / future bulk-update scripts could leave the row with exactly
+    // one of the two columns populated. R8.4 converts mapper-level
+    // silent null-degradation into a Postgres 23514 check_violation
+    // at WRITE time, eliminating the corruption-on-read class entirely.
+    //
+    // Migration 0179 backfills any existing corrupt rows (NULL-out the
+    // half-populated half) before applying the constraint so the
+    // ALTER doesn't fail on legacy data.
+    check(
+      'broadcasts_template_provenance_xor',
+      sql`(started_from_template_id IS NULL AND template_name_snapshot IS NULL)
+       OR (started_from_template_id IS NOT NULL AND template_name_snapshot IS NOT NULL)`,
+    ),
+
     // Indexes
     index('broadcasts_tenant_status_member_idx').on(
       table.tenantId,
