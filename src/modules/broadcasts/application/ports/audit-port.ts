@@ -387,9 +387,8 @@ export interface AuditPort {
   emit(tx: unknown, event: AuditEmitInput): Promise<void>;
   /**
    * R4.3 M-15 — typed emit variant. The `payload` field is constrained
-   * by `F7AuditPayloadFor<E>` (the per-event payload shape from
-   * `F7AuditPayloadShapes`) so the compiler catches missing or
-   * misshapen fields at the call site.
+   * by `F7AuditPayloadShapes[E]` (the per-event payload shape) so the
+   * compiler catches missing or misshapen fields at the call site.
    *
    * R6.2 H1 — REQUIRED on the port. The R4.3 M-15 optional marker
    * caused TypeScript to lose narrowing at every call site that fell
@@ -398,11 +397,21 @@ export interface AuditPort {
    * to `Record<string, unknown>`). Every adapter MUST implement it;
    * the production `f7AuditAdapter` provides a structural pass-through
    * to `emit`, and test fixtures declare both methods (typically the
-   * same `vi.fn()` so behaviour mirrors). Legacy untyped events still
-   * flow through `emit`; new emit sites SHOULD prefer `emitTyped` for
-   * compile-time payload narrowing.
+   * same `vi.fn()` so behaviour mirrors).
+   *
+   * R6.7 M12 — generic constraint tightened from `F7AuditEventType`
+   * (all 58 events) to `keyof F7AuditPayloadShapes` (12 typed events).
+   * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
+   * 'broadcast_drafted', payload: { whatever } })` and the payload
+   * silently fell back to `Record<string, unknown>` via the
+   * `F7AuditPayloadFor<E>` mapped-type's `: Record<string, unknown>`
+   * arm — no compile-time narrowing benefit. Now the constraint
+   * forces a deliberate choice: untyped events MUST go through
+   * `emit`; only events with a declared `F7AuditPayloadShapes` entry
+   * are eligible for `emitTyped`. Adding a new event to the typed
+   * map immediately makes it available to `emitTyped`.
    */
-  emitTyped<E extends F7AuditEventType>(
+  emitTyped<E extends keyof F7AuditPayloadShapes>(
     tx: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void>;
@@ -410,14 +419,18 @@ export interface AuditPort {
 
 /**
  * Typed counterpart of `AuditEmitInput`. The discriminant
- * `eventType: E` narrows the payload shape via
- * `F7AuditPayloadFor<E>`.
+ * `eventType: E` narrows the payload shape via `F7AuditPayloadShapes[E]`.
+ *
+ * R6.7 M12 — generic constraint mirrors `AuditPort.emitTyped<E>`:
+ * `keyof F7AuditPayloadShapes` (NOT `F7AuditEventType`) so the typed
+ * input shape only admits events whose payload is structurally
+ * declared.
  */
-export interface TypedAuditEmitInput<E extends F7AuditEventType> {
+export interface TypedAuditEmitInput<E extends keyof F7AuditPayloadShapes> {
   readonly eventType: E;
   readonly actorUserId: string;
   readonly summary: string;
-  readonly payload: F7AuditPayloadFor<E>;
+  readonly payload: F7AuditPayloadShapes[E];
   readonly tenantId: string | null;
   readonly requestId: string | null;
 }

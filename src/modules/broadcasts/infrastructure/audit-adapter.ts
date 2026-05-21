@@ -19,7 +19,7 @@ import {
   f7RetentionFor,
   type AuditEmitInput,
   type AuditPort,
-  type F7AuditEventType,
+  type F7AuditPayloadShapes,
   type TypedAuditEmitInput,
 } from '../application/ports/audit-port';
 import { db, type TenantTx } from '@/lib/db';
@@ -70,7 +70,7 @@ export const f7AuditAdapter: AuditPort = {
    * 2 production call sites use `deps.audit.emitTyped(tx, event)`
    * which preserves the receiver binding; no destructuring exists.
    */
-  async emitTyped<E extends F7AuditEventType>(
+  async emitTyped<E extends keyof F7AuditPayloadShapes>(
     txUnknown: unknown,
     event: TypedAuditEmitInput<E>,
   ): Promise<void> {
