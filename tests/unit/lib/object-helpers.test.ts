@@ -7,7 +7,7 @@
  * the strip path only — present-key + falsy + empty-input + prototype-
  * inheritance cases were uncovered. This test locks them in.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { omitUndefined } from '@/lib/object-helpers';
 
 describe('omitUndefined', () => {
@@ -69,18 +69,29 @@ describe('omitUndefined', () => {
   });
 
   it('return-type narrowing: present keys are typed as Exclude<T[K], undefined>', () => {
-    // Compile-time assertion via assignment. If the return type still
-    // included `undefined` for present keys, this would TS-error.
+    // R8.3 M-7 — use vitest's `expectTypeOf` for a TRUE compile-time
+    // type assertion. The prior R6.3 M-6 test only verified runtime
+    // (`typeof out.kept === 'string'`), which is a much weaker contract
+    // than the comment claimed — it would pass even if the return
+    // type still included `undefined` for present keys. `expectTypeOf`
+    // is checked at typecheck time and fails the build if the type
+    // contract drifts.
     const out = omitUndefined({
       kept: 'hello' as string | undefined,
       stripped: undefined as string | undefined,
     });
-    // `out.kept` is typed `string | undefined` (the `?` optional makes
-    // it potentially absent), but the VALUE-type at index access is
-    // `Exclude<string | undefined, undefined>` = `string`. Verify via
-    // runtime + structural check.
+    // `out.kept` is typed `string | undefined` because the OPTIONAL
+    // `?` on the result key means the property may be absent. But the
+    // VALUE type at present-key access is `string`, not `string |
+    // undefined`. This expectTypeOf locks the optional-key + narrowed-
+    // value contract.
+    expectTypeOf(out.kept).toEqualTypeOf<string | undefined>();
+    // And the inner Exclude narrowing: `out.kept` if present is
+    // `Exclude<string | undefined, undefined> = string`. Test the
+    // "present" path via NonNullable.
+    expectTypeOf<NonNullable<typeof out.kept>>().toEqualTypeOf<string>();
+    // Runtime check kept as a sanity sentinel.
     if (out.kept !== undefined) {
-      // `string` here, NOT `string | undefined`
       expect(typeof out.kept).toBe('string');
     }
   });

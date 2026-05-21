@@ -83,21 +83,23 @@ export async function deleteBroadcastTemplate(
       // benign branch is hit when a delete returns 404; cross-tenant
       // probes go to the audit log via path (a), but this branch has
       // historically been silent.
-      // R6.4 M-3 — guard against Drizzle driver returning `deletedAt`
-      // as `Date | string` depending on driver settings. The `!== null`
-      // branch above ensures non-null but does NOT prove it's a Date.
-      // Crashing here would convert the idempotent-no-op return into
-      // a 500 internal_error and bypass the documented path-(b)
-      // contract.
+      // R8.2 M-3 — `existing.deletedAt` is typed `Date | null` on the
+      // Domain `BroadcastTemplate` port shape. The Drizzle schema at
+      // `infrastructure/schema.ts:555` declares the column as
+      // `timestamp({ withTimezone: true })` which defaults to
+      // `mode: 'date'` — runtime returns Date instances. The `!== null`
+      // guard above narrows to `Date`; `.toISOString()` is safe.
+      //
+      // If a future schema migration switches to `mode: 'string'`, fix
+      // at the adapter boundary (broadcasts/infrastructure/db/) so
+      // every consumer sees the documented Date shape — NOT defensive
+      // guards in every use-case.
       logger.info(
         {
           tenantId: input.tenantId,
           templateId: input.templateId,
           actorUserId: input.actorUserId,
-          deletedAt:
-            existing.deletedAt instanceof Date
-              ? existing.deletedAt.toISOString()
-              : String(existing.deletedAt),
+          deletedAt: existing.deletedAt.toISOString(),
           requestId: input.requestId,
         },
         'broadcasts.template.delete_idempotent_noop',

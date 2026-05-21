@@ -59,8 +59,8 @@ export const f7AuditAdapter: AuditPort = {
   /**
    * R4.3 M-15 — typed counterpart of `emit`. At runtime the two paths
    * are indistinguishable; the only difference is the call-site type
-   * narrowing (payload constrained by `F7AuditPayloadFor<E>`). Forward
-   * the typed input through the wide-payload INSERT.
+   * narrowing (payload constrained by `F7AuditPayloadShapes[E]`).
+   * Forward the typed input through the wide-payload INSERT.
    *
    * R6.2 M-2 — dispatch via `this.emit(...)` instead of the module-
    * level binding `f7AuditAdapter.emit(...)`. The dynamic dispatch

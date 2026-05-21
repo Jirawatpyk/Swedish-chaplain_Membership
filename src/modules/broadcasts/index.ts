@@ -122,7 +122,8 @@ export {
   isF7AuditEventType,
   type F7AuditEvent,
   type F7AuditEventType,
-  type F7AuditPayloadFor,
+  // R8.1 M-2 — `F7AuditPayloadFor<E>` dropped; consumers use
+  // `F7AuditPayloadShapes[E]` directly (or `TypedAuditEmitInput<E>`).
   type F7AuditPayloadShapes,
 } from './application/ports/audit-port';
 

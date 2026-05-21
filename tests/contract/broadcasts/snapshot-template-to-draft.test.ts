@@ -199,9 +199,12 @@ const deps = makeDeps({ template: null });
     // no mutations to co-commit. R6.4 swapped the R3.2 H-2 in-tx
     // `audit.emitTyped(tx, ...)` for `safeAuditEmit(null, ...)` so
     // audit storage hiccups can't roll the empty tx → convert HTTP
-    // 410 → 500. safeAuditEmit calls `audit.emit` (NOT `emitTyped`),
-    // hence the assertion swap below.
-    expect(deps.audit.emit).toHaveBeenCalledWith(
+    // 410 → 500.
+    //
+    // R8.1 M-1 — upgraded to `safeAuditEmitTyped(null, ...)` which
+    // routes through `audit.emitTyped` (NOT `audit.emit`). Restores
+    // typed-payload narrowing symmetry with the success branch.
+    expect(deps.audit.emitTyped).toHaveBeenCalledWith(
       null,
       expect.objectContaining({
         eventType: 'broadcast_template_snapshot_refused_deleted',
@@ -218,19 +221,21 @@ const deps = makeDeps({ template: null });
         .updateDraftFromTemplate,
     ).not.toHaveBeenCalled();
     // Only the refusal audit fires — no other audit events.
-    expect(deps.audit.emit).toHaveBeenCalledTimes(1);
-    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(1);
+    expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
   it('R6.4 M-1: refused-deleted + audit storage failure → still returns template_soft_deleted (NOT 500)', async () => {
     // Audit-storage failure on the refused-deleted path MUST be
-    // swallowed by safeAuditEmit — the use-case still returns the
+    // swallowed by safeAuditEmitTyped — the use-case still returns the
     // soft-deleted error (HTTP 410) without 5xx. Forensic record is
     // lost (best-effort) but the user-visible status is preserved.
+    // R8.1 M-1 — assertion now rejects `emitTyped` (post-typed-helper
+    // migration).
     const SOFT_DELETED_AT = new Date('2026-05-19T10:00:00Z');
     const tpl = makeTemplate({ id: TEMPLATE_ID, deletedAt: SOFT_DELETED_AT });
     const deps = makeDeps({ template: tpl });
-    (deps.audit.emit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('audit storage down'),
     );
     const r = await snapshotTemplateToDraft(deps, {
@@ -437,14 +442,22 @@ const deps = makeDeps({ template: null });
     // `invocationCallOrder` to every mock invocation across the test;
     // mutation order < audit order proves the success audit fires
     // AFTER mutations succeed, not before.
+    //
+    // R8.3 M-6 — use `Math.max(...invocationCallOrder)` instead of
+    // `[0]`. If a future refactor adds retry-on-`BroadcastConcurrentMutationError`
+    // semantics, `updateDraftFromTemplate` may be called twice; we
+    // need the LAST successful mutation to precede the audit. Plus
+    // anchor "no retry today" via `toHaveBeenCalledTimes(1)` so a
+    // future contributor adding silent retry surfaces a test failure.
     const updateMock = (
       deps.broadcastsRepo as unknown as {
         updateDraftFromTemplate: ReturnType<typeof vi.fn>;
       }
     ).updateDraftFromTemplate;
     const emitTypedMock = deps.audit.emitTyped as ReturnType<typeof vi.fn>;
-    expect(updateMock.mock.invocationCallOrder[0]).toBeLessThan(
-      emitTypedMock.mock.invocationCallOrder[0]!,
+    expect(updateMock).toHaveBeenCalledTimes(1);
+    expect(Math.max(...updateMock.mock.invocationCallOrder)).toBeLessThan(
+      Math.min(...emitTypedMock.mock.invocationCallOrder),
     );
     // emit called with tx-token (mock withTx passes null as tx) +
     // template_snapshotted event + payload includes templateId,

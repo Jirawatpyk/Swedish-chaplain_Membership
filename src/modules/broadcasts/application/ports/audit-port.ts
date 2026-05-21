@@ -227,8 +227,8 @@ export function isF7AuditEventType(
  * test-first principle).
  *
  * If a new event needs typed-payload enforcement, add it to this map
- * AND a `F7AuditPayloadFor<E>` derivation in the typed-emit helper
- * (`emitTyped` below).
+ * and the `keyof F7AuditPayloadShapes` constraint on `emitTyped<E>`
+ * (below) automatically admits the new event.
  */
 export interface F7AuditPayloadShapes {
   readonly broadcast_submitted: {
@@ -320,15 +320,14 @@ export interface F7AuditPayloadShapes {
   };
 }
 
-/**
- * Mapped type — `F7AuditPayloadFor<'broadcast_submitted'>` resolves to
- * the per-event payload shape, defaulting to the wide
- * `Record<string, unknown>` for events not yet in `F7AuditPayloadShapes`.
- */
-export type F7AuditPayloadFor<E extends F7AuditEventType> =
-  E extends keyof F7AuditPayloadShapes
-    ? F7AuditPayloadShapes[E]
-    : Record<string, unknown>;
+// R8.1 M-2 — the `F7AuditPayloadFor<E>` mapped type (Round 5 type-
+// design) was retired here. Post-R6.7, `emitTyped<E>` constrains
+// `E extends keyof F7AuditPayloadShapes`, so the mapped type's
+// `: Record<string, unknown>` fallback arm became dead code (no
+// caller could trigger it). The remaining typed call sites use
+// `F7AuditPayloadShapes[E]` directly via `TypedAuditEmitInput<E>`.
+// Untyped legacy emit sites continue to use `AuditEmitInput.payload`
+// (wide `Record<string, unknown>`) below.
 
 /**
  * F7 audit event payload contract. F7 emit sites populate `payload`
@@ -336,11 +335,10 @@ export type F7AuditPayloadFor<E extends F7AuditEventType> =
  * `broadcast_submitted` carries `broadcastId`, `segmentType`,
  * `estimatedRecipientCount`, etc.).
  *
- * The structural payload contract is `F7AuditPayloadShapes` /
- * `F7AuditPayloadFor<E>` above (Round 5 type-design). The port keeps
- * the wide `Record<string, unknown>` payload field for back-compat
- * with the ~50 untyped emit sites; new emit sites SHOULD migrate to
- * the typed helper once a per-event entry is added to
+ * The structural payload contract is `F7AuditPayloadShapes`. The port
+ * keeps the wide `Record<string, unknown>` payload field for back-
+ * compat with the ~50 untyped emit sites; new emit sites SHOULD use
+ * `emitTyped<E>` once a per-event entry is added to
  * `F7AuditPayloadShapes`.
  */
 export interface F7AuditEvent {
@@ -403,13 +401,12 @@ export interface AuditPort {
    * (all 58 events) to `keyof F7AuditPayloadShapes` (12 typed events).
    * Pre-R6.7 a call site could pass `emitTyped(tx, { eventType:
    * 'broadcast_drafted', payload: { whatever } })` and the payload
-   * silently fell back to `Record<string, unknown>` via the
-   * `F7AuditPayloadFor<E>` mapped-type's `: Record<string, unknown>`
-   * arm — no compile-time narrowing benefit. Now the constraint
-   * forces a deliberate choice: untyped events MUST go through
-   * `emit`; only events with a declared `F7AuditPayloadShapes` entry
-   * are eligible for `emitTyped`. Adding a new event to the typed
-   * map immediately makes it available to `emitTyped`.
+   * silently fell back to `Record<string, unknown>` via a now-retired
+   * `F7AuditPayloadFor<E>` mapped-type (R8.1 M-2 dropped). Now the
+   * constraint forces a deliberate choice: untyped events MUST go
+   * through `emit`; only events with a declared `F7AuditPayloadShapes`
+   * entry are eligible for `emitTyped`. Adding a new event to the
+   * typed map immediately makes it available to `emitTyped`.
    */
   emitTyped<E extends keyof F7AuditPayloadShapes>(
     tx: unknown,

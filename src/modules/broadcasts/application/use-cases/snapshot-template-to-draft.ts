@@ -55,7 +55,7 @@ import {
 import type { TenantDisplayNamePort } from '../ports/tenant-display-name-port';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
-import { safeAuditEmit } from './_safe-audit-emit';
+import { safeAuditEmit, safeAuditEmitTyped } from './_safe-audit-emit';
 import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import { asMemberId } from '@/modules/members';
 import type { TenantSlug } from '@/modules/tenants';
@@ -169,15 +169,19 @@ export async function snapshotTemplateToDraft(
       // so SIEM count filters don't conflate refusals with successes.
       //
       // R6.4 M-1 — refused-deleted is a TERMINAL READ-ONLY outcome
-      // with NO mutations to co-commit. Use `safeAuditEmit(null, ...)`
+      // with NO mutations to co-commit. Use `safeAuditEmitTyped(null, ...)`
       // so an audit-storage hiccup does NOT roll back the (empty) tx
       // and convert the user-visible HTTP 410 → 500. R3.2 H-2's prior
       // `audit.emit(tx, ...)` choice presumed atomicity-with-mutation,
       // but no mutations run on this branch — the forensic record
       // survives best-effort and the 410 status remains correct.
-      // safeAuditEmit accepts the wide AuditEmitInput shape (typed
-      // payload is structurally a subtype of Record<string, unknown>).
-      await safeAuditEmit(deps.audit, null, {
+      //
+      // R8.1 M-1 — upgraded from `safeAuditEmit` (wide payload) to
+      // `safeAuditEmitTyped<E>` (narrow payload). Restores the
+      // compile-time payload narrowing the success branch (line 320)
+      // already enjoys via `emitTyped`. Symmetric type contract across
+      // both audit-of-refusal + audit-of-success paths.
+      await safeAuditEmitTyped(deps.audit, null, {
         eventType: 'broadcast_template_snapshot_refused_deleted',
         actorUserId: input.actorUserId,
         tenantId: input.tenantId,

@@ -20,7 +20,12 @@
  * Pure Application logic — no framework imports beyond logger.
  */
 import { logger } from '@/lib/logger';
-import type { AuditPort, AuditEmitInput } from '../ports/audit-port';
+import type {
+  AuditPort,
+  AuditEmitInput,
+  F7AuditPayloadShapes,
+  TypedAuditEmitInput,
+} from '../ports/audit-port';
 
 export async function safeAuditEmit(
   audit: AuditPort,
@@ -44,5 +49,45 @@ export async function safeAuditEmit(
     // preserved. The security rejection is the load-bearing effect
     // for the user; the audit row loss is captured in logger + SIEM
     // can alert on `broadcasts.audit.emit_failed` rate.
+  }
+}
+
+/**
+ * R8.1 M-1 — typed counterpart of `safeAuditEmit`. Same fail-soft
+ * envelope but the `payload` field is compile-time narrowed via
+ * `F7AuditPayloadShapes[E]` (mirrors `AuditPort.emitTyped<E>` from R6.2 H1
+ * + R6.7 M-12).
+ *
+ * Use this when the audit event is in `F7AuditPayloadShapes` AND the
+ * call site is a rejection / read-only terminal where audit-storage
+ * hiccups must NOT bubble (e.g., the snapshot-template-to-draft
+ * refused-deleted branch).
+ *
+ * Forwards to `audit.emitTyped` to preserve the typed-emit ROUTING
+ * (in case a future adapter wires emit + emitTyped to different
+ * downstream pipelines, e.g., SIEM vs OTel). Today `emitTyped` is a
+ * structural pass-through to `emit`, so behaviour is identical to
+ * `safeAuditEmit` — but the type narrowing is preserved.
+ */
+export async function safeAuditEmitTyped<
+  E extends keyof F7AuditPayloadShapes,
+>(
+  audit: AuditPort,
+  tx: unknown,
+  event: TypedAuditEmitInput<E>,
+): Promise<void> {
+  try {
+    await audit.emitTyped(tx, event);
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        eventType: event.eventType,
+        tenantId: event.tenantId,
+        actorUserId: event.actorUserId,
+        requestId: event.requestId,
+      },
+      'broadcasts.audit.emit_failed',
+    );
   }
 }
