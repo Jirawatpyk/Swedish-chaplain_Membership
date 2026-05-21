@@ -60,14 +60,19 @@ describe('R4.3 M-13 / R6.3 M-7 — already-soft-deleted template integration', (
   });
 
   afterAll(async () => {
+    // R8.6 L-1 (R7 senior-tester) — drop the auditLog DELETE.
+    // The `audit_log` table carries an append-only trigger
+    // (constitution-mandated immutability per Principle VIII +
+    // tests/integration/helpers/test-tenant.ts L206-209 comment).
+    // DELETE attempts are blocked + raise noise in CI logs without
+    // actually cleaning anything. Tenant slug uniqueness via
+    // `createTwoTestTenants` already isolates this run's audit
+    // rows from other runs; tenant teardown handles them.
     await db
       .delete(broadcastTemplates)
       .where(
         inArray(broadcastTemplates.tenantId, [tenant.ctx.slug]),
       );
-    await db
-      .delete(auditLog)
-      .where(eq(auditLog.tenantId, tenant.ctx.slug));
   });
 
   it('deleteBroadcastTemplate on soft-deleted row → not_found + NO new audit + softDelete NOT called', async () => {

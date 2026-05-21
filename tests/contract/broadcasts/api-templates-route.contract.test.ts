@@ -135,13 +135,58 @@ describe('GET /api/broadcasts/templates — R6.3 H-4 bilingual envelope contract
       makeRequest('http://localhost/api/broadcasts/templates?locale=en'),
     );
     expect(res.status).toBe(200);
+    // R8.6 L-2 (R7 senior-tester) — lock the FULL 200-path response
+    // shape so a future refactor that wraps the body (e.g.,
+    // `{data: {...}}`) or strips fields (name / locale / updatedAt)
+    // fails the contract.
     const body = (await res.json()) as {
-      templates: ReadonlyArray<{ id: string; name: string }>;
+      templates: ReadonlyArray<{
+        id: string;
+        name: string;
+        subject: string;
+        locale: 'en' | 'th' | 'sv';
+        startedFromCount: number;
+        isSeeded: boolean;
+        updatedAt: string;
+      }>;
     };
     expect(body.templates).toHaveLength(1);
-    expect(body.templates[0]?.id).toBe('tpl-1');
+    expect(body.templates[0]).toEqual({
+      id: 'tpl-1',
+      name: 'Test Template',
+      subject: 'Subject',
+      locale: 'en',
+      startedFromCount: 0,
+      isSeeded: false,
+      updatedAt: '2026-05-01T00:00:00.000Z',
+    });
     expect(res.headers.get('X-Correlation-Id')).toMatch(
       /^[0-9a-f]{8}-/i,
     );
+    expect(res.headers.get('Cache-Control')).toBe('no-store, private');
+  });
+
+  it('R8.6 L-10 (R7 senior-tester): feature-flag OFF → HTTP 503 + correct envelope', async () => {
+    // Locks the dark-launch invariant. R7 senior-tester L-10 flagged
+    // that the H-4 envelope test mocked `isF71aUs7EnabledMock` ON for
+    // all 3 prior cases; a refactor that stripped the feature-flag
+    // gate would have slipped past the contract.
+    isF71aUs7EnabledMock.mockReturnValue(false);
+    f71aUs7DisabledReasonMock.mockReturnValue('FEATURE_F71A_BROADCAST_ADVANCED');
+    getCurrentSessionMock.mockResolvedValue({
+      user: { id: 'usr-1' },
+    });
+    const { GET } = await import('@/app/api/broadcasts/templates/route');
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as {
+      error: string;
+      reason: string;
+    };
+    expect(body.error).toBe('feature_disabled');
+    expect(body.reason).toBe('FEATURE_F71A_BROADCAST_ADVANCED');
+    // listBroadcastTemplates MUST NOT be invoked when the flag is off
+    // (early-return guarantees the use-case + DB stay untouched).
+    expect(listBroadcastTemplatesMock).not.toHaveBeenCalled();
   });
 });
