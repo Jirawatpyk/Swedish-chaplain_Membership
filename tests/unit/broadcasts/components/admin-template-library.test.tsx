@@ -145,6 +145,14 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     // `vi.useFakeTimers()` call in the local `finally` block below;
     // the global `afterEach` only clears mock call history via
     // `vi.clearAllMocks()`, which does NOT toggle the timer mode.
+    //
+    // R6.8 (R5 senior-tester L-3 close) — the try/finally pattern is
+    // safe against `it.skip(...)`: if a future contributor `.skip`s
+    // this test, the WHOLE function body (including
+    // `vi.useRealTimers()`) is never executed, so global fake timers
+    // remain intact. No need to refactor to a nested-`describe` +
+    // `beforeEach`/`afterEach` pair — that adds boilerplate for the
+    // single test in this file that needs real timers.
     vi.useRealTimers();
     try {
       renderLibrary();
