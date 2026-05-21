@@ -212,12 +212,16 @@ export async function manageImageAllowlist(
     }
 
     // 2026-05-22 (post-/code-review borderline #2): thread `tx` so the
-    // `after` snapshot read joins the atomicity boundary. Without `tx`
-    // the adapter would open a nested `runInTenant` (SAVEPOINT) +
-    // potentially read a NOT-YET-COMMITTED state from a concurrent
-    // admin's interleaving mutation, producing a stale `afterCount` in
-    // the audit payload. With `tx`, the read sees the just-applied
-    // mutation on the same connection.
+    // `after` snapshot read joins the SAME tx as the just-applied
+    // add/remove mutation. Without `tx` the adapter opens a nested
+    // `runInTenant` which (per the R4-H1 comment above) postgres-js maps
+    // to a SAVEPOINT on the SAME connection — so it would still see this
+    // tx's own mutation (no dirty-read of other sessions; Postgres
+    // READ COMMITTED forbids that). The benefit of threading `tx` is
+    // therefore NOT stale-read prevention — it is (a) avoiding the
+    // redundant SAVEPOINT + `SET LOCAL ROLE`/`app.current_tenant`
+    // round-trip on every list-and-audit, and (b) keeping before+after
+    // reads in the same atomicity boundary as the mutation + audit emit.
     const after = await deps.port.findByTenantId(input.tenantId, tx);
 
     await deps.audit.emit(tx, {
