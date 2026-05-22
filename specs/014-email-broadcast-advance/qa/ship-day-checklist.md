@@ -20,17 +20,25 @@ fly auth login
 # Provision app (one-time per region)
 fly launch --copy-config --name clamav-swecham --region sin --no-deploy
 
-# NOTE (2026-05-22): CLAMAV_SHARED_SECRET was REMOVED 2026-05-19 per
-# /speckit.superb.critique — the daemon is reached over Fly.io's private
-# network (6PN), not an env-var shared secret. No `fly secrets set` step
-# is needed. See src/lib/env.ts ("CLAMAV_SHARED_SECRET removed").
+# Option D (2026-05-22): clamd sits behind a public HTTPS scan-wrapper.
+# Set the bearer secret (≥32 bytes) — store the SAME value for Vercel A.2.
+# PowerShell (no openssl): generate via .NET —
+#   $b = New-Object byte[] 48
+#   ([System.Security.Cryptography.RNGCryptoServiceProvider]::new()).GetBytes($b)
+#   $secret = [Convert]::ToBase64String($b)
+fly secrets set "CLAMAV_SCAN_SECRET=$secret" -a clamav-swecham
 
-# Deploy
+# Allocate a PUBLIC address so the Fly edge can serve HTTPS (IPv6 + free
+# shared IPv4). Without this the wrapper is unreachable from Vercel.
+fly ips allocate-v6 -a clamav-swecham
+fly ips allocate-v4 --shared -a clamav-swecham
+
+# Deploy (rebuilds — Dockerfile installs Node + the wrapper)
 fly deploy -a clamav-swecham
 
 # Verify
 fly status -a clamav-swecham                  # expect: state=started, CHECKS "1 total, 1 passing"
-fly logs -a clamav-swecham --since=2m         # expect: "socket found, clamd started." + health passing
+fly logs -a clamav-swecham --since=2m         # expect: "socket found, clamd started." + scan-server listening + health passing
 ```
 
 **MEMORY FLOOR (2026-05-22 incident)**: the first deploy used
@@ -49,18 +57,20 @@ fly machine update <machine-id> --vm-memory 2048 -a clamav-swecham
 ships with the `clamav/clamav:stable` image, so `clamd` starts on the
 bundled signatures; `main.cvd` refresh resumes after cool-down.
 
-**Local smoke-test** (laptop is NOT on Fly 6PN — tunnel first):
+**Smoke-test (Option D — public HTTPS, NO tunnel needed)**: set in
+`.env.local` (or Vercel preview env) then run the probe. Because it hits
+the public endpoint, this doubles as the Vercel→Fly reachability proof
+(C.3) — the laptop and a Vercel function use the identical transport.
 ```bash
-# Terminal 1 — open a local tunnel to the Fly machine:
-fly proxy 3310:3310 -a clamav-swecham
-# Terminal 2 — point .env.local at the tunnel + run the probe:
-#   CLAMAV_HOST=localhost  CLAMAV_PORT=3310
-pnpm verify:clamav         # expect: ping OK → EICAR detected → clean OK → p95<500ms → exit 0
+#   CLAMAV_SCAN_URL=https://clamav-swecham.fly.dev/scan
+#   CLAMAV_SCAN_SECRET=<same value as the fly secret above>
+pnpm verify:clamav   # expect: healthz OK → EICAR detected → clean OK → p95<500ms → exit 0
 ```
 
 **Exit criteria**: `fly status` shows `state=started` AND CHECKS
 `1 passing` AND logs show `socket found, clamd started.` AND
-`pnpm verify:clamav` (via `fly proxy`) reports `all probes passed`.
+`pnpm verify:clamav` against the **public** `https://clamav-swecham.fly.dev/scan`
+reports `all probes passed`. (VERIFIED 2026-05-22: p95=199.6ms.)
 
 ### A.2 — Vercel env vars (T140)
 
@@ -68,17 +78,19 @@ Set production env vars via `vercel env add` OR Vercel Dashboard → Project →
 
 | Variable | Value | Scope |
 |---|---|---|
-| `CLAMAV_HOST` | `clamav-swecham.internal` (Fly 6PN private DNS — NOT a public `.fly.dev` host; app has no public IP per `infra/clamav/fly.toml`) | Production |
-| `CLAMAV_PORT` | `3310` | Production |
+| `CLAMAV_SCAN_URL` | `https://clamav-swecham.fly.dev/scan` (Option D public HTTPS scan-wrapper) | Production |
+| `CLAMAV_SCAN_SECRET` | bearer token — **identical** to the `fly secrets set CLAMAV_SCAN_SECRET=…` value from A.1 (≥32 bytes) | Production (SECRET) |
 | `FEATURE_F71A_BROADCAST_ADVANCED` | `false` | Production (master kill-switch — flip TRUE in A.4) |
 | `FEATURE_F71A_US1_PAGINATION` | `false` | Production |
 | `FEATURE_F71A_US2_IMAGES` | `false` | Production |
 | `FEATURE_F71A_US7_TEMPLATES` | `false` | Production |
 
-> **Removed 2026-05-22**: `CLAMAV_SHARED_SECRET` is NO LONGER an env var
-> (deleted from `src/lib/env.ts` on 2026-05-19). The ClamAV daemon is
-> reached over Fly.io's private network — do NOT set it in Vercel.
+> **Option D (2026-05-22)**: `CLAMAV_HOST`/`CLAMAV_PORT` are NO LONGER
+> used by the adapter — set `CLAMAV_SCAN_URL` + `CLAMAV_SCAN_SECRET`
+> instead. `CLAMAV_SHARED_SECRET` was removed 2026-05-19 (do NOT set it).
 > `CLAMAV_TIMEOUT_MS` is optional (defaults to 50000 in env.ts).
+> The `CLAMAV_SCAN_SECRET` MUST match the Fly app secret or the wrapper
+> returns 401 → fail-closed → all uploads rejected.
 
 After setting, redeploy: `vercel --prod`.
 
@@ -205,34 +217,39 @@ vercel --prod
 
 ### C.3 — US2 Images ON (T145 — depends on Fly.io ClamAV healthy)
 
-> 🚨 **BLOCKING — Vercel→Fly reachability (verify BEFORE flipping US2)**
-> ClamAV being healthy on Fly is necessary but NOT sufficient. Production
-> Vercel functions resolve `CLAMAV_HOST=clamav-swecham.internal` only if
-> they are on the same Fly 6PN private network. **A standard Vercel
-> serverless function is NOT on Fly 6PN by default.** If reachability is
-> not established, every scan returns `error` and (fail-closed) ALL image
-> uploads are rejected — so US2 would be live-but-broken.
+> ✅ **Vercel→Fly reachability — RESOLVED 2026-05-22 (Option D).**
+> The original blocker (Vercel functions can't join Fly's IPv6-only 6PN
+> private network, so `clamav-swecham.internal` was unreachable) was
+> solved by **Option D — public HTTPS scan-wrapper**
+> (`infra/clamav/scan-server.mjs`; commits `d20d8efc`+`f19f29f7`). clamd
+> now sits behind a bearer-authed HTTPS endpoint and listens on
+> localhost only. Design:
+> [`clamav-vercel-connectivity.md`](../clamav-vercel-connectivity.md).
 >
-> Pick ONE connectivity strategy and confirm it before T145:
-> 1. **Public IP + auth proxy (README F7.1b path)** — allocate a Fly
->    public IP, add a Caddy/Nginx sidecar that terminates TLS + checks an
->    `X-Auth-Secret` header, and swap the `clamscan` TCP binding for an
->    HTTP wrapper. Highest effort; standard cross-cloud pattern.
-> 2. **WireGuard peering** — join the Vercel egress to Fly 6PN. Verify
->    Vercel's runtime supports the outbound tunnel (often impractical on
->    serverless).
-> 3. **Co-locate the scanner** off Fly onto a network Vercel can reach
->    privately.
->
-> **Reachability proof**: a production (or preview) Vercel function call
-> to `clamav-swecham.internal:3310` returns a clamd PING/PONG — capture
-> in `qa/clamav-reachability-{date}.md`. Until this passes, leave
-> `FEATURE_F71A_US2_IMAGES=false`. (Note: `fly proxy` only proves the
-> daemon works from a laptop — it does NOT prove Vercel can reach it.)
+> **Reachability PROVEN** — `pnpm verify:clamav` against the PUBLIC
+> endpoint `https://clamav-swecham.fly.dev/scan` (same transport a Vercel
+> function uses — NOT a `fly proxy` tunnel) passed end-to-end:
+> ```
+> healthz OK · EICAR detected: Eicar-Test-Signature · clean scan OK
+> latency p50=185.2ms · p95=199.6ms · p99=199.6ms — ✓ within SC-005 (<500ms)
+> all probes passed
+> ```
+> Because a laptop reaching the public HTTPS URL proves Vercel can too,
+> the connectivity gate is **PASSED**. No `qa/clamav-reachability-*.md`
+> capture needed beyond this verify output.
 
-**Pre-condition**: `fly status -a clamav-swecham` shows CHECKS `1 passing` AND production env has `CLAMAV_HOST` + `CLAMAV_PORT` set per A.2 (no `CLAMAV_SHARED_SECRET` — removed 2026-05-19; private-network reach) AND the Vercel→Fly reachability proof above passed.
+**Pre-condition** (all met / operator to confirm):
+- `fly status -a clamav-swecham` shows CHECKS `1 passing` ✅ (Option D deploy)
+- `pnpm verify:clamav` against the public URL PASSES ✅ (evidence above)
+- Production Vercel env has `CLAMAV_SCAN_URL` (`https://clamav-swecham.fly.dev/scan`) + `CLAMAV_SCAN_SECRET` (== the Fly app's `CLAMAV_SCAN_SECRET` secret) set per A.2. **NOTE**: `CLAMAV_HOST`/`CLAMAV_PORT` are no longer used by the adapter (Option D) — set the two `CLAMAV_SCAN_*` vars instead.
 
 ```bash
+# Set the Option-D scan vars in production (SCAN_SECRET must equal the
+# value passed to `fly secrets set CLAMAV_SCAN_SECRET=…` in A.1).
+vercel env add CLAMAV_SCAN_URL production       # https://clamav-swecham.fly.dev/scan
+vercel env add CLAMAV_SCAN_SECRET production     # <same as fly secret>
+
+# Then flip US2 on.
 vercel env rm FEATURE_F71A_US2_IMAGES --scope=production
 vercel env add FEATURE_F71A_US2_IMAGES true production
 vercel --prod

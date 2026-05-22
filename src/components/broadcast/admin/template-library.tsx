@@ -143,7 +143,14 @@ export function AdminTemplateLibrary({
       {/* flex-wrap keeps SV labels (~50 chars across 3 pills at
           text-[0.8rem]) from overflowing horizontally on the 320px
           Galaxy S8 baseline viewport. */}
-      <fieldset className="mb-4 flex flex-wrap items-center gap-2">
+      {/* No `mb-4`: the page's <TableContainer> is a
+          `flex flex-col gap-[var(--page-section-gap)]`, so it already
+          spaces the filter row from the table card uniformly with every
+          other section. A local `mb-4` stacked ON TOP of that flex gap,
+          making the filter→table gap visibly larger than the rest (the
+          "ฟิลเตอร์ห่างกับตาราง" report 2026-05-22). `gap-2` (between the
+          pills) is kept. */}
+      <fieldset className="flex flex-wrap items-center gap-2">
         <legend className="sr-only">{t('filterLegend')}</legend>
         <button
           type="button"
@@ -179,7 +186,14 @@ export function AdminTemplateLibrary({
         {t('filterCount', { count: liveCount })}
       </span>
 
-      <Card>
+      {/* `py-0` removes the Card's default vertical padding
+          (`py-[var(--card-padding)]`) so a full-bleed table sits flush
+          on all four sides. `CardContent p-0` alone only stripped the
+          HORIZONTAL padding, leaving a gap above the header row + below
+          the last row (the "หัวตาราง/ท้ายตาราง ซ้อนกัน" report
+          2026-05-22). The Card keeps `overflow-hidden` + rounded
+          corners, so the table edges clip cleanly to the card radius. */}
+      <Card className="py-0">
         <CardContent className="p-0">
           {/* Use the shadcn Table primitive for tokenised row-height,
               consistent cell padding, sticky header, and overflow-x
@@ -214,7 +228,23 @@ export function AdminTemplateLibrary({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((tpl) => (
+              {filtered.length === 0 ? (
+                // Filter matched nothing (e.g. "Admin-authored" when every
+                // template is a Starter). Without this row the table shows
+                // just a header + a floating horizontal scrollbar, which
+                // looks broken (report 2026-05-22). The page-level
+                // empty-state only covers "zero templates at all"; this
+                // covers "zero AFTER filtering".
+                <TableRow>
+                  <TableCell
+                    colSpan={6}
+                    className="py-8 text-center text-muted-foreground"
+                  >
+                    {t('filterEmpty')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((tpl) => (
                 <TableRow key={tpl.id}>
                   <TableCell>
                     <span className="font-medium">{tpl.name}</span>
@@ -265,7 +295,8 @@ export function AdminTemplateLibrary({
                     </Link>
                   </TableCell>
                 </TableRow>
-              ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

@@ -1804,6 +1804,7 @@
           "authored": "Kammar-författade"
         },
         "filterCount": "{count, plural, =0 {Inga mallar matchar} one {# mall} other {# mallar}}",
+        "filterEmpty": "Inga mallar matchar det här filtret.",
         "emptyState": {
           "title": "Inga mallar ännu",
           "body": "När mallar läggs till visas de här. Startmallar som förseedats vid kammarens uppstart visas också med en Start-etikett.",

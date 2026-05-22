@@ -1804,6 +1804,7 @@
           "authored": "Admin-authored"
         },
         "filterCount": "{count, plural, =0 {No templates match} one {# template} other {# templates}}",
+        "filterEmpty": "No templates match this filter.",
         "emptyState": {
           "title": "No templates yet",
           "body": "Once added, templates appear here. Starter templates seeded at chamber setup also show with a Starter badge.",
