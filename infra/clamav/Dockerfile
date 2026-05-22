@@ -20,9 +20,21 @@ FROM clamav/clamav:stable
 # only — Fly.io VMs talk over TCP, not shared volumes). Replace the
 # commented `#TCPSocket` / `#TCPAddr` directives shipped in the base
 # image's `/etc/clamav/clamd.conf` with active values.
+#
+# TCPAddr MUST be `::` (IPv6 any), NOT `0.0.0.0` (IPv4 any). Fly.io's
+# 6PN private network is IPv6-only — `clamav-swecham.internal` resolves
+# to an `fdaa:…` IPv6 address, so a Vercel function / `fly proxy`
+# connection arrives over IPv6. An IPv4-only `0.0.0.0` listener accepts
+# the local TCP health check (IPv4) but RESETS every 6PN/IPv6 client
+# connection (ECONNRESET on the first command) — the daemon looks
+# "healthy" (Fly tcp_check is a SYN handshake) yet no real client can
+# scan. `::` on Linux with the default `net.ipv6.bindv6only=0` is
+# dual-stack: it serves IPv6 6PN clients AND IPv4-mapped localhost,
+# so the in-container `clamdscan --ping` health probe still works.
+# (Root-caused 2026-05-22 — first deploy reset all proxy connections.)
 RUN sed -i \
       -e 's/^#TCPSocket .*/TCPSocket 3310/' \
-      -e 's/^#TCPAddr .*/TCPAddr 0.0.0.0/' \
+      -e 's/^#TCPAddr .*/TCPAddr ::/' \
       /etc/clamav/clamd.conf
 
 EXPOSE 3310
