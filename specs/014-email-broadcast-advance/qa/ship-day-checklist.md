@@ -20,8 +20,10 @@ fly auth login
 # Provision app (one-time per region)
 fly launch --copy-config --name clamav-swecham --region sin --no-deploy
 
-# Set the shared secret (one-time; rotate every 90 days)
-fly secrets set CLAMAV_SHARED_SECRET="$(openssl rand -hex 32)" -a clamav-swecham
+# NOTE (2026-05-22): CLAMAV_SHARED_SECRET was REMOVED 2026-05-19 per
+# /speckit.superb.critique — the daemon is reached over Fly.io's private
+# network (6PN), not an env-var shared secret. No `fly secrets set` step
+# is needed. See src/lib/env.ts ("CLAMAV_SHARED_SECRET removed").
 
 # Deploy
 fly deploy -a clamav-swecham
@@ -41,15 +43,19 @@ Set production env vars via `vercel env add` OR Vercel Dashboard → Project →
 |---|---|---|
 | `CLAMAV_HOST` | `<fly-app-host-from-A.1>.fly.dev` | Production |
 | `CLAMAV_PORT` | `3310` | Production |
-| `CLAMAV_SHARED_SECRET` | `<value-from-A.1-fly-secrets>` | Production |
 | `FEATURE_F71A_BROADCAST_ADVANCED` | `false` | Production (master kill-switch — flip TRUE in A.4) |
 | `FEATURE_F71A_US1_PAGINATION` | `false` | Production |
 | `FEATURE_F71A_US2_IMAGES` | `false` | Production |
 | `FEATURE_F71A_US7_TEMPLATES` | `false` | Production |
 
+> **Removed 2026-05-22**: `CLAMAV_SHARED_SECRET` is NO LONGER an env var
+> (deleted from `src/lib/env.ts` on 2026-05-19). The ClamAV daemon is
+> reached over Fly.io's private network — do NOT set it in Vercel.
+> `CLAMAV_TIMEOUT_MS` is optional (defaults to 50000 in env.ts).
+
 After setting, redeploy: `vercel --prod`.
 
-**Exit criteria**: `vercel env ls --environment=production` shows all 7 vars; deployment succeeds; `/admin/broadcasts/settings` route returns 503 with `feature_disabled` JSON (master flag OFF gates the surface correctly).
+**Exit criteria**: `vercel env ls --environment=production` shows all 6 vars; deployment succeeds; `/admin/broadcasts/settings` route returns 503 with `feature_disabled` JSON (master flag OFF gates the surface correctly).
 
 ### A.3 — cron-job.org coordinator (T141)
 
@@ -172,7 +178,7 @@ vercel --prod
 
 ### C.3 — US2 Images ON (T145 — depends on Fly.io ClamAV healthy)
 
-**Pre-condition**: `fly status -a clamav-swecham` shows `health-checks=passing` AND production env has `CLAMAV_HOST` + `CLAMAV_PORT` + `CLAMAV_SHARED_SECRET` set per A.2.
+**Pre-condition**: `fly status -a clamav-swecham` shows `health-checks=passing` AND production env has `CLAMAV_HOST` + `CLAMAV_PORT` set per A.2 (no `CLAMAV_SHARED_SECRET` — removed 2026-05-19; private-network reach).
 
 ```bash
 vercel env rm FEATURE_F71A_US2_IMAGES --scope=production
