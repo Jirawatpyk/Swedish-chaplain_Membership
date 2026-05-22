@@ -41,7 +41,7 @@ Set production env vars via `vercel env add` OR Vercel Dashboard → Project →
 
 | Variable | Value | Scope |
 |---|---|---|
-| `CLAMAV_HOST` | `<fly-app-host-from-A.1>.fly.dev` | Production |
+| `CLAMAV_HOST` | `clamav-swecham.internal` (Fly 6PN private DNS — NOT a public `.fly.dev` host; app has no public IP per `infra/clamav/fly.toml`) | Production |
 | `CLAMAV_PORT` | `3310` | Production |
 | `FEATURE_F71A_BROADCAST_ADVANCED` | `false` | Production (master kill-switch — flip TRUE in A.4) |
 | `FEATURE_F71A_US1_PAGINATION` | `false` | Production |
