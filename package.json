@@ -25,6 +25,7 @@
     "perf:f6": "tsx scripts/perf/run-all-f6-perf-benches.ts",
     "perf:f6:strict": "STRICT=true tsx scripts/perf/run-all-f6-perf-benches.ts",
     "verify:f6-f8": "node --env-file=.env.local --import tsx scripts/verify-f6-f8-live-wired.ts",
+    "verify:clamav": "node --env-file=.env.local --import tsx scripts/verify-clamav-connectivity.ts",
     "test:e2e": "playwright test --workers=1",
     "test:e2e:ui": "playwright test --ui",
     "check:i18n": "tsx scripts/check-i18n-coverage.ts",

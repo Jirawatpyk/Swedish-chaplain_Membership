@@ -18,7 +18,13 @@
  * dependency (`clamscan`); no test framework — keeps the cold-path
  * overhead low when the ship-day operator runs this manually.
  *
- * Run: `pnpm tsx scripts/verify-clamav-connectivity.ts`
+ * Run: `pnpm verify:clamav`
+ *
+ * (Do NOT run via bare `pnpm tsx scripts/verify-clamav-connectivity.ts`
+ * — that does NOT load `.env.local`, so `src/lib/env.ts` validation
+ * fails on DATABASE_URL/RESEND_API_KEY/etc BEFORE the ClamAV probe.
+ * The `verify:clamav` npm script wraps it with
+ * `node --env-file=.env.local --import tsx`. Fixed 2026-05-22.)
  *
  * Required env (`.env.local`):
  *   CLAMAV_HOST=localhost     # dev Docker, or "<app>.internal" on Fly.io

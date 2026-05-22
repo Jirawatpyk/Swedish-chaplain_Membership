@@ -51,7 +51,7 @@ fly status --app clamav-swecham   # expect: "running"
 fly logs --app clamav-swecham     # expect: "clamd[1]: Listening daemon"
 
 # 4. Smoke-test from the Chamber-OS app:
-pnpm tsx scripts/verify-clamav-connectivity.ts
+pnpm verify:clamav
 # Expect: EICAR → infected; clean buffer → clean; p95 < 500 ms.
 ```
 

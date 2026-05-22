@@ -61,7 +61,7 @@ Member-facing inline-image uploads return the `clamav-unreachable` banner. Backe
 
    ```bash
    # from a local dev shell with .env.local synced to prod CLAMAV_HOST:
-   pnpm tsx scripts/verify-clamav-connectivity.ts
+   pnpm verify:clamav
    # expected: "OK — clamd responded with version <X.Y.Z> in <N>ms"
    ```
 

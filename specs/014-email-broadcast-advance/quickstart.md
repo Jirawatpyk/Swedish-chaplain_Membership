@@ -132,7 +132,7 @@ The first time you run F7.1 with ClamAV enabled:
 
 ```bash
 # Self-test the ClamAV adapter via a one-off script
-pnpm tsx scripts/verify-clamav-connectivity.ts
+pnpm verify:clamav
 
 # Expected output: "ClamAV scan OK: { verdict: 'clean', signature: null, durationMs: 23 }" for a known-clean test file
 # If you get connection refused: verify ClamAV daemon is running (clamd.service on Linux, clamav service on macOS via brew, Docker container on Windows)
@@ -276,7 +276,7 @@ ClamAV signature refresh is **NOT** a cron-job.org endpoint — it runs as `fres
 
 ## 10. Common pitfalls (recorded for F7.1)
 
-- **ClamAV daemon not running** — silent test failures or 500 errors on attachment upload. Verify with `pnpm tsx scripts/verify-clamav-connectivity.ts` before running integration tests.
+- **ClamAV daemon not running** — silent test failures or 500 errors on attachment upload. Verify with `pnpm verify:clamav` before running integration tests.
 - **F3 contacts backfill skipped** — if you applied migration 0135 manually outside `drizzle-kit migrate`, the integrity check script will fail. Re-run `pnpm tsx scripts/verify-f71-contacts-backfill.ts` and remediate by running the backfill UPDATE manually.
 - **F7 MVP master flag `FEATURE_F7_BROADCASTS=false`** blocks the entire broadcasts surface — F7.1 builds on top of F7 so both must be `true` for F7.1 to be reachable.
 - **Tiptap image extension caching** — if `<img>` doesn't appear in toolbar after enabling `FEATURE_F71_US2_IMAGES=true`, hard-reload (Cmd+Shift+R) — Tiptap caches extension config at editor init.
