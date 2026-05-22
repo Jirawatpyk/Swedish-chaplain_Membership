@@ -35,6 +35,8 @@ for these endpoints — see § "Migration path: Pro plan" below.
 | **F7 reconcile-stuck-sending** | **`POST /api/cron/broadcasts/reconcile-stuck-sending`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reconcile) |
 | **F7 prune-expired-drafts** | **`POST /api/cron/broadcasts/prune-expired-drafts`** | **`30 4 * * *`** (daily 04:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 prune-drafts) |
 | **F7 broadcasts gauges** (T172) | **`GET /api/internal/metrics/broadcasts-gauges`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | emits `broadcasts.queue_pending` + `broadcasts.stuck_sending_count` gauges per tenant |
+| **F7.1a US1 split-large-broadcasts** | **`POST /api/cron/broadcasts/split-large-broadcasts`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — splits broadcasts whose recipient count exceeds the Resend per-audience cap into ≤10k batch manifests |
+| **F7.1a US1 dispatch-batches** | **`POST /api/cron/broadcasts/dispatch-batches`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — dispatches pending batch manifests created by split-large-broadcasts |
 | **F8 renewal dispatch (coordinator)** | **`POST /api/cron/renewals/dispatch-coordinator`** | **`0 6 * * *`** (daily 06:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 dispatch) |
 | **F8 at-risk recompute (coordinator)** | **`POST /api/cron/renewals/at-risk-recompute-coordinator`** | **`0 2 * * 0`** (Sun 02:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 at-risk) |
 | **F8 tier-upgrade evaluate (coordinator)** | **`POST /api/cron/renewals/tier-upgrade-evaluate-coordinator`** | **`0 3 * * 0`** (Sun 03:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 tier-upgrade) |
@@ -250,6 +252,56 @@ When SweCham upgrades to Vercel Pro the following changes ship:
 The route handlers are unchanged. The Bearer-auth pattern continues
 to work — Vercel Cron supplies the same `Authorization: Bearer
 ${CRON_SECRET}` header.
+
+## F7.1a — split + dispatch-batches (NEW — F7.1a US1, ship-day T141)
+
+F7.1a US1 lets a broadcast exceed the Resend per-audience cap (up to
+50k recipients) by fanning out into ≤10k-recipient batches. Two
+cron-job.org coordinators drive it, BOTH every 5 minutes, BOTH
+`POST` with `Authorization: Bearer ${CRON_SECRET}`:
+
+1. **`split-large-broadcasts`** — finds `approved` broadcasts whose
+   resolved recipient count exceeds the per-audience cap and creates
+   the batch manifests (idempotent; a broadcast already split is a
+   no-op).
+2. **`dispatch-batches`** — finds pending batch manifests and
+   dispatches each via the Resend Broadcasts API (advisory-locked per
+   (tenant, broadcast); at-most-once via the row-state guard).
+
+Ordering: the two run independently — split creates manifests, dispatch
+consumes them on a later tick. No cross-job ordering guarantee is
+needed (eventual consistency; a freshly-split broadcast is picked up by
+the next dispatch tick within 5 min).
+
+### Setup steps (one-time, ship-day T141)
+
+For EACH of the two jobs, in the cron-job.org dashboard:
+
+1. **Create cronjob** →
+   - **Title**: `Chamber-OS · broadcasts.split-large-broadcasts`
+     (resp. `…broadcasts.dispatch-batches`)
+   - **URL**: `https://swecham.zyncdata.app/api/cron/broadcasts/split-large-broadcasts`
+     (resp. `…/dispatch-batches`)
+   - **Schedule**: every 5 minutes (`*/5 * * * *`)
+   - **Request method**: `POST`
+   - **Request headers**: `Authorization: Bearer <CRON_SECRET value>`
+   - **Timeout**: 60 seconds
+   - **Retry**: OFF (per § Retry policy — the next 5-min tick is the
+     natural retry; the routes are idempotent + advisory-locked).
+2. Save + run once manually → expect `200`.
+
+### Expected response codes (both jobs)
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| 200 | Normal tick (zero or more broadcasts handled) | None |
+| 202 | Overlapping run holds the advisory lock | None — next tick catches up |
+| 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure headers |
+| 503 | `FEATURE_F71A_BROADCAST_ADVANCED=false` or `FEATURE_F71A_US1_PAGINATION=false` | Expected while US1 is dark; do nothing |
+
+> **Dark-launch note**: until US1 is flipped on (ship-day T146) both
+> routes return `503` (kill-switch). Configure the jobs at T141 but
+> expect 503 until the flag flip — that is correct, not an incident.
 
 ## F8 — renewals/dispatch-coordinator (NEW — F8 Phase 4)
 
