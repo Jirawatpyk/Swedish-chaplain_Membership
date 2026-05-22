@@ -29,11 +29,38 @@ fly launch --copy-config --name clamav-swecham --region sin --no-deploy
 fly deploy -a clamav-swecham
 
 # Verify
-fly status -a clamav-swecham                  # expect: state=started, health-checks=passing
-fly logs -a clamav-swecham --since=2m         # expect: "clamd[1]: Listening daemon"
+fly status -a clamav-swecham                  # expect: state=started, CHECKS "1 total, 1 passing"
+fly logs -a clamav-swecham --since=2m         # expect: "socket found, clamd started." + health passing
 ```
 
-**Exit criteria**: machine `state=started` AND `health-checks=passing` AND logs show `clamd[1]: Listening daemon`.
+**MEMORY FLOOR (2026-05-22 incident)**: the first deploy used
+`memory = "256mb"` and OOM-looped — `freshclam` (~156 MB) + `clamd`
+(~154 MB; loads daily.cvd ~355k sigs into a ~1.2 GB matcher) cannot
+coexist in 256 MB. Symptom: `Out of memory: Killed process … exit
+137` → reboot loop → health check stuck `1 critical`. `infra/clamav/fly.toml`
+is now `memory = "2gb"`. If the machine was provisioned before this
+fix, resize without a rebuild:
+```bash
+fly machine update <machine-id> --vm-memory 2048 -a clamav-swecham
+```
+
+**CDN 429 note**: a boot-loop hammers the ClamAV CDN and trips a
+~6-hour 429 cool-down on `freshclam`. This is NON-blocking — `daily.cvd`
+ships with the `clamav/clamav:stable` image, so `clamd` starts on the
+bundled signatures; `main.cvd` refresh resumes after cool-down.
+
+**Local smoke-test** (laptop is NOT on Fly 6PN — tunnel first):
+```bash
+# Terminal 1 — open a local tunnel to the Fly machine:
+fly proxy 3310:3310 -a clamav-swecham
+# Terminal 2 — point .env.local at the tunnel + run the probe:
+#   CLAMAV_HOST=localhost  CLAMAV_PORT=3310
+pnpm verify:clamav         # expect: ping OK → EICAR detected → clean OK → p95<500ms → exit 0
+```
+
+**Exit criteria**: `fly status` shows `state=started` AND CHECKS
+`1 passing` AND logs show `socket found, clamd started.` AND
+`pnpm verify:clamav` (via `fly proxy`) reports `all probes passed`.
 
 ### A.2 — Vercel env vars (T140)
 
@@ -178,7 +205,32 @@ vercel --prod
 
 ### C.3 — US2 Images ON (T145 — depends on Fly.io ClamAV healthy)
 
-**Pre-condition**: `fly status -a clamav-swecham` shows `health-checks=passing` AND production env has `CLAMAV_HOST` + `CLAMAV_PORT` set per A.2 (no `CLAMAV_SHARED_SECRET` — removed 2026-05-19; private-network reach).
+> 🚨 **BLOCKING — Vercel→Fly reachability (verify BEFORE flipping US2)**
+> ClamAV being healthy on Fly is necessary but NOT sufficient. Production
+> Vercel functions resolve `CLAMAV_HOST=clamav-swecham.internal` only if
+> they are on the same Fly 6PN private network. **A standard Vercel
+> serverless function is NOT on Fly 6PN by default.** If reachability is
+> not established, every scan returns `error` and (fail-closed) ALL image
+> uploads are rejected — so US2 would be live-but-broken.
+>
+> Pick ONE connectivity strategy and confirm it before T145:
+> 1. **Public IP + auth proxy (README F7.1b path)** — allocate a Fly
+>    public IP, add a Caddy/Nginx sidecar that terminates TLS + checks an
+>    `X-Auth-Secret` header, and swap the `clamscan` TCP binding for an
+>    HTTP wrapper. Highest effort; standard cross-cloud pattern.
+> 2. **WireGuard peering** — join the Vercel egress to Fly 6PN. Verify
+>    Vercel's runtime supports the outbound tunnel (often impractical on
+>    serverless).
+> 3. **Co-locate the scanner** off Fly onto a network Vercel can reach
+>    privately.
+>
+> **Reachability proof**: a production (or preview) Vercel function call
+> to `clamav-swecham.internal:3310` returns a clamd PING/PONG — capture
+> in `qa/clamav-reachability-{date}.md`. Until this passes, leave
+> `FEATURE_F71A_US2_IMAGES=false`. (Note: `fly proxy` only proves the
+> daemon works from a laptop — it does NOT prove Vercel can reach it.)
+
+**Pre-condition**: `fly status -a clamav-swecham` shows CHECKS `1 passing` AND production env has `CLAMAV_HOST` + `CLAMAV_PORT` set per A.2 (no `CLAMAV_SHARED_SECRET` — removed 2026-05-19; private-network reach) AND the Vercel→Fly reachability proof above passed.
 
 ```bash
 vercel env rm FEATURE_F71A_US2_IMAGES --scope=production
