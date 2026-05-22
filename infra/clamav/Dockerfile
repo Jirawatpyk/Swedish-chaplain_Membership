@@ -14,18 +14,18 @@
 # See specs/014-email-broadcast-advance/clamav-vercel-connectivity.md
 # and infra/clamav/README.md.
 #
-# We extend `clamav/clamav:stable` (Debian-based, Cisco-maintained) so
+# We extend `clamav/clamav:stable` (Alpine-based, Cisco-maintained) so
 # freshclam + clamd are preconfigured; we only flip the TCP listener to
-# localhost, add a Node runtime, and layer the wrapper on top.
+# localhost, add a Node runtime (via apk), and layer the wrapper on top.
 
 FROM clamav/clamav:stable
 
 # Node runtime for the scan-wrapper (http + net + crypto only — no npm
-# install needed). Debian bookworm ships Node 18, which satisfies the
-# wrapper's requirements (timingSafeEqual, Buffer.subarray, etc.).
-RUN apt-get update \
-      && apt-get install -y --no-install-recommends nodejs \
-      && rm -rf /var/lib/apt/lists/*
+# install needed). clamav/clamav:stable is ALPINE-based (busybox /bin/sh,
+# `apk` package manager — NOT Debian/apt), so install Node via apk.
+# Alpine's `nodejs` package satisfies the wrapper's requirements
+# (timingSafeEqual, Buffer.subarray, AbortController, etc.).
+RUN apk add --no-cache nodejs
 
 # clamd listens on LOCALHOST ONLY now — the in-container wrapper is the
 # sole client. No 6PN / public exposure (Option D moved the public
