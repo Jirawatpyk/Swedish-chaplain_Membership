@@ -25,7 +25,7 @@ Ships dark behind `FEATURE_F71A_BROADCAST_ADVANCED=false` until operator/maintai
 **Primary Dependencies**:
 - **Existing (reused)**: Next.js 16 App Router · React 19 · Drizzle ORM · Postgres (Neon `ap-southeast-1`) · `@vercel/blob` (asset storage from F4) · `resend` (Broadcasts API from F7 MVP) · `next-intl` (EN/TH/SV) · `shadcn/ui` + Tailwind v4 · `pino` + `@vercel/otel` · `react-hook-form` + `zod` · `isomorphic-dompurify` (F7 MVP sanitiser)
 - **New (F7.1a)**: **`clamscan@^2.4`** — Node.js bindings for self-hosted ClamAV (client side talks to the daemon — daemon itself runs on Fly.io). **`@types/clamscan@^2`** — DefinitelyTyped declarations (clamscan ships JS-only; required for `pnpm typecheck` pass on `scripts/verify-clamav-connectivity.ts` + future Phase 2 T025 adapter). **`@tiptap/extension-image@3.22.5`** — re-enables the `<img>` extension in the existing Tiptap editor (F7 MVP shipped Tiptap with `<img>` disabled). **Exact-pinned** (not `^3.22.5`) because `^` resolves to 3.23.x which has an unmet peer-dep on `@tiptap/core@3.23.x` — F7 MVP's pinned `@tiptap/core@3.22.5` (via `@tiptap/react@3.22.5` + `@tiptap/starter-kit@3.22.5`) cannot satisfy that without a MAJOR upgrade. Pinning to 3.22.5 keeps Clarifications round 3 Q2's "clean extension-add, no MAJOR upgrade work" invariant.
-- **New infrastructure (F7.1a)**: **Fly.io persistent micro-VM** in `sin` region running `clamav/clamav:stable` image (`clamd` daemon + `freshclam` in-container). Ships in F7.1a PR as `infra/clamav/fly.toml` + `infra/clamav/Dockerfile` (≤20 LoC each). Cost ~$2/month or free tier. Daemon model preserves FR-013 latency SLO (≤500ms p95 for files ≤2 MB) — incompatible with the originally-sketched "Vercel Function sidecar" approach per audit C2.
+- **New infrastructure (F7.1a)**: **Fly.io persistent micro-VM** in `sin` region running `clamav/clamav:stable` image (`clamd` daemon + `freshclam` in-container). Ships in F7.1a PR as `infra/clamav/fly.toml` + `infra/clamav/Dockerfile` + `infra/clamav/scan-server.mjs` + `infra/clamav/start.sh`. VM sized `shared-cpu-1x@2gb` (256mb OOM-looped — clamd loads the ~355k-sig DB into a ~1.2 GB resident set; corrected at deploy 2026-05-22). Daemon model preserves FR-013 latency SLO (≤500ms p95; 199ms measured) — incompatible with the originally-sketched "Vercel Function sidecar" approach per audit C2. **Connectivity = Option D (2026-05-22)**: clamd is fronted by a public HTTPS scan-wrapper (`scan-server.mjs`, bearer-authed, INSTREAM to localhost clamd) because Vercel serverless cannot join Fly's IPv6-only 6PN; the app uses `fetch(CLAMAV_SCAN_URL)` + `CLAMAV_SCAN_SECRET` (the `clamscan` npm dep moved into the Fly-side wrapper; the app no longer depends on it). See `clamav-vercel-connectivity.md`.
 
 **Storage**:
 - Neon Postgres `ap-southeast-1` (Singapore) — extend `broadcasts` table (5 new columns: `manual_retry_count`, `partial_delivery_accepted_at`, `partial_delivery_accepted_by_user_id`, `started_from_template_id` FK, `template_name_snapshot`); add 4 new tables (`broadcast_templates`, `broadcast_batch_manifests`, `tenant_image_source_allowlist`, `tenant_broadcast_settings` — last one is CREATE not EXTEND per Phase 2 Risk R2); seed 5 starter templates × 3 locales = 15 rows per tenant via migration 0168 (renumbered from 0134 Phase 2 2026-05-18; 012-eventcreate-integration concurrently occupied 0127-0160 on the shared Neon main branch — F14 migrations land at 0161-0168 to follow 012's contribution).
@@ -143,7 +143,7 @@ src/
 │       │       └── batch-dispatcher.ts            # NEW (US1) — orchestrates concurrency cap
 │       ├── infrastructure/
 │       │   ├── clamav-virus-scanner.ts            # NEW (US2 — implements VirusScannerPort)
-│       │   ├── clamav-endpoint-resolver.ts        # NEW (US2 — resolves CLAMAV_HOST for prod/dev/staging)
+│       │   ├── clamav-endpoint-resolver.ts        # NEW (US2 — legacy host resolver; Option D adapter uses CLAMAV_SCAN_URL via fetch)
 │       │   ├── tiptap-image-extension-config.ts   # NEW (US2 — Tiptap config wiring)
 │       │   ├── drizzle-image-allowlist-repo.ts    # NEW (US2)
 │       │   ├── drizzle-batch-manifests-repo.ts    # NEW (US1)
@@ -186,8 +186,10 @@ src/
 
 infra/                                              # NEW top-level dir for F7.1a
 └── clamav/
-    ├── fly.toml                                   # Fly.io app config (sin region, shared-cpu-1x 256MB)
-    ├── Dockerfile                                 # Extends clamav/clamav:stable; enables clamd TCP listener
+    ├── fly.toml                                   # Fly.io app config (sin region, shared-cpu-1x 2GB; public HTTPS :443→:8080 wrapper)
+    ├── Dockerfile                                 # Extends clamav/clamav:stable (Alpine); clamd localhost-only + Node + scan-wrapper
+    ├── scan-server.mjs                            # Option D — pure-Node HTTPS scan-wrapper (bearer + INSTREAM)
+    ├── start.sh                                   # Launch wrapper (bg) + clamd /init (fg)
     └── README.md                                  # Deploy + monitor instructions
 
 scripts/                                            # NEW scripts for F7.1a (per critique E2/X2)
