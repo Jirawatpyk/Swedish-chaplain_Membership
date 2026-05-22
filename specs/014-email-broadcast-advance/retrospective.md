@@ -222,3 +222,112 @@ this backlog. ✅ = closed in-session; 🔵 = deferred (documented rationale);
 - DPIA addendum: `dpia-addendum.md`
 - F7.1b backlog: `f71b-backlog.md`
 - Constitution: `.specify/memory/constitution.md` (v1.4.0)
+
+---
+
+# Spec Adherence Analysis — 2026-05-22 (post-merge)
+
+```yaml
+feature: 014-email-broadcast-advance (F7.1a)
+branch: 014-email-broadcast-advance → merged to main (squash 29477182, 2026-05-22)
+date: 2026-05-22
+completion_rate: 100%      # 152/152 tasks
+spec_adherence: 95.5%
+requirements_total: 44     # 30 FR + 14 SC + 0 NFR
+counts:
+  implemented: 39
+  modified: 1
+  partial: 4
+  not_implemented: 0
+  unspecified: 0
+critical_findings: 0
+```
+
+## Executive summary
+
+F7.1a (US1 pagination 5k→50k, US2 image upload + ClamAV, US7 template
+library) shipped at **100% task completion** and merged to `main`. Spec
+adherence is **95.5%** — every FR is implemented; the 4.5-point gap is
+four success criteria whose *implementation* is complete but whose
+*measurement* is intrinsically post-ship (wall-clock at 50k scale,
+3-month retry-success rate, 60-day template-adoption rate) and therefore
+counted PARTIAL until measured. One requirement (FR-013, ClamAV scan)
+was **modified** in approach — see Architecture Drift. **Zero critical
+findings; zero constitution violations.**
+
+Adherence formula: `((39 + 1 + 4×0.5) / (44 − 0)) × 100 = 95.5%`.
+
+## Proposed Spec Changes (Human Gate)
+
+One spec/plan update is recommended (NOT yet applied — awaiting confirmation):
+
+- **FR-013 / plan.md § ClamAV connectivity**: spec + plan describe the
+  scanner reached over **Fly 6PN private DNS** (`CLAMAV_HOST=*.internal`,
+  raw TCP 3310). Production shipped **Option D** — a public HTTPS
+  scan-wrapper (`CLAMAV_SCAN_URL` + `CLAMAV_SCAN_SECRET`) because Vercel
+  serverless functions cannot join Fly's IPv6-only 6PN. Recommend
+  updating FR-013's connectivity description + the plan's data-flow
+  diagram to match the deployed topology (authoritative design already
+  captured in `clamav-vercel-connectivity.md`).
+
+No other spec changes proposed.
+
+## Requirement coverage matrix
+
+| Group | IDs | Status |
+|---|---|---|
+| US1 pagination | FR-001..009, FR-016/016a | ✅ Implemented (batch split, retry budget, accept-partial, 4-layer race guard, advisory lock) |
+| US2 image + ClamAV | FR-010, FR-011, FR-012 | ✅ Implemented (allowlist, size cap, sanitiser hardening) |
+| US2 ClamAV scan | **FR-013** | 🔁 **Modified** — Option D HTTP wrapper vs planned 6PN-direct (functionally equivalent + clamd now localhost-only = stronger isolation) |
+| US7 templates | FR-017..023 | ✅ Implemented (CRUD, picker, snapshot decoupling, `{{chamber_name}}` escape, starter seed) |
+| Cross-cutting | FR-014, FR-015/015c | ✅ Implemented (audit taxonomy, kill-switch flags) |
+| SC code-verifiable | SC-003, 004, 005, 007, 007a, 007b, 009, 010(code) | ✅ Verified (SC-005 p95=199ms<500ms; SC-007 ALREADY_RETRYING test; SC-007b 15 rows; SC-009 3124×3 i18n) |
+| SC a11y | SC-008 | ✅ axe-core automated PASS; ⏳ manual SR QA = ship-day T135 |
+| SC post-ship metric | **SC-001, SC-002, SC-006, SC-007c** | ⚡ **Partial** — implementation complete; measurement is post-ship/staging-gated (10k≤10min, 50k≤45min, 3-mo retry≥95%, 60-day adoption≥30%) |
+
+No FR/SC is NOT-IMPLEMENTED. No unspecified requirements (Option D folds under FR-013).
+
+## Architecture drift
+
+| Planned | Shipped | Severity | Rationale |
+|---|---|---|---|
+| ClamAV via Fly 6PN `*.internal` raw TCP; `clamscan` npm in the Vercel app | Option D: public HTTPS scan-wrapper (`scan-server.mjs`) + bearer auth; clamd localhost-only; app uses `fetch()` (clamscan dep dropped from app) | SIGNIFICANT (POSITIVE) | Vercel serverless can't join Fly IPv6 6PN — discovered at deploy. Wrapper is the standard cross-cloud pattern; reduces clamd attack surface (localhost-only) + latency improved (p95 451ms tunnel → 199ms direct HTTPS). |
+| ClamAV VM `shared-cpu-1x@256mb` | `@2gb` | MINOR | 256mb OOM-looped (clamd loads 355k-sig DB ~1.2GB). Discovered at deploy. |
+
+## Significant deviations (root-cause)
+
+1. **ClamAV connectivity (Option D)** — *Discovery: deployment.* *Cause: spec/plan tech-constraint gap (assumed Vercel↔Fly 6PN reachability that doesn't exist on serverless).* *Prevention: validate cross-platform network reachability during `/speckit.plan` for any out-of-platform dependency.*
+2. **VM memory floor** — *Discovery: deployment (OOM loop).* *Cause: under-estimate of clamd resident set.* *Prevention: size long-running daemons against documented RSS, not optimistic minimums.*
+3. **Template body persisted raw** — *Discovery: `/security-review` (2026-05-22).* *Cause: process — submit/save-draft sanitised but template create/update skipped DOMPurify.* *Prevention: make "sanitise at every persist boundary" a checklist item.* Fixed pre-merge (`267e7097`).
+
+## Innovations / best-practice candidates
+
+- **Option D HTTP scan-wrapper** (pure-Node, zero-dep, bearer + INSTREAM) — reusable pattern for any future Vercel→Fly private daemon. **Constitution candidate?** No (feature-specific), but worth a `docs/` pattern note.
+- **`ChamberSubstitutedBody` Domain brand** — compile-time guarantee that un-substituted/un-escaped body can't reach the repo writer. Reusable for any templated-content domain.
+- **4-layer dispatch race defence** (cron tick + FOR UPDATE SKIP LOCKED + idempotency unique + row-state guard) — strong at-most-once primitive; candidate pattern for other fan-out features.
+
+## Constitution compliance (v1.4.0)
+
+All 10 principles **PASS** (per the per-principle posture documented earlier in this file + the `/security-review` 0-findings result). **Violations: None.**
+
+## Task execution
+
+- 152/152 tasks `[X]` (100%). Operator-only ship-day gates (T135 SR QA, T136/T142/T164 staging, T143-T146 flag-flip, T149 tag) are tracked separately in `qa/ship-day-checklist.md` and are NOT in the 152 (they are post-merge operator actions).
+- 7 review rounds + 3-agent staff-review + 1 security review → ~87 in-session task closures.
+
+## Lessons learned / recommendations
+
+1. **HIGH** — Apply the proposed FR-013/plan spec update so the doc matches the deployed Option-D topology (Human Gate below).
+2. **HIGH** — During `/speckit.plan`, add an explicit "cross-platform network reachability" check for any dependency hosted outside Vercel (would have caught the 6PN gap at plan time, not deploy time).
+3. **MEDIUM** — Add "sanitise at every persist boundary" to the security checklist template (the template-body raw-persist gap was a process miss caught only at security review).
+4. **MEDIUM** — Capture the post-ship metrics (SC-001/002/006/007c) on a calendar: 50k staging run before second-tenant rollout; 3-mo + 60-day product reviews.
+
+## Self-assessment checklist
+
+- Evidence completeness: **PASS** (each deviation cites file/commit/discovery point).
+- Coverage integrity: **PASS** (all 30 FR + 14 SC accounted; 0 missing IDs).
+- Metrics sanity: **PASS** (completion 152/152=100%; adherence (39+1+2)/44=95.5%).
+- Severity consistency: **PASS**.
+- Constitution review: **PASS** (None — explicitly stated).
+- Human Gate readiness: **PASS** (Proposed Spec Changes populated).
+- Actionability: **PASS** (4 prioritised recommendations tied to findings).
