@@ -54,13 +54,18 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
 
   const rows: readonly AllowlistRow[] = await runInTenant(
     tenantCtx,
-    async () => {
+    async (tx) => {
       const repo = makeDrizzleImageAllowlistRepo();
       // Idempotent — platform-mandated defaults (resend.com etc.)
       // ensured on every visit so admins see a non-empty allowlist
       // on first contact. Storage uses ON CONFLICT DO NOTHING.
       await seedPlatformDefaults(repo, tenantCtx.slug as never);
-      const entries = await repo.findByTenantId(tenantCtx.slug as never);
+      // 2026-05-22 (post-/code-review borderline #2 follow-up): thread
+      // the outer `tx` so the read joins THIS tenant-bound transaction
+      // instead of opening a nested `runInTenant` (SAVEPOINT +
+      // redundant `SET LOCAL ROLE`/`app.current_tenant`). RLS is still
+      // enforced via the outer `runInTenant` binding.
+      const entries = await repo.findByTenantId(tenantCtx.slug as never, tx);
       return entries.map((e) => ({
         hostname: e.hostname as string,
         isDefault: e.isDefault,
