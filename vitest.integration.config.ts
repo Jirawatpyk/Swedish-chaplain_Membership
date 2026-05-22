@@ -6,7 +6,19 @@ import { resolve } from 'node:path';
 // time; by populating process.env here (in the config file's Node
 // runtime, which runs before any test file is loaded) we guarantee the
 // env.ts validation sees the secrets.
-process.loadEnvFile?.('.env.local');
+//
+// 2026-05-22 CI fix: `process.loadEnvFile` THROWS `ENOENT` when the
+// file is absent, and `?.` only guards an undefined function (Node <20)
+// — NOT a missing file. CI runners have no `.env.local` (env comes from
+// real `process.env` / GitHub secrets), so the bare call crashed the
+// integration config at load time, failing the multi-tenant-readiness
+// workflow before any test ran. Wrap in try/catch: load when present
+// (local dev), fall back to the ambient `process.env` when absent (CI).
+try {
+  process.loadEnvFile?.('.env.local');
+} catch {
+  // No .env.local (CI / sandbox) — env vars come from process.env.
+}
 
 /**
  * Integration test configuration.
